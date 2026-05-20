@@ -1,0 +1,69 @@
+{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@ycore/forge",
+      "dependencies": {
+        "@remix-run/cookie": "^0.5.1",
+        "@remix-run/headers": "^0.19.0",
+        "@remix-run/session": "^0.4.1",
+        "hono": "^4.7.0",
+        "htmx.org": "^2.0.10",
+        "valibot": "^1.4.0",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "^2.4.15",
+        "@typescript/native-preview": "^7.0.0-dev.20260517.1",
+      },
+    },
+  },
+  "packages": {
+    "@biomejs/biome": ["@biomejs/biome@2.4.15", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.4.15", "@biomejs/cli-darwin-x64": "2.4.15", "@biomejs/cli-linux-arm64": "2.4.15", "@biomejs/cli-linux-arm64-musl": "2.4.15", "@biomejs/cli-linux-x64": "2.4.15", "@biomejs/cli-linux-x64-musl": "2.4.15", "@biomejs/cli-win32-arm64": "2.4.15", "@biomejs/cli-win32-x64": "2.4.15" }, "bin": { "biome": "bin/biome" } }, "sha512-j5VH3a/h/HXTKBM50MDMxRCzkeLv9S2XJcW2WgnZT1+xyisi+0bISrXR82gCX+8S9lvK0skEvHJRN+3Ktr2hlw=="],
+
+    "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.4.15", "", { "os": "darwin", "cpu": "arm64" }, "sha512-rF3PPqLq1yoST79zaQbDjVJwsuIeci/O+9bgNmC5QpgOqz6aqYuzA4abyAGx+mgyiDXn4A049xAN8gijbuR1Qg=="],
+
+    "@biomejs/cli-darwin-x64": ["@biomejs/cli-darwin-x64@2.4.15", "", { "os": "darwin", "cpu": "x64" }, "sha512-/5KHXYMfSJs1fNXiX30xFtI8JcCFV6zaVVLxOa0M2sfqBKHkpQhRTv94yxQWxeTY2lzo2OuTlNvPC+hDQt2wcQ=="],
+
+    "@biomejs/cli-linux-arm64": ["@biomejs/cli-linux-arm64@2.4.15", "", { "os": "linux", "cpu": "arm64" }, "sha512-owaAMZD/T4LrD0ELNCk0Km3qrRHuM0X6EAyVE1FSqGY0rbLoiDLrO4Us2tllm6cAeB2Ioa9C2C08NZPdr8+0Ug=="],
+
+    "@biomejs/cli-linux-arm64-musl": ["@biomejs/cli-linux-arm64-musl@2.4.15", "", { "os": "linux", "cpu": "arm64" }, "sha512-ZPcxznxm0pogHBLZhYntyR3sR+MrZjqJIKEr7ZqVen0Rl+P/4upVmfYXjftizi9RoqZntg33fv/1fbdhbYXpEQ=="],
+
+    "@biomejs/cli-linux-x64": ["@biomejs/cli-linux-x64@2.4.15", "", { "os": "linux", "cpu": "x64" }, "sha512-0jj7THz12GbUOLmMibktK6DZjqz2zV64KFxyBtcFTKPiiOIY0a7vns1elpO1dERvxpsZ5ik0oFfz0oGwFde1+g=="],
+
+    "@biomejs/cli-linux-x64-musl": ["@biomejs/cli-linux-x64-musl@2.4.15", "", { "os": "linux", "cpu": "x64" }, "sha512-CNq/9W38SYSH023lfcQ4KKU8K0YX8T//FZUhcgtMMRABDojx5XsMV7jlweAvGSl389wJQB29Qo6Zb/a+jdvt+w=="],
+
+    "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.4.15", "", { "os": "win32", "cpu": "arm64" }, "sha512-ouhkYdlhp/1GghEJPdWwD/Vi3gQ1nFxuSpMolWsbq3Lsq3QUR4jl6UdhhscdCugKU5vOEuMiJhvKj66O0OCq+w=="],
+
+    "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.15", "", { "os": "win32", "cpu": "x64" }, "sha512-zBrGq5mx5wwpnow4+2BxUvleDM+GNd4sLbPaMapsSLQLD0NGRCquqPBTgN+7XkUteHvj7M+BstuI8tmnV7+HgQ=="],
+
+    "@remix-run/cookie": ["@remix-run/cookie@0.5.2", "", { "dependencies": { "@remix-run/headers": "^0.20.0" } }, "sha512-3dyZaQI2lrv9iJi+20JwX3vU0DjSlJnW7d46ztjf+BaYlowlpBzTGSUx1lmfeDOsrdBXCLY/G4RPXFeeud4A/w=="],
+
+    "@remix-run/headers": ["@remix-run/headers@0.19.0", "", {}, "sha512-+62NbkXuXm9r/NdG6KfH9OCKofCWm8VjkrVPICiHKtRl8Gf2Vi6eFTN4mGgBlZRhd5mmEVRV4hTIn/JUSHDAOw=="],
+
+    "@remix-run/session": ["@remix-run/session@0.4.1", "", {}, "sha512-Bm6aKYgutb/raHZ3laloz8g/Qu7f3CeK3o4gUVDMxtEiAdWCzJamwHoTpGOc5+g1Kuy7z85v4M6nGrF06MFDSg=="],
+
+    "@typescript/native-preview": ["@typescript/native-preview@7.0.0-dev.20260519.1", "", { "optionalDependencies": { "@typescript/native-preview-darwin-arm64": "7.0.0-dev.20260519.1", "@typescript/native-preview-darwin-x64": "7.0.0-dev.20260519.1", "@typescript/native-preview-linux-arm": "7.0.0-dev.20260519.1", "@typescript/native-preview-linux-arm64": "7.0.0-dev.20260519.1", "@typescript/native-preview-linux-x64": "7.0.0-dev.20260519.1", "@typescript/native-preview-win32-arm64": "7.0.0-dev.20260519.1", "@typescript/native-preview-win32-x64": "7.0.0-dev.20260519.1" }, "bin": { "tsgo": "bin/tsgo.js" } }, "sha512-VVER7vFUDdfm5k3jbH5765tVEJa7+0rTUkFeXyGYrXPxpw9BIjA0QDxdtdlRyaU8MCZV9IKZUo6doxeAQRAjPg=="],
+
+    "@typescript/native-preview-darwin-arm64": ["@typescript/native-preview-darwin-arm64@7.0.0-dev.20260519.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-c9zdG6sGJf25Jpz04JgE23zhYeprqFypDGuqiX94yMTvR8IWXjq3R2oMnim66YLBDon/V1nCEy6cFixeSd/4fg=="],
+
+    "@typescript/native-preview-darwin-x64": ["@typescript/native-preview-darwin-x64@7.0.0-dev.20260519.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-N16V3wiM0tsNmSSA7nZrxqXXt5OCJxBwiCVn35rnA7fr4WzJw6rJmwf9heNNhZ6Gh4ne3+Pexajf5akzuHR75Q=="],
+
+    "@typescript/native-preview-linux-arm": ["@typescript/native-preview-linux-arm@7.0.0-dev.20260519.1", "", { "os": "linux", "cpu": "arm" }, "sha512-8v4BExeeuCTrhaSGfeIJqm3qQkTzlZix/Qd/FkPlWoz9f7d7COvXb3Z4qhbaVolL0MMnUvQ7m005Z4kYsZ645A=="],
+
+    "@typescript/native-preview-linux-arm64": ["@typescript/native-preview-linux-arm64@7.0.0-dev.20260519.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-ltf91vAwKdbu0SlRQbFgi1h5ZrLLrBn6a4qIeN2VILGbtYrCXnARHRznLBv81yUETQ7aVr/LSQcmsWo1ejCK0w=="],
+
+    "@typescript/native-preview-linux-x64": ["@typescript/native-preview-linux-x64@7.0.0-dev.20260519.1", "", { "os": "linux", "cpu": "x64" }, "sha512-AVD0tczTtFCHNa4RQRVPvu8Hnw4P3hQ+OlUAjnz/lHowvc6o1pYB46elMqfDuaoWqIpv+EAkAPP4ipFCofJ5IA=="],
+
+    "@typescript/native-preview-win32-arm64": ["@typescript/native-preview-win32-arm64@7.0.0-dev.20260519.1", "", { "os": "win32", "cpu": "arm64" }, "sha512-TM+qatljyejqjHevCta3WIH53i0oGC7K8SoJ6t+mf4cGMTpZTyd7NhC1ts7e6/aydZnG53Bsta2iQi1SMIlQEw=="],
+
+    "@typescript/native-preview-win32-x64": ["@typescript/native-preview-win32-x64@7.0.0-dev.20260519.1", "", { "os": "win32", "cpu": "x64" }, "sha512-r9LEsoY7JC/82gXo8hlOmpQaUXcqmngCVOv+mUx1UeMt9f+1S6oNO0W48o75mlBqqC7jfcMHqw8YS4LfVxPRGw=="],
+
+    "hono": ["hono@4.12.21", "", {}, "sha512-uV63apnb0kyPtAUwoWgaGh9HyIFcv8lgmzPZSiTBQAFOFGIzka5EZ1dZocmGnn0XdX0+XTqJ6Tqv7selMuGLRQ=="],
+
+    "htmx.org": ["htmx.org@2.0.10", "", {}, "sha512-kdeJe7ZVwaS6QMz/ebBIVtZdpwen6L0OQ5GOhPV9MKBb196TCZeZu4yA7ZIQsaLKv7EpXz+So7KSXNuHXhj7Cw=="],
+
+    "valibot": ["valibot@1.4.0", "", { "peerDependencies": { "typescript": ">=5" }, "optionalPeers": ["typescript"] }, "sha512-iC/x7fVcSyOwlm/VSt7RlHnzNGLGvR9GnxdifUeWoCJo0q4ZZvrVkIHC6faTlkxG47I2Y4UrFquPuVHCrOnrLg=="],
+
+    "@remix-run/cookie/@remix-run/headers": ["@remix-run/headers@0.20.0", "", {}, "sha512-t5akxTE1y4s8mfGsemna+BooFPN17UcZ/utVTk/rgl3HhznzmSYjIXBAMQ4j9Hv6A9Ys9DKTH3yxetVEV9oPpw=="],
+  }
+}

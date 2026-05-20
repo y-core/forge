@@ -1,0 +1,77 @@
+import { describe, expect, it } from "bun:test";
+import { Hono } from "hono";
+import { html } from "hono/html";
+import { Button } from "./button";
+
+async function render(element: unknown): Promise<string> {
+  const app = new Hono();
+  app.get("/", (c) => c.html(html`${element}`));
+  const res = await app.request("/");
+  return res.text();
+}
+
+describe("Button", () => {
+  it("renders with primary variant classes by default", async () => {
+    const out = await render(<Button>Click</Button>);
+    expect(out).toContain("bg-brand-600");
+    expect(out).toContain("text-white");
+  });
+
+  it("renders secondary variant classes", async () => {
+    const out = await render(<Button variant="secondary">Click</Button>);
+    expect(out).toContain("border-brand-600");
+    expect(out).toContain("text-brand-600");
+  });
+
+  it("renders ghost variant classes without primary background", async () => {
+    const out = await render(<Button variant="ghost">Click</Button>);
+    expect(out).toContain("hover:bg-brand-100");
+    expect(out).not.toContain("bg-brand-600");
+  });
+
+  it("renders sm size classes", async () => {
+    const out = await render(<Button size="sm">Click</Button>);
+    expect(out).toContain("h-8");
+    expect(out).toContain("px-3");
+  });
+
+  it("renders md size classes by default", async () => {
+    const out = await render(<Button>Click</Button>);
+    expect(out).toContain("h-10");
+    expect(out).toContain("px-4");
+  });
+
+  it("renders lg size classes", async () => {
+    const out = await render(<Button size="lg">Click</Button>);
+    expect(out).toContain("h-12");
+    expect(out).toContain("px-6");
+  });
+
+  it("defaults to type=button", async () => {
+    const out = await render(<Button>Click</Button>);
+    expect(out).toContain('type="button"');
+  });
+
+  it("sets type=submit when specified", async () => {
+    const out = await render(<Button type="submit">Click</Button>);
+    expect(out).toContain('type="submit"');
+  });
+
+  it("passes the disabled attribute through", async () => {
+    const withDisabled = await render(<Button disabled>Click</Button>);
+    const withoutDisabled = await render(<Button>Click</Button>);
+    expect(withDisabled).toMatch(/\bdisabled(?!:)/);
+    expect(withoutDisabled).not.toMatch(/\bdisabled(?!:)/);
+  });
+
+  it("passes through the data-ref attribute", async () => {
+    const out = await render(<Button data-ref="my-btn">Click</Button>);
+    expect(out).toContain('data-ref="my-btn"');
+  });
+
+  it("merges a custom class with the variant classes", async () => {
+    const out = await render(<Button class="extra-class">Click</Button>);
+    expect(out).toContain("extra-class");
+    expect(out).toContain("inline-flex");
+  });
+});

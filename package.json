@@ -1,0 +1,127 @@
+{
+  "name": "@y-core/forge",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Server-rendered web utilities for Hono + Cloudflare Workers",
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run lint && bun test",
+    "validate-exports": "bun run scripts/validate-exports.ts",
+    "prepublishOnly": "bun run check && bun run validate-exports",
+    "release": "bun run scripts/release.ts"
+  },
+  "dependencies": {
+    "@remix-run/cookie": "^0.5.1",
+    "@remix-run/headers": "^0.19.0",
+    "@remix-run/session": "^0.4.1",
+    "hono": "^4.7.0",
+    "htmx.org": "^2.0.10",
+    "valibot": "^1.4.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "@typescript/native-preview": "^7.0.0-dev.20260517.1"
+  },
+  "exports": {
+    "./app": {
+      "types": "./src/app/mod.ts",
+      "import": "./src/app/mod.ts"
+    },
+    "./cookie": {
+      "types": "./src/cookie/mod.ts",
+      "import": "./src/cookie/mod.ts"
+    },
+    "./session": {
+      "types": "./src/session/mod.ts",
+      "import": "./src/session/mod.ts"
+    },
+    "./html": {
+      "types": "./src/html/mod.ts",
+      "import": "./src/html/mod.ts"
+    },
+    "./form": {
+      "types": "./src/form/mod.ts",
+      "import": "./src/form/mod.ts"
+    },
+    "./headers": {
+      "types": "./src/headers/mod.ts",
+      "import": "./src/headers/mod.ts"
+    },
+    "./router": {
+      "types": "./src/router/mod.ts",
+      "import": "./src/router/mod.ts"
+    },
+    "./security": {
+      "types": "./src/security/mod.ts",
+      "import": "./src/security/mod.ts"
+    },
+    "./ui": {
+      "types": "./src/ui/mod.ts",
+      "import": "./src/ui/mod.ts"
+    },
+    "./ui/client": {
+      "types": "./src/ui/client/mod.ts",
+      "import": "./src/ui/client/mod.ts"
+    },
+    "./validation": {
+      "types": "./src/validation/mod.ts",
+      "import": "./src/validation/mod.ts"
+    },
+    "./jsx": {
+      "types": "./src/jsx/mod.ts",
+      "import": "./src/jsx/mod.ts"
+    },
+    "./jsx-runtime": {
+      "types": "./src/jsx/jsx-runtime.ts",
+      "import": "./src/jsx/jsx-runtime.ts"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./src/jsx/jsx-dev-runtime.ts",
+      "import": "./src/jsx/jsx-dev-runtime.ts"
+    },
+    "./jsx/jsx-runtime": {
+      "types": "./src/jsx/jsx-runtime.ts",
+      "import": "./src/jsx/jsx-runtime.ts"
+    },
+    "./jsx/jsx-dev-runtime": {
+      "types": "./src/jsx/jsx-dev-runtime.ts",
+      "import": "./src/jsx/jsx-dev-runtime.ts"
+    },
+    "./cli": {
+      "types": "./src/cli/mod.ts",
+      "import": "./src/cli/mod.ts"
+    },
+    "./result": {
+      "types": "./src/result/mod.ts",
+      "import": "./src/result/mod.ts"
+    },
+    "./pkg": {
+      "types": "./src/pkg/mod.ts",
+      "import": "./src/pkg/mod.ts"
+    }
+  },
+  "files": [
+    "src/app/",
+    "src/cli/",
+    "src/result/",
+    "src/cookie/",
+    "src/html/",
+    "src/form/",
+    "src/headers/",
+    "src/router/",
+    "src/security/",
+    "src/session/",
+    "src/ui/",
+    "src/validation/",
+    "src/jsx/",
+    "src/pkg/",
+    "scripts/",
+    "templates/",
+    "README.md",
+    "!**/*.test.ts",
+    "!**/*.test.tsx"
+  ]
+}

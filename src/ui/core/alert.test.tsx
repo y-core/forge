@@ -1,0 +1,45 @@
+import { describe, expect, it } from "bun:test";
+import { Hono } from "hono";
+import { html } from "hono/html";
+import { Alert } from "./alert";
+
+async function render(element: unknown): Promise<string> {
+  const app = new Hono();
+  app.get("/", (c) => c.html(html`${element}`));
+  const res = await app.request("/");
+  return res.text();
+}
+
+describe("Alert", () => {
+  it("renders the default variant classes", async () => {
+    const out = await render(<Alert>Message</Alert>);
+    expect(out).toContain("border-brand-200");
+    expect(out).toContain("bg-brand-100");
+    expect(out).toContain("text-brand-900");
+  });
+
+  it("renders the destructive variant classes", async () => {
+    const out = await render(<Alert variant="destructive">Error</Alert>);
+    expect(out).toContain("border-red-200");
+    expect(out).toContain("bg-red-50");
+    expect(out).toContain("text-red-900");
+  });
+
+  it("renders the success variant classes", async () => {
+    const out = await render(<Alert variant="success">Done</Alert>);
+    expect(out).toContain("border-emerald-200");
+    expect(out).toContain("bg-emerald-50");
+    expect(out).toContain("text-emerald-900");
+  });
+
+  it("renders children inside the alert div", async () => {
+    const out = await render(<Alert>Hello world</Alert>);
+    expect(out).toContain("Hello world");
+  });
+
+  it("merges a custom class with the base classes", async () => {
+    const out = await render(<Alert class="my-custom">Note</Alert>);
+    expect(out).toContain("my-custom");
+    expect(out).toContain("rounded-2xl");
+  });
+});
