@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it } from "bun:test";
+import { type Signal, createSignal } from "./signal";
 import { initTurnstile } from "./turnstile";
-
-type ObserverCallback = (mutations: unknown[]) => void;
 
 interface GlobalMock {
   _fts_verified?: () => void;
   _fts_expired?: () => void;
-  MutationObserver: new (cb: ObserverCallback) => { observe(): void; disconnect(): void };
   window: { turnstile?: { reset: (el: unknown) => void } | undefined };
   document: {
     documentElement: MockEl;
@@ -62,31 +60,25 @@ function makeEl(classes: string[] = []): MockEl {
 }
 
 describe("initTurnstile", () => {
+  let isDarkSignal: Signal<boolean>;
   let htmlEl: MockEl;
   let widgetEl: MockEl;
   let submitEl: MockEl;
   let formEl: MockEl;
   let resultEl: MockEl;
   let docListeners: Record<string, EventListener[]>;
-  let observerCallback: ObserverCallback | null;
 
   beforeEach(() => {
+    isDarkSignal = createSignal(false);
     htmlEl = makeEl();
     widgetEl = makeEl();
     submitEl = makeEl();
     formEl = makeEl();
     resultEl = makeEl();
     docListeners = {};
-    observerCallback = null;
 
     delete g._fts_verified;
     delete g._fts_expired;
-
-    g.MutationObserver = class {
-      constructor(cb: ObserverCallback) { observerCallback = cb; }
-      observe(): void {}
-      disconnect(): void {}
-    };
 
     g.window = { turnstile: undefined };
 
@@ -106,44 +98,43 @@ describe("initTurnstile", () => {
   });
 
   it("disables the submit button on init", () => {
-    initTurnstile();
+    initTurnstile(isDarkSignal);
     expect(submitEl.disabled).toBe(true);
   });
 
   it("sets data-callback and data-expired-callback on the widget", () => {
-    initTurnstile();
+    initTurnstile(isDarkSignal);
     expect(widgetEl.attrs["data-callback"]).toBe("_fts_verified");
     expect(widgetEl.attrs["data-expired-callback"]).toBe("_fts_expired");
   });
 
   it("enables the submit button when _fts_verified is called", () => {
-    initTurnstile();
+    initTurnstile(isDarkSignal);
     g._fts_verified?.();
     expect(submitEl.disabled).toBe(false);
   });
 
   it("disables the submit button when _fts_expired is called", () => {
-    initTurnstile();
+    initTurnstile(isDarkSignal);
     g._fts_verified?.();
     g._fts_expired?.();
     expect(submitEl.disabled).toBe(true);
   });
 
-  it("sets data-theme=light when html element has no dark class", () => {
-    initTurnstile();
+  it("sets data-theme=light when isDark is false", () => {
+    initTurnstile(isDarkSignal);
     expect(widgetEl.attrs["data-theme"]).toBe("light");
   });
 
-  it("sets data-theme=dark when html element has dark class", () => {
-    htmlEl.classes.add("dark");
-    initTurnstile();
+  it("sets data-theme=dark when isDark is true", () => {
+    isDarkSignal.value = true;
+    initTurnstile(isDarkSignal);
     expect(widgetEl.attrs["data-theme"]).toBe("dark");
   });
 
-  it("syncs theme via MutationObserver when dark class is added", () => {
-    initTurnstile();
-    htmlEl.classes.add("dark");
-    observerCallback?.([]);
+  it("syncs theme when isDark signal changes", () => {
+    initTurnstile(isDarkSignal);
+    isDarkSignal.value = true;
     expect(widgetEl.attrs["data-theme"]).toBe("dark");
   });
 
@@ -152,7 +143,7 @@ describe("initTurnstile", () => {
     g.window = {
       turnstile: { reset: (el: unknown) => { resetCalledWith = el; } },
     };
-    initTurnstile();
+    initTurnstile(isDarkSignal);
     expect(resetCalledWith).toBe(widgetEl);
   });
 
@@ -167,7 +158,7 @@ describe("initTurnstile", () => {
       return null;
     };
 
-    initTurnstile();
+    initTurnstile(isDarkSignal);
     g._fts_verified?.();
     expect(submitEl.disabled).toBe(false);
 
@@ -186,7 +177,7 @@ describe("initTurnstile", () => {
     let formReset = false;
     formEl.reset = () => { formReset = true; };
 
-    initTurnstile();
+    initTurnstile(isDarkSignal);
 
     resultEl.querySelector = () => null;
     resultEl.matches = (sel: string) => sel.includes("contact-result");

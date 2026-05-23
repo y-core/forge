@@ -1,3 +1,5 @@
+import { type ReadonlySignal, createSignal, effect } from "./signal";
+
 export interface TurnstileOptions {
   widgetSelector?: string;
   submitSelector?: string;
@@ -17,7 +19,7 @@ declare global {
 
 const NS = "_fts";
 
-export function initTurnstile(options?: TurnstileOptions): void {
+export function initTurnstile(isDark: ReadonlySignal<boolean>, options?: TurnstileOptions): void {
   const {
     widgetSelector = "[data-ref='turnstile']",
     submitSelector = "[data-ref='contact-submit']",
@@ -25,52 +27,46 @@ export function initTurnstile(options?: TurnstileOptions): void {
     resultSelector = "[data-ref='contact-result']",
   } = options ?? {};
 
-  function syncTheme(): void {
+  // Reacts only to actual dark-mode transitions; MutationObserver fired on any class mutation
+  effect(() => {
     const el = document.querySelector<HTMLElement>(widgetSelector);
     if (!el) return;
-    el.setAttribute(
-      "data-theme",
-      document.documentElement.classList.contains("dark") ? "dark" : "light",
-    );
+    el.setAttribute("data-theme", isDark.value ? "dark" : "light");
     if (typeof window.turnstile?.reset === "function") {
       window.turnstile.reset(el);
     }
-  }
-
-  syncTheme();
-  new MutationObserver(syncTheme).observe(document.documentElement, {
-    attributeFilter: ["class"],
   });
 
   const submitBtn = document.querySelector<HTMLButtonElement>(submitSelector);
   const turnstileEl = document.querySelector<HTMLElement>(widgetSelector);
 
   if (submitBtn && turnstileEl) {
-    submitBtn.disabled = true;
+    const verified = createSignal(false);
+
+    effect(() => { submitBtn.disabled = !verified.value; });
 
     (globalThis as unknown as Record<string, unknown>)[`${NS}_verified`] = () => {
-      submitBtn.disabled = false;
+      verified.value = true;
     };
     (globalThis as unknown as Record<string, unknown>)[`${NS}_expired`] = () => {
-      submitBtn.disabled = true;
+      verified.value = false;
     };
 
     turnstileEl.setAttribute("data-callback", `${NS}_verified`);
     turnstileEl.setAttribute("data-expired-callback", `${NS}_expired`);
-  }
 
-  document.addEventListener("htmx:afterSwap", (e) => {
-    const evt = e as CustomEvent<{ target: Element }>;
-    if (
-      evt.detail.target?.matches(resultSelector) &&
-      evt.detail.target.querySelector("[data-success]")
-    ) {
-      document.querySelector<HTMLFormElement>(formSelector)?.reset();
-      if (submitBtn) submitBtn.disabled = true;
-      const tEl = document.querySelector<HTMLElement>(widgetSelector);
-      if (tEl && typeof window.turnstile?.reset === "function") {
-        window.turnstile.reset(tEl);
+    document.addEventListener("htmx:afterSwap", (e) => {
+      const evt = e as CustomEvent<{ target: Element }>;
+      if (
+        evt.detail.target?.matches(resultSelector) &&
+        evt.detail.target.querySelector("[data-success]")
+      ) {
+        document.querySelector<HTMLFormElement>(formSelector)?.reset();
+        verified.value = false;
+        if (typeof window.turnstile?.reset === "function") {
+          window.turnstile.reset(turnstileEl);
+        }
       }
-    }
-  });
+    });
+  }
 }
