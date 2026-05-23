@@ -6,6 +6,9 @@ export interface SecurityHeadersOptions {
   scriptSrc?: CspValue;
   connectSrc?: CspValue;
   frameSrc?: CspValue;
+  imgSrc?: CspValue;
+  workerSrc?: CspValue;
+  childSrc?: CspValue;
   hstsMaxAge?: number;
 }
 

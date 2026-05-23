@@ -8,13 +8,14 @@ export function makeSecurityHeaders(options?: SecurityHeadersOptions): Middlewar
   const scriptSrc = options?.scriptSrc ?? ["'self'", NONCE];
   const connectSrc = options?.connectSrc ?? ["'self'"];
   const frameSrc = options?.frameSrc ?? ["'self'"];
+  const imgSrc = options?.imgSrc ?? ["'self'", "data:"];
 
   return secureHeaders({
     contentSecurityPolicy: {
       defaultSrc: ["'self'"],
       scriptSrc,
       styleSrc: ["'self'"],
-      imgSrc: ["'self'", "data:"],
+      imgSrc,
       fontSrc: ["'self'"],
       connectSrc,
       formAction: ["'self'"],
@@ -23,6 +24,8 @@ export function makeSecurityHeaders(options?: SecurityHeadersOptions): Middlewar
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       upgradeInsecureRequests: [],
+      ...(options?.workerSrc ? { workerSrc: options.workerSrc } : {}),
+      ...(options?.childSrc ? { childSrc: options.childSrc } : {}),
     },
     strictTransportSecurity: `max-age=${hstsMaxAge}; includeSubDomains; preload`,
     referrerPolicy: "strict-origin-when-cross-origin",
