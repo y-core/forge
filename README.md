@@ -33,7 +33,7 @@ Every namespace is single-purpose and independently useful. A module that cannot
 | `@y-core/forge/security` | Security middleware & headers | `defineSecurity`, `makeSecurityHeaders`, `NONCE`, `csrfProtection`, `originGuard`, `rateLimit`, `importCsrfKey`, `createCsrfToken`, `verifyCsrfToken`, `verifyOrigin` |
 | `@y-core/forge/session` | Session management & middleware | `sessionMiddleware`, `createCookieSessionStorage` |
 | `@y-core/forge/ui` | Server-side JSX components | `Form`, `Field`, `Input`, `Textarea`, `Select`, `Button`, `Alert`, `Card`, `Separator` |
-| `@y-core/forge/ui/client` | Browser-side UI scripts | `initNav`, `initThemeCycler`, `loadScriptOnEvent`, `initTurnstile` |
+| `@y-core/forge/ui/client` | Browser-side UI scripts | `initNav`, `initThemeSwitch`, `loadScriptOnEvent`, `initTurnstile` |
 | `@y-core/forge/validation` | Schema validation & result types | `v` (valibot re-export), `ValidationResult` |
 
 ---
@@ -174,10 +174,10 @@ fieldErrorId("name")  // → "field-name-error"
 Lightweight browser scripts with no framework dependency. Designed to initialise once on `DOMContentLoaded` and to compose cleanly with HTMX's event model.
 
 ```typescript
-import { initNav, initThemeCycler, loadScriptOnEvent, initTurnstile } from "@y-core/forge/ui/client";
+import { initNav, initThemeSwitch, loadScriptOnEvent, initTurnstile } from "@y-core/forge/ui/client";
 
 initNav();          // mobile nav toggle — wires [data-ref="nav-toggle"] to [data-ref="nav-menu"]
-initThemeCycler();  // light/dark/system theme toggle, persisted to localStorage
+initThemeSwitch();  // light/dark/system theme toggle, persisted to localStorage
 
 // Lazy-load a third-party script only when the user interacts with a trigger
 loadScriptOnEvent({

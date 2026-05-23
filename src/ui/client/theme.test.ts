@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { initThemeCycler } from "./theme";
+import { initThemeSwitch } from "./theme";
 import { DARK_CLASS, THEME_ATTR, THEME_STORAGE_KEY } from "./theme-constants";
 
 interface MqlMock {
@@ -26,13 +26,14 @@ interface GlobalMock {
     querySelectorAll: (sel: string) => Array<{ addEventListener: (ev: string, handler: () => void) => void }>;
   };
   localStorage: {
+    getItem: (k: string) => string | null;
     setItem: (k: string, v: string) => void;
   };
 }
 
 const g = globalThis as unknown as GlobalMock;
 
-describe("initThemeCycler", () => {
+describe("initThemeSwitch", () => {
   let mql: MqlMock;
   let docEl: DocElMock;
   let storedItems: Record<string, string>;
@@ -80,69 +81,69 @@ describe("initThemeCycler", () => {
     };
 
     g.localStorage = {
+      getItem: (k: string) => storedItems[k] ?? null,
       setItem: (k: string, v: string) => { storedItems[k] = v; },
     };
   });
 
   it("cycles from system to light on button click", () => {
-    initThemeCycler();
+    initThemeSwitch();
     btnListeners[0]();
     expect(docEl.attrs[THEME_ATTR]).toBe("light");
   });
 
   it("cycles from light to dark on button click", () => {
-    initThemeCycler();
-    docEl.attrs[THEME_ATTR] = "light";
+    storedItems[THEME_STORAGE_KEY] = "light";
+    initThemeSwitch();
     btnListeners[0]();
     expect(docEl.attrs[THEME_ATTR]).toBe("dark");
   });
 
   it("cycles from dark back to system on button click", () => {
-    initThemeCycler();
-    docEl.attrs[THEME_ATTR] = "dark";
+    storedItems[THEME_STORAGE_KEY] = "dark";
+    initThemeSwitch();
     btnListeners[0]();
     expect(docEl.attrs[THEME_ATTR]).toBe("system");
   });
 
   it("adds the dark class when cycling to dark pref", () => {
-    initThemeCycler();
-    docEl.attrs[THEME_ATTR] = "light"; // next cycle → dark
+    storedItems[THEME_STORAGE_KEY] = "light";
+    initThemeSwitch();
     btnListeners[0]();
     expect(docEl.classes.has(DARK_CLASS)).toBe(true);
   });
 
   it("removes the dark class when cycling to light pref", () => {
-    initThemeCycler();
-    docEl.classes.add(DARK_CLASS); // start dark
-    // no THEME_ATTR → current = "system" → next = "light"
-    btnListeners[0]();
+    mql.matches = true; // OS dark so isDark=true with system pref
+    initThemeSwitch(); // effect adds dark class
+    btnListeners[0](); // system → light, isDark transitions to false
     expect(docEl.classes.has(DARK_CLASS)).toBe(false);
   });
 
   it("persists the new pref to localStorage", () => {
-    initThemeCycler();
+    initThemeSwitch();
     btnListeners[0](); // system → light
     expect(storedItems[THEME_STORAGE_KEY]).toBe("light");
   });
 
   it("adds dark class on media query change when pref is system and OS is dark", () => {
-    initThemeCycler();
+    initThemeSwitch();
     mql.matches = true;
     mql.listeners[0](new Event("change"));
     expect(docEl.classes.has(DARK_CLASS)).toBe(true);
   });
 
   it("removes dark class on media query change when pref is system and OS is light", () => {
-    initThemeCycler();
-    docEl.classes.add(DARK_CLASS);
+    mql.matches = true; // start OS-dark so isDark=true on init
+    initThemeSwitch();
     mql.matches = false;
-    mql.listeners[0](new Event("change"));
+    mql.listeners[0](new Event("change")); // OS → light
     expect(docEl.classes.has(DARK_CLASS)).toBe(false);
   });
 
   it("ignores media query changes when pref is not system", () => {
-    initThemeCycler();
-    docEl.attrs[THEME_ATTR] = "light"; // locked to explicit pref
+    storedItems[THEME_STORAGE_KEY] = "light"; // locked to explicit pref
+    initThemeSwitch();
     mql.matches = true;
     mql.listeners[0](new Event("change"));
     expect(docEl.classes.has(DARK_CLASS)).toBe(false);

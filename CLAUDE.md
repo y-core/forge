@@ -58,7 +58,7 @@ Namespace-based library. Each namespace is independently useful with no cross-na
 | `@y-core/forge/security` | Security middleware & headers | `defineSecurity`, `makeSecurityHeaders`, `NONCE`, `csrfProtection`, `originGuard`, `rateLimit` |
 | `@y-core/forge/session` | Session management & middleware | `sessionMiddleware`, `createCookieSessionStorage` |
 | `@y-core/forge/ui` | Server-side JSX components | `Form`, `Field`, `Input`, `Textarea`, `Select`, `Button`, `Alert`, `Card`, `Separator` |
-| `@y-core/forge/ui/client` | Browser-side UI scripts | `initNav`, `initThemeCycler`, `loadScriptOnEvent`, `initTurnstile` |
+| `@y-core/forge/ui/client` | Browser-side UI scripts | `initNav`, `initThemeSwitch`, `loadScriptOnEvent`, `initTurnstile` |
 | `@y-core/forge/validation` | Schema validation & result types | `v` (valibot re-export), `ValidationResult` |
 
 ---

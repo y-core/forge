@@ -1,31 +1,31 @@
+import { type ReadonlySignal, computed, createSignal, effect } from "./signal";
 import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme-constants";
 
-export function initThemeCycler(): void {
+export let isDark: ReadonlySignal<boolean>;
+
+export function initThemeSwitch(): void {
   const cycle: Record<string, string> = { system: "light", light: "dark", dark: "system" };
   const mql = window.matchMedia("(prefers-color-scheme: dark)");
+  const pref = createSignal(localStorage.getItem(THEME_STORAGE_KEY) ?? DEFAULT_PREF);
+  const mqlDark = createSignal(mql.matches);
+  mql.addEventListener("change", () => { mqlDark.value = mql.matches; });
 
-  function applyTheme(pref: string): void {
-    document.documentElement.setAttribute(THEME_ATTR, pref);
-    document.documentElement.classList.toggle(
-      DARK_CLASS,
-      pref === DARK_CLASS || (pref === DEFAULT_PREF && mql.matches),
-    );
-    localStorage.setItem(THEME_STORAGE_KEY, pref);
-  }
+  isDark = computed(() =>
+    pref.value === "dark" || (pref.value === "system" && mqlDark.value),
+  );
+
+  effect(() => {
+    document.documentElement.setAttribute(THEME_ATTR, pref.value);
+    localStorage.setItem(THEME_STORAGE_KEY, pref.value);
+  });
+
+  effect(() => {
+    document.documentElement.classList.toggle(DARK_CLASS, isDark.value);
+  });
 
   document.querySelectorAll<HTMLButtonElement>("[data-ref='theme-toggle']").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const current =
-        document.documentElement.getAttribute(THEME_ATTR) || DEFAULT_PREF;
-      applyTheme(cycle[current]);
+      pref.value = cycle[pref.value];
     });
-  });
-
-  mql.addEventListener("change", () => {
-    if (
-      (document.documentElement.getAttribute(THEME_ATTR) || DEFAULT_PREF) === DEFAULT_PREF
-    ) {
-      document.documentElement.classList.toggle(DARK_CLASS, mql.matches);
-    }
   });
 }
