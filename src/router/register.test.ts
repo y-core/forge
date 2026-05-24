@@ -3,71 +3,153 @@ import { Hono } from "hono";
 import { index, layout, route } from "./config";
 import { applyRoutes } from "./register";
 
-describe("applyRoutes — route()", () => {
-  it("registers a GET handler via loader", async () => {
+describe("applyRoutes — GET orchestration", () => {
+  it("calls the loader before the view and passes loader data into the view", async () => {
     const app = new Hono();
-    applyRoutes(app, [route("/hello", { loader: (c) => c.text("hello") })]);
+    const order: string[] = [];
+
+    applyRoutes(app, [
+      route("/hello", {
+        loader: () => {
+          order.push("loader");
+          return { greeting: "hello" };
+        },
+        view: (c, state) => {
+          order.push("view");
+          expect(state.method).toBe("GET");
+          expect(state.data).toEqual({ greeting: "hello" });
+          expect(state.actionData).toBeUndefined();
+          return c.text((state.data as { greeting: string }).greeting);
+        },
+      }),
+    ]);
+
     const res = await app.request("/hello");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("hello");
+    expect(order).toEqual(["loader", "view"]);
   });
 
-  it("registers a GET handler via view", async () => {
+  it("allows a view-only page route", async () => {
     const app = new Hono();
-    applyRoutes(app, [route("/page", { view: (c) => c.text("page") })]);
+
+    applyRoutes(app, [
+      route("/page", {
+        view: (c, state) => {
+          expect(state.data).toBeUndefined();
+          return c.text("page");
+        },
+      }),
+    ]);
+
     const res = await app.request("/page");
     expect(await res.text()).toBe("page");
   });
 
-  it("prefers view over loader for GET", async () => {
+  it("returns a direct response when the loader does", async () => {
     const app = new Hono();
+
     applyRoutes(app, [
-      route("/x", { loader: (c) => c.text("loader"), view: (c) => c.text("view") }),
+      route("/redirect", {
+        loader: () => new Response("redirect", { status: 302 }),
+        view: (c) => c.text("unreachable"),
+      }),
     ]);
-    expect(await (await app.request("/x")).text()).toBe("view");
+
+    const res = await app.request("/redirect");
+    expect(res.status).toBe(302);
+    expect(await res.text()).toBe("redirect");
   });
 
-  it("registers a POST handler via action", async () => {
+  it("returns 500 when a GET route has a loader but no view", async () => {
     const app = new Hono();
-    applyRoutes(app, [route("/submit", { action: (c) => c.text("posted") })]);
+
+    applyRoutes(app, [route("/broken", { loader: () => ({ ok: true }) })]);
+
+    const res = await app.request("/broken");
+    expect(res.status).toBe(500);
+  });
+});
+
+describe("applyRoutes — POST orchestration", () => {
+  it("passes action data into the view for page routes", async () => {
+    const app = new Hono();
+    const order: string[] = [];
+
+    applyRoutes(app, [
+      route("/submit", {
+        action: async () => {
+          order.push("action");
+          return { saved: true };
+        },
+        view: (c, state) => {
+          order.push("view");
+          expect(state.method).toBe("POST");
+          expect(state.actionData).toEqual({ saved: true });
+          expect(state.data).toBeUndefined();
+          return c.text("saved");
+        },
+      }),
+    ]);
+
     const res = await app.request("/submit", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("saved");
+    expect(order).toEqual(["action", "view"]);
+  });
+
+  it("returns a direct response from a resource action", async () => {
+    const app = new Hono();
+
+    applyRoutes(app, [
+      route("/resource", {
+        action: () => new Response("posted", { status: 201 }),
+      }),
+    ]);
+
+    const res = await app.request("/resource", { method: "POST" });
+    expect(res.status).toBe(201);
     expect(await res.text()).toBe("posted");
   });
 
-  it("registers both GET and POST on the same path", async () => {
+  it("returns 500 when an action returns data without a view", async () => {
     const app = new Hono();
+
     applyRoutes(app, [
-      route("/form", { loader: (c) => c.text("get"), action: (c) => c.text("post") }),
+      route("/broken", {
+        action: () => ({ ok: true }),
+      }),
     ]);
-    expect(await (await app.request("/form")).text()).toBe("get");
-    expect(await (await app.request("/form", { method: "POST" })).text()).toBe("post");
+
+    const res = await app.request("/broken", { method: "POST" });
+    expect(res.status).toBe(500);
   });
 });
 
-describe("applyRoutes — index()", () => {
-  it("registers on the root path when no prefix", async () => {
+describe("applyRoutes — index and nested routes", () => {
+  it("registers an index route on the root path", async () => {
     const app = new Hono();
-    applyRoutes(app, [index({ loader: (c) => c.text("root") })]);
+    applyRoutes(app, [index({ view: (c) => c.text("root") })]);
+
     const res = await app.request("/");
     expect(await res.text()).toBe("root");
   });
-});
 
-describe("applyRoutes — nested routes", () => {
   it("registers child routes under the parent path", async () => {
     const app = new Hono();
     applyRoutes(app, [
-      route("/api", { loader: (c) => c.text("api root") }, [
-        route("/users", { loader: (c) => c.text("users") }),
+      route("/api", { view: (c) => c.text("api root") }, [
+        route("/users", { view: (c) => c.text("users") }),
       ]),
     ]);
+
     expect(await (await app.request("/api")).text()).toBe("api root");
     expect(await (await app.request("/api/users")).text()).toBe("users");
   });
 });
 
-describe("applyRoutes — layout() middleware", () => {
-  it("applies layout middleware to all child routes", async () => {
+describe("applyRoutes — middleware", () => {
+  it("applies layout middleware to child routes", async () => {
     const app = new Hono();
     const calls: string[] = [];
 
@@ -79,7 +161,7 @@ describe("applyRoutes — layout() middleware", () => {
             await next();
           },
         },
-        [route("/a", { loader: (c) => c.text("a") }), route("/b", { loader: (c) => c.text("b") })],
+        [route("/a", { view: (c) => c.text("a") }), route("/b", { view: (c) => c.text("b") })],
       ),
     ]);
 
@@ -87,10 +169,8 @@ describe("applyRoutes — layout() middleware", () => {
     await app.request("/b");
     expect(calls).toEqual(["mw", "mw"]);
   });
-});
 
-describe("applyRoutes — per-route middleware", () => {
-  it("applies module middleware before the handler", async () => {
+  it("applies per-route middleware before handlers", async () => {
     const app = new Hono();
     const log: string[] = [];
 
@@ -101,14 +181,18 @@ describe("applyRoutes — per-route middleware", () => {
           await next();
           log.push("after");
         },
-        loader: (c) => {
-          log.push("handler");
+        loader: () => {
+          log.push("loader");
+          return { ok: true };
+        },
+        view: (c) => {
+          log.push("view");
           return c.text("ok");
         },
       }),
     ]);
 
     await app.request("/x");
-    expect(log).toEqual(["before", "handler", "after"]);
+    expect(log).toEqual(["before", "loader", "view", "after"]);
   });
 });

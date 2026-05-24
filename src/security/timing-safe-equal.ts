@@ -1,11 +1,15 @@
 type CfSubtleCrypto = SubtleCrypto & {
-  timingSafeEqual(a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView): boolean;
+  timingSafeEqual?: (a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView) => boolean;
 };
 
 const subtle = crypto.subtle as CfSubtleCrypto;
 
 /** Constant-time byte array comparison via Cloudflare Workers crypto. @public */
 export function timingSafeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (typeof subtle.timingSafeEqual !== "function") {
+    throw new Error("crypto.subtle.timingSafeEqual is not available in this runtime");
+  }
+
   if (a.byteLength !== b.byteLength) {
     subtle.timingSafeEqual(a, a);
     return false;

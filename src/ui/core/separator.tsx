@@ -8,6 +8,7 @@ interface SeparatorProps {
 
 export const Separator: FC<SeparatorProps> = ({ orientation = "horizontal", class: cls }) => (
   <hr
+    data-slot="separator"
     aria-orientation={orientation}
     class={cn(
       orientation === "horizontal" ? "h-px w-full" : "h-full w-px",

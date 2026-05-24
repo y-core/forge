@@ -14,6 +14,7 @@ describe("Textarea", () => {
   it("renders a <textarea> element", async () => {
     const out = await render(<Textarea />);
     expect(out).toContain("<textarea");
+    expect(out).toContain('data-slot="textarea"');
   });
 
   it("includes default styling classes including resize-y", async () => {

@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const PACKAGE_NAME = (pkg as { name: string }).name;
+const PUBLISHED_FILES = new Set((pkg as { files?: string[] }).files ?? []);
 
 // Only ./ui/client imports DOM globals (document, window, MutationObserver) and
 // cannot be imported. Static parsing still runs; runtime import is skipped.
-const BROWSER_ONLY = new Set(["./ui/client"]);
+const BROWSER_ONLY = new Set(["./ui/client", "./ui/client/htmx"]);
 
 function parseBarrelExports(filePath: string): { values: string[]; hasExportStar: boolean; hasTypeExports: boolean } {
   const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");
@@ -46,6 +48,18 @@ function parseBarrelExports(filePath: string): { values: string[]; hasExportStar
 const pkgExports = (pkg as any).exports as Record<string, { import?: string; types?: string } | string>;
 let failed = false;
 
+function isPublished(rawPath: string): boolean {
+  const normalizedPath = rawPath.startsWith("./") ? rawPath.slice(2) : rawPath;
+  for (const entry of PUBLISHED_FILES) {
+    if (entry.startsWith("!")) continue;
+    const normalized = entry.endsWith("/") ? entry : `${entry}/`;
+    if (normalizedPath === entry || normalizedPath.startsWith(normalized)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 for (const [specifier, entry] of Object.entries(pkgExports)) {
   const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
   if (!rawPath) {
@@ -57,6 +71,12 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   const filePath = resolve(ROOT, rawPath);
   if (!existsSync(filePath)) {
     console.error(`FAIL ${specifier}: barrel file not found at ${rawPath}`);
+    failed = true;
+    continue;
+  }
+
+  if (!isPublished(rawPath)) {
+    console.error(`FAIL ${specifier}: ${rawPath} is not covered by package.json files`);
     failed = true;
     continue;
   }
@@ -85,7 +105,10 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   }
 
   try {
-    const mod = await import(filePath);
+    const consumerSpecifier = specifier === "."
+      ? PACKAGE_NAME
+      : `${PACKAGE_NAME}${specifier.slice(1)}`;
+    const mod = await import(consumerSpecifier);
     const missing = values.filter((name) => !(name in mod));
     if (missing.length > 0) {
       console.error(`FAIL ${specifier}: missing from runtime: ${missing.join(", ")}`);

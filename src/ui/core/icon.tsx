@@ -36,6 +36,7 @@ export const Icon: FC<IconProps> = ({
 
   return (
     <svg
+      data-slot="icon"
       width={width}
       height={height}
       viewBox={viewBox}

@@ -7,7 +7,8 @@ export type Result<T, E = Error> =
   | { ok: true; data: T }
   | { ok: false; error: E };
 
-function toError(thrown: unknown): Error {
+/** Converts any thrown value to an `Error` instance; safe to use in `catch (err)` blocks where `err` is `unknown`. @public */
+export function toError(thrown: unknown): Error {
   return thrown instanceof Error ? thrown : new Error(String(thrown));
 }
 

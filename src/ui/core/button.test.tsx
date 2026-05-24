@@ -13,6 +13,7 @@ async function render(element: unknown): Promise<string> {
 describe("Button", () => {
   it("renders with primary variant classes by default", async () => {
     const out = await render(<Button>Click</Button>);
+    expect(out).toContain('data-slot="button"');
     expect(out).toContain("bg-brand-600");
     expect(out).toContain("text-white");
   });
@@ -72,6 +73,18 @@ describe("Button", () => {
   it("merges a custom class with the variant classes", async () => {
     const out = await render(<Button class="extra-class">Click</Button>);
     expect(out).toContain("extra-class");
+    expect(out).toContain("inline-flex");
+  });
+
+  it("supports asChild for a single element child", async () => {
+    const out = await render(
+      <Button asChild>
+        <a href="/contact">Contact</a>
+      </Button>,
+    );
+    expect(out).toContain("<a");
+    expect(out).toContain('href="/contact"');
+    expect(out).toContain('data-slot="button"');
     expect(out).toContain("inline-flex");
   });
 });

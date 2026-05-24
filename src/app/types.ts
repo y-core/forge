@@ -1,5 +1,6 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
 import type { Logger } from "../logging/types";
+import type { RouteAction, RouteView } from "../router/types";
 import type { SecurityHeadersOptions } from "../security/types";
 import type { ValidationResult } from "../validation/types";
 
@@ -16,8 +17,14 @@ export interface CacheDirective {
   scope?: "public" | "private";
 }
 
-export interface PageDefinition<E extends Env = Env> {
-  view: (c: Context<E>) => Response | Promise<Response>;
+export interface PageDefinition<
+  E extends Env = Env,
+  LoaderData = unknown,
+  ActionData = unknown,
+> {
+  loader?: (c: Context<E>) => LoaderData | Response | Promise<LoaderData | Response>;
+  action?: RouteAction<E, ActionData>;
+  view: RouteView<E, LoaderData, ActionData>;
   headers?: Record<string, string>;
   cache?: "no-store" | CacheDirective;
   middleware?: MiddlewareHandler<E> | MiddlewareHandler<E>[];
@@ -30,8 +37,8 @@ export interface ActionDefinition<T, E extends Env = Env> {
   validate: (data: T) => ValidationResult<T>;
   handle: (data: T, c: Context<E>) => Response | Promise<Response>;
   middleware?: MiddlewareHandler<E> | MiddlewareHandler<E>[];
-  onValidationError?: (errors: string[], c: Context<E>) => Response;
-  onError?: (error: Error, c: Context<E>) => Response;
+  onValidationError?: (errors: string[], c: Context<E>) => Response | Promise<Response>;
+  onError?: (error: Error, c: Context<E>) => Response | Promise<Response>;
 }
 
 export interface AssetOptions<E extends Env = Env> {

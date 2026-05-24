@@ -14,6 +14,7 @@ describe("Input", () => {
   it("renders an <input> element", async () => {
     const out = await render(<Input />);
     expect(out).toContain("<input");
+    expect(out).toContain('data-slot="input"');
   });
 
   it("includes default styling classes", async () => {

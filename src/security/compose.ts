@@ -27,7 +27,7 @@ export function defineSecurity(config: SecurityConfig): MiddlewareHandler[] {
   }
 
   if (config.csrf) {
-    middleware.push(csrfProtection(config.csrf));
+    middleware.push(csrfProtection(config.csrf) as MiddlewareHandler);
   }
 
   return middleware;

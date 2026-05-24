@@ -17,57 +17,86 @@ declare global {
   }
 }
 
-const NS = "_fts";
+const mountedTurnstiles = new WeakMap<HTMLElement, () => void>();
+let callbackCount = 0;
 
-/** Integrates Cloudflare Turnstile: syncs dark/light theme, gates form submission, and resets after success. @public */
-export function initTurnstile(isDark: ReadonlySignal<boolean>, options?: TurnstileOptions): void {
+/** Mounts a Turnstile widget controller and returns a cleanup function. Safe to call more than once per widget. @public */
+export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: TurnstileOptions): () => void {
   const {
-    widgetSelector = "[data-ref='turnstile']",
-    submitSelector = "[data-ref='contact-submit']",
     formSelector = "[data-ref='contact-form']",
     resultSelector = "[data-ref='contact-result']",
+    submitSelector = "[data-ref='contact-submit']",
+    widgetSelector = "[data-ref='turnstile']",
   } = options ?? {};
 
-  // Reacts only to actual dark-mode transitions; MutationObserver fired on any class mutation
-  effect(() => {
-    const el = document.querySelector<HTMLElement>(widgetSelector);
-    if (!el) return;
-    el.setAttribute("data-theme", isDark.value ? "dark" : "light");
+  const widget = document.querySelector<HTMLElement>(widgetSelector);
+  if (!widget) {
+    return () => {};
+  }
+
+  const existing = mountedTurnstiles.get(widget);
+  if (existing) {
+    return existing;
+  }
+
+  const submitButton = document.querySelector<HTMLButtonElement>(submitSelector);
+  const form = document.querySelector<HTMLFormElement>(formSelector);
+  const verified = createSignal(false);
+  const callbackBase = `__forgeTurnstile_${++callbackCount}`;
+  const verifiedName = `${callbackBase}_verified`;
+  const expiredName = `${callbackBase}_expired`;
+  const globals = globalThis as Record<string, unknown>;
+
+  const resetWidget = () => {
     if (typeof window.turnstile?.reset === "function") {
-      window.turnstile.reset(el);
+      window.turnstile.reset(widget);
     }
+  };
+
+  const disposeTheme = effect(() => {
+    widget.setAttribute("data-theme", isDark.value ? "dark" : "light");
+    resetWidget();
   });
 
-  const submitBtn = document.querySelector<HTMLButtonElement>(submitSelector);
-  const turnstileEl = document.querySelector<HTMLElement>(widgetSelector);
+  const disposeSubmit = submitButton
+    ? effect(() => {
+        submitButton.disabled = !verified.value;
+      })
+    : () => {};
 
-  if (submitBtn && turnstileEl) {
-    const verified = createSignal(false);
+  globals[verifiedName] = () => {
+    verified.value = true;
+  };
+  globals[expiredName] = () => {
+    verified.value = false;
+  };
 
-    effect(() => { submitBtn.disabled = !verified.value; });
+  widget.setAttribute("data-callback", verifiedName);
+  widget.setAttribute("data-expired-callback", expiredName);
 
-    (globalThis as unknown as Record<string, unknown>)[`${NS}_verified`] = () => {
-      verified.value = true;
-    };
-    (globalThis as unknown as Record<string, unknown>)[`${NS}_expired`] = () => {
-      verified.value = false;
-    };
+  const onAfterSwap = (event: Event) => {
+    const customEvent = event as CustomEvent<{ target?: Element }>;
+    const target = customEvent.detail?.target;
+    if (!target?.matches(resultSelector) || !target.querySelector("[data-success]")) {
+      return;
+    }
 
-    turnstileEl.setAttribute("data-callback", `${NS}_verified`);
-    turnstileEl.setAttribute("data-expired-callback", `${NS}_expired`);
+    form?.reset();
+    verified.value = false;
+    resetWidget();
+  };
 
-    document.addEventListener("htmx:afterSwap", (e) => {
-      const evt = e as CustomEvent<{ target: Element }>;
-      if (
-        evt.detail.target?.matches(resultSelector) &&
-        evt.detail.target.querySelector("[data-success]")
-      ) {
-        document.querySelector<HTMLFormElement>(formSelector)?.reset();
-        verified.value = false;
-        if (typeof window.turnstile?.reset === "function") {
-          window.turnstile.reset(turnstileEl);
-        }
-      }
-    });
-  }
+  document.addEventListener("htmx:afterSwap", onAfterSwap);
+
+  const cleanup = () => {
+    disposeTheme();
+    disposeSubmit();
+    document.removeEventListener("htmx:afterSwap", onAfterSwap);
+    delete globals[verifiedName];
+    delete globals[expiredName];
+    mountedTurnstiles.delete(widget);
+  };
+
+  mountedTurnstiles.set(widget, cleanup);
+  return cleanup;
 }

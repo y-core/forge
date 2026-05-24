@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { CSRF_FIELD_DEFAULT } from "./constants";
-import type { CsrfResult } from "./types";
+import type { CsrfResult, CsrfVariables } from "./types";
 
 function base64urlEncode(data: Uint8Array | ArrayBuffer): string {
   const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
@@ -48,6 +48,8 @@ export async function createCsrfToken(key: CryptoKey, path: string): Promise<str
   return `${payloadEncoded}.${sigEncoded}`;
 }
 
+const CLOCK_SKEW_MS = 30_000;
+
 /** Verifies a CSRF token; checks expiry and path before the HMAC signature to avoid timing oracles. @public */
 export async function verifyCsrfToken(
   key: CryptoKey,
@@ -89,7 +91,13 @@ export async function verifyCsrfToken(
   // Check expiry and path before signature to avoid leaking whether the signature was valid.
   const [tokenPath, timestampStr] = parts;
   const timestamp = Number(timestampStr);
-  if (!Number.isInteger(timestamp) || Date.now() - timestamp > maxAgeMs) {
+  if (!Number.isInteger(timestamp)) {
+    return { ok: false, reason: "expired" };
+  }
+  if (timestamp > Date.now() + CLOCK_SKEW_MS) {
+    return { ok: false, reason: "future-timestamp" };
+  }
+  if (Date.now() - timestamp > maxAgeMs) {
     return { ok: false, reason: "expired" };
   }
 
@@ -119,7 +127,7 @@ export function csrfProtection(options: {
   secret: CryptoKey;
   tokenField?: string;
   headerName?: string;
-}): MiddlewareHandler {
+}): MiddlewareHandler<CsrfVariables> {
   const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
 
   return async (c, next) => {

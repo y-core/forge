@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { html } from "hono/html";
-import { Alert } from "./alert";
+import { Alert, AlertDescription, AlertTitle } from "./alert";
 
 async function render(element: unknown): Promise<string> {
   const app = new Hono();
@@ -13,6 +13,7 @@ async function render(element: unknown): Promise<string> {
 describe("Alert", () => {
   it("renders the default variant classes", async () => {
     const out = await render(<Alert>Message</Alert>);
+    expect(out).toContain('data-slot="alert"');
     expect(out).toContain("border-brand-200");
     expect(out).toContain("bg-brand-100");
     expect(out).toContain("text-brand-900");
@@ -41,5 +42,17 @@ describe("Alert", () => {
     const out = await render(<Alert class="my-custom">Note</Alert>);
     expect(out).toContain("my-custom");
     expect(out).toContain("rounded-2xl");
+  });
+
+  it("renders explicit title and description slots", async () => {
+    const out = await render(
+      <Alert>
+        <AlertTitle>Status</AlertTitle>
+        <AlertDescription>Everything is in sync.</AlertDescription>
+      </Alert>,
+    );
+    expect(out).toContain('data-slot="alert-title"');
+    expect(out).toContain('data-slot="alert-description"');
+    expect(out).toContain("Everything is in sync.");
   });
 });

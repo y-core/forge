@@ -1,13 +1,15 @@
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it, type Mock, mock } from "bun:test";
 import { createReleaseCommand } from "./release";
 import type { VersionResult } from "./types";
 
-function makeDeps(overrides: Partial<{
-  isWorkingTreeClean: (cwd: string) => boolean;
-  resolveVersion: (opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult;
-  updatePackageVersion: (version: string, cwd: string) => void;
-  createTag: (cwd: string, tag: string) => void;
-}> = {}) {
+interface MockDeps {
+  isWorkingTreeClean: Mock<(cwd: string) => boolean>;
+  resolveVersion: Mock<(opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult>;
+  updatePackageVersion: Mock<(version: string, cwd: string) => void>;
+  createTag: Mock<(cwd: string, tag: string) => void>;
+}
+
+function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
   return {
     isWorkingTreeClean: mock((_cwd: string) => true),
     resolveVersion: mock(

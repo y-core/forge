@@ -18,9 +18,6 @@ function makeApp(opts?: Partial<Parameters<typeof rateLimit>[0]>) {
   return app;
 }
 
-const EXPECTED_429_HTML =
-  '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Too many requests. Please try again later.</p></div>';
-
 describe("rateLimit middleware", () => {
   it("returns 429 when rate limit is exceeded", async () => {
     const app = makeApp();
@@ -30,7 +27,7 @@ describe("rateLimit middleware", () => {
       { LIMITER: { limit: async () => ({ success: false }) } },
     );
     expect(res.status).toBe(429);
-    expect(await res.text()).toBe(EXPECTED_429_HTML);
+    expect(await res.text()).toBe("Too many requests. Please try again later.");
   });
 
   it("passes through when rate limit allows", async () => {

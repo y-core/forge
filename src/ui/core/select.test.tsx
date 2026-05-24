@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { html } from "hono/html";
-import { Select } from "./select";
+import { Field, FieldContent, FieldLabel } from "./field";
+import { Select, SelectOptGroup, SelectOption } from "./select";
 
 async function render(element: unknown): Promise<string> {
   const app = new Hono();
@@ -10,52 +11,78 @@ async function render(element: unknown): Promise<string> {
   return res.text();
 }
 
-const OPTIONS = [
-  { value: "a", label: "Option A" },
-  { value: "b", label: "Option B" },
-];
-
 describe("Select", () => {
   it("renders a <select> element", async () => {
-    const out = await render(<Select options={OPTIONS} />);
+    const out = await render(
+      <Select>
+        <SelectOption value="a">Option A</SelectOption>
+      </Select>,
+    );
     expect(out).toContain("<select");
+    expect(out).toContain('data-slot="select-wrapper"');
+    expect(out).toContain('data-slot="select-icon"');
   });
 
-  it("renders all provided options", async () => {
-    const out = await render(<Select options={OPTIONS} />);
+  it("renders child options", async () => {
+    const out = await render(
+      <Select>
+        <SelectOption value="a">Option A</SelectOption>
+        <SelectOption value="b">Option B</SelectOption>
+      </Select>,
+    );
     expect(out).toContain('value="a"');
     expect(out).toContain("Option A");
     expect(out).toContain('value="b"');
     expect(out).toContain("Option B");
   });
 
-  it("renders a placeholder option when provided", async () => {
-    const out = await render(<Select options={OPTIONS} placeholder="Choose..." />);
-    expect(out).toContain("Choose...");
-    expect(out).toContain('value=""');
-  });
-
-  it("does not render a placeholder option when absent", async () => {
-    const out = await render(<Select options={OPTIONS} />);
-    expect(out).not.toContain('value=""');
-  });
-
-  it("marks the matching option as selected", async () => {
-    const withValue = await render(<Select options={OPTIONS} value="b" />);
-    const withoutValue = await render(<Select options={OPTIONS} />);
-    expect(withValue).toContain("selected");
-    expect(withoutValue).not.toContain("selected");
-  });
-
-  it("passes through id and name attributes", async () => {
-    const out = await render(<Select options={OPTIONS} id="my-select" name="choice" />);
+  it("passes through native attributes", async () => {
+    const out = await render(
+      <Select id="my-select" name="choice" required value="b">
+        <SelectOption value="a">A</SelectOption>
+        <SelectOption value="b" selected>B</SelectOption>
+      </Select>,
+    );
     expect(out).toContain('id="my-select"');
     expect(out).toContain('name="choice"');
+    expect(out).toContain("required");
+  });
+
+  it("inherits field wiring", async () => {
+    const out = await render(
+      <Field name="choice">
+        <FieldLabel>Choice</FieldLabel>
+        <FieldContent>
+          <Select>
+            <SelectOption value="a">A</SelectOption>
+          </Select>
+        </FieldContent>
+      </Field>,
+    );
+    expect(out).toContain('id="field-choice"');
+    expect(out).toContain('for="field-choice"');
   });
 
   it("merges a custom class with the default classes", async () => {
-    const out = await render(<Select options={OPTIONS} class="extra" />);
+    const out = await render(
+      <Select class="extra">
+        <SelectOption value="a">A</SelectOption>
+      </Select>,
+    );
     expect(out).toContain("extra");
     expect(out).toContain("w-full");
+  });
+
+  it("renders optgroups with explicit slots", async () => {
+    const out = await render(
+      <Select>
+        <SelectOptGroup label="Group A">
+          <SelectOption value="a">A</SelectOption>
+        </SelectOptGroup>
+      </Select>,
+    );
+    expect(out).toContain('data-slot="select-optgroup"');
+    expect(out).toContain('data-slot="select-option"');
+    expect(out).toContain('label="Group A"');
   });
 });

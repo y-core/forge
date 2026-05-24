@@ -1,17 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { createCookie } from "@remix-run/cookie";
-import type { Session } from "@remix-run/session";
 import { Hono } from "hono";
-import { createCookieSessionStorage, createMemorySessionStorage, sessionMiddleware } from "./mod";
-
-type TestVars = { Variables: { session: Session } };
+import { createCookieSessionStorage, createMemorySessionStorage } from "./mod";
+import { type SessionVariables, sessionMiddleware } from "./session";
 
 const sessionCookie = createCookie("__session", { path: "/" });
 
 describe("sessionMiddleware with cookie storage", () => {
   it("creates a new session for requests with no session cookie", async () => {
     const storage = createCookieSessionStorage();
-    const app = new Hono<TestVars>();
+    const app = new Hono<SessionVariables>();
     app.use("*", sessionMiddleware(storage, sessionCookie));
     app.get("/", (c) => {
       const session = c.get("session");
@@ -25,7 +23,7 @@ describe("sessionMiddleware with cookie storage", () => {
 
   it("sets Set-Cookie when session is dirty", async () => {
     const storage = createCookieSessionStorage();
-    const app = new Hono<TestVars>();
+    const app = new Hono<SessionVariables>();
     app.use("*", sessionMiddleware(storage, sessionCookie));
     app.post("/login", (c) => {
       const session = c.get("session");
@@ -38,9 +36,27 @@ describe("sessionMiddleware with cookie storage", () => {
     expect(res.headers.get("set-cookie")).not.toBeNull();
   });
 
+  it("appends the session cookie without overwriting existing Set-Cookie headers", async () => {
+    const storage = createCookieSessionStorage();
+    const app = new Hono<SessionVariables>();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    app.post("/login", (c) => {
+      const session = c.get("session");
+      session.set("userId", "42");
+      c.header("set-cookie", "flash=1; Path=/", { append: true });
+      return c.text("ok");
+    });
+
+    const res = await app.request("/login", { method: "POST" });
+    const cookies = res.headers.getSetCookie();
+    expect(cookies).toHaveLength(2);
+    expect(cookies[0]).toContain("flash=1");
+    expect(cookies[1]).toContain("__session=");
+  });
+
   it("does not set Set-Cookie when session is untouched", async () => {
     const storage = createCookieSessionStorage();
-    const app = new Hono<TestVars>();
+    const app = new Hono<SessionVariables>();
     app.use("*", sessionMiddleware(storage, sessionCookie));
     app.get("/", (c) => c.text("ok"));
 
@@ -52,7 +68,7 @@ describe("sessionMiddleware with cookie storage", () => {
 describe("sessionMiddleware with memory storage", () => {
   it("persists session data across requests", async () => {
     const storage = createMemorySessionStorage();
-    const app = new Hono<TestVars>();
+    const app = new Hono<SessionVariables>();
     app.use("*", sessionMiddleware(storage, sessionCookie));
     app.post("/set", (c) => {
       const session = c.get("session");
@@ -82,7 +98,7 @@ describe("sessionMiddleware with memory storage", () => {
 
   it("supports flash values consumed on next read", async () => {
     const storage = createMemorySessionStorage();
-    const app = new Hono<TestVars>();
+    const app = new Hono<SessionVariables>();
     app.use("*", sessionMiddleware(storage, sessionCookie));
     app.post("/flash", (c) => {
       const session = c.get("session");

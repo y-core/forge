@@ -19,7 +19,26 @@ export const Alert: FC<PropsWithChildren<AlertProps>> = ({
   class: cls,
   children,
 }) => (
-  <div class={cn("rounded-2xl border px-4 py-3 text-sm", variantClasses[variant], cls)}>
+  <div
+    data-slot="alert"
+    data-variant={variant}
+    class={cn("grid gap-1.5 rounded-2xl border px-4 py-3 text-sm", variantClasses[variant], cls)}
+  >
+    {children}
+  </div>
+);
+
+export const AlertTitle: FC<PropsWithChildren<{ class?: string }>> = ({ class: cls, children }) => (
+  <div data-slot="alert-title" class={cn("font-medium leading-none tracking-tight", cls)}>
+    {children}
+  </div>
+);
+
+export const AlertDescription: FC<PropsWithChildren<{ class?: string }>> = ({
+  class: cls,
+  children,
+}) => (
+  <div data-slot="alert-description" class={cn("text-sm leading-relaxed opacity-90", cls)}>
     {children}
   </div>
 );

@@ -1,10 +1,9 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { createCsrfToken, csrfProtection, importCsrfKey, verifyCsrfToken } from "./csrf";
+import type { CsrfVariables } from "./types";
 
 const HEX_SECRET = "b".repeat(64);
-
-type CsrfVars = { Variables: { csrfToken?: string } };
 
 describe("csrfProtection middleware", () => {
   let key: CryptoKey;
@@ -14,7 +13,7 @@ describe("csrfProtection middleware", () => {
   });
 
   function makeApp() {
-    const app = new Hono<CsrfVars>();
+    const app = new Hono<CsrfVariables>();
     app.use("*", csrfProtection({ secret: key }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", (c) => c.text("ok"));
@@ -77,7 +76,7 @@ describe("csrfProtection middleware", () => {
   });
 
   it("respects custom headerName option", async () => {
-    const app = new Hono<CsrfVars>();
+    const app = new Hono<CsrfVariables>();
     app.use("*", csrfProtection({ secret: key, headerName: "X-My-Token" }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", (c) => c.text("ok"));
@@ -140,5 +139,33 @@ describe("CSRF token", () => {
   it("rejects an empty token", async () => {
     const result = await verifyCsrfToken(key, "", "/api/contact");
     expect(result).toEqual({ ok: false, reason: "missing-token" });
+  });
+
+  it("accepts a token with a timestamp slightly in the future (within clock skew)", async () => {
+    const nearFutureTimestamp = Date.now() + 5_000;
+    const payload = `${"/api/contact"}|${nearFutureTimestamp}|${"aa".repeat(16)}`;
+    const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+    const sigBytes = new Uint8Array(sigBuffer);
+    const sigEncoded = btoa(String.fromCharCode(...sigBytes))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    const token = `${payloadEncoded}.${sigEncoded}`;
+    const result = await verifyCsrfToken(key, token, "/api/contact");
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("rejects a token with a future timestamp", async () => {
+    const futureTimestamp = Date.now() + 3_600_000;
+    const payload = `${"/api/contact"}|${futureTimestamp}|${"aa".repeat(16)}`;
+    const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+    const sigBytes = new Uint8Array(sigBuffer);
+    const sigEncoded = btoa(String.fromCharCode(...sigBytes))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    const token = `${payloadEncoded}.${sigEncoded}`;
+    const result = await verifyCsrfToken(key, token, "/api/contact");
+    expect(result).toEqual({ ok: false, reason: "future-timestamp" });
   });
 });

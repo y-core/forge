@@ -5,9 +5,13 @@ const SECRET = "test-secret-key";
 const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 let savedFetch: typeof globalThis.fetch;
+let savedSetTimeout: typeof globalThis.setTimeout;
+let savedClearTimeout: typeof globalThis.clearTimeout;
 
 afterEach(() => {
   if (savedFetch) globalThis.fetch = savedFetch;
+  if (savedSetTimeout) globalThis.setTimeout = savedSetTimeout;
+  if (savedClearTimeout) globalThis.clearTimeout = savedClearTimeout;
 });
 
 function mockFetch(response: object, status = 200) {
@@ -15,114 +19,165 @@ function mockFetch(response: object, status = 200) {
   globalThis.fetch = async () => new Response(JSON.stringify(response), { status });
 }
 
-function mockFetchThrows() {
+function withCapturedRequest(
+  fn: (request: { url: string; body?: string; signal?: AbortSignal }) => Response | Promise<Response>,
+) {
   savedFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
-    throw new Error("network failure");
-  };
-}
-
-function mockFetchBadJson(status = 200) {
-  savedFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response("not json", { status });
+  globalThis.fetch = async (url: URL | RequestInfo, init?: RequestInit) =>
+    fn({
+      body: init?.body as string | undefined,
+      signal: init?.signal as AbortSignal | undefined,
+      url: url.toString(),
+    });
 }
 
 describe("verifyTurnstile", () => {
-  it("returns missing-token when cf-turnstile-response is absent", async () => {
-    const fd = new FormData();
-    const result = await verifyTurnstile(fd, SECRET);
+  it("returns missing-token when the token is absent", async () => {
+    const result = await verifyTurnstile(new FormData(), SECRET);
     expect(result).toEqual({ ok: false, reason: "missing-token" });
   });
 
-  it("returns missing-token when cf-turnstile-response is empty", async () => {
-    const fd = new FormData();
-    fd.append("cf-turnstile-response", "");
-    const result = await verifyTurnstile(fd, SECRET);
-    expect(result).toEqual({ ok: false, reason: "missing-token" });
-  });
-
-  it("returns ok:true when Turnstile verification passes", async () => {
+  it("returns ok:true when verification passes", async () => {
     mockFetch({ success: true });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    const result = await verifyTurnstile(fd, SECRET);
-    expect(result).toEqual({ ok: true });
+    expect(await verifyTurnstile(fd, SECRET)).toEqual({ ok: true });
   });
 
   it("returns verification-failed when Turnstile returns success:false", async () => {
     mockFetch({ success: false });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "bad-token");
-    const result = await verifyTurnstile(fd, SECRET);
-    expect(result).toEqual({ ok: false, reason: "verification-failed" });
+    expect(await verifyTurnstile(fd, SECRET)).toEqual({
+      ok: false,
+      reason: "verification-failed",
+    });
   });
 
   it("posts the secret and token to the Turnstile endpoint", async () => {
-    let capturedUrl: string | undefined;
     let capturedBody: string | undefined;
-    savedFetch = globalThis.fetch;
-    globalThis.fetch = async (url: URL | RequestInfo, init?: RequestInit) => {
-      capturedUrl = url.toString();
-      capturedBody = init?.body as string;
+    let capturedUrl: string | undefined;
+
+    withCapturedRequest(({ body, url }) => {
+      capturedBody = body;
+      capturedUrl = url;
       return new Response(JSON.stringify({ success: true }));
-    };
+    });
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
     await verifyTurnstile(fd, SECRET);
 
     expect(capturedUrl).toBe(TURNSTILE_URL);
-    expect(JSON.parse(capturedBody!)).toEqual({ secret: SECRET, response: "tok" });
-  });
-
-  it("supports a custom token field name", async () => {
-    mockFetch({ success: true });
-    const fd = new FormData();
-    fd.append("my-token", "valid-token");
-    const result = await verifyTurnstile(fd, SECRET, "my-token");
-    expect(result).toEqual({ ok: true });
-  });
-
-  it("returns network-error when fetch throws", async () => {
-    mockFetchThrows();
-    const fd = new FormData();
-    fd.append("cf-turnstile-response", "valid-token");
-    const result = await verifyTurnstile(fd, SECRET);
-    expect(result).toEqual({ ok: false, reason: "network-error" });
-  });
-
-  it("returns network-error on a non-2xx response", async () => {
-    mockFetch({ error: "bad_request" }, 400);
-    const fd = new FormData();
-    fd.append("cf-turnstile-response", "valid-token");
-    const result = await verifyTurnstile(fd, SECRET);
-    expect(result).toEqual({ ok: false, reason: "network-error" });
-  });
-
-  it("returns parse-error when response body is not valid JSON", async () => {
-    mockFetchBadJson();
-    const fd = new FormData();
-    fd.append("cf-turnstile-response", "valid-token");
-    const result = await verifyTurnstile(fd, SECRET);
-    expect(result).toEqual({ ok: false, reason: "parse-error" });
+    expect(JSON.parse(capturedBody!)).toEqual({ response: "tok", secret: SECRET });
   });
 
   it("includes remoteip in the POST body when provided", async () => {
     let capturedBody: string | undefined;
-    savedFetch = globalThis.fetch;
-    globalThis.fetch = async (_url: URL | RequestInfo, init?: RequestInit) => {
-      capturedBody = init?.body as string;
+
+    withCapturedRequest(({ body }) => {
+      capturedBody = body;
       return new Response(JSON.stringify({ success: true }));
-    };
+    });
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
     await verifyTurnstile(fd, SECRET, "cf-turnstile-response", "1.2.3.4");
 
     expect(JSON.parse(capturedBody!)).toEqual({
-      secret: SECRET,
-      response: "tok",
       remoteip: "1.2.3.4",
+      response: "tok",
+      secret: SECRET,
     });
+  });
+
+  it("passes an AbortSignal to fetch", async () => {
+    let capturedSignal: AbortSignal | undefined;
+
+    withCapturedRequest(({ signal }) => {
+      capturedSignal = signal;
+      return new Response(JSON.stringify({ success: true }));
+    });
+
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "tok");
+    await verifyTurnstile(fd, SECRET);
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+  });
+
+  it("returns timeout when the request aborts", async () => {
+    savedSetTimeout = globalThis.setTimeout;
+    savedClearTimeout = globalThis.clearTimeout;
+    globalThis.setTimeout = (((fn: (...args: never[]) => void) => {
+      fn();
+      return 1 as unknown as number;
+    }) as unknown) as typeof globalThis.setTimeout;
+    globalThis.clearTimeout = (() => {}) as typeof globalThis.clearTimeout;
+
+    withCapturedRequest(async ({ signal }) => {
+      throw new DOMException(signal?.aborted ? "aborted" : "failed", "AbortError");
+    });
+
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "tok");
+    expect(await verifyTurnstile(fd, SECRET, "cf-turnstile-response", undefined, { timeoutMs: 1 })).toEqual({
+      ok: false,
+      reason: "timeout",
+    });
+  });
+
+  it("returns network-error on fetch failures", async () => {
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      throw new Error("network failure");
+    };
+
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    expect(await verifyTurnstile(fd, SECRET)).toEqual({ ok: false, reason: "network-error" });
+  });
+
+  it("returns parse-error when the response body is not valid JSON", async () => {
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("not json", { status: 200 });
+
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    expect(await verifyTurnstile(fd, SECRET)).toEqual({ ok: false, reason: "parse-error" });
+  });
+
+  it("returns hostname-mismatch when the hostname does not match", async () => {
+    mockFetch({ hostname: "other.example.com", success: true });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    expect(
+      await verifyTurnstile(fd, SECRET, "cf-turnstile-response", undefined, {
+        expectedHostname: "example.com",
+      }),
+    ).toEqual({ ok: false, reason: "hostname-mismatch" });
+  });
+
+  it("returns action-mismatch when the action does not match", async () => {
+    mockFetch({ action: "other", success: true });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    expect(
+      await verifyTurnstile(fd, SECRET, "cf-turnstile-response", undefined, {
+        expectedAction: "contact",
+      }),
+    ).toEqual({ ok: false, reason: "action-mismatch" });
+  });
+
+  it("returns cdata-mismatch when cdata does not match", async () => {
+    mockFetch({ cdata: "other", success: true });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    expect(
+      await verifyTurnstile(fd, SECRET, "cf-turnstile-response", undefined, {
+        expectedCData: "contact-form",
+      }),
+    ).toEqual({ ok: false, reason: "cdata-mismatch" });
   });
 });

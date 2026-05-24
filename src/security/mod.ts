@@ -10,4 +10,4 @@ export { originGuard, verifyOrigin } from "./origin";
 export type { RateLimitBinding, RateLimitOptions } from "./rate-limit";
 export { rateLimit } from "./rate-limit";
 export { timingSafeEqual, timingSafeEqualBytes } from "./timing-safe-equal";
-export type { CsrfResult, OriginResult, SecurityConfig, SecurityHeadersOptions } from "./types";
+export type { CsrfResult, CsrfVariables, OriginResult, SecurityConfig, SecurityHeadersOptions } from "./types";

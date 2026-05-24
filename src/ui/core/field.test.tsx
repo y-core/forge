@@ -1,7 +1,21 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { html } from "hono/html";
-import { Field, fieldDescriptionId, fieldErrorId, fieldId } from "./field";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSeparator,
+  FieldSet,
+  FieldTitle,
+  fieldDescriptionId,
+  fieldErrorId,
+  fieldId,
+} from "./field";
 import { Input } from "./input";
 
 async function render(element: unknown): Promise<string> {
@@ -25,78 +39,116 @@ describe("fieldId helpers", () => {
   });
 });
 
-describe("Field component", () => {
-  it("renders a label with for pointing to field-{name}", async () => {
-    const html = await render(<Field name="email" label="Email address"><Input name="email" id="field-email" /></Field>);
-    expect(html).toContain('for="field-email"');
-    expect(html).toContain("Email address");
-  });
-
-  it("renders the required asterisk when required prop is set", async () => {
+describe("Field primitives", () => {
+  it("wires FieldLabel to the control id automatically", async () => {
     const out = await render(
-      <Field name="name" label="Name" required>
-        <Input name="name" id="field-name" />
+      <Field name="email">
+        <FieldLabel>Email address</FieldLabel>
+        <FieldContent>
+          <Input />
+        </FieldContent>
       </Field>,
     );
-    expect(out).toContain("*");
-    expect(out).toContain('aria-hidden="true"');
+    expect(out).toContain('for="field-email"');
+    expect(out).toContain('id="field-email"');
+    expect(out).toContain('data-slot="field-content"');
   });
 
-  it("does not render asterisk without required prop", async () => {
+  it("adds data-invalid to the field and aria-invalid to the control", async () => {
     const out = await render(
-      <Field name="name" label="Name">
-        <Input name="name" id="field-name" />
+      <Field name="email" invalid>
+        <FieldLabel>Email</FieldLabel>
+        <FieldContent>
+          <Input />
+          <FieldError>Email is required.</FieldError>
+        </FieldContent>
       </Field>,
     );
-    expect(out).not.toContain('<span class="ml-1 text-red-500"');
-  });
-
-  it("renders description with the correct id", async () => {
-    const out = await render(
-      <Field name="phone" label="Phone" description="Optional field">
-        <Input name="phone" id="field-phone" />
-      </Field>,
-    );
-    expect(out).toContain('id="field-phone-description"');
-    expect(out).toContain("Optional field");
-  });
-
-  it("does not render description element when description is absent", async () => {
-    const out = await render(
-      <Field name="phone" label="Phone">
-        <Input name="phone" id="field-phone" />
-      </Field>,
-    );
-    expect(out).not.toContain("field-phone-description");
-  });
-
-  it("renders error with the correct id and role=alert", async () => {
-    const out = await render(
-      <Field name="email" label="Email" error="Email is required.">
-        <Input name="email" id="field-email" />
-      </Field>,
-    );
+    expect(out).toContain('data-invalid="true"');
+    expect(out).toContain('aria-invalid="true"');
     expect(out).toContain('id="field-email-error"');
-    expect(out).toContain('role="alert"');
-    expect(out).toContain("Email is required.");
   });
 
-  it("does not render error element when error is absent", async () => {
+  it("wires description and error ids into aria-describedby", async () => {
     const out = await render(
-      <Field name="email" label="Email">
-        <Input name="email" id="field-email" />
+      <Field name="message" invalid>
+        <FieldLabel>Message</FieldLabel>
+        <FieldContent>
+          <Input />
+          <FieldDescription>Minimum 15 characters</FieldDescription>
+          <FieldError>Required</FieldError>
+        </FieldContent>
       </Field>,
     );
-    expect(out).not.toContain("field-email-error");
+    expect(out).toContain('aria-describedby="field-message-description field-message-error"');
   });
 
-  it("renders child elements inside the wrapper", async () => {
+  it("inherits disabled state on the control", async () => {
     const out = await render(
-      <Field name="msg" label="Message">
-        <textarea id="field-msg" name="msg" />
+      <Field name="name" disabled>
+        <FieldLabel>Name</FieldLabel>
+        <FieldContent>
+          <Input />
+        </FieldContent>
       </Field>,
     );
-    expect(out).toContain("<textarea");
-    expect(out).toContain('name="msg"');
+    expect(out).toContain('data-disabled="true"');
+    expect(out).toMatch(/\bdisabled(?!:)/);
+  });
+
+  it("preserves explicit control props over field defaults", async () => {
+    const out = await render(
+      <Field name="name" invalid>
+        <FieldLabel>Name</FieldLabel>
+        <FieldContent>
+          <Input id="custom-id" aria-describedby="custom-help" aria-invalid="false" />
+        </FieldContent>
+      </Field>,
+    );
+    expect(out).toContain('id="custom-id"');
+    expect(out).toContain('aria-invalid="false"');
+    expect(out).toContain('aria-describedby="custom-help field-name-description field-name-error"');
+  });
+
+  it("renders FieldGroup with stack classes", async () => {
+    const out = await render(
+      <FieldGroup>
+        <Field name="name">
+          <FieldLabel>Name</FieldLabel>
+          <FieldContent>
+            <Input />
+          </FieldContent>
+        </Field>
+      </FieldGroup>,
+    );
+    expect(out).toContain('data-slot="field-group"');
+    expect(out).toContain("@container/field-group");
+  });
+
+  it("renders FieldSet and FieldLegend with explicit slots", async () => {
+    const out = await render(
+      <FieldSet>
+        <FieldLegend>Contact details</FieldLegend>
+      </FieldSet>,
+    );
+    expect(out).toContain('data-slot="field-set"');
+    expect(out).toContain('data-slot="field-legend"');
+  });
+
+  it("renders FieldTitle and FieldSeparator with explicit slots", async () => {
+    const out = await render(
+      <FieldGroup>
+        <Field name="name">
+          <FieldTitle>Name</FieldTitle>
+          <FieldContent>
+            <Input />
+          </FieldContent>
+        </Field>
+        <FieldSeparator>or</FieldSeparator>
+      </FieldGroup>,
+    );
+    expect(out).toContain('data-slot="field-title"');
+    expect(out).toContain('data-slot="field-separator"');
+    expect(out).toContain('data-slot="field-separator-content"');
   });
 });

@@ -1,13 +1,13 @@
-import type { FC, PropsWithChildren } from "hono/jsx";
+import type { Child, FC, JSX } from "hono/jsx";
+import { cloneElement, isValidElement } from "hono/jsx";
+import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
-interface ButtonProps {
+interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   variant?: "primary" | "secondary" | "ghost";
   size?: "sm" | "md" | "lg";
-  type?: "button" | "submit" | "reset";
-  disabled?: boolean;
-  class?: string;
-  "data-ref"?: string;
+  asChild?: boolean;
+  children?: Child;
 }
 
 const buttonVariants = cva({
@@ -30,21 +30,46 @@ const buttonVariants = cva({
   },
 });
 
-export const Button: FC<PropsWithChildren<ButtonProps>> = ({
+export const Button: FC<ButtonProps> = ({
   variant,
   size,
+  asChild = false,
   type = "button",
   disabled,
   class: cls,
   children,
   ...rest
-}) => (
-  <button
-    type={type}
-    disabled={disabled}
-    class={buttonVariants({ variant, size, class: cls })}
-    {...rest}
-  >
-    {children}
-  </button>
-);
+}) => {
+  const className = buttonVariants({ variant, size, class: typeof cls === "string" ? cls : undefined });
+
+  if (asChild) {
+    if (!isValidElement(children)) {
+      throw new Error("Button with asChild expects a single valid JSX element child.");
+    }
+
+    const childClass = typeof children.props.class === "string" ? children.props.class : undefined;
+    const childTag = typeof children.tag === "string" ? children.tag : undefined;
+
+    return cloneElement(children, {
+      ...rest,
+      ...(childTag === "button" ? { disabled, type } : {}),
+      ...(disabled && childTag !== "button"
+        ? { "aria-disabled": "true", "data-disabled": "true" }
+        : {}),
+      class: cn(className, childClass),
+      "data-slot": "button",
+    }) as unknown as ReturnType<FC<ButtonProps>>;
+  }
+
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      data-slot="button"
+      class={className}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+};

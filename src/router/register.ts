@@ -9,15 +9,45 @@ function applyMiddleware<E extends Env = Env>(app: Hono<E>, path: string, mw: Mi
 }
 
 function registerModule<E extends Env = Env>(app: Hono<E>, path: string, module: RouteModule<E>): void {
-  const { loader, action, view, middleware } = module;
+  const { action, loader, middleware, view } = module;
 
   if (middleware) {
     applyMiddleware(app, path, toArray(middleware));
   }
 
-  const getHandler = view ?? loader;
-  if (getHandler) app.get(path, getHandler);
-  if (action) app.post(path, action);
+  if (loader || view) {
+    app.get(path, async (c) => {
+      let data: unknown;
+
+      if (loader) {
+        const result = await loader(c);
+        if (result instanceof Response) {
+          return result;
+        }
+        data = result;
+      }
+
+      if (!view) {
+        throw new Error(`GET route "${path}" is missing a view`);
+      }
+
+      return view(c, { actionData: undefined, data, method: "GET" });
+    });
+  }
+
+  if (action) {
+    app.post(path, async (c) => {
+      const result = await action(c);
+      if (result instanceof Response || !view) {
+        if (result instanceof Response) {
+          return result;
+        }
+        throw new Error(`POST route "${path}" returned data without a view`);
+      }
+
+      return view(c, { actionData: result, data: undefined, method: "POST" });
+    });
+  }
 }
 
 function applyEntry<E extends Env = Env>(app: Hono<E>, entry: RouteConfigEntry<E>, prefix = ""): void {

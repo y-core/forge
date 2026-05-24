@@ -24,7 +24,7 @@ Every namespace is single-purpose and independently useful. A module that cannot
 
 | Import path | Concern | Key exports |
 |---|---|---|
-| `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `defineRoutes`, `createLogger`, `healthCheck`, `validateEnv`, `serveAssets` |
+| `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `healthCheck`, `validateEnv`, `serveAssets` |
 | `@y-core/forge/cookie` | HTTP cookie creation & signing | `createCookie`, `createSignedCookie` |
 | `@y-core/forge/form` | Form field reading & bot detection | `readFields`, `readTextField`, `isHoneypotFilled`, `verifyTurnstile` |
 | `@y-core/forge/headers` | Typed HTTP header value classes | `CacheControl`, `ContentType`, `SetCookie`, `Vary`, `Accept`, `Range`, etc. |
@@ -32,9 +32,9 @@ Every namespace is single-purpose and independently useful. A module that cannot
 | `@y-core/forge/router` | Declarative route configuration | `route`, `index`, `layout`, `prefix`, `applyRoutes` |
 | `@y-core/forge/security` | Security middleware & headers | `defineSecurity`, `makeSecurityHeaders`, `NONCE`, `csrfProtection`, `originGuard`, `rateLimit`, `importCsrfKey`, `createCsrfToken`, `verifyCsrfToken`, `verifyOrigin` |
 | `@y-core/forge/session` | Session management & middleware | `sessionMiddleware`, `createCookieSessionStorage` |
-| `@y-core/forge/ui` | Server-side JSX components | `Form`, `Field`, `Input`, `Textarea`, `Select`, `Button`, `Alert`, `Card`, `Separator` |
-| `@y-core/forge/ui/client` | Browser-side UI scripts | `initNav`, `initThemeSwitch`, `loadScriptOnEvent`, `initTurnstile` |
-| `@y-core/forge/validation` | Schema validation & result types | `v` (valibot re-export), `ValidationResult` |
+| `@y-core/forge/ui` | Server-side JSX primitives | `Form`, `Field`, `FieldContent`, `FieldLabel`, `FieldDescription`, `FieldError`, `Input`, `Textarea`, `Select`, `SelectOption`, `Button`, `Alert`, `AlertTitle`, `AlertDescription`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `Separator` |
+| `@y-core/forge/ui/client` | Browser-side controller mounts | `mountNav`, `mountTheme`, `mountTurnstile`, `loadScriptOnEvent`, `lazy` |
+| `@y-core/forge/validation` | Validation namespace and result types | `v`, `ValidationResult` |
 
 ---
 
@@ -71,8 +71,14 @@ if (isHoneypotFilled(formData)) return c.text("Bad request", 400);
 // Read and normalise fields (trims whitespace, normalises CRLF)
 const { name, email, message } = readFields(formData, ["name", "email", "message"]);
 
-// Verify Turnstile token (returns { ok: true } or { ok: false, error: string })
-const result = await verifyTurnstile(formData, env.TURNSTILE_SECRET_KEY);
+// Verify Turnstile token with hostname / action expectations
+const result = await verifyTurnstile(
+  formData,
+  env.TURNSTILE_SECRET_KEY,
+  "cf-turnstile-response",
+  c.req.header("CF-Connecting-IP"),
+  { expectedAction: "contact", expectedHostname: "example.com" },
+);
 if (!result.ok) return c.text("Verification failed", 403);
 ```
 
@@ -103,7 +109,7 @@ Security headers (`makeSecurityHeaders`, `NONCE`) live in `@y-core/forge/securit
 
 ## `@y-core/forge/router` — Declarative Route Configuration
 
-File-based, declarative routing inspired by React Router's route config API. Routes are plain data structures — `route()`, `index()`, `layout()`, and `prefix()` build the tree; `applyRoutes()` registers the handlers on a Hono app. Each route module exports up to three handlers: `loader` (GET data), `view` (GET render), and `action` (POST/mutation), plus optional per-route `middleware`.
+File-based, declarative routing inspired by React Router's route config API. Routes are plain data structures — `route()`, `index()`, `layout()`, and `prefix()` build the tree; `applyRoutes()` registers orchestrated route modules on a Hono app.
 
 ```typescript
 import { route, index, layout, prefix, applyRoutes } from "@y-core/forge/router";
@@ -121,49 +127,112 @@ const routes = [
 applyRoutes(app, routes);
 ```
 
-**Route module shape:**
+**Route lifecycle:**
 
 ```typescript
-// A module can export any combination of these
-export const loader  = (c) => c.json({ ... });         // GET — data
-export const view    = (c) => c.html(renderPage(...));  // GET — render
-export const action  = (c) => { /* POST handler */ };   // POST
-export const middleware = [authMiddleware];              // applied before handlers
+// GET: middleware -> loader -> view
+export const loader = async (c) => ({ csrfToken: await makeCsrfToken(c.env.CSRF_SECRET, "/contact") });
+export const view = (c, state) => c.html(renderPage(state.data));
+
+// POST: middleware -> action -> view
+export const action = async (c) => ({ success: true });
+export const view = (c, state) => c.html(renderResult(state.actionData));
+
+// Resource actions can still return a Response directly with no view.
 ```
+
+`definePage()` wraps this pattern for page routes. `defineAction()` remains the parse/validate/handle pipeline for resource-style POST handlers that return a `Response` directly.
 
 ---
 
 ## `@y-core/forge/ui` — Server-Side JSX Components
 
-Hono JSX components for forms and common UI patterns. Components are designed to wire directly to HTMX and to produce accessible, well-structured markup. The `Field` component owns the label/description/error region and auto-generates stable IDs so `aria-describedby` and `aria-errormessage` attributes are always consistent.
+Hono JSX components are source-distributed primitives: thin wrappers over native elements with default styling, predictable prop pass-through, and explicit composition. Field state is owned through composition instead of bespoke one-off props.
 
 ```tsx
-import { Form, Field, Input, Textarea, Select, Button, Alert } from "@y-core/forge/ui";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Form,
+  Input,
+  Select,
+  SelectOption,
+  Textarea,
+} from "@y-core/forge/ui";
 
-// A complete accessible contact form
 const ContactForm = () => (
-  <Form hx-post="/api/contact" hx-target="#contact-result" hx-swap="innerHTML"
-        csrfToken={token} class="flex flex-col gap-6">
+  <Card>
+    <CardHeader>
+      <CardTitle>Contact us</CardTitle>
+      <CardDescription>We reply within one business day.</CardDescription>
+    </CardHeader>
 
-    <Field name="name" label="Your name" required error={errors.name}>
-      <Input name="name" value={values.name} />
-    </Field>
+    <CardContent>
+      <Form
+        hx-post="/api/contact"
+        hx-target="#contact-result"
+        hx-swap="innerHTML"
+        csrfToken={token}
+      >
+        <FieldGroup>
+          <Field name="name" invalid={Boolean(errors.name)}>
+            <FieldLabel>Your name</FieldLabel>
+            <FieldContent>
+              <Input required value={values.name} />
+              {errors.name && <FieldError>{errors.name}</FieldError>}
+            </FieldContent>
+          </Field>
 
-    <Field name="message" label="Message" required description="Minimum 15 characters" error={errors.message}>
-      <Textarea name="message" rows={5}>{values.message}</Textarea>
-    </Field>
+          <Field name="topic">
+            <FieldLabel>Topic</FieldLabel>
+            <FieldContent>
+              <Select value={values.topic}>
+                <SelectOption value="support">Support</SelectOption>
+                <SelectOption value="partnership">Partnership</SelectOption>
+              </Select>
+            </FieldContent>
+          </Field>
 
-    <Button type="submit">Send message</Button>
-  </Form>
+          <Field name="message" invalid={Boolean(errors.message)}>
+            <FieldLabel>Message</FieldLabel>
+            <FieldContent>
+              <Textarea rows={5} required>{values.message}</Textarea>
+              <FieldDescription>Minimum 15 characters</FieldDescription>
+              {errors.message && <FieldError>{errors.message}</FieldError>}
+            </FieldContent>
+          </Field>
+        </FieldGroup>
+
+        <Button type="submit">Send message</Button>
+      </Form>
+    </CardContent>
+  </Card>
 );
-
-// Field IDs are deterministic — useful when wiring aria attributes manually
-import { fieldId, fieldErrorId } from "@y-core/forge/ui";
-fieldId("name")       // → "field-name"
-fieldErrorId("name")  // → "field-name-error"
 ```
 
-**Available components:** `Form` · `Field` · `Input` · `Textarea` · `Select` · `Button` · `Alert` · `Card` · `Separator`
+Controls rendered inside `Field` automatically inherit `id`, `name`, `aria-invalid`, and `aria-describedby` defaults from the field context.
+
+`Alert`, `Card`, and form primitives follow the same pattern: explicit subcomponents, `data-slot` hooks, and native elements as the base contract.
+
+```tsx
+<Alert variant="success">
+  <AlertTitle>Delivered</AlertTitle>
+  <AlertDescription>Your message has been sent.</AlertDescription>
+</Alert>
+```
 
 **Utilities:** `cn` (class merging) · `cva` (class variance authority for variant-based styling)
 
@@ -171,41 +240,58 @@ fieldErrorId("name")  // → "field-name-error"
 
 ## `@y-core/forge/ui/client` — Browser-Side UI Scripts
 
-Lightweight browser scripts with no framework dependency. Designed to initialise once on `DOMContentLoaded` and to compose cleanly with HTMX's event model.
+Lightweight browser helpers with no framework dependency. Each helper mounts a controller, is safe to call repeatedly, and returns a cleanup function so it can be mounted and unmounted predictably.
 
 ```typescript
-import { initNav, initThemeSwitch, loadScriptOnEvent, initTurnstile } from "@y-core/forge/ui/client";
+import {
+  isDark,
+  lazy,
+  loadScriptOnEvent,
+  mountNav,
+  mountTheme,
+  mountTurnstile,
+} from "@y-core/forge/ui/client";
 
-initNav();          // mobile nav toggle — wires [data-ref="nav-toggle"] to [data-ref="nav-menu"]
-initThemeSwitch();  // light/dark/system theme toggle, persisted to localStorage
+const unmountNav = mountNav();
+const unmountTheme = mountTheme();
 
-// Lazy-load a third-party script only when the user interacts with a trigger
 loadScriptOnEvent({
   triggerSelector: "[data-ref='turnstile-trigger']",
   event: "focus",
   scriptSrc: "https://challenges.cloudflare.com/turnstile/v0/api.js",
+  integrity: false,
 });
 
-// Initialise a Cloudflare Turnstile widget
-initTurnstile({ container: "#turnstile-widget", sitekey: TURNSTILE_SITE_KEY });
+const unmountTurnstile = mountTurnstile(isDark);
+
+lazy({
+  ref: "map-section",
+  load: () => import("./map"),
+  init: (mod) => mod.initMap(),
+});
 ```
 
 ---
 
 ## `@y-core/forge/app` — App Bootstrapping & Lifecycle
 
-Entry point for creating a Hono app with security middleware and sensible defaults pre-wired. `createApp` accepts a typed `Bindings` parameter and an options object for configuring CSP, rate limiting, and other security concerns. Structural helpers (`definePage`, `defineAction`, `defineRoutes`) organise handler modules without imposing a file-system convention.
+Entry point for creating a Hono app with security middleware and sensible defaults pre-wired. `createApp` accepts a typed `Bindings` parameter and an options object for configuring CSP and error handling. `definePage()` builds orchestrated page routes; `defineAction()` builds resource-style POST handlers.
 
 ```typescript
-import { createApp, definePage, defineAction, validateEnv, healthCheck } from "@y-core/forge/app";
+import { createApp, definePage, defineAction, healthCheck, validateEnv } from "@y-core/forge/app";
 import { NONCE } from "@y-core/forge/security";
+import { v } from "@y-core/forge/validation";
 
 const app = createApp<Bindings>({
   security: { scriptSrc: ["'self'", NONCE] },
 });
 
-// Validate required env bindings at startup
-const env = validateEnv(rawEnv, ["TURNSTILE_SECRET_KEY", "RESEND_API_KEY"]);
+const EnvSchema = v.object({
+  RESEND_API_KEY: v.string(),
+  TURNSTILE_SECRET_KEY: v.string(),
+});
+
+const env = validateEnv(rawEnv, EnvSchema);
 
 // Standard health check handler
 export const health = healthCheck(() => ({ status: "ok" }));
@@ -215,13 +301,12 @@ export const health = healthCheck(() => ({ status: "ok" }));
 
 ## `@y-core/forge/security` — Security Middleware & Headers
 
-Produces CSP + security headers and provides middleware for CSRF protection, origin validation, and rate limiting. `makeSecurityHeaders` generates the full header set; `NONCE` is the Hono per-request placeholder that gets substituted into `script-src`. `defineSecurity` composes multiple security concerns into a single middleware stack.
+Produces CSP + security headers and provides middleware for CSRF protection, origin validation, and rate limiting. `makeSecurityHeaders()` returns Hono middleware; `NONCE` is the Hono per-request placeholder that gets substituted into `script-src`. `defineSecurity()` composes multiple security concerns into a single middleware stack.
 
 ```typescript
 import { makeSecurityHeaders, NONCE, csrfProtection, originGuard, rateLimit } from "@y-core/forge/security";
 
-// Used inside createApp — security headers applied on every response
-const { headers, nonce } = makeSecurityHeaders({ isDev: env.ENVIRONMENT !== "production" });
+app.use("*", makeSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
 
 // CSRF token primitives (low-level — usually used via csrfProtection middleware)
 import { importCsrfKey, createCsrfToken, verifyCsrfToken } from "@y-core/forge/security";
@@ -254,7 +339,7 @@ const sessionCookie = createSignedCookie("session", {
 
 ## `@y-core/forge/session` — Session Management & Middleware
 
-Stateless cookie-backed sessions. `sessionMiddleware` reads the session on request and writes it back (via `set-cookie`) if the session was modified during the handler. `createCookieSessionStorage` builds the storage instance that the middleware operates on.
+Cookie-backed sessions. `sessionMiddleware()` reads the session on request and appends a session `Set-Cookie` header after `next()` if the session was modified during the handler.
 
 ```typescript
 import { sessionMiddleware, createCookieSessionStorage } from "@y-core/forge/session";
@@ -276,7 +361,7 @@ session.set("userId", user.id);
 
 ## `@y-core/forge/validation` — Schema Validation & Result Types
 
-Re-exports the full valibot API plus a default `v` namespace import, so call sites can use either import style. `ValidationResult` is the standard return type for action handlers — a discriminated union of `{ ok: true, data }` and `{ ok: false, errors }`.
+Exports the `v` valibot namespace plus `ValidationResult`. `ValidationResult<T>` is a discriminated union of `{ ok: true, data }` and `{ ok: false, errors: string[] }`.
 
 ```typescript
 import { v, type ValidationResult } from "@y-core/forge/validation";
@@ -287,9 +372,9 @@ const ContactSchema = v.object({
   message: v.pipe(v.string(), v.minLength(15)),
 });
 
-function validateContact(fields: unknown): ValidationResult<typeof ContactSchema> {
+function validateContact(fields: unknown): ValidationResult<{ name: string; email: string; message: string }> {
   const result = v.safeParse(ContactSchema, fields);
-  if (!result.success) return { ok: false, errors: v.flatten(result.issues).nested ?? {} };
+  if (!result.success) return { ok: false, errors: result.issues.map((issue) => issue.message) };
   return { ok: true, data: result.output };
 }
 ```

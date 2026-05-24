@@ -20,9 +20,12 @@ export interface SecurityConfig {
   contentType?: boolean;
 }
 
+/** Merge into your Hono app generic when using `csrfProtection` to type `c.get("csrfToken")`. @public */
+export type CsrfVariables = { Variables: { csrfToken: string | undefined } };
+
 export type CsrfResult =
   | { ok: true }
-  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "path-mismatch" | "invalid-signature" };
+  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "future-timestamp" | "path-mismatch" | "invalid-signature" };
 
 export type OriginResult =
   | { ok: true }

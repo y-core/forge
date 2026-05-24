@@ -1,9 +1,32 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
 
-export interface RouteModule<E extends Env = Env> {
-  loader?: (c: Context<E>) => Response | Promise<Response>;
-  action?: (c: Context<E>) => Response | Promise<Response>;
-  view?: (c: Context<E>) => Response | Promise<Response>;
+export interface RouteRenderState<LoaderData = unknown, ActionData = unknown> {
+  data: LoaderData;
+  actionData: ActionData;
+  method: "GET" | "POST";
+}
+
+export type RouteLoader<E extends Env = Env, LoaderData = unknown> = (
+  c: Context<E>,
+) => LoaderData | Response | Promise<LoaderData | Response>;
+
+export type RouteAction<E extends Env = Env, ActionData = unknown> = (
+  c: Context<E>,
+) => ActionData | Response | Promise<ActionData | Response>;
+
+export type RouteView<E extends Env = Env, LoaderData = unknown, ActionData = unknown> = (
+  c: Context<E>,
+  state: RouteRenderState<LoaderData, ActionData>,
+) => Response | Promise<Response>;
+
+export interface RouteModule<
+  E extends Env = Env,
+  LoaderData = unknown,
+  ActionData = unknown,
+> {
+  loader?: RouteLoader<E, LoaderData>;
+  action?: RouteAction<E, ActionData>;
+  view?: RouteView<E, LoaderData, ActionData>;
   middleware?: MiddlewareHandler<E> | MiddlewareHandler<E>[];
 }
 
