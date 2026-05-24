@@ -1,15 +1,13 @@
 import type { Env } from "hono";
 import { renderError, renderValidationErrors } from "../html/fragment";
 import { htmlResponse } from "../html/response";
+import { toArray } from "../router/register";
 import type { RouteModule } from "../router/types";
 import type { ActionDefinition } from "./types";
 
+/** Wires a parse → validate → handle pipeline into a Hono POST handler with structured error responses. @public */
 export function defineAction<T, E extends Env = Env>(def: ActionDefinition<T, E>): RouteModule<E> {
-  const middleware = def.middleware
-    ? Array.isArray(def.middleware)
-      ? def.middleware
-      : [def.middleware]
-    : [];
+  const middleware = def.middleware ? toArray(def.middleware) : [];
 
   return {
     middleware: middleware.length > 0 ? middleware : undefined,

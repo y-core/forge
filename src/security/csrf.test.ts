@@ -111,7 +111,7 @@ describe("CSRF token", () => {
   it("rejects when path does not match", async () => {
     const token = await createCsrfToken(key, "/api/contact");
     const result = await verifyCsrfToken(key, token, "/api/other");
-    expect(result).toEqual({ ok: false, reason: "invalid-signature" });
+    expect(result).toEqual({ ok: false, reason: "path-mismatch" });
   });
 
   it("rejects an expired token", async () => {

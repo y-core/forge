@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 
+/** Middleware that rejects requests without an `HX-Request: true` header (403). @public */
 export function requireHxRequest(): MiddlewareHandler {
   return async (c, next) => {
     if (c.req.header("HX-Request") !== "true") {

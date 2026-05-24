@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { NONCE, secureHeaders } from "hono/secure-headers";
 import type { SecurityHeadersOptions } from "./types";
 
+/** Middleware factory that applies CSP, HSTS, referrer-policy, and permissions-policy headers. @public */
 export function makeSecurityHeaders(options?: SecurityHeadersOptions): MiddlewareHandler {
   const { hstsMaxAge = 63072000 } = options ?? {};
 

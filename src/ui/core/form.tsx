@@ -1,4 +1,5 @@
 import type { FC, PropsWithChildren } from "hono/jsx";
+import { CSRF_FIELD_DEFAULT, HONEYPOT_FIELD_DEFAULT } from "../../security/constants";
 
 interface FormProps {
   formId?: string;
@@ -19,7 +20,7 @@ interface FormProps {
 export const Form: FC<PropsWithChildren<FormProps>> = ({
   formId,
   csrfToken,
-  honeypotField = "surname",
+  honeypotField = HONEYPOT_FIELD_DEFAULT,
   class: cls,
   children,
   "hx-headers": hxHeadersProp,
@@ -38,7 +39,7 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
       {...htmxProps}
     >
       {csrfToken && (
-        <input type="hidden" name="_csrf" value={csrfToken} />
+        <input type="hidden" name={CSRF_FIELD_DEFAULT} value={csrfToken} />
       )}
       <div
         aria-hidden="true"

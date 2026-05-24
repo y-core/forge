@@ -1,5 +1,6 @@
 import { createSignal, effect } from "./signal";
 
+/** Wires accessible open/close behaviour to `[data-ref="nav-toggle"]` and `[data-ref="nav-menu"]` elements. @public */
 export function initNav(): void {
   const toggle = document.querySelector<HTMLButtonElement>("[data-ref='nav-toggle']");
   const menu = document.querySelector<HTMLElement>("[data-ref='nav-menu']");

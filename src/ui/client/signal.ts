@@ -22,6 +22,7 @@ function cleanup(node: EffectNode): void {
   node.deps.clear();
 }
 
+/** Creates a reactive signal; reading inside an `effect` or `computed` automatically subscribes. @public */
 export function createSignal<T>(initial: T): Signal<T> {
   let _value = initial;
   const subs = new Set<EffectNode>();
@@ -50,6 +51,7 @@ export function createSignal<T>(initial: T): Signal<T> {
   };
 }
 
+/** Runs `fn` immediately and re-runs it whenever any signal read inside it changes. Returns a dispose function. @public */
 export function effect(fn: () => void): () => void {
   const node: EffectNode = {
     lastEpoch: -1,
@@ -66,6 +68,7 @@ export function effect(fn: () => void): () => void {
   return () => cleanup(node);
 }
 
+/** Derives a read-only signal whose value is recomputed whenever its dependencies change. @public */
 export function computed<T>(fn: () => T): ReadonlySignal<T> {
   const s = createSignal<T>(undefined as T);
   effect(() => {

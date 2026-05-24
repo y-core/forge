@@ -6,20 +6,24 @@ import pkg from "../package.json" with { type: "json" };
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Only ./ui/client imports DOM globals (document, window, MutationObserver) and
-// cannot be imported in Node. Static parsing still runs; runtime import is skipped.
+// cannot be imported. Static parsing still runs; runtime import is skipped.
 const BROWSER_ONLY = new Set(["./ui/client"]);
 
-function parseBarrelExports(filePath: string): { values: string[]; hasExportStar: boolean } {
+function parseBarrelExports(filePath: string): { values: string[]; hasExportStar: boolean; hasTypeExports: boolean } {
   const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");
 
   const hasExportStar = /export\s+\*\s+from\s+/.test(source);
   const values: string[] = [];
+  let hasTypeExports = false;
 
   // Phase 1: export { ... } blocks (with optional leading `type` keyword)
   // The `s` flag lets [^}]+ span newlines for multi-line brace groups.
   const blockRe = /export\s+(type\s+)?\{([^}]+)\}/gs;
   for (const match of source.matchAll(blockRe)) {
-    if (match[1]) continue; // type-only block — skip entirely
+    if (match[1]) {
+      hasTypeExports = true; // type-only block — erased at runtime
+      continue;
+    }
     for (const part of match[2].split(",")) {
       const trimmed = part.trim();
       if (!trimmed) continue;
@@ -36,7 +40,7 @@ function parseBarrelExports(filePath: string): { values: string[]; hasExportStar
     values.push(match[1]);
   }
 
-  return { values, hasExportStar };
+  return { values, hasExportStar, hasTypeExports };
 }
 
 const pkgExports = (pkg as any).exports as Record<string, { import?: string; types?: string } | string>;
@@ -57,7 +61,7 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
     continue;
   }
 
-  const { values, hasExportStar } = parseBarrelExports(filePath);
+  const { values, hasExportStar, hasTypeExports } = parseBarrelExports(filePath);
 
   if (hasExportStar) {
     console.error(`FAIL ${specifier}: contains banned \`export *\` — use explicit named exports`);
@@ -66,6 +70,10 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   }
 
   if (values.length === 0) {
+    if (hasTypeExports) {
+      console.log(`  ok ${specifier} (type-only barrel — no runtime exports)`);
+      continue;
+    }
     console.error(`FAIL ${specifier}: no value exports found in barrel`);
     failed = true;
     continue;

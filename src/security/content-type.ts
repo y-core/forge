@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 
+/** Middleware that rejects requests whose Content-Type is not a form encoding (415). @public */
 export function requireFormContentType(): MiddlewareHandler {
   return async (c, next) => {
     const ct = c.req.header("content-type") ?? "";

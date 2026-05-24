@@ -1,5 +1,4 @@
-// Context-free HTML response for use outside Hono handlers (action pipelines, standalone factories).
-// Within a handler, prefer c.html() instead.
+/** Constructs a plain `Response` with `content-type: text/html`. Use outside Hono handlers; prefer `c.html()` inside them. @public */
 export function htmlResponse(html: string, status = 200): Response {
   return new Response(html, {
     status,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { type Signal, createSignal } from "./signal";
+import { createSignal, type Signal } from "./signal";
 import { initTurnstile } from "./turnstile";
 
 interface GlobalMock {

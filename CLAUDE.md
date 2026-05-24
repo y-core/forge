@@ -26,7 +26,7 @@
 | Tool | Role |
 |---|---|
 | `bun` | Package manager and test runner |
-| `tsgo` (`@typescript/native-preview`) | Type checker (10× faster than tsc) |
+| `tsgo` (`@typescript/native-preview`) | Type checker |
 | `biome` | Linter and formatter |
 
 **Key commands:**
@@ -43,13 +43,19 @@ bun run lint:fix   # auto-fix lint/format issues
 
 ## Architecture
 
-Namespace-based library. Each namespace is independently useful with no cross-namespace dependencies.
+Namespace-based library. Most namespaces are leaf-level (no cross-namespace imports). A small number of integration-level namespaces compose across them:
+
+- **Leaf namespaces** (no cross-namespace dependencies): `html`, `router`, `security`, `validation`, `cookie`, `session`, `result`, `cli`, `ui/client`
+- **Integration namespaces** (composition roots): 
+  - `app` imports from `html`, `router`, `security`; 
+  - `ui/core` imports from `security` for shared CSRF/honeypot constants; 
+  - `security/rate-limit` imports `app/logger`
 
 **Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests (`*.test.ts`/`*.test.tsx`).
 
 | Import path | Concern | Key exports |
 |---|---|---|
-| `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `defineRoutes`, `createLogger`, `healthCheck`, `validateEnv`, `serveAssets` |
+| `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `createLogger`, `healthCheck`, `validateEnv`, `serveAssets` |
 | `@y-core/forge/cookie` | HTTP cookie creation & signing | `createCookie`, `createSignedCookie` |
 | `@y-core/forge/form` | Form field reading & bot detection | `readFields`, `readTextField`, `isHoneypotFilled`, `verifyTurnstile` |
 | `@y-core/forge/headers` | Typed HTTP header value classes | `CacheControl`, `ContentType`, `SetCookie`, `Vary`, `Accept`, `Range`, etc. |

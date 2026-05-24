@@ -1,10 +1,12 @@
 import { CacheControl } from "@remix-run/headers";
 import type { Env } from "hono";
+import { toArray } from "../router/register";
 import type { RouteModule } from "../router/types";
 import type { PageDefinition } from "./types";
 
+/** Wraps a view function with optional caching, custom headers, middleware, and error recovery. @public */
 export function definePage<E extends Env = Env>(def: PageDefinition<E>): RouteModule<E> {
-  const middleware = def.middleware ? Array.isArray(def.middleware) ? def.middleware : [def.middleware] : [];
+  const middleware = def.middleware ? toArray(def.middleware) : [];
 
   return {
     middleware: middleware.length > 0 ? middleware : undefined,
@@ -25,7 +27,12 @@ export function definePage<E extends Env = Env>(def: PageDefinition<E>): RouteMo
         }
       }
 
-      return def.view(c);
+      try {
+        return await def.view(c);
+      } catch (err) {
+        if (def.onError) return def.onError(err as Error, c);
+        throw err;
+      }
     },
   };
 }

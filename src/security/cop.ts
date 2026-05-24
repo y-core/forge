@@ -4,6 +4,7 @@ type CopResult = { ok: true } | { ok: false; reason: string };
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 
+/** Pure function: inspects Sec-Fetch-Site to detect cross-site mutations. @public */
 export function checkCrossOriginProtection(request: Request): CopResult {
   if (SAFE_METHODS.has(request.method.toUpperCase())) {
     return { ok: true };
@@ -24,6 +25,7 @@ export function checkCrossOriginProtection(request: Request): CopResult {
   return { ok: true };
 }
 
+/** Middleware that rejects cross-site mutation requests detected via Fetch Metadata (403). @public */
 export function crossOriginProtection(): MiddlewareHandler {
   return async (c, next) => {
     const result = checkCrossOriginProtection(c.req.raw);

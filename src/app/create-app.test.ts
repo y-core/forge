@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createApp } from "./create-app";
 
 describe("createApp", () => {
@@ -38,23 +38,31 @@ describe("createApp", () => {
     expect(text).toContain("An unexpected error occurred.");
   });
 
-  it("logs unhandled errors server-side", async () => {
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (msg: string) => logs.push(msg);
-    try {
+  describe("error logging", () => {
+    let logs: string[] = [];
+    let originalLog: typeof console.log;
+
+    beforeEach(() => {
+      logs = [];
+      originalLog = console.log;
+      console.log = (msg: string) => logs.push(msg);
+    });
+
+    afterEach(() => {
+      console.log = originalLog;
+    });
+
+    it("logs unhandled errors server-side", async () => {
       const app = createApp();
       app.get("/boom", () => {
         throw new Error("secret db error");
       });
       await app.request("/boom");
-    } finally {
-      console.log = originalLog;
-    }
-    expect(logs.length).toBeGreaterThan(0);
-    const parsed = JSON.parse(logs[0]) as Record<string, unknown>;
-    expect(parsed.prefix).toBe("app");
-    expect(parsed.error).toBe("secret db error");
+      expect(logs.length).toBeGreaterThan(0);
+      const parsed = JSON.parse(logs[0]) as Record<string, unknown>;
+      expect(parsed.prefix).toBe("app");
+      expect(parsed.error).toBe("secret db error");
+    });
   });
 
   it("calls custom onError when provided", async () => {

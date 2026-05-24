@@ -1,4 +1,5 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
+import type { Logger } from "../logging/types";
 import type { SecurityHeadersOptions } from "../security/types";
 import type { ValidationResult } from "../validation/types";
 
@@ -6,6 +7,8 @@ export interface AppOptions<T extends object = Record<string, unknown>> {
   security?: SecurityHeadersOptions;
   isDebug?: (c: Context<{ Bindings: T }>) => boolean;
   onError?: (error: Error, c: Context<{ Bindings: T }>) => Response | Promise<Response>;
+  /** Custom logger injected into the app error handler. Defaults to `createLogger("app")`. */
+  logger?: Logger;
 }
 
 export interface CacheDirective {
@@ -18,6 +21,8 @@ export interface PageDefinition<E extends Env = Env> {
   headers?: Record<string, string>;
   cache?: "no-store" | CacheDirective;
   middleware?: MiddlewareHandler<E> | MiddlewareHandler<E>[];
+  /** Called when `view` throws; receives the error and Hono context. If absent, the error re-throws to the app-level handler. */
+  onError?: (error: Error, c: Context<E>) => Response | Promise<Response>;
 }
 
 export interface ActionDefinition<T, E extends Env = Env> {

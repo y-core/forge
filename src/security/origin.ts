@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import type { OriginResult } from "./types";
 
+/** Pure function: checks Origin/Referer headers against the allowed list. @public */
 export function verifyOrigin(request: Request, allowedOrigins: string[]): OriginResult {
   const origin = request.headers.get("Origin");
 
@@ -23,6 +24,7 @@ export function verifyOrigin(request: Request, allowedOrigins: string[]): Origin
   return { ok: false, reason: "missing" };
 }
 
+/** Middleware that rejects requests from disallowed or missing origins (403). @public */
 export function originGuard(allowedOrigins: string[]): MiddlewareHandler {
   return async (c, next) => {
     const result = verifyOrigin(c.req.raw, allowedOrigins);

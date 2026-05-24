@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import { CSRF_FIELD_DEFAULT } from "./constants";
 import type { CsrfResult } from "./types";
 
 function base64urlEncode(data: Uint8Array | ArrayBuffer): string {
@@ -18,6 +19,7 @@ function base64urlDecode(str: string): Uint8Array {
   return bytes;
 }
 
+/** Imports a hex-encoded secret as a Web Crypto HMAC-SHA256 key for CSRF operations. @public */
 export async function importCsrfKey(hexSecret: string): Promise<CryptoKey> {
   const pairs = hexSecret.match(/.{2}/g);
   if (!pairs || pairs.length < 16)
@@ -32,6 +34,7 @@ export async function importCsrfKey(hexSecret: string): Promise<CryptoKey> {
   );
 }
 
+/** Creates a signed CSRF token embedding path, timestamp, and 16 random bytes. @public */
 export async function createCsrfToken(key: CryptoKey, path: string): Promise<string> {
   const timestamp = Date.now().toString();
   const randomBytes = crypto.getRandomValues(new Uint8Array(16));
@@ -45,6 +48,7 @@ export async function createCsrfToken(key: CryptoKey, path: string): Promise<str
   return `${payloadEncoded}.${sigEncoded}`;
 }
 
+/** Verifies a CSRF token; checks expiry and path before the HMAC signature to avoid timing oracles. @public */
 export async function verifyCsrfToken(
   key: CryptoKey,
   token: string,
@@ -82,6 +86,17 @@ export async function verifyCsrfToken(
     return { ok: false, reason: "invalid-format" };
   }
 
+  // Check expiry and path before signature to avoid leaking whether the signature was valid.
+  const [tokenPath, timestampStr] = parts;
+  const timestamp = Number(timestampStr);
+  if (!Number.isInteger(timestamp) || Date.now() - timestamp > maxAgeMs) {
+    return { ok: false, reason: "expired" };
+  }
+
+  if (tokenPath !== path) {
+    return { ok: false, reason: "path-mismatch" };
+  }
+
   const sigBuffer = sigBytes.buffer.slice(
     sigBytes.byteOffset,
     sigBytes.byteOffset + sigBytes.byteLength,
@@ -96,25 +111,16 @@ export async function verifyCsrfToken(
     return { ok: false, reason: "invalid-signature" };
   }
 
-  const [tokenPath, timestampStr] = parts;
-  const timestamp = Number(timestampStr);
-  if (!Number.isInteger(timestamp) || Date.now() - timestamp > maxAgeMs) {
-    return { ok: false, reason: "expired" };
-  }
-
-  if (tokenPath !== path) {
-    return { ok: false, reason: "invalid-signature" };
-  }
-
   return { ok: true };
 }
 
+/** Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public */
 export function csrfProtection(options: {
   secret: CryptoKey;
   tokenField?: string;
   headerName?: string;
 }): MiddlewareHandler {
-  const { secret, tokenField = "_csrf", headerName = "X-CSRF-Token" } = options;
+  const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
 
   return async (c, next) => {
     const method = c.req.method.toUpperCase();

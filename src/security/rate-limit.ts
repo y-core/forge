@@ -1,6 +1,7 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
 import { renderError } from "../html/fragment";
 import { htmlResponse } from "../html/response";
+import { createLogger } from "../logging/logger";
 
 export interface RateLimitBinding {
   limit(options: { key: string }): Promise<{ success: boolean }>;
@@ -12,6 +13,8 @@ export interface RateLimitOptions<E extends Env = Env> {
   onLimit?: (c: Context<E>) => Response | Promise<Response>;
 }
 
+const logger = createLogger("rate-limit");
+
 const DEFAULT_MESSAGE = "Too many requests. Please try again later.";
 
 function defaultKey(c: Context): string {
@@ -22,6 +25,7 @@ function defaultOnLimit(): Response {
   return htmlResponse(renderError(DEFAULT_MESSAGE), 429);
 }
 
+/** Middleware that enforces Cloudflare rate-limit bindings; skips with a warning when the binding is absent. @public */
 export function rateLimit<E extends Env = Env>(options: RateLimitOptions<E>): MiddlewareHandler<E> {
   const limiter = options.limiter;
   const key: (c: Context<E>) => string = options.key ?? (defaultKey as (c: Context<E>) => string);
@@ -30,11 +34,7 @@ export function rateLimit<E extends Env = Env>(options: RateLimitOptions<E>): Mi
   return async (c, next) => {
     const binding = limiter(c);
     if (!binding) {
-      console.warn(JSON.stringify({
-        level: "warn", prefix: "rate-limit",
-        message: "Rate limiter binding not configured — skipping",
-        timestamp: new Date().toISOString(),
-      }));
+      logger.warn("Rate limiter binding not configured — skipping");
       return next();
     }
     const { success } = await binding.limit({ key: key(c) });

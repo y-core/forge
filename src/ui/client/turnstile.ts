@@ -1,4 +1,4 @@
-import { type ReadonlySignal, createSignal, effect } from "./signal";
+import { createSignal, effect, type ReadonlySignal } from "./signal";
 
 export interface TurnstileOptions {
   widgetSelector?: string;
@@ -19,6 +19,7 @@ declare global {
 
 const NS = "_fts";
 
+/** Integrates Cloudflare Turnstile: syncs dark/light theme, gates form submission, and resets after success. @public */
 export function initTurnstile(isDark: ReadonlySignal<boolean>, options?: TurnstileOptions): void {
   const {
     widgetSelector = "[data-ref='turnstile']",

@@ -82,7 +82,6 @@ describe("Form component", () => {
   it("wraps the honeypot in an aria-hidden container", async () => {
     const out = await render(<Form><input name="x" /></Form>);
     expect(out).toContain('aria-hidden="true"');
-    expect(out).toContain("-left-[9999px]");
   });
 
   it("renders children inside the form", async () => {

@@ -1,6 +1,11 @@
+/**
+ * Discriminated-union result type aligned with forge's `{ ok }` convention.
+ * Use `result()` to wrap synchronous or async operations without try/catch at every call site.
+ * @public
+ */
 export type Result<T, E = Error> =
-  | readonly [data: T, error: null]
-  | readonly [data: null, error: E];
+  | { ok: true; data: T }
+  | { ok: false; error: E };
 
 function toError(thrown: unknown): Error {
   return thrown instanceof Error ? thrown : new Error(String(thrown));
@@ -18,19 +23,19 @@ function result<T, E = Error>(
     try {
       val = (arg as () => T | Promise<T>)();
     } catch (thrown) {
-      return [null, toError(thrown) as E] as const;
+      return { ok: false, error: toError(thrown) as E };
     }
     if (val instanceof Promise) {
       return val.then(
-        (data) => [data, null] as const,
-        (thrown) => [null, toError(thrown) as E] as const,
+        (data) => ({ ok: true as const, data }),
+        (thrown) => ({ ok: false as const, error: toError(thrown) as E }),
       );
     }
-    return [val, null] as const;
+    return { ok: true, data: val };
   }
   return (arg as Promise<T>).then(
-    (data) => [data, null] as const,
-    (thrown) => [null, toError(thrown) as E] as const,
+    (data) => ({ ok: true as const, data }),
+    (thrown) => ({ ok: false as const, error: toError(thrown) as E }),
   );
 }
 

@@ -1,6 +1,7 @@
 import type { Env } from "hono";
 import type { RouteConfigEntry, RouteModule } from "./types";
 
+/** Declares a path-matched route with an optional children array. @public */
 export function route<E extends Env = Env>(
   path: string,
   module: RouteModule<E>,
@@ -9,10 +10,12 @@ export function route<E extends Env = Env>(
   return { path, module, ...(children ? { children } : {}) };
 }
 
+/** Declares an index route that matches the parent segment's exact path. @public */
 export function index<E extends Env = Env>(module: RouteModule<E>): RouteConfigEntry<E> {
   return { index: true, module };
 }
 
+/** Groups child routes under shared middleware without adding a URL segment. @public */
 export function layout<E extends Env = Env>(
   module: RouteModule<E>,
   children: RouteConfigEntry<E>[],
@@ -20,6 +23,7 @@ export function layout<E extends Env = Env>(
   return { module, children };
 }
 
+/** Prepends a path segment to every entry in the given array. @public */
 export function prefix<E extends Env = Env>(
   path: string,
   routes: RouteConfigEntry<E>[],

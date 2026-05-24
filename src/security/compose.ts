@@ -6,6 +6,7 @@ import { requireHxRequest } from "./hx-request";
 import { originGuard } from "./origin";
 import type { SecurityConfig } from "./types";
 
+/** Composes security middleware layers (origin, COP, HTMX guard, content-type, CSRF) from a config object. @public */
 export function defineSecurity(config: SecurityConfig): MiddlewareHandler[] {
   const middleware: MiddlewareHandler[] = [];
 

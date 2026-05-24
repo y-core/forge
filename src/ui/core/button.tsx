@@ -1,6 +1,15 @@
 import type { FC, PropsWithChildren } from "hono/jsx";
 import { cva } from "./utils/cva";
 
+interface ButtonProps {
+  variant?: "primary" | "secondary" | "ghost";
+  size?: "sm" | "md" | "lg";
+  type?: "button" | "submit" | "reset";
+  disabled?: boolean;
+  class?: string;
+  "data-ref"?: string;
+}
+
 const buttonVariants = cva({
   base: "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 disabled:pointer-events-none disabled:opacity-50",
   variants: {
@@ -20,15 +29,6 @@ const buttonVariants = cva({
     size: "md",
   },
 });
-
-interface ButtonProps {
-  variant?: "primary" | "secondary" | "ghost";
-  size?: "sm" | "md" | "lg";
-  type?: "button" | "submit" | "reset";
-  disabled?: boolean;
-  class?: string;
-  "data-ref"?: string;
-}
 
 export const Button: FC<PropsWithChildren<ButtonProps>> = ({
   variant,

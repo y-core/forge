@@ -65,6 +65,28 @@ describe("definePage", () => {
     expect(res.headers.get("x-custom")).toBe("value");
   });
 
+  it("calls onError when the view throws", async () => {
+    const app = makeApp(
+      definePage({
+        view: () => { throw new Error("render failed"); },
+        onError: (_err, c) => c.text("page error", 500),
+      }),
+    );
+    const res = await app.request("/test");
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe("page error");
+  });
+
+  it("re-throws when onError is absent", async () => {
+    const app = makeApp(
+      definePage({
+        view: () => { throw new Error("unhandled"); },
+      }),
+    );
+    const res = await app.request("/test");
+    expect(res.status).toBe(500);
+  });
+
   it("runs middleware before the view", async () => {
     const order: string[] = [];
     const app = makeApp(

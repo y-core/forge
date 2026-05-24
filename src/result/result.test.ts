@@ -3,155 +3,149 @@ import type { Result } from "./result";
 import { result } from "./result";
 
 describe("result — sync success", () => {
-  it("returns [value, null] for a primitive", () => {
-    expect(result(() => 42)).toEqual([42, null]);
+  it("returns { ok: true, data } for a primitive", () => {
+    expect(result(() => 42)).toEqual({ ok: true, data: 42 });
   });
 
-  it("returns [value, null] for an object", () => {
+  it("returns { ok: true, data } for an object", () => {
     const obj = { a: 1 };
-    expect(result(() => obj)).toEqual([{ a: 1 }, null]);
+    expect(result(() => obj)).toEqual({ ok: true, data: { a: 1 } });
   });
 
-  it("returns [0, null] for falsy zero", () => {
-    expect(result(() => 0)).toEqual([0, null]);
+  it("returns { ok: true, data: 0 } for falsy zero", () => {
+    expect(result(() => 0)).toEqual({ ok: true, data: 0 });
   });
 
-  it("returns [empty string, null] for falsy empty string", () => {
-    expect(result(() => "")).toEqual(["", null]);
+  it("returns { ok: true, data: '' } for falsy empty string", () => {
+    expect(result(() => "")).toEqual({ ok: true, data: "" });
   });
 
-  it("returns [false, null] for falsy false", () => {
-    expect(result(() => false)).toEqual([false, null]);
+  it("returns { ok: true, data: false } for falsy false", () => {
+    expect(result(() => false)).toEqual({ ok: true, data: false });
   });
 });
 
 describe("result — sync error", () => {
-  it("returns [null, Error] for a thrown Error", () => {
+  it("returns { ok: false, error } for a thrown Error", () => {
     const err = new Error("boom");
-    const [data, error] = result(() => {
-      throw err;
-    });
-    expect(data).toBeNull();
-    expect(error).toBe(err);
+    const r = result(() => { throw err; });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe(err);
   });
 
-  it("returns [null, Error] for a thrown string", () => {
-    const [data, error] = result(() => {
-      throw "oops";
-    });
-    expect(data).toBeNull();
-    expect(error).toBeInstanceOf(Error);
-    expect(error?.message).toBe("oops");
+  it("returns { ok: false, error } for a thrown string", () => {
+    const r = result(() => { throw "oops"; });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBeInstanceOf(Error);
+      expect(r.error.message).toBe("oops");
+    }
   });
 
-  it("returns [null, Error] for thrown undefined", () => {
-    const [data, error] = result(() => {
-      throw undefined;
-    });
-    expect(data).toBeNull();
-    expect(error).toBeInstanceOf(Error);
-    expect(error?.message).toBe("undefined");
+  it("returns { ok: false, error } for thrown undefined", () => {
+    const r = result(() => { throw undefined; });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBeInstanceOf(Error);
+      expect(r.error.message).toBe("undefined");
+    }
   });
 
-  it("returns [null, Error] for thrown null", () => {
-    const [data, error] = result(() => {
-      throw null;
-    });
-    expect(data).toBeNull();
-    expect(error).toBeInstanceOf(Error);
-    expect(error?.message).toBe("null");
+  it("returns { ok: false, error } for thrown null", () => {
+    const r = result(() => { throw null; });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBeInstanceOf(Error);
+      expect(r.error.message).toBe("null");
+    }
   });
 });
 
 describe("result — async success", () => {
-  it("resolves to [value, null] for an async function", async () => {
-    const [data, error] = await result(async () => "hello");
-    expect(data).toBe("hello");
-    expect(error).toBeNull();
+  it("resolves to { ok: true, data } for an async function", async () => {
+    const r = await result(async () => "hello");
+    expect(r).toEqual({ ok: true, data: "hello" });
   });
 
-  it("resolves to [value, null] for a promise-returning function", async () => {
-    const [data, error] = await result(() => Promise.resolve(99));
-    expect(data).toBe(99);
-    expect(error).toBeNull();
+  it("resolves to { ok: true, data } for a promise-returning function", async () => {
+    const r = await result(() => Promise.resolve(99));
+    expect(r).toEqual({ ok: true, data: 99 });
   });
 });
 
 describe("result — async error", () => {
-  it("resolves to [null, Error] for a rejected promise", async () => {
+  it("resolves to { ok: false, error } for a rejected promise", async () => {
     const err = new Error("async fail");
-    const [data, error] = await result(() => Promise.reject(err));
-    expect(data).toBeNull();
-    expect(error).toBe(err);
+    const r = await result(() => Promise.reject(err));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe(err);
   });
 
-  it("resolves to [null, Error] for an async throw", async () => {
-    const [data, error] = await result(async () => {
-      throw new Error("async throw");
-    });
-    expect(data).toBeNull();
-    expect(error).toBeInstanceOf(Error);
-    expect(error?.message).toBe("async throw");
+  it("resolves to { ok: false, error } for an async throw", async () => {
+    const r = await result(async () => { throw new Error("async throw"); });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBeInstanceOf(Error);
+      expect(r.error.message).toBe("async throw");
+    }
   });
 });
 
 describe("result — bare promise", () => {
-  it("resolves to [value, null] for a bare resolved promise", async () => {
-    const [data, error] = await result(Promise.resolve("bare"));
-    expect(data).toBe("bare");
-    expect(error).toBeNull();
+  it("resolves to { ok: true, data } for a bare resolved promise", async () => {
+    const r = await result(Promise.resolve("bare"));
+    expect(r).toEqual({ ok: true, data: "bare" });
   });
 
-  it("resolves to [null, Error] for a bare rejected promise", async () => {
+  it("resolves to { ok: false, error } for a bare rejected promise", async () => {
     const err = new Error("bare reject");
-    const [data, error] = await result(Promise.reject(err));
-    expect(data).toBeNull();
-    expect(error).toBe(err);
+    const r = await result(Promise.reject(err));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe(err);
   });
 });
 
 describe("result — error coercion", () => {
   it("wraps thrown number with new Error(String(x))", () => {
-    const [, error] = result(() => {
-      throw 404;
-    });
-    expect(error).toBeInstanceOf(Error);
-    expect(error?.message).toBe("404");
+    const r = result(() => { throw 404; });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBeInstanceOf(Error);
+      expect(r.error.message).toBe("404");
+    }
   });
 
   it("wraps thrown object with new Error(String(x))", () => {
-    const [, error] = result(() => {
-      throw { code: 1 };
-    });
-    expect(error).toBeInstanceOf(Error);
-    expect(error?.message).toBe("[object Object]");
+    const r = result(() => { throw { code: 1 }; });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toBeInstanceOf(Error);
+      expect(r.error.message).toBe("[object Object]");
+    }
   });
 
   it("preserves Error instances without wrapping", () => {
     const original = new TypeError("type err");
-    const [, error] = result(() => {
-      throw original;
-    });
-    expect(error).toBe(original);
+    const r = result(() => { throw original; });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe(original);
   });
 });
 
 describe("result — type narrowing", () => {
-  it("narrows data to null when err is non-null", () => {
-    const r: Result<string> = [null, new Error("x")];
-    const [data, err] = r;
-    if (err !== null) {
-      const _: null = data;
-      expect(_).toBeNull();
+  it("narrows to error branch on ok: false", () => {
+    const r: Result<string> = { ok: false, error: new Error("x") };
+    if (!r.ok) {
+      const _: Error = r.error;
+      expect(_).toBeInstanceOf(Error);
     }
   });
 
-  it("narrows data to T when err is null", () => {
-    const r: Result<string> = ["ok", null];
-    const [data, err] = r;
-    if (err === null) {
-      const _: string = data;
-      expect(_).toBe("ok");
+  it("narrows to data branch on ok: true", () => {
+    const r: Result<string> = { ok: true, data: "hello" };
+    if (r.ok) {
+      const _: string = r.data;
+      expect(_).toBe("hello");
     }
   });
 });

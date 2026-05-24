@@ -1,6 +1,7 @@
 import type { Context, Env } from "hono";
 import type { AssetOptions } from "./types";
 
+/** Route handler that serves static assets from the `ASSETS` binding, falling back to `notFoundView`. @public */
 export function serveAssets<E extends Env = Env>(options: AssetOptions<E>) {
   return async (c: Context<E>): Promise<Response> => {
     const assets = (c.env as Record<string, unknown>)?.ASSETS as

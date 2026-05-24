@@ -22,7 +22,7 @@ export interface SecurityConfig {
 
 export type CsrfResult =
   | { ok: true }
-  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "invalid-signature" };
+  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "path-mismatch" | "invalid-signature" };
 
 export type OriginResult =
   | { ok: true }
