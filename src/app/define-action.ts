@@ -1,10 +1,15 @@
 import type { Env } from "hono";
-import { renderError, renderValidationErrors } from "../html/fragment";
-import { htmlResponse } from "../html/response";
+import { parseFormData } from "../form/parse-form-data";
+import type { ReadonlyFormData } from "../form/types";
+import { renderError, renderValidationErrors } from "../http/fragment";
+import { htmlResponse } from "../http/response";
 import { toError } from "../result/result";
-import { toArray } from "../router/register";
 import type { RouteModule } from "../router/types";
 import type { ActionDefinition } from "./types";
+
+function toArray<T>(value: T | T[]): T[] {
+  return Array.isArray(value) ? value : [value];
+}
 
 /** Wires a parse → validate → handle pipeline into a Hono POST handler with structured error responses. @public */
 export function defineAction<T, E extends Env = Env>(def: ActionDefinition<T, E>): RouteModule<E> {
@@ -13,9 +18,9 @@ export function defineAction<T, E extends Env = Env>(def: ActionDefinition<T, E>
   return {
     middleware: middleware.length > 0 ? middleware : undefined,
     action: async (c) => {
-      let formData: FormData;
+      let formData: ReadonlyFormData;
       try {
-        formData = await c.req.formData();
+        formData = await parseFormData(c);
       } catch {
         return htmlResponse(renderError("Unable to process the form data. Please try again."), 400);
       }

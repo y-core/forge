@@ -1,9 +1,12 @@
-import { CacheControl } from "@remix-run/headers";
 import type { Env } from "hono";
+import { CacheControl } from "../http/mod";
 import { toError } from "../result/result";
-import { toArray } from "../router/register";
 import type { RouteModule } from "../router/types";
 import type { PageDefinition } from "./types";
+
+function toArray<T>(value: T | T[]): T[] {
+  return Array.isArray(value) ? value : [value];
+}
 
 /** Wraps a view function with optional caching, custom headers, middleware, and error recovery. @public */
 export function definePage<

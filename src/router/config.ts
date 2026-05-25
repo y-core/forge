@@ -23,7 +23,14 @@ export function layout<E extends Env = Env>(
   return { module, children };
 }
 
-/** Prepends a path segment to every entry in the given array. @public */
+/**
+ * Prepends a path segment to every entry in the given array. @public
+ *
+ * Only the top-level entries are prefixed — children are intentionally left
+ * unprefixed because `applyRoutes` accumulates prefixes recursively during
+ * registration. Prefixing children here would double-prefix their paths
+ * (e.g. `/api/users` → `/api/users/api/profile`).
+ */
 export function prefix<E extends Env = Env>(
   path: string,
   routes: RouteConfigEntry<E>[],

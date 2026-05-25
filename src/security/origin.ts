@@ -1,7 +1,9 @@
 import type { MiddlewareHandler } from "hono";
 import type { OriginResult } from "./types";
 
-/** Pure function: checks Origin/Referer headers against the allowed list. @public */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+
+/** Pure function: checks Origin/Referer headers against the allowed list regardless of HTTP method. @public */
 export function verifyOrigin(request: Request, allowedOrigins: string[]): OriginResult {
   const origin = request.headers.get("Origin");
 
@@ -24,13 +26,12 @@ export function verifyOrigin(request: Request, allowedOrigins: string[]): Origin
   return { ok: false, reason: "missing" };
 }
 
-/** Middleware that rejects requests from disallowed or missing origins (403). @public */
+/** Middleware that rejects requests from disallowed or missing origins (403). Safe methods (GET/HEAD/OPTIONS/TRACE) are exempt from the check. @public */
 export function originGuard(allowedOrigins: string[]): MiddlewareHandler {
   return async (c, next) => {
+    if (SAFE_METHODS.has(c.req.method.toUpperCase())) return next();
     const result = verifyOrigin(c.req.raw, allowedOrigins);
-    if (!result.ok) {
-      return c.text("Forbidden", 403);
-    }
+    if (!result.ok) return c.text("Forbidden", 403);
     return next();
   };
 }

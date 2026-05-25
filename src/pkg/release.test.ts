@@ -15,8 +15,8 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     resolveVersion: mock(
       (_opts: unknown): VersionResult => ({ version: "1.1.0", reason: "auto-patch", previous: "v1.0.0" }),
     ),
-    updatePackageVersion: mock((_version: string, _cwd: string): void => {}),
-    createTag: mock((_cwd: string, _tag: string): void => {}),
+    updatePackageVersion: mock((_version: string, _cwd: string): void => { }),
+    createTag: mock((_cwd: string, _tag: string): void => { }),
     ...overrides,
   };
 }
@@ -90,14 +90,14 @@ describe("createReleaseCommand()", () => {
     console.log = (msg: string) => logs.push(msg);
     try {
       const cmd = createReleaseCommand(
-        { cwd: "/project", stageFiles: ["package.json", "package-lock.json"] },
+        { cwd: "/project", stageFiles: ["package.json"] },
         deps,
       );
       cmd.run?.([], { dry: false, "allow-dirty": true });
     } finally {
       console.log = origLog;
     }
-    expect(logs.some((l) => l.includes("git add package.json package-lock.json"))).toBe(true);
+    expect(logs.some((l) => l.includes("git add package.json"))).toBe(true);
   });
 
   it("checks dirty tree when allow-dirty is false", () => {

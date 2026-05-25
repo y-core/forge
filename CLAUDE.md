@@ -43,29 +43,66 @@ bun run lint:fix   # auto-fix lint/format issues
 
 ## Architecture
 
-Namespace-based library. Most namespaces are leaf-level (no cross-namespace imports). A small number of integration-level namespaces compose across them:
-
-- **Leaf namespaces** (no cross-namespace dependencies): `html`, `router`, `security`, `validation`, `cookie`, `session`, `result`, `cli`, `ui/client`
-- **Integration namespaces** (composition roots): 
-  - `app` imports from `html`, `router`, `security`; 
-  - `ui/core` imports from `security` for shared CSRF/honeypot constants; 
-  - `security/rate-limit` imports `app/logger`
+Forge acts as a **facade** for its external dependencies (`hono/jsx` via `jsx`, `valibot` via `validation`, `@remix-run/*` via `session` and `http`). Consumers import from `@y-core/forge/{namespace}`, not from third-party packages directly.
 
 **Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests (`*.test.ts`/`*.test.tsx`).
 
-| Import path | Concern | Key exports |
+### Namespace classification
+
+**Leaf namespaces** (zero cross-namespace dependencies): `cli`, `form`, `http`, `jsx`, `logging`, `result`, `router`, `session`, `ui/client`, `validation`
+
+**Integration namespaces** (compose across other namespaces):
+- `app` — imports from `form`, `http`, `logging`, `result`, `router`, `security`, `validation`
+- `security` — imports from `form` (parseFormData, ReadonlyFormData, constants), `logging` (createLogger in rate-limit)
+- `ui/core` — imports from `form` (CSRF/honeypot field name constants)
+- `pkg` — imports from `cli`
+
+### Namespace map (13 namespaces)
+
+| Import path | Category | Concern | Key exports |
+|---|---|---|---|
+| `@y-core/forge/app` | Integration | App bootstrap & lifecycle | `createApp`, `definePage`, `defineAction`, `healthCheck`, `validateEnv`, `serveAssets` |
+| `@y-core/forge/cli` | Leaf | CLI command framework | `createCommand`, `parseArgs`, `execute` |
+| `@y-core/forge/form` | Leaf | Form parsing & field conventions | `readFields`, `parseFormData`, `isHoneypotFilled`, `verifyTurnstile`, `CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT` |
+| `@y-core/forge/http` | Leaf | HTTP output — responses, headers, escaping | `html`, `escapeHtml`, `htmlResponse`, `renderSuccess`, `renderError`, `CacheControl`, `ContentType`, `Accept`, `SetCookie`, `Vary`, etc. |
+| `@y-core/forge/jsx` | Leaf | JSX runtime (facade for hono/jsx) | `Fragment`, `createContext`, `useContext`, `memo`, `FC`, `JSX` |
+| `@y-core/forge/logging` | Leaf | Structured logging | `createLogger`, `consoleChannel` |
+| `@y-core/forge/pkg` | Integration | Release & versioning tooling | `createReleaseCommand`, `parseSemVer`, `bumpSemVer` |
+| `@y-core/forge/result` | Leaf | Result monad | `result`, `toError`, `Result` |
+| `@y-core/forge/router` | Leaf | Declarative route config | `route`, `index`, `layout`, `prefix`, `applyRoutes` |
+| `@y-core/forge/security` | Integration | Transport-layer request hardening | `defineSecurity`, `makeSecurityHeaders`, `NONCE`, `csrfProtection`, `originGuard`, `rateLimit` |
+| `@y-core/forge/session` | Leaf | Session + cookie management | `sessionMiddleware`, `createCookieSessionStorage`, `createCookie`, `createSignedCookie` |
+| `@y-core/forge/ui` | Integration | Server-side JSX components | `Form`, `Field`, `Input`, `Button`, `Alert`, `Card`, `Icon`, `Select` |
+| `@y-core/forge/ui/client` | Leaf | Browser-side UI scripts | `mountNav`, `mountTheme`, `lazy`, `createSignal`, `mountTurnstile` |
+| `@y-core/forge/validation` | Leaf | Schema validation (facade for valibot) | `v`, `ValidationResult` |
+
+---
+
+## Growth rules
+
+### `security` — transport-layer hardening only
+
+`security` is **transport-layer request/response hardening**. It does not know about users, identities, or business logic.
+
+| Future feature | Belongs in | Rationale |
 |---|---|---|
-| `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `createLogger`, `healthCheck`, `validateEnv`, `serveAssets` |
-| `@y-core/forge/cookie` | HTTP cookie creation & signing | `createCookie`, `createSignedCookie` |
-| `@y-core/forge/form` | Form field reading & bot detection | `readFields`, `readTextField`, `isHoneypotFilled`, `verifyTurnstile` |
-| `@y-core/forge/headers` | Typed HTTP header value classes | `CacheControl`, `ContentType`, `SetCookie`, `Vary`, `Accept`, `Range`, etc. |
-| `@y-core/forge/html` | HTML output primitives | `escapeHtml`, `html`, `renderSuccess`, `renderError`, `renderValidationErrors`, `htmlResponse` |
-| `@y-core/forge/router` | Declarative route config | `route`, `index`, `layout`, `prefix`, `applyRoutes` |
-| `@y-core/forge/security` | Security middleware & headers | `defineSecurity`, `makeSecurityHeaders`, `NONCE`, `csrfProtection`, `originGuard`, `rateLimit` |
-| `@y-core/forge/session` | Session management & middleware | `sessionMiddleware`, `createCookieSessionStorage` |
-| `@y-core/forge/ui` | Server-side JSX components | `Form`, `Field`, `Input`, `Textarea`, `Select`, `Button`, `Alert`, `Card`, `Separator` |
-| `@y-core/forge/ui/client` | Browser-side UI scripts | `initNav`, `initThemeSwitch`, `loadScriptOnEvent`, `initTurnstile` |
-| `@y-core/forge/validation` | Schema validation & result types | `v` (valibot re-export), `ValidationResult` |
+| Authentication (JWT, OAuth, session login) | NEW: `auth` | Application-layer identity, not transport hardening |
+| Permissions / RBAC | NEW: `auth` | Identity-aware access control |
+| CORS middleware | `security` | Transport-layer cross-origin policy |
+| Webhook signature verification | `security` | Request integrity verification |
+| API key management | NEW: `auth` | Identity/credential lifecycle |
+
+### `ui/core` — SSR-only components
+
+Components requiring client-side JS export only SSR markup from `ui/core`; client behavior goes in `ui/client`. If component count exceeds ~25, introduce sub-barrels (`ui/core/form/mod.ts`) but do NOT split the export map path — consumers always import from `@y-core/forge/ui`.
+
+### `app` — bootstrap and pipeline builders
+
+`app` contains bootstrap and lifecycle (`createApp`, `resolveBindings`, `validateEnv`, `healthCheck`, `serveAssets`). The `definePage`/`defineAction` functions are pipeline builders. If a third pipeline variant is needed, extract all pipeline builders into a new `handler` namespace.
+
+### `http` — all HTTP output concerns
+
+`http` is the canonical source for response builders, header value classes, and HTML escaping. Future additions: `jsonResponse()`, streaming utilities, content negotiation. Consumers import from `@y-core/forge/http`, not from `@remix-run/headers` or `hono/html` directly.
 
 ---
 

@@ -1,13 +1,10 @@
 export { NONCE } from "hono/secure-headers";
-export { defineSecurity } from "./compose";
-export { CSRF_FIELD_DEFAULT, HONEYPOT_FIELD_DEFAULT } from "./constants";
 export { requireFormContentType } from "./content-type";
 export { checkCrossOriginProtection, crossOriginProtection } from "./cop";
-export { createCsrfToken, csrfProtection, importCsrfKey, verifyCsrfToken } from "./csrf";
 export { makeSecurityHeaders } from "./headers";
 export { requireHxRequest } from "./hx-request";
 export { originGuard, verifyOrigin } from "./origin";
 export type { RateLimitBinding, RateLimitOptions } from "./rate-limit";
 export { rateLimit } from "./rate-limit";
 export { timingSafeEqual, timingSafeEqualBytes } from "./timing-safe-equal";
-export type { CsrfResult, CsrfVariables, OriginResult, SecurityConfig, SecurityHeadersOptions } from "./types";
+export type { OriginResult, SecurityHeadersOptions } from "./types";

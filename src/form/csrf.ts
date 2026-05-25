@@ -1,6 +1,9 @@
 import type { MiddlewareHandler } from "hono";
 import { CSRF_FIELD_DEFAULT } from "./constants";
+import { parseFormData } from "./parse-form-data";
 import type { CsrfResult, CsrfVariables } from "./types";
+
+const CLOCK_SKEW_MS = 30_000;
 
 function base64urlEncode(data: Uint8Array | ArrayBuffer): string {
   const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
@@ -21,6 +24,10 @@ function base64urlDecode(str: string): Uint8Array {
 
 /** Imports a hex-encoded secret as a Web Crypto HMAC-SHA256 key for CSRF operations. @public */
 export async function importCsrfKey(hexSecret: string): Promise<CryptoKey> {
+  if (hexSecret.length % 2 !== 0)
+    throw new Error("CSRF secret must have an even number of hex characters");
+  if (!/^[0-9a-fA-F]+$/.test(hexSecret))
+    throw new Error("CSRF secret must contain only hexadecimal characters (0-9, a-f, A-F)");
   const pairs = hexSecret.match(/.{2}/g);
   if (!pairs || pairs.length < 16)
     throw new Error("CSRF secret must be at least 32 hex characters (16 bytes)");
@@ -47,8 +54,6 @@ export async function createCsrfToken(key: CryptoKey, path: string): Promise<str
   const sigEncoded = base64urlEncode(new Uint8Array(sigBuffer));
   return `${payloadEncoded}.${sigEncoded}`;
 }
-
-const CLOCK_SKEW_MS = 30_000;
 
 /** Verifies a CSRF token; checks expiry and path before the HMAC signature to avoid timing oracles. @public */
 export async function verifyCsrfToken(
@@ -133,6 +138,8 @@ export function csrfProtection(options: {
   return async (c, next) => {
     const method = c.req.method.toUpperCase();
 
+    c.set("mintCsrfToken", (path: string) => createCsrfToken(secret, path));
+
     if (method === "GET" || method === "HEAD") {
       const token = await createCsrfToken(secret, c.req.path);
       c.set("csrfToken", token);
@@ -144,8 +151,7 @@ export function csrfProtection(options: {
 
     if (!token) {
       try {
-        const cloned = c.req.raw.clone();
-        const formData = await cloned.formData();
+        const formData = await parseFormData(c);
         token = formData.get(tokenField)?.toString() ?? undefined;
       } catch {
         // body cannot be parsed as form data — token stays undefined

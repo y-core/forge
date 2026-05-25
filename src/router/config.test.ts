@@ -68,4 +68,15 @@ describe("prefix()", () => {
     expect(result.children).toBe(entry.children);
     expect(result.module).toBe(entry.module);
   });
+
+  it("does not prefix children — applyRoutes handles recursive accumulation", () => {
+    // prefix() only touches top-level entries. If it also prefixed children,
+    // applyRoutes would accumulate the prefix a second time during registration,
+    // producing double-prefixed paths like /api/users/api/profile.
+    const child = route("/profile", { loader: handler });
+    const entry = route("/users", { loader: handler }, [child]);
+    const [result] = prefix("/api", [entry]);
+    expect(result.path).toBe("/api/users");
+    expect(result.children![0].path).toBe("/profile");
+  });
 });

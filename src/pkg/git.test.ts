@@ -1,8 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 
 // Install mock before ./git is loaded so its top-level import gets the stub.
-const mockExecSync = mock((_cmd: string, _opts?: unknown): string | Buffer => "");
-mock.module("node:child_process", () => ({ execSync: mockExecSync }));
+const mockExecSync = mock((_cmd: string, _args?: string[], _opts?: unknown): string | Buffer => "");
+mock.module("node:child_process", () => ({ execFileSync: mockExecSync }));
 
 const {
   gitExec,
@@ -75,11 +75,19 @@ describe("getLastCommitMessage()", () => {
 });
 
 describe("createTag()", () => {
-  it("calls execSync with the correct tag argument", () => {
+  it("calls execFileSync with git and the correct arg array", () => {
     mockExecSync.mockReturnValue("");
     mockExecSync.mockClear();
     createTag("/cwd", "v1.2.3");
     expect(mockExecSync.mock.calls).toHaveLength(1);
-    expect(mockExecSync.mock.calls[0][0]).toBe("git tag v1.2.3");
+    expect(mockExecSync.mock.calls[0][0]).toBe("git");
+    expect(mockExecSync.mock.calls[0][1]).toEqual(["tag", "v1.2.3"]);
+  });
+
+  it("passes shell metacharacters in tag names as-is without interpretation", () => {
+    mockExecSync.mockReturnValue("");
+    mockExecSync.mockClear();
+    createTag("/cwd", "v1.0.0; rm -rf /");
+    expect(mockExecSync.mock.calls[0][1]).toEqual(["tag", "v1.0.0; rm -rf /"]);
   });
 });

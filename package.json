@@ -37,10 +37,6 @@
       "types": "./src/cli/mod.ts",
       "import": "./src/cli/mod.ts"
     },
-    "./cookie": {
-      "types": "./src/cookie/mod.ts",
-      "import": "./src/cookie/mod.ts"
-    },
     "./form": {
       "types": "./src/form/mod.ts",
       "import": "./src/form/mod.ts"
@@ -61,13 +57,9 @@
       "types": "./src/jsx/jsx-runtime.ts",
       "import": "./src/jsx/jsx-runtime.ts"
     },
-    "./headers": {
-      "types": "./src/headers/mod.ts",
-      "import": "./src/headers/mod.ts"
-    },
-    "./html": {
-      "types": "./src/html/mod.ts",
-      "import": "./src/html/mod.ts"
+    "./http": {
+      "types": "./src/http/mod.ts",
+      "import": "./src/http/mod.ts"
     },
     "./logging": {
       "types": "./src/logging/mod.ts",
@@ -93,10 +85,6 @@
       "types": "./src/session/mod.ts",
       "import": "./src/session/mod.ts"
     },
-    "./types": {
-      "types": "./src/types/mod.ts",
-      "import": "./src/types/mod.ts"
-    },
     "./ui": {
       "types": "./src/ui/mod.ts",
       "import": "./src/ui/mod.ts"
@@ -118,10 +106,8 @@
     "scripts/",
     "src/app/",
     "src/cli/",
-    "src/cookie/",
     "src/form/",
-    "src/headers/",
-    "src/html/",
+    "src/http/",
     "src/jsx/",
     "src/logging/",
     "src/pkg/",
@@ -129,7 +115,6 @@
     "src/router/",
     "src/security/",
     "src/session/",
-    "src/types/",
     "src/ui/",
     "src/validation/",
     "templates/",

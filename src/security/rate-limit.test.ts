@@ -77,8 +77,14 @@ describe("rateLimit middleware", () => {
     expect(capturedKey).toBe("unknown");
   });
 
-  it("skips when binding is undefined", async () => {
+  it("returns 503 when binding is undefined (default required: true)", async () => {
     const app = makeApp();
+    const res = await app.request("/test", { method: "POST" });
+    expect(res.status).toBe(503);
+  });
+
+  it("skips when binding is undefined and required: false", async () => {
+    const app = makeApp({ required: false });
     const res = await app.request("/test", { method: "POST" });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");

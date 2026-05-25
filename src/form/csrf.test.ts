@@ -1,7 +1,34 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { createCsrfToken, csrfProtection, importCsrfKey, verifyCsrfToken } from "./csrf";
+import { parseFormData } from "./parse-form-data";
 import type { CsrfVariables } from "./types";
+
+describe("importCsrfKey()", () => {
+  it("rejects an odd-length hex string", async () => {
+    await expect(importCsrfKey("a".repeat(63))).rejects.toThrow(
+      "CSRF secret must have an even number of hex characters",
+    );
+  });
+
+  it("rejects non-hex characters", async () => {
+    await expect(importCsrfKey("zz".repeat(16))).rejects.toThrow(
+      "CSRF secret must contain only hexadecimal characters (0-9, a-f, A-F)",
+    );
+  });
+
+  it("accepts valid lowercase hex", async () => {
+    await expect(importCsrfKey("a".repeat(64))).resolves.toBeDefined();
+  });
+
+  it("accepts valid uppercase hex", async () => {
+    await expect(importCsrfKey("A".repeat(64))).resolves.toBeDefined();
+  });
+
+  it("accepts valid mixed-case hex", async () => {
+    await expect(importCsrfKey("aAbB0123".repeat(8))).resolves.toBeDefined();
+  });
+});
 
 const HEX_SECRET = "b".repeat(64);
 
@@ -89,6 +116,62 @@ describe("csrfProtection middleware", () => {
       headers: { "X-My-Token": token },
     });
     expect(res.status).toBe(200);
+  });
+
+  it("GET sets mintCsrfToken on context", async () => {
+    let capturedMint: ((path: string) => Promise<string>) | undefined;
+    const app = new Hono<CsrfVariables>();
+    app.use("*", csrfProtection({ secret: key }));
+    app.get("/test", (c) => {
+      capturedMint = c.get("mintCsrfToken");
+      return c.text("ok");
+    });
+    await app.request("/test");
+    expect(typeof capturedMint).toBe("function");
+  });
+
+  it("token minted with mintCsrfToken for a specific path validates on that path", async () => {
+    let capturedMint: ((path: string) => Promise<string>) | undefined;
+    const app = new Hono<CsrfVariables>();
+    app.use("*", csrfProtection({ secret: key }));
+    app.get("/contact", (c) => {
+      capturedMint = c.get("mintCsrfToken");
+      return c.text("ok");
+    });
+    app.post("/api/contact", (c) => c.text("submitted"));
+
+    await app.request("/contact");
+    const apiToken = await capturedMint!("/api/contact");
+    const res = await app.request("/api/contact", {
+      method: "POST",
+      headers: { "X-CSRF-Token": apiToken },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("submitted");
+  });
+
+  it("POST with _csrf form field — action handler reuses cached parseFormData", async () => {
+    let captured: string | null = null;
+    const app = new Hono<CsrfVariables>();
+    app.use("*", csrfProtection({ secret: key }));
+    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
+    app.post("/test", async (c) => {
+      const fd = await parseFormData(c);
+      captured = fd.get("name") as string;
+      return c.text("ok");
+    });
+
+    const getRes = await app.request("/test");
+    const token = await getRes.text();
+
+    const body = new URLSearchParams({ _csrf: token, name: "Alice" });
+    const res = await app.request("/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    expect(res.status).toBe(200);
+    expect(captured).toBe("Alice");
   });
 });
 

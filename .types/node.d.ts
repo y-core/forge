@@ -38,4 +38,5 @@ declare module "node:child_process" {
     stdio?: string | string[];
   }
   export function execSync(command: string, options?: ExecSyncOptions): Buffer | string;
+  export function execFileSync(file: string, args?: string[], options?: ExecSyncOptions): Buffer | string;
 }

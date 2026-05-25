@@ -1,5 +1,5 @@
 import type { Child, FC, JSX, PropsWithChildren } from "hono/jsx";
-import { CSRF_FIELD_DEFAULT, HONEYPOT_FIELD_DEFAULT } from "../../security/constants";
+import { CSRF_FIELD_DEFAULT, HONEYPOT_FIELD_DEFAULT } from "../../form/constants";
 
 type PrimitiveFormValue = boolean | number | string | undefined;
 

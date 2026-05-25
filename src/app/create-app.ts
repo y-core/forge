@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { escapeHtml } from "../html/escape";
+import { escapeHtml } from "../http/escape";
 import { createLogger } from "../logging/logger";
 import { makeSecurityHeaders } from "../security/headers";
 import type { AppOptions } from "./types";
@@ -16,9 +16,7 @@ export function createApp<T extends object = Record<string, unknown>>(options?: 
       return options.onError(err, c);
     }
     logger.error("Unhandled error", { error: err.message });
-    const detail = options?.isDebug?.(c)
-      ? `<p>${escapeHtml(err.message)}</p>`
-      : "<p>An unexpected error occurred.</p>";
+    const detail = options?.isDebug?.(c) ? `<p>${escapeHtml(err.message)}</p>` : "<p>An unexpected error occurred.</p>";
     return c.html(
       `<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1>${detail}</body></html>`,
       500,

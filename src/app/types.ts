@@ -1,4 +1,5 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
+import type { ReadonlyFormData } from "../form/types";
 import type { Logger } from "../logging/types";
 import type { RouteAction, RouteView } from "../router/types";
 import type { SecurityHeadersOptions } from "../security/types";
@@ -33,7 +34,7 @@ export interface PageDefinition<
 }
 
 export interface ActionDefinition<T, E extends Env = Env> {
-  parse: (formData: FormData) => T;
+  parse: (formData: ReadonlyFormData) => T;
   validate: (data: T) => ValidationResult<T>;
   handle: (data: T, c: Context<E>) => Response | Promise<Response>;
   middleware?: MiddlewareHandler<E> | MiddlewareHandler<E>[];

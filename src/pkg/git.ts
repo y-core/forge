@@ -1,9 +1,9 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { ReleaseError } from "./types";
 
 export function gitExec(args: string[], cwd: string): string {
   try {
-    const result = execSync(`git ${args.join(" ")}`, { cwd, encoding: "utf-8" });
+    const result = execFileSync("git", args, { cwd, encoding: "utf-8" });
     return (result as string).trim();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

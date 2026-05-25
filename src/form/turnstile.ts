@@ -1,9 +1,9 @@
-import type { TurnstileResult, TurnstileVerifyOptions } from "./types";
+import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "./types";
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 export async function verifyTurnstile(
-  formData: FormData,
+  formData: ReadonlyFormData,
   secretKey: string,
   tokenField = "cf-turnstile-response",
   remoteIp?: string,
