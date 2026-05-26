@@ -13,8 +13,10 @@ declare module "bun:test" {
     mock: { calls: Parameters<T>[]; results: { type: "return" | "throw"; value: ReturnType<T> }[] };
     mockImplementation(fn: T): this;
     mockReturnValue(value: ReturnType<T>): this;
+    mockResolvedValue(value: Awaited<ReturnType<T>>): this;
     mockClear(): this;
     mockReset(): this;
+    mockRestore(): this;
   }
 
   export const mock: {
@@ -22,6 +24,11 @@ declare module "bun:test" {
     module(id: string, factory: () => any): void | Promise<void>;
     restore(): void;
   };
+
+  export function spyOn<T extends object, K extends keyof T>(
+    object: T,
+    method: K,
+  ): Mock<T[K] extends AnyFn ? T[K] : AnyFn>;
 
   export function expect(value?: any): any;
 

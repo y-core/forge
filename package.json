@@ -26,12 +26,33 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
-    "@typescript/native-preview": "^7.0.0-dev.20260517.1"
+    "@typescript/native-preview": "^7.0.0-dev.20260517.1",
+    "esbuild": "^0.25.0"
+  },
+  "peerDependencies": {
+    "esbuild": ">=0.20.0"
+  },
+  "peerDependenciesMeta": {
+    "esbuild": {
+      "optional": true
+    }
   },
   "exports": {
     "./app": {
       "types": "./src/app/mod.ts",
       "import": "./src/app/mod.ts"
+    },
+    "./assets": {
+      "types": "./src/assets/mod.ts",
+      "import": "./src/assets/mod.ts"
+    },
+    "./assets/build": {
+      "types": "./src/assets/build/mod.ts",
+      "import": "./src/assets/build/mod.ts"
+    },
+    "./assets/manifest": {
+      "types": "./src/assets/manifest/mod.ts",
+      "import": "./src/assets/manifest/mod.ts"
     },
     "./cli": {
       "types": "./src/cli/mod.ts",
@@ -105,6 +126,7 @@
   "files": [
     "scripts/",
     "src/app/",
+    "src/assets/",
     "src/cli/",
     "src/form/",
     "src/http/",
