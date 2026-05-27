@@ -41,7 +41,7 @@ describe("csrfProtection middleware", () => {
 
   function makeApp() {
     const app = new Hono<CsrfVariables>();
-    app.use("*", csrfProtection({ secret: key }));
+    app.use("*", csrfProtection({ secret: () => key }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", (c) => c.text("ok"));
     return app;
@@ -104,7 +104,7 @@ describe("csrfProtection middleware", () => {
 
   it("respects custom headerName option", async () => {
     const app = new Hono<CsrfVariables>();
-    app.use("*", csrfProtection({ secret: key, headerName: "X-My-Token" }));
+    app.use("*", csrfProtection({ secret: () => key, headerName: "X-My-Token" }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", (c) => c.text("ok"));
 
@@ -121,7 +121,7 @@ describe("csrfProtection middleware", () => {
   it("GET sets mintCsrfToken on context", async () => {
     let capturedMint: ((path: string) => Promise<string>) | undefined;
     const app = new Hono<CsrfVariables>();
-    app.use("*", csrfProtection({ secret: key }));
+    app.use("*", csrfProtection({ secret: () => key }));
     app.get("/test", (c) => {
       capturedMint = c.get("mintCsrfToken");
       return c.text("ok");
@@ -133,7 +133,7 @@ describe("csrfProtection middleware", () => {
   it("token minted with mintCsrfToken for a specific path validates on that path", async () => {
     let capturedMint: ((path: string) => Promise<string>) | undefined;
     const app = new Hono<CsrfVariables>();
-    app.use("*", csrfProtection({ secret: key }));
+    app.use("*", csrfProtection({ secret: () => key }));
     app.get("/contact", (c) => {
       capturedMint = c.get("mintCsrfToken");
       return c.text("ok");
@@ -153,7 +153,7 @@ describe("csrfProtection middleware", () => {
   it("POST with _csrf form field — action handler reuses cached parseFormData", async () => {
     let captured: string | null = null;
     const app = new Hono<CsrfVariables>();
-    app.use("*", csrfProtection({ secret: key }));
+    app.use("*", csrfProtection({ secret: () => key }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", async (c) => {
       const fd = await parseFormData(c);
@@ -172,6 +172,62 @@ describe("csrfProtection middleware", () => {
     });
     expect(res.status).toBe(200);
     expect(captured).toBe("Alice");
+  });
+});
+
+describe("csrfProtection middleware with typed resolver", () => {
+  it("resolver receives typed context with custom Bindings", async () => {
+    type TestEnv = {
+      Bindings: { MY_SECRET: string };
+      Variables: CsrfVariables["Variables"];
+    };
+
+    let capturedSecret: string | undefined;
+    const key = await importCsrfKey(HEX_SECRET);
+
+    const app = new Hono<TestEnv>();
+    app.use("*", csrfProtection<TestEnv>({
+      secret: async (c) => {
+        capturedSecret = c.env.MY_SECRET;
+        return key;
+      },
+    }));
+    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
+
+    const res = await app.request("/test", undefined, { MY_SECRET: "test-value" });
+    expect(res.status).toBe(200);
+    expect(capturedSecret).toBe("test-value");
+  });
+});
+
+describe("csrfProtection middleware with resolver secret", () => {
+  it("resolves key via function, mints token on GET, validates on POST, and caches the key", async () => {
+    let callCount = 0;
+    const key = await importCsrfKey(HEX_SECRET);
+
+    const app = new Hono<CsrfVariables>();
+    app.use("*", csrfProtection({
+      secret: async (_c) => {
+        callCount++;
+        return key;
+      },
+    }));
+    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
+    app.post("/test", (c) => c.text("ok"));
+
+    const getRes = await app.request("/test");
+    expect(getRes.status).toBe(200);
+    const token = await getRes.text();
+    expect(token).toContain(".");
+
+    const postRes = await app.request("/test", {
+      method: "POST",
+      headers: { "X-CSRF-Token": token },
+    });
+    expect(postRes.status).toBe(200);
+    expect(await postRes.text()).toBe("ok");
+
+    expect(callCount).toBe(1);
   });
 });
 

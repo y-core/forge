@@ -1,3 +1,5 @@
+import type { Context, Env } from "hono";
+
 export interface ReadonlyFormData {
   get(name: string): FormDataEntryValue | null;
   getAll(name: string): FormDataEntryValue[];
@@ -47,3 +49,6 @@ export type CsrfVariables = {
 export type CsrfResult =
   | { ok: true }
   | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "future-timestamp" | "path-mismatch" | "invalid-signature" };
+
+/** A function that resolves a CSRF secret key from the request context. @public */
+export type CsrfSecretResolver<E extends Env = Env> = (c: Context<E>) => CryptoKey | Promise<CryptoKey>;

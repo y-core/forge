@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { v } from "../validation/mod";
-import { resolveBindings, type ValidatedEnv, validateEnv } from "./env";
+import { validateBindings, validateEnv } from "./env";
 
 const schema = v.object({
   DATABASE_URL: v.string(),
@@ -28,30 +28,53 @@ describe("validateEnv", () => {
   });
 });
 
-describe("resolveBindings", () => {
+describe("validateBindings", () => {
   const simpleSchema = v.object({ DATABASE_URL: v.string() });
-  type SimpleEnv = { DATABASE_URL: string };
 
-  it("makes the validated env available via c.get('bindings')", async () => {
-    const app = new Hono<ValidatedEnv<SimpleEnv>>();
-    app.use("*", resolveBindings(simpleSchema));
-    app.get("/", (c) => c.text(c.get("bindings").DATABASE_URL));
+  it("calls next() when env is valid", async () => {
+    const app = new Hono<{ Bindings: { DATABASE_URL: string } }>();
+    app.use("*", validateBindings(simpleSchema));
+    app.get("/", (c) => c.text(c.env.DATABASE_URL));
     const res = await app.request("/", {}, { DATABASE_URL: "postgres://test/db" });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("postgres://test/db");
   });
 
-  it("applies valibot transformations — c.get('bindings') reflects schema output, not raw env", async () => {
-    const transformSchema = v.object({
-      DATABASE_URL: v.string(),
-      PORT: v.optional(v.pipe(v.string(), v.transform(Number))),
+  it("returns 500 when env is invalid (handler is never reached)", async () => {
+    const app = new Hono();
+    app.use("*", validateBindings(simpleSchema));
+    let handlerReached = false;
+    app.get("/", (c) => {
+      handlerReached = true;
+      return c.text("ok");
     });
-    type Parsed = { DATABASE_URL: string; PORT?: number };
-    const app = new Hono<ValidatedEnv<Parsed>>();
-    app.use("*", resolveBindings(transformSchema));
-    app.get("/", (c) => c.text(String(typeof c.get("bindings").PORT)));
-    const res = await app.request("/", {}, { DATABASE_URL: "x", PORT: "8080" });
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("number");
+    const res = await app.request("/", {}, {});
+    expect(res.status).toBe(500);
+    expect(handlerReached).toBe(false);
+  });
+
+  it("re-validates when env reference changes", async () => {
+    const app = new Hono<{ Bindings: { DATABASE_URL: string } }>();
+    app.use("*", validateBindings(simpleSchema));
+    app.get("/", (c) => c.text(c.env.DATABASE_URL));
+
+    const res1 = await app.request("/", {}, { DATABASE_URL: "first" });
+    expect(await res1.text()).toBe("first");
+
+    const res2 = await app.request("/", {}, { DATABASE_URL: "second" });
+    expect(await res2.text()).toBe("second");
+  });
+
+  it("does not set any context variables", async () => {
+    const app = new Hono<{ Bindings: { DATABASE_URL: string } }>();
+    app.use("*", validateBindings(simpleSchema));
+    let bindingsValue: unknown = "not-set";
+    app.get("/", (c) => {
+      // biome-ignore lint/suspicious/noExplicitAny: intentional — verifying the key was never set
+      bindingsValue = (c as any).get("bindings");
+      return c.text("ok");
+    });
+    await app.request("/", {}, { DATABASE_URL: "postgres://test/db" });
+    expect(bindingsValue).toBeUndefined();
   });
 });

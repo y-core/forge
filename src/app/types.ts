@@ -5,10 +5,10 @@ import type { RouteAction, RouteView } from "../router/types";
 import type { SecurityHeadersOptions } from "../security/types";
 import type { ValidationResult } from "../validation/types";
 
-export interface AppOptions<T extends object = Record<string, unknown>> {
+export interface AppOptions<E extends Env = Env> {
   security?: SecurityHeadersOptions;
-  isDebug?: (c: Context<{ Bindings: T }>) => boolean;
-  onError?: (error: Error, c: Context<{ Bindings: T }>) => Response | Promise<Response>;
+  isDebug?: (c: Context<E>) => boolean;
+  onError?: (error: Error, c: Context<E>) => Response | Promise<Response>;
   /** Custom logger injected into the app error handler. Defaults to `createLogger("app")`. */
   logger?: Logger;
 }
@@ -40,6 +40,10 @@ export interface ActionDefinition<T, E extends Env = Env> {
   middleware?: MiddlewareHandler<E> | MiddlewareHandler<E>[];
   onValidationError?: (errors: string[], c: Context<E>) => Response | Promise<Response>;
   onError?: (error: Error, c: Context<E>) => Response | Promise<Response>;
+}
+
+export interface AssetsFetcher {
+  fetch(req: Request): Promise<Response>;
 }
 
 export interface AssetOptions<E extends Env = Env> {

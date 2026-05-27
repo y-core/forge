@@ -1,15 +1,13 @@
-import type { Context } from "hono";
+import type { Context, Env } from "hono";
 import type { HealthCheckResult } from "./types";
 
-type CheckFn<T extends object = Record<string, unknown>> = (
-  c: Context<{ Bindings: T }>,
+type CheckFn<E extends Env = Env> = (
+  c: Context<E>,
 ) => boolean | Promise<boolean>;
 
 /** Returns a route handler that runs named check functions concurrently and responds with JSON health status. @public */
-export function healthCheck<T extends object = Record<string, unknown>>(
-  checks: Record<string, CheckFn<T>>,
-) {
-  return async (c: Context<{ Bindings: T }>): Promise<Response> => {
+export function healthCheck<E extends Env = Env>(checks: Record<string, CheckFn<E>>) {
+  return async (c: Context<E>): Promise<Response> => {
     const entries = Object.entries(checks);
     // Promise.resolve().then wraps each call so synchronous throws become rejections,
     // which Promise.allSettled can then handle without aborting the batch.

@@ -1,22 +1,10 @@
 import type { MiddlewareHandler } from "hono";
 import { v } from "../validation/mod";
 
-/**
- * Hono env type that adds the validated bindings variable. Merge with your own
- * `{ Bindings: YourRawEnv }` to get typed `c.get("bindings")` access.
- * Does NOT type `c.env` — that stays whatever Bindings type you declare.
+/** Validates an env object against a valibot schema; throws a descriptive error on failure.
  * @public
  */
-export type ValidatedEnv<T extends object> = {
-  Bindings: Record<string, unknown>;
-  Variables: { bindings: Readonly<T> };
-};
-
-/** Validates an env object against a valibot schema; throws a descriptive error on failure. @public */
-export function validateEnv<T>(
-  env: unknown,
-  schema: v.BaseSchema<unknown, T, v.BaseIssue<unknown>>,
-): T {
+export function validateEnv<T>(env: unknown, schema: v.BaseSchema<unknown, T, v.BaseIssue<unknown>>): T {
   const result = v.safeParse(schema, env);
   if (!result.success) {
     const issues = result.issues
@@ -28,19 +16,19 @@ export function validateEnv<T>(
 }
 
 /**
- * Middleware that validates and caches Cloudflare Worker bindings on first request,
- * then exposes the validated (and transformed) result via `c.get("bindings")`.
+ * Middleware that validates Cloudflare Worker bindings on first request (or when the env
+ * reference changes). Throws on failure; does not modify or store the env — use `c.env` directly.
+ * Cache is keyed by `c.env` object identity: re-validates only when the env reference changes,
+ * which allows tests to pass different env objects per request.
  * @public
  */
-export function resolveBindings<T extends object>(
-  schema: v.BaseSchema<unknown, T, v.BaseIssue<unknown>>,
-): MiddlewareHandler<ValidatedEnv<T>> {
-  let cached: Readonly<T> | undefined;
+export function validateBindings(schema: v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>): MiddlewareHandler {
+  let cachedEnvRef: unknown;
   return async (c, next) => {
-    if (!cached) {
-      cached = Object.freeze(validateEnv(c.env, schema));
+    if (c.env !== cachedEnvRef) {
+      validateEnv(c.env, schema);
+      cachedEnvRef = c.env;
     }
-    c.set("bindings", cached);
     await next();
   };
 }

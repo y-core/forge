@@ -61,7 +61,7 @@ describe("healthCheck", () => {
 
   it("passes context to check functions", async () => {
     const app = new Hono<{ Bindings: { MY_VAR?: string } }>();
-    app.get("/health", healthCheck<{ MY_VAR?: string }>({
+    app.get("/health", healthCheck<{ Bindings: { MY_VAR?: string } }>({
       myVar: (c) => !!c.env.MY_VAR,
     }));
     const res = await app.request("/health", {}, { MY_VAR: "present" });

@@ -1,7 +1,7 @@
-import type { MiddlewareHandler } from "hono";
+import type { Context, Env, MiddlewareHandler } from "hono";
 import { CSRF_FIELD_DEFAULT } from "./constants";
 import { parseFormData } from "./parse-form-data";
-import type { CsrfResult, CsrfVariables } from "./types";
+import type { CsrfResult, CsrfSecretResolver, CsrfVariables } from "./types";
 
 const CLOCK_SKEW_MS = 30_000;
 
@@ -128,21 +128,28 @@ export async function verifyCsrfToken(
 }
 
 /** Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public */
-export function csrfProtection(options: {
-  secret: CryptoKey;
+export function csrfProtection<E extends Env = Env>(options: {
+  secret: CsrfSecretResolver<E>;
   tokenField?: string;
   headerName?: string;
-}): MiddlewareHandler<CsrfVariables> {
+}): MiddlewareHandler<E> {
   const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
+
+  let resolvedKey: CryptoKey | undefined;
+  const resolveKey = async (c: Context<E>): Promise<CryptoKey> => {
+    if (!resolvedKey) resolvedKey = await secret(c);
+    return resolvedKey;
+  };
 
   return async (c, next) => {
     const method = c.req.method.toUpperCase();
+    const key = await resolveKey(c);
 
-    c.set("mintCsrfToken", (path: string) => createCsrfToken(secret, path));
+    const csrfContext = c as unknown as Context<CsrfVariables>;
+    csrfContext.set("mintCsrfToken", (path: string) => createCsrfToken(key, path));
 
     if (method === "GET" || method === "HEAD") {
-      const token = await createCsrfToken(secret, c.req.path);
-      c.set("csrfToken", token);
+      csrfContext.set("csrfToken", await createCsrfToken(key, c.req.path));
       return next();
     }
 
@@ -158,7 +165,7 @@ export function csrfProtection(options: {
       }
     }
 
-    const result = await verifyCsrfToken(secret, token ?? "", c.req.path);
+    const result = await verifyCsrfToken(key, token ?? "", c.req.path);
     if (!result.ok) {
       return c.text("Forbidden", 403);
     }

@@ -4,4 +4,4 @@ export { isHoneypotFilled } from "./honeypot";
 export { parseFormData } from "./parse-form-data";
 export { readFields, readTextField } from "./read";
 export { verifyTurnstile } from "./turnstile";
-export type { CsrfResult, CsrfVariables, FormFieldReader, ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "./types";
+export type { CsrfResult, CsrfSecretResolver, CsrfVariables, FormFieldReader, ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "./types";
