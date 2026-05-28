@@ -1,20 +1,25 @@
 import { createSignal, effect, type ReadonlySignal } from "./signal";
 
+declare global {
+  interface Window {
+    turnstile?: TurnstileAPI;
+  }
+}
+
 export interface TurnstileOptions {
   widgetSelector?: string;
   submitSelector?: string;
   formSelector?: string;
   resultSelector?: string;
+  /** "reset" (default) starts a new challenge immediately. "remove" tears down the widget. */
+  onSuccess?: "reset" | "remove";
 }
 
 interface TurnstileAPI {
-  reset(el: HTMLElement): void;
-}
-
-declare global {
-  interface Window {
-    turnstile?: TurnstileAPI;
-  }
+  render(container: string | HTMLElement, params?: Record<string, unknown>): string;
+  reset(el: string | HTMLElement): void;
+  remove(widgetIdOrContainer: string | HTMLElement): void;
+  getResponse(el?: string | HTMLElement): string | undefined;
 }
 
 const mountedTurnstiles = new WeakMap<HTMLElement, () => void>();
@@ -24,6 +29,7 @@ let callbackCount = 0;
 export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: TurnstileOptions): () => void {
   const {
     formSelector = "[data-ref='contact-form']",
+    onSuccess = "reset",
     resultSelector = "[data-ref='contact-result']",
     submitSelector = "[data-ref='contact-submit']",
     widgetSelector = "[data-ref='turnstile']",
@@ -31,7 +37,7 @@ export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: Turnst
 
   const widget = document.querySelector<HTMLElement>(widgetSelector);
   if (!widget) {
-    return () => {};
+    return () => { };
   }
 
   const existing = mountedTurnstiles.get(widget);
@@ -46,6 +52,9 @@ export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: Turnst
   const verifiedName = `${callbackBase}_verified`;
   const expiredName = `${callbackBase}_expired`;
   const globals = globalThis as Record<string, unknown>;
+  let removed = false;
+
+  const sitekey = widget.getAttribute("data-sitekey") ?? "";
 
   const resetWidget = () => {
     if (typeof window.turnstile?.reset === "function") {
@@ -53,16 +62,39 @@ export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: Turnst
     }
   };
 
+  const removeWidget = () => {
+    if (typeof window.turnstile?.remove === "function") {
+      window.turnstile.remove(widget);
+    }
+    removed = true;
+  };
+
+  const renderWidget = () => {
+    if (typeof window.turnstile?.render !== "function") {
+      return;
+    }
+    window.turnstile.render(widget, {
+      sitekey,
+      callback: verifiedName,
+      "expired-callback": expiredName,
+      theme: isDark.value ? "dark" : "light",
+      size: widget.getAttribute("data-size") ?? "normal",
+    });
+    removed = false;
+  };
+
   const disposeTheme = effect(() => {
     widget.setAttribute("data-theme", isDark.value ? "dark" : "light");
-    resetWidget();
+    if (!removed) {
+      resetWidget();
+    }
   });
 
   const disposeSubmit = submitButton
     ? effect(() => {
-        submitButton.disabled = !verified.value;
-      })
-    : () => {};
+      submitButton.disabled = !verified.value;
+    })
+    : () => { };
 
   globals[verifiedName] = () => {
     verified.value = true;
@@ -83,15 +115,34 @@ export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: Turnst
 
     form?.reset();
     verified.value = false;
-    resetWidget();
+
+    if (onSuccess === "remove") {
+      removeWidget();
+    } else {
+      resetWidget();
+    }
+  };
+
+  const onFormFocusin = () => {
+    if (!removed) {
+      return;
+    }
+    renderWidget();
   };
 
   document.addEventListener("htmx:afterSwap", onAfterSwap);
+
+  if (onSuccess === "remove" && form) {
+    form.addEventListener("focusin", onFormFocusin);
+  }
 
   const cleanup = () => {
     disposeTheme();
     disposeSubmit();
     document.removeEventListener("htmx:afterSwap", onAfterSwap);
+    if (onSuccess === "remove" && form) {
+      form.removeEventListener("focusin", onFormFocusin);
+    }
     delete globals[verifiedName];
     delete globals[expiredName];
     mountedTurnstiles.delete(widget);

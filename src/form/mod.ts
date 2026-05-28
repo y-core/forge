@@ -1,3 +1,5 @@
+export type { CsrfConfig, TurnstileConfig } from "./config";
+export { CsrfConfigSchema, TurnstileConfigSchema } from "./config";
 export { CSRF_FIELD_DEFAULT, HONEYPOT_FIELD_DEFAULT } from "./constants";
 export { createCsrfToken, csrfProtection, importCsrfKey, verifyCsrfToken } from "./csrf";
 export { isHoneypotFilled } from "./honeypot";

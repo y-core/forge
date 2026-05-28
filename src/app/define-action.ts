@@ -1,4 +1,5 @@
 import type { Env } from "hono";
+import type { InferConfig } from "../config/config";
 import { parseFormData } from "../form/parse-form-data";
 import type { ReadonlyFormData } from "../form/types";
 import { renderError, renderValidationErrors } from "../http/fragment";
@@ -17,7 +18,7 @@ export function defineAction<T, E extends Env = Env>(def: ActionDefinition<T, E>
 
   return {
     middleware: middleware.length > 0 ? middleware : undefined,
-    action: async (c) => {
+    action: async (c, config: InferConfig<E>) => {
       let formData: ReadonlyFormData;
       try {
         formData = await parseFormData(c);
@@ -40,7 +41,7 @@ export function defineAction<T, E extends Env = Env>(def: ActionDefinition<T, E>
       }
 
       try {
-        return await def.handle(validation.data, c);
+        return await def.handle(validation.data, c, config);
       } catch (err) {
         if (def.onError) return def.onError(toError(err), c);
         return htmlResponse(renderError("Something went wrong. Please try again."), 500);

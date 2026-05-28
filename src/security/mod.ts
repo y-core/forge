@@ -7,4 +7,5 @@ export { originGuard, verifyOrigin } from "./origin";
 export type { RateLimitBinding, RateLimitOptions } from "./rate-limit";
 export { rateLimit } from "./rate-limit";
 export { timingSafeEqual, timingSafeEqualBytes } from "./timing-safe-equal";
-export type { OriginResult, SecurityHeadersOptions } from "./types";
+export type { BaseUrlConfig, OriginResult, ParsedUrl, SecurityHeadersOptions } from "./types";
+export { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";

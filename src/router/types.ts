@@ -1,4 +1,7 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
+import type { InferConfig } from "../config/config";
+
+export type { InferConfig } from "../config/config";
 
 export interface RouteRenderState<LoaderData = unknown, ActionData = unknown> {
   data: LoaderData;
@@ -8,14 +11,17 @@ export interface RouteRenderState<LoaderData = unknown, ActionData = unknown> {
 
 export type RouteLoader<E extends Env = Env, LoaderData = unknown> = (
   c: Context<E>,
+  config: InferConfig<E>,
 ) => LoaderData | Response | Promise<LoaderData | Response>;
 
 export type RouteAction<E extends Env = Env, ActionData = unknown> = (
   c: Context<E>,
+  config: InferConfig<E>,
 ) => ActionData | Response | Promise<ActionData | Response>;
 
 export type RouteView<E extends Env = Env, LoaderData = unknown, ActionData = unknown> = (
   c: Context<E>,
+  config: InferConfig<E>,
   state: RouteRenderState<LoaderData, ActionData>,
 ) => Response | Promise<Response>;
 

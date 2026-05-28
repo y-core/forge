@@ -42,6 +42,10 @@
       "types": "./src/app/mod.ts",
       "import": "./src/app/mod.ts"
     },
+    "./config": {
+      "types": "./src/config/mod.ts",
+      "import": "./src/config/mod.ts"
+    },
     "./assets": {
       "types": "./src/assets/mod.ts",
       "import": "./src/assets/mod.ts"
@@ -127,6 +131,7 @@
     "scripts/",
     "src/app/",
     "src/assets/",
+    "src/config/",
     "src/cli/",
     "src/form/",
     "src/http/",

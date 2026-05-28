@@ -16,7 +16,7 @@ describe("definePage", () => {
     const app = makeApp(
       definePage({
         loader: () => ({ message: "hello" }),
-        view: (c, state) => c.text((state.data as { message: string }).message),
+        view: (c, _config, state) => c.text((state.data as { message: string }).message),
       }),
     );
 
@@ -29,7 +29,7 @@ describe("definePage", () => {
     const app = makeApp(
       definePage({
         action: () => ({ ok: true }),
-        view: (c, state) => c.text(String((state.actionData as { ok: boolean }).ok)),
+        view: (c, _config, state) => c.text(String((state.actionData as { ok: boolean }).ok)),
       }),
     );
 

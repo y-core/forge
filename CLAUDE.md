@@ -49,30 +49,34 @@ Forge acts as a **facade** for its external dependencies (`hono/jsx` via `jsx`, 
 
 ### Namespace classification
 
-**Leaf namespaces** (zero cross-namespace dependencies): `cli`, `form`, `http`, `jsx`, `logging`, `result`, `router`, `session`, `ui/client`, `validation`
+**Leaf namespaces** (zero cross-namespace dependencies): `assets`, `assets/build`, `assets/manifest`, `cli`, `config`, `form`, `http`, `jsx`, `logging`, `result`, `router`, `session`, `ui/client`, `validation`
 
 **Integration namespaces** (compose across other namespaces):
 - `app` — imports from `form`, `http`, `logging`, `result`, `router`, `security`, `validation`
-- `security` — imports from `form` (parseFormData, ReadonlyFormData, constants), `logging` (createLogger in rate-limit)
+- `security` — imports from `logging` (createLogger in rate-limit)
 - `ui/core` — imports from `form` (CSRF/honeypot field name constants)
 - `pkg` — imports from `cli`
 
-### Namespace map (13 namespaces)
+### Namespace map (18 namespaces)
 
 | Import path | Category | Concern | Key exports |
 |---|---|---|---|
-| `@y-core/forge/app` | Integration | App bootstrap & lifecycle | `createApp`, `definePage`, `defineAction`, `healthCheck`, `validateEnv`, `serveAssets` |
+| `@y-core/forge/app` | Integration | App bootstrap & lifecycle | `createApp`, `definePage`, `defineAction`, `healthCheck`, `validateEnv`, `validateBindings`, `serveAssets` |
+| `@y-core/forge/assets` | Leaf | Asset config & metadata | `defineAssetsConfig`, `loadConfig`, `AssetsConfig` |
+| `@y-core/forge/assets/build` | Leaf | Asset build pipeline | `buildAll`, `generateManifest`, `buildCSS`, `buildJS`, `buildSprites` |
+| `@y-core/forge/assets/manifest` | Leaf | Manifest reading & sprite registry | `createManifest`, `createSpriteRegistry` |
 | `@y-core/forge/cli` | Leaf | CLI command framework | `createCommand`, `parseArgs`, `execute` |
-| `@y-core/forge/form` | Leaf | Form parsing & field conventions | `readFields`, `parseFormData`, `isHoneypotFilled`, `verifyTurnstile`, `CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT` |
-| `@y-core/forge/http` | Leaf | HTTP output — responses, headers, escaping | `html`, `escapeHtml`, `htmlResponse`, `renderSuccess`, `renderError`, `CacheControl`, `ContentType`, `Accept`, `SetCookie`, `Vary`, etc. |
+| `@y-core/forge/config` | Leaf | Environment config resolution | `Config`, `env`, `applyMapping`, `optionalGroup`, `resolveConfig`, `registerConfig`, `retrieveConfig` |
+| `@y-core/forge/form` | Leaf | Form parsing, CSRF protection & bot detection | `readFields`, `readTextField`, `parseFormData`, `isHoneypotFilled`, `verifyTurnstile`, `csrfProtection`, `importCsrfKey`, `createCsrfToken`, `verifyCsrfToken`, `CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT` |
+| `@y-core/forge/http` | Leaf | HTTP output — responses, headers, escaping | `html`, `escapeHtml`, `htmlResponse`, `renderSuccess`, `renderError`, `renderValidationErrors`, `CacheControl`, `ContentType`, `Accept`, `SetCookie`, `Vary` |
 | `@y-core/forge/jsx` | Leaf | JSX runtime (facade for hono/jsx) | `Fragment`, `createContext`, `useContext`, `memo`, `FC`, `JSX` |
 | `@y-core/forge/logging` | Leaf | Structured logging | `createLogger`, `consoleChannel` |
 | `@y-core/forge/pkg` | Integration | Release & versioning tooling | `createReleaseCommand`, `parseSemVer`, `bumpSemVer` |
 | `@y-core/forge/result` | Leaf | Result monad | `result`, `toError`, `Result` |
 | `@y-core/forge/router` | Leaf | Declarative route config | `route`, `index`, `layout`, `prefix`, `applyRoutes` |
-| `@y-core/forge/security` | Integration | Transport-layer request hardening | `defineSecurity`, `makeSecurityHeaders`, `NONCE`, `csrfProtection`, `originGuard`, `rateLimit` |
-| `@y-core/forge/session` | Leaf | Session + cookie management | `sessionMiddleware`, `createCookieSessionStorage`, `createCookie`, `createSignedCookie` |
-| `@y-core/forge/ui` | Integration | Server-side JSX components | `Form`, `Field`, `Input`, `Button`, `Alert`, `Card`, `Icon`, `Select` |
+| `@y-core/forge/security` | Integration | Transport-layer request hardening | `makeSecurityHeaders`, `NONCE`, `crossOriginProtection`, `originGuard`, `rateLimit`, `requireFormContentType`, `requireHxRequest`, `timingSafeEqual`, `verifyOrigin` |
+| `@y-core/forge/session` | Leaf | Session + cookie management | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
+| `@y-core/forge/ui` | Integration | Server-side JSX components | `Form`, `Field`, `FieldLabel`, `FieldContent`, `FieldError`, `FieldGroup`, `Input`, `Textarea`, `Select`, `SelectOption`, `Button`, `Alert`, `AlertTitle`, `AlertDescription`, `Card`, `CardHeader`, `CardContent`, `Icon`, `cn`, `cva` |
 | `@y-core/forge/ui/client` | Leaf | Browser-side UI scripts | `mountNav`, `mountTheme`, `lazy`, `createSignal`, `mountTurnstile` |
 | `@y-core/forge/validation` | Leaf | Schema validation (facade for valibot) | `v`, `ValidationResult` |
 
@@ -98,7 +102,7 @@ Components requiring client-side JS export only SSR markup from `ui/core`; clien
 
 ### `app` — bootstrap and pipeline builders
 
-`app` contains bootstrap and lifecycle (`createApp`, `resolveBindings`, `validateEnv`, `healthCheck`, `serveAssets`). The `definePage`/`defineAction` functions are pipeline builders. If a third pipeline variant is needed, extract all pipeline builders into a new `handler` namespace.
+`app` contains bootstrap and lifecycle (`createApp`, `validateBindings`, `validateEnv`, `healthCheck`, `serveAssets`). The `definePage`/`defineAction` functions are pipeline builders. If a third pipeline variant is needed, extract all pipeline builders into a new `handler` namespace.
 
 ### `http` — all HTTP output concerns
 

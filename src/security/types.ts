@@ -2,6 +2,17 @@ import type { ContentSecurityPolicyOptionHandler } from "hono/secure-headers";
 
 type CspValue = (string | ContentSecurityPolicyOptionHandler)[];
 
+export interface ParsedUrl {
+  origin: string;
+  hostname: string;
+  protocol: string;
+}
+
+/** Extended parsed URL with derived allowed origins for CORS/origin checks. @public */
+export interface BaseUrlConfig extends ParsedUrl {
+  allowedOrigins: string[];
+}
+
 export interface SecurityHeadersOptions {
   scriptSrc?: CspValue;
   connectSrc?: CspValue;

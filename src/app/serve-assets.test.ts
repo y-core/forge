@@ -8,7 +8,7 @@ function makeApp(assetsResponse: Response | null) {
   const app = new Hono<{ Bindings: Bindings }>();
   app.all(
     "*",
-    serveAssets({
+    serveAssets(app, {
       notFoundView: (c) => c.html("<h1>Not found</h1>", 404),
     }),
   );

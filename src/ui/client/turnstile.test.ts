@@ -6,8 +6,15 @@ interface ListenerRegistry {
   [event: string]: EventListener[];
 }
 
+interface TurnstileMock {
+  reset: (el: unknown) => void;
+  remove: (el: unknown) => void;
+  render: (container: unknown, params?: Record<string, unknown>) => string;
+  getResponse: () => string | undefined;
+}
+
 interface GlobalMock {
-  window: { turnstile?: { reset: (el: unknown) => void } | undefined };
+  window: { turnstile?: TurnstileMock | undefined };
   document: {
     querySelector: (sel: string) => MockEl | null;
     addEventListener: (ev: string, h: EventListener) => void;
@@ -23,6 +30,7 @@ interface MockEl {
   listeners: ListenerRegistry;
   reset?: () => void;
   setAttribute: (k: string, v: string) => void;
+  getAttribute: (k: string) => string | null;
   querySelector: (sel: string) => MockEl | null;
   addEventListener: (event: string, handler: EventListener) => void;
   removeEventListener: (event: string, handler: EventListener) => void;
@@ -44,6 +52,7 @@ function makeEl(): MockEl {
     setAttribute: (k, v) => {
       attrs[k] = v;
     },
+    getAttribute: (k) => attrs[k] ?? null,
     querySelector: () => null,
     addEventListener: (event, handler) => {
       listeners[event] = [...(listeners[event] ?? []), handler];
@@ -119,6 +128,9 @@ describe("mountTurnstile", () => {
           expect(el).toBe(widgetEl);
           resetCalled += 1;
         },
+        remove: () => {},
+        render: () => "widget-id",
+        getResponse: () => undefined,
       },
     };
 
@@ -172,5 +184,147 @@ describe("mountTurnstile", () => {
     g.document.querySelector = () => null;
     const cleanup = mountTurnstile(isDarkSignal);
     expect(() => cleanup()).not.toThrow();
+  });
+
+  it("calls turnstile.remove() on success when onSuccess is 'remove'", () => {
+    formEl.reset = () => {};
+    let removeCalled = 0;
+    let resetCalled = 0;
+    g.window = {
+      turnstile: {
+        reset: () => {
+          resetCalled += 1;
+        },
+        remove: (el: unknown) => {
+          expect(el).toBe(widgetEl);
+          removeCalled += 1;
+        },
+        render: () => "widget-id",
+        getResponse: () => undefined,
+      },
+    };
+
+    const cleanup = mountTurnstile(isDarkSignal, { onSuccess: "remove" });
+    const resetBefore = resetCalled;
+
+    const verify = (globalThis as unknown as Record<string, () => void>)[
+      widgetEl.attrs["data-callback"]
+    ];
+    verify();
+
+    resultEl.querySelector = (sel: string) => (sel.includes("data-success") ? makeEl() : null);
+    resultEl.matches = (sel: string) => sel.includes("contact-result");
+
+    docListeners["htmx:afterSwap"][0](
+      new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }),
+    );
+
+    expect(removeCalled).toBe(1);
+    expect(resetCalled).toBe(resetBefore);
+    expect(submitEl.disabled).toBe(true);
+    cleanup();
+  });
+
+  it("re-renders widget on form focusin after removal", () => {
+    formEl.reset = () => {};
+    let removeCalled = 0;
+    let renderCalled = 0;
+    let renderParams: Record<string, unknown> | undefined;
+    g.window = {
+      turnstile: {
+        reset: () => {},
+        remove: () => {
+          removeCalled += 1;
+        },
+        render: (_container: unknown, params?: Record<string, unknown>) => {
+          renderCalled += 1;
+          renderParams = params;
+          return "widget-id";
+        },
+        getResponse: () => undefined,
+      },
+    };
+
+    widgetEl.attrs["data-sitekey"] = "test-key";
+    widgetEl.attrs["data-size"] = "compact";
+
+    const cleanup = mountTurnstile(isDarkSignal, { onSuccess: "remove" });
+
+    const verify = (globalThis as unknown as Record<string, () => void>)[
+      widgetEl.attrs["data-callback"]
+    ];
+    verify();
+
+    resultEl.querySelector = (sel: string) => (sel.includes("data-success") ? makeEl() : null);
+    resultEl.matches = (sel: string) => sel.includes("contact-result");
+    docListeners["htmx:afterSwap"][0](
+      new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }),
+    );
+    expect(removeCalled).toBe(1);
+
+    formEl.listeners.focusin?.[0](new Event("focusin"));
+
+    expect(renderCalled).toBe(1);
+    expect(renderParams?.sitekey).toBe("test-key");
+    expect(renderParams?.size).toBe("compact");
+    expect(renderParams?.theme).toBe("light");
+    cleanup();
+  });
+
+  it("does not re-render on focusin when not removed", () => {
+    let renderCalled = 0;
+    g.window = {
+      turnstile: {
+        reset: () => {},
+        remove: () => {},
+        render: () => {
+          renderCalled += 1;
+          return "widget-id";
+        },
+        getResponse: () => undefined,
+      },
+    };
+
+    const cleanup = mountTurnstile(isDarkSignal, { onSuccess: "remove" });
+
+    formEl.listeners.focusin?.[0](new Event("focusin"));
+
+    expect(renderCalled).toBe(0);
+    cleanup();
+  });
+
+  it("skips resetWidget in theme effect when widget is removed", () => {
+    formEl.reset = () => {};
+    let resetCalled = 0;
+    g.window = {
+      turnstile: {
+        reset: () => {
+          resetCalled += 1;
+        },
+        remove: () => {},
+        render: () => "widget-id",
+        getResponse: () => undefined,
+      },
+    };
+
+    const cleanup = mountTurnstile(isDarkSignal, { onSuccess: "remove" });
+    const resetAfterInit = resetCalled;
+
+    const verify = (globalThis as unknown as Record<string, () => void>)[
+      widgetEl.attrs["data-callback"]
+    ];
+    verify();
+
+    resultEl.querySelector = (sel: string) => (sel.includes("data-success") ? makeEl() : null);
+    resultEl.matches = (sel: string) => sel.includes("contact-result");
+    docListeners["htmx:afterSwap"][0](
+      new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }),
+    );
+
+    const resetAfterRemove = resetCalled;
+    isDarkSignal.value = true;
+    expect(resetCalled).toBe(resetAfterRemove);
+    expect(resetCalled).toBe(resetAfterInit);
+    cleanup();
   });
 });

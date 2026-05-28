@@ -1,17 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { Config } from "../config/config";
+import { applyRoutes, route } from "../router/mod";
+import { v } from "../validation/mod";
 import { createApp } from "./create-app";
 
 describe("createApp", () => {
-  it("applies security headers to every response by default", async () => {
-    const app = createApp();
-    app.get("/test", (c) => c.text("ok"));
-
-    const res = await app.request("/test");
-    expect(res.headers.get("content-security-policy")).not.toBeNull();
-    expect(res.headers.get("strict-transport-security")).not.toBeNull();
-    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
-  });
-
   it("error boundary returns 500 HTML for unhandled errors", async () => {
     const app = createApp();
     app.get("/boom", () => {
@@ -113,5 +106,24 @@ describe("createApp", () => {
     const text = await res.text();
     expect(text).toContain("An unexpected error occurred.");
     expect(text).not.toContain("secret info");
+  });
+
+  it("injects config into route handlers when a Config instance is provided", async () => {
+    type AppEnv = { Bindings: { DB_URL: string }; Config: { dbUrl: string } };
+
+    const app = createApp<AppEnv>({
+      config: new Config({ dbUrl: { __env: "DB_URL" } }, v.object({ dbUrl: v.string() })),
+    });
+
+    applyRoutes(app, [
+      route("/config-test", {
+        loader: (_c, config) => ({ url: config?.dbUrl }),
+        view: (c, _config, state) => c.text((state.data as { url: string }).url),
+      }),
+    ]);
+
+    const res = await app.request("/config-test", {}, { DB_URL: "postgres://localhost/test" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("postgres://localhost/test");
   });
 });

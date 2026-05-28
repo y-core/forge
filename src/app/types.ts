@@ -1,12 +1,12 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
+import type { Config, InferConfig } from "../config/config";
 import type { ReadonlyFormData } from "../form/types";
 import type { Logger } from "../logging/types";
 import type { RouteAction, RouteView } from "../router/types";
-import type { SecurityHeadersOptions } from "../security/types";
 import type { ValidationResult } from "../validation/types";
 
 export interface AppOptions<E extends Env = Env> {
-  security?: SecurityHeadersOptions;
+  config?: Config<InferConfig<E>>;
   isDebug?: (c: Context<E>) => boolean;
   onError?: (error: Error, c: Context<E>) => Response | Promise<Response>;
   /** Custom logger injected into the app error handler. Defaults to `createLogger("app")`. */
@@ -23,7 +23,7 @@ export interface PageDefinition<
   LoaderData = unknown,
   ActionData = unknown,
 > {
-  loader?: (c: Context<E>) => LoaderData | Response | Promise<LoaderData | Response>;
+  loader?: (c: Context<E>, config: InferConfig<E>) => LoaderData | Response | Promise<LoaderData | Response>;
   action?: RouteAction<E, ActionData>;
   view: RouteView<E, LoaderData, ActionData>;
   headers?: Record<string, string>;
@@ -36,7 +36,7 @@ export interface PageDefinition<
 export interface ActionDefinition<T, E extends Env = Env> {
   parse: (formData: ReadonlyFormData) => T;
   validate: (data: T) => ValidationResult<T>;
-  handle: (data: T, c: Context<E>) => Response | Promise<Response>;
+  handle: (data: T, c: Context<E>, config: InferConfig<E>) => Response | Promise<Response>;
   middleware?: MiddlewareHandler<E> | MiddlewareHandler<E>[];
   onValidationError?: (errors: string[], c: Context<E>) => Response | Promise<Response>;
   onError?: (error: Error, c: Context<E>) => Response | Promise<Response>;
@@ -47,7 +47,7 @@ export interface AssetsFetcher {
 }
 
 export interface AssetOptions<E extends Env = Env> {
-  notFoundView: (c: Context<E>) => Response | Promise<Response>;
+  notFoundView: (c: Context<E>, config: InferConfig<E>) => Response | Promise<Response>;
 }
 
 export interface HealthCheckResult {

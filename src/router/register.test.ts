@@ -14,7 +14,7 @@ describe("applyRoutes — GET orchestration", () => {
           order.push("loader");
           return { greeting: "hello" };
         },
-        view: (c, state) => {
+        view: (c, _config, state) => {
           order.push("view");
           expect(state.method).toBe("GET");
           expect(state.data).toEqual({ greeting: "hello" });
@@ -35,7 +35,7 @@ describe("applyRoutes — GET orchestration", () => {
 
     applyRoutes(app, [
       route("/page", {
-        view: (c, state) => {
+        view: (c, _config, state) => {
           expect(state.data).toBeUndefined();
           return c.text("page");
         },
@@ -82,7 +82,7 @@ describe("applyRoutes — POST orchestration", () => {
           order.push("action");
           return { saved: true };
         },
-        view: (c, state) => {
+        view: (c, _config, state) => {
           order.push("view");
           expect(state.method).toBe("POST");
           expect(state.actionData).toEqual({ saved: true });

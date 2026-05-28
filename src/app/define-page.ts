@@ -1,4 +1,5 @@
 import type { Env } from "hono";
+import type { InferConfig } from "../config/config";
 import { CacheControl } from "../http/mod";
 import { toError } from "../result/result";
 import type { RouteModule } from "../router/types";
@@ -40,10 +41,10 @@ export function definePage<
     middleware: middleware.length > 0 ? middleware : undefined,
     ...(loader
       ? {
-          loader: async (c) => {
+          loader: async (c, config: InferConfig<E>) => {
             applyHeaders(c);
             try {
-              return await loader(c);
+              return await loader(c, config);
             } catch (err) {
               if (def.onError) return def.onError(toError(err), c);
               throw err;
@@ -53,10 +54,10 @@ export function definePage<
       : {}),
     ...(action
       ? {
-          action: async (c) => {
+          action: async (c, config: InferConfig<E>) => {
             applyHeaders(c);
             try {
-              return await action(c);
+              return await action(c, config);
             } catch (err) {
               if (def.onError) return def.onError(toError(err), c);
               throw err;
@@ -64,11 +65,11 @@ export function definePage<
           },
         }
       : {}),
-    view: async (c, state) => {
+    view: async (c, config: InferConfig<E>, state) => {
       applyHeaders(c);
 
       try {
-        return await def.view(c, state);
+        return await def.view(c, config, state);
       } catch (err) {
         if (def.onError) return def.onError(toError(err), c);
         throw err;

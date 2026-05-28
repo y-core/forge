@@ -24,44 +24,46 @@ Every namespace is single-purpose and independently useful. A module that cannot
 
 | Import path | Concern | Key exports |
 |---|---|---|
-| `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `healthCheck`, `validateEnv`, `serveAssets` |
-| `@y-core/forge/cookie` | HTTP cookie creation & signing | `createCookie`, `createSignedCookie` |
-| `@y-core/forge/form` | Form field reading & bot detection | `readFields`, `readTextField`, `isHoneypotFilled`, `verifyTurnstile` |
-| `@y-core/forge/headers` | Typed HTTP header value classes | `CacheControl`, `ContentType`, `SetCookie`, `Vary`, `Accept`, `Range`, etc. |
-| `@y-core/forge/html` | HTML output primitives | `escapeHtml`, `html`, `renderSuccess`, `renderError`, `renderValidationErrors`, `htmlResponse` |
+| `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `healthCheck`, `validateEnv`, `validateBindings`, `serveAssets` |
+| `@y-core/forge/assets` | Asset config & metadata | `defineAssetsConfig`, `loadConfig`, `AssetsConfig` |
+| `@y-core/forge/assets/build` | Asset build pipeline | `buildAll`, `generateManifest`, `buildCSS`, `buildJS`, `buildSprites` |
+| `@y-core/forge/assets/manifest` | Manifest reading & sprite registry | `createManifest`, `createSpriteRegistry` |
+| `@y-core/forge/config` | Environment config resolution | `Config`, `env`, `applyMapping`, `optionalGroup`, `resolveConfig`, `registerConfig`, `retrieveConfig` |
+| `@y-core/forge/form` | Form parsing, CSRF protection & bot detection | `readFields`, `readTextField`, `parseFormData`, `isHoneypotFilled`, `verifyTurnstile`, `csrfProtection`, `importCsrfKey`, `createCsrfToken`, `verifyCsrfToken`, `CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT` |
+| `@y-core/forge/http` | HTTP output — responses, headers, escaping | `html`, `escapeHtml`, `htmlResponse`, `renderSuccess`, `renderError`, `renderValidationErrors`, `CacheControl`, `ContentType`, `Accept`, `SetCookie`, `Vary` |
+| `@y-core/forge/jsx` | JSX runtime (facade for hono/jsx) | `Fragment`, `createContext`, `useContext`, `memo`, `ErrorBoundary`, `Suspense`, `FC`, `JSX` |
+| `@y-core/forge/logging` | Structured logging | `createLogger`, `consoleChannel` |
+| `@y-core/forge/result` | Result monad | `result`, `toError`, `Result` |
 | `@y-core/forge/router` | Declarative route configuration | `route`, `index`, `layout`, `prefix`, `applyRoutes` |
-| `@y-core/forge/security` | Security middleware & headers | `defineSecurity`, `makeSecurityHeaders`, `NONCE`, `csrfProtection`, `originGuard`, `rateLimit`, `importCsrfKey`, `createCsrfToken`, `verifyCsrfToken`, `verifyOrigin` |
-| `@y-core/forge/session` | Session management & middleware | `sessionMiddleware`, `createCookieSessionStorage` |
-| `@y-core/forge/ui` | Server-side JSX primitives | `Form`, `Field`, `FieldContent`, `FieldLabel`, `FieldDescription`, `FieldError`, `Input`, `Textarea`, `Select`, `SelectOption`, `Button`, `Alert`, `AlertTitle`, `AlertDescription`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `Separator` |
+| `@y-core/forge/security` | Security middleware & headers | `makeSecurityHeaders`, `NONCE`, `crossOriginProtection`, `originGuard`, `rateLimit`, `requireFormContentType`, `requireHxRequest`, `timingSafeEqual`, `verifyOrigin` |
+| `@y-core/forge/session` | Session management, cookies & middleware | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
+| `@y-core/forge/ui` | Server-side JSX primitives | `Form`, `Field`, `FieldContent`, `FieldLabel`, `FieldDescription`, `FieldError`, `FieldGroup`, `Input`, `Textarea`, `Select`, `SelectOption`, `Button`, `Alert`, `AlertTitle`, `AlertDescription`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `Icon`, `cn`, `cva` |
 | `@y-core/forge/ui/client` | Browser-side controller mounts | `mountNav`, `mountTheme`, `mountTurnstile`, `loadScriptOnEvent`, `lazy` |
 | `@y-core/forge/validation` | Validation namespace and result types | `v`, `ValidationResult` |
 
 ---
 
-## `@y-core/forge/html` — HTML Output Primitives
+## `@y-core/forge/form` — Form Parsing, CSRF Protection & Bot Detection
 
-Low-level utilities for producing safe HTML strings from a Worker handler. All user-facing content must pass through `escapeHtml` before inclusion in a response.
-
-```typescript
-import { escapeHtml, html, renderSuccess, renderError, renderValidationErrors, htmlResponse } from "@y-core/forge/html";
-
-// Safe interpolation
-const safe = escapeHtml(userInput); // & < > " ' → entities
-
-// HTMX response fragments
-return htmlResponse(renderSuccess("Message sent — we'll be in touch."));
-return htmlResponse(renderError("Something went wrong. Please try again."));
-return htmlResponse(renderValidationErrors(["Name is required", "Message too short"]));
-```
-
----
-
-## `@y-core/forge/form` — Form Field Reading and Bot Detection
-
-Reads and normalises form submissions, and filters spam submissions before they reach business logic. Each concern is a separate function so you compose only what you need. CSRF protection lives in `@y-core/forge/security`.
+Reads and normalises form submissions, provides CSRF middleware and token primitives, and filters spam submissions before they reach business logic. Each concern is a separate function so you compose only what you need.
 
 ```typescript
-import { readFields, readTextField, isHoneypotFilled, verifyTurnstile } from "@y-core/forge/form";
+import {
+  csrfProtection,
+  importCsrfKey,
+  createCsrfToken,
+  readFields,
+  readTextField,
+  isHoneypotFilled,
+  verifyTurnstile,
+  CSRF_FIELD_DEFAULT,
+} from "@y-core/forge/form";
+
+// CSRF middleware — secret is resolved lazily from context at request time
+app.use("/contact", csrfProtection({ secret: async (c) => importCsrfKey(c.env.CSRF_SECRET) }));
+
+// Generate a token for embedding in a form
+const token = await createCsrfToken(await importCsrfKey(env.CSRF_SECRET), "/contact");
 
 const formData = await c.req.formData();
 
@@ -84,26 +86,57 @@ if (!result.ok) return c.text("Verification failed", 403);
 
 ---
 
-## `@y-core/forge/headers` — Typed HTTP Header Value Classes
+## `@y-core/forge/config` — Environment Config Resolution
 
-Typed constructors for common HTTP header values, re-exported from `@remix-run/headers`. Each class serialises to a spec-compliant string and provides named accessors so directive values are never stringly-typed.
+Typed, lazy configuration bound to Cloudflare Workers environment variables. `Config` resolves once on first access and caches the result for the Worker's lifetime. `env()` creates typed references to binding names; `applyMapping()` walks a nested mapping and substitutes values from `env`. `optionalGroup()` wraps a group of fields so the entire group collapses to `null` when required keys are absent.
 
 ```typescript
-import { CacheControl, ContentType, Vary } from "@y-core/forge/headers";
+import { Config, env, optionalGroup, resolveConfig } from "@y-core/forge/config";
+import { v } from "@y-core/forge/validation";
 
-new CacheControl({ maxAge: 3600, public: true }).toString();
-// → "max-age=3600, public"
+// Declare a typed config bound to env var names
+const emailConfig = new Config(
+  { apiKey: env("RESEND_API_KEY"), fromAddress: env("EMAIL_FROM") },
+  v.object({ apiKey: v.string(), fromAddress: v.pipe(v.string(), v.email()) }),
+);
 
-new ContentType({ mediaType: "text/html", charset: "utf-8" }).toString();
-// → "text/html; charset=utf-8"
+// Resolve on first use — cached for the Worker instance lifetime
+const { apiKey, fromAddress } = emailConfig.get(c.env);
 
-new Vary({ headers: ["Accept-Encoding", "Accept-Language"] }).toString();
-// → "Accept-Encoding, Accept-Language"
+// optionalGroup — whole block is null if required key is absent
+const analyticsSchema = v.object({
+  analytics: optionalGroup(
+    { siteId: v.string(), host: v.string() },
+    { required: ["siteId"], defaults: { host: "analytics.example.com" } },
+  ),
+});
+
+// Environment overrides — e.g. patch URLs in CI
+const apiConfig = new Config(
+  { apiUrl: env("API_URL") },
+  v.object({ apiUrl: v.string() }),
+  {
+    detect: (env) => env["CI"] === "true",
+    patch: (cfg) => ({ ...cfg, apiUrl: "http://localhost:3000" }),
+  },
+);
+
+// Test control — seed bypasses env resolution entirely
+emailConfig.seed({ apiKey: "test-key", fromAddress: "noreply@example.com" });
+emailConfig.reset(); // restore lazy resolution
 ```
 
-**Available classes:** `CacheControl` · `ContentType` · `SetCookie` · `Vary` · `Accept` · `ContentDisposition` · `ContentRange` · `Range`
+The `registerConfig` / `retrieveConfig` registry associates a `Config` store with any host object via a `WeakMap`, letting modules expose their config without a shared import:
 
-Security headers (`makeSecurityHeaders`, `NONCE`) live in `@y-core/forge/security`.
+```typescript
+import { registerConfig, retrieveConfig } from "@y-core/forge/config";
+
+registerConfig(emailModule, emailConfig);
+
+// Elsewhere, by reference only — no direct import of emailConfig needed
+const store = retrieveConfig<EmailCfg>(emailModule);
+const cfg = resolveConfig(store, c.env);
+```
 
 ---
 
@@ -278,7 +311,7 @@ lazy({
 Entry point for creating a Hono app with security middleware and sensible defaults pre-wired. `createApp` accepts a typed `Bindings` parameter and an options object for configuring CSP and error handling. `definePage()` builds orchestrated page routes; `defineAction()` builds resource-style POST handlers.
 
 ```typescript
-import { createApp, definePage, defineAction, healthCheck, validateEnv } from "@y-core/forge/app";
+import { createApp, definePage, defineAction, healthCheck, validateEnv, validateBindings } from "@y-core/forge/app";
 import { NONCE } from "@y-core/forge/security";
 import { v } from "@y-core/forge/validation";
 
@@ -293,6 +326,9 @@ const EnvSchema = v.object({
 
 const env = validateEnv(rawEnv, EnvSchema);
 
+// Validate required Worker bindings at startup
+const bindings = validateBindings(c.env, ["KV_STORE", "ASSETS"]);
+
 // Standard health check handler
 export const health = healthCheck(() => ({ status: "ok" }));
 ```
@@ -301,15 +337,29 @@ export const health = healthCheck(() => ({ status: "ok" }));
 
 ## `@y-core/forge/security` — Security Middleware & Headers
 
-Produces CSP + security headers and provides middleware for CSRF protection, origin validation, and rate limiting. `makeSecurityHeaders()` returns Hono middleware; `NONCE` is the Hono per-request placeholder that gets substituted into `script-src`. `defineSecurity()` composes multiple security concerns into a single middleware stack.
+Produces CSP + security headers and provides middleware for transport-layer hardening: origin validation, cross-origin protection, rate limiting, and request filtering. `makeSecurityHeaders()` returns Hono middleware; `NONCE` is the Hono per-request placeholder substituted into `script-src`.
+
+> **Note:** CSRF protection has moved to `@y-core/forge/form` — use `csrfProtection`, `importCsrfKey`, and `createCsrfToken` from there.
 
 ```typescript
-import { makeSecurityHeaders, NONCE, csrfProtection, originGuard, rateLimit } from "@y-core/forge/security";
+import {
+  makeSecurityHeaders,
+  NONCE,
+  crossOriginProtection,
+  originGuard,
+  rateLimit,
+  requireFormContentType,
+  requireHxRequest,
+  timingSafeEqual,
+  verifyOrigin,
+} from "@y-core/forge/security";
 
 app.use("*", makeSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
+app.use("*", crossOriginProtection());
 
-// CSRF token primitives (low-level — usually used via csrfProtection middleware)
-import { importCsrfKey, createCsrfToken, verifyCsrfToken } from "@y-core/forge/security";
+// Guard POST endpoints to same-origin HTMX requests only
+app.use("/api/*", requireHxRequest());
+app.use("/api/*", requireFormContentType());
 
 // Origin validation
 import { originGuard, verifyOrigin } from "@y-core/forge/security";
@@ -317,39 +367,27 @@ import { originGuard, verifyOrigin } from "@y-core/forge/security";
 
 ---
 
-## `@y-core/forge/cookie` — HTTP Cookie Creation & Signing
+## `@y-core/forge/session` — Session Management, Cookies & Middleware
 
-Cookie constructors with strong defaults. `createSignedCookie` enforces `httpOnly: true`, `secure: true`, and HMAC signing — you cannot accidentally create an unsigned or client-readable signed cookie.
+Cookie-backed sessions, plus cookie constructors with strong defaults. `sessionMiddleware()` reads the session on request and appends a session `Set-Cookie` header after `next()` if the session was modified during the handler. `createSignedCookie` enforces `httpOnly: true`, `secure: true`, and HMAC signing.
 
 ```typescript
-import { createCookie, createSignedCookie } from "@y-core/forge/cookie";
+import { sessionMiddleware, createCookieSessionStorage, createCookie, createSignedCookie } from "@y-core/forge/session";
 
 // Plain cookie (use for non-sensitive values)
 const themeCookie = createCookie("theme", { maxAge: 60 * 60 * 24 * 365 });
 
-// Signed + httpOnly + secure (use for session tokens, CSRF state)
-const sessionCookie = createSignedCookie("session", {
-  secrets: [env.COOKIE_SECRET],
+// Signed + httpOnly + secure (use for session tokens)
+const sessionCookie = createSignedCookie("__session", {
+  secrets: [env.SESSION_SECRET],
   maxAge: 60 * 60 * 24 * 7,
   sameSite: "Lax",
 });
-```
 
----
-
-## `@y-core/forge/session` — Session Management & Middleware
-
-Cookie-backed sessions. `sessionMiddleware()` reads the session on request and appends a session `Set-Cookie` header after `next()` if the session was modified during the handler.
-
-```typescript
-import { sessionMiddleware, createCookieSessionStorage } from "@y-core/forge/session";
-import { createSignedCookie } from "@y-core/forge/cookie";
-
-const cookie = createSignedCookie("__session", { secrets: [env.SESSION_SECRET] });
-const storage = createCookieSessionStorage({ cookie });
+const storage = createCookieSessionStorage({ cookie: sessionCookie });
 
 // Register as Hono middleware
-app.use("*", sessionMiddleware(storage, cookie));
+app.use("*", sessionMiddleware(storage, sessionCookie));
 
 // In a handler — session is set on the context by the middleware
 const session = c.get("session");
