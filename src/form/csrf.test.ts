@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-import { createCsrfToken, csrfProtection, importCsrfKey, verifyCsrfToken } from "./csrf";
+import { createCsrfToken, csrfProtection, importCsrfKey, importCsrfKeyRing, verifyCsrfToken } from "./csrf";
 import { parseFormData } from "./parse-form-data";
-import type { CsrfVariables } from "./types";
+import type { CsrfKeyRing, CsrfVariables } from "./types";
 
 describe("importCsrfKey()", () => {
   it("rejects an odd-length hex string", async () => {
@@ -173,6 +173,35 @@ describe("csrfProtection middleware", () => {
     expect(res.status).toBe(200);
     expect(captured).toBe("Alice");
   });
+
+  it("middleware with key ring accepts tokens from both active and previous keys", async () => {
+    const secret1 = "aa".repeat(32);
+    const secret2 = "bb".repeat(32);
+    const ring = await importCsrfKeyRing([secret1, secret2]);
+    const oldRing = await importCsrfKeyRing([secret2]);
+
+    const oldKey = oldRing.keys[oldRing.activeKeyId];
+    const oldToken = await createCsrfToken(oldKey, "/test", oldRing.activeKeyId);
+
+    const app = new Hono<CsrfVariables>();
+    app.use("*", csrfProtection({ secret: () => ring }));
+    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
+    app.post("/test", (c) => c.text("ok"));
+
+    const getRes = await app.request("/test");
+    const newToken = await getRes.text();
+    const postNew = await app.request("/test", {
+      method: "POST",
+      headers: { "X-CSRF-Token": newToken },
+    });
+    expect(postNew.status).toBe(200);
+
+    const postOld = await app.request("/test", {
+      method: "POST",
+      headers: { "X-CSRF-Token": oldToken },
+    });
+    expect(postOld.status).toBe(200);
+  });
 });
 
 describe("csrfProtection middleware with typed resolver", () => {
@@ -246,6 +275,13 @@ describe("CSRF token", () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it("round-trip with explicit kid and ring succeeds", async () => {
+    const token = await createCsrfToken(key, "/api/contact", "v2");
+    const ring: CsrfKeyRing = { activeKeyId: "v2", keys: { v2: key } };
+    const result = await verifyCsrfToken(ring, token, "/api/contact");
+    expect(result).toEqual({ ok: true });
+  });
+
   it("rejects when path does not match", async () => {
     const token = await createCsrfToken(key, "/api/contact");
     const result = await verifyCsrfToken(key, token, "/api/other");
@@ -282,7 +318,7 @@ describe("CSRF token", () => {
 
   it("accepts a token with a timestamp slightly in the future (within clock skew)", async () => {
     const nearFutureTimestamp = Date.now() + 5_000;
-    const payload = `${"/api/contact"}|${nearFutureTimestamp}|${"aa".repeat(16)}`;
+    const payload = `0|${"/api/contact"}|${nearFutureTimestamp}|${"aa".repeat(16)}`;
     const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
     const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
@@ -296,7 +332,7 @@ describe("CSRF token", () => {
 
   it("rejects a token with a future timestamp", async () => {
     const futureTimestamp = Date.now() + 3_600_000;
-    const payload = `${"/api/contact"}|${futureTimestamp}|${"aa".repeat(16)}`;
+    const payload = `0|${"/api/contact"}|${futureTimestamp}|${"aa".repeat(16)}`;
     const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
     const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
@@ -306,5 +342,92 @@ describe("CSRF token", () => {
     const token = `${payloadEncoded}.${sigEncoded}`;
     const result = await verifyCsrfToken(key, token, "/api/contact");
     expect(result).toEqual({ ok: false, reason: "future-timestamp" });
+  });
+
+  it("rejects a token whose kid is absent from the ring (unknown-key)", async () => {
+    const token = await createCsrfToken(key, "/api/contact", "orphan");
+    const ring: CsrfKeyRing = { activeKeyId: "v1", keys: { v1: key } };
+    const result = await verifyCsrfToken(ring, token, "/api/contact");
+    expect(result).toEqual({ ok: false, reason: "unknown-key" });
+  });
+
+  it("rejects a token with a tampered kid (invalid-signature)", async () => {
+    const key2 = await importCsrfKey("cc".repeat(32));
+    const ring: CsrfKeyRing = { activeKeyId: "k1", keys: { k1: key, k2: key2 } };
+
+    const token = await createCsrfToken(key, "/api/contact", "k1");
+    const dotIdx = token.indexOf(".");
+    const payloadEncoded = token.slice(0, dotIdx);
+    const sigEncoded = token.slice(dotIdx + 1);
+
+    const payloadStr = new TextDecoder().decode(
+      Uint8Array.from(atob(payloadEncoded.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)),
+    );
+    const tamperedPayload = payloadStr.replace("k1|", "k2|");
+    const tamperedEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(tamperedPayload)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    const tamperedToken = `${tamperedEncoded}.${sigEncoded}`;
+
+    const result = await verifyCsrfToken(ring, tamperedToken, "/api/contact");
+    expect(result).toEqual({ ok: false, reason: "invalid-signature" });
+  });
+
+  it("rejects a kid containing pipe character", async () => {
+    await expect(createCsrfToken(key, "/test", "a|b")).rejects.toThrow(
+      "CSRF key id must not contain '|'",
+    );
+  });
+});
+
+describe("CSRF token rotation overlap", () => {
+  it("ring with active and previous keys verifies tokens from both", async () => {
+    const secretNew = "dd".repeat(32);
+    const secretOld = "ee".repeat(32);
+    const ring = await importCsrfKeyRing([secretNew, secretOld]);
+
+    const newKey = ring.keys[ring.activeKeyId];
+    const tokenNew = await createCsrfToken(newKey, "/form", ring.activeKeyId);
+
+    const oldRing = await importCsrfKeyRing([secretOld]);
+    const oldKey = oldRing.keys[oldRing.activeKeyId];
+    const tokenOld = await createCsrfToken(oldKey, "/form", oldRing.activeKeyId);
+
+    expect(await verifyCsrfToken(ring, tokenNew, "/form")).toEqual({ ok: true });
+    expect(await verifyCsrfToken(ring, tokenOld, "/form")).toEqual({ ok: true });
+  });
+});
+
+describe("importCsrfKeyRing()", () => {
+  it("activeKeyId is the first secret's kid", async () => {
+    const ring = await importCsrfKeyRing(["aa".repeat(32), "bb".repeat(32)]);
+    const firstOnly = await importCsrfKeyRing(["aa".repeat(32)]);
+    expect(ring.activeKeyId).toBe(firstOnly.activeKeyId);
+  });
+
+  it("derives stable kids — same secret produces same kid across calls", async () => {
+    const ring1 = await importCsrfKeyRing(["cc".repeat(32)]);
+    const ring2 = await importCsrfKeyRing(["cc".repeat(32)]);
+    expect(ring1.activeKeyId).toBe(ring2.activeKeyId);
+  });
+
+  it("ring built from [s1, s2] verifies tokens minted by either key", async () => {
+    const s1 = "11".repeat(32);
+    const s2 = "22".repeat(32);
+    const ring = await importCsrfKeyRing([s1, s2]);
+
+    const kids = Object.keys(ring.keys);
+    expect(kids.length).toBe(2);
+
+    for (const kid of kids) {
+      const token = await createCsrfToken(ring.keys[kid], "/test", kid);
+      const result = await verifyCsrfToken(ring, token, "/test");
+      expect(result).toEqual({ ok: true });
+    }
+  });
+
+  it("different secrets produce different kids", async () => {
+    const ring = await importCsrfKeyRing(["aa".repeat(32), "bb".repeat(32)]);
+    const kids = Object.keys(ring.keys);
+    expect(kids[0]).not.toBe(kids[1]);
   });
 });

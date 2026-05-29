@@ -151,6 +151,11 @@ describe("optionalGroup — returns group when required fields present", () => {
 
 // --- Config<T> ---
 
+const testDescriptor = {
+  map: { dbUrl: env("DB_URL"), mode: env("MODE") },
+  schema: v.object({ dbUrl: v.string(), mode: v.optional(v.string()) }),
+};
+
 describe("Config", () => {
   it("get() resolves and returns typed config", () => {
     const cfg = new Config(testDescriptor.map, testDescriptor.schema);

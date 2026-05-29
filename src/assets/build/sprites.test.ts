@@ -70,7 +70,6 @@ describe("buildSprites()", () => {
     try {
       const emptySourceDir = join(tmpDir, "svg-src");
       const spriteOut = join(tmpDir, "svg", "sprite.svg");
-      console.log("DIAGNOSTIC before:", { tmpDir, emptySourceDir, spriteOut, sourceExists: existsSync(emptySourceDir), spriteExists: existsSync(spriteOut) });
       await buildSprites(
         {
           icons: {
@@ -81,7 +80,6 @@ describe("buildSprites()", () => {
         tmpDir,
       );
       const spriteExists = existsSync(spriteOut);
-      console.log("DIAGNOSTIC after:", { spriteExists });
       expect(spriteExists).toBe(false);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });

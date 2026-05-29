@@ -48,7 +48,15 @@ export type CsrfVariables = {
 
 export type CsrfResult =
   | { ok: true }
-  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "future-timestamp" | "path-mismatch" | "invalid-signature" };
+  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "future-timestamp" | "path-mismatch" | "unknown-key" | "invalid-signature" };
 
-/** A function that resolves a CSRF secret key from the request context. @public */
-export type CsrfSecretResolver<E extends Env = Env> = (c: Context<E>) => CryptoKey | Promise<CryptoKey>;
+/** A key ring for CSRF secret rotation — one active signing key plus all keys valid for verification. @public */
+export interface CsrfKeyRing {
+  /** kid of the key used to SIGN new tokens; must be a key in `keys`. */
+  activeKeyId: string;
+  /** All keys valid for VERIFICATION, indexed by kid (O(1) lookup). */
+  keys: Record<string, CryptoKey>;
+}
+
+/** A function that resolves a CSRF secret key (or key ring) from the request context. @public */
+export type CsrfSecretResolver<E extends Env = Env> = (c: Context<E>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;

@@ -1,7 +1,7 @@
 export { NONCE } from "hono/secure-headers";
 export { requireFormContentType } from "./content-type";
 export { checkCrossOriginProtection, crossOriginProtection } from "./cop";
-export { makeSecurityHeaders } from "./headers";
+export { makeSecurityHeaders, mergeSecurityHeaders } from "./headers";
 export { requireHxRequest } from "./hx-request";
 export { originGuard, verifyOrigin } from "./origin";
 export type { RateLimitBinding, RateLimitOptions } from "./rate-limit";

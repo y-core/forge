@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-import { makeSecurityHeaders } from "./headers";
+import { makeSecurityHeaders, mergeSecurityHeaders } from "./headers";
 
 async function headersFor(middleware: ReturnType<typeof makeSecurityHeaders>) {
   const app = new Hono();
@@ -73,5 +73,47 @@ describe("makeSecurityHeaders — custom options", () => {
     const headers = await headersFor(makeSecurityHeaders({ frameSrc: ["'self'", "https://embed.example.com"] }));
     const csp = headers.get("content-security-policy") ?? "";
     expect(csp).toContain("embed.example.com");
+  });
+});
+
+describe("makeSecurityHeaders — directive validation", () => {
+  it("throws when a custom directive contains an empty string", () => {
+    expect(() => makeSecurityHeaders({ scriptSrc: ["'self'", ""] })).toThrow();
+  });
+
+  it("throws on a whitespace-only connect-src entry", () => {
+    expect(() => makeSecurityHeaders({ connectSrc: ["   "] })).toThrow();
+  });
+});
+
+describe("mergeSecurityHeaders", () => {
+  it("concatenates sources onto a single directive", () => {
+    const base = { scriptSrc: ["'self'"], connectSrc: ["'self'"] };
+    const merged = mergeSecurityHeaders(base, { scriptSrc: ["'sha256-abc='"] });
+    expect(merged.scriptSrc).toEqual(["'self'", "'sha256-abc='"]);
+  });
+
+  it("leaves untouched directives intact", () => {
+    const base = { scriptSrc: ["'self'"], connectSrc: ["'self'", "https://api.example.com"] };
+    const merged = mergeSecurityHeaders(base, { scriptSrc: ["'sha256-abc='"] });
+    expect(merged.connectSrc).toEqual(["'self'", "https://api.example.com"]);
+  });
+
+  it("returns base unchanged for empty extra", () => {
+    const base = { scriptSrc: ["'self'"], connectSrc: ["'self'"], hstsMaxAge: 100 };
+    const merged = mergeSecurityHeaders(base, {});
+    expect(merged).toEqual({ scriptSrc: ["'self'"], connectSrc: ["'self'"], hstsMaxAge: 100 });
+  });
+
+  it("does not mutate base", () => {
+    const base = { scriptSrc: ["'self'"] };
+    mergeSecurityHeaders(base, { scriptSrc: ["'sha256-abc='"] });
+    expect(base.scriptSrc).toEqual(["'self'"]);
+  });
+
+  it("overrides hstsMaxAge when provided", () => {
+    const base = { scriptSrc: ["'self'"], hstsMaxAge: 100 };
+    const merged = mergeSecurityHeaders(base, { hstsMaxAge: 200 });
+    expect(merged.hstsMaxAge).toBe(200);
   });
 });
