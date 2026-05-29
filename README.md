@@ -25,20 +25,22 @@ Every namespace is single-purpose and independently useful. A module that cannot
 | Import path | Concern | Key exports |
 |---|---|---|
 | `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `healthCheck`, `validateEnv`, `validateBindings`, `serveAssets` |
-| `@y-core/forge/assets` | Asset config & metadata | `defineAssetsConfig`, `loadConfig`, `AssetsConfig` |
-| `@y-core/forge/assets/build` | Asset build pipeline | `buildAll`, `generateManifest`, `buildCSS`, `buildJS`, `buildSprites` |
+| `@y-core/forge/assets` | Asset config & metadata | `defineAssetsConfig`, `loadConfig`, `AssetsConfig`, `AssetsConfigSchema` |
+| `@y-core/forge/assets/build` | Asset build pipeline | `buildAll`, `generateManifest`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets`, `buildFonts`, `fetchURL`, `hashFile`, `hashString`, `sanitizeSVG`, `svgToSymbol`, `hasChanged`, `loadState`, `markBuilt`, `saveState` |
 | `@y-core/forge/assets/manifest` | Manifest reading & sprite registry | `createManifest`, `createSpriteRegistry` |
+| `@y-core/forge/cli` | CLI command framework | `createCommand`, `addCommand`, `parseArgs`, `collectFlags`, `execute`, `formatHelp`, `formatUsage`, `CliError`, `formatError` |
 | `@y-core/forge/config` | Environment config resolution | `Config`, `env`, `applyMapping`, `optionalGroup`, `resolveConfig`, `registerConfig`, `retrieveConfig` |
-| `@y-core/forge/form` | Form parsing, CSRF protection & bot detection | `readFields`, `readTextField`, `parseFormData`, `isHoneypotFilled`, `verifyTurnstile`, `csrfProtection`, `importCsrfKey`, `createCsrfToken`, `verifyCsrfToken`, `CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT` |
-| `@y-core/forge/http` | HTTP output — responses, headers, escaping | `html`, `escapeHtml`, `htmlResponse`, `renderSuccess`, `renderError`, `renderValidationErrors`, `CacheControl`, `ContentType`, `Accept`, `SetCookie`, `Vary` |
-| `@y-core/forge/jsx` | JSX runtime (facade for hono/jsx) | `Fragment`, `createContext`, `useContext`, `memo`, `ErrorBoundary`, `Suspense`, `FC`, `JSX` |
+| `@y-core/forge/form` | Form parsing, CSRF protection & bot detection | `readFields`, `readTextField`, `parseFormData`, `isHoneypotFilled`, `verifyTurnstile`, `csrfProtection`, `importCsrfKey`, `importCsrfKeyRing`, `createCsrfToken`, `verifyCsrfToken`, `CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT`, `CsrfConfigSchema`, `TurnstileConfigSchema` |
+| `@y-core/forge/http` | HTTP output — responses, headers, escaping | `html`, `escapeHtml`, `htmlResponse`, `renderSuccess`, `renderError`, `renderValidationErrors`, `CacheControl`, `ContentDisposition`, `ContentRange`, `ContentType`, `Range`, `Accept`, `SetCookie`, `Vary` |
+| `@y-core/forge/jsx` | JSX runtime (facade for hono/jsx) | `Fragment`, `createContext`, `useContext`, `memo`, `ErrorBoundary`, `Suspense`, `FC`, `JSX`, `PropsWithChildren` |
 | `@y-core/forge/logging` | Structured logging | `createLogger`, `consoleChannel` |
+| `@y-core/forge/pkg` | Release & versioning tooling | `createReleaseCommand`, `createTag`, `getCommitsSinceTag`, `getLastCommitMessage`, `getLatestTag`, `gitExec`, `isWorkingTreeClean`, `readPackageVersion`, `updatePackageVersion`, `parseSemVer`, `bumpSemVer`, `compareSemVer`, `formatSemVer`, `isGreaterThan`, `resolveVersion`, `ReleaseError` |
 | `@y-core/forge/result` | Result monad | `result`, `toError`, `Result` |
-| `@y-core/forge/router` | Declarative route configuration | `route`, `index`, `layout`, `prefix`, `applyRoutes` |
-| `@y-core/forge/security` | Security middleware & headers | `makeSecurityHeaders`, `NONCE`, `crossOriginProtection`, `originGuard`, `rateLimit`, `requireFormContentType`, `requireHxRequest`, `timingSafeEqual`, `verifyOrigin` |
-| `@y-core/forge/session` | Session management, cookies & middleware | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
-| `@y-core/forge/ui` | Server-side JSX primitives | `Form`, `Field`, `FieldContent`, `FieldLabel`, `FieldDescription`, `FieldError`, `FieldGroup`, `Input`, `Textarea`, `Select`, `SelectOption`, `Button`, `Alert`, `AlertTitle`, `AlertDescription`, `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `Icon`, `cn`, `cva` |
-| `@y-core/forge/ui/client` | Browser-side controller mounts | `mountNav`, `mountTheme`, `mountTurnstile`, `loadScriptOnEvent`, `lazy` |
+| `@y-core/forge/router` | Declarative route configuration | `route`, `index`, `layout`, `prefix`, `applyRoutes`, `App` |
+| `@y-core/forge/security` | Security middleware & headers | `makeSecurityHeaders`, `mergeSecurityHeaders`, `NONCE`, `crossOriginProtection`, `checkCrossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit`, `requireFormContentType`, `requireHxRequest`, `timingSafeEqual`, `timingSafeEqualBytes`, `BaseUrlConfigSchema`, `deriveAllowedOrigins`, `parseUrl` |
+| `@y-core/forge/session` | Session management, cookies & middleware | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie`, `Cookie`, `Session`, `createSession`, `createSessionId` |
+| `@y-core/forge/ui` | Server-side JSX primitives | `Form`, `Field`, `FieldLabel`, `FieldContent`, `FieldDescription`, `FieldError`, `FieldGroup`, `FieldLegend`, `FieldSeparator`, `FieldSet`, `FieldTitle`, `Input`, `Textarea`, `Select`, `SelectOptGroup`, `SelectOption`, `Button`, `Alert`, `AlertTitle`, `AlertDescription`, `Card`, `CardAction`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`, `Icon`, `IconSpriteProvider`, `Separator`, `cn`, `cva`, `fieldId`, `fieldErrorId`, `fieldDescriptionId` |
+| `@y-core/forge/ui/client` | Browser-side controller mounts | `mountNav`, `mountTheme`, `mountTurnstile`, `lazy`, `loadScriptOnEvent`, `loadStylesheet`, `createSignal`, `computed`, `effect`, `isDark`, `DARK_CLASS`, `DEFAULT_PREF`, `FOUC_SCRIPT`, `THEME_ATTR`, `THEME_STORAGE_KEY` |
 | `@y-core/forge/validation` | Validation namespace and result types | `v`, `ValidationResult` |
 
 ---
