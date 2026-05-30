@@ -29,5 +29,6 @@ export async function loadConfig(configPath?: string): Promise<ResolvedConfig> {
     fonts: {
       downloads: parsed.fonts?.downloads ?? [],
     },
+    icons: parsed.icons ?? null,
   };
 }

@@ -1,6 +1,6 @@
 import { addCommand, createCommand } from "../../cli/mod";
 import type { CommandBase } from "../../cli/types";
-import { buildAll, buildCSS, buildFonts, buildJS, buildSprites, generateManifest } from "../build/mod";
+import { buildAll, buildCSS, buildFonts, buildIcons, buildJS, buildSprites, generateManifest } from "../build/mod";
 import { loadConfig } from "../config";
 
 export function createAssetsCommands(): CommandBase {
@@ -78,6 +78,21 @@ export function createAssetsCommands(): CommandBase {
       run: async (_args, flags) => {
         const config = await loadConfig(flags.config);
         await buildFonts(config.fonts, config.paths.publicDir);
+      },
+    }),
+  );
+
+  addCommand(
+    buildCmd,
+    createCommand({
+      name: "icons",
+      description: "Build icon outputs (SVG, PNG, ICO, web app manifest)",
+      flags: {
+        config: { type: "string", description: "Path to assets.config.ts" },
+      },
+      run: async (_args, flags) => {
+        const config = await loadConfig(flags.config);
+        if (config.icons) await buildIcons(config.icons);
       },
     }),
   );

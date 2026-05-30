@@ -8,6 +8,26 @@ const JsBundleSchema = v.object({
   minify: v.optional(v.boolean()),
 });
 
+const IconOutputSchema = v.union([
+  v.object({ kind: v.literal("svg"), file: v.string() }),
+  v.object({ kind: v.literal("png"), file: v.string(), size: v.number(), manifest: v.optional(v.boolean()) }),
+  v.object({ kind: v.literal("ico"), file: v.string(), sizes: v.array(v.number()) }),
+  v.object({ kind: v.literal("manifest"), file: v.string() }),
+]);
+
+const IconsConfigSchema = v.object({
+  src: v.string(),
+  outDir: v.string(),
+  lightColor: v.string(),
+  darkColor: v.optional(v.string()),
+  app: v.optional(v.object({
+    name: v.string(),
+    shortName: v.string(),
+    backgroundColor: v.string(),
+  })),
+  outputs: v.array(IconOutputSchema),
+});
+
 const CssBuildSchema = v.object({
   tool: v.literal("tailwindcss"),
   input: v.string(),
@@ -55,6 +75,7 @@ export const AssetsConfigSchema = v.object({
       downloads: v.optional(v.array(FontDownloadSchema)),
     }),
   ),
+  icons: v.optional(IconsConfigSchema),
 });
 
 export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
@@ -65,6 +86,8 @@ export type SpriteGroup = v.InferOutput<typeof SpriteGroupSchema>;
 export type Sprites = Record<string, SpriteGroup>;
 export type FontDownload = v.InferOutput<typeof FontDownloadSchema>;
 export type PathsConfig = v.InferOutput<typeof PathsConfigSchema>;
+export type IconOutput = v.InferOutput<typeof IconOutputSchema>;
+export type IconsConfig = v.InferOutput<typeof IconsConfigSchema>;
 export type AssetsConfig = v.InferInput<typeof AssetsConfigSchema>;
 
 export interface ResolvedPaths {
@@ -80,4 +103,5 @@ export interface ResolvedConfig {
   copy: CopyEntry[];
   sprites: Sprites;
   fonts: { downloads: FontDownload[] };
+  icons: IconsConfig | null;
 }

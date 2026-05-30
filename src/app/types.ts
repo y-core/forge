@@ -2,8 +2,8 @@ import type { Context, Env, MiddlewareHandler } from "hono";
 import type { Config, InferConfig } from "../config/config";
 import type { ReadonlyFormData } from "../form/types";
 import type { Logger } from "../logging/types";
+import type { ValidationResult } from "../result/result";
 import type { RouteAction, RouteView } from "../router/types";
-import type { ValidationResult } from "../validation/types";
 
 export interface AppOptions<E extends Env = Env> {
   config?: Config<InferConfig<E>>;

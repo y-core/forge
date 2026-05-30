@@ -5,6 +5,7 @@ import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
 import { buildFonts } from "./fonts";
 import { hashFile } from "./hash";
+import { buildIcons } from "./icons";
 import { buildJS } from "./js";
 import { buildSprites } from "./sprites";
 
@@ -33,6 +34,10 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
 
   if (config.fonts.downloads.length > 0) {
     await buildFonts(config.fonts, publicDir);
+  }
+
+  if (config.icons) {
+    await buildIcons(config.icons);
   }
 
   await generateManifest(publicDir, opts?.manifestPath ?? ".assets-manifest.json");

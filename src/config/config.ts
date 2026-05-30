@@ -2,6 +2,9 @@ import { v } from "../validation/mod";
 
 export type InferConfig<E> = E extends { Config: infer C } ? C : undefined;
 
+/** Merge into your Hono app generic to enable typed `c.get("config")`. @public */
+export type ConfigVariables<C> = { Variables: { config: C } };
+
 export type EnvRef<K extends string = string> = { readonly __env: K };
 export function env<K extends string>(name: K): EnvRef<K> {
   return { __env: name };

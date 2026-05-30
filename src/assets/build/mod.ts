@@ -3,6 +3,7 @@ export { buildCSS } from "./css";
 export { fetchURL } from "./download";
 export { buildFonts } from "./fonts";
 export { hashFile, hashString } from "./hash";
+export { buildIcons } from "./icons";
 export { buildJS } from "./js";
 export type { BuildOptions } from "./pipeline";
 export { buildAll, generateManifest } from "./pipeline";

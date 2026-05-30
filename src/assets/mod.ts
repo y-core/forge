@@ -4,6 +4,8 @@ export type {
   CopyEntry,
   CssBuild,
   FontDownload,
+  IconOutput,
+  IconsConfig,
   JsBundle,
   PathsConfig,
   ResolvedConfig,

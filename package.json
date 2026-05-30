@@ -30,10 +30,14 @@
     "esbuild": "^0.25.0"
   },
   "peerDependencies": {
-    "esbuild": ">=0.20.0"
+    "esbuild": ">=0.20.0",
+    "sharp": ">=0.33.0"
   },
   "peerDependenciesMeta": {
     "esbuild": {
+      "optional": true
+    },
+    "sharp": {
       "optional": true
     }
   },
@@ -65,10 +69,6 @@
     "./form": {
       "types": "./src/form/mod.ts",
       "import": "./src/form/mod.ts"
-    },
-    "./jsx": {
-      "types": "./src/jsx/mod.ts",
-      "import": "./src/jsx/mod.ts"
     },
     "./jsx/jsx-dev-runtime": {
       "types": "./src/jsx/jsx-dev-runtime.ts",
