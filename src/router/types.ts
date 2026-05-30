@@ -1,8 +1,6 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
 import type { InferConfig } from "../config/config";
 
-export type { InferConfig } from "../config/config";
-
 export interface RouteRenderState<LoaderData = unknown, ActionData = unknown> {
   data: LoaderData;
   actionData: ActionData;

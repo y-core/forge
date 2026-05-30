@@ -9,6 +9,9 @@ export interface TurnstileConfig {
   siteKey: string;
 }
 
+/** Maximum allowed form body size in bytes. Default: 100 KB. */
+export const FORM_MAX_BYTES_DEFAULT = 100 * 1024;
+
 export const CsrfConfigSchema = v.object({
   secret: v.pipe(
     v.string(),

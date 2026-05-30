@@ -48,7 +48,7 @@ export type CsrfVariables = {
 
 export type CsrfResult =
   | { ok: true }
-  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "future-timestamp" | "path-mismatch" | "unknown-key" | "invalid-signature" };
+  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "future-timestamp" | "path-mismatch" | "subject-mismatch" | "unknown-key" | "invalid-signature" };
 
 /** A key ring for CSRF secret rotation — one active signing key plus all keys valid for verification. @public */
 export interface CsrfKeyRing {

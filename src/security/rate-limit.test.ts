@@ -23,7 +23,7 @@ describe("rateLimit middleware", () => {
     const app = makeApp();
     const res = await app.request(
       "/test",
-      { method: "POST" },
+      { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },
       { LIMITER: { limit: async () => ({ success: false }) } },
     );
     expect(res.status).toBe(429);
@@ -34,7 +34,7 @@ describe("rateLimit middleware", () => {
     const app = makeApp();
     const res = await app.request(
       "/test",
-      { method: "POST" },
+      { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },
       { LIMITER: { limit: async () => ({ success: true }) } },
     );
     expect(res.status).toBe(200);
@@ -59,22 +59,14 @@ describe("rateLimit middleware", () => {
     expect(capturedKey).toBe("5.6.7.8");
   });
 
-  it("falls back to 'unknown' when CF-Connecting-IP header is absent", async () => {
+  it("returns 503 when CF-Connecting-IP is absent and no custom key is provided (fail-closed)", async () => {
     const app = makeApp();
-    let capturedKey: string | undefined;
-    await app.request(
+    const res = await app.request(
       "/test",
       { method: "POST" },
-      {
-        LIMITER: {
-          limit: async ({ key }: { key: string }) => {
-            capturedKey = key;
-            return { success: true };
-          },
-        },
-      },
+      { LIMITER: { limit: async () => ({ success: true }) } },
     );
-    expect(capturedKey).toBe("unknown");
+    expect(res.status).toBe(503);
   });
 
   it("returns 503 when binding is undefined (default required: true)", async () => {
@@ -112,7 +104,7 @@ describe("rateLimit middleware", () => {
     const app = makeApp({ onLimit: (c) => c.json({ error: "rate limited" }, 429) });
     const res = await app.request(
       "/test",
-      { method: "POST" },
+      { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },
       { LIMITER: { limit: async () => ({ success: false }) } },
     );
     expect(res.status).toBe(429);

@@ -1,36 +1,38 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-import { requireHxRequest } from "./hx-request";
+import { isHxRequest } from "./hx-request";
 
-function makeApp() {
-  const app = new Hono();
-  app.use("*", requireHxRequest());
-  app.post("/test", (c) => c.text("ok"));
-  return app;
-}
-
-describe("requireHxRequest middleware", () => {
-  it("passes when HX-Request is 'true'", async () => {
-    const app = makeApp();
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { "HX-Request": "true" },
+describe("isHxRequest predicate", () => {
+  it("returns true when HX-Request header is 'true'", async () => {
+    const app = new Hono();
+    let captured: boolean | undefined;
+    app.get("/test", (c) => {
+      captured = isHxRequest(c);
+      return c.text("ok");
     });
-    expect(res.status).toBe(200);
+    await app.request("/test", { headers: { "HX-Request": "true" } });
+    expect(captured).toBe(true);
   });
 
-  it("returns 403 when HX-Request header is absent", async () => {
-    const app = makeApp();
-    const res = await app.request("/test", { method: "POST" });
-    expect(res.status).toBe(403);
+  it("returns false when HX-Request header is absent", async () => {
+    const app = new Hono();
+    let captured: boolean | undefined;
+    app.get("/test", (c) => {
+      captured = isHxRequest(c);
+      return c.text("ok");
+    });
+    await app.request("/test");
+    expect(captured).toBe(false);
   });
 
-  it("returns 403 when HX-Request is not 'true'", async () => {
-    const app = makeApp();
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { "HX-Request": "false" },
+  it("returns false when HX-Request is not 'true'", async () => {
+    const app = new Hono();
+    let captured: boolean | undefined;
+    app.get("/test", (c) => {
+      captured = isHxRequest(c);
+      return c.text("ok");
     });
-    expect(res.status).toBe(403);
+    await app.request("/test", { headers: { "HX-Request": "false" } });
+    expect(captured).toBe(false);
   });
 });

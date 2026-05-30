@@ -7,6 +7,11 @@ export type Result<T, E = Error> =
   | { ok: true; data: T }
   | { ok: false; error: E };
 
+/** Validation result — success carries parsed data, failure carries an array of error messages. @public */
+export type ValidationResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; errors: string[] };
+
 /** Converts any thrown value to an `Error` instance; safe to use in `catch (err)` blocks where `err` is `unknown`. @public */
 export function toError(thrown: unknown): Error {
   return thrown instanceof Error ? thrown : new Error(String(thrown));

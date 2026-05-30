@@ -30,4 +30,16 @@ describe("isHoneypotFilled", () => {
     fd.append("website", "");
     expect(isHoneypotFilled(fd, "website")).toBe(false);
   });
+
+  it("returns true when the field contains a non-empty File", () => {
+    const fd = new FormData();
+    fd.append("surname", new File(["content"], "bot.txt"));
+    expect(isHoneypotFilled(fd)).toBe(true);
+  });
+
+  it("returns false when the field contains an empty File (zero bytes)", () => {
+    const fd = new FormData();
+    fd.append("surname", new File([], "empty.txt"));
+    expect(isHoneypotFilled(fd)).toBe(false);
+  });
 });

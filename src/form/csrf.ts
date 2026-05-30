@@ -94,30 +94,48 @@ export async function importCsrfKeyRing(
   return { activeKeyId, keys };
 }
 
-/** Creates a signed CSRF token embedding kid, path, timestamp, and 16 random bytes. @public */
+export interface CsrfTokenOptions {
+  kid?: string;
+  /** Session or user identifier to bind to the token. When provided at verify time it must match. */
+  subject?: string;
+}
+
+/** Creates a signed CSRF token embedding kid, path, optional subject, timestamp, and 16 random bytes. @public */
 export async function createCsrfToken(
   key: CryptoKey,
   path: string,
-  kid?: string,
+  options: CsrfTokenOptions | string = {},
 ): Promise<string> {
-  const effectiveKid = kid ?? DEFAULT_KEY_ID;
+  const opts: CsrfTokenOptions = typeof options === "string" ? { kid: options } : options;
+  const effectiveKid = opts.kid ?? DEFAULT_KEY_ID;
   if (effectiveKid.includes("|")) {
     throw new Error("CSRF key id must not contain '|'");
+  }
+  const subject = opts.subject ?? "";
+  if (subject.includes("|")) {
+    throw new Error("CSRF subject must not contain '|'");
   }
   const timestamp = Date.now().toString();
   const randomBytes = crypto.getRandomValues(new Uint8Array(16));
   const randomHex = Array.from(randomBytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  const payload = `${effectiveKid}|${path}|${timestamp}|${randomHex}`;
+  const payload = `${effectiveKid}|${path}|${subject}|${timestamp}|${randomHex}`;
   const payloadEncoded = base64urlEncode(TEXT_ENCODER.encode(payload));
   const sigBuffer = await crypto.subtle.sign("HMAC", key, TEXT_ENCODER.encode(payload));
   const sigEncoded = base64urlEncode(new Uint8Array(sigBuffer));
   return `${payloadEncoded}.${sigEncoded}`;
 }
 
+export interface CsrfVerifyOptions {
+  maxAgeMs?: number;
+  /** When provided, the token's embedded subject must match this value. */
+  subject?: string;
+}
+
 /**
- * Verifies a CSRF token; checks expiry and path before the HMAC signature to avoid timing oracles.
+ * Verifies a CSRF token; checks expiry, path, and optional subject before the HMAC
+ * signature to avoid timing oracles.
  *
  * Accepts a single `CryptoKey` (default kid) or a `CsrfKeyRing` for rotation. When a ring
  * is provided, the token's embedded kid selects the verification key via O(1) map lookup.
@@ -128,8 +146,14 @@ export async function verifyCsrfToken(
   keyOrRing: CryptoKey | CsrfKeyRing,
   token: string,
   path: string,
-  maxAgeMs = 3_600_000,
+  maxAgeMsOrOptions: number | CsrfVerifyOptions = 3_600_000,
 ): Promise<CsrfResult> {
+  const opts: CsrfVerifyOptions =
+    typeof maxAgeMsOrOptions === "number"
+      ? { maxAgeMs: maxAgeMsOrOptions }
+      : maxAgeMsOrOptions;
+  const maxAgeMs = opts.maxAgeMs ?? 3_600_000;
+
   if (!token) {
     return { ok: false, reason: "missing-token" };
   }
@@ -157,11 +181,11 @@ export async function verifyCsrfToken(
   }
 
   const parts = payloadStr.split("|");
-  if (parts.length !== 4) {
+  if (parts.length !== 5) {
     return { ok: false, reason: "invalid-format" };
   }
 
-  const [_kid, tokenPath, timestampStr] = parts;
+  const [_kid, tokenPath, tokenSubject, timestampStr] = parts;
   const timestamp = Number(timestampStr);
   if (!Number.isInteger(timestamp)) {
     return { ok: false, reason: "expired" };
@@ -175,6 +199,10 @@ export async function verifyCsrfToken(
 
   if (tokenPath !== path) {
     return { ok: false, reason: "path-mismatch" };
+  }
+
+  if (opts.subject !== undefined && tokenSubject !== opts.subject) {
+    return { ok: false, reason: "subject-mismatch" };
   }
 
   const ring = normalizeRing(keyOrRing);
@@ -229,6 +257,8 @@ export function csrfProtection<E extends Env = Env>(options: {
   secret: CsrfSecretResolver<E>;
   tokenField?: string;
   headerName?: string;
+  /** Optionally derive a subject (e.g. session id) from context to bind tokens to a session. */
+  subject?: (c: Context<E>) => string | undefined;
 }): MiddlewareHandler<E> {
   const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
 
@@ -245,17 +275,18 @@ export function csrfProtection<E extends Env = Env>(options: {
     const method = c.req.method.toUpperCase();
     const ring = await resolveRing(c);
     const activeKey = ring.keys[ring.activeKeyId];
+    const subject = options.subject?.(c);
 
     const csrfContext = c as unknown as Context<CsrfVariables>;
     csrfContext.set(
       "mintCsrfToken",
-      (path: string) => createCsrfToken(activeKey, path, ring.activeKeyId),
+      (path: string) => createCsrfToken(activeKey, path, { kid: ring.activeKeyId, subject }),
     );
 
     if (method === "GET" || method === "HEAD") {
       csrfContext.set(
         "csrfToken",
-        await createCsrfToken(activeKey, c.req.path, ring.activeKeyId),
+        await createCsrfToken(activeKey, c.req.path, { kid: ring.activeKeyId, subject }),
       );
       return next();
     }
@@ -272,7 +303,7 @@ export function csrfProtection<E extends Env = Env>(options: {
       }
     }
 
-    const result = await verifyCsrfToken(ring, token ?? "", c.req.path);
+    const result = await verifyCsrfToken(ring, token ?? "", c.req.path, { subject });
     if (!result.ok) {
       return c.text("Forbidden", 403);
     }

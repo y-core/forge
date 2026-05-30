@@ -11,19 +11,21 @@ export {
 } from "./card";
 export {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
-  FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSeparator,
-  FieldSet,
-  FieldTitle,
   fieldDescriptionId,
   fieldErrorId,
   fieldId,
 } from "./field";
+export {
+  FieldContent,
+  FieldGroup,
+  FieldLegend,
+  FieldSeparator,
+  FieldSet,
+  FieldTitle,
+} from "./field-layout";
 export { Form } from "./form";
 export { Icon, type IconProps } from "./icon";
 export { IconSpriteProvider } from "./icon-context";
@@ -31,5 +33,5 @@ export { Input } from "./input";
 export { Select, SelectOptGroup, SelectOption } from "./select";
 export { Separator } from "./separator";
 export { Textarea } from "./textarea";
-export { cn } from "./utils/cn";
+export { asClass, cn } from "./utils/cn";
 export { cva } from "./utils/cva";

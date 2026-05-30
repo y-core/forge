@@ -1,10 +1,15 @@
 import type { FC, JSX, PropsWithChildren } from "hono/jsx";
 import { useFieldControlProps } from "./field";
-import { cn } from "./utils/cn";
+import { asClass, cn } from "./utils/cn";
 
 type SelectProps = JSX.IntrinsicElements["select"];
 type SelectOptionProps = JSX.IntrinsicElements["option"];
 type SelectOptGroupProps = JSX.IntrinsicElements["optgroup"];
+
+const SELECT_BASE =
+  "w-full appearance-none rounded-lg border border-brand-200 bg-white px-3 py-2 pr-10 text-sm text-brand-900";
+const SELECT_FOCUS = "focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20";
+const SELECT_DISABLED = "disabled:cursor-not-allowed disabled:pointer-events-none";
 
 export const Select: FC<PropsWithChildren<SelectProps>> = ({
   class: cls,
@@ -12,18 +17,12 @@ export const Select: FC<PropsWithChildren<SelectProps>> = ({
   ...props
 }) => {
   const fieldProps = useFieldControlProps(props);
-  const className = typeof cls === "string" ? cls : undefined;
 
   return (
     <div data-slot="select-wrapper" class="group/select relative w-full has-[select:disabled]:opacity-50">
       <select
         data-slot="select"
-        class={cn(
-          "w-full appearance-none rounded-lg border border-brand-200 bg-white px-3 py-2 pr-10 text-sm text-brand-900",
-          "focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20",
-          "disabled:cursor-not-allowed disabled:pointer-events-none",
-          className,
-        )}
+        class={cn(SELECT_BASE, SELECT_FOCUS, SELECT_DISABLED, asClass(cls))}
         {...fieldProps}
       >
         {children}
@@ -62,7 +61,7 @@ export const SelectOptGroup: FC<PropsWithChildren<SelectOptGroupProps>> = ({
   children,
   ...props
 }) => (
-  <optgroup data-slot="select-optgroup" class={typeof cls === "string" ? cls : undefined} {...props}>
+  <optgroup data-slot="select-optgroup" class={asClass(cls)} {...props}>
     {children}
   </optgroup>
 );

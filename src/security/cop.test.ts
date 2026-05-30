@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { checkCrossOriginProtection, crossOriginProtection } from "./cop";
 
-function makeApp() {
+function makeApp(opts?: Parameters<typeof crossOriginProtection>[0]) {
   const app = new Hono();
-  app.use("*", crossOriginProtection());
+  app.use("*", crossOriginProtection(opts));
   app.get("/test", (c) => c.text("ok"));
   app.post("/test", (c) => c.text("ok"));
   app.put("/test", (c) => c.text("ok"));
@@ -69,16 +69,20 @@ describe("checkCrossOriginProtection", () => {
     expect(checkCrossOriginProtection(req)).toEqual({ ok: false, reason: "cross-site" });
   });
 
-  it("allows POST when Sec-Fetch-Site is absent (non-browser client)", () => {
+  it("blocks POST when Sec-Fetch-Site is absent (fail-closed default)", () => {
     const req = new Request("https://example.com/test", { method: "POST" });
-    expect(checkCrossOriginProtection(req)).toEqual({ ok: true });
+    expect(checkCrossOriginProtection(req)).toEqual({ ok: false, reason: "missing-fetch-metadata" });
+  });
+
+  it("allows POST when Sec-Fetch-Site is absent and allowMissingHeader: true", () => {
+    const req = new Request("https://example.com/test", { method: "POST" });
+    expect(checkCrossOriginProtection(req, { allowMissingHeader: true })).toEqual({ ok: true });
   });
 });
 
 describe("crossOriginProtection middleware", () => {
-  const app = makeApp();
-
   it("allows GET from cross-site (safe method)", async () => {
+    const app = makeApp();
     const res = await app.request("/test", {
       method: "GET",
       headers: { "Sec-Fetch-Site": "cross-site" },
@@ -87,6 +91,7 @@ describe("crossOriginProtection middleware", () => {
   });
 
   it("allows POST from same-origin", async () => {
+    const app = makeApp();
     const res = await app.request("/test", {
       method: "POST",
       headers: { "Sec-Fetch-Site": "same-origin" },
@@ -95,6 +100,7 @@ describe("crossOriginProtection middleware", () => {
   });
 
   it("returns 403 for POST from cross-site", async () => {
+    const app = makeApp();
     const res = await app.request("/test", {
       method: "POST",
       headers: { "Sec-Fetch-Site": "cross-site" },
@@ -103,7 +109,15 @@ describe("crossOriginProtection middleware", () => {
     expect(await res.text()).toBe("Forbidden");
   });
 
-  it("allows DELETE with no Sec-Fetch-Site (server-to-server)", async () => {
+  it("returns 403 for DELETE with no Sec-Fetch-Site (fail-closed default)", async () => {
+    const app = makeApp();
+    const res = await app.request("/test", { method: "DELETE" });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("allows DELETE with no Sec-Fetch-Site when allowMissingHeader: true", async () => {
+    const app = makeApp({ allowMissingHeader: true });
     const res = await app.request("/test", { method: "DELETE" });
     expect(res.status).toBe(200);
   });

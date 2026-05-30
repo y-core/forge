@@ -16,7 +16,15 @@ export interface RateLimitOptions<E extends Env = Env> {
 const DEFAULT_MESSAGE = "Too many requests. Please try again later.";
 
 function defaultKey(c: Context): string {
-  return c.req.header("CF-Connecting-IP") ?? "unknown";
+  const ip = c.req.header("CF-Connecting-IP");
+  if (!ip) {
+    // Fail-closed: off-Cloudflare deployments must provide an explicit `key` option.
+    throw new Error(
+      "rateLimit: CF-Connecting-IP header is absent and no custom key function was provided. " +
+        "Pass a `key` option for non-Cloudflare deployments.",
+    );
+  }
+  return ip;
 }
 
 function defaultOnLimit(): Response {
@@ -40,7 +48,13 @@ export function rateLimit<E extends Env = Env>(options: RateLimitOptions<E>): Mi
       }
       return new Response("Service unavailable", { status: 503 });
     }
-    const { success } = await binding.limit({ key: key(c) });
+    let resolvedKey: string;
+    try {
+      resolvedKey = key(c);
+    } catch {
+      return new Response("Service unavailable", { status: 503 });
+    }
+    const { success } = await binding.limit({ key: resolvedKey });
     if (!success) {
       return onLimit(c);
     }

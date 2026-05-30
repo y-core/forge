@@ -1,11 +1,6 @@
-import type { MiddlewareHandler } from "hono";
+import type { Context } from "hono";
 
-/** Middleware that rejects requests without an `HX-Request: true` header (403). @public */
-export function requireHxRequest(): MiddlewareHandler {
-  return async (c, next) => {
-    if (c.req.header("HX-Request") !== "true") {
-      return c.text("Forbidden", 403);
-    }
-    return next();
-  };
+/** Returns true when the request carries an HX-Request: true header. Use as a routing hint, not a security boundary. @public */
+export function isHxRequest(c: Context): boolean {
+  return c.req.header("HX-Request") === "true";
 }

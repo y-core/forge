@@ -6,8 +6,15 @@ type SignedCookieOptions = Omit<CookieOptions, "httpOnly" | "secure" | "secrets"
   sameSite?: "Strict" | "Lax";
 };
 
-/** Creates a cookie that is always httpOnly, secure, and HMAC-signed via the provided secrets. */
+/** Creates a cookie that is always httpOnly, secure, and HMAC-signed via the provided secrets. Throws if any secret is shorter than 32 characters. */
 export function createSignedCookie(name: string, options: SignedCookieOptions) {
+  for (const secret of options.secrets) {
+    if (secret.length < 32) {
+      throw new Error(
+        `createSignedCookie: each secret must be at least 32 characters (got ${secret.length})`,
+      );
+    }
+  }
   return createCookie(name, {
     ...options,
     httpOnly: true,

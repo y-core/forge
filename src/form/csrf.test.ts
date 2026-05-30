@@ -181,7 +181,7 @@ describe("csrfProtection middleware", () => {
     const oldRing = await importCsrfKeyRing([secret2]);
 
     const oldKey = oldRing.keys[oldRing.activeKeyId];
-    const oldToken = await createCsrfToken(oldKey, "/test", oldRing.activeKeyId);
+    const oldToken = await createCsrfToken(oldKey, "/test", { kid: oldRing.activeKeyId });
 
     const app = new Hono<CsrfVariables>();
     app.use("*", csrfProtection({ secret: () => ring }));
@@ -276,7 +276,7 @@ describe("CSRF token", () => {
   });
 
   it("round-trip with explicit kid and ring succeeds", async () => {
-    const token = await createCsrfToken(key, "/api/contact", "v2");
+    const token = await createCsrfToken(key, "/api/contact", { kid: "v2" });
     const ring: CsrfKeyRing = { activeKeyId: "v2", keys: { v2: key } };
     const result = await verifyCsrfToken(ring, token, "/api/contact");
     expect(result).toEqual({ ok: true });
@@ -290,7 +290,7 @@ describe("CSRF token", () => {
 
   it("rejects an expired token", async () => {
     const token = await createCsrfToken(key, "/api/contact");
-    const result = await verifyCsrfToken(key, token, "/api/contact", -1);
+    const result = await verifyCsrfToken(key, token, "/api/contact", { maxAgeMs: -1 });
     expect(result).toEqual({ ok: false, reason: "expired" });
   });
 
@@ -318,7 +318,7 @@ describe("CSRF token", () => {
 
   it("accepts a token with a timestamp slightly in the future (within clock skew)", async () => {
     const nearFutureTimestamp = Date.now() + 5_000;
-    const payload = `0|${"/api/contact"}|${nearFutureTimestamp}|${"aa".repeat(16)}`;
+    const payload = `0|${"/api/contact"}||${nearFutureTimestamp}|${"aa".repeat(16)}`;
     const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
     const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
@@ -332,7 +332,7 @@ describe("CSRF token", () => {
 
   it("rejects a token with a future timestamp", async () => {
     const futureTimestamp = Date.now() + 3_600_000;
-    const payload = `0|${"/api/contact"}|${futureTimestamp}|${"aa".repeat(16)}`;
+    const payload = `0|${"/api/contact"}||${futureTimestamp}|${"aa".repeat(16)}`;
     const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
     const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
@@ -345,7 +345,7 @@ describe("CSRF token", () => {
   });
 
   it("rejects a token whose kid is absent from the ring (unknown-key)", async () => {
-    const token = await createCsrfToken(key, "/api/contact", "orphan");
+    const token = await createCsrfToken(key, "/api/contact", { kid: "orphan" });
     const ring: CsrfKeyRing = { activeKeyId: "v1", keys: { v1: key } };
     const result = await verifyCsrfToken(ring, token, "/api/contact");
     expect(result).toEqual({ ok: false, reason: "unknown-key" });
@@ -355,7 +355,7 @@ describe("CSRF token", () => {
     const key2 = await importCsrfKey("cc".repeat(32));
     const ring: CsrfKeyRing = { activeKeyId: "k1", keys: { k1: key, k2: key2 } };
 
-    const token = await createCsrfToken(key, "/api/contact", "k1");
+    const token = await createCsrfToken(key, "/api/contact", { kid: "k1" });
     const dotIdx = token.indexOf(".");
     const payloadEncoded = token.slice(0, dotIdx);
     const sigEncoded = token.slice(dotIdx + 1);
@@ -373,9 +373,39 @@ describe("CSRF token", () => {
   });
 
   it("rejects a kid containing pipe character", async () => {
-    await expect(createCsrfToken(key, "/test", "a|b")).rejects.toThrow(
+    await expect(createCsrfToken(key, "/test", { kid: "a|b" })).rejects.toThrow(
       "CSRF key id must not contain '|'",
     );
+  });
+
+  it("rejects a subject containing pipe character", async () => {
+    await expect(createCsrfToken(key, "/test", { subject: "a|b" })).rejects.toThrow(
+      "CSRF subject must not contain '|'",
+    );
+  });
+
+  it("round-trip with subject succeeds when subjects match", async () => {
+    const token = await createCsrfToken(key, "/api/contact", { subject: "session-abc" });
+    const result = await verifyCsrfToken(key, token, "/api/contact", { subject: "session-abc" });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("rejects when subject at verify time differs from token subject", async () => {
+    const token = await createCsrfToken(key, "/api/contact", { subject: "session-abc" });
+    const result = await verifyCsrfToken(key, token, "/api/contact", { subject: "session-xyz" });
+    expect(result).toEqual({ ok: false, reason: "subject-mismatch" });
+  });
+
+  it("rejects when subject required at verify but token has no subject", async () => {
+    const token = await createCsrfToken(key, "/api/contact");
+    const result = await verifyCsrfToken(key, token, "/api/contact", { subject: "session-abc" });
+    expect(result).toEqual({ ok: false, reason: "subject-mismatch" });
+  });
+
+  it("accepts any subject when no subject given at verify time", async () => {
+    const token = await createCsrfToken(key, "/api/contact", { subject: "any-session" });
+    const result = await verifyCsrfToken(key, token, "/api/contact");
+    expect(result).toEqual({ ok: true });
   });
 });
 
@@ -386,11 +416,11 @@ describe("CSRF token rotation overlap", () => {
     const ring = await importCsrfKeyRing([secretNew, secretOld]);
 
     const newKey = ring.keys[ring.activeKeyId];
-    const tokenNew = await createCsrfToken(newKey, "/form", ring.activeKeyId);
+    const tokenNew = await createCsrfToken(newKey, "/form", { kid: ring.activeKeyId });
 
     const oldRing = await importCsrfKeyRing([secretOld]);
     const oldKey = oldRing.keys[oldRing.activeKeyId];
-    const tokenOld = await createCsrfToken(oldKey, "/form", oldRing.activeKeyId);
+    const tokenOld = await createCsrfToken(oldKey, "/form", { kid: oldRing.activeKeyId });
 
     expect(await verifyCsrfToken(ring, tokenNew, "/form")).toEqual({ ok: true });
     expect(await verifyCsrfToken(ring, tokenOld, "/form")).toEqual({ ok: true });
@@ -419,7 +449,7 @@ describe("importCsrfKeyRing()", () => {
     expect(kids.length).toBe(2);
 
     for (const kid of kids) {
-      const token = await createCsrfToken(ring.keys[kid], "/test", kid);
+      const token = await createCsrfToken(ring.keys[kid], "/test", { kid });
       const result = await verifyCsrfToken(ring, token, "/test");
       expect(result).toEqual({ ok: true });
     }

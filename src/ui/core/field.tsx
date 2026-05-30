@@ -1,7 +1,6 @@
 import type { Child, FC, JSX, PropsWithChildren } from "hono/jsx";
 import { createContext, useContext } from "hono/jsx";
-import { Separator } from "./separator";
-import { cn } from "./utils/cn";
+import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
 interface FieldContextValue {
@@ -20,31 +19,6 @@ interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children">
   invalid?: boolean;
   disabled?: boolean;
   orientation?: FieldOrientation;
-  children?: Child;
-}
-
-interface FieldGroupProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  children?: Child;
-}
-
-interface FieldSetProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
-  children?: Child;
-}
-
-interface FieldLegendProps extends Omit<JSX.IntrinsicElements["legend"], "children"> {
-  children?: Child;
-  variant?: "label" | "legend";
-}
-
-interface FieldContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  children?: Child;
-}
-
-interface FieldTitleProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  children?: Child;
-}
-
-interface FieldSeparatorProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   children?: Child;
 }
 
@@ -78,6 +52,10 @@ const fieldVariants = cva({
   },
 });
 
+/** Shared Tailwind class string for FieldLabel and FieldTitle. */
+export const FIELD_LABEL_CLASSES =
+  "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-brand-900 group-data-[disabled=true]/field:opacity-50";
+
 export function fieldId(name: string): string {
   return `field-${name}`;
 }
@@ -100,13 +78,14 @@ export function useFieldControlProps<T extends FieldControlProps>(props: T): T {
     return props;
   }
 
-  const describedBy = [
-    props["aria-describedby"],
-    field.descriptionId,
-    field.invalid ? field.errorId : undefined,
-  ]
-    .filter(Boolean)
-    .join(" ") || undefined;
+  const existingDescribedBy = props["aria-describedby"];
+  const describedBy = existingDescribedBy
+    ? field.invalid
+      ? `${existingDescribedBy} ${field.descriptionId} ${field.errorId}`
+      : `${existingDescribedBy} ${field.descriptionId}`
+    : field.invalid
+      ? `${field.descriptionId} ${field.errorId}`
+      : field.descriptionId;
 
   return {
     ...props,
@@ -118,53 +97,6 @@ export function useFieldControlProps<T extends FieldControlProps>(props: T): T {
   };
 }
 
-export const FieldSet: FC<PropsWithChildren<FieldSetProps>> = ({ class: cls, children, ...props }) => (
-  <fieldset
-    data-slot="field-set"
-    class={cn("flex flex-col gap-6", typeof cls === "string" ? cls : undefined)}
-    {...props}
-  >
-    {children}
-  </fieldset>
-);
-
-export const FieldLegend: FC<PropsWithChildren<FieldLegendProps>> = ({
-  class: cls,
-  variant = "legend",
-  children,
-  ...props
-}) => (
-  <legend
-    data-slot="field-legend"
-    data-variant={variant}
-    class={cn(
-      "mb-3 font-medium",
-      variant === "legend" ? "text-base text-brand-900" : "text-sm text-brand-900",
-      typeof cls === "string" ? cls : undefined,
-    )}
-    {...props}
-  >
-    {children}
-  </legend>
-);
-
-export const FieldGroup: FC<PropsWithChildren<FieldGroupProps>> = ({
-  class: cls,
-  children,
-  ...props
-}) => (
-  <div
-    data-slot="field-group"
-    class={cn(
-      "@container/field-group flex w-full flex-col gap-6",
-      typeof cls === "string" ? cls : undefined,
-    )}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
 export const Field: FC<PropsWithChildren<FieldProps>> = ({
   name,
   invalid = false,
@@ -174,7 +106,6 @@ export const Field: FC<PropsWithChildren<FieldProps>> = ({
   children,
   ...props
 }) => {
-  const className = typeof cls === "string" ? cls : undefined;
   const value: FieldContextValue = {
     descriptionId: fieldDescriptionId(name),
     disabled,
@@ -192,7 +123,7 @@ export const Field: FC<PropsWithChildren<FieldProps>> = ({
         data-disabled={disabled ? "true" : undefined}
         data-invalid={invalid ? "true" : undefined}
         data-orientation={orientation}
-        class={fieldVariants({ orientation, class: className })}
+        class={fieldVariants({ orientation, class: asClass(cls) })}
         {...props}
       >
         {children}
@@ -201,23 +132,6 @@ export const Field: FC<PropsWithChildren<FieldProps>> = ({
   );
 };
 
-export const FieldContent: FC<PropsWithChildren<FieldContentProps>> = ({
-  class: cls,
-  children,
-  ...props
-}) => (
-  <div
-    data-slot="field-content"
-    class={cn(
-      "flex flex-1 flex-col gap-1.5 leading-snug",
-      typeof cls === "string" ? cls : undefined,
-    )}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
 export const FieldLabel: FC<PropsWithChildren<LabelProps>> = ({
   class: cls,
   for: htmlFor,
@@ -225,15 +139,11 @@ export const FieldLabel: FC<PropsWithChildren<LabelProps>> = ({
   ...props
 }) => {
   const field = getFieldContext();
-  const className = typeof cls === "string" ? cls : undefined;
 
   return (
     <label
       data-slot="field-label"
-      class={cn(
-        "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-brand-900 group-data-[disabled=true]/field:opacity-50",
-        className,
-      )}
+      class={cn(FIELD_LABEL_CLASSES, asClass(cls))}
       for={htmlFor ?? field?.id}
       {...props}
     >
@@ -242,23 +152,6 @@ export const FieldLabel: FC<PropsWithChildren<LabelProps>> = ({
   );
 };
 
-export const FieldTitle: FC<PropsWithChildren<FieldTitleProps>> = ({
-  class: cls,
-  children,
-  ...props
-}) => (
-  <div
-    data-slot="field-title"
-    class={cn(
-      "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-brand-900 group-data-[disabled=true]/field:opacity-50",
-      typeof cls === "string" ? cls : undefined,
-    )}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
 export const FieldDescription: FC<PropsWithChildren<DescriptionProps>> = ({
   class: cls,
   id,
@@ -266,12 +159,11 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps>> = ({
   ...props
 }) => {
   const field = getFieldContext();
-  const className = typeof cls === "string" ? cls : undefined;
 
   return (
     <p
       data-slot="field-description"
-      class={cn("text-sm leading-normal text-brand-600", className)}
+      class={cn("text-sm leading-normal text-brand-600", asClass(cls))}
       id={id ?? field?.descriptionId}
       {...props}
     >
@@ -292,12 +184,11 @@ export const FieldError: FC<PropsWithChildren<ErrorProps>> = ({
   }
 
   const field = getFieldContext();
-  const className = typeof cls === "string" ? cls : undefined;
 
   return (
     <p
       data-slot="field-error"
-      class={cn("text-sm font-normal text-red-600", className)}
+      class={cn("text-sm font-normal text-red-600", asClass(cls))}
       id={id ?? field?.errorId}
       role={role ?? "alert"}
       {...props}
@@ -306,26 +197,3 @@ export const FieldError: FC<PropsWithChildren<ErrorProps>> = ({
     </p>
   );
 };
-
-export const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({
-  class: cls,
-  children,
-  ...props
-}) => (
-  <div
-    data-content={children ? "true" : undefined}
-    data-slot="field-separator"
-    class={cn("relative h-5 text-sm", typeof cls === "string" ? cls : undefined)}
-    {...props}
-  >
-    <Separator class="absolute inset-0 top-1/2" />
-    {children ? (
-      <span
-        data-slot="field-separator-content"
-        class="relative mx-auto block w-fit bg-white px-2 text-brand-600"
-      >
-        {children}
-      </span>
-    ) : null}
-  </div>
-);

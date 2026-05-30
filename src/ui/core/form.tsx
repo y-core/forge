@@ -1,5 +1,4 @@
 import type { Child, FC, JSX, PropsWithChildren } from "hono/jsx";
-import { CSRF_FIELD_DEFAULT, HONEYPOT_FIELD_DEFAULT } from "../../form/constants";
 
 type PrimitiveFormValue = boolean | number | string | undefined;
 
@@ -8,6 +7,7 @@ type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method"> & {
   "hx-headers"?: Record<string, string> | string;
   children?: Child;
   csrfToken?: string;
+  csrfField?: string;
   honeypotField?: string;
 } & {
   [key: `data-${string}`]: PrimitiveFormValue;
@@ -62,7 +62,8 @@ function resolveHxHeaders(
 
 export const Form: FC<PropsWithChildren<FormProps>> = ({
   csrfToken,
-  honeypotField = HONEYPOT_FIELD_DEFAULT,
+  csrfField = "_csrf",
+  honeypotField = "surname",
   method = "post",
   children,
   "hx-headers": hxHeadersProp,
@@ -81,7 +82,7 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
         <input
           data-slot="form-csrf"
           type="hidden"
-          name={CSRF_FIELD_DEFAULT}
+          name={csrfField}
           value={csrfToken}
         />
       )}

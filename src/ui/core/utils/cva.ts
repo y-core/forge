@@ -13,17 +13,19 @@ export type CVAProps<V extends VariantConfig> = {
 } & { class?: string };
 
 export function cva<V extends VariantConfig>(config: CVAConfig<V>) {
+  const base = config.base ?? "";
+  const variants = config.variants;
+  const defaultVariants = config.defaultVariants ?? ({} as DefaultVariants<V>);
+  const variantKeys = variants ? (Object.keys(variants) as (keyof V)[]) : [];
+
   return (props?: CVAProps<V>): string => {
-    const { variants, base = "", defaultVariants = {} as DefaultVariants<V> } = config;
     const parts: string[] = base ? [base] : [];
 
-    if (variants) {
-      for (const key of Object.keys(variants) as (keyof V)[]) {
-        const variantMap = variants[key] as VariantMap;
-        const value = (props?.[key] ?? defaultVariants[key]) as string | undefined;
-        if (value && variantMap[value]) {
-          parts.push(variantMap[value]);
-        }
+    for (const key of variantKeys) {
+      const variantMap = (variants as VariantConfig)[key as string] as VariantMap;
+      const value = (props?.[key] ?? defaultVariants[key]) as string | undefined;
+      if (value && variantMap[value]) {
+        parts.push(variantMap[value]);
       }
     }
 

@@ -1,6 +1,9 @@
+import { createLogger } from "../logging/logger";
 import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "./types";
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+
+const logger = createLogger("turnstile");
 
 export async function verifyTurnstile(
   formData: ReadonlyFormData,
@@ -9,6 +12,12 @@ export async function verifyTurnstile(
   remoteIp?: string,
   options?: TurnstileVerifyOptions,
 ): Promise<TurnstileResult> {
+  if (!options?.expectedHostname) {
+    logger.warn(
+      "verifyTurnstile: expectedHostname not set — token hostname will not be validated. " +
+        "Set expectedHostname to prevent cross-site token replay.",
+    );
+  }
   const token = formData.get(tokenField);
   if (typeof token !== "string" || token === "") {
     return { ok: false, reason: "missing-token" };

@@ -3,7 +3,6 @@ export { Hono as App } from "hono";
 export { index, layout, prefix, route } from "./config";
 export { applyRoutes } from "./register";
 export type {
-  InferConfig,
   RouteAction,
   RouteConfig,
   RouteConfigEntry,

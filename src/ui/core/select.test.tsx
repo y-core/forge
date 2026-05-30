@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { html } from "hono/html";
-import { Field, FieldContent, FieldLabel } from "./field";
+import { Field, FieldLabel } from "./field";
+import { FieldContent } from "./field-layout";
 import { Select, SelectOptGroup, SelectOption } from "./select";
 
 async function render(element: unknown): Promise<string> {

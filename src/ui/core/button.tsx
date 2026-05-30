@@ -1,6 +1,6 @@
 import type { Child, FC, JSX } from "hono/jsx";
 import { cloneElement, isValidElement } from "hono/jsx";
-import { cn } from "./utils/cn";
+import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
 interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
@@ -40,14 +40,14 @@ export const Button: FC<ButtonProps> = ({
   children,
   ...rest
 }) => {
-  const className = buttonVariants({ variant, size, class: typeof cls === "string" ? cls : undefined });
+  const className = buttonVariants({ variant, size, class: asClass(cls) });
 
   if (asChild) {
     if (!isValidElement(children)) {
       throw new Error("Button with asChild expects a single valid JSX element child.");
     }
 
-    const childClass = typeof children.props.class === "string" ? children.props.class : undefined;
+    const childClass = asClass(children.props.class);
     const childTag = typeof children.tag === "string" ? children.tag : undefined;
 
     return cloneElement(children, {
