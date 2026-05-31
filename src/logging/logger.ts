@@ -5,9 +5,25 @@ import type { LogChannel, Logger, LoggerOptions, LogLevel, LogRecord } from "./t
 export function createLogger(prefix: string, options?: LoggerOptions): Logger {
   const channels: LogChannel[] = options?.channels ?? [consoleChannel()];
   const pending: Promise<void>[] = [];
+  return makeLogger(prefix, options?.bindings ?? {}, channels, pending);
+}
 
+function makeLogger(
+  prefix: string,
+  bindings: Record<string, unknown>,
+  channels: LogChannel[],
+  pending: Promise<void>[],
+): Logger {
   function dispatch(level: LogLevel, message: string, data?: Record<string, unknown>): void {
-    const record: LogRecord = { level, prefix, message, timestamp: new Date().toISOString(), ...(data ? { data } : {}) };
+    const hasBindings = Object.keys(bindings).length > 0;
+    const merged = hasBindings || data ? { ...bindings, ...(data ?? {}) } : undefined;
+    const record: LogRecord = {
+      level,
+      prefix,
+      message,
+      timestamp: new Date().toISOString(),
+      ...(merged !== undefined ? { data: merged } : {}),
+    };
     for (const channel of channels) {
       const result = channel(record);
       if (result instanceof Promise) {
@@ -24,6 +40,9 @@ export function createLogger(prefix: string, options?: LoggerOptions): Logger {
     async flush(): Promise<void> {
       const toAwait = pending.splice(0);
       await Promise.all(toAwait);
+    },
+    child(extra: Record<string, unknown>): Logger {
+      return makeLogger(prefix, { ...bindings, ...extra }, channels, pending);
     },
   };
 }

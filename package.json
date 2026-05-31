@@ -90,6 +90,10 @@
       "types": "./src/logging/mod.ts",
       "import": "./src/logging/mod.ts"
     },
+    "./logging/http": {
+      "types": "./src/logging/http/mod.ts",
+      "import": "./src/logging/http/mod.ts"
+    },
     "./pkg": {
       "types": "./src/pkg/mod.ts",
       "import": "./src/pkg/mod.ts"

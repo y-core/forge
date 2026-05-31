@@ -131,3 +131,94 @@ describe("createLogger", () => {
     expect("data" in records[0]).toBe(false);
   });
 });
+
+describe("createLogger — child()", () => {
+  it("child merges bindings into data on records", () => {
+    const records: LogRecord[] = [];
+    const ch: LogChannel = (r) => { records.push(r); };
+    const log = createLogger("svc", { channels: [ch] });
+    const child = log.child({ requestId: "abc-123" });
+
+    child.info("handler called");
+
+    expect(records[0].data).toStrictEqual({ requestId: "abc-123" });
+  });
+
+  it("per-call data overrides a binding of the same key", () => {
+    const records: LogRecord[] = [];
+    const ch: LogChannel = (r) => { records.push(r); };
+    const log = createLogger("svc", { channels: [ch] });
+    const child = log.child({ requestId: "original" });
+
+    child.warn("override", { requestId: "overridden", extra: "val" });
+
+    expect(records[0].data).toStrictEqual({ requestId: "overridden", extra: "val" });
+  });
+
+  it("parent and child share the same pending queue so one flush() drains both", async () => {
+    const order: string[] = [];
+    const asyncChannel: LogChannel = (_r) =>
+      new Promise<void>((resolve) => {
+        setTimeout(() => { order.push("async"); resolve(); }, 10);
+      });
+
+    const log = createLogger("parent", { channels: [asyncChannel] });
+    const child = log.child({ requestId: "r1" });
+
+    child.info("from child");
+    order.push("before-flush");
+    await log.flush(); // flush on parent drains child writes too
+    order.push("after-flush");
+
+    expect(order).toStrictEqual(["before-flush", "async", "after-flush"]);
+  });
+
+  it("child shares channels with parent — writes go to all channels", () => {
+    const records1: LogRecord[] = [];
+    const records2: LogRecord[] = [];
+    const ch1: LogChannel = (r) => { records1.push(r); };
+    const ch2: LogChannel = (r) => { records2.push(r); };
+
+    const log = createLogger("p", { channels: [ch1, ch2] });
+    const child = log.child({ userId: "u1" });
+
+    child.error("boom");
+
+    expect(records1).toHaveLength(1);
+    expect(records2).toHaveLength(1);
+    expect(records1[0].data).toStrictEqual({ userId: "u1" });
+  });
+
+  it("child bindings do not affect the parent logger", () => {
+    const records: LogRecord[] = [];
+    const ch: LogChannel = (r) => { records.push(r); };
+    const log = createLogger("svc", { channels: [ch] });
+    log.child({ requestId: "child-only" });
+
+    log.info("parent msg");
+
+    expect("data" in records[0]).toBe(false);
+  });
+
+  it("nested children accumulate bindings", () => {
+    const records: LogRecord[] = [];
+    const ch: LogChannel = (r) => { records.push(r); };
+    const log = createLogger("svc", { channels: [ch] });
+    const child = log.child({ requestId: "r1" });
+    const grandchild = child.child({ userId: "u1" });
+
+    grandchild.debug("deep");
+
+    expect(records[0].data).toStrictEqual({ requestId: "r1", userId: "u1" });
+  });
+
+  it("createLogger bindings option sets initial bindings", () => {
+    const records: LogRecord[] = [];
+    const ch: LogChannel = (r) => { records.push(r); };
+    const log = createLogger("svc", { channels: [ch], bindings: { service: "api" } });
+
+    log.info("startup");
+
+    expect(records[0].data).toStrictEqual({ service: "api" });
+  });
+});

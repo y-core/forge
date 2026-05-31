@@ -12,6 +12,7 @@ export type LogChannel = (record: LogRecord) => void | Promise<void>;
 
 export interface LoggerOptions {
   channels?: LogChannel[];
+  bindings?: Record<string, unknown>;
 }
 
 export interface Logger {
@@ -20,4 +21,6 @@ export interface Logger {
   warn(message: string, data?: Record<string, unknown>): void;
   error(message: string, data?: Record<string, unknown>): void;
   flush(): Promise<void>;
+  /** Creates a child logger sharing the same channels and pending queue, with merged bindings. @public */
+  child(bindings: Record<string, unknown>): Logger;
 }

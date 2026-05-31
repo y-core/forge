@@ -69,7 +69,7 @@ describe("createKVStore — prefix round-trip", () => {
     const stub = makeKVStub();
     const store = createKVStore(stub, { prefix: "sess" });
     await store.set("abc", "data");
-    expect(stub._store.has("sess:abc")).toBe(true);
+    expect(stub._store.has("sess||abc")).toBe(true);
   });
 
   it("strips prefix from list results", async () => {
