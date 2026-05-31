@@ -42,6 +42,7 @@ describe("validateBindings", () => {
 
   it("returns 500 when env is invalid (handler is never reached)", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
     app.use("*", validateBindings(simpleSchema));
     let handlerReached = false;
     app.get("/", (c) => {

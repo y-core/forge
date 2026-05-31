@@ -34,6 +34,7 @@ describe("resolveObjectStore", () => {
 
   it("throws when binding is absent and required is true (default)", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
     app.get("/", (c) => {
       resolveObjectStore(c, { binding: () => undefined });
       return c.text("ok");
@@ -64,6 +65,7 @@ describe("validateR2Binding", () => {
 
   it("throws when the binding is missing", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
     app.use("*", validateR2Binding("MY_BUCKET"));
     app.get("/", (c) => c.text("ok"));
     const res = await app.request("/", {}, {});

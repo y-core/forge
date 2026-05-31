@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { applyRoutes, route } from "../router/mod";
-import { defineAction } from "./define-action";
+import { defineAction } from "./action";
 
 interface TestData {
   name: string;

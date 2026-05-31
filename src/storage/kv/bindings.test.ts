@@ -24,6 +24,7 @@ describe("resolveKVStore", () => {
 
   it("throws when binding is absent and required is true (default)", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
     app.get("/", (c) => {
       resolveKVStore(c, { binding: () => undefined });
       return c.text("ok");
@@ -54,6 +55,7 @@ describe("validateKVBinding", () => {
 
   it("throws when the binding is missing", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
     app.use("*", validateKVBinding("MY_KV"));
     app.get("/", (c) => c.text("ok"));
     const res = await app.request("/", {}, {});

@@ -29,6 +29,7 @@ describe("resolveD1Client", () => {
 
   it("throws when binding is absent and required is true (default)", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
     app.get("/", (c) => {
       resolveD1Client(c, { binding: () => undefined });
       return c.text("ok");
@@ -59,6 +60,7 @@ describe("validateD1Binding", () => {
 
   it("throws when the binding is missing", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
     app.use("*", validateD1Binding("DB"));
     app.get("/", (c) => c.text("ok"));
     const res = await app.request("/", {}, {});

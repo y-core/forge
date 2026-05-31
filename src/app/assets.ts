@@ -6,7 +6,12 @@ import type { AssetOptions, AssetsFetcher } from "./types";
 
 type HasAssets = { Bindings: { ASSETS?: AssetsFetcher } };
 
-/** Route handler that serves static assets from the `ASSETS` binding, falling back to `notFoundView`. @public */
+/** Registers the static-asset catch-all handler onto a Hono app. @public */
+export function applyAssets<E extends Env & HasAssets>(app: Hono<E>, options: AssetOptions<E>, path = "*"): void {
+  app.all(path, serveAssets(app, options));
+}
+
+/** Route handler that serves static assets from the `ASSETS` binding, falling back to `notFoundView`. */
 export function serveAssets<E extends Env & HasAssets>(app: Hono<E>, options: AssetOptions<E>) {
   return async (c: Context<E>): Promise<Response> => {
     const configStore = retrieveConfig<InferConfig<E>>(app);

@@ -18,7 +18,7 @@ function makeApp(channel: LogChannel, extraBindings?: Record<string, unknown>) {
   app.use(
     "*",
     requestLogger({
-      channels: [channel],
+      channels: () => [channel],
       bindings: extraBindings ? () => extraBindings : undefined,
     }),
   );
@@ -71,7 +71,7 @@ describe("requestLogger", () => {
   it("uses the custom prefix when provided", async () => {
     const { records, channel } = makeCapture();
     const app = new Hono<LoggerVariables>();
-    app.use("*", requestLogger({ prefix: "worker", channels: [channel] }));
+    app.use("*", requestLogger({ prefix: "worker", channels: () => [channel] }));
     app.get("/test", (c) => {
       c.get("logger").info("msg");
       return c.text("ok");
@@ -88,7 +88,7 @@ describe("requestLogger", () => {
 
     const { channel } = makeCapture();
     const app = new Hono<LoggerVariables>();
-    app.use("*", requestLogger({ channels: [channel] }));
+    app.use("*", requestLogger({ channels: () => [channel] }));
     app.get("/test", (c) => {
       c.get("logger").info("msg");
       return c.text("ok");
@@ -108,7 +108,7 @@ describe("requestLogger", () => {
       });
 
     const app = new Hono<LoggerVariables>();
-    app.use("*", requestLogger({ channels: [asyncChannel] }));
+    app.use("*", requestLogger({ channels: () => [asyncChannel] }));
     app.get("/test", (c) => {
       c.get("logger").info("trigger");
       return c.text("ok");

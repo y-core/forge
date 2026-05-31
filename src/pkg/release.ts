@@ -1,3 +1,4 @@
+import { exit } from "node:process";
 import { createCommand } from "../cli/command";
 import type { Command } from "../cli/types";
 import { createTag, isWorkingTreeClean } from "./git";
@@ -41,7 +42,7 @@ export function createReleaseCommand(
 
       if (!dry && !allowDirty && !deps.isWorkingTreeClean(cwd)) {
         console.error("Error: Working tree is not clean. Commit or stash changes first, or use --allow-dirty.");
-        process.exit(1);
+        exit(1);
       }
 
       const result = deps.resolveVersion({ explicit, cwd, tagPrefix });

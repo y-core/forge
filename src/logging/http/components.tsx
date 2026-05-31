@@ -1,7 +1,6 @@
 /** @jsxImportSource @y-core/forge */
 import type { FC, } from "hono/jsx";
 import { Button } from "../../ui/core/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../ui/core/card";
 import { Field, FieldLabel } from "../../ui/core/field";
 import { Input } from "../../ui/core/input";
 import { Select, SelectOption } from "../../ui/core/select";
@@ -49,7 +48,7 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
     class="flex flex-wrap items-end gap-3"
     hx-get={formAction}
     hx-target={`#${targetId}`}
-    hx-swap="innerHTML"
+    hx-swap="outerHTML"
     hx-push-url="true"
   >
     <Field name="level" class="w-36">
@@ -75,10 +74,11 @@ interface LogTableProps {
   cursor?: string;
   complete: boolean;
   loadMoreAction: string;
+  tbodyId?: string;
 }
 
 /** Table of log rows with level badges and optional load-more button. @public */
-export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAction }) => (
+export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAction, tbodyId }) => (
   <div class="overflow-x-auto">
     <table class="w-full border-collapse text-sm">
       <thead>
@@ -90,7 +90,7 @@ export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAc
           <th class="py-2">Request ID</th>
         </tr>
       </thead>
-      <LogTableBody rows={rows} cursor={cursor} complete={complete} loadMoreAction={loadMoreAction} />
+      <LogTableBody id={tbodyId} rows={rows} cursor={cursor} complete={complete} loadMoreAction={loadMoreAction} />
     </table>
   </div>
 );
@@ -100,11 +100,12 @@ interface LogTableBodyProps {
   cursor?: string;
   complete: boolean;
   loadMoreAction: string;
+  id?: string;
 }
 
 /** `<tbody>` fragment — returned standalone for HTMX partial swaps. @public */
-export const LogTableBody: FC<LogTableBodyProps> = ({ rows, cursor, complete, loadMoreAction }) => (
-  <tbody>
+export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, cursor, complete, loadMoreAction }) => (
+  <tbody id={id}>
     {rows.length === 0 && (
       <tr>
         <td colspan={5} class="py-8 text-center text-brand-500 text-sm">
@@ -141,55 +142,3 @@ export const LogTableBody: FC<LogTableBodyProps> = ({ rows, cursor, complete, lo
   </tbody>
 );
 
-interface LogViewerPageProps {
-  rows: LogRow[];
-  cursor?: string;
-  complete: boolean;
-  level?: string;
-  q?: string;
-  basePath: string;
-  tbodyId: string;
-}
-
-/** Self-contained log viewer page shell. @public */
-export const LogViewerPage: FC<LogViewerPageProps> = ({
-  rows,
-  cursor,
-  complete,
-  level,
-  q,
-  basePath,
-  tbodyId,
-}) => (
-  <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Log Viewer</title>
-      <script src="https://unpkg.com/htmx.org@2/dist/htmx.min.js" />
-    </head>
-    <body class="bg-brand-50 p-6 text-brand-900">
-      <div class="mx-auto max-w-7xl space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Log Viewer</CardTitle>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <LogFilterBar
-              level={level}
-              q={q}
-              targetId={tbodyId}
-              formAction={basePath}
-            />
-            <LogTable
-              rows={rows}
-              cursor={cursor}
-              complete={complete}
-              loadMoreAction={basePath}
-            />
-          </CardContent>
-        </Card>
-      </div>
-    </body>
-  </html>
-);

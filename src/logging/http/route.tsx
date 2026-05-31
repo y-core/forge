@@ -4,7 +4,7 @@ import { html } from "../../http/mod";
 import type { RouteModule } from "../../router/types";
 import type { KVNamespace } from "../../storage/kv/types";
 import type { LogLevel } from "../types";
-import { LogTableBody, LogViewerPage } from "./components";
+import { LogTableBody } from "./components";
 import { readLogs } from "./reader";
 
 const TBODY_ID = "log-tbody";
@@ -17,7 +17,8 @@ export interface LogViewerOptions {
   basePath?: string;
 }
 
-interface ViewerLoaderData {
+/** Data returned by the log viewer loader — type the `state.data` in your view. @public */
+export interface LogViewerLoaderData {
   rows: Awaited<ReturnType<typeof readLogs>>["rows"];
   cursor?: string;
   complete: boolean;
@@ -36,7 +37,7 @@ export function logViewer(options: LogViewerOptions): RouteModule {
   const basePath = options.basePath ?? "/admin/logs";
 
   return {
-    loader: async (c): Promise<ViewerLoaderData | Response> => {
+    loader: async (c): Promise<LogViewerLoaderData | Response> => {
       const kv = options.kv(c);
       const level = c.req.query("level") as LogLevel | undefined;
       const q = c.req.query("q");
@@ -48,11 +49,12 @@ export function logViewer(options: LogViewerOptions): RouteModule {
         cursor: cursor || undefined,
       });
 
-      // HTMX partial: return only the <tbody> fragment
+      // HTMX partial: return only the <tbody> fragment; id must survive outerHTML swap
       if (c.req.header("HX-Request") === "true") {
         return c.html(
           html`${(
             <LogTableBody
+              id={TBODY_ID}
               rows={result.rows}
               cursor={result.cursor}
               complete={result.complete}
@@ -70,23 +72,6 @@ export function logViewer(options: LogViewerOptions): RouteModule {
         q: q || undefined,
         basePath,
       };
-    },
-
-    view: (c, _config, state) => {
-      const data = state.data as ViewerLoaderData;
-      return c.html(
-        html`<!DOCTYPE html>${(
-          <LogViewerPage
-            rows={data.rows}
-            cursor={data.cursor}
-            complete={data.complete}
-            level={data.level}
-            q={data.q}
-            basePath={data.basePath}
-            tbodyId={TBODY_ID}
-          />
-        )}`,
-      );
     },
   };
 }

@@ -3,7 +3,7 @@ import type { Env } from "hono";
 import { Hono } from "hono";
 import { applyRoutes, route } from "../router/mod";
 import type { RouteModule } from "../router/types";
-import { definePage } from "./define-page";
+import { definePage } from "./page";
 
 function makeApp(pageModule: unknown) {
   const app = new Hono();

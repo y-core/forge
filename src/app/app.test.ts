@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Config } from "../config/config";
 import { applyRoutes, route } from "../router/mod";
 import { v } from "../validation/mod";
-import { createApp } from "./create-app";
+import { createApp } from "./app";
 
 describe("createApp", () => {
   it("error boundary returns 500 HTML for unhandled errors", async () => {

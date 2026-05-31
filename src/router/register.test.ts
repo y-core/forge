@@ -63,6 +63,7 @@ describe("applyRoutes — GET orchestration", () => {
 
   it("returns 500 when a GET route has a loader but no view", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
 
     applyRoutes(app, [route("/broken", { loader: () => ({ ok: true }) })]);
 
@@ -114,6 +115,7 @@ describe("applyRoutes — POST orchestration", () => {
 
   it("returns 500 when an action returns data without a view", async () => {
     const app = new Hono();
+    app.onError((err, c) => c.text(err.message, 500));
 
     applyRoutes(app, [
       route("/broken", {
