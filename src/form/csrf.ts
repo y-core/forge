@@ -1,38 +1,25 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
+import {
+  base64urlDecode,
+  base64urlEncode,
+  bytesToHex,
+  hmacSign,
+  hmacVerify,
+  importHmacKeyFromHex,
+  randomBytes,
+  sha256,
+  utf8Decode,
+  utf8Encode,
+} from "../crypto/mod";
 import { CSRF_FIELD_DEFAULT } from "./constants";
 import { parseFormData } from "./parse-form-data";
 import type { CsrfKeyRing, CsrfResult, CsrfSecretResolver, CsrfVariables } from "./types";
 
-// Module-level singletons — TextEncoder/TextDecoder are stateless, so reusing them
-// across every sign/verify avoids a fresh allocation per CSRF operation.
-const TEXT_ENCODER = new TextEncoder();
-const TEXT_DECODER = new TextDecoder();
 const CLOCK_SKEW_MS = 30_000;
 const DEFAULT_KEY_ID = "0";
 
-function base64urlEncode(data: Uint8Array | ArrayBuffer): string {
-  const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-function base64urlDecode(str: string): Uint8Array {
-  const padded = str.replace(/-/g, "+").replace(/_/g, "/");
-  const remainder = padded.length % 4;
-  const padded2 = remainder ? padded + "=".repeat(4 - remainder) : padded;
-  const binary = atob(padded2);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
 async function keyFingerprint(hexSecret: string): Promise<string> {
-  const hash = await crypto.subtle.digest(
-    "SHA-256",
-    TEXT_ENCODER.encode(hexSecret.toLowerCase()),
-  );
-  return base64urlEncode(new Uint8Array(hash)).slice(0, 12);
+  return base64urlEncode(await sha256(hexSecret.toLowerCase())).slice(0, 12);
 }
 
 function normalizeRing(keyOrRing: CryptoKey | CsrfKeyRing): CsrfKeyRing {
@@ -43,22 +30,8 @@ function normalizeRing(keyOrRing: CryptoKey | CsrfKeyRing): CsrfKeyRing {
 }
 
 /** Imports a hex-encoded secret as a Web Crypto HMAC-SHA256 key for CSRF operations. @public */
-export async function importCsrfKey(hexSecret: string): Promise<CryptoKey> {
-  if (hexSecret.length % 2 !== 0)
-    throw new Error("CSRF secret must have an even number of hex characters");
-  if (!/^[0-9a-fA-F]+$/.test(hexSecret))
-    throw new Error("CSRF secret must contain only hexadecimal characters (0-9, a-f, A-F)");
-  const pairs = hexSecret.match(/.{2}/g);
-  if (!pairs || pairs.length < 16)
-    throw new Error("CSRF secret must be at least 32 hex characters (16 bytes)");
-  const bytes = new Uint8Array(pairs.map((h) => Number.parseInt(h, 16)));
-  return crypto.subtle.importKey(
-    "raw",
-    bytes,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"],
-  );
+export function importCsrfKey(hexSecret: string): Promise<CryptoKey> {
+  return importHmacKeyFromHex(hexSecret, "CSRF secret");
 }
 
 /**
@@ -116,14 +89,10 @@ export async function createCsrfToken(
     throw new Error("CSRF subject must not contain '|'");
   }
   const timestamp = Date.now().toString();
-  const randomBytes = crypto.getRandomValues(new Uint8Array(16));
-  const randomHex = Array.from(randomBytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  const payload = `${effectiveKid}|${path}|${subject}|${timestamp}|${randomHex}`;
-  const payloadEncoded = base64urlEncode(TEXT_ENCODER.encode(payload));
-  const sigBuffer = await crypto.subtle.sign("HMAC", key, TEXT_ENCODER.encode(payload));
-  const sigEncoded = base64urlEncode(new Uint8Array(sigBuffer));
+  const nonce = bytesToHex(randomBytes(16));
+  const payload = `${effectiveKid}|${path}|${subject}|${timestamp}|${nonce}`;
+  const payloadEncoded = base64urlEncode(utf8Encode(payload));
+  const sigEncoded = base64urlEncode(await hmacSign(key, payload));
   return `${payloadEncoded}.${sigEncoded}`;
 }
 
@@ -166,7 +135,7 @@ export async function verifyCsrfToken(
   const payloadEncoded = token.slice(0, dotIdx);
   const sigEncoded = token.slice(dotIdx + 1);
 
-  let sigBytes: Uint8Array;
+  let sigBytes: Uint8Array<ArrayBuffer>;
   try {
     sigBytes = base64urlDecode(sigEncoded);
   } catch {
@@ -175,7 +144,7 @@ export async function verifyCsrfToken(
 
   let payloadStr: string;
   try {
-    payloadStr = TEXT_DECODER.decode(base64urlDecode(payloadEncoded));
+    payloadStr = utf8Decode(base64urlDecode(payloadEncoded));
   } catch {
     return { ok: false, reason: "invalid-format" };
   }
@@ -211,16 +180,7 @@ export async function verifyCsrfToken(
     return { ok: false, reason: "unknown-key" };
   }
 
-  const sigBuffer = sigBytes.buffer.slice(
-    sigBytes.byteOffset,
-    sigBytes.byteOffset + sigBytes.byteLength,
-  ) as ArrayBuffer;
-  const valid = await crypto.subtle.verify(
-    "HMAC",
-    key,
-    sigBuffer,
-    TEXT_ENCODER.encode(payloadStr),
-  );
+  const valid = await hmacVerify(key, payloadStr, sigBytes);
   if (!valid) {
     return { ok: false, reason: "invalid-signature" };
   }
