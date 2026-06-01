@@ -42,7 +42,7 @@ export async function buildJS(
   const absPublicDir = resolve(opts.outDir);
 
   for (const [outPath, meta] of Object.entries(result.metafile.outputs)) {
-    if (meta.entryPoint) {
+    if (meta.entryPoint === bundle.entry) {
       const relPath = relative(absPublicDir, resolve(outPath)).replace(/\\/g, "/");
       const logicalName = `${basename(bundle.entry, extname(bundle.entry))}.js`;
       mapping[`${bundle.outdir}/${logicalName}`] = relPath;
