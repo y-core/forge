@@ -1,15 +1,12 @@
 import type { Child, FC, JSX, PropsWithChildren } from "hono/jsx";
-import { createContext, useContext } from "hono/jsx";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
-interface FieldContextValue {
+/** Plain object describing a form field — pass explicitly to controls instead of relying on context. @public */
+export interface FieldDescriptor {
   name: string;
-  id: string;
-  descriptionId: string;
-  errorId: string;
-  invalid: boolean;
-  disabled: boolean;
+  invalid?: boolean;
+  disabled?: boolean;
 }
 
 type FieldOrientation = "horizontal" | "responsive" | "vertical";
@@ -33,8 +30,6 @@ interface FieldControlProps {
   "aria-describedby"?: string;
   "aria-invalid"?: boolean | "true" | "false";
 }
-
-const FieldContext = createContext<FieldContextValue | null>(null);
 
 const fieldVariants = cva({
   base: "group/field flex w-full gap-3 data-[invalid=true]:text-red-600",
@@ -68,32 +63,28 @@ export function fieldErrorId(name: string): string {
   return `field-${name}-error`;
 }
 
-function getFieldContext(): FieldContextValue | null {
-  return useContext(FieldContext);
-}
-
-export function useFieldControlProps<T extends FieldControlProps>(props: T): T {
-  const field = getFieldContext();
-  if (!field) {
-    return props;
-  }
+/** Pure function that merges field descriptor wiring into control props. @public */
+export function fieldControlProps<T extends FieldControlProps>(props: T, field: FieldDescriptor): T {
+  const invalid = field.invalid ?? false;
+  const descriptionId = fieldDescriptionId(field.name);
+  const errorId = fieldErrorId(field.name);
 
   const existingDescribedBy = props["aria-describedby"];
   const describedBy = existingDescribedBy
-    ? field.invalid
-      ? `${existingDescribedBy} ${field.descriptionId} ${field.errorId}`
-      : `${existingDescribedBy} ${field.descriptionId}`
-    : field.invalid
-      ? `${field.descriptionId} ${field.errorId}`
-      : field.descriptionId;
+    ? invalid
+      ? `${existingDescribedBy} ${descriptionId} ${errorId}`
+      : `${existingDescribedBy} ${descriptionId}`
+    : invalid
+      ? `${descriptionId} ${errorId}`
+      : descriptionId;
 
   return {
     ...props,
-    id: props.id ?? field.id,
+    id: props.id ?? fieldId(field.name),
     name: props.name ?? field.name,
     disabled: props.disabled ?? field.disabled,
     "aria-describedby": describedBy,
-    "aria-invalid": props["aria-invalid"] ?? (field.invalid ? true : undefined),
+    "aria-invalid": props["aria-invalid"] ?? (invalid ? true : undefined),
   };
 }
 
@@ -106,45 +97,33 @@ export const Field: FC<PropsWithChildren<FieldProps>> = ({
   children,
   ...props
 }) => {
-  const value: FieldContextValue = {
-    descriptionId: fieldDescriptionId(name),
-    disabled,
-    errorId: fieldErrorId(name),
-    id: fieldId(name),
-    invalid,
-    name,
-  };
-
   return (
-    <FieldContext.Provider value={value}>
-      <fieldset
-        disabled={disabled}
-        data-slot="field"
-        data-disabled={disabled ? "true" : undefined}
-        data-invalid={invalid ? "true" : undefined}
-        data-orientation={orientation}
-        class={fieldVariants({ orientation, class: asClass(cls) })}
-        {...props}
-      >
-        {children}
-      </fieldset>
-    </FieldContext.Provider>
+    <fieldset
+      disabled={disabled}
+      data-slot="field"
+      data-disabled={disabled ? "true" : undefined}
+      data-invalid={invalid ? "true" : undefined}
+      data-orientation={orientation}
+      class={fieldVariants({ orientation, class: asClass(cls) })}
+      {...props}
+    >
+      {children}
+    </fieldset>
   );
 };
 
-export const FieldLabel: FC<PropsWithChildren<LabelProps>> = ({
+export const FieldLabel: FC<PropsWithChildren<LabelProps & { name?: string }>> = ({
   class: cls,
   for: htmlFor,
+  name,
   children,
   ...props
 }) => {
-  const field = getFieldContext();
-
   return (
     <label
       data-slot="field-label"
       class={cn(FIELD_LABEL_CLASSES, asClass(cls))}
-      for={htmlFor ?? field?.id}
+      for={htmlFor ?? (name ? fieldId(name) : undefined)}
       {...props}
     >
       {children}
@@ -152,19 +131,18 @@ export const FieldLabel: FC<PropsWithChildren<LabelProps>> = ({
   );
 };
 
-export const FieldDescription: FC<PropsWithChildren<DescriptionProps>> = ({
+export const FieldDescription: FC<PropsWithChildren<DescriptionProps & { name?: string }>> = ({
   class: cls,
   id,
+  name,
   children,
   ...props
 }) => {
-  const field = getFieldContext();
-
   return (
     <p
       data-slot="field-description"
       class={cn("text-sm leading-normal text-brand-600", asClass(cls))}
-      id={id ?? field?.descriptionId}
+      id={id ?? (name ? fieldDescriptionId(name) : undefined)}
       {...props}
     >
       {children}
@@ -172,10 +150,11 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps>> = ({
   );
 };
 
-export const FieldError: FC<PropsWithChildren<ErrorProps>> = ({
+export const FieldError: FC<PropsWithChildren<ErrorProps & { name?: string }>> = ({
   class: cls,
   id,
   role,
+  name,
   children,
   ...props
 }) => {
@@ -183,13 +162,11 @@ export const FieldError: FC<PropsWithChildren<ErrorProps>> = ({
     return null;
   }
 
-  const field = getFieldContext();
-
   return (
     <p
       data-slot="field-error"
       class={cn("text-sm font-normal text-red-600", asClass(cls))}
-      id={id ?? field?.errorId}
+      id={id ?? (name ? fieldErrorId(name) : undefined)}
       role={role ?? "alert"}
       {...props}
     >

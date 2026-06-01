@@ -1,6 +1,6 @@
 import { addCommand, createCommand } from "../../cli/mod";
 import type { CommandBase } from "../../cli/types";
-import { buildAll, buildCSS, buildFonts, buildIcons, buildJS, buildSprites, generateManifest } from "../build/mod";
+import { buildAll, buildCSS, buildFonts, buildIcons, buildJS, buildSprites } from "../build/mod";
 import { loadConfig } from "../config";
 
 export function createAssetsCommands(): CommandBase {
@@ -18,11 +18,11 @@ export function createAssetsCommands(): CommandBase {
     buildCmd,
     createCommand({
       name: "all",
-      description: "Build all assets and generate the manifest",
+      description: "Build all assets and generate the typed assets module",
       flags: {
-        minify: { type: "boolean", description: "Minify CSS and JS output" },
+        minify: { type: "boolean", description: "Minify CSS and JS output; also enables content-hashed filenames" },
         config: { type: "string", description: "Path to assets.config.ts" },
-        out: { type: "string", description: "Manifest output path" },
+        out: { type: "string", description: "Output path for the generated assets module (default: .forge/assets.ts)" },
       },
       run: async (_args, flags) => {
         const config = await loadConfig(flags.config);
@@ -105,27 +105,12 @@ export function createAssetsCommands(): CommandBase {
       name: "sprites",
       description: "Build SVG sprite sheets",
       flags: {
+        minify: { type: "boolean", description: "Enable content-hashed filenames" },
         config: { type: "string", description: "Path to assets.config.ts" },
       },
       run: async (_args, flags) => {
         const config = await loadConfig(flags.config);
-        await buildSprites(config.sprites, config.paths.publicDir);
-      },
-    }),
-  );
-
-  addCommand(
-    root,
-    createCommand({
-      name: "manifest",
-      description: "Generate asset manifest from built files",
-      flags: {
-        config: { type: "string", description: "Path to assets.config.ts" },
-        out: { type: "string", description: "Output path", default: ".assets-manifest.json" },
-      },
-      run: async (_args, flags) => {
-        const config = await loadConfig(flags.config);
-        await generateManifest(config.paths.publicDir, flags.out ?? ".assets-manifest.json");
+        await buildSprites(config.sprites, config.paths.publicDir, { hash: flags.minify });
       },
     }),
   );

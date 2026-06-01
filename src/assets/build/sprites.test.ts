@@ -2,7 +2,7 @@ import { describe, expect, it, spyOn } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSprites, sanitizeSVG, svgToSymbol } from "./sprites";
+import { buildSprites, extractViewBoxes, sanitizeSVG, svgToSymbol } from "./sprites";
 
 describe("sanitizeSVG()", () => {
   it("strips inline script tags", () => {
@@ -85,6 +85,61 @@ describe("buildSprites()", () => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("returns groups keyed by config key with correct spriteKey and meta for two groups", async () => {
+    const tmpDir = join(tmpdir(), `forge-sprites-twogroup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tmpDir, { recursive: true });
+    const svgA = `<svg viewBox="0 0 24 24"><path d="M0 0"/></svg>`;
+    const svgB = `<svg viewBox="0 0 32 32"><circle r="16"/></svg>`;
+    const fetchSpy = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(svgA, { status: 200 }))
+      .mockResolvedValueOnce(new Response(svgB, { status: 200 }));
+    try {
+      const sprites = {
+        core: {
+          target: "svg/sprite.svg",
+          sources: [{ path: "https://example.com/a/", files: ["a.svg"] }],
+        },
+        "brand-icons": {
+          target: "svg/brand.svg",
+          sources: [{ path: "https://example.com/b/", files: ["b.svg"] }],
+        },
+      };
+      const result = await buildSprites(sprites, tmpDir);
+      expect(Object.keys(result.groups)).toEqual(["core", "brand-icons"]);
+      expect(result.groups["core"].spriteKey).toBe("svg/sprite.svg");
+      expect(result.groups["brand-icons"].spriteKey).toBe("svg/brand.svg");
+      expect(result.groups["core"].meta["icon-a"]).toBe("0 0 24 24");
+      expect(result.groups["brand-icons"].meta["icon-b"]).toBe("0 0 32 32");
+    } finally {
+      fetchSpy.mockRestore();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("extractViewBoxes()", () => {
+  it("extracts viewBox from each symbol by id", () => {
+    const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="icon-sun" viewBox="0 0 24 24"><circle/></symbol>
+  <symbol id="icon-logo" viewBox="147.9 43 583.1 313"><path/></symbol>
+</svg>`;
+    const meta = extractViewBoxes(sprite);
+    expect(meta["icon-sun"]).toBe("0 0 24 24");
+    expect(meta["icon-logo"]).toBe("147.9 43 583.1 313");
+  });
+
+  it("returns empty object for sprite with no symbols", () => {
+    expect(extractViewBoxes(`<svg></svg>`)).toEqual({});
+  });
+
+  it("handles symbols with id before viewBox and viewBox before id", () => {
+    const sprite = `<svg>
+  <symbol viewBox="0 0 22 22" id="icon-hamburger"><path/></symbol>
+</svg>`;
+    const meta = extractViewBoxes(sprite);
+    expect(meta["icon-hamburger"]).toBe("0 0 22 22");
+  });
 });
 
 describe("svgToSymbol()", () => {
@@ -136,5 +191,20 @@ describe("svgToSymbol()", () => {
     expect(result).not.toContain(`stroke=`);
     expect(result).toContain(`fill="#366"`);
     expect(result).toContain(`fill-rule="nonzero"`);
+  });
+
+  it("normalizes non-zero-origin viewBox to '0 0 w h' and wraps content in translate", () => {
+    const svg = `<svg viewBox="147.9 43 583.1 313"><path d="M577.1 43"/></svg>`;
+    const result = svgToSymbol(svg, "logo.svg") ?? "";
+    expect(result).toContain(`viewBox="0 0 583.1 313"`);
+    expect(result).toContain(`transform="translate(-147.9 -43)"`);
+    expect(result).toContain(`d="M577.1 43"`);
+  });
+
+  it("does not add translate wrapper for zero-origin viewBox", () => {
+    const svg = `<svg viewBox="0 0 24 24"><path d="M12 12"/></svg>`;
+    const result = svgToSymbol(svg, "icon.svg") ?? "";
+    expect(result).toContain(`viewBox="0 0 24 24"`);
+    expect(result).not.toContain(`transform=`);
   });
 });

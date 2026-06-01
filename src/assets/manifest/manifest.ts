@@ -7,10 +7,9 @@ export function createManifest(data: Record<string, string>, prefix: string): Ma
   return {
     path(key: string): string {
       const lookup = key.startsWith("/") ? key.slice(1) : key;
-      const hash = data[lookup];
-      const keyPath = key.startsWith("/") ? key : `/${key}`;
-      if (!hash) return `${base}${keyPath}`;
-      return `${base}${keyPath}?v=${hash}`;
+      const mapped = data[lookup];
+      const resolved = mapped ?? lookup;
+      return `${base}/${resolved}`;
     },
   };
 }

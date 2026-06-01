@@ -13,7 +13,7 @@ import {
 } from "../crypto/mod";
 import { CSRF_FIELD_DEFAULT } from "./constants";
 import { parseFormData } from "./parse-form-data";
-import type { CsrfKeyRing, CsrfResult, CsrfSecretResolver, CsrfVariables } from "./types";
+import type { CsrfContext, CsrfKeyRing, CsrfResult, CsrfSecretResolver } from "./types";
 
 const CLOCK_SKEW_MS = 30_000;
 const DEFAULT_KEY_ID = "0";
@@ -237,9 +237,9 @@ export function csrfProtection<E extends Env = Env>(options: {
     const activeKey = ring.keys[ring.activeKeyId];
     const subject = options.subject?.(c);
 
-    const csrfContext = c as unknown as Context<CsrfVariables>;
+    const csrfContext = c as unknown as Context<{ Variables: CsrfContext }>;
     csrfContext.set(
-      "mintCsrfToken",
+      "mintCsrf",
       (path: string) => createCsrfToken(activeKey, path, { kid: ring.activeKeyId, subject }),
     );
 

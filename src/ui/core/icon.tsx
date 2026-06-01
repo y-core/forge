@@ -1,5 +1,4 @@
 import type { FC } from "hono/jsx";
-import { useIconSprite } from "./icon-context";
 import { cn } from "./utils/cn";
 
 export interface IconProps {
@@ -31,9 +30,6 @@ export const Icon: FC<IconProps> = ({
   "stroke-linecap": strokeLinecap,
   "stroke-linejoin": strokeLinejoin,
 }) => {
-  const contextSprite = useIconSprite();
-  const resolvedSprite = sprite || contextSprite;
-
   return (
     <svg
       data-slot="icon"
@@ -48,7 +44,20 @@ export const Icon: FC<IconProps> = ({
       stroke-linecap={strokeLinecap}
       stroke-linejoin={strokeLinejoin}
     >
-      <use href={`${resolvedSprite}#${symbol}`} />
+      <use href={`${sprite ?? ""}#${symbol}`} />
     </svg>
   );
 };
+
+/**
+ * Factory that binds a sprite URL and viewBox metadata to produce a typed Icon component.
+ * The returned component's `name` prop is narrowed to the icon names found in `meta`.
+ */
+export function createIcon<M extends Record<string, string>>(sprite: string, meta: M) {
+  type Name = keyof M extends `icon-${infer N}` ? N : never;
+  return function BoundIcon(p: Omit<IconProps, "symbol" | "sprite"> & { name: Name }) {
+    const { name, viewBox, ...rest } = p;
+    const id = `icon-${String(name)}`;
+    return <Icon {...rest} sprite={sprite} symbol={id} viewBox={viewBox ?? (meta as Record<string, string>)[id]} />;
+  };
+}

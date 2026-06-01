@@ -1,8 +1,8 @@
 import type { FC, JSX, PropsWithChildren } from "hono/jsx";
-import { useFieldControlProps } from "./field";
+import { type FieldDescriptor, fieldControlProps } from "./field";
 import { asClass, cn } from "./utils/cn";
 
-type SelectProps = JSX.IntrinsicElements["select"];
+type SelectProps = JSX.IntrinsicElements["select"] & { field?: FieldDescriptor };
 type SelectOptionProps = JSX.IntrinsicElements["option"];
 type SelectOptGroupProps = JSX.IntrinsicElements["optgroup"];
 
@@ -13,17 +13,18 @@ const SELECT_DISABLED = "disabled:cursor-not-allowed disabled:pointer-events-non
 
 export const Select: FC<PropsWithChildren<SelectProps>> = ({
   class: cls,
+  field,
   children,
   ...props
 }) => {
-  const fieldProps = useFieldControlProps(props);
+  const resolved = field ? fieldControlProps(props, field) : props;
 
   return (
     <div data-slot="select-wrapper" class="group/select relative w-full has-[select:disabled]:opacity-50">
       <select
         data-slot="select"
         class={cn(SELECT_BASE, SELECT_FOCUS, SELECT_DISABLED, asClass(cls))}
-        {...fieldProps}
+        {...resolved}
       >
         {children}
       </select>

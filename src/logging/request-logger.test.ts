@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ExecutionContext } from "hono";
 import { Hono } from "hono";
-import type { LoggerVariables } from "./request-logger";
+import type { LoggerContext } from "./request-logger";
 import { requestLogger } from "./request-logger";
 import type { LogChannel, LogRecord } from "./types";
 
@@ -14,7 +14,7 @@ function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
 }
 
 function makeApp(channel: LogChannel, extraBindings?: Record<string, unknown>) {
-  const app = new Hono<LoggerVariables>();
+  const app = new Hono<{ Variables: LoggerContext }>();
   app.use(
     "*",
     requestLogger({
@@ -70,7 +70,7 @@ describe("requestLogger", () => {
 
   it("uses the custom prefix when provided", async () => {
     const { records, channel } = makeCapture();
-    const app = new Hono<LoggerVariables>();
+    const app = new Hono<{ Variables: LoggerContext }>();
     app.use("*", requestLogger({ prefix: "worker", channels: () => [channel] }));
     app.get("/test", (c) => {
       c.get("logger").info("msg");
@@ -87,7 +87,7 @@ describe("requestLogger", () => {
     const mockCtx = { waitUntil: (p: Promise<void>) => { flushed.push(p); } };
 
     const { channel } = makeCapture();
-    const app = new Hono<LoggerVariables>();
+    const app = new Hono<{ Variables: LoggerContext }>();
     app.use("*", requestLogger({ channels: () => [channel] }));
     app.get("/test", (c) => {
       c.get("logger").info("msg");
@@ -107,7 +107,7 @@ describe("requestLogger", () => {
         setTimeout(() => { order.push("async-done"); resolve(); }, 5);
       });
 
-    const app = new Hono<LoggerVariables>();
+    const app = new Hono<{ Variables: LoggerContext }>();
     app.use("*", requestLogger({ channels: () => [asyncChannel] }));
     app.get("/test", (c) => {
       c.get("logger").info("trigger");

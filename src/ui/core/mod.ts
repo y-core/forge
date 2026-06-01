@@ -12,8 +12,10 @@ export {
 export {
   Field,
   FieldDescription,
+  type FieldDescriptor,
   FieldError,
   FieldLabel,
+  fieldControlProps,
   fieldDescriptionId,
   fieldErrorId,
   fieldId,
@@ -27,8 +29,7 @@ export {
   FieldTitle,
 } from "./field-layout";
 export { Form } from "./form";
-export { Icon, type IconProps } from "./icon";
-export { IconSpriteProvider } from "./icon-context";
+export { createIcon, Icon, type IconProps } from "./icon";
 export { Input } from "./input";
 export { Select, SelectOptGroup, SelectOption } from "./select";
 export { Separator } from "./separator";

@@ -49,12 +49,12 @@ describe("Select", () => {
     expect(out).toContain("required");
   });
 
-  it("inherits field wiring", async () => {
+  it("wires id and for via explicit field and name props", async () => {
     const out = await render(
       <Field name="choice">
-        <FieldLabel>Choice</FieldLabel>
+        <FieldLabel name="choice">Choice</FieldLabel>
         <FieldContent>
-          <Select>
+          <Select field={{ name: "choice" }}>
             <SelectOption value="a">A</SelectOption>
           </Select>
         </FieldContent>

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-import type { RequestIdVariables } from "./request-id";
+import type { RequestIdContext } from "./request-id";
 import { requestId } from "./request-id";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function makeApp() {
-  const app = new Hono<RequestIdVariables>();
+  const app = new Hono<{ Variables: RequestIdContext }>();
   app.use("*", requestId());
   app.get("/test", (c) => c.json({ id: c.get("requestId") }));
   return app;

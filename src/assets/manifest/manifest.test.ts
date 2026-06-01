@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { createManifest } from "./manifest";
 
 describe("createManifest()", () => {
-  it("returns cache-busted path for known key", () => {
-    const m = createManifest({ "css/main.css": "a3f2b1c9" }, "/assets");
-    expect(m.path("css/main.css")).toBe("/assets/css/main.css?v=a3f2b1c9");
+  it("returns hashed path for known key", () => {
+    const m = createManifest({ "css/main.css": "css/main.a3f2b1c9.css" }, "/assets");
+    expect(m.path("css/main.css")).toBe("/assets/css/main.a3f2b1c9.css");
   });
 
   it("returns plain path for unknown key", () => {
@@ -13,13 +13,13 @@ describe("createManifest()", () => {
   });
 
   it("handles prefix with trailing slash", () => {
-    const m = createManifest({ "app.js": "abc12345" }, "/cdn/");
-    expect(m.path("app.js")).toBe("/cdn/app.js?v=abc12345");
+    const m = createManifest({ "app.js": "app-abc12345.js" }, "/cdn/");
+    expect(m.path("app.js")).toBe("/cdn/app-abc12345.js");
   });
 
   it("normalizes key with leading slash", () => {
-    const m = createManifest({ "css/main.css": "deadbeef" }, "/assets");
-    expect(m.path("/css/main.css")).toBe("/assets/css/main.css?v=deadbeef");
+    const m = createManifest({ "css/main.css": "css/main.deadbeef.css" }, "/assets");
+    expect(m.path("/css/main.css")).toBe("/assets/css/main.deadbeef.css");
   });
 
   it("returns unversioned path for empty manifest", () => {

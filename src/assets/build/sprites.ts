@@ -1,17 +1,59 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { SpriteGroup, Sprites } from "../types";
+import { hashFile } from "./hash";
 import { fetchURL } from "./download";
 
-export async function buildSprites(sprites: Sprites, publicDir: string): Promise<void> {
-  for (const group of Object.values(sprites)) {
-    await buildSpriteGroup(group, publicDir);
-  }
+export interface SpriteGroupResult {
+  spriteKey: string;
+  meta: Record<string, string>;
 }
 
-async function buildSpriteGroup(group: SpriteGroup, publicDir: string): Promise<void> {
+export interface SpriteBuildResult {
+  mapping: Record<string, string>;
+  groups: Record<string, SpriteGroupResult>;
+}
+
+export async function buildSprites(
+  sprites: Sprites,
+  publicDir: string,
+  opts?: { hash?: boolean },
+): Promise<SpriteBuildResult> {
+  const mapping: Record<string, string> = {};
+  const groups: Record<string, SpriteGroupResult> = {};
+  for (const [key, group] of Object.entries(sprites)) {
+    const result = await buildSpriteGroup(group, publicDir, opts?.hash ?? false);
+    if (result) {
+      Object.assign(mapping, result.mapping);
+      groups[key] = { spriteKey: result.spriteKey, meta: result.meta };
+    }
+  }
+  return { mapping, groups };
+}
+
+export function extractViewBoxes(spriteContent: string): Record<string, string> {
+  const meta: Record<string, string> = {};
+  const symbolRegex = /<symbol([^>]*)>/g;
+  let match: RegExpExecArray | null;
+  while ((match = symbolRegex.exec(spriteContent)) !== null) {
+    const attrs = match[1];
+    const idMatch = attrs.match(/id="([^"]+)"/);
+    const viewBoxMatch = attrs.match(/viewBox="([^"]+)"/i);
+    if (idMatch && viewBoxMatch) {
+      meta[idMatch[1]] = viewBoxMatch[1];
+    }
+  }
+  return meta;
+}
+
+async function buildSpriteGroup(
+  group: SpriteGroup,
+  publicDir: string,
+  shouldHash: boolean,
+): Promise<{ mapping: Record<string, string>; spriteKey: string; meta: Record<string, string> } | null> {
   const target = join(publicDir, group.target);
-  mkdirSync(dirname(target), { recursive: true });
+  const spriteDir = dirname(target);
+  mkdirSync(spriteDir, { recursive: true });
 
   const symbols: string[] = [];
 
@@ -22,7 +64,7 @@ async function buildSpriteGroup(group: SpriteGroup, publicDir: string): Promise<
       let content: string;
 
       if (isRemote) {
-        const cachePath = join(dirname(target), ".svg-cache", file);
+        const cachePath = join(spriteDir, ".svg-cache", file);
         await fetchURL(`${source.path}${file}`, cachePath);
         content = readFileSync(cachePath, "utf-8");
       } else {
@@ -41,11 +83,38 @@ async function buildSpriteGroup(group: SpriteGroup, publicDir: string): Promise<
 
   if (symbols.length === 0) {
     console.warn(`[forge-assets] No symbols produced for ${group.target}, skipping write`);
-    return;
+    return null;
   }
 
   const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">\n${symbols.join("\n")}\n</svg>`;
+
+  // Clean up old sprite files (hashed or not) before writing.
+  try {
+    for (const entry of readdirSync(spriteDir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".svg") && !entry.name.startsWith(".")) {
+        rmSync(join(spriteDir, entry.name));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
   writeFileSync(target, sprite);
+
+  const viewBoxMeta = extractViewBoxes(sprite);
+
+  if (!shouldHash) {
+    return { mapping: { [group.target]: group.target }, spriteKey: group.target, meta: viewBoxMeta };
+  }
+
+  const hash = hashFile(target);
+  const ext = ".svg";
+  const stem = group.target.slice(0, group.target.lastIndexOf("."));
+  const hashedRelative = `${stem}.${hash}${ext}`;
+
+  renameSync(target, join(publicDir, hashedRelative));
+
+  return { mapping: { [group.target]: hashedRelative }, spriteKey: group.target, meta: viewBoxMeta };
 }
 
 export function sanitizeSVG(content: string): string {
@@ -92,7 +161,14 @@ function propagateRootAttrs(inner: string, rootAttrs: Partial<Record<string, str
 
 export function svgToSymbol(svgContent: string, filename: string): string | null {
   const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/i);
-  const viewBox = viewBoxMatch ? viewBoxMatch[1] : "0 0 24 24";
+  const rawViewBox = viewBoxMatch ? viewBoxMatch[1] : "0 0 24 24";
+
+  // Normalize non-zero-origin viewBoxes to "0 0 w h" and compensate with a
+  // translate on the inner content. This ensures <use> at (0,0) is always
+  // within the symbol's viewport, regardless of the source SVG's coordinate origin.
+  const [minX, minY, w, h] = rawViewBox.trim().split(/[\s,]+/).map(Number);
+  const hasOffset = minX !== 0 || minY !== 0;
+  const viewBox = `0 0 ${w} ${h}`;
 
   const svgTagMatch = svgContent.match(/<svg([^>]*)>/i);
   const innerMatch = svgContent.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
@@ -100,7 +176,8 @@ export function svgToSymbol(svgContent: string, filename: string): string | null
 
   const rootAttrs = svgTagMatch ? extractRootAttrs(svgTagMatch[1]) : {};
   const sanitized = sanitizeSVG(innerMatch[1]).trim();
-  const inner = propagateRootAttrs(sanitized, rootAttrs);
+  const propagated = propagateRootAttrs(sanitized, rootAttrs);
+  const inner = hasOffset ? `<g transform="translate(${-minX} ${-minY})">${propagated}</g>` : propagated;
 
   const id = `icon-${basename(filename, ".svg")}`;
   return `  <symbol id="${id}" viewBox="${viewBox}">${inner}</symbol>`;

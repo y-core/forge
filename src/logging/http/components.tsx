@@ -52,8 +52,8 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
     hx-push-url="true"
   >
     <Field name="level" class="w-36">
-      <FieldLabel>Level</FieldLabel>
-      <Select name="level">
+      <FieldLabel name="level">Level</FieldLabel>
+      <Select name="level" field={{ name: "level" }}>
         <SelectOption value="" selected={!level}>All</SelectOption>
         <SelectOption value="debug" selected={level === "debug"}>debug</SelectOption>
         <SelectOption value="info" selected={level === "info"}>info</SelectOption>
@@ -62,8 +62,8 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
       </Select>
     </Field>
     <Field name="q" class="flex-1 min-w-48">
-      <FieldLabel>Search</FieldLabel>
-      <Input name="q" type="search" placeholder="message, prefix, requestId…" value={q ?? ""} />
+      <FieldLabel name="q">Search</FieldLabel>
+      <Input name="q" type="search" placeholder="message, prefix, requestId…" value={q ?? ""} field={{ name: "q" }} />
     </Field>
     <Button type="submit" variant="secondary" size="md">Filter</Button>
   </form>

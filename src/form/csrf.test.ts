@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { createCsrfToken, csrfProtection, importCsrfKey, importCsrfKeyRing, verifyCsrfToken } from "./csrf";
 import { parseFormData } from "./parse-form-data";
-import type { CsrfKeyRing, CsrfVariables } from "./types";
+import type { CsrfContext, CsrfKeyRing } from "./types";
 
 describe("importCsrfKey()", () => {
   it("rejects an odd-length hex string", async () => {
@@ -40,7 +40,7 @@ describe("csrfProtection middleware", () => {
   });
 
   function makeApp() {
-    const app = new Hono<CsrfVariables>();
+    const app = new Hono<{ Variables: CsrfContext }>();
     app.use("*", csrfProtection({ secret: () => key }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", (c) => c.text("ok"));
@@ -103,7 +103,7 @@ describe("csrfProtection middleware", () => {
   });
 
   it("respects custom headerName option", async () => {
-    const app = new Hono<CsrfVariables>();
+    const app = new Hono<{ Variables: CsrfContext }>();
     app.use("*", csrfProtection({ secret: () => key, headerName: "X-My-Token" }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", (c) => c.text("ok"));
@@ -118,24 +118,24 @@ describe("csrfProtection middleware", () => {
     expect(res.status).toBe(200);
   });
 
-  it("GET sets mintCsrfToken on context", async () => {
+  it("GET sets mintCsrf on context", async () => {
     let capturedMint: ((path: string) => Promise<string>) | undefined;
-    const app = new Hono<CsrfVariables>();
+    const app = new Hono<{ Variables: CsrfContext }>();
     app.use("*", csrfProtection({ secret: () => key }));
     app.get("/test", (c) => {
-      capturedMint = c.get("mintCsrfToken");
+      capturedMint = c.get("mintCsrf");
       return c.text("ok");
     });
     await app.request("/test");
     expect(typeof capturedMint).toBe("function");
   });
 
-  it("token minted with mintCsrfToken for a specific path validates on that path", async () => {
+  it("token minted with mintCsrf for a specific path validates on that path", async () => {
     let capturedMint: ((path: string) => Promise<string>) | undefined;
-    const app = new Hono<CsrfVariables>();
+    const app = new Hono<{ Variables: CsrfContext }>();
     app.use("*", csrfProtection({ secret: () => key }));
     app.get("/contact", (c) => {
-      capturedMint = c.get("mintCsrfToken");
+      capturedMint = c.get("mintCsrf");
       return c.text("ok");
     });
     app.post("/api/contact", (c) => c.text("submitted"));
@@ -152,7 +152,7 @@ describe("csrfProtection middleware", () => {
 
   it("POST with _csrf form field — action handler reuses cached parseFormData", async () => {
     let captured: string | null = null;
-    const app = new Hono<CsrfVariables>();
+    const app = new Hono<{ Variables: CsrfContext }>();
     app.use("*", csrfProtection({ secret: () => key }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", async (c) => {
@@ -183,7 +183,7 @@ describe("csrfProtection middleware", () => {
     const oldKey = oldRing.keys[oldRing.activeKeyId];
     const oldToken = await createCsrfToken(oldKey, "/test", { kid: oldRing.activeKeyId });
 
-    const app = new Hono<CsrfVariables>();
+    const app = new Hono<{ Variables: CsrfContext }>();
     app.use("*", csrfProtection({ secret: () => ring }));
     app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
     app.post("/test", (c) => c.text("ok"));
@@ -208,7 +208,7 @@ describe("csrfProtection middleware with typed resolver", () => {
   it("resolver receives typed context with custom Bindings", async () => {
     type TestEnv = {
       Bindings: { MY_SECRET: string };
-      Variables: CsrfVariables["Variables"];
+      Variables: CsrfContext;
     };
 
     let capturedSecret: string | undefined;
@@ -234,7 +234,7 @@ describe("csrfProtection middleware with resolver secret", () => {
     let callCount = 0;
     const key = await importCsrfKey(HEX_SECRET);
 
-    const app = new Hono<CsrfVariables>();
+    const app = new Hono<{ Variables: CsrfContext }>();
     app.use("*", csrfProtection({
       secret: async (_c) => {
         callCount++;

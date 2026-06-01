@@ -1,6 +1,6 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import type { Config, ConfigVariables, InferConfig } from "../config/config";
+import type { Config, ConfigContext, InferConfig } from "../config/config";
 import { resolveConfig } from "../config/config";
 import { retrieveConfig } from "../config/registry";
 import type { RouteConfig, RouteConfigEntry, RouteModule } from "./types";
@@ -30,7 +30,7 @@ function registerModule<E extends Env>(
   if (loader || view) {
     app.get(path, async (c) => {
       const config = resolveConfig(configStore, c.env ?? {});
-      (c as unknown as Context<ConfigVariables<InferConfig<E>>>).set("config", config);
+      (c as unknown as Context<{ Variables: ConfigContext<InferConfig<E>> }>).set("config", config);
       let data: unknown;
 
       if (loader) {
@@ -52,7 +52,7 @@ function registerModule<E extends Env>(
   if (action) {
     app.post(path, async (c) => {
       const config = resolveConfig(configStore, c.env ?? {});
-      (c as unknown as Context<ConfigVariables<InferConfig<E>>>).set("config", config);
+      (c as unknown as Context<{ Variables: ConfigContext<InferConfig<E>> }>).set("config", config);
       const result = await action(c, config);
       if (result instanceof Response || !view) {
         if (result instanceof Response) {

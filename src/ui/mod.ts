@@ -1,5 +1,5 @@
 export type { Child } from "hono/jsx";
-export type { AlertVariant, IconProps } from "./core/mod";
+export type { AlertVariant, FieldDescriptor, IconProps } from "./core/mod";
 export {
   Alert,
   AlertDescription,
@@ -13,6 +13,7 @@ export {
   CardHeader,
   CardTitle,
   cn,
+  createIcon,
   cva,
   Field,
   FieldContent,
@@ -25,11 +26,11 @@ export {
   FieldSet,
   FieldTitle,
   Form,
+  fieldControlProps,
   fieldDescriptionId,
   fieldErrorId,
   fieldId,
   Icon,
-  IconSpriteProvider,
   Input,
   Select,
   SelectOptGroup,

@@ -2,6 +2,9 @@ import type { MiddlewareHandler } from "hono";
 import { NONCE, secureHeaders } from "hono/secure-headers";
 import type { SecurityHeadersOptions } from "./types";
 
+/** Bare variable record set by Hono's `secureHeaders` middleware. @public */
+export type SecureHeadersContext = { secureHeadersNonce?: string };
+
 /** Rejects empty or whitespace-only CSP source entries, which silently break the policy. */
 function assertValidDirective(name: string, sources: readonly unknown[]): void {
   for (const source of sources) {

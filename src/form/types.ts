@@ -38,12 +38,10 @@ export interface TurnstileVerifyOptions {
 
 export type FormFieldReader = (formData: ReadonlyFormData, field: string) => string;
 
-/** Merge into your Hono app generic when using `csrfProtection` to type `c.get("csrfToken")`. @public */
-export type CsrfVariables = {
-  Variables: {
-    csrfToken: string | undefined;
-    mintCsrfToken: ((path: string) => Promise<string>) | undefined;
-  };
+/** Bare variable record set by `csrfProtection`. Intersect into `AppEnv.Variables`. @public */
+export type CsrfContext = {
+  csrfToken: string | undefined;
+  mintCsrf: ((path: string) => Promise<string>) | undefined;
 };
 
 export type CsrfResult =

@@ -1,35 +1,46 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ResolvedConfig } from "../types";
 import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
 import { buildFonts } from "./fonts";
-import { hashFile } from "./hash";
 import { buildIcons } from "./icons";
 import { buildJS } from "./js";
 import { buildSprites } from "./sprites";
+import type { SpriteGroupResult } from "./sprites";
 
 export interface BuildOptions {
   minify?: boolean;
+  /** Path for the generated assets module. Default: ".forge/assets.ts" */
+  assetsPath?: string;
+  /** @deprecated Use assetsPath. Kept for CLI --out flag forwarding. */
   manifestPath?: string;
 }
 
 export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Promise<void> {
-  const { publicDir } = config.paths;
+  const { publicDir, publicPrefix } = config.paths;
+  const shouldHash = opts?.minify ?? false;
   mkdirSync(publicDir, { recursive: true });
 
+  const manifest: Record<string, string> = {};
+  let spriteGroups: Record<string, SpriteGroupResult> = {};
+
   for (const css of config.css) {
-    buildCSS(css, { outDir: publicDir, minify: opts?.minify });
+    const mapping = buildCSS(css, { outDir: publicDir, minify: opts?.minify, hash: shouldHash });
+    Object.assign(manifest, mapping);
   }
 
   for (const bundle of config.js.bundles) {
-    await buildJS(bundle, { outDir: publicDir, minify: opts?.minify });
+    const mapping = await buildJS(bundle, { outDir: publicDir, minify: opts?.minify, hash: shouldHash });
+    Object.assign(manifest, mapping);
   }
 
   copyAssets(config.copy, publicDir);
 
   if (Object.keys(config.sprites).length > 0) {
-    await buildSprites(config.sprites, publicDir);
+    const result = await buildSprites(config.sprites, publicDir, { hash: shouldHash });
+    Object.assign(manifest, result.mapping);
+    spriteGroups = result.groups;
   }
 
   if (config.fonts.downloads.length > 0) {
@@ -40,32 +51,83 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
     await buildIcons(config.icons);
   }
 
-  await generateManifest(publicDir, opts?.manifestPath ?? ".assets-manifest.json");
-}
+  // opts.manifestPath is the legacy --out flag; assetsPath takes precedence.
+  const outputPath = opts?.assetsPath ?? opts?.manifestPath ?? ".forge/assets.ts";
+  await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath);
 
-export async function generateManifest(publicDir: string, manifestPath: string): Promise<void> {
-  const manifest: Record<string, string> = {};
-  walkDir(publicDir, publicDir, manifest);
-  const content = JSON.stringify(manifest, null, 2);
-  if (existsSync(manifestPath) && readFileSync(manifestPath, "utf-8") === content) return;
-  mkdirSync(dirname(manifestPath), { recursive: true });
-  writeFileSync(manifestPath, content);
-}
-
-function walkDir(dir: string, baseDir: string, manifest: Record<string, string>): void {
-  try {
-    const entries = readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walkDir(fullPath, baseDir, manifest);
-      } else if (entry.isFile()) {
-        if (entry.name.startsWith(".")) continue;
-        const relPath = relative(baseDir, fullPath).replace(/\\/g, "/");
-        manifest[relPath] = hashFile(fullPath);
-      }
-    }
-  } catch {
-    return;
+  if (shouldHash) {
+    emitHeaders(publicDir);
   }
+}
+
+function toConstName(key: string): string {
+  return `${key.replace(/[^a-zA-Z0-9]+/g, "_").toUpperCase()}_META`;
+}
+
+function toPascalCase(key: string): string {
+  return key
+    .split(/[^a-zA-Z0-9]+/)
+    .map((seg) => (seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : ""))
+    .join("");
+}
+
+async function generateAssetsModule(
+  manifest: Record<string, string>,
+  spriteGroups: Record<string, SpriteGroupResult>,
+  publicPrefix: string,
+  outputPath: string,
+): Promise<void> {
+  const dataEntries = Object.entries(manifest)
+    .map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`)
+    .join("\n");
+
+  const hasSprites = Object.keys(spriteGroups).length > 0;
+
+  let content: string;
+
+  if (hasSprites) {
+    const groupBlocks = Object.entries(spriteGroups)
+      .map(([key, group]) => {
+        const constName = toConstName(key);
+        const exportName = `${toPascalCase(key)}Icon`;
+        const metaEntries = Object.entries(group.meta)
+          .map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`)
+          .join("\n");
+        return `const ${constName} = {\n${metaEntries}\n} as const;\n\nexport const ${exportName} = createIcon(assets.path(${JSON.stringify(group.spriteKey)}), ${constName});`;
+      })
+      .join("\n\n");
+
+    content = `// AUTO-GENERATED by @y-core/forge assets build — do not edit.
+import { createManifest } from "@y-core/forge/assets/manifest";
+import { createIcon } from "@y-core/forge/ui";
+
+const DATA: Record<string, string> = {
+${dataEntries}
+};
+
+export const assets = createManifest(DATA, ${JSON.stringify(publicPrefix)});
+
+${groupBlocks}
+`;
+  } else {
+    content = `// AUTO-GENERATED by @y-core/forge assets build — do not edit.
+import { createManifest } from "@y-core/forge/assets/manifest";
+
+const DATA: Record<string, string> = {
+${dataEntries}
+};
+
+export const assets = createManifest(DATA, ${JSON.stringify(publicPrefix)});
+`;
+  }
+
+  if (existsSync(outputPath) && readFileSync(outputPath, "utf-8") === content) return;
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, content);
+}
+
+function emitHeaders(publicDir: string): void {
+  const headersPath = join(dirname(publicDir), "_headers");
+  const content = `/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n`;
+  writeFileSync(headersPath, content);
 }

@@ -2,14 +2,14 @@ import type { Context, Env, MiddlewareHandler } from "hono";
 import { createLogger } from "./logger";
 import type { LogChannel, Logger } from "./types";
 
-/** Merge into your Hono app generic to type `c.get("logger")`. @public */
-export type LoggerVariables = { Variables: { logger: Logger } };
+/** Bare variable record set by `requestLogger`. Intersect into `AppEnv.Variables`. @public */
+export type LoggerContext = { logger: Logger };
 
 /**
  * Note: middleware that sets values consumed by `bindings` (e.g. `requestId`) must run
  * **before** `requestLogger` so those values are available when the callbacks execute. @public
  */
-export interface RequestLoggerOptions<E extends Env & LoggerVariables = LoggerVariables> {
+export interface RequestLoggerOptions<E extends Env & { Variables: LoggerContext } = { Variables: LoggerContext }> {
   prefix?: string;
   /** Factory called once per request; return the channels to write log records to. */
   channels: (c: Context<E>) => LogChannel[];
@@ -21,7 +21,7 @@ export interface RequestLoggerOptions<E extends Env & LoggerVariables = LoggerVa
  * `c.set("logger", ...)`. Flushes all pending async channel writes (e.g. KV puts) via
  * `executionCtx.waitUntil` so log writes never block the response. @public
  */
-export function requestLogger<E extends Env & LoggerVariables = LoggerVariables>(
+export function requestLogger<E extends Env & { Variables: LoggerContext } = { Variables: LoggerContext }>(
   options: RequestLoggerOptions<E>,
 ): MiddlewareHandler<E> {
   return async (c, next) => {

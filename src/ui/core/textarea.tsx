@@ -1,8 +1,8 @@
 import type { FC, JSX, PropsWithChildren } from "hono/jsx";
-import { useFieldControlProps } from "./field";
+import { type FieldDescriptor, fieldControlProps } from "./field";
 import { asClass, cn } from "./utils/cn";
 
-type TextareaProps = JSX.IntrinsicElements["textarea"];
+type TextareaProps = JSX.IntrinsicElements["textarea"] & { field?: FieldDescriptor };
 
 const TEXTAREA_BASE =
   "w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm text-brand-900 placeholder:text-brand-400";
@@ -11,16 +11,17 @@ const TEXTAREA_DISABLED = "disabled:cursor-not-allowed disabled:opacity-50 resiz
 
 export const Textarea: FC<PropsWithChildren<TextareaProps>> = ({
   class: cls,
+  field,
   children,
   ...props
 }) => {
-  const fieldProps = useFieldControlProps(props);
+  const resolved = field ? fieldControlProps(props, field) : props;
 
   return (
     <textarea
       data-slot="textarea"
       class={cn(TEXTAREA_BASE, TEXTAREA_FOCUS, TEXTAREA_DISABLED, asClass(cls))}
-      {...fieldProps}
+      {...resolved}
     >
       {children}
     </textarea>

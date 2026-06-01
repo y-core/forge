@@ -42,12 +42,12 @@ describe("fieldId helpers", () => {
 });
 
 describe("Field primitives", () => {
-  it("wires FieldLabel to the control id automatically", async () => {
+  it("wires FieldLabel to the control id via explicit name prop", async () => {
     const out = await render(
       <Field name="email">
-        <FieldLabel>Email address</FieldLabel>
+        <FieldLabel name="email">Email address</FieldLabel>
         <FieldContent>
-          <Input />
+          <Input field={{ name: "email" }} />
         </FieldContent>
       </Field>,
     );
@@ -59,10 +59,10 @@ describe("Field primitives", () => {
   it("adds data-invalid to the field and aria-invalid to the control", async () => {
     const out = await render(
       <Field name="email" invalid>
-        <FieldLabel>Email</FieldLabel>
+        <FieldLabel name="email">Email</FieldLabel>
         <FieldContent>
-          <Input />
-          <FieldError>Email is required.</FieldError>
+          <Input field={{ name: "email", invalid: true }} />
+          <FieldError name="email">Email is required.</FieldError>
         </FieldContent>
       </Field>,
     );
@@ -74,11 +74,11 @@ describe("Field primitives", () => {
   it("wires description and error ids into aria-describedby", async () => {
     const out = await render(
       <Field name="message" invalid>
-        <FieldLabel>Message</FieldLabel>
+        <FieldLabel name="message">Message</FieldLabel>
         <FieldContent>
-          <Input />
-          <FieldDescription>Minimum 15 characters</FieldDescription>
-          <FieldError>Required</FieldError>
+          <Input field={{ name: "message", invalid: true }} />
+          <FieldDescription name="message">Minimum 15 characters</FieldDescription>
+          <FieldError name="message">Required</FieldError>
         </FieldContent>
       </Field>,
     );
@@ -88,9 +88,9 @@ describe("Field primitives", () => {
   it("inherits disabled state on the control", async () => {
     const out = await render(
       <Field name="name" disabled>
-        <FieldLabel>Name</FieldLabel>
+        <FieldLabel name="name">Name</FieldLabel>
         <FieldContent>
-          <Input />
+          <Input field={{ name: "name", disabled: true }} />
         </FieldContent>
       </Field>,
     );
@@ -101,9 +101,14 @@ describe("Field primitives", () => {
   it("preserves explicit control props over field defaults", async () => {
     const out = await render(
       <Field name="name" invalid>
-        <FieldLabel>Name</FieldLabel>
+        <FieldLabel name="name">Name</FieldLabel>
         <FieldContent>
-          <Input id="custom-id" aria-describedby="custom-help" aria-invalid="false" />
+          <Input
+            id="custom-id"
+            aria-describedby="custom-help"
+            aria-invalid="false"
+            field={{ name: "name", invalid: true }}
+          />
         </FieldContent>
       </Field>,
     );
@@ -116,9 +121,9 @@ describe("Field primitives", () => {
     const out = await render(
       <FieldGroup>
         <Field name="name">
-          <FieldLabel>Name</FieldLabel>
+          <FieldLabel name="name">Name</FieldLabel>
           <FieldContent>
-            <Input />
+            <Input field={{ name: "name" }} />
           </FieldContent>
         </Field>
       </FieldGroup>,
@@ -143,7 +148,7 @@ describe("Field primitives", () => {
         <Field name="name">
           <FieldTitle>Name</FieldTitle>
           <FieldContent>
-            <Input />
+            <Input field={{ name: "name" }} />
           </FieldContent>
         </Field>
         <FieldSeparator>or</FieldSeparator>
