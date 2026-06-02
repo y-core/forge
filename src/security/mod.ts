@@ -11,7 +11,7 @@ export { originGuard, verifyOrigin } from "./origin";
 export type { RateLimitBinding, RateLimitOptions } from "./rate-limit";
 export { rateLimit } from "./rate-limit";
 export type { RequestIdContext } from "./request-id";
-export { requestId } from "./request-id";
+export { requestId, requestIdCtx } from "./request-id";
 export type { BaseUrlConfig, OriginResult, ParsedUrl, SecurityHeadersOptions } from "./types";
 export type { DeriveAllowedOriginsOptions } from "./url";
 export { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";

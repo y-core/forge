@@ -19,7 +19,7 @@ const secureHeadersNonce = contextVar<string>("secureHeadersNonce");
 
 /** Returns the CSP nonce Hono's `secureHeaders` sets for the current request, or "" when none is set. @public */
 export function getNonce<E extends Env>(c: Context<E>): string {
-  return secureHeadersNonce.get(c) ?? "";
+  return secureHeadersNonce.getOptional(c) ?? "";
 }
 
 /** Rejects empty or whitespace-only CSP source entries, which silently break the policy. */

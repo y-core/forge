@@ -209,10 +209,7 @@ export async function verifyCsrfToken(
  *  (i.e. `csrfProtection` was not mounted on this route). @public */
 export async function mintCsrf<E extends Env>(c: Context<E>, path?: string): Promise<string> {
   if (!path) return "";
-  const mint = csrfMinter.get(c);
-  if (!mint) {
-    throw new Error("mintCsrf: no CSRF minter on context — mount csrfProtection on this route");
-  }
+  const mint = csrfMinter.get(c, "mintCsrf: no CSRF minter on context — mount csrfProtection on this route");
   return mint(path);
 }
 

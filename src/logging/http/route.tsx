@@ -1,5 +1,5 @@
 /** @jsxImportSource @y-core/forge */
-import type { Context } from "hono";
+import type { Context, Env } from "hono";
 import { html } from "hono/html";
 import type { RouteModule } from "../../router/types";
 import type { KVNamespace } from "../../storage/kv/types";
@@ -10,9 +10,9 @@ import { readLogs } from "./reader";
 const TBODY_ID = "log-tbody";
 
 /** Options for the log viewer route module. @public */
-export interface LogViewerOptions {
+export interface LogViewerOptions<E extends Env = Env> {
   /** Returns the KV namespace to read from. Called per request. */
-  kv: (c: Context) => KVNamespace;
+  kv: (c: Context<E>) => KVNamespace;
   /** URL path prefix where the viewer is mounted (used for HTMX targets). */
   basePath?: string;
 }
@@ -33,11 +33,11 @@ export interface LogViewerLoaderData {
  * The viewer is unauthenticated by default — wrap with auth middleware at the route level. @public
  */
 // TODO(auth): mount behind an auth middleware before exposing to production
-export function logViewer(options: LogViewerOptions): RouteModule {
+export function logViewer<E extends Env = Env>(options: LogViewerOptions<E>): RouteModule<E, LogViewerLoaderData> {
   const basePath = options.basePath ?? "/admin/logs";
 
   return {
-    loader: async (c): Promise<LogViewerLoaderData | Response> => {
+    loader: async (c: Context<E>): Promise<LogViewerLoaderData | Response> => {
       const kv = options.kv(c);
       const level = c.req.query("level") as LogLevel | undefined;
       const q = c.req.query("q");

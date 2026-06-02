@@ -6,7 +6,7 @@ import type { LogChannel, Logger } from "./types";
 /** Bare variable record set by `requestLogger`. Intersect into `AppEnv.Variables`. @public */
 export type LoggerContext = { logger: Logger };
 
-const requestLog = contextVar<Logger>("logger");
+export const requestLog = contextVar<Logger>("logger");
 
 /**
  * Note: middleware that sets values consumed by `bindings` (e.g. `requestId`) must run
