@@ -8,7 +8,7 @@ interface CardProps {
 export const Card: FC<PropsWithChildren<CardProps>> = ({ class: cls, children }) => (
   <div
     data-slot="card"
-    class={cn("flex flex-col rounded-2xl border border-brand-200 bg-brand-100 text-brand-900 shadow-sm", cls)}
+    class={cn("flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm", cls)}
   >
     {children}
   </div>
@@ -17,20 +17,20 @@ export const Card: FC<PropsWithChildren<CardProps>> = ({ class: cls, children })
 export const CardHeader: FC<PropsWithChildren<CardProps>> = ({ class: cls, children }) => (
   <div
     data-slot="card-header"
-    class={cn("grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-brand-200 px-6 py-5", cls)}
+    class={cn("grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5", cls)}
   >
     {children}
   </div>
 );
 
 export const CardTitle: FC<PropsWithChildren<CardProps>> = ({ class: cls, children }) => (
-  <div data-slot="card-title" class={cn("font-semibold leading-none text-brand-900", cls)}>
+  <div data-slot="card-title" class={cn("font-semibold leading-none text-card-foreground", cls)}>
     {children}
   </div>
 );
 
 export const CardDescription: FC<PropsWithChildren<CardProps>> = ({ class: cls, children }) => (
-  <div data-slot="card-description" class={cn("text-sm text-brand-600", cls)}>
+  <div data-slot="card-description" class={cn("text-sm text-muted-foreground", cls)}>
     {children}
   </div>
 );
@@ -53,7 +53,7 @@ export const CardContent: FC<PropsWithChildren<CardProps>> = ({ class: cls, chil
 export const CardFooter: FC<PropsWithChildren<CardProps>> = ({ class: cls, children }) => (
   <div
     data-slot="card-footer"
-    class={cn("flex items-center gap-2 border-t border-brand-200 px-6 py-4", cls)}
+    class={cn("flex items-center gap-2 border-t border-border px-6 py-4", cls)}
   >
     {children}
   </div>

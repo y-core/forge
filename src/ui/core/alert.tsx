@@ -2,7 +2,7 @@ import type { FC, PropsWithChildren } from "hono/jsx";
 import { cn } from "./utils/cn";
 
 const variantClasses = {
-  default: "border-brand-200 bg-brand-100 text-brand-900",
+  default: "border-border bg-muted text-foreground",
   destructive: "border-red-200 bg-red-50 text-red-900",
   success: "border-emerald-200 bg-emerald-50 text-emerald-900",
 };

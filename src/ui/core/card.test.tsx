@@ -23,8 +23,8 @@ describe("Card", () => {
     const out = await render(<Card>content</Card>);
     expect(out).toContain('data-slot="card"');
     expect(out).toContain("rounded-2xl");
-    expect(out).toContain("border-brand-200");
-    expect(out).toContain("bg-brand-100");
+    expect(out).toContain("border-border");
+    expect(out).toContain("bg-card");
   });
 
   it("renders CardHeader with title, description, and action slots", async () => {

@@ -11,12 +11,12 @@ interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> 
 }
 
 const buttonVariants = cva({
-  base: "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 disabled:pointer-events-none disabled:opacity-50",
+  base: "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
   variants: {
     variant: {
-      primary: "bg-brand-600 text-white hover:bg-brand-800",
-      secondary: "border border-brand-600 text-brand-600 hover:bg-brand-50",
-      ghost: "text-brand-600 hover:bg-brand-100",
+      primary: "bg-primary text-primary-foreground hover:bg-primary/90",
+      secondary: "border border-input text-foreground hover:bg-accent",
+      ghost: "text-foreground hover:bg-accent",
     },
     size: {
       sm: "h-8 px-3 text-sm",

@@ -14,9 +14,9 @@ describe("Alert", () => {
   it("renders the default variant classes", async () => {
     const out = await render(<Alert>Message</Alert>);
     expect(out).toContain('data-slot="alert"');
-    expect(out).toContain("border-brand-200");
-    expect(out).toContain("bg-brand-100");
-    expect(out).toContain("text-brand-900");
+    expect(out).toContain("border-border");
+    expect(out).toContain("bg-muted");
+    expect(out).toContain("text-foreground");
   });
 
   it("renders the destructive variant classes", async () => {

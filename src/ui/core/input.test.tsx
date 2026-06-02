@@ -21,7 +21,7 @@ describe("Input", () => {
     const out = await render(<Input />);
     expect(out).toContain("w-full");
     expect(out).toContain("rounded-lg");
-    expect(out).toContain("border-brand-200");
+    expect(out).toContain("border-input");
   });
 
   it("passes through id and name", async () => {

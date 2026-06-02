@@ -49,7 +49,7 @@ export const FieldLegend: FC<PropsWithChildren<FieldLegendProps>> = ({
     data-variant={variant}
     class={cn(
       "mb-3 font-medium",
-      variant === "legend" ? "text-base text-brand-900" : "text-sm text-brand-900",
+      variant === "legend" ? "text-base text-foreground" : "text-sm text-foreground",
       asClass(cls),
     )}
     {...props}
@@ -115,7 +115,7 @@ export const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({
     {children ? (
       <span
         data-slot="field-separator-content"
-        class="relative mx-auto block w-fit bg-white px-2 text-brand-600"
+        class="relative mx-auto block w-fit bg-background px-2 text-muted-foreground"
       >
         {children}
       </span>

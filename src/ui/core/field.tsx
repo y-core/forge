@@ -49,7 +49,7 @@ const fieldVariants = cva({
 
 /** Shared Tailwind class string for FieldLabel and FieldTitle. */
 export const FIELD_LABEL_CLASSES =
-  "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-brand-900 group-data-[disabled=true]/field:opacity-50";
+  "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50";
 
 export function fieldId(name: string): string {
   return `field-${name}`;
@@ -141,7 +141,7 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps & { name?: 
   return (
     <p
       data-slot="field-description"
-      class={cn("text-sm leading-normal text-brand-600", asClass(cls))}
+      class={cn("text-sm leading-normal text-muted-foreground", asClass(cls))}
       id={id ?? (name ? fieldDescriptionId(name) : undefined)}
       {...props}
     >

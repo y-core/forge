@@ -12,7 +12,7 @@ export const Separator: FC<SeparatorProps> = ({ orientation = "horizontal", clas
     aria-orientation={orientation}
     class={cn(
       orientation === "horizontal" ? "h-px w-full" : "h-full w-px",
-      "border-0 bg-brand-200",
+      "border-0 bg-border",
       cls,
     )}
   />
