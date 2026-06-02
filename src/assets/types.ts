@@ -1,4 +1,4 @@
-import * as v from "valibot";
+import { v } from "../validation/mod";
 
 const JsBundleSchema = v.object({
   entry: v.string(),

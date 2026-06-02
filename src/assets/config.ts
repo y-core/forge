@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import * as v from "valibot";
+import { v } from "../validation/mod";
 import type { AssetsConfig, ResolvedConfig } from "./types";
 import { AssetsConfigSchema } from "./types";
 
