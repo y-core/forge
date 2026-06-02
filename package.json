@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "type": "module",
   "description": "Server-rendered web utilities for Hono + Cloudflare Workers",
   "scripts": {
