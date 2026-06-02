@@ -14,20 +14,20 @@ describe("Button", () => {
   it("renders with primary variant classes by default", async () => {
     const out = await render(<Button>Click</Button>);
     expect(out).toContain('data-slot="button"');
-    expect(out).toContain("bg-brand-600");
-    expect(out).toContain("text-white");
+    expect(out).toContain("bg-primary");
+    expect(out).toContain("text-primary-foreground");
   });
 
   it("renders secondary variant classes", async () => {
     const out = await render(<Button variant="secondary">Click</Button>);
-    expect(out).toContain("border-brand-600");
-    expect(out).toContain("text-brand-600");
+    expect(out).toContain("border-input");
+    expect(out).toContain("text-foreground");
   });
 
   it("renders ghost variant classes without primary background", async () => {
     const out = await render(<Button variant="ghost">Click</Button>);
-    expect(out).toContain("hover:bg-brand-100");
-    expect(out).not.toContain("bg-brand-600");
+    expect(out).toContain("hover:bg-accent");
+    expect(out).not.toContain("bg-primary");
   });
 
   it("renders sm size classes", async () => {
