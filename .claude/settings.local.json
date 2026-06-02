@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__tsmcp__decisions_read",
+      "mcp__tsmcp__lsp_find_references",
+      "Bash(bun test *)",
+      "Bash(bun run *)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "tsmcp"
+  ]
+}

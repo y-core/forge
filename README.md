@@ -22,26 +22,34 @@ Every namespace is single-purpose and independently useful. A module that cannot
 
 ## Namespace Overview
 
-| Import path | Concern | Key exports |
-|---|---|---|
-| `@y-core/forge/app` | App bootstrapping & lifecycle | `createApp`, `definePage`, `defineAction`, `healthCheck`, `validateEnv`, `validateBindings`, `serveAssets` |
-| `@y-core/forge/assets` | Asset config & metadata | `defineAssetsConfig`, `loadConfig`, `AssetsConfig`, `AssetsConfigSchema` |
-| `@y-core/forge/assets/build` | Asset build pipeline | `buildAll`, `generateManifest`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets`, `buildFonts`, `fetchURL`, `hashFile`, `hashString`, `sanitizeSVG`, `svgToSymbol`, `hasChanged`, `loadState`, `markBuilt`, `saveState` |
-| `@y-core/forge/assets/manifest` | Manifest reading & sprite registry | `createManifest`, `createSpriteRegistry` |
-| `@y-core/forge/cli` | CLI command framework | `createCommand`, `addCommand`, `parseArgs`, `collectFlags`, `execute`, `formatHelp`, `formatUsage`, `CliError`, `formatError` |
-| `@y-core/forge/config` | Environment config resolution | `Config`, `env`, `applyMapping`, `optionalGroup`, `resolveConfig`, `registerConfig`, `retrieveConfig` |
-| `@y-core/forge/form` | Form parsing, CSRF protection & bot detection | `readFields`, `readTextField`, `parseFormData`, `isHoneypotFilled`, `verifyTurnstile`, `csrfProtection`, `importCsrfKey`, `importCsrfKeyRing`, `createCsrfToken`, `verifyCsrfToken`, `CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT`, `CsrfConfigSchema`, `TurnstileConfigSchema` |
-| `@y-core/forge/http` | HTTP output — responses, headers, escaping | `html`, `escapeHtml`, `htmlResponse`, `renderSuccess`, `renderError`, `renderValidationErrors`, `CacheControl`, `ContentDisposition`, `ContentRange`, `ContentType`, `Range`, `Accept`, `SetCookie`, `Vary` |
-| `@y-core/forge/jsx` | JSX runtime (facade for hono/jsx) | `Fragment`, `createContext`, `useContext`, `memo`, `ErrorBoundary`, `Suspense`, `FC`, `JSX`, `PropsWithChildren` |
-| `@y-core/forge/logging` | Structured logging | `createLogger`, `consoleChannel` |
-| `@y-core/forge/pkg` | Release & versioning tooling | `createReleaseCommand`, `createTag`, `getCommitsSinceTag`, `getLastCommitMessage`, `getLatestTag`, `gitExec`, `isWorkingTreeClean`, `readPackageVersion`, `updatePackageVersion`, `parseSemVer`, `bumpSemVer`, `compareSemVer`, `formatSemVer`, `isGreaterThan`, `resolveVersion`, `ReleaseError` |
-| `@y-core/forge/result` | Result monad | `result`, `toError`, `Result` |
-| `@y-core/forge/router` | Declarative route configuration | `route`, `index`, `layout`, `prefix`, `applyRoutes`, `App` |
-| `@y-core/forge/security` | Security middleware & headers | `makeSecurityHeaders`, `mergeSecurityHeaders`, `NONCE`, `crossOriginProtection`, `checkCrossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit`, `requireFormContentType`, `requireHxRequest`, `timingSafeEqual`, `timingSafeEqualBytes`, `BaseUrlConfigSchema`, `deriveAllowedOrigins`, `parseUrl` |
-| `@y-core/forge/session` | Session management, cookies & middleware | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie`, `Cookie`, `Session`, `createSession`, `createSessionId` |
-| `@y-core/forge/ui` | Server-side JSX primitives | `Form`, `Field`, `FieldLabel`, `FieldContent`, `FieldDescription`, `FieldError`, `FieldGroup`, `FieldLegend`, `FieldSeparator`, `FieldSet`, `FieldTitle`, `Input`, `Textarea`, `Select`, `SelectOptGroup`, `SelectOption`, `Button`, `Alert`, `AlertTitle`, `AlertDescription`, `Card`, `CardAction`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`, `Icon`, `IconSpriteProvider`, `Separator`, `cn`, `cva`, `fieldId`, `fieldErrorId`, `fieldDescriptionId` |
-| `@y-core/forge/ui/client` | Browser-side controller mounts | `mountNav`, `mountTheme`, `mountTurnstile`, `lazy`, `loadScriptOnEvent`, `loadStylesheet`, `createSignal`, `computed`, `effect`, `isDark`, `DARK_CLASS`, `DEFAULT_PREF`, `FOUC_SCRIPT`, `THEME_ATTR`, `THEME_STORAGE_KEY` |
-| `@y-core/forge/validation` | Validation namespace and result types | `v`, `ValidationResult` |
+See [NAMESPACE_DESIGN.md](.decisions/NAMESPACE_DESIGN.md) for the authoritative namespace catalog.
+The table below is a quick reference; the decision doc is the source of truth.
+
+| Import path | Concern |
+|---|---|
+| `@y-core/forge/app` | App bootstrap & lifecycle |
+| `@y-core/forge/assets` | Asset config & metadata |
+| `@y-core/forge/assets/build` | Asset build pipeline |
+| `@y-core/forge/assets/manifest` | Manifest & sprite registry |
+| `@y-core/forge/cli` | CLI command framework |
+| `@y-core/forge/config` | Environment config |
+| `@y-core/forge/form` | Form parsing, CSRF & bot detection |
+| `@y-core/forge/http` | HTTP output — responses, headers |
+| `@y-core/forge/jsx` | JSX runtime |
+| `@y-core/forge/logging` | Structured logging |
+| `@y-core/forge/logging/http` | Log viewer UI & reader |
+| `@y-core/forge/pkg` | Release & versioning |
+| `@y-core/forge/result` | Result monad |
+| `@y-core/forge/router` | Declarative route config |
+| `@y-core/forge/security` | Transport-layer hardening |
+| `@y-core/forge/session` | Session + cookie management |
+| `@y-core/forge/storage/db` | D1 database client |
+| `@y-core/forge/storage/kv` | Workers KV typed store |
+| `@y-core/forge/storage/r2` | R2 object storage |
+| `@y-core/forge/ui` | Server-side JSX components |
+| `@y-core/forge/ui/client` | Browser-side UI scripts |
+| `@y-core/forge/ui/client/htmx` | HTMX bundle (sideEffect) |
+| `@y-core/forge/validation` | Schema validation (valibot) |
 
 ---
 
@@ -347,21 +355,17 @@ Produces CSP + security headers and provides middleware for transport-layer hard
 import {
   makeSecurityHeaders,
   NONCE,
-  crossOriginProtection,
+  cors,
   originGuard,
   rateLimit,
-  requireFormContentType,
-  requireHxRequest,
-  timingSafeEqual,
+  isHxRequest,
   verifyOrigin,
 } from "@y-core/forge/security";
 
 app.use("*", makeSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
-app.use("*", crossOriginProtection());
 
 // Guard POST endpoints to same-origin HTMX requests only
-app.use("/api/*", requireHxRequest());
-app.use("/api/*", requireFormContentType());
+app.use("/api/*", (c, next) => isHxRequest(c) ? next() : c.text("Forbidden", 403));
 
 // Origin validation
 import { originGuard, verifyOrigin } from "@y-core/forge/security";

@@ -1,0 +1,374 @@
+---
+title: UI Components
+description: "Hono JSX components, Form, Field, Input, Select, Button, Alert, Card, Icon, cn, cva, SSR components, ui/core, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
+weight: 30
+---
+
+# UI Components
+
+> Authoritative source for forge's two UI namespaces: ui/core (SSR JSX components)
+> and ui/client (browser-side controllers). Covers the SSR-vs-client split, component
+> catalog, and HTMX integration.
+>
+> Complements [ROUTING_AND_MIDDLEWARE.md](./ROUTING_AND_MIDDLEWARE.md) (route views),
+> [INPUT_VALIDATION.md](./INPUT_VALIDATION.md) (form components).
+
+---
+
+## 0. Quick Reference
+
+- §1 ui/core namespace: Form, Field, Input, Button, Alert, Card, Icon, cn, cva
+- §2 SSR component patterns: composing Field+FieldLabel+FieldError+Input
+- §3 cn and cva: class name utilities for conditional and variant styling
+- §4 ui/client namespace: mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, signals
+- §5 HTMX sideEffect import: ui/client/htmx for htmx bundle
+- §6 SSR-vs-client split rule: when to use ui/core vs ui/client
+
+---
+
+## 1. ui/core Namespace (SSR Components)
+
+> All components in ui/core are Hono JSX components rendered server-side. They produce
+> static HTML with no browser JavaScript dependency.
+
+### 1a. Form Component
+
+    import { Form } from "@y-core/forge/ui"
+
+    <Form hx-post="/api/contact" hx-target="#result">
+      {/* form fields */}
+    </Form>
+
+Renders an HTML `<form>` element. Accepts all standard HTML form attributes plus HTMX
+data attributes (`hx-post`, `hx-get`, `hx-target`, `hx-swap`, etc.). No client-side
+submission logic is added — behavior is delegated entirely to HTMX or native form
+submission.
+
+### 1b. Field Components — Accessible Form Fields
+
+    import { Field, FieldLabel, FieldError, FieldDescription, Input } from "@y-core/forge/ui"
+    import { fieldId, fieldErrorId, fieldDescriptionId } from "@y-core/forge/ui"
+
+    <Field name="email">
+      <FieldLabel>Email</FieldLabel>
+      <Input type="email" name="email" />
+      <FieldDescription>We'll never share your email.</FieldDescription>
+      <FieldError>{errors.email}</FieldError>
+    </Field>
+
+`Field` provides a scoped context for its `name` prop. `FieldLabel`, `FieldDescription`,
+and `FieldError` auto-wire `for`/`id`/`aria-describedby` relationships via the ID
+helpers:
+
+- `fieldId(name)` — base input ID
+- `fieldErrorId(name)` — ID for the error message element
+- `fieldDescriptionId(name)` — ID for the description element
+
+Pass these to `aria-describedby` and `aria-errormessage` on `Input` when composing
+outside of `Field` context.
+
+### 1c. Input, Textarea, Select Components
+
+    import { Input, Textarea, Select, SelectOption, SelectOptGroup } from "@y-core/forge/ui"
+
+    <Input type="text" name="name" placeholder="Your name" />
+    <Textarea name="message" rows={4} />
+    <Select name="country">
+      <SelectOption value="us">United States</SelectOption>
+      <SelectOptGroup label="Europe">
+        <SelectOption value="uk">United Kingdom</SelectOption>
+      </SelectOptGroup>
+    </Select>
+
+All accept standard HTML attributes. `Input` renders `<input>`, `Textarea` renders
+`<textarea>`, `Select` renders `<select>` with optional grouping via `SelectOptGroup`.
+
+### 1d. Button Component
+
+    import { Button } from "@y-core/forge/ui"
+
+    <Button type="submit">Send Message</Button>
+    <Button type="button" hx-get="/api/data" hx-target="#result">Load</Button>
+
+Renders a styled `<button>`. Accepts `type`, HTMX attributes, and all standard button
+attributes. Does not add JavaScript event listeners — HTMX handles interactivity.
+
+### 1e. Alert Component
+
+    import { Alert, AlertTitle, AlertDescription, type AlertVariant } from "@y-core/forge/ui"
+
+    <Alert variant="destructive">
+      <AlertTitle>Error</AlertTitle>
+      <AlertDescription>Something went wrong.</AlertDescription>
+    </Alert>
+
+`AlertVariant`: `"default" | "destructive" | "success"`. Used for inline feedback in
+HTMX response fragments (see §2b). `AlertTitle` renders as a `<p>` with strong styling;
+`AlertDescription` renders body text below it.
+
+### 1f. Card Components
+
+    import {
+      Card, CardHeader, CardTitle, CardDescription,
+      CardContent, CardFooter, CardAction
+    } from "@y-core/forge/ui"
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Title</CardTitle>
+        <CardDescription>Description</CardDescription>
+      </CardHeader>
+      <CardContent>Content here</CardContent>
+      <CardFooter>
+        <CardAction><Button>Act</Button></CardAction>
+      </CardFooter>
+    </Card>
+
+`Card` is a bordered container. `CardHeader` groups `CardTitle` and `CardDescription`.
+`CardAction` anchors actions (buttons, links) to the footer right edge.
+
+### 1g. Icon Component
+
+    import { Icon, createIcon } from "@y-core/forge/ui"
+
+    <Icon name="arrow-right" size={20} />
+
+`Icon` renders an inline SVG from the forge icon registry. `createIcon(pathData)` builds
+a named icon component from raw SVG path data for custom icons not in the registry.
+`size` sets both `width` and `height` attributes (default `16`).
+
+---
+
+## 2. SSR Component Patterns
+
+> Canonical patterns for combining ui/core components in route views.
+
+### 2a. Form with Validation Errors Pattern
+
+    <Form hx-post="/api/contact" hx-target="#contact-result">
+      <Field name="name">
+        <FieldLabel>Name</FieldLabel>
+        <Input
+          name="name"
+          value={name}
+          aria-describedby={fieldErrorId("name")}
+        />
+        <FieldError>{errors?.name}</FieldError>
+      </Field>
+      <Field name="email">
+        <FieldLabel>Email</FieldLabel>
+        <Input
+          type="email"
+          name="email"
+          value={email}
+          aria-describedby={fieldErrorId("email")}
+        />
+        <FieldError>{errors?.email}</FieldError>
+      </Field>
+      <Button type="submit">Submit</Button>
+    </Form>
+    <div id="contact-result" data-ref="contact-result" />
+
+The `errors` object comes from the handler after zod validation (see
+[INPUT_VALIDATION.md](./INPUT_VALIDATION.md)). `FieldError` renders nothing when its
+child is `undefined` or empty string, so it is safe to always include.
+
+### 2b. HTMX Response Fragment Target
+
+The form's `hx-target` points to the result `<div>`. On the handler side, successful
+and failed submissions return a JSX fragment swapped into that div:
+
+    // handler returns on error:
+    return c.html(
+      <Alert variant="destructive">
+        <AlertTitle>Submission Failed</AlertTitle>
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
+    )
+
+    // handler returns on success:
+    return c.html(
+      <Alert variant="success">
+        <AlertTitle>Message Sent</AlertTitle>
+      </Alert>
+    )
+
+The fragment replaces the inner content of `#contact-result` via the default
+`hx-swap="innerHTML"`.
+
+---
+
+## 3. cn and cva Class Utilities
+
+> Tailwind v4 utility helpers for conditional and variant class composition.
+
+### 3a. cn — Conditional Class Names
+
+    import { cn } from "@y-core/forge/ui"
+
+    <div class={cn("base-class", isActive && "active", className)} />
+
+`cn` merges class strings and filters falsy values. Uses `clsx` internally. Accepts
+strings, arrays, objects (`{ "class": condition }`), and nested combinations. Use `cn`
+whenever a component conditionally applies Tailwind classes or accepts a `className` prop
+override.
+
+### 3b. cva — Class Variance Authority
+
+    import { cva } from "@y-core/forge/ui"
+
+    const buttonVariants = cva("inline-flex items-center rounded-md font-medium", {
+      variants: {
+        variant: {
+          primary: "bg-primary text-white hover:bg-primary/90",
+          outline: "border border-input bg-transparent hover:bg-accent",
+          ghost:   "hover:bg-accent hover:text-accent-foreground",
+        },
+        size: {
+          sm: "h-8 px-3 text-sm",
+          md: "h-10 px-4 text-base",
+          lg: "h-12 px-6 text-lg",
+        },
+      },
+      defaultVariants: { variant: "primary", size: "md" },
+    })
+
+    // usage:
+    <button class={buttonVariants({ variant: "outline", size: "sm" })}>Click</button>
+
+`cva` returns a variant function. Call it with a variant map to produce the resolved
+class string. Combine with `cn` when additional conditional classes are needed:
+
+    <button class={cn(buttonVariants({ variant }), isLoading && "opacity-50")} />
+
+---
+
+## 4. ui/client Namespace (Browser Controllers)
+
+> ui/client exports run only in the browser. Never import in SSR-executed files.
+> See §6 for the hard split rule.
+
+### 4a. mountTheme — Dark Mode Controller
+
+    import { mountTheme, FOUC_SCRIPT } from "@y-core/forge/ui/client"
+
+    // In layout <head> — runs synchronously before first paint:
+    <script dangerouslySetInnerHTML={{ __html: FOUC_SCRIPT }} />
+
+    // In <body> — wires the toggle button:
+    <script>mountTheme()</script>
+
+`FOUC_SCRIPT` is a minified inline script that reads `localStorage` and sets the `dark`
+class on `<html>` before the browser paints. This prevents flash-of-unstyled-content
+(FOUC) on dark mode. `mountTheme()` attaches click handlers to the theme toggle button.
+The script hash for `FOUC_SCRIPT` must be included in the CSP `script-src` via
+`makeSecurityHeaders` (see [SECURITY_HARDENING.md](./SECURITY_HARDENING.md)).
+
+### 4b. mountNav — Navigation Controller
+
+    import { mountNav } from "@y-core/forge/ui/client"
+
+    <script>mountNav()</script>
+
+Wires the mobile hamburger menu toggle and applies active-link highlighting based on
+`window.location.pathname`. Call once per page in a bundled client script or inline
+`<script>` tag.
+
+### 4c. mountTurnstile — CAPTCHA Controller
+
+    import { mountTurnstile } from "@y-core/forge/ui/client"
+
+    <script>mountTurnstile({ siteKey: turnstileSiteKey })</script>
+
+Initialises Cloudflare Turnstile on forms that include a `[data-turnstile]` element.
+`siteKey` is injected server-side from the Worker env (never hardcoded). The controller
+appends the hidden `cf-turnstile-response` token to form submissions.
+
+### 4d. Signals — Reactive State
+
+    import { createSignal, computed, effect } from "@y-core/forge/ui/client"
+
+    const count = createSignal(0)
+    const doubled = computed(() => count.value * 2)
+
+    effect(() => {
+      console.log("doubled:", doubled.value)
+    })
+
+    count.value = 5  // triggers effect, logs "doubled: 10"
+
+Signals provide fine-grained reactive state without a framework. `createSignal` returns
+a signal with `.value` getter/setter. `computed` derives a read-only signal. `effect`
+subscribes to all signals read during its execution and re-runs on change. Use for
+lightweight client state that does not justify HTMX round-trips.
+
+### 4e. Lazy Loading Utilities
+
+    import { lazy, loadScriptOnEvent, loadStylesheet } from "@y-core/forge/ui/client"
+
+    lazy(() => import("./expensive-module"))          // deferred dynamic import
+    loadScriptOnEvent("click", "/analytics.js")       // load script on first event
+    loadStylesheet("/print.css")                       // inject <link> stylesheet
+
+`lazy` defers a dynamic import until the browser is idle. `loadScriptOnEvent` injects a
+`<script>` tag the first time a given DOM event fires — useful for analytics or chat
+widgets that must not block page load. `loadStylesheet` injects a `<link rel="stylesheet">`.
+
+---
+
+## 5. HTMX Import (sideEffect)
+
+> The htmx bundle must be imported as a side-effect — never tree-shaken.
+
+### 5a. htmx Bundle Import
+
+    // src/client/main.ts (esbuild entry point):
+    import "@y-core/forge/ui/client/htmx"  // side-effect only — no exports used
+
+This import is marked `"sideEffects": true` in the forge `package.json`. It attaches
+`htmx` to `window` and registers all built-in extensions. esbuild must NOT tree-shake
+this import. Never import htmx directly from a CDN URL — use this entry point so the
+version is pinned by the forge package.
+
+The output bundle lands at `public/assets/js/main.js` and is referenced in the layout
+`<script src="/assets/js/main.js" defer>` tag. The CSP `script-src` covers this file
+via the `'self'` allowlist (no hash required for external files).
+
+---
+
+## 6. SSR-vs-Client Split Rule
+
+> Hard boundary: ui/core runs at build time and request time on the Worker;
+> ui/client runs exclusively in the browser after the page is delivered.
+
+### 6a. When to Use ui/core (SSR)
+
+Use ui/core components for all of the following:
+
+- HTML structure: forms, cards, alerts, buttons, inputs
+- Route view JSX rendered inside Hono handlers (`c.html(...)`)
+- Components that carry no JS behavior — styling and markup only
+- Any component imported in `src/views/`, `src/handlers/`, or `src/routes.tsx`
+
+### 6b. When to Use ui/client (Browser)
+
+Use ui/client exports for all of the following:
+
+- DOM controllers that require `document` or `window` (theme, nav, turnstile)
+- Reactive client state managed with signals
+- Deferred or event-triggered resource loading
+- Code imported only inside `src/client/` (esbuild entry) or inline `<script>` tags
+
+### 6c. Never Use ui/client in SSR Context
+
+ui/client exports reference browser globals (`document`, `window`, `localStorage`).
+Importing them in Worker-executed code throws at runtime on Cloudflare Workers, which
+has no DOM. The import boundary is enforced by path convention:
+
+- `@y-core/forge/ui` — safe in Workers (SSR)
+- `@y-core/forge/ui/client` — browser only; restricted to `src/client/`
+- `@y-core/forge/ui/client/htmx` — browser only; esbuild entry point only
+
+If a component needs both SSR markup and client behavior, render the markup with ui/core
+and wire behavior via a `mountX()` call in a `<script>` tag that references the bundled
+client entry. Never inline ui/client imports in JSX files outside `src/client/`.
