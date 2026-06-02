@@ -148,6 +148,8 @@
     "src/app/",
     "src/assets/",
     "src/config/",
+    "src/context/",
+    "src/crypto/",
     "src/cli/",
     "src/form/",
     "src/http/",
