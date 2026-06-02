@@ -1,6 +1,6 @@
 /** @jsxImportSource @y-core/forge */
 import type { Context } from "hono";
-import { html } from "../../http/mod";
+import { html } from "hono/html";
 import type { RouteModule } from "../../router/types";
 import type { KVNamespace } from "../../storage/kv/types";
 import type { LogLevel } from "../types";

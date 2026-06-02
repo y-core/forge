@@ -1,18 +1,10 @@
-import type { MiddlewareHandler } from "hono";
+import type { Context, Env, MiddlewareHandler } from "hono";
 import { NONCE, secureHeaders } from "hono/secure-headers";
+import { contextVar } from "../context/accessor";
 import type { SecurityHeadersOptions } from "./types";
 
 /** Bare variable record set by Hono's `secureHeaders` middleware. @public */
 export type SecureHeadersContext = { secureHeadersNonce?: string };
-
-/** Rejects empty or whitespace-only CSP source entries, which silently break the policy. */
-function assertValidDirective(name: string, sources: readonly unknown[]): void {
-  for (const source of sources) {
-    if (typeof source === "string" && source.trim() === "") {
-      throw new Error(`Invalid CSP directive "${name}": source entries must be non-empty strings`);
-    }
-  }
-}
 
 const CSP_DIRECTIVES = [
   "scriptSrc",
@@ -23,13 +15,26 @@ const CSP_DIRECTIVES = [
   "childSrc",
 ] as const;
 
+const secureHeadersNonce = contextVar<string>("secureHeadersNonce");
+
+/** Returns the CSP nonce Hono's `secureHeaders` sets for the current request, or "" when none is set. @public */
+export function getNonce<E extends Env>(c: Context<E>): string {
+  return secureHeadersNonce.get(c) ?? "";
+}
+
+/** Rejects empty or whitespace-only CSP source entries, which silently break the policy. */
+function assertValidDirective(name: string, sources: readonly unknown[]): void {
+  for (const source of sources) {
+    if (typeof source === "string" && source.trim() === "") {
+      throw new Error(`Invalid CSP directive "${name}": source entries must be non-empty strings`);
+    }
+  }
+}
+
 /** Layers extra CSP sources onto a base policy, concatenating each directive's source list.
  *  Lets callers inject environment-specific sources (e.g. a dev-only script hash) onto a
  *  shared base policy without mutating it. @public */
-export function mergeSecurityHeaders(
-  base: SecurityHeadersOptions,
-  extra: Partial<SecurityHeadersOptions>,
-): SecurityHeadersOptions {
+export function mergeSecurityHeaders(base: SecurityHeadersOptions, extra: Partial<SecurityHeadersOptions>): SecurityHeadersOptions {
   const merged: SecurityHeadersOptions = { ...base };
   for (const key of CSP_DIRECTIVES) {
     const extraSources = extra[key];

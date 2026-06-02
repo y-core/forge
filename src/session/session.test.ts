@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createCookie } from "@remix-run/cookie";
+import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
+import { createMemorySessionStorage } from "@remix-run/session/memory-storage";
 import { Hono } from "hono";
-import { createCookieSessionStorage, createMemorySessionStorage } from "./mod";
 import { type SessionVariables, sessionMiddleware } from "./session";
 
 const sessionCookie = createCookie("__session", { path: "/" });

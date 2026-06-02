@@ -14,6 +14,7 @@ declare module "bun:test" {
     mockImplementation(fn: T): this;
     mockReturnValue(value: ReturnType<T>): this;
     mockResolvedValue(value: Awaited<ReturnType<T>>): this;
+    mockResolvedValueOnce(value: Awaited<ReturnType<T>>): this;
     mockClear(): this;
     mockReset(): this;
     mockRestore(): this;

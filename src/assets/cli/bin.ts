@@ -1,4 +1,4 @@
-import { execute } from "../../cli/mod";
+import { execute } from "../../cli/execute";
 import { createAssetsCommands } from "./commands";
 
 const root = createAssetsCommands();

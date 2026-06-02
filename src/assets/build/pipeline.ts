@@ -6,8 +6,8 @@ import { buildCSS } from "./css";
 import { buildFonts } from "./fonts";
 import { buildIcons } from "./icons";
 import { buildJS } from "./js";
-import { buildSprites } from "./sprites";
 import type { SpriteGroupResult } from "./sprites";
+import { buildSprites } from "./sprites";
 
 export interface BuildOptions {
   minify?: boolean;

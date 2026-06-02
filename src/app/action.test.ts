@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-import { applyRoutes, route } from "../router/mod";
+import { route } from "../router/config";
+import { applyRoutes } from "../router/register";
 import { defineAction } from "./action";
 
 interface TestData {

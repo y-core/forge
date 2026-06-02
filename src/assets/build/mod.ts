@@ -7,7 +7,7 @@ export { buildIcons } from "./icons";
 export { buildJS } from "./js";
 export type { BuildOptions } from "./pipeline";
 export { buildAll } from "./pipeline";
-export { buildSprites, extractViewBoxes, sanitizeSVG, svgToSymbol } from "./sprites";
 export type { SpriteBuildResult, SpriteGroupResult } from "./sprites";
+export { buildSprites, extractViewBoxes, sanitizeSVG, svgToSymbol } from "./sprites";
 export type { BuildState } from "./state";
 export { hasChanged, loadState, markBuilt, saveState } from "./state";

@@ -17,17 +17,17 @@ export interface ReadonlyFormData {
 export type TurnstileResult =
   | { ok: true }
   | {
-      ok: false;
-      reason:
-        | "action-mismatch"
-        | "cdata-mismatch"
-        | "hostname-mismatch"
-        | "missing-token"
-        | "network-error"
-        | "parse-error"
-        | "timeout"
-        | "verification-failed";
-    };
+    ok: false;
+    reason:
+    | "action-mismatch"
+    | "cdata-mismatch"
+    | "hostname-mismatch"
+    | "missing-token"
+    | "network-error"
+    | "parse-error"
+    | "timeout"
+    | "verification-failed";
+  };
 
 export interface TurnstileVerifyOptions {
   expectedAction?: string;
@@ -38,15 +38,20 @@ export interface TurnstileVerifyOptions {
 
 export type FormFieldReader = (formData: ReadonlyFormData, field: string) => string;
 
-/** Bare variable record set by `csrfProtection`. Intersect into `AppEnv.Variables`. @public */
-export type CsrfContext = {
-  csrfToken: string | undefined;
-  mintCsrf: ((path: string) => Promise<string>) | undefined;
-};
-
 export type CsrfResult =
   | { ok: true }
-  | { ok: false; reason: "missing-token" | "invalid-format" | "expired" | "future-timestamp" | "path-mismatch" | "subject-mismatch" | "unknown-key" | "invalid-signature" };
+  | {
+    ok: false;
+    reason:
+    | "expired"
+    | "future-timestamp"
+    | "invalid-format"
+    | "invalid-signature"
+    | "missing-token"
+    | "path-mismatch"
+    | "subject-mismatch"
+    | "unknown-key";
+  };
 
 /** A key ring for CSRF secret rotation — one active signing key plus all keys valid for verification. @public */
 export interface CsrfKeyRing {

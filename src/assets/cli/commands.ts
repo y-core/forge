@@ -1,6 +1,11 @@
-import { addCommand, createCommand } from "../../cli/mod";
+import { addCommand, createCommand } from "../../cli/command";
 import type { CommandBase } from "../../cli/types";
-import { buildAll, buildCSS, buildFonts, buildIcons, buildJS, buildSprites } from "../build/mod";
+import { buildCSS } from "../build/css";
+import { buildFonts } from "../build/fonts";
+import { buildIcons } from "../build/icons";
+import { buildJS } from "../build/js";
+import { buildAll } from "../build/pipeline";
+import { buildSprites } from "../build/sprites";
 import { loadConfig } from "../config";
 
 export function createAssetsCommands(): CommandBase {

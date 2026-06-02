@@ -107,9 +107,9 @@ describe("buildSprites()", () => {
       };
       const result = await buildSprites(sprites, tmpDir);
       expect(Object.keys(result.groups)).toEqual(["core", "brand-icons"]);
-      expect(result.groups["core"].spriteKey).toBe("svg/sprite.svg");
+      expect(result.groups.core.spriteKey).toBe("svg/sprite.svg");
       expect(result.groups["brand-icons"].spriteKey).toBe("svg/brand.svg");
-      expect(result.groups["core"].meta["icon-a"]).toBe("0 0 24 24");
+      expect(result.groups.core.meta["icon-a"]).toBe("0 0 24 24");
       expect(result.groups["brand-icons"].meta["icon-b"]).toBe("0 0 32 32");
     } finally {
       fetchSpy.mockRestore();

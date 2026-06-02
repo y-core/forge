@@ -1,6 +1,6 @@
+import { CacheControl } from "@remix-run/headers";
 import type { Env } from "hono";
 import type { InferConfig } from "../config/config";
-import { CacheControl } from "../http/mod";
 import { toError } from "../result/result";
 import type { RouteModule } from "../router/types";
 import type { PageDefinition } from "./types";

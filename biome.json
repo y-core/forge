@@ -7,7 +7,22 @@
     ]
   },
   "linter": {
-    "enabled": true
+    "enabled": true,
+    "rules": {
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+              }
+            ]
+          }
+        }
+      }
+    }
   },
   "assist": {
     "actions": {

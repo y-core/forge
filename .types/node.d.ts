@@ -1,6 +1,6 @@
 // Minimal ambient declarations for node: built-ins used in forge CLI/pkg/assets modules.
 // Avoids pulling in @types/node, which pollutes the global scope and conflicts
-// with @cloudflare/workers-types and DOM types.
+// with the Wrangler/workerd-generated Workers runtime types and DOM types.
 
 // Node's Buffer extends Uint8Array; declare minimally so execSync return type resolves.
 declare type Buffer = Uint8Array;
@@ -37,6 +37,7 @@ declare module "node:fs" {
   export function existsSync(path: string): boolean;
   export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
   export function copyFileSync(src: string, dest: string): void;
+  export function renameSync(oldPath: string, newPath: string): void;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function unlinkSync(path: string): void;
   export interface Dirent {

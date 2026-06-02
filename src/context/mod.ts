@@ -1,2 +1,2 @@
-export type { RequestBase } from "./request-context";
-export { hydrateRequestBase } from "./request-context";
+export type { ContextVar } from "./accessor";
+export { contextVar } from "./accessor";

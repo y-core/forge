@@ -1,4 +1,5 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
+import { contextVar } from "../context/accessor";
 import {
   base64urlDecode,
   base64urlEncode,
@@ -13,10 +14,27 @@ import {
 } from "../crypto/mod";
 import { CSRF_FIELD_DEFAULT } from "./constants";
 import { parseFormData } from "./parse-form-data";
-import type { CsrfContext, CsrfKeyRing, CsrfResult, CsrfSecretResolver } from "./types";
+import type { CsrfKeyRing, CsrfResult, CsrfSecretResolver } from "./types";
+
+export interface CsrfTokenOptions {
+  kid?: string;
+  /** Session or user identifier to bind to the token. When provided at verify time it must match. */
+  subject?: string;
+}
 
 const CLOCK_SKEW_MS = 30_000;
 const DEFAULT_KEY_ID = "0";
+
+const CSRF_MINTER_KEY = "csrf";     // per-request minter fn
+const CSRF_TOKEN_KEY = "csrfToken"; // GET/HEAD pre-minted token
+
+const csrfMinter = contextVar<(path: string) => Promise<string>>(CSRF_MINTER_KEY);
+const csrfToken = contextVar<string>(CSRF_TOKEN_KEY);
+
+/** Bare variable record set by `csrfProtection`. Intersect into `AppEnv.Variables`. @public */
+export type CsrfContext =
+  Record<typeof CSRF_TOKEN_KEY, string | undefined> &
+  Record<typeof CSRF_MINTER_KEY, ((path: string) => Promise<string>) | undefined>;
 
 async function keyFingerprint(hexSecret: string): Promise<string> {
   return base64urlEncode(await sha256(hexSecret.toLowerCase())).slice(0, 12);
@@ -67,26 +85,22 @@ export async function importCsrfKeyRing(
   return { activeKeyId, keys };
 }
 
-export interface CsrfTokenOptions {
-  kid?: string;
-  /** Session or user identifier to bind to the token. When provided at verify time it must match. */
-  subject?: string;
-}
-
 /** Creates a signed CSRF token embedding kid, path, optional subject, timestamp, and 16 random bytes. @public */
 export async function createCsrfToken(
   key: CryptoKey,
   path: string,
-  options: CsrfTokenOptions | string = {},
+  options: CsrfTokenOptions = {},
 ): Promise<string> {
-  const opts: CsrfTokenOptions = typeof options === "string" ? { kid: options } : options;
-  const effectiveKid = opts.kid ?? DEFAULT_KEY_ID;
+  const effectiveKid = options.kid ?? DEFAULT_KEY_ID;
   if (effectiveKid.includes("|")) {
     throw new Error("CSRF key id must not contain '|'");
   }
-  const subject = opts.subject ?? "";
+  const subject = options.subject ?? "";
   if (subject.includes("|")) {
     throw new Error("CSRF subject must not contain '|'");
+  }
+  if (path.includes("|")) {
+    throw new Error("CSRF path must not contain '|'");
   }
   const timestamp = Date.now().toString();
   const nonce = bytesToHex(randomBytes(16));
@@ -103,8 +117,10 @@ export interface CsrfVerifyOptions {
 }
 
 /**
- * Verifies a CSRF token; checks expiry, path, and optional subject before the HMAC
- * signature to avoid timing oracles.
+ * Verifies a CSRF token. Runs the cheap, non-secret checks (expiry, path, subject, kid
+ * lookup) first and the constant-time HMAC verification (`crypto.subtle.verify`) last,
+ * so malformed/stale tokens are rejected without the HMAC cost. Ordering is a performance
+ * choice, not a timing-side-channel mitigation.
  *
  * Accepts a single `CryptoKey` (default kid) or a `CsrfKeyRing` for rotation. When a ring
  * is provided, the token's embedded kid selects the verification key via O(1) map lookup.
@@ -188,6 +204,18 @@ export async function verifyCsrfToken(
   return { ok: true };
 }
 
+/** Mints a CSRF token for `path` by reading the minter `csrfProtection` set on the request.
+ *  Returns "" when no `path` is given. Throws if a path is given but no minter is on context
+ *  (i.e. `csrfProtection` was not mounted on this route). @public */
+export async function mintCsrf<E extends Env>(c: Context<E>, path?: string): Promise<string> {
+  if (!path) return "";
+  const mint = csrfMinter.get(c);
+  if (!mint) {
+    throw new Error("mintCsrf: no CSRF minter on context — mount csrfProtection on this route");
+  }
+  return mint(path);
+}
+
 /**
  * Middleware that sets a CSRF token on GET requests and verifies it on mutations.
  *
@@ -237,17 +265,10 @@ export function csrfProtection<E extends Env = Env>(options: {
     const activeKey = ring.keys[ring.activeKeyId];
     const subject = options.subject?.(c);
 
-    const csrfContext = c as unknown as Context<{ Variables: CsrfContext }>;
-    csrfContext.set(
-      "mintCsrf",
-      (path: string) => createCsrfToken(activeKey, path, { kid: ring.activeKeyId, subject }),
-    );
+    csrfMinter.set(c, (path: string) => createCsrfToken(activeKey, path, { kid: ring.activeKeyId, subject }));
 
     if (method === "GET" || method === "HEAD") {
-      csrfContext.set(
-        "csrfToken",
-        await createCsrfToken(activeKey, c.req.path, { kid: ring.activeKeyId, subject }),
-      );
+      csrfToken.set(c, await createCsrfToken(activeKey, c.req.path, { kid: ring.activeKeyId, subject }));
       return next();
     }
 

@@ -1,9 +1,12 @@
 import type { Context, Env, MiddlewareHandler } from "hono";
+import { contextVar } from "../context/accessor";
 import { createLogger } from "./logger";
 import type { LogChannel, Logger } from "./types";
 
 /** Bare variable record set by `requestLogger`. Intersect into `AppEnv.Variables`. @public */
 export type LoggerContext = { logger: Logger };
+
+const requestLog = contextVar<Logger>("logger");
 
 /**
  * Note: middleware that sets values consumed by `bindings` (e.g. `requestId`) must run
@@ -27,7 +30,7 @@ export function requestLogger<E extends Env & { Variables: LoggerContext } = { V
   return async (c, next) => {
     const base = createLogger(options.prefix ?? "request", { channels: options.channels(c) });
     const log = base.child(options.bindings ? options.bindings(c) : {});
-    c.set("logger", log);
+    requestLog.set(c, log);
     try {
       await next();
     } finally {

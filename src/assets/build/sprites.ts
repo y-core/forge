@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { SpriteGroup, Sprites } from "../types";
-import { hashFile } from "./hash";
 import { fetchURL } from "./download";
+import { hashFile } from "./hash";
 
 export interface SpriteGroupResult {
   spriteKey: string;
@@ -34,14 +34,15 @@ export async function buildSprites(
 export function extractViewBoxes(spriteContent: string): Record<string, string> {
   const meta: Record<string, string> = {};
   const symbolRegex = /<symbol([^>]*)>/g;
-  let match: RegExpExecArray | null;
-  while ((match = symbolRegex.exec(spriteContent)) !== null) {
+  let match = symbolRegex.exec(spriteContent);
+  while (match !== null) {
     const attrs = match[1];
     const idMatch = attrs.match(/id="([^"]+)"/);
     const viewBoxMatch = attrs.match(/viewBox="([^"]+)"/i);
     if (idMatch && viewBoxMatch) {
       meta[idMatch[1]] = viewBoxMatch[1];
     }
+    match = symbolRegex.exec(spriteContent);
   }
   return meta;
 }

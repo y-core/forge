@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { Env } from "hono";
 import { Hono } from "hono";
-import { applyRoutes, route } from "../router/mod";
+import { route } from "../router/config";
+import { applyRoutes } from "../router/register";
 import type { RouteModule } from "../router/types";
 import { definePage } from "./page";
 

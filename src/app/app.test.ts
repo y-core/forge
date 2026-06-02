@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Config } from "../config/config";
-import { applyRoutes, route } from "../router/mod";
+import { route } from "../router/config";
+import { applyRoutes } from "../router/register";
 import { v } from "../validation/mod";
 import { createApp } from "./app";
 
