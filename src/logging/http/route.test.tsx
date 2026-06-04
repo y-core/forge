@@ -2,7 +2,10 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import type { KVNamespace } from "../../storage/kv/types";
+import { createIcon } from "../../ui/core/icon";
 import { logViewer } from "./route";
+
+const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
 function makeKvStub(): KVNamespace {
   return {
@@ -16,7 +19,7 @@ function makeKvStub(): KVNamespace {
 
 function makeApp(options?: { basePath?: string }) {
   const app = new Hono();
-  const mod = logViewer({ kv: () => makeKvStub(), ...options });
+  const mod = logViewer({ kv: () => makeKvStub(), icon, ...options });
   app.get("/logs", async (c) => {
     if (!mod.loader) return c.text("no loader", 500);
     const result = await mod.loader(c, undefined);

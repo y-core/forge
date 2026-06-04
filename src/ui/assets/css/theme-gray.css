@@ -1,0 +1,16 @@
+/* Gray neutral ramp — maps --palette-* aliases onto Tailwind's gray scale.
+   Gray matches the base-default accent values, so no accent overrides are needed.
+   @import theme-base.css before this file. */
+:root {
+  --palette-50:  var(--color-gray-50);
+  --palette-100: var(--color-gray-100);
+  --palette-200: var(--color-gray-200);
+  --palette-300: var(--color-gray-300);
+  --palette-400: var(--color-gray-400);
+  --palette-500: var(--color-gray-500);
+  --palette-600: var(--color-gray-600);
+  --palette-700: var(--color-gray-700);
+  --palette-800: var(--color-gray-800);
+  --palette-900: var(--color-gray-900);
+  --palette-950: var(--color-gray-950);
+}

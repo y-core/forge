@@ -1,8 +1,11 @@
 /** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "hono/jsx/dom/server";
+import { createIcon } from "../../ui/core/icon";
 import { LogFilterBar, LogLevelBadge, LogTableBody } from "./components";
 import type { LogRow } from "./reader";
+
+const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
 function row(overrides?: Partial<LogRow>): LogRow {
   return {
@@ -108,7 +111,7 @@ describe("LogTableBody", () => {
 describe("LogFilterBar", () => {
   it("renders the level select and search input", () => {
     const html = renderToString(
-      <LogFilterBar targetId="log-tbody" formAction="/admin/logs" />,
+      <LogFilterBar targetId="log-tbody" formAction="/admin/logs" icon={icon} />,
     );
     expect(html).toContain('name="level"');
     expect(html).toContain('name="q"');
@@ -118,14 +121,14 @@ describe("LogFilterBar", () => {
 
   it("pre-selects the current level", () => {
     const html = renderToString(
-      <LogFilterBar level="error" targetId="log-tbody" formAction="/admin/logs" />,
+      <LogFilterBar level="error" targetId="log-tbody" formAction="/admin/logs" icon={icon} />,
     );
     expect(html).toContain('value="error" selected');
   });
 
   it("pre-fills the search query", () => {
     const html = renderToString(
-      <LogFilterBar q="payment" targetId="log-tbody" formAction="/admin/logs" />,
+      <LogFilterBar q="payment" targetId="log-tbody" formAction="/admin/logs" icon={icon} />,
     );
     expect(html).toContain('value="payment"');
   });

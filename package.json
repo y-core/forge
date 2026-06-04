@@ -126,6 +126,10 @@
       "types": "./src/ui/client/htmx.ts",
       "import": "./src/ui/client/htmx.ts"
     },
+    "./ui/server": {
+      "types": "./src/ui/server/mod.ts",
+      "import": "./src/ui/server/mod.ts"
+    },
     "./storage/db": {
       "types": "./src/storage/db/mod.ts",
       "import": "./src/storage/db/mod.ts"

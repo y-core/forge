@@ -1,0 +1,16 @@
+/* Neutral ramp — maps --palette-* aliases onto Tailwind's neutral scale.
+   Neutral matches the base-default accent values, so no accent overrides are needed.
+   @import theme-base.css before this file. */
+:root {
+  --palette-50:  var(--color-neutral-50);
+  --palette-100: var(--color-neutral-100);
+  --palette-200: var(--color-neutral-200);
+  --palette-300: var(--color-neutral-300);
+  --palette-400: var(--color-neutral-400);
+  --palette-500: var(--color-neutral-500);
+  --palette-600: var(--color-neutral-600);
+  --palette-700: var(--color-neutral-700);
+  --palette-800: var(--color-neutral-800);
+  --palette-900: var(--color-neutral-900);
+  --palette-950: var(--color-neutral-950);
+}

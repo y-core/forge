@@ -1,0 +1,16 @@
+/* Stone neutral ramp — maps --palette-* aliases onto Tailwind's stone scale.
+   Stone matches the base-default accent values, so no accent overrides are needed.
+   @import theme-base.css before this file. */
+:root {
+  --palette-50:  var(--color-stone-50);
+  --palette-100: var(--color-stone-100);
+  --palette-200: var(--color-stone-200);
+  --palette-300: var(--color-stone-300);
+  --palette-400: var(--color-stone-400);
+  --palette-500: var(--color-stone-500);
+  --palette-600: var(--color-stone-600);
+  --palette-700: var(--color-stone-700);
+  --palette-800: var(--color-stone-800);
+  --palette-900: var(--color-stone-900);
+  --palette-950: var(--color-stone-950);
+}
