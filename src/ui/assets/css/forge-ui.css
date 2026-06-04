@@ -1,0 +1,31 @@
+/* Utility CSS required by componentry components.
+   Each block is tied to a specific component — add or remove blocks as
+   components are adopted.  Do not put general-purpose utilities here. */
+
+@layer utilities {
+
+  /* pkg/componentry/interactive/htmx — indicator visibility.
+     Meta(Name("htmx-config"), Content(`{"includeIndicatorStyles":false}`)) disables
+     runtime <style> injection (which violates Content-Security-Policy: style-src 'self').
+     Replicate the stylesheet behavior here instead. */
+  .htmx-indicator {
+    opacity: 0;
+    transition: opacity 200ms ease-in;
+  }
+  .htmx-request .htmx-indicator,
+  .htmx-request.htmx-indicator {
+    opacity: 1;
+  }
+
+  /* pkg/componentry/interactive/theme — icon visibility driven by
+     data-theme-preference on <html>.  ThemeScript sets it before first paint;
+     ThemeSelector maintains it at runtime via localStorage. */
+  .theme-light-icon,
+  .theme-dark-icon,
+  .theme-system-icon { display: none; }
+  html[data-theme-preference="light"]  .theme-light-icon  { display: contents; }
+  html[data-theme-preference="dark"]   .theme-dark-icon   { display: contents; }
+  html[data-theme-preference="system"] .theme-system-icon { display: contents; }
+  html:not([data-theme-preference])    .theme-system-icon { display: contents; }
+
+}

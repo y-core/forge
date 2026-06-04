@@ -1,0 +1,23 @@
+/* Olive neutral ramp — maps --palette-* aliases onto Tailwind's olive scale.
+   Accent overrides: olive uses higher-chroma destructive and orange warning.
+   @import theme-base.css before this file. */
+:root {
+  --palette-50:  var(--color-olive-50);
+  --palette-100: var(--color-olive-100);
+  --palette-200: var(--color-olive-200);
+  --palette-300: var(--color-olive-300);
+  --palette-400: var(--color-olive-400);
+  --palette-500: var(--color-olive-500);
+  --palette-600: var(--color-olive-600);
+  --palette-700: var(--color-olive-700);
+  --palette-800: var(--color-olive-800);
+  --palette-900: var(--color-olive-900);
+  --palette-950: var(--color-olive-950);
+
+  --destructive: oklch(0.577 0.245 27.325);
+  --warning:     var(--color-orange-700);
+}
+
+.dark {
+  --warning: var(--color-orange-500);
+}

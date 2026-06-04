@@ -1,0 +1,23 @@
+/* Zinc neutral ramp — maps --palette-* aliases onto Tailwind's zinc scale.
+   Accent overrides: zinc uses higher-chroma destructive and orange warning.
+   @import theme-base.css before this file. */
+:root {
+  --palette-50:  var(--color-zinc-50);
+  --palette-100: var(--color-zinc-100);
+  --palette-200: var(--color-zinc-200);
+  --palette-300: var(--color-zinc-300);
+  --palette-400: var(--color-zinc-400);
+  --palette-500: var(--color-zinc-500);
+  --palette-600: var(--color-zinc-600);
+  --palette-700: var(--color-zinc-700);
+  --palette-800: var(--color-zinc-800);
+  --palette-900: var(--color-zinc-900);
+  --palette-950: var(--color-zinc-950);
+
+  --destructive: oklch(0.577 0.245 27.325);
+  --warning:     var(--color-orange-700);
+}
+
+.dark {
+  --warning: var(--color-orange-500);
+}

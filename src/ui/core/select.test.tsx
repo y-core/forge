@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { html } from "hono/html";
-import { Field, FieldLabel } from "./field";
-import { FieldContent } from "./field-layout";
-import { Select, SelectOptGroup, SelectOption } from "./select";
+import { Field } from "./field-layout";
+import { createIcon } from "./icon";
+import { Select } from "./select";
+
+const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
 async function render(element: unknown): Promise<string> {
   const app = new Hono();
@@ -15,8 +17,8 @@ async function render(element: unknown): Promise<string> {
 describe("Select", () => {
   it("renders a <select> element", async () => {
     const out = await render(
-      <Select>
-        <SelectOption value="a">Option A</SelectOption>
+      <Select icon={icon}>
+        <Select.Option value="a">Option A</Select.Option>
       </Select>,
     );
     expect(out).toContain("<select");
@@ -24,11 +26,21 @@ describe("Select", () => {
     expect(out).toContain('data-slot="select-icon"');
   });
 
+  it("renders the chevron via a sprite <use> reference", async () => {
+    const out = await render(
+      <Select icon={icon}>
+        <Select.Option value="a">Option A</Select.Option>
+      </Select>,
+    );
+    expect(out).toContain("<use");
+    expect(out).toContain('href="/sprite.svg#icon-chevron-down"');
+  });
+
   it("renders child options", async () => {
     const out = await render(
-      <Select>
-        <SelectOption value="a">Option A</SelectOption>
-        <SelectOption value="b">Option B</SelectOption>
+      <Select icon={icon}>
+        <Select.Option value="a">Option A</Select.Option>
+        <Select.Option value="b">Option B</Select.Option>
       </Select>,
     );
     expect(out).toContain('value="a"');
@@ -39,9 +51,9 @@ describe("Select", () => {
 
   it("passes through native attributes", async () => {
     const out = await render(
-      <Select id="my-select" name="choice" required value="b">
-        <SelectOption value="a">A</SelectOption>
-        <SelectOption value="b" selected>B</SelectOption>
+      <Select icon={icon} id="my-select" name="choice" required value="b">
+        <Select.Option value="a">A</Select.Option>
+        <Select.Option value="b" selected>B</Select.Option>
       </Select>,
     );
     expect(out).toContain('id="my-select"');
@@ -52,12 +64,12 @@ describe("Select", () => {
   it("wires id and for via explicit field and name props", async () => {
     const out = await render(
       <Field name="choice">
-        <FieldLabel name="choice">Choice</FieldLabel>
-        <FieldContent>
-          <Select field={{ name: "choice" }}>
-            <SelectOption value="a">A</SelectOption>
+        <Field.Label name="choice">Choice</Field.Label>
+        <Field.Content>
+          <Select icon={icon} field={{ name: "choice" }}>
+            <Select.Option value="a">A</Select.Option>
           </Select>
-        </FieldContent>
+        </Field.Content>
       </Field>,
     );
     expect(out).toContain('id="field-choice"');
@@ -66,8 +78,8 @@ describe("Select", () => {
 
   it("merges a custom class with the default classes", async () => {
     const out = await render(
-      <Select class="extra">
-        <SelectOption value="a">A</SelectOption>
+      <Select icon={icon} class="extra">
+        <Select.Option value="a">A</Select.Option>
       </Select>,
     );
     expect(out).toContain("extra");
@@ -76,10 +88,10 @@ describe("Select", () => {
 
   it("renders optgroups with explicit slots", async () => {
     const out = await render(
-      <Select>
-        <SelectOptGroup label="Group A">
-          <SelectOption value="a">A</SelectOption>
-        </SelectOptGroup>
+      <Select icon={icon}>
+        <Select.OptGroup label="Group A">
+          <Select.Option value="a">A</Select.Option>
+        </Select.OptGroup>
       </Select>,
     );
     expect(out).toContain('data-slot="select-optgroup"');

@@ -1,8 +1,12 @@
 import type { FC, JSX, PropsWithChildren } from "hono/jsx";
 import { type FieldDescriptor, fieldControlProps } from "./field";
+import type { ForgeIcon } from "./icon";
 import { asClass, cn } from "./utils/cn";
 
-type SelectProps = JSX.IntrinsicElements["select"] & { field?: FieldDescriptor };
+type SelectProps = JSX.IntrinsicElements["select"] & {
+  field?: FieldDescriptor;
+  icon: ForgeIcon<"chevron-down">;
+};
 type SelectOptionProps = JSX.IntrinsicElements["option"];
 type SelectOptGroupProps = JSX.IntrinsicElements["optgroup"];
 
@@ -11,9 +15,10 @@ const SELECT_BASE =
 const SELECT_FOCUS = "focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20";
 const SELECT_DISABLED = "disabled:cursor-not-allowed disabled:pointer-events-none";
 
-export const Select: FC<PropsWithChildren<SelectProps>> = ({
+const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({
   class: cls,
   field,
+  icon: Icon,
   children,
   ...props
 }) => {
@@ -33,31 +38,27 @@ export const Select: FC<PropsWithChildren<SelectProps>> = ({
         data-slot="select-icon"
         class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground"
       >
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 16 16"
-          width="16"
-          height="16"
-          fill="none"
+        <Icon
+          name="chevron-down"
+          width={16}
+          height={16}
           stroke="currentColor"
-          stroke-width="1.5"
+          stroke-width={1.5}
           stroke-linecap="round"
           stroke-linejoin="round"
-        >
-          <path d="m4 6 4 4 4-4" />
-        </svg>
+        />
       </span>
     </div>
   );
 };
 
-export const SelectOption: FC<PropsWithChildren<SelectOptionProps>> = ({ children, ...props }) => (
+const SelectOption: FC<PropsWithChildren<SelectOptionProps>> = ({ children, ...props }) => (
   <option data-slot="select-option" {...props}>
     {children}
   </option>
 );
 
-export const SelectOptGroup: FC<PropsWithChildren<SelectOptGroupProps>> = ({
+const SelectOptGroup: FC<PropsWithChildren<SelectOptGroupProps>> = ({
   class: cls,
   children,
   ...props
@@ -66,3 +67,8 @@ export const SelectOptGroup: FC<PropsWithChildren<SelectOptGroupProps>> = ({
     {children}
   </optgroup>
 );
+
+export const Select = Object.assign(SelectRoot, {
+  Option: SelectOption,
+  OptGroup: SelectOptGroup,
+});

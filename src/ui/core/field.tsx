@@ -88,7 +88,7 @@ export function fieldControlProps<T extends FieldControlProps>(props: T, field: 
   };
 }
 
-export const Field: FC<PropsWithChildren<FieldProps>> = ({
+export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   name,
   invalid = false,
   disabled = false,

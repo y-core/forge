@@ -16,6 +16,19 @@ export interface IconProps {
   "stroke-linejoin"?: string;
 }
 
+/**
+ * Shape of a sprite-bound icon component — i.e. the value returned by {@link createIcon}.
+ * Forge components that render an icon accept a `ForgeIcon` so the consuming app injects
+ * its own bound icon (the sprite URL lives only in the app's generated assets module).
+ *
+ * `Name` is the set of icon names the component requires. Because function parameters are
+ * contravariant, an app icon bound to a wider name set is assignable to a narrower `ForgeIcon`,
+ * but the app's sprite must actually contain every required name or assignment fails to compile.
+ */
+export type ForgeIcon<Name extends string = string> = (
+  props: Omit<IconProps, "symbol" | "sprite"> & { name: Name },
+) => ReturnType<FC>;
+
 export const Icon: FC<IconProps> = ({
   symbol,
   sprite,

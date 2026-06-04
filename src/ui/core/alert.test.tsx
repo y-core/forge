@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { html } from "hono/html";
-import { Alert, AlertDescription, AlertTitle } from "./alert";
+import { Alert } from "./alert";
 
 async function render(element: unknown): Promise<string> {
   const app = new Hono();
@@ -47,12 +47,40 @@ describe("Alert", () => {
   it("renders explicit title and description slots", async () => {
     const out = await render(
       <Alert>
-        <AlertTitle>Status</AlertTitle>
-        <AlertDescription>Everything is in sync.</AlertDescription>
+        <Alert.Title>Status</Alert.Title>
+        <Alert.Description>Everything is in sync.</Alert.Description>
       </Alert>,
     );
     expect(out).toContain('data-slot="alert-title"');
     expect(out).toContain('data-slot="alert-description"');
     expect(out).toContain("Everything is in sync.");
+  });
+
+  it("renders the warning variant classes", async () => {
+    const out = await render(<Alert variant="warning">Warning</Alert>);
+    expect(out).toContain('data-variant="warning"');
+    expect(out).toContain("bg-yellow-50");
+    expect(out).toContain("text-yellow-900");
+    expect(out).toContain("border-yellow-200");
+  });
+
+  it("renders the info variant classes", async () => {
+    const out = await render(<Alert variant="info">Info</Alert>);
+    expect(out).toContain('data-variant="info"');
+    expect(out).toContain("bg-blue-50");
+    expect(out).toContain("text-blue-900");
+    expect(out).toContain("border-blue-200");
+  });
+
+  it("renders dismiss button when dismissible=true", async () => {
+    const out = await render(<Alert dismissible>Message</Alert>);
+    expect(out).toContain('data-slot="alert-dismiss"');
+    expect(out).toContain('aria-label="Dismiss"');
+    expect(out).toContain("pr-8");
+  });
+
+  it("does not render dismiss button by default", async () => {
+    const out = await render(<Alert>Message</Alert>);
+    expect(out).not.toContain('data-slot="alert-dismiss"');
   });
 });

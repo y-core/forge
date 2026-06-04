@@ -1,5 +1,6 @@
-export { LogFilterBar, LogLevelBadge, LogTable, LogTableBody } from "./components";
+export type { LogViewerLoaderData } from "./components";
+export { LOG_TBODY_ID, LogFilterBar, LogLevelBadge, LogTable, LogTableBody, LogViewerContent } from "./components";
 export type { LogQuery, LogReadResult, LogRow } from "./reader";
 export { readLogs } from "./reader";
-export type { LogViewerLoaderData, LogViewerOptions } from "./route";
+export type { LogViewerOptions } from "./route";
 export { logViewer } from "./route";

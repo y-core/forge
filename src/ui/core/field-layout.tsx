@@ -1,5 +1,5 @@
 import type { FC, JSX, PropsWithChildren } from "hono/jsx";
-import { FIELD_LABEL_CLASSES } from "./field";
+import { FIELD_LABEL_CLASSES, FieldDescription, FieldError, FieldLabel, FieldRoot } from "./field";
 import { Separator } from "./separator";
 import { asClass, cn } from "./utils/cn";
 
@@ -28,7 +28,7 @@ interface FieldSeparatorProps extends Omit<JSX.IntrinsicElements["div"], "childr
   children?: unknown;
 }
 
-export const FieldSet: FC<PropsWithChildren<FieldSetProps>> = ({ class: cls, children, ...props }) => (
+const FieldSet: FC<PropsWithChildren<FieldSetProps>> = ({ class: cls, children, ...props }) => (
   <fieldset
     data-slot="field-set"
     class={cn("flex flex-col gap-6", asClass(cls))}
@@ -38,7 +38,7 @@ export const FieldSet: FC<PropsWithChildren<FieldSetProps>> = ({ class: cls, chi
   </fieldset>
 );
 
-export const FieldLegend: FC<PropsWithChildren<FieldLegendProps>> = ({
+const FieldLegend: FC<PropsWithChildren<FieldLegendProps>> = ({
   class: cls,
   variant = "legend",
   children,
@@ -58,7 +58,7 @@ export const FieldLegend: FC<PropsWithChildren<FieldLegendProps>> = ({
   </legend>
 );
 
-export const FieldGroup: FC<PropsWithChildren<FieldGroupProps>> = ({
+const FieldGroup: FC<PropsWithChildren<FieldGroupProps>> = ({
   class: cls,
   children,
   ...props
@@ -72,7 +72,7 @@ export const FieldGroup: FC<PropsWithChildren<FieldGroupProps>> = ({
   </div>
 );
 
-export const FieldContent: FC<PropsWithChildren<FieldContentProps>> = ({
+const FieldContent: FC<PropsWithChildren<FieldContentProps>> = ({
   class: cls,
   children,
   ...props
@@ -86,7 +86,7 @@ export const FieldContent: FC<PropsWithChildren<FieldContentProps>> = ({
   </div>
 );
 
-export const FieldTitle: FC<PropsWithChildren<FieldTitleProps>> = ({
+const FieldTitle: FC<PropsWithChildren<FieldTitleProps>> = ({
   class: cls,
   children,
   ...props
@@ -100,7 +100,7 @@ export const FieldTitle: FC<PropsWithChildren<FieldTitleProps>> = ({
   </div>
 );
 
-export const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({
+const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({
   class: cls,
   children,
   ...props
@@ -122,3 +122,15 @@ export const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({
     ) : null}
   </div>
 );
+
+export const Field = Object.assign(FieldRoot, {
+  Label: FieldLabel,
+  Description: FieldDescription,
+  Error: FieldError,
+  Set: FieldSet,
+  Legend: FieldLegend,
+  Group: FieldGroup,
+  Content: FieldContent,
+  Title: FieldTitle,
+  Separator: FieldSeparator,
+});

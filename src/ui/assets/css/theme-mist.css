@@ -1,0 +1,23 @@
+/* Mist neutral ramp — maps --palette-* aliases onto Tailwind's mist scale.
+   Accent overrides: mist uses higher-chroma destructive and orange warning.
+   @import theme-base.css before this file. */
+:root {
+  --palette-50:  var(--color-mist-50);
+  --palette-100: var(--color-mist-100);
+  --palette-200: var(--color-mist-200);
+  --palette-300: var(--color-mist-300);
+  --palette-400: var(--color-mist-400);
+  --palette-500: var(--color-mist-500);
+  --palette-600: var(--color-mist-600);
+  --palette-700: var(--color-mist-700);
+  --palette-800: var(--color-mist-800);
+  --palette-900: var(--color-mist-900);
+  --palette-950: var(--color-mist-950);
+
+  --destructive: oklch(0.577 0.245 27.325);
+  --warning:     var(--color-orange-700);
+}
+
+.dark {
+  --warning: var(--color-orange-500);
+}

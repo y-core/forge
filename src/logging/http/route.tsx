@@ -1,13 +1,15 @@
 /** @jsxImportSource @y-core/forge */
 import type { Context, Env } from "hono";
 import { html } from "hono/html";
-import type { RouteModule } from "../../router/types";
+import type { Child } from "hono/jsx";
+import type { InferConfig } from "../../config/config";
+import type { RouteModule, RouteRenderState } from "../../router/types";
 import type { KVNamespace } from "../../storage/kv/types";
+import type { ForgeIcon } from "../../ui/core/icon";
 import type { LogLevel } from "../types";
-import { LogTableBody } from "./components";
+import type { LogViewerLoaderData } from "./components";
+import { LOG_TBODY_ID, LogTableBody, LogViewerContent } from "./components";
 import { readLogs } from "./reader";
-
-const TBODY_ID = "log-tbody";
 
 /** Options for the log viewer route module. @public */
 export interface LogViewerOptions<E extends Env = Env> {
@@ -15,16 +17,10 @@ export interface LogViewerOptions<E extends Env = Env> {
   kv: (c: Context<E>) => KVNamespace;
   /** URL path prefix where the viewer is mounted (used for HTMX targets). */
   basePath?: string;
-}
-
-/** Data returned by the log viewer loader — type the `state.data` in your view. @public */
-export interface LogViewerLoaderData {
-  rows: Awaited<ReturnType<typeof readLogs>>["rows"];
-  cursor?: string;
-  complete: boolean;
-  level?: string;
-  q?: string;
-  basePath: string;
+  /** App-bound icon supplying the filter `Select`'s chevron. The app's sprite must contain `chevron-down`. */
+  icon: ForgeIcon<"chevron-down">;
+  /** Renders the full HTML page around the viewer content. When provided, logViewer returns a `view`; when omitted the module is loader-only. @public */
+  renderPage?: (c: Context<E>, config: InferConfig<E>, content: Child) => Response | Promise<Response>;
 }
 
 /**
@@ -35,6 +31,7 @@ export interface LogViewerLoaderData {
 // TODO(auth): mount behind an auth middleware before exposing to production
 export function logViewer<E extends Env = Env>(options: LogViewerOptions<E>): RouteModule<E, LogViewerLoaderData> {
   const basePath = options.basePath ?? "/admin/logs";
+  const renderPage = options.renderPage;
 
   return {
     loader: async (c: Context<E>): Promise<LogViewerLoaderData | Response> => {
@@ -54,7 +51,7 @@ export function logViewer<E extends Env = Env>(options: LogViewerOptions<E>): Ro
         return c.html(
           html`${(
             <LogTableBody
-              id={TBODY_ID}
+              id={LOG_TBODY_ID}
               rows={result.rows}
               cursor={result.cursor}
               complete={result.complete}
@@ -73,5 +70,11 @@ export function logViewer<E extends Env = Env>(options: LogViewerOptions<E>): Ro
         basePath,
       };
     },
+    ...(renderPage
+      ? {
+          view: (c: Context<E>, config: InferConfig<E>, state: RouteRenderState<LogViewerLoaderData>) =>
+            renderPage(c, config, <LogViewerContent data={state.data} icon={options.icon} />),
+        }
+      : {}),
   };
 }

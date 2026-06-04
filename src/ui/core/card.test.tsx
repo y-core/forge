@@ -1,15 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { html } from "hono/html";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "./card";
+import { Card } from "./card";
 
 async function render(element: unknown): Promise<string> {
   const app = new Hono();
@@ -27,14 +19,14 @@ describe("Card", () => {
     expect(out).toContain("bg-card");
   });
 
-  it("renders CardHeader with title, description, and action slots", async () => {
+  it("renders Card.Header with title, description, and action slots", async () => {
     const out = await render(
       <Card>
-        <CardHeader>
-          <CardTitle>Title</CardTitle>
-          <CardDescription>Description</CardDescription>
-          <CardAction>Action</CardAction>
-        </CardHeader>
+        <Card.Header>
+          <Card.Title>Title</Card.Title>
+          <Card.Description>Description</Card.Description>
+          <Card.Action>Action</Card.Action>
+        </Card.Header>
       </Card>,
     );
     expect(out).toContain("Title");
@@ -44,10 +36,10 @@ describe("Card", () => {
     expect(out).toContain('data-slot="card-action"');
   });
 
-  it("renders CardContent with padding", async () => {
+  it("renders Card.Content with padding", async () => {
     const out = await render(
       <Card>
-        <CardContent>Body</CardContent>
+        <Card.Content>Body</Card.Content>
       </Card>,
     );
     expect(out).toContain("Body");
@@ -56,10 +48,10 @@ describe("Card", () => {
     expect(out).toContain("py-5");
   });
 
-  it("renders CardFooter with border-t and padding", async () => {
+  it("renders Card.Footer with border-t and padding", async () => {
     const out = await render(
       <Card>
-        <CardFooter>Footer</CardFooter>
+        <Card.Footer>Footer</Card.Footer>
       </Card>,
     );
     expect(out).toContain("Footer");
@@ -71,9 +63,9 @@ describe("Card", () => {
   it("renders all sub-components in document order", async () => {
     const out = await render(
       <Card>
-        <CardHeader>Head</CardHeader>
-        <CardContent>Body</CardContent>
-        <CardFooter>Foot</CardFooter>
+        <Card.Header>Head</Card.Header>
+        <Card.Content>Body</Card.Content>
+        <Card.Footer>Foot</Card.Footer>
       </Card>,
     );
     expect(out.indexOf("Head")).toBeLessThan(out.indexOf("Body"));

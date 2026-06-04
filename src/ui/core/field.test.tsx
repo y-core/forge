@@ -2,22 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 import { html } from "hono/html";
 import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
   fieldDescriptionId,
   fieldErrorId,
   fieldId,
 } from "./field";
-import {
-  FieldContent,
-  FieldGroup,
-  FieldLegend,
-  FieldSeparator,
-  FieldSet,
-  FieldTitle,
-} from "./field-layout";
+import { Field } from "./field-layout";
 import { Input } from "./input";
 
 async function render(element: unknown): Promise<string> {
@@ -42,13 +31,13 @@ describe("fieldId helpers", () => {
 });
 
 describe("Field primitives", () => {
-  it("wires FieldLabel to the control id via explicit name prop", async () => {
+  it("wires Field.Label to the control id via explicit name prop", async () => {
     const out = await render(
       <Field name="email">
-        <FieldLabel name="email">Email address</FieldLabel>
-        <FieldContent>
+        <Field.Label name="email">Email address</Field.Label>
+        <Field.Content>
           <Input field={{ name: "email" }} />
-        </FieldContent>
+        </Field.Content>
       </Field>,
     );
     expect(out).toContain('for="field-email"');
@@ -59,11 +48,11 @@ describe("Field primitives", () => {
   it("adds data-invalid to the field and aria-invalid to the control", async () => {
     const out = await render(
       <Field name="email" invalid>
-        <FieldLabel name="email">Email</FieldLabel>
-        <FieldContent>
+        <Field.Label name="email">Email</Field.Label>
+        <Field.Content>
           <Input field={{ name: "email", invalid: true }} />
-          <FieldError name="email">Email is required.</FieldError>
-        </FieldContent>
+          <Field.Error name="email">Email is required.</Field.Error>
+        </Field.Content>
       </Field>,
     );
     expect(out).toContain('data-invalid="true"');
@@ -74,12 +63,12 @@ describe("Field primitives", () => {
   it("wires description and error ids into aria-describedby", async () => {
     const out = await render(
       <Field name="message" invalid>
-        <FieldLabel name="message">Message</FieldLabel>
-        <FieldContent>
+        <Field.Label name="message">Message</Field.Label>
+        <Field.Content>
           <Input field={{ name: "message", invalid: true }} />
-          <FieldDescription name="message">Minimum 15 characters</FieldDescription>
-          <FieldError name="message">Required</FieldError>
-        </FieldContent>
+          <Field.Description name="message">Minimum 15 characters</Field.Description>
+          <Field.Error name="message">Required</Field.Error>
+        </Field.Content>
       </Field>,
     );
     expect(out).toContain('aria-describedby="field-message-description field-message-error"');
@@ -88,10 +77,10 @@ describe("Field primitives", () => {
   it("inherits disabled state on the control", async () => {
     const out = await render(
       <Field name="name" disabled>
-        <FieldLabel name="name">Name</FieldLabel>
-        <FieldContent>
+        <Field.Label name="name">Name</Field.Label>
+        <Field.Content>
           <Input field={{ name: "name", disabled: true }} />
-        </FieldContent>
+        </Field.Content>
       </Field>,
     );
     expect(out).toContain('data-disabled="true"');
@@ -101,15 +90,15 @@ describe("Field primitives", () => {
   it("preserves explicit control props over field defaults", async () => {
     const out = await render(
       <Field name="name" invalid>
-        <FieldLabel name="name">Name</FieldLabel>
-        <FieldContent>
+        <Field.Label name="name">Name</Field.Label>
+        <Field.Content>
           <Input
             id="custom-id"
             aria-describedby="custom-help"
             aria-invalid="false"
             field={{ name: "name", invalid: true }}
           />
-        </FieldContent>
+        </Field.Content>
       </Field>,
     );
     expect(out).toContain('id="custom-id"');
@@ -117,42 +106,42 @@ describe("Field primitives", () => {
     expect(out).toContain('aria-describedby="custom-help field-name-description field-name-error"');
   });
 
-  it("renders FieldGroup with stack classes", async () => {
+  it("renders Field.Group with stack classes", async () => {
     const out = await render(
-      <FieldGroup>
+      <Field.Group>
         <Field name="name">
-          <FieldLabel name="name">Name</FieldLabel>
-          <FieldContent>
+          <Field.Label name="name">Name</Field.Label>
+          <Field.Content>
             <Input field={{ name: "name" }} />
-          </FieldContent>
+          </Field.Content>
         </Field>
-      </FieldGroup>,
+      </Field.Group>,
     );
     expect(out).toContain('data-slot="field-group"');
     expect(out).toContain("@container/field-group");
   });
 
-  it("renders FieldSet and FieldLegend with explicit slots", async () => {
+  it("renders Field.Set and Field.Legend with explicit slots", async () => {
     const out = await render(
-      <FieldSet>
-        <FieldLegend>Contact details</FieldLegend>
-      </FieldSet>,
+      <Field.Set>
+        <Field.Legend>Contact details</Field.Legend>
+      </Field.Set>,
     );
     expect(out).toContain('data-slot="field-set"');
     expect(out).toContain('data-slot="field-legend"');
   });
 
-  it("renders FieldTitle and FieldSeparator with explicit slots", async () => {
+  it("renders Field.Title and Field.Separator with explicit slots", async () => {
     const out = await render(
-      <FieldGroup>
+      <Field.Group>
         <Field name="name">
-          <FieldTitle>Name</FieldTitle>
-          <FieldContent>
+          <Field.Title>Name</Field.Title>
+          <Field.Content>
             <Input field={{ name: "name" }} />
-          </FieldContent>
+          </Field.Content>
         </Field>
-        <FieldSeparator>or</FieldSeparator>
-      </FieldGroup>,
+        <Field.Separator>or</Field.Separator>
+      </Field.Group>,
     );
     expect(out).toContain('data-slot="field-title"');
     expect(out).toContain('data-slot="field-separator"');
