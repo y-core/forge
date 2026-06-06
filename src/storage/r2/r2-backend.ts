@@ -19,8 +19,12 @@ function toStoredObject(obj: R2Object): StoredObject {
 function toObjectBody(obj: R2ObjectBody): ObjectBody {
   return {
     ...toStoredObject(obj),
-    get body() { return obj.body; },
-    get bodyUsed() { return obj.bodyUsed; },
+    get body() {
+      return obj.body;
+    },
+    get bodyUsed() {
+      return obj.bodyUsed;
+    },
     arrayBuffer: () => obj.arrayBuffer(),
     text: () => obj.text(),
     blob: () => obj.blob(),
@@ -65,8 +69,8 @@ export function r2Backend(bucket: R2Bucket): ObjectStorageBackend {
       return {
         objects: res.objects.map(toStoredObject),
         truncated: res.truncated,
-        cursor: res.cursor,
-        delimitedPrefixes: res.delimitedPrefixes,
+        ...(res.cursor !== undefined ? { cursor: res.cursor } : {}),
+        ...(res.delimitedPrefixes !== undefined ? { delimitedPrefixes: res.delimitedPrefixes } : {}),
       };
     },
   };

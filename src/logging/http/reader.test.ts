@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { KVListResult, KVNamespace } from "../../storage/kv/types";
-import type { KvLogMetadata } from "../kv-channel";
+import type { KvLogMetadata } from "../types";
 import { readLogs } from "./reader";
 
 function makeKvStub(entries: Array<{ key: string; meta: KvLogMetadata }>): KVNamespace {
@@ -13,9 +13,7 @@ function makeKvStub(entries: Array<{ key: string; meta: KvLogMetadata }>): KVNam
     delete: () => Promise.resolve(),
     list<M = unknown>(opts?: { prefix?: string; limit?: number; cursor?: string }): Promise<KVListResult<M>> {
       const pfx = opts?.prefix ?? "";
-      const keys = sorted
-        .filter((e) => e.key.startsWith(pfx))
-        .map((e) => ({ name: e.key, metadata: e.meta as unknown as M }));
+      const keys = sorted.filter((e) => e.key.startsWith(pfx)).map((e) => ({ name: e.key, metadata: e.meta as unknown as M }));
       return Promise.resolve({ keys, list_complete: true });
     },
   } as unknown as KVNamespace;
@@ -24,13 +22,7 @@ function makeKvStub(entries: Array<{ key: string; meta: KvLogMetadata }>): KVNam
 }
 
 function meta(overrides?: Partial<KvLogMetadata>): KvLogMetadata {
-  return {
-    level: "info",
-    prefix: "svc",
-    message: "test message",
-    timestamp: "2026-05-31T10:00:00.000Z",
-    ...overrides,
-  };
+  return { level: "info", prefix: "svc", message: "test message", timestamp: "2026-05-31T10:00:00.000Z", ...overrides };
 }
 
 describe("readLogs — basic retrieval", () => {
@@ -43,8 +35,8 @@ describe("readLogs — basic retrieval", () => {
     const result = await readLogs(kv);
 
     expect(result.rows).toHaveLength(2);
-    expect(result.rows[0].message).toBe("first");
-    expect(result.rows[1].message).toBe("second");
+    expect(result.rows[0]!.message).toBe("first");
+    expect(result.rows[1]!.message).toBe("second");
   });
 
   it("returns empty rows when KV has no matching entries", async () => {
@@ -55,14 +47,11 @@ describe("readLogs — basic retrieval", () => {
 
   it("maps KV metadata fields onto LogRow", async () => {
     const kv = makeKvStub([
-      {
-        key: "logs||2026-05-31T10:00:00.000Z||aaa",
-        meta: meta({ level: "warn", prefix: "api", message: "slow request", requestId: "req-xyz" }),
-      },
+      { key: "logs||2026-05-31T10:00:00.000Z||aaa", meta: meta({ level: "warn", prefix: "api", message: "slow request", requestId: "req-xyz" }) },
     ]);
 
     const result = await readLogs(kv);
-    const row = result.rows[0];
+    const row = result.rows[0]!;
 
     expect(row.level).toBe("warn");
     expect(row.prefix).toBe("api");
@@ -83,7 +72,7 @@ describe("readLogs — level filter", () => {
     const result = await readLogs(kv, { level: "error" });
 
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].level).toBe("error");
+    expect(result.rows[0]!.level).toBe("error");
   });
 
   it("returns all rows when level is not specified", async () => {
@@ -108,7 +97,7 @@ describe("readLogs — text filter (q)", () => {
     const result = await readLogs(kv, { q: "email" });
 
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].message).toBe("Email delivery failed");
+    expect(result.rows[0]!.message).toBe("Email delivery failed");
   });
 
   it("filters by prefix substring", async () => {
@@ -120,25 +109,19 @@ describe("readLogs — text filter (q)", () => {
     const result = await readLogs(kv, { q: "contact" });
 
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].prefix).toBe("contact");
+    expect(result.rows[0]!.prefix).toBe("contact");
   });
 
   it("filters by requestId substring", async () => {
     const kv = makeKvStub([
-      {
-        key: "logs||2026-05-31T10:00:00.000Z||a",
-        meta: meta({ requestId: "cf-ray-12345" }),
-      },
-      {
-        key: "logs||2026-05-31T10:00:01.000Z||b",
-        meta: meta({ requestId: "cf-ray-99999" }),
-      },
+      { key: "logs||2026-05-31T10:00:00.000Z||a", meta: meta({ requestId: "cf-ray-12345" }) },
+      { key: "logs||2026-05-31T10:00:01.000Z||b", meta: meta({ requestId: "cf-ray-99999" }) },
     ]);
 
     const result = await readLogs(kv, { q: "12345" });
 
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].requestId).toBe("cf-ray-12345");
+    expect(result.rows[0]!.requestId).toBe("cf-ray-12345");
   });
 
   it("combines level and text filters", async () => {
@@ -151,8 +134,8 @@ describe("readLogs — text filter (q)", () => {
     const result = await readLogs(kv, { level: "error", q: "failed" });
 
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].level).toBe("error");
-    expect(result.rows[0].message).toBe("failed");
+    expect(result.rows[0]!.level).toBe("error");
+    expect(result.rows[0]!.message).toBe("failed");
   });
 });
 
@@ -166,6 +149,6 @@ describe("readLogs — custom prefix", () => {
     const result = await readLogs(kv, { prefix: "app-logs" });
 
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].message).toBe("in prefix");
+    expect(result.rows[0]!.message).toBe("in prefix");
   });
 });

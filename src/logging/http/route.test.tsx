@@ -1,6 +1,7 @@
 /** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
+import { Forge } from "../../app/forge-app";
+import { mapHandler } from "../../app/route-test-helper";
 import type { KVNamespace } from "../../storage/kv/types";
 import { createIcon } from "../../ui/core/icon";
 import { logViewer } from "./route";
@@ -18,14 +19,9 @@ function makeKvStub(): KVNamespace {
 }
 
 function makeApp(options?: { basePath?: string }) {
-  const app = new Hono();
-  const mod = logViewer({ kv: () => makeKvStub(), icon, ...options });
-  app.get("/logs", async (c) => {
-    if (!mod.loader) return c.text("no loader", 500);
-    const result = await mod.loader(c, undefined);
-    if (result instanceof Response) return result;
-    return c.json(result);
-  });
+  const app = new Forge();
+  const handler = logViewer({ kv: () => makeKvStub(), icon, ...options });
+  mapHandler(app, "GET", "/logs", handler);
   return app;
 }
 
@@ -94,9 +90,7 @@ describe("logViewer loader — non-HTMX request", () => {
 describe("logViewer loader — HTMX request", () => {
   it("returns 200 HTML response when HX-Request header is true", async () => {
     const app = makeApp();
-    const res = await app.request("/logs", {
-      headers: { "HX-Request": "true" },
-    });
+    const res = await app.request("/logs", { headers: { "HX-Request": "true" } });
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain("<tbody");
@@ -104,18 +98,14 @@ describe("logViewer loader — HTMX request", () => {
 
   it("returns an HTML content-type for HTMX partial", async () => {
     const app = makeApp();
-    const res = await app.request("/logs", {
-      headers: { "HX-Request": "true" },
-    });
+    const res = await app.request("/logs", { headers: { "HX-Request": "true" } });
     const contentType = res.headers.get("content-type") ?? "";
     expect(contentType).toContain("text/html");
   });
 
   it("does not treat HX-Request: false as an HTMX request", async () => {
     const app = makeApp();
-    const res = await app.request("/logs", {
-      headers: { "HX-Request": "false" },
-    });
+    const res = await app.request("/logs", { headers: { "HX-Request": "false" } });
     expect(res.status).toBe(200);
     const contentType = res.headers.get("content-type") ?? "";
     expect(contentType).toContain("application/json");

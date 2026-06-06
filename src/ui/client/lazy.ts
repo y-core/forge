@@ -18,17 +18,18 @@ export interface LazyLoadOptions {
 /** Defers loading a module until its anchor element enters the viewport via IntersectionObserver. @public */
 export function lazy<T>(options: LazyImportOptions<T>): () => void {
   const el = document.querySelector(`[data-ref='${options.ref}']`);
-  if (!el) return () => { };
+  if (!el) return () => {};
 
-  const observer = new IntersectionObserver(
-    (entries) => {
-      if (entries[0].isIntersecting) {
-        observer.disconnect();
-        options.load().then((mod) => options.init(mod, el));
-      }
-    },
-    { rootMargin: options.rootMargin, threshold: options.threshold },
-  );
+  const init: IntersectionObserverInit = {};
+  if (options.rootMargin !== undefined) init.rootMargin = options.rootMargin;
+  if (options.threshold !== undefined) init.threshold = options.threshold;
+
+  const observer = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting) {
+      observer.disconnect();
+      options.load().then((mod) => options.init(mod, el));
+    }
+  }, init);
   observer.observe(el);
 
   return () => observer.disconnect();
@@ -75,9 +76,7 @@ export function loadStylesheet(href: string, integrity: string | false): Promise
       link.crossOrigin = "anonymous";
     }
     link.addEventListener("load", () => resolve());
-    link.addEventListener("error", () =>
-      reject(new Error(`Failed to load stylesheet: ${href}`)),
-    );
+    link.addEventListener("error", () => reject(new Error(`Failed to load stylesheet: ${href}`)));
     document.head.appendChild(link);
   });
 }

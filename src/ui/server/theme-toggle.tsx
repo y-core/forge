@@ -1,5 +1,5 @@
 /** @jsxImportSource @y-core/forge */
-import type { FC } from "hono/jsx";
+import type { FC } from "../../jsx/types";
 import type { ForgeIcon } from "../core/icon";
 import { cn } from "../core/utils/cn";
 
@@ -21,15 +21,15 @@ const TOGGLE_BASE = "rounded-lg p-2 text-foreground transition hover:bg-accent";
  * contract `mountTheme` (and the theme CSS) depend on — keep them exact. @public
  */
 export const ThemeToggle: FC<ThemeToggleProps> = ({ icon: Icon, size = 20, class: cls }) => (
-  <button type="button" data-ref="theme-toggle" aria-label="Toggle theme" class={cn(TOGGLE_BASE, cls)}>
-    <span class="theme-light-icon">
-      <Icon name="sun" width={size} height={size} />
+  <button type='button' data-ref='theme-toggle' aria-label='Toggle theme' class={cn(TOGGLE_BASE, cls)}>
+    <span class='theme-light-icon'>
+      <Icon name='sun' width={size} height={size} />
     </span>
-    <span class="theme-dark-icon">
-      <Icon name="moon" width={size} height={size} />
+    <span class='theme-dark-icon'>
+      <Icon name='moon' width={size} height={size} />
     </span>
-    <span class="theme-system-icon">
-      <Icon name="monitor" width={size} height={size} />
+    <span class='theme-system-icon'>
+      <Icon name='monitor' width={size} height={size} />
     </span>
   </button>
 );

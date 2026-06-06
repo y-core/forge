@@ -15,7 +15,11 @@
           "options": {
             "patterns": [
               {
-                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
+                "group": [
+                  "../**/mod",
+                  "!../**/validation/mod",
+                  "!../**/crypto/mod"
+                ],
                 "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
               }
             ]
@@ -32,7 +36,24 @@
     }
   },
   "formatter": {
-    "enabled": false
+    "enabled": true,
+    "attributePosition": "auto",
+    "expand": "never",
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 148
+  },
+  "javascript": {
+    "formatter": {
+      "arrowParentheses": "always",
+      "bracketSameLine": true,
+      "bracketSpacing": true,
+      "jsxQuoteStyle": "single",
+      "operatorLinebreak": "after",
+      "quoteProperties": "asNeeded",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
   },
   "overrides": [
     {

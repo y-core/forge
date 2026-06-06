@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { htmlResponse } from "./response";
+import { fragmentResponse, htmlResponse, redirect } from "./response";
 
 describe("htmlResponse", () => {
   it("defaults to status 200", () => {
@@ -7,9 +7,9 @@ describe("htmlResponse", () => {
     expect(res.status).toBe(200);
   });
 
-  it("sets content-type to text/html; charset=utf-8", () => {
+  it("sets content-type to text/html; charset=UTF-8", () => {
     const res = htmlResponse("<p>hello</p>");
-    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(res.headers.get("content-type")).toBe("text/html; charset=UTF-8");
   });
 
   it("accepts a custom status code", () => {
@@ -19,6 +19,41 @@ describe("htmlResponse", () => {
 
   it("passes the HTML body through unchanged", async () => {
     const res = htmlResponse("<h1>Title</h1>");
-    expect(await res.text()).toBe("<h1>Title</h1>");
+    expect(await res.text()).toBe("<!DOCTYPE html><h1>Title</h1>");
+  });
+
+  it("prepends a leading <!DOCTYPE html> for full pages", async () => {
+    const body = await htmlResponse("<html></html>").text();
+    expect(body.startsWith("<!DOCTYPE html>")).toBe(true);
+  });
+});
+
+describe("fragmentResponse", () => {
+  it("defaults to status 200", () => {
+    const res = fragmentResponse("<div>x</div>");
+    expect(res.status).toBe(200);
+  });
+
+  it("sets content-type to text/html; charset=utf-8 (lowercase)", () => {
+    const res = fragmentResponse("<div>x</div>");
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  });
+
+  it("passes the body through with no <!DOCTYPE html> prepended", async () => {
+    const res = fragmentResponse("<div>x</div>");
+    expect(await res.text()).toBe("<div>x</div>");
+  });
+
+  it("accepts a custom status code", () => {
+    const res = fragmentResponse("<div>error</div>", 422);
+    expect(res.status).toBe(422);
+  });
+});
+
+describe("redirect", () => {
+  it("returns a 302 response with the Location header set", () => {
+    const res = redirect("/login", 302);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/login");
   });
 });

@@ -1,11 +1,4 @@
-/**
- * A parameterised SQL fragment — values are bind params, never concatenated text.
- * Compose fragments with nested interpolation; they flatten automatically. @public
- */
-export interface SqlFragment {
-  readonly text: string;
-  readonly params: readonly unknown[];
-}
+import type { SqlFragment } from "./types";
 
 /** Placeholder used in generated SQL text. @public */
 export const SQL_PLACEHOLDER = "?";
@@ -16,15 +9,16 @@ export const SQL_PLACEHOLDER = "?";
  * Nested SqlFragment values are flattened — text merged, params concatenated. @public
  */
 export function sql(strings: TemplateStringsArray, ...values: unknown[]): SqlFragment {
-  let text = strings[0];
+  let text = strings[0] ?? "";
   const params: unknown[] = [];
   for (let i = 0; i < values.length; i++) {
     const value = values[i];
+    const next = strings[i + 1] ?? "";
     if (isSqlFragment(value)) {
-      text += value.text + strings[i + 1];
+      text += value.text + next;
       params.push(...value.params);
     } else {
-      text += SQL_PLACEHOLDER + strings[i + 1];
+      text += SQL_PLACEHOLDER + next;
       params.push(value);
     }
   }

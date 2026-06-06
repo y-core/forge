@@ -1,4 +1,4 @@
-import type { FC, PropsWithChildren } from "hono/jsx";
+import type { FC, PropsWithChildren } from "../../jsx/types";
 import { cn } from "./utils/cn";
 
 const variantClasses = {
@@ -17,31 +17,19 @@ interface AlertProps {
   class?: string;
 }
 
-const AlertRoot: FC<PropsWithChildren<AlertProps>> = ({
-  variant = "default",
-  dismissible = false,
-  class: cls,
-  children,
-}) => (
+const AlertRoot: FC<PropsWithChildren<AlertProps>> = ({ variant = "default", dismissible = false, class: cls, children }) => (
   <div
-    data-slot="alert"
+    data-slot='alert'
     data-variant={variant}
-    class={cn(
-      "relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm",
-      variantClasses[variant],
-      dismissible && "pr-8",
-      cls,
-    )}
-  >
+    class={cn("relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm", variantClasses[variant], dismissible && "pr-8", cls)}>
     {children}
     {dismissible ? (
       <button
-        type="button"
-        data-slot="alert-dismiss"
-        aria-label="Dismiss"
-        class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"
-      >
-        <span aria-hidden="true" class="text-base leading-none">
+        type='button'
+        data-slot='alert-dismiss'
+        aria-label='Dismiss'
+        class='absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring'>
+        <span aria-hidden='true' class='text-base leading-none'>
           ×
         </span>
       </button>
@@ -50,21 +38,15 @@ const AlertRoot: FC<PropsWithChildren<AlertProps>> = ({
 );
 
 const AlertTitle: FC<PropsWithChildren<{ class?: string }>> = ({ class: cls, children }) => (
-  <div data-slot="alert-title" class={cn("font-medium leading-none tracking-tight", cls)}>
+  <div data-slot='alert-title' class={cn("font-medium leading-none tracking-tight", cls)}>
     {children}
   </div>
 );
 
-const AlertDescription: FC<PropsWithChildren<{ class?: string }>> = ({
-  class: cls,
-  children,
-}) => (
-  <div data-slot="alert-description" class={cn("text-sm leading-relaxed opacity-90", cls)}>
+const AlertDescription: FC<PropsWithChildren<{ class?: string }>> = ({ class: cls, children }) => (
+  <div data-slot='alert-description' class={cn("text-sm leading-relaxed opacity-90", cls)}>
     {children}
   </div>
 );
 
-export const Alert = Object.assign(AlertRoot, {
-  Title: AlertTitle,
-  Description: AlertDescription,
-});
+export const Alert = Object.assign(AlertRoot, { Title: AlertTitle, Description: AlertDescription });

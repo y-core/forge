@@ -1,4 +1,4 @@
-import { v } from "../validation/mod";
+import { v } from "../validation/validation";
 
 export type InferConfig<E> = E extends { Config: infer C } ? C : undefined;
 
@@ -6,24 +6,37 @@ export type InferConfig<E> = E extends { Config: infer C } ? C : undefined;
 export type ConfigContext<C> = { config: C };
 
 export type EnvRef<K extends string = string> = { readonly __env: K };
+
+export type EnvMapping<K extends string = string> = string | EnvRef<K> | { [key: string]: EnvMapping<K> };
+
+export interface ConfigOverrides<ConfigData> {
+  detect: (env: Record<string, unknown>) => boolean;
+  patch: (config: ConfigData) => ConfigData;
+}
+
+export interface ConfigDescriptor<ConfigData, Keys extends string = string> {
+  map: EnvMapping<Keys>;
+  schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>;
+  overrides?: ConfigOverrides<ConfigData>;
+}
+
+function resolve<ConfigData>(env: object, descriptor: ConfigDescriptor<ConfigData>): ConfigData {
+  const record = env as Record<string, unknown>;
+  const mapped = applyMapping(record, descriptor.map);
+  const result = v.safeParse(descriptor.schema, mapped);
+  if (!result.success) {
+    const issues = result.issues.map((issue) => `${issue.path?.map((p) => p.key).join(".") ?? "root"}: ${issue.message}`).join("; ");
+    throw new Error(`Invalid environment: ${issues}`);
+  }
+  let config = result.output;
+  if (descriptor.overrides?.detect(record)) {
+    config = descriptor.overrides.patch(config);
+  }
+  return config;
+}
+
 export function env<K extends string>(name: K): EnvRef<K> {
   return { __env: name };
-}
-
-export type EnvMapping<K extends string = string> =
-  | string
-  | EnvRef<K>
-  | { [key: string]: EnvMapping<K> };
-
-export interface ConfigOverrides<TConfig> {
-  detect: (env: Record<string, unknown>) => boolean;
-  patch: (config: TConfig) => TConfig;
-}
-
-export interface ConfigDescriptor<TConfig, TKeys extends string = string> {
-  map: EnvMapping<TKeys>;
-  schema: v.BaseSchema<unknown, TConfig, v.BaseIssue<unknown>>;
-  overrides?: ConfigOverrides<TConfig>;
 }
 
 export function applyMapping(env: Record<string, unknown>, map: EnvMapping): unknown {
@@ -38,10 +51,7 @@ export function applyMapping(env: Record<string, unknown>, map: EnvMapping): unk
 
 export function optionalGroup<T extends Record<string, v.GenericSchema>>(
   entries: T,
-  options: {
-    required: (keyof T & string)[] | "all";
-    defaults?: Partial<Record<keyof T & string, unknown>>;
-  },
+  options: { required: (keyof T & string)[] | "all"; defaults?: Partial<Record<keyof T & string, unknown>> },
 ) {
   type Output = { [K in keyof T]: v.InferOutput<T[K]> } | null;
 
@@ -64,48 +74,36 @@ export function optionalGroup<T extends Record<string, v.GenericSchema>>(
   );
 }
 
-function resolve<TConfig>(env: object, descriptor: ConfigDescriptor<TConfig>): TConfig {
-  const record = env as Record<string, unknown>;
-  const mapped = applyMapping(record, descriptor.map);
-  const result = v.safeParse(descriptor.schema, mapped);
-  if (!result.success) {
-    const issues = result.issues
-      .map((issue) => `${issue.path?.map((p) => p.key).join(".") ?? "root"}: ${issue.message}`)
-      .join("; ");
-    throw new Error(`Invalid environment: ${issues}`);
-  }
-  let config = result.output;
-  if (descriptor.overrides?.detect(record)) {
-    config = descriptor.overrides.patch(config);
-  }
-  return config;
-}
-
 /** Returns config from store, or an empty object cast to T when no store is registered. @public */
 export function resolveConfig<T>(store: Config<T> | undefined, env: object): T {
   return (store ? store.get(env) : {}) as T;
 }
 
 /** Lazy singleton config holder. Resolves once on first get(); seed()/reset() for test control. @public */
-export class Config<TConfig> {
-  #value: TConfig | undefined;
-  readonly #resolve: (env: object) => TConfig;
+export class Config<ConfigData> {
+  #value: ConfigData | undefined;
+  readonly #resolve: (env: object) => ConfigData;
 
-  constructor(
-    map: EnvMapping,
-    schema: v.BaseSchema<unknown, TConfig, v.BaseIssue<unknown>>,
-    overrides?: ConfigOverrides<TConfig>,
-  ) {
-    const descriptor: ConfigDescriptor<TConfig> = { map, schema, overrides };
+  constructor(map: EnvMapping, schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>, overrides?: ConfigOverrides<ConfigData>) {
+    const descriptor: ConfigDescriptor<ConfigData> = { map, schema, ...(overrides ? { overrides } : {}) };
     this.#resolve = (env: object) => resolve(env, descriptor);
   }
 
-  get(env: object): TConfig {
+  /**
+   * Resolves config on first call and caches it for the lifetime of the holder.
+   *
+   * @remarks
+   * The cache lives as long as the V8 isolate, not a single request. The `env` passed on the
+   * *first* call wins; later calls ignore their `env` and return the cached value. This is correct
+   * on Workers (bindings are stable per isolate) but means tests that vary `env` must `reset()`
+   * (or `seed()`) between cases to avoid leaking the first resolution.
+   */
+  get(env: object): ConfigData {
     this.#value ??= this.#resolve(env);
     return this.#value;
   }
 
-  seed(config: TConfig): void {
+  seed(config: ConfigData): void {
     this.#value = config;
   }
 
@@ -113,4 +111,3 @@ export class Config<TConfig> {
     this.#value = undefined;
   }
 }
-

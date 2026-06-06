@@ -1,15 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import type { Context } from "hono";
+import { RequestContext } from "@remix-run/fetch-router";
 import { contextVar } from "./accessor";
 
-function makeCtx(): Context {
-  const vars: Record<string, unknown> = {};
-  return {
-    get: (k: string) => vars[k],
-    set: (k: string, v: unknown) => {
-      vars[k] = v;
-    },
-  } as unknown as Context;
+function makeCtx() {
+  return new RequestContext(new Request("http://localhost/"));
 }
 
 describe("contextVar", () => {

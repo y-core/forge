@@ -9,15 +9,9 @@ import { buildSprites } from "../build/sprites";
 import { loadConfig } from "../config";
 
 export function createAssetsCommands(): CommandBase {
-  const root = createCommand({
-    name: "forge-assets",
-    description: "Asset pipeline for @y-core/forge consumer projects",
-  });
+  const root = createCommand({ name: "forge-assets", description: "Asset pipeline for @y-core/forge consumer projects" });
 
-  const buildCmd = createCommand({
-    name: "build",
-    description: "Build asset types",
-  });
+  const buildCmd = createCommand({ name: "build", description: "Build asset types" });
 
   addCommand(
     buildCmd,
@@ -31,7 +25,7 @@ export function createAssetsCommands(): CommandBase {
       },
       run: async (_args, flags) => {
         const config = await loadConfig(flags.config);
-        await buildAll(config, { minify: flags.minify, manifestPath: flags.out });
+        await buildAll(config, { minify: flags.minify, ...(flags.out !== undefined ? { assetsPath: flags.out } : {}) });
       },
     }),
   );
@@ -41,10 +35,7 @@ export function createAssetsCommands(): CommandBase {
     createCommand({
       name: "css",
       description: "Build CSS only",
-      flags: {
-        minify: { type: "boolean", description: "Minify output" },
-        config: { type: "string", description: "Path to assets.config.ts" },
-      },
+      flags: { minify: { type: "boolean", description: "Minify output" }, config: { type: "string", description: "Path to assets.config.ts" } },
       run: async (_args, flags) => {
         const config = await loadConfig(flags.config);
         for (const css of config.css) {
@@ -59,15 +50,10 @@ export function createAssetsCommands(): CommandBase {
     createCommand({
       name: "js",
       description: "Build JavaScript bundles only",
-      flags: {
-        minify: { type: "boolean", description: "Minify output" },
-        config: { type: "string", description: "Path to assets.config.ts" },
-      },
+      flags: { minify: { type: "boolean", description: "Minify output" }, config: { type: "string", description: "Path to assets.config.ts" } },
       run: async (_args, flags) => {
         const config = await loadConfig(flags.config);
-        for (const bundle of config.js.bundles) {
-          await buildJS(bundle, { outDir: config.paths.publicDir, minify: flags.minify });
-        }
+        await buildJS(config.js.bundles, { outDir: config.paths.publicDir, minify: flags.minify });
       },
     }),
   );
@@ -77,9 +63,7 @@ export function createAssetsCommands(): CommandBase {
     createCommand({
       name: "fonts",
       description: "Download fonts",
-      flags: {
-        config: { type: "string", description: "Path to assets.config.ts" },
-      },
+      flags: { config: { type: "string", description: "Path to assets.config.ts" } },
       run: async (_args, flags) => {
         const config = await loadConfig(flags.config);
         await buildFonts(config.fonts, config.paths.publicDir);
@@ -92,9 +76,7 @@ export function createAssetsCommands(): CommandBase {
     createCommand({
       name: "icons",
       description: "Build icon outputs (SVG, PNG, ICO, web app manifest)",
-      flags: {
-        config: { type: "string", description: "Path to assets.config.ts" },
-      },
+      flags: { config: { type: "string", description: "Path to assets.config.ts" } },
       run: async (_args, flags) => {
         const config = await loadConfig(flags.config);
         if (config.icons) await buildIcons(config.icons);

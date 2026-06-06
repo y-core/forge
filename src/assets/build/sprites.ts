@@ -14,11 +14,7 @@ export interface SpriteBuildResult {
   groups: Record<string, SpriteGroupResult>;
 }
 
-export async function buildSprites(
-  sprites: Sprites,
-  publicDir: string,
-  opts?: { hash?: boolean },
-): Promise<SpriteBuildResult> {
+export async function buildSprites(sprites: Sprites, publicDir: string, opts?: { hash?: boolean }): Promise<SpriteBuildResult> {
   const mapping: Record<string, string> = {};
   const groups: Record<string, SpriteGroupResult> = {};
   for (const [key, group] of Object.entries(sprites)) {
@@ -36,10 +32,10 @@ export function extractViewBoxes(spriteContent: string): Record<string, string> 
   const symbolRegex = /<symbol([^>]*)>/g;
   let match = symbolRegex.exec(spriteContent);
   while (match !== null) {
-    const attrs = match[1];
+    const attrs = match[1] ?? "";
     const idMatch = attrs.match(/id="([^"]+)"/);
     const viewBoxMatch = attrs.match(/viewBox="([^"]+)"/i);
-    if (idMatch && viewBoxMatch) {
+    if (idMatch?.[1] && viewBoxMatch?.[1]) {
       meta[idMatch[1]] = viewBoxMatch[1];
     }
     match = symbolRegex.exec(spriteContent);
@@ -134,7 +130,7 @@ function extractRootAttrs(svgTag: string): Partial<Record<(typeof PROPAGATABLE_A
   const attrs: Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>> = {};
   for (const attr of PROPAGATABLE_ATTRS) {
     const match = svgTag.match(new RegExp(`${attr}="([^"]+)"`, "i"));
-    if (match) attrs[attr] = match[1];
+    if (match?.[1]) attrs[attr] = match[1];
   }
   return attrs;
 }
@@ -162,20 +158,23 @@ function propagateRootAttrs(inner: string, rootAttrs: Partial<Record<string, str
 
 export function svgToSymbol(svgContent: string, filename: string): string | null {
   const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/i);
-  const rawViewBox = viewBoxMatch ? viewBoxMatch[1] : "0 0 24 24";
+  const rawViewBox = viewBoxMatch?.[1] ?? "0 0 24 24";
 
   // Normalize non-zero-origin viewBoxes to "0 0 w h" and compensate with a
   // translate on the inner content. This ensures <use> at (0,0) is always
   // within the symbol's viewport, regardless of the source SVG's coordinate origin.
-  const [minX, minY, w, h] = rawViewBox.trim().split(/[\s,]+/).map(Number);
+  const [minX = 0, minY = 0, w = 24, h = 24] = rawViewBox
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
   const hasOffset = minX !== 0 || minY !== 0;
   const viewBox = `0 0 ${w} ${h}`;
 
   const svgTagMatch = svgContent.match(/<svg([^>]*)>/i);
   const innerMatch = svgContent.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
-  if (!innerMatch) return null;
+  if (innerMatch?.[1] === undefined) return null;
 
-  const rootAttrs = svgTagMatch ? extractRootAttrs(svgTagMatch[1]) : {};
+  const rootAttrs = svgTagMatch?.[1] ? extractRootAttrs(svgTagMatch[1]) : {};
   const sanitized = sanitizeSVG(innerMatch[1]).trim();
   const propagated = propagateRootAttrs(sanitized, rootAttrs);
   const inner = hasOffset ? `<g transform="translate(${-minX} ${-minY})">${propagated}</g>` : propagated;

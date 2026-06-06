@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Button } from "./button";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Button", () => {
@@ -19,19 +16,19 @@ describe("Button", () => {
   });
 
   it("renders secondary variant classes", async () => {
-    const out = await render(<Button variant="secondary">Click</Button>);
+    const out = await render(<Button variant='secondary'>Click</Button>);
     expect(out).toContain("border-input");
     expect(out).toContain("text-foreground");
   });
 
   it("renders ghost variant classes without primary background", async () => {
-    const out = await render(<Button variant="ghost">Click</Button>);
+    const out = await render(<Button variant='ghost'>Click</Button>);
     expect(out).toContain("hover:bg-accent");
     expect(out).not.toContain("bg-primary");
   });
 
   it("renders sm size classes", async () => {
-    const out = await render(<Button size="sm">Click</Button>);
+    const out = await render(<Button size='sm'>Click</Button>);
     expect(out).toContain("h-8");
     expect(out).toContain("px-3");
   });
@@ -43,7 +40,7 @@ describe("Button", () => {
   });
 
   it("renders lg size classes", async () => {
-    const out = await render(<Button size="lg">Click</Button>);
+    const out = await render(<Button size='lg'>Click</Button>);
     expect(out).toContain("h-12");
     expect(out).toContain("px-6");
   });
@@ -54,7 +51,7 @@ describe("Button", () => {
   });
 
   it("sets type=submit when specified", async () => {
-    const out = await render(<Button type="submit">Click</Button>);
+    const out = await render(<Button type='submit'>Click</Button>);
     expect(out).toContain('type="submit"');
   });
 
@@ -66,12 +63,12 @@ describe("Button", () => {
   });
 
   it("passes through the data-ref attribute", async () => {
-    const out = await render(<Button data-ref="my-btn">Click</Button>);
+    const out = await render(<Button data-ref='my-btn'>Click</Button>);
     expect(out).toContain('data-ref="my-btn"');
   });
 
   it("merges a custom class with the variant classes", async () => {
-    const out = await render(<Button class="extra-class">Click</Button>);
+    const out = await render(<Button class='extra-class'>Click</Button>);
     expect(out).toContain("extra-class");
     expect(out).toContain("inline-flex");
   });
@@ -79,7 +76,7 @@ describe("Button", () => {
   it("supports asChild for a single element child", async () => {
     const out = await render(
       <Button asChild>
-        <a href="/contact">Contact</a>
+        <a href='/contact'>Contact</a>
       </Button>,
     );
     expect(out).toContain("<a");

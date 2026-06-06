@@ -1,10 +1,5 @@
 import { v } from "../validation/mod";
-import type { BaseUrlConfig, ParsedUrl } from "./types";
-
-export interface DeriveAllowedOriginsOptions {
-  /** When true, adds the `www.` variant for non-www hostnames. Defaults to false. */
-  includeWww?: boolean;
-}
+import type { BaseUrlConfig, DeriveAllowedOriginsOptions, ParsedUrl } from "./types";
 
 /** Valibot schema: validates a URL string and transforms it into a BaseUrlConfig with allowedOrigins. Rejects non-https URLs (http://localhost is allowed for local development). @public */
 export const BaseUrlConfigSchema = v.pipe(
@@ -30,10 +25,7 @@ export const BaseUrlConfigSchema = v.pipe(
  * variant for non-www hostnames.
  * @public
  */
-export function deriveAllowedOrigins(
-  parsed: ParsedUrl,
-  options: DeriveAllowedOriginsOptions = {},
-): string[] {
+export function deriveAllowedOrigins(parsed: ParsedUrl, options: DeriveAllowedOriginsOptions = {}): string[] {
   const origins = [parsed.origin];
   if (options.includeWww && !parsed.hostname.startsWith("www.")) {
     origins.push(`${parsed.protocol}//www.${parsed.hostname}`);
@@ -44,9 +36,5 @@ export function deriveAllowedOrigins(
 /** Parses a URL string and returns structured origin/hostname/protocol. Throws on invalid input. @public */
 export function parseUrl(input: string): ParsedUrl {
   const url = new URL(input);
-  return {
-    origin: url.origin,
-    hostname: url.hostname,
-    protocol: url.protocol,
-  };
+  return { origin: url.origin, hostname: url.hostname, protocol: url.protocol };
 }

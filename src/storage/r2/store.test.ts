@@ -1,6 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { createObjectStore } from "./store";
-import type { ListObjectsResult, ObjectBody, ObjectStorageBackend, StoredObject, StoreGetOptions, StoreListOptions, StorePutOptions } from "./types";
+import type {
+  ListObjectsResult,
+  ObjectBody,
+  ObjectStorageBackend,
+  StoredObject,
+  StoreGetOptions,
+  StoreListOptions,
+  StorePutOptions,
+} from "./types";
 
 // ── Shared in-memory backend factory ──────────────────────────────────────────
 
@@ -29,7 +37,7 @@ function makeMemoryBackend(name = "memory"): ObjectStorageBackend & { _store: Ma
         etag: `etag-${key}`,
         httpEtag: `"etag-${key}"`,
         uploaded: new Date("2026-01-01"),
-        contentType: opts?.contentType,
+        ...(opts?.contentType !== undefined ? { contentType: opts.contentType } : {}),
         _body: body,
       };
       _store.set(key, entry);

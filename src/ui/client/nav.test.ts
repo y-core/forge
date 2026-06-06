@@ -19,9 +19,7 @@ interface MockEl {
   classes: Set<string>;
   attrs: Record<string, string>;
   listeners: ListenerRegistry;
-  classList: {
-    toggle: (c: string, force?: boolean) => void;
-  };
+  classList: { toggle: (c: string, force?: boolean) => void };
   setAttribute: (k: string, v: string) => void;
   addEventListener: (event: string, handler: EventListener) => void;
   removeEventListener: (event: string, handler: EventListener) => void;
@@ -97,22 +95,22 @@ describe("mountNav", () => {
 
   it("opens the menu and sets aria-expanded=true when toggled", () => {
     mountNav();
-    toggle.listeners.click[0](new Event("click"));
+    toggle.listeners.click![0]!(new Event("click"));
     expect(menu.classes.has("hidden")).toBe(false);
     expect(toggle.attrs["aria-expanded"]).toBe("true");
   });
 
   it("closes the menu on Escape", () => {
     mountNav();
-    toggle.listeners.click[0](new Event("click"));
-    docListeners.keydown[0](Object.assign(new Event("keydown"), { key: "Escape" }));
+    toggle.listeners.click![0]!(new Event("click"));
+    docListeners.keydown![0]!(Object.assign(new Event("keydown"), { key: "Escape" }));
     expect(menu.classes.has("hidden")).toBe(true);
   });
 
   it("closes the menu on outside clicks", () => {
     mountNav();
-    toggle.listeners.click[0](new Event("click"));
-    docListeners.click[0](new Event("click"));
+    toggle.listeners.click![0]!(new Event("click"));
+    docListeners.click![0]!(new Event("click"));
     expect(menu.classes.has("hidden")).toBe(true);
   });
 
@@ -121,8 +119,8 @@ describe("mountNav", () => {
     menu.querySelectorAll = () => [link];
 
     mountNav();
-    toggle.listeners.click[0](new Event("click"));
-    link.listeners.click[0](new Event("click"));
+    toggle.listeners.click![0]!(new Event("click"));
+    link.listeners.click![0]!(new Event("click"));
     expect(menu.classes.has("hidden")).toBe(true);
   });
 

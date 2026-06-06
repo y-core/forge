@@ -4,7 +4,9 @@ export function parseSemVer(str: string): SemVer | null {
   const normalized = str.startsWith("v") ? str.slice(1) : str;
   const parts = normalized.split(".");
   if (parts.length !== 3) return null;
-  const [major, minor, patch] = parts.map(Number);
+  const nums = parts.map(Number);
+  const [major, minor, patch] = nums;
+  if (major === undefined || minor === undefined || patch === undefined) return null;
   if (!Number.isInteger(major) || !Number.isInteger(minor) || !Number.isInteger(patch)) return null;
   if (major < 0 || minor < 0 || patch < 0) return null;
   // Reject leading zeros ("01.2.3") and empty parts ("1..3")

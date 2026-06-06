@@ -1,4 +1,4 @@
-import type { Child, FC, JSX, PropsWithChildren } from "hono/jsx";
+import type { Child, FC, JSX, PropsWithChildren } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
@@ -28,23 +28,20 @@ interface FieldControlProps {
   name?: string;
   disabled?: boolean;
   "aria-describedby"?: string;
-  "aria-invalid"?: boolean | "true" | "false";
+  "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling";
 }
 
 const fieldVariants = cva({
   base: "group/field flex w-full gap-3 data-[invalid=true]:text-red-600",
   variants: {
     orientation: {
-      horizontal:
-        "flex-row items-start [&>[data-slot=field-label]]:flex-auto [&>[data-slot=field-content]]:flex-1",
+      horizontal: "flex-row items-start [&>[data-slot=field-label]]:flex-auto [&>[data-slot=field-content]]:flex-1",
       responsive:
         "flex-col [&>*]:w-full @md/field-group:flex-row @md/field-group:items-start @md/field-group:[&>*]:w-auto @md/field-group:[&>[data-slot=field-label]]:flex-auto @md/field-group:[&>[data-slot=field-content]]:flex-1",
       vertical: "flex-col [&>*]:w-full",
     },
   },
-  defaultVariants: {
-    orientation: "vertical",
-  },
+  defaultVariants: { orientation: "vertical" },
 });
 
 /** Shared Tailwind class string for FieldLabel and FieldTitle. */
@@ -97,79 +94,54 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   children,
   ...props
 }) => {
+  // cva's `class` is `class?: string` (no `undefined`), so omit it rather than pass undefined.
+  const clsValue = asClass(cls);
   return (
     <fieldset
       disabled={disabled}
-      data-slot="field"
+      data-slot='field'
       data-disabled={disabled ? "true" : undefined}
       data-invalid={invalid ? "true" : undefined}
       data-orientation={orientation}
-      class={fieldVariants({ orientation, class: asClass(cls) })}
-      {...props}
-    >
+      class={fieldVariants({ orientation, ...(clsValue !== undefined ? { class: clsValue } : {}) })}
+      {...props}>
       {children}
     </fieldset>
   );
 };
 
-export const FieldLabel: FC<PropsWithChildren<LabelProps & { name?: string }>> = ({
-  class: cls,
-  for: htmlFor,
-  name,
-  children,
-  ...props
-}) => {
-  return (
-    <label
-      data-slot="field-label"
-      class={cn(FIELD_LABEL_CLASSES, asClass(cls))}
-      for={htmlFor ?? (name ? fieldId(name) : undefined)}
-      {...props}
-    >
-      {children}
-    </label>
-  );
-};
+export const FieldLabel: FC<PropsWithChildren<LabelProps & { name?: string }>> = ({ class: cls, for: htmlFor, name, children, ...props }) => (
+  <label data-slot='field-label' class={cn(FIELD_LABEL_CLASSES, asClass(cls))} for={htmlFor ?? (name ? fieldId(name) : undefined)} {...props}>
+    {children}
+  </label>
+);
 
-export const FieldDescription: FC<PropsWithChildren<DescriptionProps & { name?: string }>> = ({
-  class: cls,
-  id,
-  name,
-  children,
-  ...props
-}) => {
+export const FieldDescription: FC<PropsWithChildren<DescriptionProps & { name?: string }>> = ({ class: cls, id, name, children, ...props }) => {
+  const resolvedId = id ?? (name ? fieldDescriptionId(name) : undefined);
   return (
     <p
-      data-slot="field-description"
+      data-slot='field-description'
       class={cn("text-sm leading-normal text-muted-foreground", asClass(cls))}
-      id={id ?? (name ? fieldDescriptionId(name) : undefined)}
-      {...props}
-    >
+      {...(resolvedId !== undefined ? { id: resolvedId } : {})}
+      {...props}>
       {children}
     </p>
   );
 };
 
-export const FieldError: FC<PropsWithChildren<ErrorProps & { name?: string }>> = ({
-  class: cls,
-  id,
-  role,
-  name,
-  children,
-  ...props
-}) => {
+export const FieldError: FC<PropsWithChildren<ErrorProps & { name?: string }>> = ({ class: cls, id, role, name, children, ...props }) => {
   if (children == null || children === false) {
     return null;
   }
 
+  const resolvedId = id ?? (name ? fieldErrorId(name) : undefined);
   return (
     <p
-      data-slot="field-error"
+      data-slot='field-error'
       class={cn("text-sm font-normal text-red-600", asClass(cls))}
-      id={id ?? (name ? fieldErrorId(name) : undefined)}
+      {...(resolvedId !== undefined ? { id: resolvedId } : {})}
       role={role ?? "alert"}
-      {...props}
-    >
+      {...props}>
       {children}
     </p>
   );

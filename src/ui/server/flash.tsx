@@ -1,5 +1,5 @@
 /** @jsxImportSource @y-core/forge */
-import type { FC } from "hono/jsx";
+import type { FC } from "../../jsx/types";
 import type { AlertVariant } from "../core/alert";
 import { Alert } from "../core/alert";
 import { oobAppend } from "./htmx-patterns";
@@ -45,7 +45,7 @@ export const FlashOob: FC<{ messages?: FlashMessage[] }> = ({ messages }) => {
 };
 
 export const FlashContainer: FC<{ messages?: FlashMessage[] }> = ({ messages }) => (
-  <div id="flash" class="grid gap-2" aria-live="polite">
+  <div id='flash' class='grid gap-2' aria-live='polite'>
     <Flash messages={messages ?? []} />
   </div>
 );

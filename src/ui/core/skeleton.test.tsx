@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Skeleton } from "./skeleton";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Skeleton", () => {
@@ -34,14 +31,14 @@ describe("Skeleton", () => {
   });
 
   it("merges a custom size class", async () => {
-    const out = await render(<Skeleton class="h-4 w-full" />);
+    const out = await render(<Skeleton class='h-4 w-full' />);
     expect(out).toContain("h-4");
     expect(out).toContain("w-full");
     expect(out).toContain("animate-pulse");
   });
 
   it("merges a custom shape class", async () => {
-    const out = await render(<Skeleton class="h-10 w-10 rounded-full" />);
+    const out = await render(<Skeleton class='h-10 w-10 rounded-full' />);
     expect(out).toContain("rounded-full");
     expect(out).toContain("animate-pulse");
   });

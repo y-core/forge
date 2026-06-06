@@ -1,16 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { route } from "../router/config";
-import { applyRoutes } from "../router/register";
 import { defineAction } from "./action";
+import { Forge } from "./forge-app";
+import { mapHandler } from "./route-test-helper";
 
 interface TestData {
   name: string;
 }
 
 function makeApp(action: ReturnType<typeof defineAction<TestData>>) {
-  const app = new Hono();
-  applyRoutes(app, [route("/test", action)]);
+  const app = new Forge();
+  mapHandler(app, "POST", "/test", action);
   return app;
 }
 
@@ -21,9 +20,8 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) =>
-          data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] },
-        handle: (_data, c) => c.text("success"),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        handle: () => new Response("success"),
       }),
     );
 
@@ -41,15 +39,11 @@ describe("defineAction", () => {
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
         validate: (_data) => ({ ok: false, errors: ["Name required."] }),
-        handle: (_data, c) => c.text("success"),
+        handle: () => new Response("success"),
       }),
     );
 
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: "name=Jane",
-    });
+    const res = await app.request("/test", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "name=Jane" });
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("Name required.");
@@ -60,9 +54,8 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) =>
-          data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] },
-        handle: (_data, c) => c.text("success"),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        handle: () => new Response("success"),
       }),
     );
 
@@ -79,16 +72,12 @@ describe("defineAction", () => {
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
         validate: (_data) => ({ ok: false, errors: ["Bad"] }),
-        handle: (_data, c) => c.text("success"),
-        onValidationError: (_errors, c) => c.text("custom error", 422),
+        handle: () => new Response("success"),
+        onValidationError: () => new Response("custom error", { status: 422 }),
       }),
     );
 
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: "name=Jane",
-    });
+    const res = await app.request("/test", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "name=Jane" });
     expect(res.status).toBe(422);
     expect(await res.text()).toBe("custom error");
   });
@@ -97,8 +86,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) =>
-          data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] },
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
         handle: () => {
           throw new Error("downstream failure");
         },
@@ -117,12 +105,11 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) =>
-          data.name ? { ok: true, data } : { ok: false, errors: ["required"] },
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["required"] }),
         handle: () => {
           throw new Error("oops");
         },
-        onError: (_err, c) => c.text("custom 500", 500),
+        onError: () => new Response("custom 500", { status: 500 }),
       }),
     );
 
@@ -134,29 +121,65 @@ describe("defineAction", () => {
     expect(await res.text()).toBe("custom 500");
   });
 
-  it("runs middleware before the action", async () => {
+  it("runs controller middleware before the action", async () => {
     const order: string[] = [];
-    const app = makeApp(
-      defineAction<TestData>({
-        middleware: async (_c, next) => {
+    const app = new Forge();
+    mapHandler(app, "POST", "/test", {
+      middleware: [
+        async (_c, next) => {
           order.push("mw");
           return next();
         },
+      ],
+      handler: defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) =>
-          data.name ? { ok: true, data } : { ok: false, errors: ["required"] },
-        handle: (_data, c) => {
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["required"] }),
+        handle: () => {
           order.push("handle");
-          return c.text("ok");
+          return new Response("ok");
         },
       }),
-    );
+    });
 
-    await app.request("/test", {
+    await app.request("/test", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: VALID_FORM.toString() });
+    expect(order).toEqual(["mw", "handle"]);
+  });
+
+  it("returns 413 when the form body exceeds the default size limit", async () => {
+    const app = makeApp(
+      defineAction<TestData>({
+        parse: (fd) => ({ name: fd.get("name") as string }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        handle: () => new Response("success"),
+      }),
+    );
+    const res = await app.request("/test", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: VALID_FORM.toString(),
+      // 100 KB default limit; this body is ~200 KB.
+      body: `name=${"x".repeat(200_000)}`,
     });
-    expect(order).toEqual(["mw", "handle"]);
+    expect(res.status).toBe(413);
+  });
+
+  it("logs server-side when the handler throws", async () => {
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    try {
+      const app = makeApp(
+        defineAction<TestData>({
+          parse: (fd) => ({ name: fd.get("name") as string }),
+          validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+          handle: () => {
+            throw new Error("boom downstream");
+          },
+        }),
+      );
+      await app.request("/test", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: VALID_FORM.toString() });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(logs.some((l) => l.includes("Action handler threw"))).toBe(true);
   });
 });

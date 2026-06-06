@@ -17,14 +17,19 @@ describe("createSignal", () => {
 describe("effect", () => {
   it("runs immediately on creation", () => {
     let ran = false;
-    effect(() => { ran = true; });
+    effect(() => {
+      ran = true;
+    });
     expect(ran).toBe(true);
   });
 
   it("re-runs when a tracked signal changes", () => {
     const s = createSignal(0);
     let runs = 0;
-    effect(() => { s.value; runs++; });
+    effect(() => {
+      s.value;
+      runs++;
+    });
     expect(runs).toBe(1);
     s.value = 1;
     expect(runs).toBe(2);
@@ -34,7 +39,11 @@ describe("effect", () => {
     const a = createSignal(0);
     const b = createSignal(0);
     let runs = 0;
-    effect(() => { a.value; b.value; runs++; });
+    effect(() => {
+      a.value;
+      b.value;
+      runs++;
+    });
     expect(runs).toBe(1);
     a.value = 1;
     expect(runs).toBe(2);
@@ -45,7 +54,10 @@ describe("effect", () => {
   it("dispose stops the effect from re-running", () => {
     const s = createSignal(0);
     let runs = 0;
-    const dispose = effect(() => { s.value; runs++; });
+    const dispose = effect(() => {
+      s.value;
+      runs++;
+    });
     dispose();
     s.value = 1;
     expect(runs).toBe(1);
@@ -54,7 +66,10 @@ describe("effect", () => {
   it("skips re-run when the same value is written (Object.is equality)", () => {
     const s = createSignal("hello");
     let runs = 0;
-    effect(() => { s.value; runs++; });
+    effect(() => {
+      s.value;
+      runs++;
+    });
     expect(runs).toBe(1);
     s.value = "hello";
     expect(runs).toBe(1);
@@ -130,7 +145,10 @@ describe("computed", () => {
     // floor always returns 0 for values in [0, 1)
     const floored = computed(() => Math.floor(a.value));
     let sideEffectRuns = 0;
-    effect(() => { floored.value; sideEffectRuns++; });
+    effect(() => {
+      floored.value;
+      sideEffectRuns++;
+    });
     expect(sideEffectRuns).toBe(1);
     a.value = 0.5; // floored is still 0 → downstream skipped
     expect(sideEffectRuns).toBe(1);
@@ -147,9 +165,17 @@ describe("diamond dependency", () => {
     const c = createSignal(0);
     let dRuns = 0;
 
-    effect(() => { b.value = a.value; });
-    effect(() => { c.value = a.value; });
-    effect(() => { b.value; c.value; dRuns++; });
+    effect(() => {
+      b.value = a.value;
+    });
+    effect(() => {
+      c.value = a.value;
+    });
+    effect(() => {
+      b.value;
+      c.value;
+      dRuns++;
+    });
 
     expect(dRuns).toBe(1);
     a.value = 1; // triggers both branches, D should fire exactly once

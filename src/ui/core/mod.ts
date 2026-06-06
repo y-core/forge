@@ -11,9 +11,7 @@ export {
   fieldErrorId,
   fieldId,
 } from "./field";
-export {
-  Field,
-} from "./field-layout";
+export { Field } from "./field-layout";
 export { Form } from "./form";
 export { createIcon, type ForgeIcon, Icon, type IconProps } from "./icon";
 export { Input } from "./input";

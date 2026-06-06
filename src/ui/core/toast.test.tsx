@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Toast } from "./toast";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Toast", () => {
@@ -26,28 +23,28 @@ describe("Toast", () => {
   });
 
   it("renders success variant classes", async () => {
-    const out = await render(<Toast variant="success">Done</Toast>);
+    const out = await render(<Toast variant='success'>Done</Toast>);
     expect(out).toContain('data-variant="success"');
     expect(out).toContain("bg-emerald-50");
     expect(out).toContain("text-emerald-900");
   });
 
   it("renders info variant classes", async () => {
-    const out = await render(<Toast variant="info">Info</Toast>);
+    const out = await render(<Toast variant='info'>Info</Toast>);
     expect(out).toContain('data-variant="info"');
     expect(out).toContain("bg-blue-50");
     expect(out).toContain("text-blue-900");
   });
 
   it("renders warning variant classes", async () => {
-    const out = await render(<Toast variant="warning">Alert</Toast>);
+    const out = await render(<Toast variant='warning'>Alert</Toast>);
     expect(out).toContain('data-variant="warning"');
     expect(out).toContain("bg-yellow-50");
     expect(out).toContain("text-yellow-900");
   });
 
   it("renders destructive variant classes", async () => {
-    const out = await render(<Toast variant="destructive">Error</Toast>);
+    const out = await render(<Toast variant='destructive'>Error</Toast>);
     expect(out).toContain('data-variant="destructive"');
     expect(out).toContain("bg-red-50");
     expect(out).toContain("text-red-900");
@@ -75,7 +72,7 @@ describe("Toast", () => {
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Toast class="my-toast">Hello</Toast>);
+    const out = await render(<Toast class='my-toast'>Hello</Toast>);
     expect(out).toContain("my-toast");
     expect(out).toContain("rounded-xl");
   });
@@ -99,20 +96,20 @@ describe("Toast.Container", () => {
   });
 
   it("renders top-left position classes", async () => {
-    const out = await render(<Toast.Container position="top-left" />);
+    const out = await render(<Toast.Container position='top-left' />);
     expect(out).toContain('data-position="top-left"');
     expect(out).toContain("top-4");
     expect(out).toContain("left-4");
   });
 
   it("renders top-center position with translate", async () => {
-    const out = await render(<Toast.Container position="top-center" />);
+    const out = await render(<Toast.Container position='top-center' />);
     expect(out).toContain("top-4");
     expect(out).toContain("-translate-x-1/2");
   });
 
   it("renders top-right position classes", async () => {
-    const out = await render(<Toast.Container position="top-right" />);
+    const out = await render(<Toast.Container position='top-right' />);
     expect(out).toContain("top-4");
     expect(out).toContain("right-4");
   });

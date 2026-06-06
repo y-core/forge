@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Popover } from "./popover";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Popover", () => {
@@ -29,7 +26,7 @@ describe("Popover", () => {
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Popover class="my-popover" />);
+    const out = await render(<Popover class='my-popover' />);
     expect(out).toContain("my-popover");
     expect(out).toContain("relative");
   });
@@ -49,7 +46,7 @@ describe("Popover.Trigger", () => {
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Popover.Trigger class="my-trigger">Click</Popover.Trigger>);
+    const out = await render(<Popover.Trigger class='my-trigger'>Click</Popover.Trigger>);
     expect(out).toContain("my-trigger");
   });
 });
@@ -71,18 +68,18 @@ describe("Popover.Content", () => {
   });
 
   it("renders end align class", async () => {
-    const out = await render(<Popover.Content align="end">Items</Popover.Content>);
+    const out = await render(<Popover.Content align='end'>Items</Popover.Content>);
     expect(out).toContain('data-align="end"');
     expect(out).toContain("right-0");
   });
 
   it("renders center align classes", async () => {
-    const out = await render(<Popover.Content align="center">Items</Popover.Content>);
+    const out = await render(<Popover.Content align='center'>Items</Popover.Content>);
     expect(out).toContain("-translate-x-1/2");
   });
 
   it("renders top side classes", async () => {
-    const out = await render(<Popover.Content side="top">Items</Popover.Content>);
+    const out = await render(<Popover.Content side='top'>Items</Popover.Content>);
     expect(out).toContain('data-side="top"');
     expect(out).toContain("bottom-full");
   });
@@ -95,7 +92,7 @@ describe("Popover.Content", () => {
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Popover.Content class="w-64">Items</Popover.Content>);
+    const out = await render(<Popover.Content class='w-64'>Items</Popover.Content>);
     expect(out).toContain("w-64");
     expect(out).toContain("absolute");
   });

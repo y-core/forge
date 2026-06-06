@@ -1,6 +1,6 @@
 ---
 title: Library Architecture
-description: facade over dependencies, runtime-only library, demand composition, Web-APIs-only, leaf namespace, integration namespace, dependency tiers, no build step, Cloudflare Workers, Hono, valibot, @remix-run
+description: facade over dependencies, runtime-only library, demand composition, Web-APIs-only, leaf namespace, integration namespace, dependency tiers, no build step, Cloudflare Workers, fetch-router, valibot, @remix-run
 weight: 12
 ---
 
@@ -21,7 +21,7 @@ weight: 12
 - §1 Core principles: facade, runtime-only, demand composition, Web-APIs-only
 - §2 Namespace dependency tiers: leaf vs integration, what each means
 - §3 Runtime-only constraint: no build step, why raw TS ships
-- §4 Facade pattern: wrapping hono, valibot, @remix-run behind forge exports
+- §4 Facade pattern: wrapping fetch-router, valibot, @remix-run behind forge exports
 - §5 Demand composition: single-purpose namespaces, consumers assemble what they need
 - §6 Workers runtime model: V8 isolate, no Node.js APIs, global scope constraints
 - §7 Review checklist: architecture compliance items
@@ -33,13 +33,17 @@ weight: 12
 ### 1a. Facade Over Dependencies Pattern
 
 Forge wraps its external dependencies behind its own export map. Consumers import from
-`@y-core/forge/{namespace}`, never from `hono`, `valibot`, or `@remix-run/*` directly.
+`@y-core/forge/{namespace}`, never from `@remix-run/*`, `valibot`, or other deps directly.
 
 Wrapped dependencies:
 
-- `hono` + `hono/jsx` → `@y-core/forge/router` (Hono as App), `@y-core/forge/jsx` (JSX runtime)
+- `@remix-run/fetch-router` → `@y-core/forge/router` (`route`, `createController`, `Middleware`,
+  `RequestContext`) and `@y-core/forge/app` (the `createApp` factory / `Forge` app object)
+- forge's own SSR JSX runtime → `@y-core/forge/jsx` (`createRemixElement`, `Fragment`),
+  `@y-core/forge/jsx-runtime` (transform target), and `@y-core/forge/render` (`renderToString`)
 - `valibot` → `@y-core/forge/validation` (`v` namespace + `ValidationResult`)
-- `@remix-run/headers` → `@y-core/forge/http` (`CacheControl`, `ContentType`, `SetCookie`, etc.)
+- `@remix-run/headers` + `@remix-run/html-template` → `@y-core/forge/http` (`CacheControl`,
+  `ContentType`, `SetCookie`, `html`, `rawHtml`, etc.)
 - `@remix-run/cookie`, `@remix-run/session` → `@y-core/forge/session`
 - `htmx.org` → `@y-core/forge/ui/client/htmx` (side-effect import)
 
@@ -108,7 +112,7 @@ These directories exist in `src/` but have NO entry in `package.json` `"exports"
 
 | Directory | Content | Used by |
 |---|---|---|
-| `src/context/` | `contextVar` accessor for Hono context variables | `security`, `form` |
+| `src/context/` | `contextVar` accessor for `RequestContext` variables | `security`, `form` |
 | `src/crypto/` | HMAC/timing-safe/base64url utilities (`@internal`) | `form`, `security`, `session` |
 
 Never import these from outside forge. They have no stability guarantee.
@@ -151,9 +155,11 @@ When a facade namespace (like `validation` or `session`) wraps a third-party pac
 
 Example of correct facade exposure in `src/validation/mod.ts`:
 
-    export { v, type ValidationResult } from "./validation.ts"
+    export type { ValidationResult } from "./validation"
+    export { v } from "./validation"
 
-Not:
+This exposes exactly two symbols: `v` (the valibot namespace) and the `ValidationResult<T>`
+type — never the raw `valibot` surface. Not:
 
     export * from "valibot"   // WRONG — exposes entire valibot surface
 
@@ -174,7 +180,7 @@ If consumers need a third-party feature not yet exposed by the forge facade:
 Apps (like `forge-starter`) compose forge namespaces they need:
 
     import { createApp, applyAssets } from "@y-core/forge/app"
-    import { applyRoutes } from "@y-core/forge/router"
+    import { route, createController } from "@y-core/forge/router"
     import { makeSecurityHeaders } from "@y-core/forge/security"
     import { requestLogger } from "@y-core/forge/logging"
 

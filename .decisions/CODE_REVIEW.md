@@ -105,16 +105,16 @@ Group by file, then severity (critical first).
 
 ### 2e. Facade Boundary Check
 
-- [ ] Consumers import from `@y-core/forge/{namespace}`, not from `hono`/`valibot`/`@remix-run` directly
+- [ ] Consumers import from `@y-core/forge/{namespace}`, not from `valibot`/`@remix-run/*` directly
 - [ ] New exports added to correct namespace (not placed in wrong namespace)
 - [ ] `timingSafeEqual`/crypto utilities remain `@internal` in `src/crypto/`
 
     ## EXAMPLE — violation
     // src/handlers/contact.ts
-    import { valibot } from 'valibot'   // BANNED: bypass facade, import via forge/validation
+    import * as v from 'valibot'   // BANNED: bypass facade, import via forge/validation
 
     ## EXAMPLE — correct
-    import { parseInput } from '@y-core/forge/validation'
+    import { v } from '@y-core/forge/validation'
 
 ---
 
@@ -146,25 +146,28 @@ Group by file, then severity (critical first).
 ### 3c. CSRF and Form Security (`form` namespace)
 
 - [ ] CSRF verification is in `@y-core/forge/form` (not `security` namespace)
-- [ ] `csrfProtection` used on state-changing routes (`POST`/`PUT`/`DELETE`)
-- [ ] `importCsrfKey` called with env-provided secret, not hardcoded
+- [ ] `csrfProtection` (or a guard built on `verifyCsrfToken`) is in the route's `middleware` array for state-changing routes (`POST`/`PUT`/`DELETE`)
+- [ ] `importCsrfKey`/`importCsrfKeyRing` called with env-provided secret, not hardcoded
 
 ### 3d. Origin and Transport Guards
 
-- [ ] `originGuard` or `verifyOrigin` used for webhooks/trusted-caller routes
+- [ ] `originGuard`/`verifyOrigin` (or `crossOriginProtection`) used for webhooks/trusted-caller routes
 - [ ] `isHxRequest` check on HTMX-only endpoints
 - [ ] `requireFormContentType` on form `POST` routes
+- [ ] Guards live in the controller action's `middleware` array — not inline inside the handler
 
     ## EXAMPLE — HTMX endpoint missing guard
-    app.post('/fragment', async (c) => {   // MISSING: isHxRequest guard
-      return c.html(<SomeFragment />)
-    })
+    // controller action with no origin/HX guard
+    fragment: handleFragment,   // MISSING: contactSecurityGuard / isHxRequest guard
 
     ## EXAMPLE — correct
-    app.post('/fragment', async (c) => {
-      if (!isHxRequest(c)) return c.text('Not Found', 404)
-      return c.html(<SomeFragment />)
-    })
+    // route declared in routes map:
+    //   fragment: { method: 'POST', pattern: '/fragment' }
+    // controller action attaches guards:
+    fragment: { middleware: [contactSecurityGuard, csrfVerifyGuard], handler: handleFragment }
+    // ...where the guard is a `Middleware`:
+    const contactSecurityGuard: Middleware = (c, next) =>
+      isHxRequest(c) ? next() : new Response('Not Found', { status: 404 })
 
 ---
 
@@ -218,6 +221,8 @@ Group by file, then severity (critical first).
 - Security test missing fail case
 - New namespace not classified in [LIBRARY_ARCHITECTURE.md](./LIBRARY_ARCHITECTURE.md)
 - HTML entity encoding wrong in test assertions
+- Route not declared via the routes map + `createController` + `app.map` (no out-of-band route registration)
+- Route guard placed inline inside a handler instead of the controller action's `middleware` array
 - `bun run check` fails (any step)
 
 ### 5c. Minor — Consider Fixing

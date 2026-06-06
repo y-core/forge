@@ -9,17 +9,20 @@ tasks:
   # ── MCP server ────────────────────────────────────────────────────────────────
   mcp:up:
     desc: 'Build and start tsmcp on port {{.MCP_PORT | default "8087"}} (must
-      match .mcp.json)'
+      match .mcp.json). Optional: EXTRA_SRC=<host-path> mounts an additional
+      source root at /forge and sets EXTRA_ROOTS=/forge. Example:
+      task mcp:up EXTRA_SRC=../forge'
     vars:
       MCP_PORT: '{{.MCP_PORT | default "8087"}}'
       MCP_CONTAINER: "mcp-{{base .USER_WORKING_DIR}}"
       MCP_IMAGE: "tsmcp-{{base .USER_WORKING_DIR}}"
       MCP_DECISIONS_DIR: '{{.MCP_DECISIONS_DIR | default ".decisions"}}'
       MCP_SERVER_NAME: '{{.MCP_SERVER_NAME | default "tsmcp"}}'
+      EXTRA_SRC: '{{.EXTRA_SRC | default ""}}'
     cmds:
       - docker build --build-arg PORT={{.MCP_PORT}} -f docker/tsmcp/tsmcp.dockerfile -t {{.MCP_IMAGE}} docker/tsmcp/
       - docker rm -f {{.MCP_CONTAINER}} 2>/dev/null || true
-      - docker run -d --name {{.MCP_CONTAINER}} -p {{.MCP_PORT}}:{{.MCP_PORT}} -v "{{.USER_WORKING_DIR}}:/workspace:ro" -e WORKSPACE=/workspace -e DECISIONS_DIR={{.MCP_DECISIONS_DIR}} -e MCP_SERVER_NAME={{.MCP_SERVER_NAME}} {{.MCP_IMAGE}}
+      - docker run -d --name {{.MCP_CONTAINER}} -p {{.MCP_PORT}}:{{.MCP_PORT}} -v "{{.USER_WORKING_DIR}}:/workspace:ro" -e WORKSPACE=/workspace -e DECISIONS_DIR={{.MCP_DECISIONS_DIR}} -e MCP_SERVER_NAME={{.MCP_SERVER_NAME}} {{if .EXTRA_SRC}}-v "{{.EXTRA_SRC}}:/forge:ro" -e EXTRA_ROOTS=/forge{{end}} {{.MCP_IMAGE}}
 
   mcp:down:
     desc: "Stop and remove the tsmcp MCP server"

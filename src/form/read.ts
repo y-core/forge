@@ -7,7 +7,5 @@ export function readTextField(formData: ReadonlyFormData, field: string): string
 }
 
 export function readFields<K extends string>(formData: ReadonlyFormData, fields: K[]): Record<K, string> {
-  return Object.fromEntries(
-    fields.map((field) => [field, readTextField(formData, field)]),
-  ) as Record<K, string>;
+  return Object.fromEntries(fields.map((field) => [field, readTextField(formData, field)])) as Record<K, string>;
 }

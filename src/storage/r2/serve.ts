@@ -1,19 +1,26 @@
-import type { ObjectBody, ObjectStorageBackend } from "./types";
-
-/** Options for serveObject. @public */
-export interface ServeOptions {
-  cacheControl?: string;
-  contentDisposition?: "inline" | "attachment";
-}
+import type { ObjectBody, ObjectStorageBackend, ServeOptions } from "./types";
 
 function parseRange(header: string): { offset?: number; length?: number; suffix?: number } | null {
   const suffixMatch = /^bytes=-(\d+)$/.exec(header);
-  if (suffixMatch) return { suffix: parseInt(suffixMatch[1], 10) };
+  if (suffixMatch) return { suffix: parseInt(suffixMatch[1] ?? "", 10) };
   const match = /^bytes=(\d+)-(\d*)$/.exec(header);
   if (!match) return null;
-  const offset = parseInt(match[1], 10);
+  const offset = parseInt(match[1] ?? "", 10);
   const end = match[2] ? parseInt(match[2], 10) : undefined;
   return { offset, ...(end !== undefined ? { length: end - offset + 1 } : {}) };
+}
+
+/**
+ * Builds a `Content-Disposition` value with both a sanitized ASCII `filename="…"` fallback and an
+ * RFC 5987 `filename*=UTF-8''…` parameter for non-ASCII names. The fallback strips quotes,
+ * backslashes, and control characters so the filename cannot break out of the quoted string.
+ */
+function contentDisposition(type: "inline" | "attachment", filename: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: strip C0 controls (\u0000-\u001f) + DEL (\u007f) from the quoted fallback
+  const fallback = filename.replace(/[\u0000-\u001f\u007f"\\]/g, "");
+  // encodeURIComponent leaves a few non-attr-chars unescaped; encode them too for a strict ext-value.
+  const encoded = encodeURIComponent(filename).replace(/['()*!]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
@@ -25,7 +32,7 @@ function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
   if (cc) h.set("Cache-Control", cc);
   if (opts?.contentDisposition) {
     const filename = obj.key.split("/").pop() ?? obj.key;
-    h.set("Content-Disposition", `${opts.contentDisposition}; filename="${filename}"`);
+    h.set("Content-Disposition", contentDisposition(opts.contentDisposition, filename));
   }
   return h;
 }
@@ -34,12 +41,7 @@ function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
  * Serves an object from a storage backend with ETag / If-None-Match / Range support.
  * Returns 200, 206, 304, 404, or 416. @public
  */
-export async function serveObject(
-  backend: ObjectStorageBackend,
-  request: Request,
-  key: string,
-  options?: ServeOptions,
-): Promise<Response> {
+export async function serveObject(backend: ObjectStorageBackend, request: Request, key: string, options?: ServeOptions): Promise<Response> {
   const ifNoneMatch = request.headers.get("If-None-Match");
   const rangeHeader = request.headers.get("Range");
 

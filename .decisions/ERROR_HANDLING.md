@@ -1,13 +1,13 @@
 ---
 title: Error Handling
-description: "Result monad, result function, toError, ValidationResult, renderError, renderSuccess, renderValidationErrors, htmlResponse, fragment rendering, fail-closed, error taxonomy, ValidationIssue, HTMX fragment error pattern"
+description: "Result type, result function, toError, ValidationResult, renderError, renderSuccess, renderValidationErrors, fragmentResponse, htmlResponse, fragment rendering, error boundary middleware, baseline-hardened 500, defineAction 413, fail-closed, error taxonomy, HTMX fragment error pattern"
 weight: 24
 ---
 
 # Error Handling
 
-> Authoritative source for forge's error patterns: the Result monad, HTTP fragment
-> renderers, and the fail-closed posture for missing dependencies.
+> Authoritative source for forge's error patterns: the `Result` type, HTTP fragment
+> renderers, the router error boundary, and the fail-closed posture for missing dependencies.
 >
 > Complements [INPUT_VALIDATION.md](./INPUT_VALIDATION.md) (validation pipeline),
 > [ROUTING_AND_MIDDLEWARE.md](./ROUTING_AND_MIDDLEWARE.md) (action handler pattern).
@@ -17,10 +17,10 @@ weight: 24
 ## 0. Quick Reference
 
 - §1 result namespace: `result()`, `toError()`, `Result<T,E>`, `ValidationResult`
-- §2 Fragment renderers: `renderError`, `renderSuccess`, `renderValidationErrors`
+- §2 Fragment renderers: `renderError`, `renderSuccess`, `renderValidationErrors`, `fragmentResponse`
 - §3 `htmlResponse`: wraps JSX in full HTML response; `html` tag; `escapeHtml`
 - §4 Fail-closed posture: 503 when critical context missing, not silent fallback
-- §5 Error taxonomy: expected vs unexpected vs infrastructure errors
+- §5 Error taxonomy: expected vs unexpected vs infrastructure errors; the error boundary
 - §6 Review checklist: error handling items
 
 ---
@@ -29,40 +29,47 @@ weight: 24
 
 ### 1a. `result` and `toError` Functions
 
-The `result` and `toError` constructors live in `@y-core/forge/result` and form
-a lightweight discriminated-union monad that keeps error paths explicit at the
-type level without requiring exceptions.
+The `result` function and `toError` helper live in `@y-core/forge/result` and
+form a lightweight discriminated-union monad that keeps error paths explicit at
+the type level without requiring exceptions.
 
 ```typescript
 import { result, toError, type Result } from "@y-core/forge/result"
 
 type Result<T, E = Error> =
-    | { ok: true;  value: T }
+    | { ok: true;  data: T }
     | { ok: false; error: E }
 
-function result<T>(value: T): Result<T, never>   // success variant
-function toError<E>(error: E): Result<never, E>  // failure variant
+// `result` wraps a sync/async function or a promise, capturing any throw as `error`:
+function result<T, E = Error>(fn: () => T): Result<T, E>
+function result<T, E = Error>(fn: () => Promise<T>): Promise<Result<T, E>>
+function result<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>
+
+// `toError` coerces an unknown thrown value into an `Error` instance:
+function toError(thrown: unknown): Error
 ```
 
 Use `Result` as the return type for any function that can fail in a predictable
-way. Never return `null | T` or throw for expected failures.
+way. Never return `null | T` or throw for expected failures. The success variant
+carries `data`; the failure variant carries `error`.
 
 ### 1b. Usage Pattern
 
-Callers narrow the union with a single `if (!r.ok)` guard:
+Wrap a fallible operation with `result(...)`, then narrow the union with a single
+`if (!r.ok)` guard:
 
 ```typescript
-function parseUrl(raw: string): Result<URL, Error> {
-    try {
-        return result(new URL(raw))
-    } catch {
-        return toError(new Error(`Invalid URL: ${raw}`))
-    }
-}
+const r = result(() => new URL(input))
+if (!r.ok) return new Response(r.error.message, { status: 400 })
+const url = r.data  // type-narrowed to URL — no cast needed
+```
 
-const r = parseUrl(input)
-if (!r.ok) return c.text(r.error.message, 400)
-const url = r.value  // type-narrowed to URL — no cast needed
+For async work, `result` returns a `Promise<Result<T, E>>`:
+
+```typescript
+const r = await result(fetchRemote(id))
+if (!r.ok) return new Response("Upstream unavailable", { status: 502 })
+const payload = r.data
 ```
 
 Chain multiple operations by returning early on each failure rather than
@@ -71,26 +78,25 @@ nesting. This keeps the happy path at the left margin.
 ### 1c. `ValidationResult` Type
 
 `ValidationResult<T>` is a specialised variant used by the validation pipeline.
-It replaces the generic `error: E` slot with a structured issues array:
+It replaces the generic `error: E` slot with an array of error messages:
 
 ```typescript
 import type { ValidationResult } from "@y-core/forge/result"
+// (also re-exported from "@y-core/forge/validation")
 
-// Equivalent shape:
-// | { ok: true;  value: T }
-// | { ok: false; issues: ValidationIssue[] }
-
-// ValidationIssue:
-// { path: string[]; message: string }
+type ValidationResult<T> =
+    | { ok: true;  data: T }
+    | { ok: false; errors: string[] }
 ```
 
-`path` is the dot-path of the failing field (e.g. `["email"]`). `message` is
-a human-readable description. This structure feeds directly into
+`errors` is a flat list of human-readable, already-formatted field messages
+(e.g. `"Email is required"`). This structure feeds directly into
 `renderValidationErrors` (§2c).
 
-Validation operations backed by valibot return `ValidationResult<T>`. Do not
-convert validation issues into a single `Error` — preserve the per-field
-structure so the UI can place each message next to the correct input.
+Validation operations backed by `v` (the valibot namespace from
+`@y-core/forge/validation`) return `ValidationResult<T>`. Do not collapse the
+issues into a single `Error` — preserve the per-field message list so the UI can
+surface every failing field at once.
 
 ---
 
@@ -98,19 +104,21 @@ structure so the UI can place each message next to the correct input.
 
 All three renderers produce HTMX-compatible HTML fragments — partial HTML
 suitable for `hx-swap` targets. They do NOT render a full `<html>` document.
-Import them from `@y-core/forge/http`.
+Each renderer returns a `SafeHtml` value (the rendered markup), not a
+`Response`; wrap it with `fragmentResponse(body, status?)` to set the HTTP
+status. Import everything from `@y-core/forge/http`.
 
 ### 2a. `renderError` — Error Fragment
 
 ```typescript
-import { renderError, type FragmentOptions } from "@y-core/forge/http"
+import { fragmentResponse, renderError } from "@y-core/forge/http"
 
-// Inside a Hono handler:
-return renderError(c, "Something went wrong", { status: 400 })
+return fragmentResponse(renderError("Something went wrong"), 400)
 ```
 
-Renders a styled error fragment. The second argument is the user-visible message
-string. `FragmentOptions.status` sets the HTTP status code (default `500`).
+`renderError(message, options?)` renders a styled error fragment from the
+user-visible `message` string. The HTTP status is the second argument to
+`fragmentResponse` (default `200`).
 
 Use `renderError` for single-message failures where no field attribution is
 needed: rate-limit exceeded, service unavailable, generic handler errors.
@@ -118,52 +126,49 @@ needed: rate-limit exceeded, service unavailable, generic handler errors.
 ### 2b. `renderSuccess` — Success Fragment
 
 ```typescript
-import { renderSuccess } from "@y-core/forge/http"
+import { fragmentResponse, renderSuccess } from "@y-core/forge/http"
 
-return renderSuccess(c, "Message sent successfully")
+return fragmentResponse(renderSuccess("Message sent successfully"))
 ```
 
-Renders a styled success fragment. No `FragmentOptions` overload — success
-responses always use status `200` so HTMX swaps the target without triggering
-error handling.
+`renderSuccess(message, options?)` renders a styled success banner. Success
+responses use status `200` (the `fragmentResponse` default) so HTMX swaps the
+target without triggering error handling.
 
 ### 2c. `renderValidationErrors` — Validation Error Fragment
 
 ```typescript
-import { renderValidationErrors } from "@y-core/forge/http"
-import * as v from "valibot"
+import { fragmentResponse, renderValidationErrors } from "@y-core/forge/http"
 
-const parsed = v.safeParse(Schema, formData)
-if (!parsed.success) {
-    return renderValidationErrors(c, parsed.issues)
+const r = validateContact(formData)   // returns ValidationResult<T>
+if (!r.ok) {
+    return fragmentResponse(renderValidationErrors(r.errors), 422)
 }
 ```
 
-Renders per-field validation errors as an HTMX fragment. Each issue maps
-`path[0]` to the field name shown in the UI. Preserves the full issue list
-so all fields show errors simultaneously rather than one at a time.
-
-When using the forge validation helpers that return `ValidationResult<T>`,
-pass `result.issues` directly:
-
-```typescript
-const r = validateContactForm(data)
-if (!r.ok) return renderValidationErrors(c, r.issues)
-```
+`renderValidationErrors(errors, options?)` renders the flat list of field error
+messages as a `<ul>` inside an HTMX fragment, so every failing field surfaces at
+once rather than one at a time. Pass the `errors` array from a
+`ValidationResult<T>` (§1c) directly.
 
 ### 2d. Fragment Options
 
-`FragmentOptions` is a single-field interface:
+`FragmentOptions` controls presentation only — the HTTP status is set by
+`fragmentResponse`, not by the renderer:
 
 ```typescript
 interface FragmentOptions {
-    status?: number   // HTTP status code; default 200 for success, 500 for errors
+    class?: string         // override the banner container class
+    successAttr?: string   // raw attribute fragment on the success banner (e.g. `data-status="ok"`)
+    ulClass?: string       // override the <ul> class in renderValidationErrors
 }
 ```
 
-Pass `{ status: 422 }` for semantic correctness on validation failures when the
-HTMX client is configured to handle non-2xx responses. Default `200` works with
-standard HTMX `hx-swap` without additional client configuration.
+All option *class* values are HTML-escaped before interpolation, so a hostile
+class string cannot break out of the attribute. (`successAttr` is, by contract,
+a developer-supplied raw attribute fragment and is interpolated verbatim — never
+pass user input to it.) For the status code, pass it to `fragmentResponse`:
+`fragmentResponse(renderValidationErrors(errors), 422)`.
 
 ---
 
@@ -171,21 +176,28 @@ standard HTMX `hx-swap` without additional client configuration.
 
 ### 3a. `htmlResponse` Pattern
 
-`htmlResponse` is the primary way to return a full-page JSX render from a
-Hono handler. It sets `Content-Type: text/html; charset=UTF-8` and serialises
-the JSX tree.
+`htmlResponse` is the primary way to return a full-page render from a handler.
+It guarantees a leading `<!DOCTYPE html>` and sets
+`content-type: text/html; charset=utf-8`. Its signature is
+`htmlResponse(body, status?, headers?)` where `body` is a string or a `SafeHtml`
+value (e.g. the output of `renderToString`).
 
 ```typescript
 import { htmlResponse } from "@y-core/forge/http"
+import { renderToString } from "@y-core/forge/render"
+import { getNonce } from "@y-core/forge/security"
 
-app.get("/", async (c) => {
+const homeView = async (c: AppContext<AppEnv>) => {
     const data = await fetchPageData(c)
-    return htmlResponse(c.req.raw, <Layout nonce={c.get("nonce")}><Page data={data} /></Layout>)
-})
+    const markup = await renderToString(<Layout nonce={getNonce(c)}><Page data={data} /></Layout>)
+    return htmlResponse(markup)
+}
 ```
 
-Pass `c.req.raw` (the native `Request`), not the Hono context, so
-`htmlResponse` can read request headers for conditional rendering if needed.
+The handler receives an `AppContext<Bindings>` (a `RequestContext` plus `.env`
+and `.executionCtx`); read request headers via `c.request.headers.get(...)` and
+the CSP nonce via `getNonce(c)`. For HTMX partials that must NOT carry a
+DOCTYPE, use `fragmentResponse` (§2) instead.
 
 ### 3b. `html` Tagged Template
 
@@ -195,14 +207,14 @@ import { html } from "@y-core/forge/http"
 const snippet = html`<div class="item">${escapeHtml(label)}</div>`
 ```
 
-`html` returns a tagged-template string typed as `TrustedHtml` (an opaque
-brand). It does not auto-escape interpolations — the caller is responsible for
-escaping dynamic content before interpolation. Use `escapeHtml` (§3c) for every
-non-literal value.
+`html` returns a tagged-template value typed as `SafeHtml` (an opaque brand;
+test membership with `isSafeHtml`). It escapes interpolated string values by
+default; use `rawHtml(...)` to opt a pre-trusted fragment out of escaping, and
+`escapeHtml` (§3c) for any value built up outside the tag.
 
-Prefer Hono JSX components over `html` tagged templates wherever possible. Use
-`html` only when building raw string fragments that will be injected into
-pre-existing HTML strings.
+Prefer JSX components over `html` tagged templates wherever possible. Use `html`
+only when building raw string fragments that will be injected into pre-existing
+HTML strings.
 
 ### 3c. `escapeHtml`
 
@@ -214,9 +226,11 @@ const safe = escapeHtml('<script>alert("xss")</script>')
 ```
 
 Escapes `&`, `<`, `>`, `"`, `'` to their HTML entity equivalents. Required for
-any dynamic string injected via `html` tagged templates or raw string
-concatenation. Hono JSX auto-escapes text nodes — `escapeHtml` is only needed
-outside JSX render paths.
+any dynamic string injected via `rawHtml` or raw string concatenation. The JSX
+runtime and the `html` tag auto-escape text/interpolations — `escapeHtml` is
+only needed outside those render paths. (For URL attribute values, use `safeUrl`
+from `@y-core/forge/http`, which neutralises `javascript:`-style payloads and is
+applied automatically to `href`/`src`/`action` in JSX output.)
 
 Test assertions for HTML output must match the encoded form (e.g. `&amp;`, `&lt;`)
 not the raw characters. See CLAUDE.md: "account for HTML-encoded entities in test
@@ -239,7 +253,7 @@ if (csrfKey) await verifyCsrf(c)
 
 // GOOD: fail closed
 const csrfKey = c.env.CSRF_SECRET
-if (!csrfKey) return c.text("Service Unavailable", 503)
+if (!csrfKey) return new Response("Service Unavailable", { status: 503 })
 await verifyCsrf(c, csrfKey)
 ```
 
@@ -279,29 +293,45 @@ email, expired token). They are not exceptional.
 
 Handle them explicitly:
 - Return `Result<T, E>` from service/utility functions.
-- Return `renderValidationErrors`, `renderError`, or `renderSuccess` from
-  Hono handlers.
+- Return a fragment via `fragmentResponse(renderValidationErrors(...) | renderError(...) | renderSuccess(...))`
+  from handlers.
 - Never `throw` for expected failures — it hides the error path from the type
   system and forces callers to use `try/catch`.
 
-### 5b. Unexpected Errors — Let Bubble or Return 500
+### 5b. Unexpected Errors — The Router Error Boundary
 
 Unexpected errors are programming mistakes: `null` dereferences, failed
 invariant assertions, type errors at runtime. They cannot be meaningfully
-recovered from at the call site.
+recovered from at the call site. The app does not need a per-route `try/catch`;
+the router installs an error boundary as its innermost global middleware.
 
-Let them propagate to the Hono top-level error handler, which must:
-1. Log the full error (including stack trace) server-side.
-2. Return a generic `500` or `503` message to the client.
-3. Never include `err.message` or `err.stack` in the client response.
+Two paths exist, with different header guarantees:
 
-```typescript
-// Top-level handler in worker.ts (set once, not per-route)
-app.onError((err, c) => {
-    console.error("unhandled error", err)
-    return c.text("Internal Server Error", 500)
-})
-```
+- **In-chain errors** — anything thrown by a route handler or route-level
+  middleware. The `errorBoundary` middleware catches the throw and produces the
+  error response, which then flows back out through the path-scoped guards
+  (including the consumer's security-headers middleware) and the outermost
+  `applyHeaders` flush. Error pages therefore carry the consumer's full CSP and
+  security headers.
+- **Out-of-chain errors** — anything thrown outside the middleware chain (router
+  internals). These never reach the consumer's security middleware, so the
+  handler emits a **baseline-hardened 500** that is self-contained:
+
+  | Header | Value |
+  |---|---|
+  | `X-Content-Type-Options` | `nosniff` |
+  | `Content-Security-Policy` | `default-src 'none'` |
+  | `Referrer-Policy` | `no-referrer` |
+
+  On the in-chain path, `applyPendingHeaders` set-overwrites these baseline
+  values with the consumer's policy.
+
+The boundary logs the failure via the app logger (`createLogger("app")`) and,
+in debug builds (the `isDebug` predicate passed to `createApp`), includes the
+escaped `err.message` in the page; otherwise it shows a generic notice. The
+client never receives a stack trace. Consumers may override the page entirely
+by passing `onError` to `createApp` (or to `definePage`/`defineAction` for a
+single route — see §5d).
 
 ### 5c. Infrastructure Errors — Log and Fail Closed
 
@@ -309,14 +339,18 @@ External service failures (KV store unavailable, email API down, third-party
 timeout) fall between expected and unexpected. The service call itself is
 expected to sometimes fail; the specific error is not actionable by the user.
 
-Pattern: catch, log with context, return `503` via `renderError`:
+Pattern: catch, log with context via the request logger, return `503` via
+`fragmentResponse(renderError(...))`:
 
 ```typescript
-try {
-    await emailService.send(msg)
-} catch (err) {
-    console.error("email: send failed", { error: String(err) })
-    return renderError(c, "Message could not be sent. Please try again later.", { status: 503 })
+import { fragmentResponse, renderError } from "@y-core/forge/http"
+import { requestLog } from "@y-core/forge/logging"
+
+const log = requestLog.get(c)
+const r = await result(emailService.send(msg))
+if (!r.ok) {
+    log.error("email: send failed", { error: r.error.message })
+    return fragmentResponse(renderError("Message could not be sent. Please try again later."), 503)
 }
 ```
 
@@ -324,17 +358,37 @@ Log enough context to diagnose the failure (service name, operation, sanitised
 input identifiers) but never log user-supplied content verbatim if it may
 contain PII.
 
+### 5d. `defineAction` and `definePage` Error Recovery
+
+`defineAction` (the parse → validate → handle pipeline) centralises action error
+handling so individual handlers stay thin:
+
+- An oversized request body surfaces a **413** fragment
+  (`fragmentResponse(renderError(...), 413)`); an otherwise unparseable body
+  yields **400**.
+- Validation failures return `renderValidationErrors(validation.errors)` unless
+  an `onValidationError` hook is provided.
+- A throw from the `handle` step is logged via `createLogger("action")` and
+  converted to a generic **500** fragment, unless an `onError` hook overrides it.
+
+`definePage` likewise accepts an `onError(error, c)` hook; if a `loader` or
+`view` throws and no hook is set, the error re-throws so the router error
+boundary (§5b) handles it. Use these hooks for per-route recovery instead of
+wrapping handlers in ad-hoc `try/catch`.
+
 ---
 
 ## 6. Error Handling Review Checklist
 
 Before merging any handler or service change, verify:
 
-- [ ] Expected failures use `Result` monad or fragment renderers — not thrown exceptions
-- [ ] Validation errors use `renderValidationErrors` with per-field `ValidationIssue[]`
-- [ ] Stack traces and raw `err.message` strings never reach the client
+- [ ] Expected failures use the `Result` type or fragment renderers — not thrown exceptions
+- [ ] Validation errors use `renderValidationErrors` with the `ValidationResult.errors` list
+- [ ] Fragments are returned via `fragmentResponse(render*(...), status)` (status on the response, not the renderer)
+- [ ] Stack traces and raw `err.message` strings never reach the client (the error boundary gates this)
+- [ ] Unexpected throws propagate to the router error boundary or a `definePage`/`defineAction` `onError` hook — no ad-hoc per-route `try/catch`
 - [ ] Security-critical paths are fail-closed (missing env var → `503`, not silent skip)
-- [ ] Infrastructure errors are logged with context before returning `503`
-- [ ] `escapeHtml` is applied to every dynamic value interpolated via `html` tagged templates
+- [ ] Infrastructure errors are logged with context (`requestLog.get(c)`) before returning `503`
+- [ ] `escapeHtml` is applied to every dynamic value interpolated via `rawHtml` or raw string concatenation; URL attributes use `safeUrl`
 - [ ] Test assertions for HTML output match encoded entities (`&amp;`, `&lt;`, etc.)
 - [ ] `required: false` is only used for non-security hardening middleware (rate limiting)

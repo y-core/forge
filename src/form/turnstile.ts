@@ -5,6 +5,14 @@ const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 const logger = createLogger("turnstile");
 
+/**
+ * Verifies a Cloudflare Turnstile token against the siteverify API.
+ *
+ * @remarks
+ * Always pass `options.expectedHostname` in production. Without it the token's origin hostname is
+ * not validated, so a token minted on an attacker-controlled site can be replayed against this
+ * one (cross-site token replay). A runtime warning is logged when it is omitted. @public
+ */
 export async function verifyTurnstile(
   formData: ReadonlyFormData,
   secretKey: string,
@@ -27,7 +35,9 @@ export async function verifyTurnstile(
   if (remoteIp) body.remoteip = remoteIp;
 
   const controller = new AbortController();
-  const timeoutMs = options?.timeoutMs ?? 5_000;
+  // Clamp to ≥1ms so a caller passing 0 or a negative value cannot abort the request before the
+  // fetch is even dispatched (which would surface as a spurious "timeout").
+  const timeoutMs = Math.max(1, options?.timeoutMs ?? 5_000);
   const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
   let res: Response;

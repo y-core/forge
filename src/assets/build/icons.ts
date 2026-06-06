@@ -7,29 +7,15 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
   const src = readFileSync(config.src, "utf-8");
   mkdirSync(config.outDir, { recursive: true });
 
-  const darkRule = config.darkColor
-    ? `@media(prefers-color-scheme:dark){path{fill:${config.darkColor}}}`
-    : "";
-  const faviconSvg = src.replace(
-    "<path",
-    `<style>path{fill:${config.lightColor}}${darkRule}</style><path`,
-  );
+  const darkRule = config.darkColor ? `@media(prefers-color-scheme:dark){path{fill:${config.darkColor}}}` : "";
+  const faviconSvg = src.replace("<path", `<style>path{fill:${config.lightColor}}${darkRule}</style><path`);
 
   // sharp doesn't resolve currentColor — replace with the explicit light fill
   const rasterSvg = new TextEncoder().encode(src.replace("currentColor", config.lightColor));
 
-  const sizes = [
-    ...new Set(
-      config.outputs.flatMap((o) => (o.kind === "png" ? [o.size] : o.kind === "ico" ? o.sizes : [])),
-    ),
-  ];
+  const sizes = [...new Set(config.outputs.flatMap((o) => (o.kind === "png" ? [o.size] : o.kind === "ico" ? o.sizes : [])))];
   const rasters = new Map(
-    await Promise.all(
-      sizes.map(async (s) => [
-        s,
-        await sharp(rasterSvg, { density: 300 }).resize(s, s).png().toBuffer(),
-      ] as const),
-    ),
+    await Promise.all(sizes.map(async (s) => [s, await sharp(rasterSvg, { density: 300 }).resize(s, s).png().toBuffer()] as const)),
   );
   const getPixels = (size: number): Uint8Array => {
     const buf = rasters.get(size);
@@ -38,9 +24,7 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
   };
 
   // Collect png entries opted-in to the web app manifest
-  const manifestPngs = config.outputs.filter(
-    (o): o is Extract<IconOutput, { kind: "png" }> => o.kind === "png" && !!o.manifest,
-  );
+  const manifestPngs = config.outputs.filter((o): o is Extract<IconOutput, { kind: "png" }> => o.kind === "png" && !!o.manifest);
 
   for (const o of config.outputs) {
     const dest = `${config.outDir}/${o.file}`;
@@ -62,10 +46,7 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
   }
 }
 
-function renderManifest(
-  config: IconsConfig,
-  pngs: Array<{ file: string; size: number }>,
-): string {
+function renderManifest(config: IconsConfig, pngs: Array<{ file: string; size: number }>): string {
   return JSON.stringify(
     {
       name: config.app?.name ?? "",
@@ -73,11 +54,7 @@ function renderManifest(
       theme_color: config.lightColor,
       background_color: config.app?.backgroundColor ?? "",
       display: "standalone",
-      icons: pngs.map(({ file, size }) => ({
-        src: `/${file}`,
-        sizes: `${size}x${size}`,
-        type: "image/png",
-      })),
+      icons: pngs.map(({ file, size }) => ({ src: `/${file}`, sizes: `${size}x${size}`, type: "image/png" })),
     },
     null,
     2,
@@ -98,22 +75,25 @@ function buildIco(sizes: number[], pngs: Uint8Array[]): Uint8Array {
   const view = new DataView(out.buffer);
 
   // ICONDIR
-  view.setUint16(0, 0, true);     // reserved
-  view.setUint16(2, 1, true);     // type = 1 (ICO)
+  view.setUint16(0, 0, true); // reserved
+  view.setUint16(2, 1, true); // type = 1 (ICO)
   view.setUint16(4, count, true); // count
 
   // ICONDIRENTRY × count
   let pos = 6;
   for (let i = 0; i < count; i++) {
-    const sz = sizes[i] < 256 ? sizes[i] : 0;
-    out[pos] = sz;      // width
-    out[pos + 1] = sz;  // height
-    out[pos + 2] = 0;   // color count
-    out[pos + 3] = 0;   // reserved
-    view.setUint16(pos + 4, 1, true);             // planes
-    view.setUint16(pos + 6, 32, true);            // bit count
-    view.setUint32(pos + 8, pngs[i].length, true); // size
-    view.setUint32(pos + 12, offsets[i], true);   // offset
+    const size = sizes[i] ?? 0;
+    const png = pngs[i];
+    const offset = offsets[i] ?? 0;
+    const sz = size < 256 ? size : 0;
+    out[pos] = sz; // width
+    out[pos + 1] = sz; // height
+    out[pos + 2] = 0; // color count
+    out[pos + 3] = 0; // reserved
+    view.setUint16(pos + 4, 1, true); // planes
+    view.setUint16(pos + 6, 32, true); // bit count
+    view.setUint32(pos + 8, png ? png.length : 0, true); // size
+    view.setUint32(pos + 12, offset, true); // offset
     pos += 16;
   }
 

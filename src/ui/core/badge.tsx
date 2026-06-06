@@ -1,4 +1,4 @@
-import type { FC, PropsWithChildren } from "hono/jsx";
+import type { FC, PropsWithChildren } from "../../jsx/types";
 import { cn } from "./utils/cn";
 
 const variantClasses = {
@@ -15,20 +15,11 @@ interface BadgeProps {
   class?: string;
 }
 
-export const Badge: FC<PropsWithChildren<BadgeProps>> = ({
-  variant = "default",
-  class: cls,
-  children,
-}) => (
+export const Badge: FC<PropsWithChildren<BadgeProps>> = ({ variant = "default", class: cls, children }) => (
   <span
-    data-slot="badge"
+    data-slot='badge'
     data-variant={variant}
-    class={cn(
-      "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
-      variantClasses[variant],
-      cls,
-    )}
-  >
+    class={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors", variantClasses[variant], cls)}>
     {children}
   </span>
 );

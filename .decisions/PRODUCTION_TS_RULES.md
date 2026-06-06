@@ -38,9 +38,10 @@ let currentUser: User | null = null // module-level mutable — never do this
 
 GOOD:
 ```typescript
-// Inject state as factory parameters or via Hono context variables
+// Inject state as factory parameters or read it from the request context
+import type { AppContext } from "@y-core/forge/context"
 export function createService(config: ServiceConfig) {
-  return { handle: (c: Context) => { /* use c.env, not module vars */ } }
+  return { handle: (c: AppContext) => { /* use c.env, not module vars */ } }
 }
 ```
 
@@ -49,11 +50,12 @@ Use factory functions to create stateful behavior. The factory captures config
 (immutable after creation), not request state.
 
 ```typescript
-export function makeSecurityHeaders(options: SecurityHeadersOptions): MiddlewareHandler {
+import type { Middleware } from "@y-core/forge/router"
+export function makeSecurityHeaders(options: SecurityHeadersOptions): Middleware {
   // options captured at middleware creation time — immutable
   return async (c, next) => {
-    // request-scoped work uses c (Hono context)
-    await next()
+    // request-scoped work uses c (the RequestContext); return the downstream Response
+    return next()
   }
 }
 ```
@@ -72,14 +74,11 @@ For operations that can fail with expected errors, use the Result monad from
 @y-core/forge/result rather than throwing exceptions:
 
 ```typescript
-import { result, toError, type Result } from "@y-core/forge/result"
+import { result, type Result } from "@y-core/forge/result"
 
+// result() wraps a throwing function, returning { ok: true; data } | { ok: false; error }.
 export function parseUrl(url: string): Result<URL, Error> {
-  try {
-    return result(new URL(url))
-  } catch {
-    return toError(new Error(`Invalid URL: ${url}`))
-  }
+  return result(() => new URL(url))
 }
 ```
 
@@ -88,7 +87,8 @@ Use ValidationResult (from @y-core/forge/result) for validation operations:
 
 ```typescript
 import type { ValidationResult } from "@y-core/forge/result"
-// ValidationResult = { ok: true; value: T } | { ok: false; issues: ValidationIssue[] }
+// ValidationResult<T> = { ok: true; data: T } | { ok: false; errors: string[] }
+// Also re-exported from @y-core/forge/validation alongside the `v` namespace.
 ```
 
 ### 2c. When to Throw vs Return Result
@@ -104,8 +104,14 @@ business logic. The boundary is the handler or the config loader.
 
 ```typescript
 import { v } from "@y-core/forge/validation"
+import { fragmentResponse } from "@y-core/forge/http"
+import { renderValidationErrors } from "@y-core/forge/http"
+
 const result = v.safeParse(MySchema, rawInput, { abortEarly: true })
-if (!result.success) return renderValidationErrors(c, result.issues)
+if (!result.success) {
+  const messages = result.issues.map((i) => i.message)
+  return fragmentResponse(renderValidationErrors(messages))
+}
 ```
 
 ### 3b. Valibot v Facade
@@ -166,8 +172,10 @@ const fakeKV: KVNamespace = {
 Every exported function, type, and constant needs at minimum a one-line TSDoc:
 
 ```typescript
-/** Creates a typed Hono application with config validation and debug mode. */
-export function createApp<E extends AppEnv>(options: AppOptions<E>): App<E>
+/** Creates a Forge app with a structured error boundary and config validation. */
+export function createApp<Bindings extends object = Record<string, unknown>>(
+  options?: AppOptions<Bindings>,
+): Forge<Bindings>
 ```
 
 ### 5b. @internal for Non-Public Symbols
@@ -183,13 +191,16 @@ Add @example when the usage pattern is non-obvious:
 
 ```typescript
 /**
- * Applies all routes from a RouteConfig to a Hono app.
+ * Registers the static-asset catch-all handler onto a Forge app.
  * @example
  * ```typescript
- * applyRoutes(app, routes)
+ * applyAssets(app, { notFoundView })
  * ```
  */
-export function applyRoutes<E extends Env>(app: App<E>, routes: RouteConfig<E>): void
+export function applyAssets<Bindings extends HasAssets = HasAssets>(
+  app: Forge<Bindings>,
+  options: AssetOptions<Bindings>,
+): void
 ```
 
 ## 6. Declarative Over Imperative Rule

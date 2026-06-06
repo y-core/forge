@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Alert } from "./alert";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Alert", () => {
@@ -20,14 +17,14 @@ describe("Alert", () => {
   });
 
   it("renders the destructive variant classes", async () => {
-    const out = await render(<Alert variant="destructive">Error</Alert>);
+    const out = await render(<Alert variant='destructive'>Error</Alert>);
     expect(out).toContain("border-red-200");
     expect(out).toContain("bg-red-50");
     expect(out).toContain("text-red-900");
   });
 
   it("renders the success variant classes", async () => {
-    const out = await render(<Alert variant="success">Done</Alert>);
+    const out = await render(<Alert variant='success'>Done</Alert>);
     expect(out).toContain("border-emerald-200");
     expect(out).toContain("bg-emerald-50");
     expect(out).toContain("text-emerald-900");
@@ -39,7 +36,7 @@ describe("Alert", () => {
   });
 
   it("merges a custom class with the base classes", async () => {
-    const out = await render(<Alert class="my-custom">Note</Alert>);
+    const out = await render(<Alert class='my-custom'>Note</Alert>);
     expect(out).toContain("my-custom");
     expect(out).toContain("rounded-2xl");
   });
@@ -57,7 +54,7 @@ describe("Alert", () => {
   });
 
   it("renders the warning variant classes", async () => {
-    const out = await render(<Alert variant="warning">Warning</Alert>);
+    const out = await render(<Alert variant='warning'>Warning</Alert>);
     expect(out).toContain('data-variant="warning"');
     expect(out).toContain("bg-yellow-50");
     expect(out).toContain("text-yellow-900");
@@ -65,7 +62,7 @@ describe("Alert", () => {
   });
 
   it("renders the info variant classes", async () => {
-    const out = await render(<Alert variant="info">Info</Alert>);
+    const out = await render(<Alert variant='info'>Info</Alert>);
     expect(out).toContain('data-variant="info"');
     expect(out).toContain("bg-blue-50");
     expect(out).toContain("text-blue-900");

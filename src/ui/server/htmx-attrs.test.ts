@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { hxAttrs } from "./htmx-attrs";
+import { type HxAttrsProps, hxAttrs } from "./htmx-attrs";
 
 describe("hxAttrs", () => {
   it("returns empty object for empty props", () => {
@@ -12,7 +12,8 @@ describe("hxAttrs", () => {
   });
 
   it("omits undefined scalars", () => {
-    expect(hxAttrs({ get: undefined, post: undefined })).toEqual({});
+    const undefinedProps = { get: undefined, post: undefined } as unknown as HxAttrsProps;
+    expect(hxAttrs(undefinedProps)).toEqual({});
   });
 
   it("maps get → hx-get", () => {
@@ -64,9 +65,7 @@ describe("hxAttrs", () => {
   });
 
   it("values → hx-vals as JSON", () => {
-    expect(hxAttrs({ values: { key: "val" } })).toEqual({
-      "hx-vals": '{"key":"val"}',
-    });
+    expect(hxAttrs({ values: { key: "val" } })).toEqual({ "hx-vals": '{"key":"val"}' });
   });
 
   it("empty values map → omitted", () => {
@@ -74,9 +73,7 @@ describe("hxAttrs", () => {
   });
 
   it("headers → hx-headers as JSON", () => {
-    expect(hxAttrs({ headers: { "X-Custom": "test" } })).toEqual({
-      "hx-headers": '{"X-Custom":"test"}',
-    });
+    expect(hxAttrs({ headers: { "X-Custom": "test" } })).toEqual({ "hx-headers": '{"X-Custom":"test"}' });
   });
 
   it("empty headers map → omitted", () => {
@@ -84,17 +81,7 @@ describe("hxAttrs", () => {
   });
 
   it("maps multiple scalar fields together", () => {
-    const result = hxAttrs({
-      get: "/a",
-      target: "#b",
-      swap: "innerHTML",
-      trigger: "click",
-    });
-    expect(result).toEqual({
-      "hx-get": "/a",
-      "hx-target": "#b",
-      "hx-swap": "innerHTML",
-      "hx-trigger": "click",
-    });
+    const result = hxAttrs({ get: "/a", target: "#b", swap: "innerHTML", trigger: "click" });
+    expect(result).toEqual({ "hx-get": "/a", "hx-target": "#b", "hx-swap": "innerHTML", "hx-trigger": "click" });
   });
 });

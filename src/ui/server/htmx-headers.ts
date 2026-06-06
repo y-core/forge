@@ -1,4 +1,5 @@
-import type { Context } from "hono";
+import type { RequestContext } from "@remix-run/fetch-router";
+import { setPendingHeader } from "../../context/pending-headers";
 import { isHxRequest } from "../../security/hx-request";
 
 export interface HxRequest {
@@ -10,73 +11,89 @@ export interface HxRequest {
   currentUrl: string;
 }
 
-export function readHxRequest(c: Context): HxRequest {
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant for header reading
+export function readHxRequest(c: RequestContext<any, any>): HxRequest {
   return {
     enabled: isHxRequest(c),
-    boosted: c.req.header("HX-Boosted") === "true",
-    trigger: c.req.header("HX-Trigger") ?? "",
-    target: c.req.header("HX-Target") ?? "",
-    triggerName: c.req.header("HX-Trigger-Name") ?? "",
-    currentUrl: c.req.header("HX-Current-URL") ?? "",
+    boosted: c.request.headers.get("HX-Boosted") === "true",
+    trigger: c.request.headers.get("HX-Trigger") ?? "",
+    target: c.request.headers.get("HX-Target") ?? "",
+    triggerName: c.request.headers.get("HX-Trigger-Name") ?? "",
+    currentUrl: c.request.headers.get("HX-Current-URL") ?? "",
   };
 }
 
-export function isPartial(c: Context): boolean {
-  return isHxRequest(c) && c.req.header("HX-Boosted") !== "true";
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function isPartial(c: RequestContext<any, any>): boolean {
+  return isHxRequest(c) && c.request.headers.get("HX-Boosted") !== "true";
 }
 
-export function isBoosted(c: Context): boolean {
-  return c.req.header("HX-Boosted") === "true";
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function isBoosted(c: RequestContext<any, any>): boolean {
+  return c.request.headers.get("HX-Boosted") === "true";
 }
 
-export function hxTrigger(c: Context): string {
-  return c.req.header("HX-Trigger") ?? "";
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function hxTrigger(c: RequestContext<any, any>): string {
+  return c.request.headers.get("HX-Trigger") ?? "";
 }
 
-export function hxTarget(c: Context): string {
-  return c.req.header("HX-Target") ?? "";
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function hxTarget(c: RequestContext<any, any>): string {
+  return c.request.headers.get("HX-Target") ?? "";
 }
 
-export function hxTriggerName(c: Context): string {
-  return c.req.header("HX-Trigger-Name") ?? "";
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function hxTriggerName(c: RequestContext<any, any>): string {
+  return c.request.headers.get("HX-Trigger-Name") ?? "";
 }
 
-export function hxCurrentUrl(c: Context): string {
-  return c.req.header("HX-Current-URL") ?? "";
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function hxCurrentUrl(c: RequestContext<any, any>): string {
+  return c.request.headers.get("HX-Current-URL") ?? "";
 }
 
-export function setRedirect(c: Context, url: string): void {
-  c.header("HX-Redirect", url);
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setRedirect(c: RequestContext<any, any>, url: string): void {
+  setPendingHeader(c, "HX-Redirect", url);
 }
 
-export function setRefresh(c: Context): void {
-  c.header("HX-Refresh", "true");
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setRefresh(c: RequestContext<any, any>): void {
+  setPendingHeader(c, "HX-Refresh", "true");
 }
 
-export function setPushUrl(c: Context, url: string): void {
-  c.header("HX-Push-Url", url);
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setPushUrl(c: RequestContext<any, any>, url: string): void {
+  setPendingHeader(c, "HX-Push-Url", url);
 }
 
-export function setReplaceUrl(c: Context, url: string): void {
-  c.header("HX-Replace-Url", url);
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setReplaceUrl(c: RequestContext<any, any>, url: string): void {
+  setPendingHeader(c, "HX-Replace-Url", url);
 }
 
-export function setTrigger(c: Context, value: string): void {
-  c.header("HX-Trigger", value);
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setTrigger(c: RequestContext<any, any>, value: string): void {
+  setPendingHeader(c, "HX-Trigger", value);
 }
 
-export function setTriggerAfterSettle(c: Context, value: string): void {
-  c.header("HX-Trigger-After-Settle", value);
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setTriggerAfterSettle(c: RequestContext<any, any>, value: string): void {
+  setPendingHeader(c, "HX-Trigger-After-Settle", value);
 }
 
-export function setTriggerAfterSwap(c: Context, value: string): void {
-  c.header("HX-Trigger-After-Swap", value);
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setTriggerAfterSwap(c: RequestContext<any, any>, value: string): void {
+  setPendingHeader(c, "HX-Trigger-After-Swap", value);
 }
 
-export function setRetarget(c: Context, selector: string): void {
-  c.header("HX-Retarget", selector);
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setRetarget(c: RequestContext<any, any>, selector: string): void {
+  setPendingHeader(c, "HX-Retarget", selector);
 }
 
-export function setReswap(c: Context, strategy: string): void {
-  c.header("HX-Reswap", strategy);
+// biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+export function setReswap(c: RequestContext<any, any>, strategy: string): void {
+  setPendingHeader(c, "HX-Reswap", strategy);
 }

@@ -47,11 +47,7 @@ describe("readFields", () => {
 
     const result = readFields(fd, ["name", "email", "phone"]);
 
-    expect(result).toEqual({
-      name: "Alice",
-      email: "alice@example.com",
-      phone: "+27 11 000 0000",
-    });
+    expect(result).toEqual({ name: "Alice", email: "alice@example.com", phone: "+27 11 000 0000" });
   });
 
   it("returns empty strings for missing fields", () => {

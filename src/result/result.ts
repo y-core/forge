@@ -3,14 +3,10 @@
  * Use `result()` to wrap synchronous or async operations without try/catch at every call site.
  * @public
  */
-export type Result<T, E = Error> =
-  | { ok: true; data: T }
-  | { ok: false; error: E };
+export type Result<T, E = Error> = { ok: true; data: T } | { ok: false; error: E };
 
 /** Validation result — success carries parsed data, failure carries an array of error messages. @public */
-export type ValidationResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; errors: string[] };
+export type ValidationResult<T> = { ok: true; data: T } | { ok: false; errors: string[] };
 
 /** Converts any thrown value to an `Error` instance; safe to use in `catch (err)` blocks where `err` is `unknown`. @public */
 export function toError(thrown: unknown): Error {
@@ -21,9 +17,7 @@ function result<E = Error>(fn: () => never): Result<never, E>;
 function result<T, E = Error>(fn: () => Promise<T>): Promise<Result<T, E>>;
 function result<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
 function result<T, E = Error>(fn: () => T): Result<T, E>;
-function result<T, E = Error>(
-  arg: (() => T | Promise<T>) | Promise<T>,
-): Result<T, E> | Promise<Result<T, E>> {
+function result<T, E = Error>(arg: (() => T | Promise<T>) | Promise<T>): Result<T, E> | Promise<Result<T, E>> {
   if (typeof arg === "function") {
     let val: T | Promise<T>;
     try {

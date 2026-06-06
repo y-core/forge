@@ -21,11 +21,7 @@ describe("parseArgs()", () => {
     });
 
     it("parses multiple boolean flags", () => {
-      const { flags } = parseArgs(["--foo", "--bar"], {
-        foo: { type: "boolean" },
-        bar: { type: "boolean" },
-        baz: { type: "boolean" },
-      });
+      const { flags } = parseArgs(["--foo", "--bar"], { foo: { type: "boolean" }, bar: { type: "boolean" }, baz: { type: "boolean" } });
       expect(flags.foo).toBe(true);
       expect(flags.bar).toBe(true);
       expect(flags.baz).toBe(false);
@@ -80,9 +76,7 @@ describe("parseArgs()", () => {
     });
 
     it("throws missing-value when next token looks like a flag", () => {
-      expect(() =>
-        parseArgs(["--output", "--other"], { output: { type: "string" } }),
-      ).toThrow(CliError);
+      expect(() => parseArgs(["--output", "--other"], { output: { type: "string" } })).toThrow(CliError);
     });
   });
 
@@ -93,9 +87,7 @@ describe("parseArgs()", () => {
     });
 
     it("treats everything after -- as positionals", () => {
-      const { args, flags } = parseArgs(["--verbose", "--", "--not-a-flag", "arg"], {
-        verbose: { type: "boolean" },
-      });
+      const { args, flags } = parseArgs(["--verbose", "--", "--not-a-flag", "arg"], { verbose: { type: "boolean" } });
       expect(flags.verbose).toBe(true);
       expect(args).toEqual(["--not-a-flag", "arg"]);
     });
@@ -127,23 +119,14 @@ describe("parseArgs()", () => {
 
 describe("collectFlags()", () => {
   it("returns all own flags for a root command", () => {
-    const cmd = createCommand({
-      name: "root",
-      flags: { verbose: { type: "boolean" }, output: { type: "string" } },
-    });
+    const cmd = createCommand({ name: "root", flags: { verbose: { type: "boolean" }, output: { type: "string" } } });
     const flags = collectFlags(cmd);
     expect(flags).toHaveProperty("verbose");
     expect(flags).toHaveProperty("output");
   });
 
   it("includes persistent ancestor flags for child", () => {
-    const parent = createCommand({
-      name: "root",
-      flags: {
-        debug: { type: "boolean", persistent: true },
-        internal: { type: "boolean" },
-      },
-    });
+    const parent = createCommand({ name: "root", flags: { debug: { type: "boolean", persistent: true }, internal: { type: "boolean" } } });
     const child = createCommand({ name: "sub", flags: { verbose: { type: "boolean" } } });
     addCommand(parent, child);
 
@@ -154,10 +137,7 @@ describe("collectFlags()", () => {
   });
 
   it("excludes non-persistent ancestor flags", () => {
-    const parent = createCommand({
-      name: "root",
-      flags: { secret: { type: "string" } },
-    });
+    const parent = createCommand({ name: "root", flags: { secret: { type: "string" } } });
     const child = createCommand({ name: "sub" });
     addCommand(parent, child);
 
@@ -166,14 +146,8 @@ describe("collectFlags()", () => {
   });
 
   it("child flag overrides ancestor flag of same name", () => {
-    const parent = createCommand({
-      name: "root",
-      flags: { format: { type: "string", persistent: true, default: "text" } },
-    });
-    const child = createCommand({
-      name: "sub",
-      flags: { format: { type: "string", default: "json" } },
-    });
+    const parent = createCommand({ name: "root", flags: { format: { type: "string", persistent: true, default: "text" } } });
+    const child = createCommand({ name: "sub", flags: { format: { type: "string", default: "json" } } });
     addCommand(parent, child);
 
     const flags = collectFlags(child);
@@ -181,10 +155,7 @@ describe("collectFlags()", () => {
   });
 
   it("propagates persistent flags through multiple levels", () => {
-    const root = createCommand({
-      name: "root",
-      flags: { debug: { type: "boolean", persistent: true } },
-    });
+    const root = createCommand({ name: "root", flags: { debug: { type: "boolean", persistent: true } } });
     const mid = createCommand({ name: "mid" });
     const leaf = createCommand({ name: "leaf" });
     addCommand(root, mid);

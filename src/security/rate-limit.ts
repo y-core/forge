@@ -1,24 +1,14 @@
-import type { Context, Env, MiddlewareHandler } from "hono";
+import type { Middleware } from "@remix-run/fetch-router";
+import type { AppContext } from "../context/types";
+import { getAppContext } from "../context/types";
 import { createLogger } from "../logging/logger";
-
-export interface RateLimitBinding {
-  limit(options: { key: string }): Promise<{ success: boolean }>;
-}
-
-export interface RateLimitOptions<E extends Env = Env> {
-  limiter: (c: Context<E>) => RateLimitBinding | undefined;
-  key?: (c: Context<E>) => string;
-  onLimit?: (c: Context<E>) => Response | Promise<Response>;
-  /** When true (default), returns 503 if the binding is absent. Set false to warn-and-skip instead. */
-  required?: boolean;
-}
+import type { RateLimitBinding, RateLimitOptions } from "./types";
 
 const DEFAULT_MESSAGE = "Too many requests. Please try again later.";
 
-function defaultKey(c: Context): string {
-  const ip = c.req.header("CF-Connecting-IP");
+function defaultKey(c: AppContext<object>): string {
+  const ip = c.request.headers.get("CF-Connecting-IP");
   if (!ip) {
-    // Fail-closed: off-Cloudflare deployments must provide an explicit `key` option.
     throw new Error(
       "rateLimit: CF-Connecting-IP header is absent and no custom key function was provided. " +
         "Pass a `key` option for non-Cloudflare deployments.",
@@ -31,15 +21,24 @@ function defaultOnLimit(): Response {
   return new Response(DEFAULT_MESSAGE, { status: 429 });
 }
 
-/** Middleware that enforces Cloudflare rate-limit bindings; returns 503 when binding is absent unless `required: false`. @public */
-export function rateLimit<E extends Env = Env>(options: RateLimitOptions<E>): MiddlewareHandler<E> {
+/**
+ * Middleware that enforces Cloudflare rate-limit bindings; returns 503 when binding is absent
+ * unless `required: false`.
+ *
+ * @remarks
+ * The default key is the `CF-Connecting-IP` header, which is only trustworthy when the Worker runs
+ * behind Cloudflare — on other platforms (or a directly-reachable origin) a client can forge it to
+ * evade or poison the limit. For non-Cloudflare deployments always supply a custom `key`. @public
+ */
+export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimitOptions<Bindings>): Middleware {
   const logger = createLogger("rate-limit");
   const limiter = options.limiter;
-  const key: (c: Context<E>) => string = options.key ?? (defaultKey as (c: Context<E>) => string);
-  const onLimit: (c: Context<E>) => Response | Promise<Response> = options.onLimit ?? defaultOnLimit;
+  const key: (c: AppContext<Bindings>) => string = options.key ?? (defaultKey as (c: AppContext<Bindings>) => string);
+  const onLimit: (c: AppContext<Bindings>) => Response | Promise<Response> = options.onLimit ?? defaultOnLimit;
   const required = options.required !== false;
 
-  return async (c, next) => {
+  return async (context, next) => {
+    const c = getAppContext<Bindings>(context);
     const binding = limiter(c);
     if (!binding) {
       if (!required) {

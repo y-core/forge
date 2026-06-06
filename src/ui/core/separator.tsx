@@ -1,4 +1,4 @@
-import type { FC } from "hono/jsx";
+import type { FC } from "../../jsx/types";
 import { cn } from "./utils/cn";
 
 interface SeparatorProps {
@@ -8,12 +8,8 @@ interface SeparatorProps {
 
 export const Separator: FC<SeparatorProps> = ({ orientation = "horizontal", class: cls }) => (
   <hr
-    data-slot="separator"
+    data-slot='separator'
     aria-orientation={orientation}
-    class={cn(
-      orientation === "horizontal" ? "h-px w-full" : "h-full w-px",
-      "border-0 bg-border",
-      cls,
-    )}
+    class={cn(orientation === "horizontal" ? "h-px w-full" : "h-full w-px", "border-0 bg-border", cls)}
   />
 );

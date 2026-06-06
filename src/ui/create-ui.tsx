@@ -1,5 +1,5 @@
 /** @jsxImportSource @y-core/forge */
-import type { FC, PropsWithChildren } from "hono/jsx";
+import type { FC, PropsWithChildren } from "../jsx/types";
 import type { ForgeIcon } from "./core/icon";
 import { Select as RawSelect } from "./core/select";
 import { Spinner as RawSpinner } from "./core/spinner";
@@ -24,10 +24,7 @@ export function createUI(icon: ForgeIcon<UIIconName>) {
   const Spinner: FC<SpinnerProps> = (props) => <RawSpinner {...props} icon={icon} />;
 
   const SelectRoot: FC<PropsWithChildren<SelectProps>> = (props) => <RawSelect {...props} icon={icon} />;
-  const Select = Object.assign(SelectRoot, {
-    Option: RawSelect.Option,
-    OptGroup: RawSelect.OptGroup,
-  });
+  const Select = Object.assign(SelectRoot, { Option: RawSelect.Option, OptGroup: RawSelect.OptGroup });
 
   const ThemeToggle: FC<ThemeToggleProps> = (props) => <RawThemeToggle {...props} icon={icon} />;
 

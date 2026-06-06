@@ -28,13 +28,17 @@ describe("result — sync success", () => {
 describe("result — sync error", () => {
   it("returns { ok: false, error } for a thrown Error", () => {
     const err = new Error("boom");
-    const r = result(() => { throw err; });
+    const r = result(() => {
+      throw err;
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe(err);
   });
 
   it("returns { ok: false, error } for a thrown string", () => {
-    const r = result(() => { throw "oops"; });
+    const r = result(() => {
+      throw "oops";
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBeInstanceOf(Error);
@@ -43,7 +47,9 @@ describe("result — sync error", () => {
   });
 
   it("returns { ok: false, error } for thrown undefined", () => {
-    const r = result(() => { throw undefined; });
+    const r = result(() => {
+      throw undefined;
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBeInstanceOf(Error);
@@ -52,7 +58,9 @@ describe("result — sync error", () => {
   });
 
   it("returns { ok: false, error } for thrown null", () => {
-    const r = result(() => { throw null; });
+    const r = result(() => {
+      throw null;
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBeInstanceOf(Error);
@@ -82,7 +90,9 @@ describe("result — async error", () => {
   });
 
   it("resolves to { ok: false, error } for an async throw", async () => {
-    const r = await result(async () => { throw new Error("async throw"); });
+    const r = await result(async () => {
+      throw new Error("async throw");
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBeInstanceOf(Error);
@@ -107,7 +117,9 @@ describe("result — bare promise", () => {
 
 describe("result — error coercion", () => {
   it("wraps thrown number with new Error(String(x))", () => {
-    const r = result(() => { throw 404; });
+    const r = result(() => {
+      throw 404;
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBeInstanceOf(Error);
@@ -116,7 +128,9 @@ describe("result — error coercion", () => {
   });
 
   it("wraps thrown object with new Error(String(x))", () => {
-    const r = result(() => { throw { code: 1 }; });
+    const r = result(() => {
+      throw { code: 1 };
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error).toBeInstanceOf(Error);
@@ -126,7 +140,9 @@ describe("result — error coercion", () => {
 
   it("preserves Error instances without wrapping", () => {
     const original = new TypeError("type err");
-    const r = result(() => { throw original; });
+    const r = result(() => {
+      throw original;
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe(original);
   });

@@ -2,7 +2,7 @@
   "name": "@y-core/forge",
   "version": "0.0.21",
   "type": "module",
-  "description": "Server-rendered web utilities for Hono + Cloudflare Workers",
+  "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "lint": "biome check src/",
@@ -18,15 +18,18 @@
   ],
   "dependencies": {
     "@remix-run/cookie": "^0.5.4",
+    "@remix-run/fetch-router": "^0.20.0",
     "@remix-run/headers": "^0.21.1",
+    "@remix-run/html-template": "^0.3.1",
+    "@remix-run/response": "^0.3.6",
+    "@remix-run/route-pattern": "^0.22.1",
     "@remix-run/session": "^0.4.2",
-    "hono": "^4.12.23",
     "htmx.org": "^2.0.10",
     "valibot": "^1.4.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
-    "@typescript/native-preview": "^7.0.0-dev.20260602.1",
+    "@typescript/native-preview": "^7.0.0-dev.20260605.1",
     "esbuild": "^0.28.0"
   },
   "peerDependencies": {
@@ -85,6 +88,14 @@
     "./http": {
       "types": "./src/http/mod.ts",
       "import": "./src/http/mod.ts"
+    },
+    "./context": {
+      "types": "./src/context/mod.ts",
+      "import": "./src/context/mod.ts"
+    },
+    "./render": {
+      "types": "./src/jsx/render-to-string.ts",
+      "import": "./src/jsx/render-to-string.ts"
     },
     "./logging": {
       "types": "./src/logging/mod.ts",
@@ -170,6 +181,7 @@
     "templates/",
     "README.md",
     "!**/*.test.ts",
-    "!**/*.test.tsx"
+    "!**/*.test.tsx",
+    "!**/route-test-helper.ts"
   ]
 }

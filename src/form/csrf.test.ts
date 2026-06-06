@@ -1,21 +1,18 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import type { CsrfContext } from "./csrf";
-import { createCsrfToken, csrfProtection, importCsrfKey, importCsrfKeyRing, mintCsrf, verifyCsrfToken } from "./csrf";
+import { Forge } from "../app/forge-app";
+import { mapHandler } from "../app/route-test-helper";
+import type { AppContext } from "../context/types";
+import { createCsrfToken, csrfMinterCtx, csrfProtection, csrfTokenCtx, importCsrfKey, importCsrfKeyRing, mintCsrf, verifyCsrfToken } from "./csrf";
 import { parseFormData } from "./parse-form-data";
 import type { CsrfKeyRing } from "./types";
 
 describe("importCsrfKey()", () => {
   it("rejects an odd-length hex string", async () => {
-    await expect(importCsrfKey("a".repeat(63))).rejects.toThrow(
-      "CSRF secret must have an even number of hex characters",
-    );
+    await expect(importCsrfKey("a".repeat(63))).rejects.toThrow("CSRF secret must have an even number of hex characters");
   });
 
   it("rejects non-hex characters", async () => {
-    await expect(importCsrfKey("zz".repeat(16))).rejects.toThrow(
-      "CSRF secret must contain only hexadecimal characters (0-9, a-f, A-F)",
-    );
+    await expect(importCsrfKey("zz".repeat(16))).rejects.toThrow("CSRF secret must contain only hexadecimal characters (0-9, a-f, A-F)");
   });
 
   it("accepts valid lowercase hex", async () => {
@@ -39,24 +36,48 @@ describe("mintCsrf()", () => {
     key = await importCsrfKey(HEX_SECRET);
   });
 
-  it("returns '' when no path given", async () => {
-    const app = new Hono<{ Variables: CsrfContext }>();
+  it("throws when no path argument is given", async () => {
+    const app = new Forge();
+    let caughtMessage: string | undefined;
     app.use("*", csrfProtection({ secret: () => key }));
-    app.get("/test", async (c) => c.text(await mintCsrf(c)));
+    mapHandler(app, "GET", "/test", async (c) => {
+      try {
+        await mintCsrf(c);
+        return new Response("no-throw");
+      } catch (e) {
+        caughtMessage = (e as Error).message;
+        return new Response("threw");
+      }
+    });
     const res = await app.request("/test");
-    expect(await res.text()).toBe("");
+    expect(await res.text()).toBe("threw");
+    expect(caughtMessage).toContain("non-empty action path is required");
+  });
+
+  it("mints a token for a path that verifies when POSTed to that path", async () => {
+    const app = new Forge();
+    app.use("*", csrfProtection({ secret: () => key }));
+    mapHandler(app, "GET", "/mint", async (c) => new Response(await mintCsrf(c, "/action")));
+    mapHandler(app, "POST", "/action", () => new Response("ok"));
+
+    const mintRes = await app.request("/mint");
+    const token = await mintRes.text();
+
+    const res = await app.request("/action", { method: "POST", headers: { "X-CSRF-Token": token } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
   });
 
   it("throws when path given but no minter on context", async () => {
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     let caughtMessage: string | undefined;
-    app.get("/test", async (c) => {
+    mapHandler(app, "GET", "/test", async (c) => {
       try {
         await mintCsrf(c, "/test");
-        return c.text("no-throw");
+        return new Response("no-throw");
       } catch (e) {
         caughtMessage = (e as Error).message;
-        return c.text("threw");
+        return new Response("threw");
       }
     });
     const res = await app.request("/test");
@@ -65,9 +86,9 @@ describe("mintCsrf()", () => {
   });
 
   it("returns a dot-bearing token when minter is mounted", async () => {
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     app.use("*", csrfProtection({ secret: () => key }));
-    app.get("/test", async (c) => c.text(await mintCsrf(c, "/api/submit")));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, "/api/submit")));
     const res = await app.request("/test");
     const token = await res.text();
     expect(token).not.toBe("");
@@ -83,10 +104,10 @@ describe("csrfProtection middleware", () => {
   });
 
   function makeApp() {
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     app.use("*", csrfProtection({ secret: () => key }));
-    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
-    app.post("/test", (c) => c.text("ok"));
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "POST", "/test", () => new Response("ok"));
     return app;
   }
 
@@ -104,20 +125,14 @@ describe("csrfProtection middleware", () => {
     const getRes = await app.request("/test");
     const token = await getRes.text();
 
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { "X-CSRF-Token": token },
-    });
+    const res = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token } });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
   });
 
   it("POST with invalid X-CSRF-Token header returns 403", async () => {
     const app = makeApp();
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { "X-CSRF-Token": "invalid.token" },
-    });
+    const res = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": "invalid.token" } });
     expect(res.status).toBe(403);
   });
 
@@ -137,37 +152,30 @@ describe("csrfProtection middleware", () => {
 
   it("POST with no token returns 403", async () => {
     const app = makeApp();
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: "name=Jane",
-    });
+    const res = await app.request("/test", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "name=Jane" });
     expect(res.status).toBe(403);
   });
 
   it("respects custom headerName option", async () => {
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     app.use("*", csrfProtection({ secret: () => key, headerName: "X-My-Token" }));
-    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
-    app.post("/test", (c) => c.text("ok"));
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test");
     const token = await getRes.text();
 
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { "X-My-Token": token },
-    });
+    const res = await app.request("/test", { method: "POST", headers: { "X-My-Token": token } });
     expect(res.status).toBe(200);
   });
 
-  it("GET sets csrf on context", async () => {
+  it("GET sets csrf minter on context", async () => {
     let capturedMint: ((path: string) => Promise<string>) | undefined;
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     app.use("*", csrfProtection({ secret: () => key }));
-    app.get("/test", (c) => {
-      capturedMint = c.get("csrf");
-      return c.text("ok");
+    mapHandler(app, "GET", "/test", (c) => {
+      capturedMint = csrfMinterCtx.getOptional(c);
+      return new Response("ok");
     });
     await app.request("/test");
     expect(typeof capturedMint).toBe("function");
@@ -175,33 +183,30 @@ describe("csrfProtection middleware", () => {
 
   it("token minted with csrf for a specific path validates on that path", async () => {
     let capturedMint: ((path: string) => Promise<string>) | undefined;
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     app.use("*", csrfProtection({ secret: () => key }));
-    app.get("/contact", (c) => {
-      capturedMint = c.get("csrf");
-      return c.text("ok");
+    mapHandler(app, "GET", "/contact", (c) => {
+      capturedMint = csrfMinterCtx.getOptional(c);
+      return new Response("ok");
     });
-    app.post("/api/contact", (c) => c.text("submitted"));
+    mapHandler(app, "POST", "/api/contact", () => new Response("submitted"));
 
     await app.request("/contact");
     const apiToken = await capturedMint!("/api/contact");
-    const res = await app.request("/api/contact", {
-      method: "POST",
-      headers: { "X-CSRF-Token": apiToken },
-    });
+    const res = await app.request("/api/contact", { method: "POST", headers: { "X-CSRF-Token": apiToken } });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("submitted");
   });
 
   it("POST with _csrf form field — action handler reuses cached parseFormData", async () => {
     let captured: string | null = null;
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     app.use("*", csrfProtection({ secret: () => key }));
-    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
-    app.post("/test", async (c) => {
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "POST", "/test", async (c) => {
       const fd = await parseFormData(c);
       captured = fd.get("name") as string;
-      return c.text("ok");
+      return new Response("ok");
     });
 
     const getRes = await app.request("/test");
@@ -219,11 +224,11 @@ describe("csrfProtection middleware", () => {
 
   it("HEAD mints csrfToken on context", async () => {
     let capturedToken: string | undefined;
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     app.use("*", csrfProtection({ secret: () => key }));
-    app.get("/test", (c) => {
-      capturedToken = c.get("csrfToken");
-      return c.text("body");
+    mapHandler(app, "GET", "/test", (c) => {
+      capturedToken = csrfTokenCtx.getOptional(c);
+      return new Response("body");
     });
     const res = await app.request("/test", { method: "HEAD" });
     expect(res.status).toBe(200);
@@ -233,27 +238,18 @@ describe("csrfProtection middleware", () => {
   });
 
   it("subject binding — wrong session returns 403, matching session returns 200", async () => {
-    const app = new Hono<{ Variables: CsrfContext }>();
-    app.use("*", csrfProtection({
-      secret: () => key,
-      subject: (c) => c.req.header("x-session") ?? undefined,
-    }));
-    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
-    app.post("/test", (c) => c.text("ok"));
+    const app = new Forge();
+    app.use("*", csrfProtection({ secret: () => key, subject: (c) => c.request.headers.get("x-session") ?? undefined }));
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test", { headers: { "x-session": "session-a" } });
     const token = await getRes.text();
 
-    const res403 = await app.request("/test", {
-      method: "POST",
-      headers: { "X-CSRF-Token": token, "x-session": "session-b" },
-    });
+    const res403 = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token, "x-session": "session-b" } });
     expect(res403.status).toBe(403);
 
-    const res200 = await app.request("/test", {
-      method: "POST",
-      headers: { "X-CSRF-Token": token, "x-session": "session-a" },
-    });
+    const res200 = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token, "x-session": "session-a" } });
     expect(res200.status).toBe(200);
   });
 
@@ -263,48 +259,42 @@ describe("csrfProtection middleware", () => {
     const ring = await importCsrfKeyRing([secret1, secret2]);
     const oldRing = await importCsrfKeyRing([secret2]);
 
-    const oldKey = oldRing.keys[oldRing.activeKeyId];
+    const oldKey = oldRing.keys[oldRing.activeKeyId]!;
     const oldToken = await createCsrfToken(oldKey, "/test", { kid: oldRing.activeKeyId });
 
-    const app = new Hono<{ Variables: CsrfContext }>();
+    const app = new Forge();
     app.use("*", csrfProtection({ secret: () => ring }));
-    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
-    app.post("/test", (c) => c.text("ok"));
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test");
     const newToken = await getRes.text();
-    const postNew = await app.request("/test", {
-      method: "POST",
-      headers: { "X-CSRF-Token": newToken },
-    });
+    const postNew = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": newToken } });
     expect(postNew.status).toBe(200);
 
-    const postOld = await app.request("/test", {
-      method: "POST",
-      headers: { "X-CSRF-Token": oldToken },
-    });
+    const postOld = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": oldToken } });
     expect(postOld.status).toBe(200);
   });
 });
 
 describe("csrfProtection middleware with typed resolver", () => {
   it("resolver receives typed context with custom Bindings", async () => {
-    type TestEnv = {
-      Bindings: { MY_SECRET: string };
-      Variables: CsrfContext;
-    };
+    type TestBindings = { MY_SECRET: string };
 
     let capturedSecret: string | undefined;
     const key = await importCsrfKey(HEX_SECRET);
 
-    const app = new Hono<TestEnv>();
-    app.use("*", csrfProtection<TestEnv>({
-      secret: async (c) => {
-        capturedSecret = c.env.MY_SECRET;
-        return key;
-      },
-    }));
-    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
+    const app = new Forge<TestBindings>();
+    app.use(
+      "*",
+      csrfProtection<TestBindings>({
+        secret: async (c) => {
+          capturedSecret = (c as AppContext<TestBindings>).env.MY_SECRET;
+          return key;
+        },
+      }),
+    );
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
 
     const res = await app.request("/test", undefined, { MY_SECRET: "test-value" });
     expect(res.status).toBe(200);
@@ -317,25 +307,25 @@ describe("csrfProtection middleware with resolver secret", () => {
     let callCount = 0;
     const key = await importCsrfKey(HEX_SECRET);
 
-    const app = new Hono<{ Variables: CsrfContext }>();
-    app.use("*", csrfProtection({
-      secret: async (_c) => {
-        callCount++;
-        return key;
-      },
-    }));
-    app.get("/test", (c) => c.text(c.get("csrfToken") ?? ""));
-    app.post("/test", (c) => c.text("ok"));
+    const app = new Forge();
+    app.use(
+      "*",
+      csrfProtection({
+        secret: async (_c) => {
+          callCount++;
+          return key;
+        },
+      }),
+    );
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test");
     expect(getRes.status).toBe(200);
     const token = await getRes.text();
     expect(token).toContain(".");
 
-    const postRes = await app.request("/test", {
-      method: "POST",
-      headers: { "X-CSRF-Token": token },
-    });
+    const postRes = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token } });
     expect(postRes.status).toBe(200);
     expect(await postRes.text()).toBe("ok");
 
@@ -403,11 +393,15 @@ describe("CSRF token", () => {
     const nearFutureTimestamp = Date.now() + 5_000;
     const payload = `0|${"/api/contact"}||${nearFutureTimestamp}|${"aa".repeat(16)}`;
     const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
     const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
     const sigBytes = new Uint8Array(sigBuffer);
     const sigEncoded = btoa(String.fromCharCode(...sigBytes))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
     const token = `${payloadEncoded}.${sigEncoded}`;
     const result = await verifyCsrfToken(key, token, "/api/contact");
     expect(result).toEqual({ ok: true });
@@ -417,11 +411,15 @@ describe("CSRF token", () => {
     const futureTimestamp = Date.now() + 3_600_000;
     const payload = `0|${"/api/contact"}||${futureTimestamp}|${"aa".repeat(16)}`;
     const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
     const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
     const sigBytes = new Uint8Array(sigBuffer);
     const sigEncoded = btoa(String.fromCharCode(...sigBytes))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
     const token = `${payloadEncoded}.${sigEncoded}`;
     const result = await verifyCsrfToken(key, token, "/api/contact");
     expect(result).toEqual({ ok: false, reason: "future-timestamp" });
@@ -448,7 +446,9 @@ describe("CSRF token", () => {
     );
     const tamperedPayload = payloadStr.replace("k1|", "k2|");
     const tamperedEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(tamperedPayload)))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
     const tamperedToken = `${tamperedEncoded}.${sigEncoded}`;
 
     const result = await verifyCsrfToken(ring, tamperedToken, "/api/contact");
@@ -456,9 +456,7 @@ describe("CSRF token", () => {
   });
 
   it("rejects a kid containing pipe character", async () => {
-    await expect(createCsrfToken(key, "/test", { kid: "a|b" })).rejects.toThrow(
-      "CSRF key id must not contain '|'",
-    );
+    await expect(createCsrfToken(key, "/test", { kid: "a|b" })).rejects.toThrow("CSRF key id must not contain '|'");
   });
 
   it("rejects a path containing pipe character", async () => {
@@ -475,19 +473,21 @@ describe("CSRF token", () => {
   it("rejects a token with non-integer timestamp as expired", async () => {
     const payload = `0|/api/contact||notanumber|${"aa".repeat(16)}`;
     const payloadEncoded = btoa(String.fromCharCode(...new TextEncoder().encode(payload)))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
     const sigBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
     const sigBytes = new Uint8Array(sigBuffer);
     const sigEncoded = btoa(String.fromCharCode(...sigBytes))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=/g, "");
     const result = await verifyCsrfToken(key, `${payloadEncoded}.${sigEncoded}`, "/api/contact");
     expect(result).toEqual({ ok: false, reason: "expired" });
   });
 
   it("rejects a subject containing pipe character", async () => {
-    await expect(createCsrfToken(key, "/test", { subject: "a|b" })).rejects.toThrow(
-      "CSRF subject must not contain '|'",
-    );
+    await expect(createCsrfToken(key, "/test", { subject: "a|b" })).rejects.toThrow("CSRF subject must not contain '|'");
   });
 
   it("round-trip with subject succeeds when subjects match", async () => {
@@ -521,11 +521,11 @@ describe("CSRF token rotation overlap", () => {
     const secretOld = "ee".repeat(32);
     const ring = await importCsrfKeyRing([secretNew, secretOld]);
 
-    const newKey = ring.keys[ring.activeKeyId];
+    const newKey = ring.keys[ring.activeKeyId]!;
     const tokenNew = await createCsrfToken(newKey, "/form", { kid: ring.activeKeyId });
 
     const oldRing = await importCsrfKeyRing([secretOld]);
-    const oldKey = oldRing.keys[oldRing.activeKeyId];
+    const oldKey = oldRing.keys[oldRing.activeKeyId]!;
     const tokenOld = await createCsrfToken(oldKey, "/form", { kid: oldRing.activeKeyId });
 
     expect(await verifyCsrfToken(ring, tokenNew, "/form")).toEqual({ ok: true });
@@ -555,7 +555,7 @@ describe("importCsrfKeyRing()", () => {
     expect(kids.length).toBe(2);
 
     for (const kid of kids) {
-      const token = await createCsrfToken(ring.keys[kid], "/test", { kid });
+      const token = await createCsrfToken(ring.keys[kid]!, "/test", { kid });
       const result = await verifyCsrfToken(ring, token, "/test");
       expect(result).toEqual({ ok: true });
     }

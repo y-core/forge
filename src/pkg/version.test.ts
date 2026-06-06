@@ -5,12 +5,14 @@ import { resolveVersion } from "./version";
 const CWD = "/repo";
 const PREFIX = "v";
 
-function makeDeps(overrides: {
-  getLatestTag?: (cwd: string, prefix: string) => string | null;
-  getCommitsSinceTag?: (cwd: string, tag: string) => string[];
-  getLastCommitMessage?: (cwd: string) => string;
-  readPackageVersion?: (cwd: string) => string;
-} = {}) {
+function makeDeps(
+  overrides: {
+    getLatestTag?: (cwd: string, prefix: string) => string | null;
+    getCommitsSinceTag?: (cwd: string, tag: string) => string[];
+    getLastCommitMessage?: (cwd: string) => string;
+    readPackageVersion?: (cwd: string) => string;
+  } = {},
+) {
   return {
     getLatestTag: () => null,
     getCommitsSinceTag: () => [],
@@ -32,25 +34,17 @@ describe("resolveVersion() — explicit version", () => {
   });
 
   it("throws invalid-version for a non-semver explicit version", () => {
-    expect(() =>
-      resolveVersion({ explicit: "not-a-version", cwd: CWD, tagPrefix: PREFIX }, makeDeps()),
-    ).toThrow(ReleaseError);
+    expect(() => resolveVersion({ explicit: "not-a-version", cwd: CWD, tagPrefix: PREFIX }, makeDeps())).toThrow(ReleaseError);
   });
 
   it("throws version-not-greater when explicit is not > latest tag", () => {
-    expect(() =>
-      resolveVersion(
-        { explicit: "1.0.0", cwd: CWD, tagPrefix: PREFIX },
-        makeDeps({ getLatestTag: () => "v1.0.0" }),
-      ),
-    ).toThrow(ReleaseError);
+    expect(() => resolveVersion({ explicit: "1.0.0", cwd: CWD, tagPrefix: PREFIX }, makeDeps({ getLatestTag: () => "v1.0.0" }))).toThrow(
+      ReleaseError,
+    );
   });
 
   it("accepts explicit version greater than latest tag", () => {
-    const result = resolveVersion(
-      { explicit: "1.0.1", cwd: CWD, tagPrefix: PREFIX },
-      makeDeps({ getLatestTag: () => "v1.0.0" }),
-    );
+    const result = resolveVersion({ explicit: "1.0.1", cwd: CWD, tagPrefix: PREFIX }, makeDeps({ getLatestTag: () => "v1.0.0" }));
     expect(result.version).toBe("1.0.1");
     expect(result.previous).toBe("v1.0.0");
   });
@@ -65,25 +59,13 @@ describe("resolveVersion() — first release", () => {
 
 describe("resolveVersion() — in-sync", () => {
   it("returns in-sync when tag exists and no new commits", () => {
-    const result = resolveVersion(
-      { cwd: CWD, tagPrefix: PREFIX },
-      makeDeps({
-        getLatestTag: () => "v0.2.0",
-        readPackageVersion: () => "0.2.0",
-      }),
-    );
+    const result = resolveVersion({ cwd: CWD, tagPrefix: PREFIX }, makeDeps({ getLatestTag: () => "v0.2.0", readPackageVersion: () => "0.2.0" }));
     expect(result).toEqual({ version: "0.2.0", reason: "in-sync", previous: "v0.2.0" });
   });
 
   it("throws version-mismatch when package.json version doesn't match tag", () => {
     expect(() =>
-      resolveVersion(
-        { cwd: CWD, tagPrefix: PREFIX },
-        makeDeps({
-          getLatestTag: () => "v0.2.0",
-          readPackageVersion: () => "0.1.0",
-        }),
-      ),
+      resolveVersion({ cwd: CWD, tagPrefix: PREFIX }, makeDeps({ getLatestTag: () => "v0.2.0", readPackageVersion: () => "0.1.0" })),
     ).toThrow(ReleaseError);
   });
 });
@@ -129,10 +111,7 @@ describe("resolveVersion() — auto bump", () => {
     expect(() =>
       resolveVersion(
         { cwd: CWD, tagPrefix: PREFIX },
-        makeDeps({
-          getLatestTag: () => "v-bad-tag",
-          getCommitsSinceTag: () => ["abc1234 fix: something"],
-        }),
+        makeDeps({ getLatestTag: () => "v-bad-tag", getCommitsSinceTag: () => ["abc1234 fix: something"] }),
       ),
     ).toThrow(ReleaseError);
   });

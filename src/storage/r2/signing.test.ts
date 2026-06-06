@@ -59,4 +59,23 @@ describe("createSignedObjectUrl / verifySignedObjectUrl", () => {
     const result = await verifySignedObjectUrl(key, "https://x.com/?key=a&exp=9999999999");
     expect(result).toEqual({ ok: false, reason: "invalid-format" });
   });
+
+  it("round-trips a key containing the '|' delimiter (length-prefixed payload)", async () => {
+    const key = await makeKey();
+    const url = await createSignedObjectUrl(key, "https://x.com/", "weird|name|with|pipes.txt");
+    const result = await verifySignedObjectUrl(key, url);
+    expect(result).toEqual({ ok: true, key: "weird|name|with|pipes.txt" });
+  });
+
+  it("does not accept a signature minted for a different key/exp split (delimiter ambiguity)", async () => {
+    const key = await makeKey();
+    // Sign for key "a|100"; an attacker cannot reuse the signature as key "a", exp 100 because the
+    // length prefix makes "5:a|100|<exp>" distinct from "1:a|100".
+    const url = await createSignedObjectUrl(key, "https://x.com/", "a|100");
+    const parsed = new URL(url);
+    parsed.searchParams.set("key", "a");
+    parsed.searchParams.set("exp", "100");
+    const result = await verifySignedObjectUrl(key, parsed.toString());
+    expect(result.ok).toBe(false);
+  });
 });

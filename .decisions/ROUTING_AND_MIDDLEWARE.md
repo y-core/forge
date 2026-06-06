@@ -1,6 +1,6 @@
 ---
 title: Routing and Middleware
-description: "route declarative config, route() function, index, layout, prefix, applyRoutes, middleware composition, middleware ordering, context namespace, contextVar accessor, Hono context variables, RouteConfig, RouteView, RouteAction, RouteLoader"
+description: "route map, route() createRoutes, createController controller actions, app.map registration, definePage definePage loader view, defineAction parse validate handle, healthCheck, app.use path-scoped middleware, Middleware type, middleware ordering, context namespace, contextVar accessor, AppContext, htmlResponse fragmentResponse redirect, parseFormData"
 weight: 21
 ---
 
@@ -16,11 +16,11 @@ weight: 21
 
 ## 0. Quick Reference
 
-- §1 router namespace: `route()`, `index`, `layout`, `prefix`, `applyRoutes`, `App`, `Context`
-- §2 Declarative route config pattern: `RouteConfig`, `RouteConfigEntry` shape
-- §3 Middleware composition and ordering rules
+- §1 router namespace: `route()` (route map), `createController`, `app.map`, the `Middleware` type
+- §2 Page vs action routes: `definePage`, `defineAction`, `healthCheck`, controller middleware
+- §3 Middleware composition and ordering rules (`app.use` global, controller-level route middleware)
 - §4 context namespace: `contextVar` typed accessor (internal, no public export)
-- §5 Route lifecycle: loader (GET) and action (POST) handler types
+- §5 Route lifecycle: loader/view/action shapes and the response helpers
 
 ---
 
@@ -28,179 +28,198 @@ weight: 21
 
 Imports from `@y-core/forge/router`:
 
-- `route(path, config)` — creates a `RouteConfigEntry`
-- `index` — shorthand for `route("/", config)`
-- `layout(path, config)` — wraps children in a layout component
-- `prefix(path, children)` — groups routes under a shared path prefix
-- `applyRoutes(app, routes)` — registers all routes on the Hono app
-- `App` — Hono app type (re-export of Hono class as `App`)
-- `Context`, `MiddlewareHandler`, `Next` — Hono types re-exported for consumer use
+- `route(defs)` — alias for `createRoutes`; builds a route MAP of name → `Route { method, pattern }`
+- `createController(routes, controller)` — maps each route name to an action handler
+- `createAction(route, action)` — type-checks a single action against its route pattern
+- `createHref(pattern, args)` / a route's `.href(args)` — type-safe URL generation from a pattern
+- `Route`, `RouteMap`, `RouteDef`, `RouteDefs` — route-map types
+- `Controller`, `Action`, `RequestHandler` — controller and handler types
+- `Middleware`, `MiddlewareContext`, `RequestContext` — middleware and context types
+- `get`, `post`, `put`, `patch`, `del`, `head`, `options`, `resource`, `resources`, `form` — route
+  authoring helpers for building `RouteDef`s
 
-### 1a. Declarative Route Config Pattern
+Registration happens on the app object (`Forge<Bindings>` from `@y-core/forge/app`) via
+`app.map(routes, controller)`. There is no `applyRoutes`, `prefix`, `index`, or `layout` export, and
+no imperative `app.get(...)`/`app.post(...)` — routes are declared only through the map + controller.
 
-Routes are declared in a single `routes.tsx` or `routes.ts` file as `RouteConfig<Env>`.
-The config is a flat or nested array of `RouteConfigEntry` objects.
+### 1a. Declarative Route Map Pattern
 
-    // src/routes.tsx
-    import { route, type RouteConfig } from "@y-core/forge/router"
-    import type { AppEnv } from "./app/context"
+Routes are declared in a single `routes.ts` file as a name → `{ method, pattern }` map. Each name
+becomes an addressable `Route` with a typed `.href()` for URL generation.
 
-    export const routes: RouteConfig<AppEnv> = [
-      route("/", { loader: homeLoader, view: HomeView }),
-      route("/api/contact", { middleware: [csrfGuard], action: contactAction }),
-    ]
+    // src/routes.ts
+    import { route } from "@y-core/forge/router"
 
-Pass the config array to `applyRoutes` in the worker factory:
+    export const routes = route({
+      home:    { method: "GET",  pattern: "/" },
+      contact: { method: "POST", pattern: "/api/contact" },
+      health:  { method: "GET",  pattern: "/api/health" },
+    })
 
-    applyRoutes(app, routes)
+The map carries no handlers — only method + pattern. Handlers are bound separately by the
+controller (§1b), keeping the URL surface and the behaviour independently inspectable.
 
-### 1b. RouteConfigEntry Shape
+### 1b. Controller — Mapping Route Names to Actions
 
-Each `RouteConfigEntry` accepts:
+`createController(routes, { actions })` binds each route name to an action. An action is either a
+bare `RequestHandler` (no route middleware) or an object `{ middleware, handler }` whose middleware
+runs before the handler for that route only.
 
-| Field | Type | Purpose |
-|---|---|---|
-| `path` | `string` | URL pattern; supports `:param` and `*` wildcards |
-| `loader` | `RouteLoader<E>` | Handles GET; returns loader data or a `Response` |
-| `action` | `RouteAction<E>` | Handles POST/PUT/DELETE; returns `Response` |
-| `view` | `RouteView<E>` | JSX component that receives loader data |
-| `middleware` | `MiddlewareHandler<E>[]` | Per-route guards; run before loader/action |
+    // src/router.tsx
+    import { healthCheck } from "@y-core/forge/app"
+    import { createController } from "@y-core/forge/router"
+    import { csrfVerifyGuard } from "./app/middleware"
+    import { contactGuards, handleContactAction } from "./handlers/contact"
+    import { homeView } from "./handlers/home"
+    import { routes } from "./routes"
 
-All fields except `path` are optional. A route may have any combination of
-`loader`, `action`, and `view`. A `view` without a `loader` is valid when the
-view needs no data from the server.
+    export const controller = createController(routes, {
+      actions: {
+        home:    { middleware: [csrfVerifyGuard], handler: homeView },
+        contact: { middleware: contactGuards, handler: handleContactAction },
+        health:  healthCheck<AppEnv>({ csrf: () => true }),   // bare handler — no route middleware
+      },
+    })
 
-### 1c. applyRoutes Registration
+Route middleware lives in the action object (`{ middleware, handler }`) — it is the only place
+per-route guards are declared. The controller object may also carry a controller-level `middleware`
+array that applies to every action it owns.
 
-`applyRoutes(app, routes)` iterates the config array and registers each entry
-on the Hono app:
+### 1c. Registering Routes with app.map
 
-- Routes with both `loader` and `action` → GET and POST handlers registered.
-- Routes with only `loader` → GET handler only.
-- Routes with only `action` → POST handler only.
-- Per-route `middleware` is prepended to the handler chain in array order.
+`app.map(routes, controller)` registers all routes on the app. Call it after global middleware is
+registered (§3) so that `app.use` middleware wraps every matched route:
 
-`applyRoutes` must be called after all app-level middleware is registered so that
-app-level middleware executes first in the chain.
+    // src/worker.ts
+    const app = createApp<AppEnv>({ config: configStore, isDebug: (c) => configStore.get(c.env).debug })
+    applyMiddleware(app, security)        // app.use(...) registrations
+    app.map(routes, controller)           // declarative route registration
+    applyAssets(app, { notFoundView })    // static-asset catch-all
+    export default app
+
+The route's HTTP method is taken from the map entry; the controller supplies the handler and any
+per-route middleware. No method is inferred from the handler.
 
 ---
 
-## 2. Declarative Route Config Patterns
+## 2. Page and Action Route Patterns
 
-### 2a. Full-Page Routes with Loader and View
+A route name's handler is produced by one of three factories from `@y-core/forge/app`
+(`definePage`, `defineAction`, `healthCheck`) or by any plain `(c: AppContext<Bindings>) => Response`.
+Each factory returns a `RequestHandler` that is placed under `handler` in the controller action.
 
-A loader fetches or computes data; the view renders it as a full HTML page.
-The loader return value is passed directly to the view component.
+### 2a. Full-Page Routes with definePage
 
-    route("/", {
-      loader: async (c) => {
-        const config = configStore.get(c.env)
-        const ctx = await renderContext(c, config)
-        return { ctx, content: homeContent }
+`definePage({ loader, view, action?, headers?, cache?, onError? })` returns a handler that runs the
+optional `loader`, then renders `view`. The loader's return value is exposed to the view through the
+render state; a loader may instead return a `Response` to short-circuit (e.g. a redirect).
+
+    import { definePage } from "@y-core/forge/app"
+
+    export const homeView = definePage<AppEnv, AppConfig>({
+      cache: "no-store",
+      view: (c) => (c as AppContext).render((ctx) => <HomePage ctx={ctx} content={content} />),
+    })
+
+The view signature is `(c: AppContext<Bindings>, config, state) => Response | Promise<Response>`.
+`state` carries `{ data, actionData, method }`. The view returns a `Response` (typically built by a
+render helper) — it does not return a bare JSX element to the router. `definePage` does NOT accept a
+`middleware` field; route middleware belongs in the controller action (§1b).
+
+### 2b. Action-Only Routes with defineAction
+
+API endpoints that mutate state use `defineAction({ parse, validate, handle, onValidationError?,
+onError? })`. The pipeline parses the form body, validates it, then calls `handle`; validation
+failures and oversized bodies (413) produce structured fragment responses automatically.
+
+    import { defineAction } from "@y-core/forge/app"
+
+    export const handleContactAction = defineAction<ContactInput, AppEnv, AppConfig>({
+      parse: (formData) => readContactFields(formData),
+      validate: (data) => ContactSchema(data),
+      handle: async (data, c, config) => {
+        await sendContactEmail(data, config.services.email)
+        return fragmentResponse(renderSuccess("Thanks. We'll get back to you soon."))
       },
-      view: HomeView,
     })
 
-The view component signature receives the loader data and the Hono context:
+`handle` returns a `Response` directly — an HTMX fragment, a JSON response, or a redirect. It never
+delegates to a view. A plain `(c) => Response` action is equally valid when the parse/validate/handle
+pipeline is not needed (see `handleContactAction` in the starter, which reads `parseFormData(c)`
+itself). Like `definePage`, `defineAction` does NOT accept a `middleware` field.
 
-    const HomeView = (data: HomeData, c: Context<AppEnv>): JSX.Element => (
-      <Layout ctx={data.ctx}>
-        <Home content={data.content} />
-      </Layout>
-    )
+### 2c. Health Check Route with healthCheck
 
-### 2b. Action-Only Routes
-
-API endpoints that mutate state or send messages use `action` only.
-Multiple middleware guards compose in declaration order.
-
-    route("/api/contact", {
-      middleware: [contactSecurityGuard, rateLimitGuard, csrfVerifyGuard],
-      action: handleContactAction,
-    })
-
-The action returns a `Response` directly — either an HTMX fragment, a JSON
-response, or a redirect. It never delegates to a view.
-
-### 2c. Health Check Route
-
-The `healthCheck` factory from `@y-core/forge/app` produces a loader compatible
-with the standard route shape. Pass a `csrf` predicate to control whether
-CSRF validation is required for the health endpoint (typically always `true`).
+`healthCheck<Bindings>(checks)` from `@y-core/forge/app` returns a `RequestHandler` that runs each
+named check function concurrently and responds with JSON `{ ok, checks }` (200 when all pass, 503
+otherwise, `cache-control: no-store`). The keys name the checks; pass `{ csrf: () => true }` to
+record a `csrf` check that always passes:
 
     import { healthCheck } from "@y-core/forge/app"
 
-    route("/api/health", { loader: healthCheck<AppEnv>({ csrf: () => true }) })
+    // In the controller actions map:
+    health: healthCheck<AppEnv>({ csrf: () => true })
 
-### 2d. Grouped Routes with prefix
-
-`prefix` keeps related routes co-located and avoids repeating path segments:
-
-    import { prefix, route } from "@y-core/forge/router"
-
-    const apiRoutes = prefix("/api", [
-      route("/contact", { middleware: [csrfVerifyGuard], action: contactAction }),
-      route("/health",  { loader: healthCheck<AppEnv>({ csrf: () => true }) }),
-    ])
-
-    export const routes: RouteConfig<AppEnv> = [
-      route("/", { loader: homeLoader, view: HomeView }),
-      ...apiRoutes,
-    ]
+Because it is already a `RequestHandler`, the health action is registered as a bare handler with no
+surrounding route middleware.
 
 ---
 
 ## 3. Middleware Composition and Ordering
 
-### 3a. App-Level vs Route-Level Middleware
+### 3a. Global vs Route-Level Middleware
 
-App-level middleware is registered on the Hono app before `applyRoutes` and
-runs for every request regardless of route. Route-level middleware is declared
-in the `middleware` array of a `RouteConfigEntry` and runs only for that route.
+Global (path-scoped) middleware is registered on the app with `app.use(path, ...middleware)` and
+runs for every request whose URL matches `path`. Route-level middleware is declared in the
+`middleware` array of a controller action and runs only for that route.
 
-Recommended app-level registration order:
+`app.use` path conventions:
+
+- `app.use("*", mw)` — runs for every request.
+- `app.use("/api/*", mw)` — runs for `/api` and any path under it.
+
+Recommended `app.use` registration order:
 
 1. `makeSecurityHeaders` — injects CSP/HSTS/XFO headers and the per-request nonce.
 2. `requestId` — generates and stores a request ID in context.
 3. `requestLogger` — logs request method, path, status, and duration.
 4. `cors` (scoped to `/api/*`) — adds CORS headers for API routes only.
 
-Route-level middleware runs after all app-level middleware has completed.
+Route-level (controller) middleware runs after all matching `app.use` middleware has completed.
 
 ### 3b. Middleware Handler Type
 
-    import type { MiddlewareHandler } from "@y-core/forge/router"
+    import type { Middleware } from "@y-core/forge/router"   // also re-exported from @y-core/forge/context
 
-    const myGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
-      if (!isAllowed(c)) return c.text("Forbidden", 403)
+    const myGuard: Middleware = async (c, next) => {
+      if (!isAllowed(c)) return new Response("Forbidden", { status: 403 })
       return next()
     }
 
-A middleware must either call `next()` to continue the chain or return a
-`Response` to short-circuit. Failing to call `next()` and not returning a
-response results in a hung request.
+`Middleware` is `(context, next) => Response | Promise<Response>`. A middleware must either call
+`next()` to continue the chain or return a `Response` to short-circuit. Failing to call `next()` and
+not returning a response results in a hung request. The context is `AppContext<Bindings>` — read
+request data via `c.request.headers.get("X")`, `c.method`, and `c.url` (§5).
 
-### 3c. Middleware Array Ordering on Routes
+### 3c. Route Middleware Array Ordering
 
-Middleware in the `middleware` array executes left-to-right before the
-`loader` or `action` is invoked:
+Middleware in a controller action's `middleware` array executes left-to-right before the handler:
 
-    route("/api/contact", {
-      middleware: [contactSecurityGuard, rateLimitGuard, csrfVerifyGuard],
-      action: handleContactAction,
-    })
+    contact: { middleware: [contactSecurityGuard, rateLimitGuard, csrfVerifyGuard], handler: handleContactAction }
     // Execution order:
     // contactSecurityGuard → rateLimitGuard → csrfVerifyGuard → handleContactAction
 
-Place broad guards (origin checks, rate limiting) before narrow guards (CSRF
-token verification) so cheap rejections occur before expensive ones.
+Place broad guards (origin checks, rate limiting) before narrow guards (CSRF token verification) so
+cheap rejections occur before expensive ones.
 
 ### 3d. Security Middleware Placement
 
-`makeSecurityHeaders` must always be the first app-level middleware. It sets the
-nonce used by CSP. Any middleware that reads or writes security headers must run
-after it. See [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) for the full
-nonce and CSP contract.
+`makeSecurityHeaders` must always be the first `app.use("*", ...)` registration. It sets the nonce
+used by CSP. Any middleware that reads or writes security headers must run after it. See
+[SECURITY_HARDENING.md](./SECURITY_HARDENING.md) for the full nonce and CSP contract. Response
+headers added by forge middleware are queued on an internal pending-header channel and flushed once
+by the app's outermost header pass — middleware should add headers through that channel (or by
+returning a `Response`), never by mutating an already-sent response.
 
 ---
 
@@ -208,13 +227,13 @@ nonce and CSP contract.
 
 ### 4a. contextVar Typed Accessor
 
-The internal `context` namespace provides `contextVar` — a factory for typed
-accessors over Hono's `c.set` / `c.get` context variable store.
+The internal `context` namespace provides `contextVar` — a factory for typed accessors over the
+request context's variable store (`c.set` / `c.get` keyed by an opaque context key).
 
-This namespace has **no public export path** in `package.json`. Consumer code
-must never import from `@y-core/forge/context`. It is used only inside forge
-namespaces to create typed accessors that are then exported via their own
-namespace (e.g., `@y-core/forge/security`).
+This namespace is for forge internals. Consumer code should not reach into it to invent ad-hoc
+context slots; forge namespaces use it to build typed accessors that are then exported through their
+own namespace (e.g., `requestIdCtx` from `@y-core/forge/security`, `csrfTokenCtx` from
+`@y-core/forge/form`).
 
     // Inside a forge namespace (not consumer code):
     import { contextVar } from "../context/accessor"
@@ -222,7 +241,7 @@ namespace (e.g., `@y-core/forge/security`).
     export const requestIdCtx = contextVar<string>("requestId")
 
     // Middleware that sets the value:
-    const requestIdMiddleware: MiddlewareHandler = async (c, next) => {
+    const requestIdMiddleware: Middleware = (c, next) => {
       requestIdCtx.set(c, crypto.randomUUID())
       return next()
     }
@@ -233,57 +252,80 @@ namespace (e.g., `@y-core/forge/security`).
 
 ### 4b. Context Variable Typing
 
-`contextVar<T>(key)` creates a typed accessor bound to the string key `key`.
-The generic `T` prevents callers from accidentally reading a context slot with
-the wrong expected type. Each `contextVar` instance is the sole read/write point
-for its slot — no raw `c.get("requestId")` calls appear in consumer code.
+`contextVar<T>(name)` creates a typed accessor backed by a fresh `createContextKey<T>()`. The
+generic `T` prevents callers from accidentally reading a context slot with the wrong expected type.
+Each `contextVar` instance is the sole read/write point for its slot — no raw `c.get(key)` calls
+appear in consumer code.
 
 The typed accessor API surface:
 
 | Method | Behaviour |
 |---|---|
 | `.set(c, value)` | Stores `value` under the key in context |
-| `.get(c)` | Returns the value; throws `Error` if the key is unset |
+| `.get(c, message?)` | Returns the value; throws `Error` (optionally with `message`) if unset |
 | `.getOptional(c)` | Returns the value or `undefined` if unset |
+| `.key` | The underlying typed `ContextKey<T>` |
 
 ---
 
 ## 5. Route Lifecycle
 
-### 5a. Loader — GET Handler Pattern
+A route's handler runs inside the matched middleware chain and returns a standard `Response`. The
+internal loader/view/action types backing `definePage`/`defineAction` are summarised below; consumer
+code constructs responses with the helpers in §5d rather than the framework methods of the old model.
 
-    type RouteLoader<E extends Env> = (c: Context<E>) => Promise<LoaderData> | Response
+### 5a. Loader — definePage GET Data Source
 
-A loader handles GET requests. It may:
+A loader has the shape `(c: AppContext<Bindings>, config) => LoaderData | Response | Promise<...>`.
+It may:
 
-- Return a plain object (`LoaderData`) — `applyRoutes` passes it to the view.
+- Return a plain object (`LoaderData`) — `definePage` exposes it to the view via render state.
 - Return a `Response` directly — used for redirects or streaming responses.
 
-Loaders should not write response headers directly; delegate header concerns to
-app-level middleware (`makeSecurityHeaders` already sets security headers).
+Loaders should not mutate an already-built response's headers; per-page headers belong in the
+`definePage({ headers, cache })` fields, and security headers are added by `app.use` middleware.
 
-### 5b. Action — POST Handler Pattern
+### 5b. Action — defineAction / handle Pattern
 
-    type RouteAction<E extends Env> = (c: Context<E>) => Promise<Response>
+`defineAction`'s `handle` has the shape `(data, c: AppContext<Bindings>, config) => Response |
+Promise<Response>`. A plain action is `(c: AppContext<Bindings>) => Response | Promise<Response>`.
+Both always return a `Response`. Common return patterns:
 
-An action handles POST, PUT, and DELETE requests. It always returns a `Response`.
-Common return patterns:
+- `fragmentResponse(renderSuccess(msg))` — HTMX partial HTML swap.
+- `Response.json(data, { status })` — JSON API response.
+- `redirect(url, 303)` — Post/Redirect/Get pattern.
 
-- `c.html(fragment)` — HTMX partial HTML swap.
-- `c.json(data, status)` — JSON API response.
-- `c.redirect(url, 303)` — Post/Redirect/Get pattern.
+Actions read the form body via `parseFormData(c)` (from `@y-core/forge/form`) or
+`c.request.formData()`, and JSON via `c.request.json()`. With `defineAction`, the body is parsed by
+the pipeline and `handle` receives validated `data`. Input validation must occur before any side
+effects.
 
-Actions read form data via `c.req.formData()` or JSON via `c.req.json()`.
-Input validation must occur at the top of the action body before any side effects.
+### 5c. View — definePage Render Function
 
-### 5c. View — JSX Render Component
+A view has the shape `(c: AppContext<Bindings>, config, state) => Response | Promise<Response>`,
+where `state` is `{ data, actionData, method }`. It builds a `Response` (typically via a render
+helper that calls `renderToString` on a JSX tree and wraps it with `htmlResponse`). The context
+provides the nonce (via `getNonce(c)` from `@y-core/forge/security`) for inline script attributes
+and other per-request values. Views must not perform I/O — all data fetching belongs in the loader.
 
-    type RouteView<E extends Env> = (data: LoaderData, c: Context<E>) => JSX.Element
+### 5d. Response and Context Helpers
 
-A view receives the loader's return value as its first argument and the Hono
-context as its second. It returns a Hono JSX element rendered to HTML by
-`applyRoutes`. The context argument provides access to the nonce (via the
-security namespace) for inline script attributes and other per-request values.
+The context is `AppContext<Bindings>` (a `RequestContext` plus `.env` and `.executionCtx`). It
+replaces the old framework context-method surface:
 
-Views live in `src/views/` and import layout wrappers from the same directory.
-They must not perform I/O — all data fetching belongs in the loader.
+| Old | Now |
+|---|---|
+| `c.html(x)` | `htmlResponse(x)` from `@y-core/forge/http` |
+| `c.text(s, status)` | `new Response(s, { status })` |
+| `c.json(d, status)` | `Response.json(d, { status })` |
+| `c.redirect(url, 303)` | `redirect(url, 303)` from `@y-core/forge/http` |
+| HTMX fragment | `fragmentResponse(fragment, status?)` from `@y-core/forge/http` |
+| `c.req.formData()` | `parseFormData(c)` from `@y-core/forge/form` (or `c.request.formData()`) |
+| `c.req.json()` | `c.request.json()` |
+| `c.req.header("X")` | `c.request.headers.get("X")` |
+| `c.env.MY_KV` | `c.env.MY_KV` (env bindings — unchanged) |
+| `ctx.waitUntil(p)` | `c.executionCtx.waitUntil(p)` |
+| `c.set(k,v)` / `c.get(k)` | typed `contextVar` accessors (§4) |
+
+Resolved config is available as `c.config` (installed by the router) or via
+`configStore.get(c.env)`. Method, URL, and params are `c.method`, `c.url` (a `URL`), and `c.params`.

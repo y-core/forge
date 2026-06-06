@@ -36,4 +36,5 @@ export {
   SWAP,
   toastOob,
 } from "./htmx-patterns";
+export { Resumable } from "./resumable";
 export { ThemeToggle } from "./theme-toggle";

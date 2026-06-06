@@ -14,21 +14,15 @@ describe("createSignedCookie — secret validation", () => {
   });
 
   it("does not throw when all secrets in a multi-secret array are valid", () => {
-    expect(() =>
-      createSignedCookie("session", { secrets: [SECRET_32, SECRET_64] }),
-    ).not.toThrow();
+    expect(() => createSignedCookie("session", { secrets: [SECRET_32, SECRET_64] })).not.toThrow();
   });
 
   it("throws when the only secret is shorter than 32 characters", () => {
-    expect(() =>
-      createSignedCookie("session", { secrets: ["short"] }),
-    ).toThrow("at least 32 characters");
+    expect(() => createSignedCookie("session", { secrets: ["short"] })).toThrow("at least 32 characters");
   });
 
   it("throws when one secret in a multi-secret array is too short (even if first is valid)", () => {
-    expect(() =>
-      createSignedCookie("session", { secrets: [SECRET_32, "short"] }),
-    ).toThrow("at least 32 characters");
+    expect(() => createSignedCookie("session", { secrets: [SECRET_32, "short"] })).toThrow("at least 32 characters");
   });
 
   it("throws with a message that includes the offending length", () => {
@@ -61,10 +55,7 @@ describe("createSignedCookie — returned cookie", () => {
   });
 
   it("respects a Strict sameSite override", async () => {
-    const cookie = createSignedCookie("session", {
-      secrets: [SECRET_32],
-      sameSite: "Strict",
-    });
+    const cookie = createSignedCookie("session", { secrets: [SECRET_32], sameSite: "Strict" });
     const serialized = await cookie.serialize("value");
     expect(serialized).toContain("SameSite=Strict");
   });

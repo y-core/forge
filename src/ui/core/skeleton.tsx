@@ -1,4 +1,4 @@
-import type { FC } from "hono/jsx";
+import type { FC } from "../../jsx/types";
 import { cn } from "./utils/cn";
 
 interface SkeletonProps {
@@ -6,9 +6,5 @@ interface SkeletonProps {
 }
 
 export const Skeleton: FC<SkeletonProps> = ({ class: cls }) => (
-  <div
-    data-slot="skeleton"
-    aria-hidden="true"
-    class={cn("animate-pulse rounded-md bg-muted", cls)}
-  />
+  <div data-slot='skeleton' aria-hidden='true' class={cn("animate-pulse rounded-md bg-muted", cls)} />
 );

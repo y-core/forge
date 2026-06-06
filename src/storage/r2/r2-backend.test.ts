@@ -33,7 +33,10 @@ function makeBucket(): R2Bucket & { _store: Map<string, R2Object> } {
   return {
     _store,
     async put(key, _value, opts) {
-      const obj = makeR2Object(key, { httpMetadata: opts?.httpMetadata, customMetadata: opts?.customMetadata });
+      const obj = makeR2Object(key, {
+        ...(opts?.httpMetadata !== undefined ? { httpMetadata: opts.httpMetadata } : {}),
+        ...(opts?.customMetadata !== undefined ? { customMetadata: opts.customMetadata } : {}),
+      });
       _store.set(key, obj);
       return obj;
     },

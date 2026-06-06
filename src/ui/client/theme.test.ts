@@ -12,10 +12,7 @@ interface DocElMock {
   attrs: Record<string, string>;
   classes: Set<string>;
   setAttribute: (k: string, v: string) => void;
-  classList: {
-    toggle: (cls: string, force?: boolean) => void;
-    contains: (cls: string) => boolean;
-  };
+  classList: { toggle: (cls: string, force?: boolean) => void; contains: (cls: string) => boolean };
 }
 
 interface ButtonMock {
@@ -26,14 +23,8 @@ interface ButtonMock {
 
 interface GlobalMock {
   window: { matchMedia: (query: string) => MqlMock };
-  document: {
-    documentElement: DocElMock;
-    querySelectorAll: (sel: string) => ButtonMock[];
-  };
-  localStorage: {
-    getItem: (k: string) => string | null;
-    setItem: (k: string, v: string) => void;
-  };
+  document: { documentElement: DocElMock; querySelectorAll: (sel: string) => ButtonMock[] };
+  localStorage: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void };
 }
 
 const g = globalThis as unknown as GlobalMock;
@@ -86,10 +77,7 @@ describe("mountTheme", () => {
     };
 
     g.window = { matchMedia: () => mql };
-    g.document = {
-      documentElement: docEl,
-      querySelectorAll: () => [button],
-    };
+    g.document = { documentElement: docEl, querySelectorAll: () => [button] };
     g.localStorage = {
       getItem: (k) => storedItems[k] ?? null,
       setItem: (k, v) => {
@@ -100,7 +88,7 @@ describe("mountTheme", () => {
 
   it("cycles from system to light on button click", () => {
     const cleanup = mountTheme();
-    button.listeners[0]();
+    button.listeners[0]!();
     expect(docEl.attrs[THEME_ATTR]).toBe("light");
     cleanup();
   });
@@ -108,7 +96,7 @@ describe("mountTheme", () => {
   it("adds the dark class when cycling to dark", () => {
     storedItems[THEME_STORAGE_KEY] = "light";
     const cleanup = mountTheme();
-    button.listeners[0]();
+    button.listeners[0]!();
     expect(docEl.classes.has(DARK_CLASS)).toBe(true);
     cleanup();
   });
@@ -116,7 +104,7 @@ describe("mountTheme", () => {
   it("reacts to system preference changes while in system mode", () => {
     const cleanup = mountTheme();
     mql.matches = true;
-    mql.listeners[0](new Event("change"));
+    mql.listeners[0]!(new Event("change"));
     expect(docEl.classes.has(DARK_CLASS)).toBe(true);
     cleanup();
   });

@@ -1,6 +1,16 @@
+import type { AppContext } from "../../context/types";
 import type { Logger } from "../../logging/types";
 import type { Result } from "../../result/result";
-import type { KvCodec } from "./codec";
+
+/** Determines which KV get overload to call and how to encode/decode the value. @public */
+export type KvValueType = "text" | "arrayBuffer";
+
+/** Codec for encoding/decoding values stored in KV. @public */
+export interface KvCodec<T> {
+  readonly type: KvValueType;
+  encode(value: T): string | ArrayBuffer;
+  decode(raw: string | ArrayBuffer): T;
+}
 
 /** Minimal structural KV namespace — type-only, erases at runtime. @public */
 export interface KVNamespace {
@@ -70,4 +80,12 @@ export interface KVStore<T = unknown> {
   set(key: string, value: T, options?: KVSetOptions): Promise<Result<void>>;
   getOrSet(key: string, factory: () => T | Promise<T>, options?: KVSetOptions): Promise<Result<T>>;
   list<M = unknown>(options?: KVListOptions): Promise<Result<{ keys: KVListEntry<M>[]; cursor?: string; complete: boolean }>>;
+}
+
+/** Options for resolving a KV binding from context. @public */
+export interface KVBindingOptions<Bindings = Record<string, unknown>, T = unknown> {
+  binding: (c: AppContext<Bindings>) => KVNamespace | undefined;
+  /** When true (default), throws if the binding is absent. Set false to return null instead. */
+  required?: boolean;
+  store?: KVStoreOptions<T>;
 }

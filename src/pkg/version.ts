@@ -1,21 +1,8 @@
 import { getCommitsSinceTag, getLastCommitMessage, getLatestTag } from "./git";
 import { readPackageVersion } from "./pkg";
 import { bumpSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
-import type { VersionResult } from "./types";
+import type { ResolveVersionOptions, VersionDeps, VersionResult } from "./types";
 import { ReleaseError } from "./types";
-
-interface ResolveVersionOptions {
-  explicit?: string;
-  cwd: string;
-  tagPrefix: string;
-}
-
-interface VersionDeps {
-  getLatestTag: (cwd: string, prefix: string) => string | null;
-  getCommitsSinceTag: (cwd: string, tag: string) => string[];
-  getLastCommitMessage: (cwd: string) => string;
-  readPackageVersion: (cwd: string) => string;
-}
 
 export function resolveVersion(
   { explicit, cwd, tagPrefix }: ResolveVersionOptions,
@@ -34,10 +21,7 @@ export function resolveVersion(
       const prevStr = latestTag.startsWith(tagPrefix) ? latestTag.slice(tagPrefix.length) : latestTag;
       const prev = parseSemVer(prevStr);
       if (prev !== null && !isGreaterThan(parsed, prev)) {
-        throw new ReleaseError(
-          "version-not-greater",
-          `Version ${version} is not greater than the current tag ${latestTag}`,
-        );
+        throw new ReleaseError("version-not-greater", `Version ${version} is not greater than the current tag ${latestTag}`);
       }
     }
 
@@ -54,10 +38,7 @@ export function resolveVersion(
     const pkgVersion = deps.readPackageVersion(cwd);
     const tagVersion = latestTag.startsWith(tagPrefix) ? latestTag.slice(tagPrefix.length) : latestTag;
     if (pkgVersion !== tagVersion) {
-      throw new ReleaseError(
-        "version-mismatch",
-        `package.json version (${pkgVersion}) does not match latest tag (${latestTag})`,
-      );
+      throw new ReleaseError("version-mismatch", `package.json version (${pkgVersion}) does not match latest tag (${latestTag})`);
     }
     return { version: pkgVersion, reason: "in-sync", previous: latestTag };
   }

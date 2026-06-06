@@ -1,4 +1,30 @@
-import type { Context, Env } from "hono";
+import type { RequestContext } from "@remix-run/fetch-router";
+
+export interface CsrfConfig {
+  secret: string;
+}
+
+export interface TurnstileConfig {
+  secretKey: string;
+  siteKey: string;
+}
+
+export interface CsrfTokenOptions {
+  kid?: string;
+  /** Session or user identifier to bind to the token. */
+  subject?: string;
+}
+
+export interface CsrfVerifyOptions {
+  maxAgeMs?: number;
+  subject?: string;
+}
+
+/** Maximum allowed form body size in bytes. Default: 100 KB. */
+export interface ParseFormDataOptions {
+  /** Maximum allowed Content-Length in bytes. Requests exceeding this are rejected with a 413 Response. Defaults to 100 KB. */
+  maxBytes?: number;
+}
 
 export interface ReadonlyFormData {
   get(name: string): FormDataEntryValue | null;
@@ -7,27 +33,24 @@ export interface ReadonlyFormData {
   entries(): IterableIterator<[string, FormDataEntryValue]>;
   keys(): IterableIterator<string>;
   values(): IterableIterator<FormDataEntryValue>;
-  forEach(
-    callback: (value: FormDataEntryValue, key: string, parent: ReadonlyFormData) => void,
-    thisArg?: unknown,
-  ): void;
+  forEach(callback: (value: FormDataEntryValue, key: string, parent: ReadonlyFormData) => void, thisArg?: unknown): void;
   [Symbol.iterator](): IterableIterator<[string, FormDataEntryValue]>;
 }
 
 export type TurnstileResult =
   | { ok: true }
   | {
-    ok: false;
-    reason:
-    | "action-mismatch"
-    | "cdata-mismatch"
-    | "hostname-mismatch"
-    | "missing-token"
-    | "network-error"
-    | "parse-error"
-    | "timeout"
-    | "verification-failed";
-  };
+      ok: false;
+      reason:
+        | "action-mismatch"
+        | "cdata-mismatch"
+        | "hostname-mismatch"
+        | "missing-token"
+        | "network-error"
+        | "parse-error"
+        | "timeout"
+        | "verification-failed";
+    };
 
 export interface TurnstileVerifyOptions {
   expectedAction?: string;
@@ -41,17 +64,17 @@ export type FormFieldReader = (formData: ReadonlyFormData, field: string) => str
 export type CsrfResult =
   | { ok: true }
   | {
-    ok: false;
-    reason:
-    | "expired"
-    | "future-timestamp"
-    | "invalid-format"
-    | "invalid-signature"
-    | "missing-token"
-    | "path-mismatch"
-    | "subject-mismatch"
-    | "unknown-key";
-  };
+      ok: false;
+      reason:
+        | "expired"
+        | "future-timestamp"
+        | "invalid-format"
+        | "invalid-signature"
+        | "missing-token"
+        | "path-mismatch"
+        | "subject-mismatch"
+        | "unknown-key";
+    };
 
 /** A key ring for CSRF secret rotation — one active signing key plus all keys valid for verification. @public */
 export interface CsrfKeyRing {
@@ -62,4 +85,5 @@ export interface CsrfKeyRing {
 }
 
 /** A function that resolves a CSRF secret key (or key ring) from the request context. @public */
-export type CsrfSecretResolver<E extends Env = Env> = (c: Context<E>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
+// biome-ignore lint/suspicious/noExplicitAny: context shape varies per consumer
+export type CsrfSecretResolver = (c: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;

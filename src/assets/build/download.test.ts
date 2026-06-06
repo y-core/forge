@@ -47,8 +47,6 @@ describe("fetchURL()", () => {
     await Bun.write(dest, "stale");
 
     // Force re-download — will throw because URL is unreachable
-    await expect(
-      fetchURL("https://this.url.does.not.exist.invalid/file", dest, { force: true }),
-    ).rejects.toThrow();
+    await expect(fetchURL("https://this.url.does.not.exist.invalid/file", dest, { force: true })).rejects.toThrow();
   });
 });

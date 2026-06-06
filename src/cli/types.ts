@@ -68,3 +68,10 @@ export interface CliIO {
   stderr: (msg: string) => void;
   exit: (code: number) => never;
 }
+
+export type CliErrorKind = "unknown-flag" | "missing-value" | "invalid-args" | "missing-command";
+
+// Internal types used to invoke run without knowing the specific flag type.
+// CommandBase omits run deliberately; we recover it here via an assertion.
+export type AnyFlags = Record<string, boolean | string | undefined>;
+export type CallableCommand = { run?: (args: string[], flags: AnyFlags) => void | Promise<void> };

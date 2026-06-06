@@ -1,2 +1,11 @@
-export type { JSX } from "hono/jsx/jsx-runtime";
-export { Fragment, jsx, jsxAttr, jsxEscape, jsxs, jsxTemplate } from "hono/jsx/jsx-runtime";
+import { createElement, Fragment } from "./element";
+import type { JSX } from "./types";
+
+export type { JSX };
+export { Fragment };
+
+export function jsx(type: string | ((...args: unknown[]) => unknown), props: Record<string, unknown>, key?: unknown) {
+  return createElement(type, props, key);
+}
+
+export const jsxs = jsx;
