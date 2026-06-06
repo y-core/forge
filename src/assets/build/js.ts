@@ -1,7 +1,16 @@
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
 import type { JsBundle } from "../types";
+import { safeJoin } from "./paths";
 
+/**
+ * Bundles JavaScript entries with esbuild and writes them to `opts.outDir`.
+ *
+ * **Output directory ownership:** `buildJS` removes all non-hidden files (and the `chunks/`
+ * subdirectory) inside each `bundle.outdir` on each rebuild. Do not place hand-authored files
+ * alongside generated output — they will be deleted. The path containment guard ensures
+ * deletions stay within `opts.outDir`.
+ */
 export async function buildJS(bundles: JsBundle[], opts: { outDir: string; minify?: boolean; hash?: boolean }): Promise<Record<string, string>> {
   if (bundles.length === 0) return {};
 
@@ -11,7 +20,7 @@ export async function buildJS(bundles: JsBundle[], opts: { outDir: string; minif
   // Group bundles by resolved outdir so each outdir is cleaned exactly once.
   const byOutdir = new Map<string, JsBundle[]>();
   for (const bundle of bundles) {
-    const key = join(absPublicDir, bundle.outdir);
+    const key = safeJoin(absPublicDir, bundle.outdir);
     const group = byOutdir.get(key) ?? [];
     group.push(bundle);
     byOutdir.set(key, group);

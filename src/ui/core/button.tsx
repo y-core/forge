@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement } from "../../jsx/element";
-import type { Child, FC, JSX } from "../../jsx/types";
+import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
@@ -7,7 +7,7 @@ interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> 
   variant?: "primary" | "secondary" | "ghost";
   size?: "sm" | "md" | "lg";
   asChild?: boolean;
-  children?: Child;
+  children?: JSXNode;
 }
 
 const buttonVariants = cva({

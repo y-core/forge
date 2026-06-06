@@ -112,10 +112,13 @@ These directories exist in `src/` but have NO entry in `package.json` `"exports"
 
 | Directory | Content | Used by |
 |---|---|---|
-| `src/context/` | `contextVar` accessor for `RequestContext` variables | `security`, `form` |
 | `src/crypto/` | HMAC/timing-safe/base64url utilities (`@internal`) | `form`, `security`, `session` |
 
-Never import these from outside forge. They have no stability guarantee.
+Never import `crypto` from outside forge. It has no stability guarantee.
+
+(`src/context/` is now the public `@y-core/forge/context` subpath — consumers need its
+`Middleware`/`AppContext` types and the `contextVar` accessor over fetch-router's
+`RequestContext`. See §2a of NAMESPACE_DESIGN.md.)
 
 ---
 

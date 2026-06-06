@@ -3,9 +3,18 @@ import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import type { CssBuild } from "../types";
 import { hashFile } from "./hash";
+import { safeJoin } from "./paths";
 
+/**
+ * Builds a Tailwind CSS bundle and writes it to `opts.outDir`.
+ *
+ * **Output directory ownership:** `buildCSS` removes all `.css` files in `dirname(output)`
+ * on each rebuild (to purge stale hashed filenames). Do not place hand-authored `.css` files
+ * alongside generated output — they will be deleted. The path containment guard ensures
+ * deletions stay within `opts.outDir`.
+ */
 export function buildCSS(cssBuild: CssBuild, opts: { outDir: string; minify?: boolean; hash?: boolean }): Record<string, string> {
-  const output = join(opts.outDir, cssBuild.output);
+  const output = safeJoin(opts.outDir, cssBuild.output);
   const outDirPath = dirname(output);
   const shouldHash = opts.hash ?? false;
 

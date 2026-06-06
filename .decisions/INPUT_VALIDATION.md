@@ -89,7 +89,7 @@ failure mode. It returns a `RequestHandler` you map to a route action in the con
     import { v } from "@y-core/forge/validation"
     import type { ValidationResult } from "@y-core/forge/validation"
 
-    export const handleContactAction = defineAction<ContactInput, AppEnv, AppConfig>({
+    export const handleContact = defineAction<ContactInput, AppEnv, AppConfig>({
       parse: (formData) => readFields(formData, ["name", "email", "message"]),
       validate: (data): ValidationResult<ContactInput> => {
         const result = v.safeParse(ContactSchema, data, { abortEarly: true })

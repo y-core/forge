@@ -158,15 +158,15 @@ Group by file, then severity (critical first).
 
     ## EXAMPLE — HTMX endpoint missing guard
     // controller action with no origin/HX guard
-    fragment: handleFragment,   // MISSING: contactSecurityGuard / isHxRequest guard
+    fragment: handleFragment,   // MISSING: contactGuard / isHxRequest guard
 
     ## EXAMPLE — correct
     // route declared in routes map:
     //   fragment: { method: 'POST', pattern: '/fragment' }
     // controller action attaches guards:
-    fragment: { middleware: [contactSecurityGuard, csrfVerifyGuard], handler: handleFragment }
+    fragment: { middleware: [contactGuard, csrfVerifyGuard], handler: handleFragment }
     // ...where the guard is a `Middleware`:
-    const contactSecurityGuard: Middleware = (c, next) =>
+    const contactGuard: Middleware = (c, next) =>
       isHxRequest(c) ? next() : new Response('Not Found', { status: 404 })
 
 ---

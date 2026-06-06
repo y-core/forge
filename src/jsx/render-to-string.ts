@@ -1,8 +1,9 @@
 import { escapeHtml, safeUrl } from "../http/escape";
 import type { SafeHtml } from "../http/html";
 import { rawHtml } from "../http/html";
+import { htmlResponse } from "../http/response";
 import { Fragment, isValidElement } from "./element";
-import type { JSXElement } from "./types";
+import type { JSXElement, JSXNode } from "./types";
 
 /** HTML5 void elements — no children, no closing tag. */
 const VOID_ELEMENTS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
@@ -144,4 +145,13 @@ async function renderNode(node: unknown): Promise<string> {
 /** Renders a JSX tree produced by the forge runtime to a `SafeHtml` value. @public */
 export async function renderToString(node: unknown): Promise<SafeHtml> {
   return rawHtml(await renderNode(node));
+}
+
+/**
+ * Renders a JSX tree to a full-page HTML `Response`, prepending the HTML5 doctype.
+ * Equivalent to `htmlResponse("<!DOCTYPE html>" + await renderToString(node), ...)`.
+ * Use this in page handlers (`definePage` view functions, 404 handlers, etc.). @public
+ */
+export async function renderPage(node: JSXNode, init?: { status?: number; headers?: Record<string, string> }): Promise<Response> {
+  return htmlResponse(`<!DOCTYPE html>${await renderToString(node)}`, init?.status ?? 200, init?.headers);
 }

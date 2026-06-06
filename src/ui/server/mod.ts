@@ -1,3 +1,10 @@
+/**
+ * Server-side HTMX helpers and JSX components for `@y-core/forge/ui/server`. @public
+ *
+ * Exports flash messages, HTMX header helpers (`hxTrigger`, `setPushUrl`, etc.),
+ * HTMX patterns (`formSubmit`, `liveSearch`, `infiniteScroll`, etc.), `ThemeToggle`,
+ * and `Resumable`. Import only in SSR/Workers contexts — never in browser bundles.
+ */
 export type { FlashMessage, FlashType } from "./flash";
 export { Flash, FlashContainer, FlashOob } from "./flash";
 export type { FlashCookieOptions, Flasher } from "./flash-cookie";

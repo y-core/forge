@@ -1,9 +1,9 @@
-import type { Child, FC, JSX, PropsWithChildren } from "../../jsx/types";
+import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 
 type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx-headers"> & {
   method?: "get" | "post";
   "hx-headers"?: Record<string, string> | string;
-  children?: Child;
+  children?: JSXNode;
   csrfToken?: string;
   csrfField?: string;
   honeypotField?: string;

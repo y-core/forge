@@ -69,14 +69,14 @@ runs before the handler for that route only.
     import { healthCheck } from "@y-core/forge/app"
     import { createController } from "@y-core/forge/router"
     import { csrfVerifyGuard } from "./app/middleware"
-    import { contactGuards, handleContactAction } from "./handlers/contact"
+    import { contactGuards, handleContact } from "./handlers/contact"
     import { homeView } from "./handlers/home"
     import { routes } from "./routes"
 
     export const controller = createController(routes, {
       actions: {
         home:    { middleware: [csrfVerifyGuard], handler: homeView },
-        contact: { middleware: contactGuards, handler: handleContactAction },
+        contact: { middleware: contactGuards, handler: handleContact },
         health:  healthCheck<AppEnv>({ csrf: () => true }),   // bare handler — no route middleware
       },
     })
@@ -134,7 +134,7 @@ failures and oversized bodies (413) produce structured fragment responses automa
 
     import { defineAction } from "@y-core/forge/app"
 
-    export const handleContactAction = defineAction<ContactInput, AppEnv, AppConfig>({
+    export const handleContact = defineAction<ContactInput, AppEnv, AppConfig>({
       parse: (formData) => readContactFields(formData),
       validate: (data) => ContactSchema(data),
       handle: async (data, c, config) => {
@@ -145,7 +145,7 @@ failures and oversized bodies (413) produce structured fragment responses automa
 
 `handle` returns a `Response` directly — an HTMX fragment, a JSON response, or a redirect. It never
 delegates to a view. A plain `(c) => Response` action is equally valid when the parse/validate/handle
-pipeline is not needed (see `handleContactAction` in the starter, which reads `parseFormData(c)`
+pipeline is not needed (see `handleContact` in the starter, which reads `parseFormData(c)`
 itself). Like `definePage`, `defineAction` does NOT accept a `middleware` field.
 
 ### 2c. Health Check Route with healthCheck
@@ -205,9 +205,9 @@ request data via `c.request.headers.get("X")`, `c.method`, and `c.url` (§5).
 
 Middleware in a controller action's `middleware` array executes left-to-right before the handler:
 
-    contact: { middleware: [contactSecurityGuard, rateLimitGuard, csrfVerifyGuard], handler: handleContactAction }
+    contact: { middleware: [contactGuard, rateLimitGuard, csrfVerifyGuard], handler: handleContact }
     // Execution order:
-    // contactSecurityGuard → rateLimitGuard → csrfVerifyGuard → handleContactAction
+    // contactGuard → rateLimitGuard → csrfVerifyGuard → handleContact
 
 Place broad guards (origin checks, rate limiting) before narrow guards (CSRF token verification) so
 cheap rejections occur before expensive ones.

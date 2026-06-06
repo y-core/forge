@@ -161,7 +161,14 @@ export async function mintCsrf(context: RequestContext<any, any>, path?: string)
 export type { CsrfSecretResolver };
 
 /**
- * Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public
+ * Middleware that sets a CSRF token on GET requests and verifies it on mutations.
+ *
+ * The `secret` resolver is invoked **once per distinct `context.env` object** and the
+ * resulting key ring is cached against it via `WeakMap`. In Cloudflare Workers production
+ * the same `env` binding lives for the isolate's lifetime, so the key is imported exactly
+ * once. In tests each `app.request(..., env)` call with a different `env` object re-invokes
+ * the resolver, ensuring per-environment isolation. Falls back to no-cache when `env` is
+ * absent. @public
  */
 export function csrfProtection<Bindings = Record<string, unknown>>(options: {
   // biome-ignore lint/suspicious/noExplicitAny: context shape varies
@@ -173,14 +180,19 @@ export function csrfProtection<Bindings = Record<string, unknown>>(options: {
 }): Middleware {
   const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
 
-  let resolvedRing: CsrfKeyRing | undefined;
+  const ringCache = new WeakMap<object, CsrfKeyRing>();
   // biome-ignore lint/suspicious/noExplicitAny: context shape varies
   const resolveRing = async (context: RequestContext<any, any>): Promise<CsrfKeyRing> => {
-    if (!resolvedRing) {
-      const result = await Promise.resolve(secret(context));
-      resolvedRing = normalizeRing(result);
+    // biome-ignore lint/suspicious/noExplicitAny: env shape varies across apps and tests
+    const envObj = (context as any).env;
+    const cacheKey = envObj && typeof envObj === "object" ? (envObj as object) : null;
+    if (cacheKey) {
+      const hit = ringCache.get(cacheKey);
+      if (hit) return hit;
     }
-    return resolvedRing;
+    const ring = normalizeRing(await Promise.resolve(secret(context)));
+    if (cacheKey) ringCache.set(cacheKey, ring);
+    return ring;
   };
 
   return async (context, next) => {

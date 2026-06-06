@@ -53,6 +53,7 @@ The table below is a quick reference; the decision doc is the source of truth.
 | `@y-core/forge/storage/db` | D1 database client |
 | `@y-core/forge/storage/kv` | Workers KV typed store |
 | `@y-core/forge/storage/r2` | R2 object storage |
+| `@y-core/forge/render` | JSX → `HtmlResponse` (`renderPage`) |
 | `@y-core/forge/ui` | Server-side JSX components |
 | `@y-core/forge/ui/client` | Browser-side UI scripts |
 | `@y-core/forge/ui/client/htmx` | HTMX bundle (sideEffect) |
@@ -95,7 +96,8 @@ const maybe = userCtx.getOptional(context); // undefined if unset
 `createApp` returns a `Forge` instance — a Workers-native request router with a fail-closed error boundary. Its `fetch(request, env, executionCtx)` method is a valid Workers module default export.
 
 ```typescript
-import { createApp, applyAssets, definePage, defineAction, healthCheck, validateBindings, validateEnv, renderWith } from "@y-core/forge/app";
+import { createApp, applyAssets, definePage, defineAction, healthCheck, validateBindings, validateEnv } from "@y-core/forge/app";
+import { renderPage } from "@y-core/forge/render";
 import { route, createController } from "@y-core/forge/router";
 import { makeSecurityHeaders, NONCE } from "@y-core/forge/security";
 import { v } from "@y-core/forge/validation";
@@ -145,11 +147,9 @@ app.use("*", validateBindings(EnvSchema));
 
 `definePage` wraps a `loader` (data) + `view` (JSX → `Response`) into a `RequestHandler`, with optional caching, custom headers, and error recovery. The handler receives `(c, config, state)`.
 
-Full pages are rendered via a `renderWith()`-installed renderer — the app calls
-`app.use("*", renderWith(pageRenderer))` once, and handlers call `c.render(content, init)`;
-`logViewer` and other forge handlers read the same renderer via `context.get(Renderer)`.
-When no renderer is installed, `c.render` is not available and those handlers fall back
-to `Response.json(data)`.
+Full pages are rendered by calling `renderPage(jsxNode, init?)` from `@y-core/forge/render`
+inside the `view` function. `renderPage` converts the JSX tree to an `HtmlResponse` directly —
+no global middleware step is required.
 
 ```typescript
 import { definePage } from "@y-core/forge/app";
@@ -157,7 +157,7 @@ import { definePage } from "@y-core/forge/app";
 export const homePage = definePage<Bindings, AppConfig>({
   cache: "no-store",
   loader: async (c, config) => ({ greeting: `Hello from ${config.site.name}` }),
-  view: (c, config, state) => c.render(<Home data={state.data} />),
+  view: (_c, _cfg, state) => renderPage(<Home data={state.data} />),
   onError: (err, c) => renderError(c, err),     // called if loader/view throws
 });
 ```
@@ -201,7 +201,7 @@ const controller = createController(routes, {
   actions: {
     home: homePage,
     contact: { middleware: [csrfGuard, originGuard], handler: contactAction },
-    adminLogs: { middleware: [adminAuth], handler: logViewer({ kv: (c) => c.env.LOGS_KV }) },
+    adminLogs: { middleware: [adminAuth], handler: adminLogsController },
   },
 });
 

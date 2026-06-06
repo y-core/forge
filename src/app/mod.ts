@@ -6,6 +6,4 @@ export { validateBindings, validateEnv } from "./env";
 export { Forge } from "./forge-app";
 export { healthCheck } from "./health";
 export { definePage } from "./page";
-export type { AnyRenderer } from "./render-middleware";
-export { Renderer, renderWith } from "./render-middleware";
 export type { ActionDefinition, AppOptions, AssetOptions, AssetsFetcher, CacheDirective, HealthCheckResult, PageDefinition } from "./types";
