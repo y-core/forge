@@ -1,4 +1,4 @@
-import type { FC, JSX, PropsWithChildren } from "hono/jsx";
+import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
 import { FIELD_LABEL_CLASSES, FieldDescription, FieldError, FieldLabel, FieldRoot } from "./field";
 import { Separator } from "./separator";
 import { asClass, cn } from "./utils/cn";
@@ -29,94 +29,44 @@ interface FieldSeparatorProps extends Omit<JSX.IntrinsicElements["div"], "childr
 }
 
 const FieldSet: FC<PropsWithChildren<FieldSetProps>> = ({ class: cls, children, ...props }) => (
-  <fieldset
-    data-slot="field-set"
-    class={cn("flex flex-col gap-6", asClass(cls))}
-    {...props}
-  >
+  <fieldset data-slot='field-set' class={cn("flex flex-col gap-6", asClass(cls))} {...props}>
     {children}
   </fieldset>
 );
 
-const FieldLegend: FC<PropsWithChildren<FieldLegendProps>> = ({
-  class: cls,
-  variant = "legend",
-  children,
-  ...props
-}) => (
+const FieldLegend: FC<PropsWithChildren<FieldLegendProps>> = ({ class: cls, variant = "legend", children, ...props }) => (
   <legend
-    data-slot="field-legend"
+    data-slot='field-legend'
     data-variant={variant}
-    class={cn(
-      "mb-3 font-medium",
-      variant === "legend" ? "text-base text-foreground" : "text-sm text-foreground",
-      asClass(cls),
-    )}
-    {...props}
-  >
+    class={cn("mb-3 font-medium", variant === "legend" ? "text-base text-foreground" : "text-sm text-foreground", asClass(cls))}
+    {...props}>
     {children}
   </legend>
 );
 
-const FieldGroup: FC<PropsWithChildren<FieldGroupProps>> = ({
-  class: cls,
-  children,
-  ...props
-}) => (
-  <div
-    data-slot="field-group"
-    class={cn("@container/field-group flex w-full flex-col gap-6", asClass(cls))}
-    {...props}
-  >
+const FieldGroup: FC<PropsWithChildren<FieldGroupProps>> = ({ class: cls, children, ...props }) => (
+  <div data-slot='field-group' class={cn("@container/field-group flex w-full flex-col gap-6", asClass(cls))} {...props}>
     {children}
   </div>
 );
 
-const FieldContent: FC<PropsWithChildren<FieldContentProps>> = ({
-  class: cls,
-  children,
-  ...props
-}) => (
-  <div
-    data-slot="field-content"
-    class={cn("flex flex-1 flex-col gap-1.5 leading-snug", asClass(cls))}
-    {...props}
-  >
+const FieldContent: FC<PropsWithChildren<FieldContentProps>> = ({ class: cls, children, ...props }) => (
+  <div data-slot='field-content' class={cn("flex flex-1 flex-col gap-1.5 leading-snug", asClass(cls))} {...props}>
     {children}
   </div>
 );
 
-const FieldTitle: FC<PropsWithChildren<FieldTitleProps>> = ({
-  class: cls,
-  children,
-  ...props
-}) => (
-  <div
-    data-slot="field-title"
-    class={cn(FIELD_LABEL_CLASSES, asClass(cls))}
-    {...props}
-  >
+const FieldTitle: FC<PropsWithChildren<FieldTitleProps>> = ({ class: cls, children, ...props }) => (
+  <div data-slot='field-title' class={cn(FIELD_LABEL_CLASSES, asClass(cls))} {...props}>
     {children}
   </div>
 );
 
-const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({
-  class: cls,
-  children,
-  ...props
-}) => (
-  <div
-    data-content={children ? "true" : undefined}
-    data-slot="field-separator"
-    class={cn("relative h-5 text-sm", asClass(cls))}
-    {...props}
-  >
-    <Separator class="absolute inset-0 top-1/2" />
+const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({ class: cls, children, ...props }) => (
+  <div data-content={children ? "true" : undefined} data-slot='field-separator' class={cn("relative h-5 text-sm", asClass(cls))} {...props}>
+    <Separator class='absolute inset-0 top-1/2' />
     {children ? (
-      <span
-        data-slot="field-separator-content"
-        class="relative mx-auto block w-fit bg-background px-2 text-muted-foreground"
-      >
+      <span data-slot='field-separator-content' class='relative mx-auto block w-fit bg-background px-2 text-muted-foreground'>
         {children}
       </span>
     ) : null}

@@ -66,9 +66,7 @@ describe("addCommand()", () => {
   it("throws on duplicate command name", () => {
     const parent = createCommand({ name: "root" });
     addCommand(parent, createCommand({ name: "sub" }));
-    expect(() => addCommand(parent, createCommand({ name: "sub" }))).toThrow(
-      'Duplicate command name: "sub"',
-    );
+    expect(() => addCommand(parent, createCommand({ name: "sub" }))).toThrow('Duplicate command name: "sub"');
   });
 
   it("allows multiple distinct children", () => {

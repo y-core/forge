@@ -1,30 +1,27 @@
-import type { Context, Env, MiddlewareHandler } from "hono";
+import type { Middleware } from "@remix-run/fetch-router";
 import { validateBindings } from "../../app/env";
+import type { AppContext } from "../../context/types";
 import { v } from "../../validation/mod";
 import { r2Backend } from "./r2-backend";
-import type { ObjectStore, ObjectStoreOptions } from "./store";
 import { createObjectStore } from "./store";
-import type { R2Bucket } from "./types";
-
-/** Options for resolving an R2 binding from Hono context. @public */
-export interface R2BindingOptions<E extends Env = Env> {
-  binding: (c: Context<E>) => R2Bucket | undefined;
-  /** When true (default), throws if the binding is absent. Set false to return null instead. */
-  required?: boolean;
-  store?: ObjectStoreOptions;
-}
+import type { ObjectStore, ObjectStoreOptions, R2BindingOptions, R2Bucket } from "./types";
 
 /**
  * Middleware that validates an R2 bucket binding exists on first request.
  * Pass the Wrangler binding name (e.g. "MY_BUCKET"). @public
  */
-export function validateR2Binding(name: string): MiddlewareHandler {
+export function validateR2Binding(name: string): Middleware {
   return validateBindings(
     v.object({
       [name]: v.pipe(
         v.unknown(),
         v.check(
-          (val) => typeof val === "object" && val !== null,
+          // Shape check, not mere presence: a string/number bound to this name must be rejected.
+          (val) =>
+            typeof val === "object" &&
+            val !== null &&
+            typeof (val as { get?: unknown }).get === "function" &&
+            typeof (val as { put?: unknown }).put === "function",
           `${name} must be an R2 bucket binding`,
         ),
       ),
@@ -36,9 +33,9 @@ export function validateR2Binding(name: string): MiddlewareHandler {
  * Resolves an ObjectStore from the current request context using an R2 backend.
  * Returns null when binding is absent and `required` is false; throws otherwise. @public
  */
-export function resolveObjectStore<E extends Env = Env>(
-  c: Context<E>,
-  opts: R2BindingOptions<E>,
+export function resolveObjectStore<Bindings = Record<string, unknown>>(
+  c: AppContext<Bindings>,
+  opts: R2BindingOptions<Bindings>,
 ): ObjectStore | null {
   const bucket = opts.binding(c);
   if (!bucket) {

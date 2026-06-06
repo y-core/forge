@@ -1,8 +1,7 @@
 import { createLogger } from "../../logging/logger";
 import { result } from "../../result/result";
-import type { KvCodec } from "./codec";
 import { jsonCodec } from "./codec";
-import type { KVEntry, KVListEntry, KVListOptions, KVNamespace, KVSetOptions, KVStore, KVStoreOptions } from "./types";
+import type { KVEntry, KVListEntry, KVListOptions, KVNamespace, KVSetOptions, KVStore, KVStoreOptions, KvCodec } from "./types";
 
 const KV_PREFIX_SEPARATOR = "||";
 
@@ -55,13 +54,11 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
     getWithMeta<M = unknown>(key: string) {
       return result(async (): Promise<KVEntry<T, M>> => {
         const fullKey = prefixKey(key);
-        const { value, metadata } = codec.type === "arrayBuffer"
-          ? await kv.getWithMetadata<M>(fullKey, { type: "arrayBuffer" })
-          : await kv.getWithMetadata<M>(fullKey, { type: "text" });
-        return {
-          value: value !== null ? codec.decode(value) : null,
-          metadata,
-        };
+        const { value, metadata } =
+          codec.type === "arrayBuffer"
+            ? await kv.getWithMetadata<M>(fullKey, { type: "arrayBuffer" })
+            : await kv.getWithMetadata<M>(fullKey, { type: "text" });
+        return { value: value !== null ? codec.decode(value) : null, metadata };
       });
     },
 
@@ -95,13 +92,13 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
             ? `${prefix}${KV_PREFIX_SEPARATOR}${listOpts.prefix}`
             : `${prefix}${KV_PREFIX_SEPARATOR}`
           : listOpts?.prefix;
-        const res = await kv.list<M>({ ...listOpts, prefix: listPrefix });
+        const res = await kv.list<M>({ ...listOpts, ...(listPrefix !== undefined ? { prefix: listPrefix } : {}) });
         const keys: KVListEntry<M>[] = res.keys.map(({ name, expiration, metadata }) => ({
           name: stripPrefix(name),
           ...(expiration !== undefined ? { expiration } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         }));
-        return { keys, cursor: res.cursor, complete: res.list_complete };
+        return { keys, ...(res.cursor !== undefined ? { cursor: res.cursor } : {}), complete: res.list_complete };
       });
     },
   };

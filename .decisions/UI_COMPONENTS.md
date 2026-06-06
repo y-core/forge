@@ -1,6 +1,6 @@
 ---
 title: UI Components
-description: "Hono JSX components, Form, Field, Input, Select, Button, Alert, Card, Icon, cn, cva, SSR components, ui/core, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
+description: "forge JSX components, renderToString, safeUrl, getNonce, Form, Field, Input, Select, Button, Alert, Card, Icon, cn, cva, SSR components, ui/core, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
 weight: 30
 ---
 
@@ -12,6 +12,11 @@ weight: 30
 >
 > Complements [ROUTING_AND_MIDDLEWARE.md](./ROUTING_AND_MIDDLEWARE.md) (route views),
 > [INPUT_VALIDATION.md](./INPUT_VALIDATION.md) (form components).
+>
+> SSR rendering: components produce a forge `RemixElement` tree; `renderToString`
+> (from `@y-core/forge/render`) serializes it to a `SafeHtml` string. The JSX runtime is
+> forge's own (`@y-core/forge/jsx-runtime`), set via `/** @jsxImportSource @y-core/forge */`
+> at the top of each `.tsx` file — it is NOT a third-party JSX runtime.
 
 ---
 
@@ -28,8 +33,11 @@ weight: 30
 
 ## 1. ui/core Namespace (SSR Components)
 
-> All components in ui/core are Hono JSX components rendered server-side. They produce
-> static HTML with no browser JavaScript dependency.
+> All components in ui/core are forge JSX components rendered server-side via
+> `renderToString`. They produce static HTML with no browser JavaScript dependency.
+> URL-valued attributes (`href`, `src`, `action`, `formaction`, `poster`, `cite`,
+> `background`) are scheme-sanitized automatically by the renderer via `safeUrl`, so a
+> `javascript:`-style value collapses to `"#"` in the emitted HTML.
 
 ### 1a. Form Component
 
@@ -176,25 +184,33 @@ child is `undefined` or empty string, so it is safe to always include.
 ### 2b. HTMX Response Fragment Target
 
 The form's `hx-target` points to the result `<div>`. On the handler side, successful
-and failed submissions return a JSX fragment swapped into that div:
+and failed submissions serialize a JSX fragment with `renderToString` and wrap the
+resulting `SafeHtml` in a `text/html` `Response` via `fragmentResponse` (no DOCTYPE,
+since the fragment is swapped into an existing document):
+
+    import { fragmentResponse } from "@y-core/forge/http"
+    import { renderToString } from "@y-core/forge/render"
 
     // handler returns on error:
-    return c.html(
+    return fragmentResponse(await renderToString(
       <Alert variant="destructive">
         <AlertTitle>Submission Failed</AlertTitle>
         <AlertDescription>{message}</AlertDescription>
       </Alert>
-    )
+    ))
 
     // handler returns on success:
-    return c.html(
+    return fragmentResponse(await renderToString(
       <Alert variant="success">
         <AlertTitle>Message Sent</AlertTitle>
       </Alert>
-    )
+    ))
 
 The fragment replaces the inner content of `#contact-result` via the default
-`hx-swap="innerHTML"`.
+`hx-swap="innerHTML"`. For full pages use `htmlResponse(await renderToString(<Page/>))`,
+which prepends `<!DOCTYPE html>`. For plain text/JSON banners that need no JSX, the
+`renderError` / `renderSuccess` / `renderValidationErrors` helpers (also from
+`@y-core/forge/http`) return ready-to-send `SafeHtml`.
 
 ---
 
@@ -262,7 +278,9 @@ class string. Combine with `cn` when additional conditional classes are needed:
 class on `<html>` before the browser paints. This prevents flash-of-unstyled-content
 (FOUC) on dark mode. `mountTheme()` attaches click handlers to the theme toggle button.
 The script hash for `FOUC_SCRIPT` must be included in the CSP `script-src` via
-`makeSecurityHeaders` (see [SECURITY_HARDENING.md](./SECURITY_HARDENING.md)).
+`makeSecurityHeaders` (see [SECURITY_HARDENING.md](./SECURITY_HARDENING.md)). Any other
+inline `<script>` rendered server-side must carry the per-request nonce, obtained with
+`getNonce(c)` from `@y-core/forge/security` and emitted as `<script nonce={getNonce(c)}>`.
 
 ### 4b. mountNav — Navigation Controller
 
@@ -346,9 +364,10 @@ via the `'self'` allowlist (no hash required for external files).
 Use ui/core components for all of the following:
 
 - HTML structure: forms, cards, alerts, buttons, inputs
-- Route view JSX rendered inside Hono handlers (`c.html(...)`)
+- Route view JSX serialized inside request handlers via `renderToString` and returned
+  through `htmlResponse` / `fragmentResponse`
 - Components that carry no JS behavior — styling and markup only
-- Any component imported in `src/views/`, `src/handlers/`, or `src/routes.tsx`
+- Any component imported in `src/views/`, `src/handlers/`, or `src/router.tsx`
 
 ### 6b. When to Use ui/client (Browser)
 

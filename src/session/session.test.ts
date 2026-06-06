@@ -2,19 +2,21 @@ import { describe, expect, it } from "bun:test";
 import { createCookie } from "@remix-run/cookie";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 import { createMemorySessionStorage } from "@remix-run/session/memory-storage";
-import { Hono } from "hono";
-import { type SessionVariables, sessionMiddleware } from "./session";
+import { Forge } from "../app/forge-app";
+import { mapHandler } from "../app/route-test-helper";
+import { setPendingHeader } from "../context/pending-headers";
+import { sessionCtx, sessionMiddleware } from "./session";
 
 const sessionCookie = createCookie("__session", { path: "/" });
 
 describe("sessionMiddleware with cookie storage", () => {
   it("creates a new session for requests with no session cookie", async () => {
     const storage = createCookieSessionStorage();
-    const app = new Hono<SessionVariables>();
+    const app = new Forge();
     app.use("*", sessionMiddleware(storage, sessionCookie));
-    app.get("/", (c) => {
-      const session = c.get("session");
-      return c.text(session.id ? "has-id" : "no-id");
+    mapHandler(app, "GET", "/", (c) => {
+      const session = sessionCtx.get(c);
+      return new Response(session.id ? "has-id" : "no-id");
     });
 
     const res = await app.request("/");
@@ -24,12 +26,12 @@ describe("sessionMiddleware with cookie storage", () => {
 
   it("sets Set-Cookie when session is dirty", async () => {
     const storage = createCookieSessionStorage();
-    const app = new Hono<SessionVariables>();
+    const app = new Forge();
     app.use("*", sessionMiddleware(storage, sessionCookie));
-    app.post("/login", (c) => {
-      const session = c.get("session");
+    mapHandler(app, "POST", "/login", (c) => {
+      const session = sessionCtx.get(c);
       session.set("userId", "42");
-      return c.text("ok");
+      return new Response("ok");
     });
 
     const res = await app.request("/login", { method: "POST" });
@@ -39,46 +41,84 @@ describe("sessionMiddleware with cookie storage", () => {
 
   it("appends the session cookie without overwriting existing Set-Cookie headers", async () => {
     const storage = createCookieSessionStorage();
-    const app = new Hono<SessionVariables>();
+    const app = new Forge();
     app.use("*", sessionMiddleware(storage, sessionCookie));
-    app.post("/login", (c) => {
-      const session = c.get("session");
+    mapHandler(app, "POST", "/login", (c) => {
+      const session = sessionCtx.get(c);
       session.set("userId", "42");
-      c.header("set-cookie", "flash=1; Path=/", { append: true });
-      return c.text("ok");
+      setPendingHeader(c, "set-cookie", "flash=1; Path=/", { append: true });
+      return new Response("ok");
     });
 
     const res = await app.request("/login", { method: "POST" });
     const cookies = res.headers.getSetCookie();
     expect(cookies).toHaveLength(2);
-    expect(cookies[0]).toContain("flash=1");
-    expect(cookies[1]).toContain("__session=");
+    // Both cookies survive; set-cookie order is not semantically meaningful.
+    expect(cookies.some((c) => c.includes("__session="))).toBe(true);
+    expect(cookies.some((c) => c.includes("flash=1"))).toBe(true);
   });
 
   it("does not set Set-Cookie when session is untouched", async () => {
     const storage = createCookieSessionStorage();
-    const app = new Hono<SessionVariables>();
+    const app = new Forge();
     app.use("*", sessionMiddleware(storage, sessionCookie));
-    app.get("/", (c) => c.text("ok"));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
 
     const res = await app.request("/");
     expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("emits exactly one Set-Cookie when a session is mutated", async () => {
+    const storage = createCookieSessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "POST", "/login", (c) => {
+      sessionCtx.get(c).set("userId", "42");
+      return new Response("ok");
+    });
+
+    const res = await app.request("/login", { method: "POST" });
+    expect(res.headers.getSetCookie()).toHaveLength(1);
+  });
+});
+
+describe("sessionMiddleware destroy", () => {
+  it("emits a Set-Cookie when a seeded session is destroyed", async () => {
+    const storage = createMemorySessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "POST", "/set", (c) => {
+      sessionCtx.get(c).set("userId", "42");
+      return new Response("ok");
+    });
+    mapHandler(app, "POST", "/logout", (c) => {
+      sessionCtx.get(c).destroy();
+      return new Response("ok");
+    });
+
+    // Seed an existing session and capture its cookie.
+    const setRes = await app.request("/set", { method: "POST" });
+    const setCookie = setRes.headers.get("set-cookie")!;
+    const sessionId = setCookie.match(/__session=([^;]+)/)?.[1] ?? "";
+
+    const res = await app.request("/logout", { method: "POST", headers: { cookie: `__session=${sessionId}` } });
+    expect(res.headers.get("set-cookie")).not.toBeNull();
   });
 });
 
 describe("sessionMiddleware with memory storage", () => {
   it("persists session data across requests", async () => {
     const storage = createMemorySessionStorage();
-    const app = new Hono<SessionVariables>();
+    const app = new Forge();
     app.use("*", sessionMiddleware(storage, sessionCookie));
-    app.post("/set", (c) => {
-      const session = c.get("session");
+    mapHandler(app, "POST", "/set", (c) => {
+      const session = sessionCtx.get(c);
       session.set("role", "admin");
-      return c.text("ok");
+      return new Response("ok");
     });
-    app.get("/get", (c) => {
-      const session = c.get("session");
-      return c.text(String(session.get("role") ?? "none"));
+    mapHandler(app, "GET", "/get", (c) => {
+      const session = sessionCtx.get(c);
+      return new Response(String(session.get("role") ?? "none"));
     });
 
     // First request: set the value
@@ -91,24 +131,22 @@ describe("sessionMiddleware with memory storage", () => {
     const sessionId = match?.[1] ?? "";
 
     // Second request: read the value back
-    const getRes = await app.request("/get", {
-      headers: { cookie: `__session=${sessionId}` },
-    });
+    const getRes = await app.request("/get", { headers: { cookie: `__session=${sessionId}` } });
     expect(await getRes.text()).toBe("admin");
   });
 
   it("supports flash values consumed on next read", async () => {
     const storage = createMemorySessionStorage();
-    const app = new Hono<SessionVariables>();
+    const app = new Forge();
     app.use("*", sessionMiddleware(storage, sessionCookie));
-    app.post("/flash", (c) => {
-      const session = c.get("session");
+    mapHandler(app, "POST", "/flash", (c) => {
+      const session = sessionCtx.get(c);
       session.flash("notice", "Saved!");
-      return c.text("ok");
+      return new Response("ok");
     });
-    app.get("/read", (c) => {
-      const session = c.get("session");
-      return c.text(String(session.get("notice") ?? "empty"));
+    mapHandler(app, "GET", "/read", (c) => {
+      const session = sessionCtx.get(c);
+      return new Response(String(session.get("notice") ?? "empty"));
     });
 
     const flashRes = await app.request("/flash", { method: "POST" });
@@ -116,9 +154,7 @@ describe("sessionMiddleware with memory storage", () => {
     const match = cookieHeader.match(/__session=([^;]+)/);
     const sessionId = match?.[1] ?? "";
 
-    const readRes = await app.request("/read", {
-      headers: { cookie: `__session=${sessionId}` },
-    });
+    const readRes = await app.request("/read", { headers: { cookie: `__session=${sessionId}` } });
     expect(await readRes.text()).toBe("Saved!");
   });
 });

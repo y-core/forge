@@ -88,12 +88,13 @@ These two are exempted because they are shared utilities without circular risk.
 
 | Export Path | Source | Category | Key Exports |
 |---|---|---|---|
-| `@y-core/forge/app` | `src/app/mod.ts` | Integration | `createApp`, `applyAssets`, `validateBindings`, `validateEnv`, `healthCheck`, `definePage`, `defineAction` |
+| `@y-core/forge/app` | `src/app/mod.ts` | Integration | `createApp`, `applyAssets`, `validateBindings`, `validateEnv`, `healthCheck`, `definePage`, `defineAction`, `renderWith`, `Renderer`, `AnyRenderer` |
 | `@y-core/forge/assets` | `src/assets/mod.ts` | Integration | `defineAssetsConfig`, `loadConfig`, `AssetsConfig`, `AssetsConfigSchema` |
 | `@y-core/forge/assets/build` | `src/assets/build/mod.ts` | Leaf | `buildAll`, `generateManifest`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets` |
 | `@y-core/forge/assets/manifest` | `src/assets/manifest/mod.ts` | Leaf | `createManifest`, `createSpriteRegistry` |
 | `@y-core/forge/cli` | `src/cli/mod.ts` | Leaf | `createCommand`, `addCommand`, `parseArgs`, `execute`, `CliError` |
 | `@y-core/forge/config` | `src/config/mod.ts` | Leaf | `Config`, `env`, `applyMapping`, `optionalGroup`, `resolveConfig` |
+| `@y-core/forge/context` | `src/context/mod.ts` | Leaf | `contextVar`, `createContextKey`, `RequestContext`, `EnvKey`, `ExecutionContextKey`; types `AppContext`, `Middleware`, `RequestHandler`, `ContextKey`, `ContextVar` |
 | `@y-core/forge/form` | `src/form/mod.ts` | Leaf | `readFields`, `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `createCsrfToken`, `isHoneypotFilled`, `verifyTurnstile`, `CsrfConfigSchema`, `TurnstileConfigSchema` |
 | `@y-core/forge/http` | `src/http/mod.ts` | Leaf | `html`, `escapeHtml`, `htmlResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, `CacheControl`, `ContentType`, `SetCookie`, `Vary` |
 | `@y-core/forge/jsx-runtime` | `src/jsx/jsx-runtime.ts` | Leaf | JSX runtime (alias) |
@@ -103,7 +104,7 @@ These two are exempted because they are shared utilities without circular risk.
 | `@y-core/forge/logging/http` | `src/logging/http/mod.ts` | Integration | `logViewer`, `readLogs`, `LogFilterBar`, `LogLevelBadge`, `LogTable`, `LogTableBody` |
 | `@y-core/forge/pkg` | `src/pkg/mod.ts` | Integration | `createReleaseCommand`, `parseSemVer`, `bumpSemVer`, `formatSemVer` |
 | `@y-core/forge/result` | `src/result/mod.ts` | Leaf | `result`, `toError`, `Result`, `ValidationResult` |
-| `@y-core/forge/router` | `src/router/mod.ts` | Leaf | `route`, `index`, `layout`, `prefix`, `applyRoutes`, `App`, `Context`, `MiddlewareHandler`, `Next` |
+| `@y-core/forge/router` | `src/router/mod.ts` | Leaf | re-exports fetch-router: `route`, `createController`, `createAction`, `createRouter`, `createContextKey`, `RequestContext`, `get`/`post`/`put`/`patch`/`del`, `resource`, `createHref`; types `Controller`, `Middleware`, `RequestHandler`, `RouteMap` |
 | `@y-core/forge/security` | `src/security/mod.ts` | Integration | `makeSecurityHeaders`, `mergeSecurityHeaders`, `NONCE`, `requestId`, `requestIdCtx`, `isHxRequest`, `requireFormContentType`, `cors`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit`, `BaseUrlConfigSchema` |
 | `@y-core/forge/session` | `src/session/mod.ts` | Leaf | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
 | `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | Leaf | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment` |
@@ -118,10 +119,12 @@ These two are exempted because they are shared utilities without circular risk.
 
 | Directory | Purpose | Consumers |
 |---|---|---|
-| `src/context/` | `contextVar()` accessor for Hono typed context vars | security, form, logging |
-| `src/crypto/` | HMAC/timing-safe/base64url utilities (`@internal`) | form (CSRF), security (origin), session |
+| `src/crypto/` | HMAC/timing-safe/base64url utilities (`@internal`) | form (CSRF), security (origin), session, storage/r2 (signing) |
 
-These have no `package.json` export entry. Never import them from outside forge.
+This has no `package.json` export entry. Never import it from outside forge.
+(`src/context/` is now the public `@y-core/forge/context` subpath — see §3a —
+because consumers need its `Middleware`/`AppContext` types and the `contextVar`
+accessor, which sit over fetch-router's `RequestContext`.)
 
 Note on stale references: earlier versions listed `timingSafeEqual` under security exports.
 The correct location is `src/crypto/mod.ts` (`@internal`). `isHxRequest` is the correct export
@@ -135,7 +138,7 @@ name from security (not `requireHxRequest`).
 
 A namespace is leaf when:
 - It imports only from its own `src/{name}/` directory
-- It imports only from external npm packages (`hono`, `valibot`, `@remix-run/*`)
+- It imports only from external npm packages (`valibot`, `@remix-run/*`)
 - It has zero imports from other forge namespaces
 
 Current leaf namespaces:
@@ -176,9 +179,9 @@ the export path as `@y-core/forge/ui` — consumers never change their imports.
 
 ### 5c. app — Bootstrap and Pipeline Builders
 
-`app` contains `createApp`, `validateBindings`, `validateEnv`, `healthCheck`, `serveAssets`,
-`definePage`, `defineAction`. If a third pipeline builder variant is needed, extract all
-pipeline builders into a new `@y-core/forge/handler` namespace.
+`app` contains `createApp`, `validateBindings`, `validateEnv`, `healthCheck`, `applyAssets`,
+`definePage`, `defineAction`, `renderWith`. If a third pipeline builder variant is needed,
+extract all pipeline builders into a new `@y-core/forge/handler` namespace.
 
 ### 5d. http — All HTTP Output Concerns
 

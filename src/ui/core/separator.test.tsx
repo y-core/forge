@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Separator } from "./separator";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Separator", () => {
@@ -23,7 +20,7 @@ describe("Separator", () => {
   });
 
   it("renders vertical classes when orientation=vertical", async () => {
-    const out = await render(<Separator orientation="vertical" />);
+    const out = await render(<Separator orientation='vertical' />);
     expect(out).toContain("h-full");
     expect(out).toContain("w-px");
   });
@@ -34,12 +31,12 @@ describe("Separator", () => {
   });
 
   it("sets aria-orientation=vertical when specified", async () => {
-    const out = await render(<Separator orientation="vertical" />);
+    const out = await render(<Separator orientation='vertical' />);
     expect(out).toContain('aria-orientation="vertical"');
   });
 
   it("merges a custom class with the base classes", async () => {
-    const out = await render(<Separator class="my-sep" />);
+    const out = await render(<Separator class='my-sep' />);
     expect(out).toContain("my-sep");
     expect(out).toContain("border-0");
   });

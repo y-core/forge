@@ -5,10 +5,7 @@ import type { D1Database, D1PreparedStatement, D1Result } from "./types";
 
 type BoundCall = { text: string; params: unknown[] };
 
-function makeD1Stub(rows: unknown[] = [], meta: D1Result<unknown>["meta"] = {}): {
-  db: D1Database;
-  calls: BoundCall[];
-} {
+function makeD1Stub(rows: unknown[] = [], meta: D1Result<unknown>["meta"] = {}): { db: D1Database; calls: BoundCall[] } {
   const calls: BoundCall[] = [];
 
   function makeStatement(text: string, params: unknown[]): D1PreparedStatement {
@@ -59,17 +56,25 @@ describe("createD1Client — query", () => {
     const { db, calls } = makeD1Stub([]);
     const client = createD1Client(db);
     await client.query(sql`SELECT * FROM t WHERE name = ${"Alice"} AND age = ${30}`);
-    expect(calls[0].params).toEqual(["Alice", 30]);
+    expect(calls[0]!.params).toEqual(["Alice", 30]);
   });
 
   it("wraps D1 errors in Result", async () => {
     const db: D1Database = {
       prepare() {
         return {
-          bind() { return this; },
-          all() { return Promise.reject(new Error("D1 error")); },
-          first() { return Promise.reject(new Error("D1 error")); },
-          run() { return Promise.reject(new Error("D1 error")); },
+          bind() {
+            return this;
+          },
+          all() {
+            return Promise.reject(new Error("D1 error"));
+          },
+          first() {
+            return Promise.reject(new Error("D1 error"));
+          },
+          run() {
+            return Promise.reject(new Error("D1 error"));
+          },
         };
       },
       batch: () => Promise.reject(new Error("D1 error")),
@@ -111,10 +116,7 @@ describe("createD1Client — batch", () => {
   it("executes multiple fragments as a batch", async () => {
     const { db } = makeD1Stub([]);
     const client = createD1Client(db);
-    const res = await client.batch([
-      sql`INSERT INTO t (a) VALUES (${1})`,
-      sql`INSERT INTO t (a) VALUES (${2})`,
-    ]);
+    const res = await client.batch([sql`INSERT INTO t (a) VALUES (${1})`, sql`INSERT INTO t (a) VALUES (${2})`]);
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.data).toHaveLength(2);
   });

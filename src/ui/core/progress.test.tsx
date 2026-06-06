@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Progress } from "./progress";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Progress", () => {
@@ -24,17 +21,17 @@ describe("Progress", () => {
   });
 
   it("renders aria-label from the label convenience prop", async () => {
-    const out = await render(<Progress label="Upload progress" />);
+    const out = await render(<Progress label='Upload progress' />);
     expect(out).toContain('aria-label="Upload progress"');
   });
 
   it("renders aria-label directly when provided", async () => {
-    const out = await render(<Progress aria-label="Direct label" />);
+    const out = await render(<Progress aria-label='Direct label' />);
     expect(out).toContain('aria-label="Direct label"');
   });
 
   it("prefers explicit aria-label over label prop", async () => {
-    const out = await render(<Progress aria-label="Explicit" label="Ignored" />);
+    const out = await render(<Progress aria-label='Explicit' label='Ignored' />);
     expect(out).toContain('aria-label="Explicit"');
     expect(out).not.toContain("Ignored");
   });
@@ -47,7 +44,7 @@ describe("Progress", () => {
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Progress class="my-progress" />);
+    const out = await render(<Progress class='my-progress' />);
     expect(out).toContain("my-progress");
     expect(out).toContain("rounded-full");
   });

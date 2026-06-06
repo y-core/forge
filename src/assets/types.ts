@@ -20,61 +20,29 @@ const IconsConfigSchema = v.object({
   outDir: v.string(),
   lightColor: v.string(),
   darkColor: v.optional(v.string()),
-  app: v.optional(v.object({
-    name: v.string(),
-    shortName: v.string(),
-    backgroundColor: v.string(),
-  })),
+  app: v.optional(v.object({ name: v.string(), shortName: v.string(), backgroundColor: v.string() })),
   outputs: v.array(IconOutputSchema),
 });
 
-const CssBuildSchema = v.object({
-  tool: v.literal("tailwindcss"),
-  input: v.string(),
-  output: v.string(),
-});
+const CssBuildSchema = v.object({ tool: v.literal("tailwindcss"), input: v.string(), output: v.string() });
 
-const CopyEntrySchema = v.object({
-  from: v.string(),
-  to: v.string(),
-});
+const CopyEntrySchema = v.object({ from: v.string(), to: v.string() });
 
-const SpriteSourceSchema = v.object({
-  path: v.string(),
-  files: v.array(v.string()),
-});
+const SpriteSourceSchema = v.object({ path: v.string(), files: v.array(v.string()) });
 
-const SpriteGroupSchema = v.object({
-  target: v.string(),
-  sources: v.array(SpriteSourceSchema),
-});
+const SpriteGroupSchema = v.object({ target: v.string(), sources: v.array(SpriteSourceSchema) });
 
-const FontDownloadSchema = v.object({
-  url: v.string(),
-  to: v.string(),
-});
+const FontDownloadSchema = v.object({ url: v.string(), to: v.string() });
 
-const PathsConfigSchema = v.object({
-  sourceDir: v.optional(v.string()),
-  publicDir: v.optional(v.string()),
-  publicPrefix: v.optional(v.string()),
-});
+const PathsConfigSchema = v.object({ sourceDir: v.optional(v.string()), publicDir: v.optional(v.string()), publicPrefix: v.optional(v.string()) });
 
 export const AssetsConfigSchema = v.object({
   paths: v.optional(PathsConfigSchema),
-  js: v.optional(
-    v.object({
-      bundles: v.optional(v.array(JsBundleSchema)),
-    }),
-  ),
+  js: v.optional(v.object({ bundles: v.optional(v.array(JsBundleSchema)) })),
   css: v.optional(v.array(CssBuildSchema)),
   copy: v.optional(v.array(CopyEntrySchema)),
   sprites: v.optional(v.record(v.string(), SpriteGroupSchema)),
-  fonts: v.optional(
-    v.object({
-      downloads: v.optional(v.array(FontDownloadSchema)),
-    }),
-  ),
+  fonts: v.optional(v.object({ downloads: v.optional(v.array(FontDownloadSchema)) })),
   icons: v.optional(IconsConfigSchema),
 });
 

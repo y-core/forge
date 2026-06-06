@@ -1,37 +1,20 @@
-import {
-  base64urlDecode,
-  base64urlEncode,
-  hmacSign,
-  importHmacKeyFromHex,
-  timingSafeEqualBytes,
-} from "../../crypto/mod";
+import { base64urlDecode, base64urlEncode, hmacSign, importHmacKeyFromHex, timingSafeEqualBytes } from "../../crypto/mod";
+import type { SignedUrlError, SignedUrlOk, SignedUrlOptions } from "./types";
 
 /** Imports a hex-encoded secret as a Web Crypto HMAC-SHA256 key for signing operations. @public */
 export function importSigningKey(hexSecret: string): Promise<CryptoKey> {
   return importHmacKeyFromHex(hexSecret, "Signing secret");
 }
 
-/** Options for createSignedObjectUrl. @public */
-export interface SignedUrlOptions {
-  /** Seconds until the URL expires. Default: 3600. */
-  expiresInSeconds?: number;
-}
-
-/** Successful verification result. @public */
-export interface SignedUrlOk {
-  ok: true;
-  key: string;
-}
-
-/** Failed verification result. @public */
-export interface SignedUrlError {
-  ok: false;
-  reason: "expired" | "invalid-signature" | "invalid-format";
+/** Length-prefixes the key so the `key`/`exp` boundary is unambiguous (defense-in-depth against
+ *  a key crafted to contain the `|` delimiter). Both signing and verification use this form. */
+function signingPayload(objectKey: string, exp: number): string {
+  return `${objectKey.length}:${objectKey}|${exp}`;
 }
 
 /**
  * Creates a signed URL for GET access to an object.
- * HMAC-SHA-256 over `${objectKey}|${exp}`.
+ * HMAC-SHA-256 over `${key.length}:${key}|${exp}`.
  * Appends `?key=`, `?exp=`, and `?sig=` to `baseUrl`. @public
  */
 export async function createSignedObjectUrl(
@@ -42,7 +25,7 @@ export async function createSignedObjectUrl(
 ): Promise<string> {
   const expiresIn = options?.expiresInSeconds ?? 3600;
   const exp = Math.floor(Date.now() / 1000) + expiresIn;
-  const payload = `${objectKey}|${exp}`;
+  const payload = signingPayload(objectKey, exp);
   const sig = base64urlEncode(await hmacSign(signingKey, payload));
   const url = new URL(baseUrl);
   url.searchParams.set("key", objectKey);
@@ -55,10 +38,7 @@ export async function createSignedObjectUrl(
  * Verifies a signed object URL.
  * Checks expiry first, then constant-time HMAC comparison. @public
  */
-export async function verifySignedObjectUrl(
-  signingKey: CryptoKey,
-  url: string,
-): Promise<SignedUrlOk | SignedUrlError> {
+export async function verifySignedObjectUrl(signingKey: CryptoKey, url: string): Promise<SignedUrlOk | SignedUrlError> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -77,7 +57,7 @@ export async function verifySignedObjectUrl(
 
   if (Math.floor(Date.now() / 1000) > exp) return { ok: false, reason: "expired" };
 
-  const payload = `${objectKey}|${exp}`;
+  const payload = signingPayload(objectKey, exp);
   const expected = await hmacSign(signingKey, payload);
 
   let actual: Uint8Array;

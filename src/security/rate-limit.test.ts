@@ -1,20 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import type { RateLimitBinding } from "./rate-limit";
+import { Forge } from "../app/forge-app";
+import { mapHandler } from "../app/route-test-helper";
 import { rateLimit } from "./rate-limit";
+import type { RateLimitBinding } from "./types";
 
 type Env = { LIMITER?: RateLimitBinding };
 
 function makeApp(opts?: Partial<Parameters<typeof rateLimit>[0]>) {
-  const app = new Hono<{ Bindings: Env }>();
-  app.use(
-    "*",
-    rateLimit({
-      limiter: (c) => (c.env as Env | undefined)?.LIMITER,
-      ...opts,
-    }),
-  );
-  app.post("/test", (c) => c.text("ok"));
+  const app = new Forge<Env>();
+  app.use("*", rateLimit<Env>({ limiter: (c) => c.env.LIMITER, ...opts }));
+  mapHandler(app, "POST", "/test", () => new Response("ok"));
   return app;
 }
 
@@ -61,11 +56,7 @@ describe("rateLimit middleware", () => {
 
   it("returns 503 when CF-Connecting-IP is absent and no custom key is provided (fail-closed)", async () => {
     const app = makeApp();
-    const res = await app.request(
-      "/test",
-      { method: "POST" },
-      { LIMITER: { limit: async () => ({ success: true }) } },
-    );
+    const res = await app.request("/test", { method: "POST" }, { LIMITER: { limit: async () => ({ success: true }) } });
     expect(res.status).toBe(503);
   });
 
@@ -101,7 +92,7 @@ describe("rateLimit middleware", () => {
   });
 
   it("uses custom onLimit response", async () => {
-    const app = makeApp({ onLimit: (c) => c.json({ error: "rate limited" }, 429) });
+    const app = makeApp({ onLimit: () => Response.json({ error: "rate limited" }, { status: 429 }) });
     const res = await app.request(
       "/test",
       { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },

@@ -1,15 +1,5 @@
-import type { MiddlewareHandler } from "hono";
-
-export interface CorsOptions {
-  /** Explicit allowed origins. Exact match or subdomain pattern ("https://*.example.com").
-   *  No literal "*" when credentials is true. */
-  origins: string[];
-  methods?: string[];
-  allowedHeaders?: string[];
-  credentials?: boolean;
-  /** Preflight cache duration in seconds. @defaultValue 86400 */
-  maxAge?: number;
-}
+import type { Middleware } from "@remix-run/fetch-router";
+import type { CorsOptions } from "./types";
 
 /** Pure function: tests whether an origin matches an exact string or a subdomain wildcard pattern. @public */
 export function matchOrigin(origin: string, patterns: string[]): boolean {
@@ -18,7 +8,6 @@ export function matchOrigin(origin: string, patterns: string[]): boolean {
       if (origin === pattern) return true;
       continue;
     }
-    // Escape metacharacters (excluding *), then replace * with [^.]+ (single DNS label)
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
     const rePattern = escaped.replace(/\*/g, "[^.]+");
     if (new RegExp(`^${rePattern}$`).test(origin)) return true;
@@ -27,7 +16,7 @@ export function matchOrigin(origin: string, patterns: string[]): boolean {
 }
 
 /** Middleware that adds CORS response headers for allowed origins. @public */
-export function cors(options: CorsOptions): MiddlewareHandler {
+export function cors(options: CorsOptions): Middleware {
   const {
     origins,
     methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -40,34 +29,42 @@ export function cors(options: CorsOptions): MiddlewareHandler {
     throw new Error('cors: cannot use wildcard origin "*" with credentials: true');
   }
 
-  const isAllowed = (origin: string): boolean =>
-    origins.includes("*") || matchOrigin(origin, origins);
+  const isAllowed = (origin: string): boolean => origins.includes("*") || matchOrigin(origin, origins);
 
-  const resolveAcao = (origin: string): string =>
-    origins.includes("*") && !credentials ? "*" : origin;
+  const resolveAcao = (origin: string): string => (origins.includes("*") && !credentials ? "*" : origin);
 
-  return async (c, next) => {
-    const origin = c.req.header("Origin");
+  return async (context, next) => {
+    const origin = context.request.headers.get("Origin");
 
     // Preflight
-    if (c.req.method === "OPTIONS" && c.req.header("Access-Control-Request-Method") != null) {
+    if (context.method === "OPTIONS" && context.request.headers.get("Access-Control-Request-Method") != null) {
       if (origin != null && isAllowed(origin)) {
-        c.header("Access-Control-Allow-Origin", resolveAcao(origin));
-        c.header("Access-Control-Allow-Methods", methods.join(", "));
-        c.header("Access-Control-Allow-Headers", allowedHeaders.join(", "));
-        c.header("Access-Control-Max-Age", String(maxAge));
-        if (credentials) c.header("Access-Control-Allow-Credentials", "true");
-        c.header("Vary", "Origin");
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "Access-Control-Allow-Origin": resolveAcao(origin),
+            "Access-Control-Allow-Methods": methods.join(", "),
+            "Access-Control-Allow-Headers": allowedHeaders.join(", "),
+            "Access-Control-Max-Age": String(maxAge),
+            ...(credentials ? { "Access-Control-Allow-Credentials": "true" } : {}),
+            Vary: "Origin",
+          },
+        });
       }
-      return c.body(null, 204);
+      return new Response(null, { status: 204 });
     }
 
-    await next();
+    const res = await next();
 
     if (origin != null && isAllowed(origin)) {
-      c.header("Access-Control-Allow-Origin", resolveAcao(origin));
-      if (credentials) c.header("Access-Control-Allow-Credentials", "true");
-      c.header("Vary", "Origin");
+      // Rebuild rather than mutate: the downstream response's headers may be immutable (e.g. a
+      // cached or constructed Response), and in-place mutation would silently throw or no-op.
+      const headers = new Headers(res.headers);
+      headers.set("Access-Control-Allow-Origin", resolveAcao(origin));
+      if (credentials) headers.set("Access-Control-Allow-Credentials", "true");
+      headers.set("Vary", "Origin");
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
     }
+    return res;
   };
 }

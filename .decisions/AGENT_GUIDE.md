@@ -110,7 +110,7 @@ needs a related but distinct grouping that does not warrant its own document.
 Use the parent section number as a prefix, followed by a lowercase letter:
 
     ## 3. Route Handler Patterns
-    ### 3a. Hono Route Handler and Context Typing
+    ### 3a. Route Controller Action and Context Typing
     ### 3b. Middleware Composition and Execution Order
     ### 3c. Error Boundary and Response Shape
     ### 3d. Cloudflare Workers Bindings Access Pattern
@@ -142,7 +142,7 @@ Avoid titles that are meaningful only in context:
 | Avoid | Prefer |
 |---|---|
 | `### Rules` | `### 3f. Barrel Export Rules and Constraints` |
-| `### Setup` | `### 1a. Hono App Factory Setup and Configuration` |
+| `### Setup` | `### 1a. createApp Factory Setup and Configuration` |
 | `### Implementation` | `### 3b. Cloudflare Workers KV Implementation with Bindings` |
 | `### Basic usage` | `### 4a. HTMX Partial Render Basic Usage and Swap Targets` |
 | `### Structure` | `### 3a. Route Handler Struct and Dependency Structure` |
@@ -154,6 +154,7 @@ When a subsection describes a known pattern, name the pattern in the title:
 | Avoid | Prefer |
 |---|---|
 | `### The mod.ts Pattern` | `### 1a. mod.ts Barrel Export and Namespace Catalog Pattern` |
+| `### Routes` | `### 5a. createController Action Map and app.map Registration` |
 | `### Domain Errors` | `### 1b. Domain Error Sentinels and HTTP Status Mapping` |
 | `### Interface at the consumer` | `### 4a. Service Interface Defined at Consumer Layer` |
 | `### Security headers` | `### 6b. makeSecurityHeaders CSP Nonce Injection Pattern` |
@@ -197,11 +198,11 @@ of searchable terms — not a prose sentence. Include:
 
 Good example:
 
-    description: "barrel exports, mod.ts pattern, namespace catalog, validate-exports, Hono route registration, Cloudflare Workers bindings, CSP nonce, security headers, HTMX partial render, Tailwind v4 theme tokens"
+    description: "barrel exports, mod.ts pattern, namespace catalog, validate-exports, app.map route registration, Cloudflare Workers bindings, CSP nonce, security headers, HTMX partial render, Tailwind v4 theme tokens"
 
 Avoid:
 
-    description: "Governing patterns for TypeScript module exports — barrel files, namespace design, Hono integration, and the mod.ts catalog pattern."
+    description: "Governing patterns for TypeScript module exports — barrel files, namespace design, route registration, and the mod.ts catalog pattern."
 
 ### 4c. Weight Field
 

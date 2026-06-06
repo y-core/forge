@@ -1,4 +1,4 @@
-export type { Child } from "hono/jsx";
+export type { Child } from "../jsx/types";
 export type {
   AlertVariant,
   BadgeVariant,

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
+import { Forge } from "../app/forge-app";
+import { mapHandler } from "../app/route-test-helper";
 import { makeSecurityHeaders, mergeSecurityHeaders } from "./headers";
 
 async function headersFor(middleware: ReturnType<typeof makeSecurityHeaders>) {
-  const app = new Hono();
+  const app = new Forge();
   app.use("*", middleware);
-  app.get("/", (c) => c.text("ok"));
+  mapHandler(app, "GET", "/", () => new Response("ok"));
   const res = await app.request("/");
   return res.headers;
 }
@@ -13,9 +14,7 @@ async function headersFor(middleware: ReturnType<typeof makeSecurityHeaders>) {
 describe("makeSecurityHeaders — defaults", () => {
   it("sets strict-transport-security with default max-age", async () => {
     const headers = await headersFor(makeSecurityHeaders());
-    expect(headers.get("strict-transport-security")).toBe(
-      "max-age=63072000; includeSubDomains; preload",
-    );
+    expect(headers.get("strict-transport-security")).toBe("max-age=63072000; includeSubDomains; preload");
   });
 
   it("sets content-security-policy", async () => {
@@ -52,9 +51,7 @@ describe("makeSecurityHeaders — defaults", () => {
 describe("makeSecurityHeaders — custom options", () => {
   it("overrides hstsMaxAge", async () => {
     const headers = await headersFor(makeSecurityHeaders({ hstsMaxAge: 31536000 }));
-    expect(headers.get("strict-transport-security")).toBe(
-      "max-age=31536000; includeSubDomains; preload",
-    );
+    expect(headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains; preload");
   });
 
   it("overrides scriptSrc", async () => {

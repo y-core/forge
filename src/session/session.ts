@@ -1,22 +1,39 @@
 import type { Cookie } from "@remix-run/cookie";
+import type { Middleware } from "@remix-run/fetch-router";
 import type { Session, SessionStorage } from "@remix-run/session";
-import type { MiddlewareHandler } from "hono";
+import { contextVar } from "../context/accessor";
+import { setPendingHeader } from "../context/pending-headers";
 
-/** Merge into your Hono app generic when using `sessionMiddleware` to type `c.get("session")`. @public */
-export type SessionVariables = { Variables: { session: Session } };
+/** Typed accessor for the session variable set by `sessionMiddleware`. @public */
+export const sessionCtx = contextVar<Session>("session");
 
-export function sessionMiddleware(storage: SessionStorage, cookie: Cookie): MiddlewareHandler<SessionVariables> {
-  return async (c, next) => {
-    const cookieHeader = c.req.header("cookie") ?? null;
+/**
+ * Reads the session cookie on the way in and persists it on the way out.
+ *
+ * Persistence is skipped entirely for a session that was neither modified nor destroyed
+ * (`dirty`/`destroyed`), so unchanged requests emit no `Set-Cookie` — this avoids a
+ * cache-defeating cookie write per request for server-side stores. Callers that rely on
+ * sliding expiry must touch the session (e.g. `session.set`) to mark it dirty. @public
+ */
+export function sessionMiddleware(storage: SessionStorage, cookie: Cookie): Middleware {
+  return async (context, next) => {
+    const cookieHeader = context.request.headers.get("cookie") ?? null;
     const cookieValue = await cookie.parse(cookieHeader);
     const session = await storage.read(cookieValue);
-    c.set("session", session);
+    sessionCtx.set(context, session);
 
-    await next();
+    const res = await next();
 
-    const serialized = await storage.save(session);
-    if (serialized !== null) {
-      c.header("set-cookie", await cookie.serialize(serialized), { append: true });
+    if (!session.dirty && !session.destroyed) {
+      return res;
     }
+    const serialized = await storage.save(session);
+    if (serialized === null) {
+      return res;
+    }
+    const serializedCookie = await cookie.serialize(serialized);
+    // Queue on the pending channel; the single `applyHeaders` pass flushes it onto the response.
+    setPendingHeader(context, "set-cookie", serializedCookie, { append: true });
+    return res;
   };
 }

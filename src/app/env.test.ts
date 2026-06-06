@@ -1,12 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
+import type { AppContext } from "../context/types";
 import { v } from "../validation/mod";
 import { validateBindings, validateEnv } from "./env";
+import { Forge } from "./forge-app";
+import { mapHandler } from "./route-test-helper";
 
-const schema = v.object({
-  DATABASE_URL: v.string(),
-  PORT: v.optional(v.pipe(v.string(), v.transform(Number))),
-});
+const schema = v.object({ DATABASE_URL: v.string(), PORT: v.optional(v.pipe(v.string(), v.transform(Number))) });
 
 describe("validateEnv", () => {
   it("returns parsed env when valid", () => {
@@ -32,22 +31,22 @@ describe("validateBindings", () => {
   const simpleSchema = v.object({ DATABASE_URL: v.string() });
 
   it("calls next() when env is valid", async () => {
-    const app = new Hono<{ Bindings: { DATABASE_URL: string } }>();
+    const app = new Forge<{ DATABASE_URL: string }>();
     app.use("*", validateBindings(simpleSchema));
-    app.get("/", (c) => c.text(c.env.DATABASE_URL));
+    mapHandler(app, "GET", "/", (c) => new Response((c as AppContext<{ DATABASE_URL: string }>).env.DATABASE_URL));
     const res = await app.request("/", {}, { DATABASE_URL: "postgres://test/db" });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("postgres://test/db");
   });
 
   it("returns 500 when env is invalid (handler is never reached)", async () => {
-    const app = new Hono();
-    app.onError((err, c) => c.text(err.message, 500));
+    const app = new Forge();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
     app.use("*", validateBindings(simpleSchema));
     let handlerReached = false;
-    app.get("/", (c) => {
+    mapHandler(app, "GET", "/", () => {
       handlerReached = true;
-      return c.text("ok");
+      return new Response("ok");
     });
     const res = await app.request("/", {}, {});
     expect(res.status).toBe(500);
@@ -55,9 +54,9 @@ describe("validateBindings", () => {
   });
 
   it("re-validates when env reference changes", async () => {
-    const app = new Hono<{ Bindings: { DATABASE_URL: string } }>();
+    const app = new Forge<{ DATABASE_URL: string }>();
     app.use("*", validateBindings(simpleSchema));
-    app.get("/", (c) => c.text(c.env.DATABASE_URL));
+    mapHandler(app, "GET", "/", (c) => new Response((c as AppContext<{ DATABASE_URL: string }>).env.DATABASE_URL));
 
     const res1 = await app.request("/", {}, { DATABASE_URL: "first" });
     expect(await res1.text()).toBe("first");
@@ -66,16 +65,17 @@ describe("validateBindings", () => {
     expect(await res2.text()).toBe("second");
   });
 
-  it("does not set any context variables", async () => {
-    const app = new Hono<{ Bindings: { DATABASE_URL: string } }>();
+  it("does not set any extra context properties beyond env and executionCtx", async () => {
+    const app = new Forge<{ DATABASE_URL: string }>();
     app.use("*", validateBindings(simpleSchema));
-    let bindingsValue: unknown = "not-set";
-    app.get("/", (c) => {
-      // biome-ignore lint/suspicious/noExplicitAny: intentional — verifying the key was never set
-      bindingsValue = (c as any).get("bindings");
-      return c.text("ok");
+    let hasBindingsKey = false;
+    mapHandler(app, "GET", "/", (c) => {
+      // validateBindings must not install a "bindings" property — env is accessed directly
+      // biome-ignore lint/suspicious/noExplicitAny: intentional — verifying no extra property
+      hasBindingsKey = "bindings" in (c as any);
+      return new Response("ok");
     });
     await app.request("/", {}, { DATABASE_URL: "postgres://test/db" });
-    expect(bindingsValue).toBeUndefined();
+    expect(hasBindingsKey).toBe(false);
   });
 });

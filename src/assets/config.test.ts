@@ -4,9 +4,7 @@ import type { AssetsConfig } from "./types";
 
 describe("defineAssetsConfig()", () => {
   it("returns config as-is (identity function)", () => {
-    const config: AssetsConfig = {
-      css: [{ tool: "tailwindcss", input: "src/styles/main.css", output: "css/main.css" }],
-    };
+    const config: AssetsConfig = { css: [{ tool: "tailwindcss", input: "src/styles/main.css", output: "css/main.css" }] };
     expect(defineAssetsConfig(config)).toBe(config);
   });
 

@@ -1,18 +1,12 @@
-import type { Child, FC, JSX, PropsWithChildren } from "hono/jsx";
+import type { Child, FC, JSX, PropsWithChildren } from "../../jsx/types";
 
-type PrimitiveFormValue = boolean | number | string | undefined;
-
-type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method"> & {
+type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx-headers"> & {
   method?: "get" | "post";
   "hx-headers"?: Record<string, string> | string;
   children?: Child;
   csrfToken?: string;
   csrfField?: string;
   honeypotField?: string;
-} & {
-  [key: `data-${string}`]: PrimitiveFormValue;
-} & {
-  [key: `hx-${string}`]: PrimitiveFormValue;
 };
 
 function parseHxHeaders(value: string): Record<string, string> | null {
@@ -34,10 +28,7 @@ function parseHxHeaders(value: string): Record<string, string> | null {
   }
 }
 
-function resolveHxHeaders(
-  hxHeaders: FormProps["hx-headers"],
-  csrfToken?: string,
-): string | undefined {
+function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfToken?: string): string | undefined {
   if (!csrfToken) {
     if (typeof hxHeaders === "string") {
       return hxHeaders;
@@ -70,33 +61,13 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
   ...props
 }) => {
   const formProps = props as Record<string, unknown>;
+  const resolvedHxHeaders = resolveHxHeaders(hxHeadersProp, csrfToken);
 
   return (
-    <form
-      data-slot="form"
-      method={method}
-      hx-headers={resolveHxHeaders(hxHeadersProp, csrfToken)}
-      {...formProps}
-    >
-      {csrfToken && (
-        <input
-          data-slot="form-csrf"
-          type="hidden"
-          name={csrfField}
-          value={csrfToken}
-        />
-      )}
-      <div
-        aria-hidden="true"
-        data-slot="form-honeypot"
-        class="absolute -left-[9999px] opacity-0 pointer-events-none"
-      >
-        <input
-          type="text"
-          name={honeypotField}
-          tabindex={-1}
-          autocomplete="off"
-        />
+    <form data-slot='form' method={method} {...(resolvedHxHeaders !== undefined ? { "hx-headers": resolvedHxHeaders } : {})} {...formProps}>
+      {csrfToken && <input data-slot='form-csrf' type='hidden' name={csrfField} value={csrfToken} />}
+      <div aria-hidden='true' data-slot='form-honeypot' class='absolute -left-[9999px] opacity-0 pointer-events-none'>
+        <input type='text' name={honeypotField} tabindex={-1} autocomplete='off' />
       </div>
       {children}
     </form>

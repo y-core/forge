@@ -112,9 +112,7 @@ describe("mountTurnstile", () => {
 
   it("enables the submit button when the verification callback is called", () => {
     const cleanup = mountTurnstile(isDarkSignal);
-    const callback = (globalThis as unknown as Record<string, () => void>)[
-      widgetEl.attrs["data-callback"]
-    ];
+    const callback = (globalThis as unknown as Record<string, () => void>)[widgetEl.attrs["data-callback"]!]!;
     callback();
     expect(submitEl.disabled).toBe(false);
     cleanup();
@@ -149,15 +147,13 @@ describe("mountTurnstile", () => {
     };
 
     const cleanup = mountTurnstile(isDarkSignal);
-    const verify = (globalThis as unknown as Record<string, () => void>)[
-      widgetEl.attrs["data-callback"]
-    ];
+    const verify = (globalThis as unknown as Record<string, () => void>)[widgetEl.attrs["data-callback"]!]!;
     verify();
 
     resultEl.querySelector = (sel: string) => (sel.includes("data-success") ? makeEl() : null);
     resultEl.matches = (sel: string) => sel.includes("contact-result");
 
-    docListeners["htmx:afterSwap"][0](new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }));
+    docListeners["htmx:afterSwap"]![0]!(new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }));
 
     expect(resetCount).toBe(1);
     expect(submitEl.disabled).toBe(true);
@@ -174,7 +170,7 @@ describe("mountTurnstile", () => {
 
   it("cleanup removes callbacks and listeners", () => {
     const cleanup = mountTurnstile(isDarkSignal);
-    const callbackName = widgetEl.attrs["data-callback"];
+    const callbackName = widgetEl.attrs["data-callback"]!;
     cleanup();
     expect((globalThis as Record<string, unknown>)[callbackName]).toBeUndefined();
     expect(docListeners["htmx:afterSwap"]).toHaveLength(0);
@@ -207,17 +203,13 @@ describe("mountTurnstile", () => {
     const cleanup = mountTurnstile(isDarkSignal, { onSuccess: "remove" });
     const resetBefore = resetCalled;
 
-    const verify = (globalThis as unknown as Record<string, () => void>)[
-      widgetEl.attrs["data-callback"]
-    ];
+    const verify = (globalThis as unknown as Record<string, () => void>)[widgetEl.attrs["data-callback"]!]!;
     verify();
 
     resultEl.querySelector = (sel: string) => (sel.includes("data-success") ? makeEl() : null);
     resultEl.matches = (sel: string) => sel.includes("contact-result");
 
-    docListeners["htmx:afterSwap"][0](
-      new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }),
-    );
+    docListeners["htmx:afterSwap"]![0]!(new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }));
 
     expect(removeCalled).toBe(1);
     expect(resetCalled).toBe(resetBefore);
@@ -250,19 +242,15 @@ describe("mountTurnstile", () => {
 
     const cleanup = mountTurnstile(isDarkSignal, { onSuccess: "remove" });
 
-    const verify = (globalThis as unknown as Record<string, () => void>)[
-      widgetEl.attrs["data-callback"]
-    ];
+    const verify = (globalThis as unknown as Record<string, () => void>)[widgetEl.attrs["data-callback"]!]!;
     verify();
 
     resultEl.querySelector = (sel: string) => (sel.includes("data-success") ? makeEl() : null);
     resultEl.matches = (sel: string) => sel.includes("contact-result");
-    docListeners["htmx:afterSwap"][0](
-      new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }),
-    );
+    docListeners["htmx:afterSwap"]![0]!(new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }));
     expect(removeCalled).toBe(1);
 
-    formEl.listeners.focusin?.[0](new Event("focusin"));
+    formEl.listeners.focusin![0]!(new Event("focusin"));
 
     expect(renderCalled).toBe(1);
     expect(renderParams?.sitekey).toBe("test-key");
@@ -287,7 +275,7 @@ describe("mountTurnstile", () => {
 
     const cleanup = mountTurnstile(isDarkSignal, { onSuccess: "remove" });
 
-    formEl.listeners.focusin?.[0](new Event("focusin"));
+    formEl.listeners.focusin![0]!(new Event("focusin"));
 
     expect(renderCalled).toBe(0);
     cleanup();
@@ -310,16 +298,12 @@ describe("mountTurnstile", () => {
     const cleanup = mountTurnstile(isDarkSignal, { onSuccess: "remove" });
     const resetAfterInit = resetCalled;
 
-    const verify = (globalThis as unknown as Record<string, () => void>)[
-      widgetEl.attrs["data-callback"]
-    ];
+    const verify = (globalThis as unknown as Record<string, () => void>)[widgetEl.attrs["data-callback"]!]!;
     verify();
 
     resultEl.querySelector = (sel: string) => (sel.includes("data-success") ? makeEl() : null);
     resultEl.matches = (sel: string) => sel.includes("contact-result");
-    docListeners["htmx:afterSwap"][0](
-      new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }),
-    );
+    docListeners["htmx:afterSwap"]![0]!(new CustomEvent("htmx:afterSwap", { detail: { target: resultEl } }));
 
     const resetAfterRemove = resetCalled;
     isDarkSignal.value = true;

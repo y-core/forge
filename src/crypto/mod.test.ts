@@ -18,21 +18,14 @@ import {
 // Polyfill Cloudflare Workers' crypto.subtle.timingSafeEqual for Bun test runtime.
 beforeAll(() => {
   if (typeof crypto.subtle.timingSafeEqual === "function") return;
-  crypto.subtle.timingSafeEqual = (
-    a: ArrayBuffer | ArrayBufferView,
-    b: ArrayBuffer | ArrayBufferView,
-  ): boolean => {
-    const bufA = ArrayBuffer.isView(a)
-      ? new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
-      : new Uint8Array(a);
-    const bufB = ArrayBuffer.isView(b)
-      ? new Uint8Array(b.buffer, b.byteOffset, b.byteLength)
-      : new Uint8Array(b);
+  crypto.subtle.timingSafeEqual = (a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView): boolean => {
+    const bufA = ArrayBuffer.isView(a) ? new Uint8Array(a.buffer, a.byteOffset, a.byteLength) : new Uint8Array(a);
+    const bufB = ArrayBuffer.isView(b) ? new Uint8Array(b.buffer, b.byteOffset, b.byteLength) : new Uint8Array(b);
     if (bufA.byteLength !== bufB.byteLength) {
       throw new TypeError("Input buffers must have the same byte length");
     }
     let result = 0;
-    for (let i = 0; i < bufA.byteLength; i++) result |= bufA[i] ^ bufB[i];
+    for (let i = 0; i < bufA.byteLength; i++) result |= bufA[i]! ^ bufB[i]!;
     return result === 0;
   };
 });
@@ -203,9 +196,7 @@ describe("importHmacKeyFromHex", () => {
   });
 
   it("rejects with label when hex length is odd", async () => {
-    await expect(importHmacKeyFromHex("abc", "secret")).rejects.toThrow(
-      "secret must have an even number of hex characters",
-    );
+    await expect(importHmacKeyFromHex("abc", "secret")).rejects.toThrow("secret must have an even number of hex characters");
   });
 
   it("rejects with label when hex contains non-hex characters", async () => {
@@ -215,9 +206,7 @@ describe("importHmacKeyFromHex", () => {
   });
 
   it("rejects with label when hex is fewer than 32 chars (< 16 bytes)", async () => {
-    await expect(importHmacKeyFromHex("aabb", "secret")).rejects.toThrow(
-      "secret must be at least 32 hex characters (16 bytes)",
-    );
+    await expect(importHmacKeyFromHex("aabb", "secret")).rejects.toThrow("secret must be at least 32 hex characters (16 bytes)");
   });
 });
 
@@ -237,7 +226,7 @@ describe("hmacSign / hmacVerify", () => {
   it("returns false when signature is tampered", async () => {
     const key = await importHmacKeyFromHex("a".repeat(32), "secret");
     const sig = await hmacSign(key, "test payload");
-    sig[0] ^= 0xff;
+    sig[0]! ^= 0xff;
     expect(await hmacVerify(key, "test payload", sig)).toBe(false);
   });
 

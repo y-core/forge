@@ -1,4 +1,5 @@
-import { createSignal, effect, type ReadonlySignal } from "./signal";
+import type { ReadonlySignal } from "./signal";
+import { createSignal, effect } from "./signal";
 
 declare global {
   interface Window {
@@ -37,7 +38,7 @@ export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: Turnst
 
   const widget = document.querySelector<HTMLElement>(widgetSelector);
   if (!widget) {
-    return () => { };
+    return () => {};
   }
 
   const existing = mountedTurnstiles.get(widget);
@@ -92,9 +93,9 @@ export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: Turnst
 
   const disposeSubmit = submitButton
     ? effect(() => {
-      submitButton.disabled = !verified.value;
-    })
-    : () => { };
+        submitButton.disabled = !verified.value;
+      })
+    : () => {};
 
   globals[verifiedName] = () => {
     verified.value = true;

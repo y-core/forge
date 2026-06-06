@@ -8,22 +8,11 @@ export function createLogger(prefix: string, options?: LoggerOptions): Logger {
   return makeLogger(prefix, options?.bindings ?? {}, channels, pending);
 }
 
-function makeLogger(
-  prefix: string,
-  bindings: Record<string, unknown>,
-  channels: LogChannel[],
-  pending: Promise<void>[],
-): Logger {
+function makeLogger(prefix: string, bindings: Record<string, unknown>, channels: LogChannel[], pending: Promise<void>[]): Logger {
   function dispatch(level: LogLevel, message: string, data?: Record<string, unknown>): void {
     const hasBindings = Object.keys(bindings).length > 0;
     const merged = hasBindings || data ? { ...bindings, ...(data ?? {}) } : undefined;
-    const record: LogRecord = {
-      level,
-      prefix,
-      message,
-      timestamp: new Date().toISOString(),
-      ...(merged !== undefined ? { data: merged } : {}),
-    };
+    const record: LogRecord = { level, prefix, message, timestamp: new Date().toISOString(), ...(merged !== undefined ? { data: merged } : {}) };
     for (const channel of channels) {
       const result = channel(record);
       if (result instanceof Promise) {

@@ -1,16 +1,13 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { createIcon } from "./icon";
 import { Spinner } from "./spinner";
 
 const icon = createIcon("/sprite.svg", { "icon-spinner": "0 0 24 24" });
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Spinner", () => {
@@ -40,7 +37,7 @@ describe("Spinner", () => {
   });
 
   it("renders a custom label in sr-only span", async () => {
-    const out = await render(<Spinner icon={icon} label="Processing…" />);
+    const out = await render(<Spinner icon={icon} label='Processing…' />);
     expect(out).toContain("Processing");
   });
 
@@ -50,17 +47,17 @@ describe("Spinner", () => {
   });
 
   it("renders sm size class", async () => {
-    const out = await render(<Spinner icon={icon} size="sm" />);
+    const out = await render(<Spinner icon={icon} size='sm' />);
     expect(out).toContain("size-4");
   });
 
   it("renders lg size class", async () => {
-    const out = await render(<Spinner icon={icon} size="lg" />);
+    const out = await render(<Spinner icon={icon} size='lg' />);
     expect(out).toContain("size-8");
   });
 
   it("merges a custom class on the wrapper", async () => {
-    const out = await render(<Spinner icon={icon} class="my-spinner" />);
+    const out = await render(<Spinner icon={icon} class='my-spinner' />);
     expect(out).toContain("my-spinner");
     expect(out).toContain("inline-flex");
   });

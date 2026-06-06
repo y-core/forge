@@ -28,10 +28,7 @@ describe("CsrfConfigSchema", () => {
 
 describe("TurnstileConfigSchema", () => {
   it("accepts valid secretKey and siteKey", () => {
-    const result = v.safeParse(TurnstileConfigSchema, {
-      secretKey: "secret",
-      siteKey: "site",
-    });
+    const result = v.safeParse(TurnstileConfigSchema, { secretKey: "secret", siteKey: "site" });
     expect(result.success).toBe(true);
   });
 

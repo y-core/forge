@@ -4,10 +4,7 @@ import { dirname, extname, join } from "node:path";
 import type { CssBuild } from "../types";
 import { hashFile } from "./hash";
 
-export function buildCSS(
-  cssBuild: CssBuild,
-  opts: { outDir: string; minify?: boolean; hash?: boolean },
-): Record<string, string> {
+export function buildCSS(cssBuild: CssBuild, opts: { outDir: string; minify?: boolean; hash?: boolean }): Record<string, string> {
   const output = join(opts.outDir, cssBuild.output);
   const outDirPath = dirname(output);
   const shouldHash = opts.hash ?? false;

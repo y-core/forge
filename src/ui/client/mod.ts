@@ -2,6 +2,8 @@ export type { LazyImportOptions, LazyLoadOptions } from "./lazy";
 export { lazy, loadScriptOnEvent, loadStylesheet } from "./lazy";
 export type { NavControllerOptions } from "./nav";
 export { mountNav } from "./nav";
+export type { ResumeContext, ScopeDefinition } from "./resume";
+export { registerScope, resume } from "./resume";
 export type { ReadonlySignal, Signal } from "./signal";
 export { computed, createSignal, effect } from "./signal";
 export type { ThemeControllerOptions } from "./theme";

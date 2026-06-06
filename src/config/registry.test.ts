@@ -45,9 +45,7 @@ describe("registerConfig — isolation", () => {
     // retrieveConfig for targetA should return what was registered for targetA
     expect(retrieveConfig(targetA)).toBe(storeA as unknown as ReturnType<typeof retrieveConfig>);
     // targetB registration does not bleed into targetA
-    expect(retrieveConfig(targetA)).not.toBe(
-      retrieveConfig(targetB) as unknown as ReturnType<typeof retrieveConfig>,
-    );
+    expect(retrieveConfig(targetA)).not.toBe(retrieveConfig(targetB) as unknown as ReturnType<typeof retrieveConfig>);
   });
 });
 

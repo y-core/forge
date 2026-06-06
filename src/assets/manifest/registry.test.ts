@@ -34,14 +34,8 @@ describe("createSpriteRegistry — get", () => {
   });
 
   it("resolves each sprite name independently via the manifest", () => {
-    const manifest = createManifest(
-      { "icons.svg": "icons.svg", "avatars.svg": "avatars.svg" },
-      "/assets",
-    );
-    const registry = createSpriteRegistry(
-      { icons: "icons.svg", avatars: "avatars.svg" },
-      manifest,
-    );
+    const manifest = createManifest({ "icons.svg": "icons.svg", "avatars.svg": "avatars.svg" }, "/assets");
+    const registry = createSpriteRegistry({ icons: "icons.svg", avatars: "avatars.svg" }, manifest);
     expect(registry.get("icons")).toBe("/assets/icons.svg");
     expect(registry.get("avatars")).toBe("/assets/avatars.svg");
   });

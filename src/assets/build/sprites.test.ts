@@ -43,12 +43,7 @@ describe("buildSprites()", () => {
       new Response(`<svg viewBox="0 0 24 24"><path d="M12 12"/></svg>`, { status: 200 }),
     );
     try {
-      const sprites = {
-        icons: {
-          target: "svg/sprite.svg",
-          sources: [{ path: "https://example.com/icons/", files: ["arrow.svg"] }],
-        },
-      };
+      const sprites = { icons: { target: "svg/sprite.svg", sources: [{ path: "https://example.com/icons/", files: ["arrow.svg"] }] } };
 
       await buildSprites(sprites, tmpDir);
 
@@ -70,15 +65,7 @@ describe("buildSprites()", () => {
     try {
       const emptySourceDir = join(tmpDir, "svg-src");
       const spriteOut = join(tmpDir, "svg", "sprite.svg");
-      await buildSprites(
-        {
-          icons: {
-            target: "svg/sprite.svg",
-            sources: [{ path: emptySourceDir, files: ["icon.svg"] }],
-          },
-        },
-        tmpDir,
-      );
+      await buildSprites({ icons: { target: "svg/sprite.svg", sources: [{ path: emptySourceDir, files: ["icon.svg"] }] } }, tmpDir);
       const spriteExists = existsSync(spriteOut);
       expect(spriteExists).toBe(false);
     } finally {
@@ -96,21 +83,15 @@ describe("buildSprites()", () => {
       .mockResolvedValueOnce(new Response(svgB, { status: 200 }));
     try {
       const sprites = {
-        core: {
-          target: "svg/sprite.svg",
-          sources: [{ path: "https://example.com/a/", files: ["a.svg"] }],
-        },
-        "brand-icons": {
-          target: "svg/brand.svg",
-          sources: [{ path: "https://example.com/b/", files: ["b.svg"] }],
-        },
+        core: { target: "svg/sprite.svg", sources: [{ path: "https://example.com/a/", files: ["a.svg"] }] },
+        "brand-icons": { target: "svg/brand.svg", sources: [{ path: "https://example.com/b/", files: ["b.svg"] }] },
       };
       const result = await buildSprites(sprites, tmpDir);
       expect(Object.keys(result.groups)).toEqual(["core", "brand-icons"]);
-      expect(result.groups.core.spriteKey).toBe("svg/sprite.svg");
-      expect(result.groups["brand-icons"].spriteKey).toBe("svg/brand.svg");
-      expect(result.groups.core.meta["icon-a"]).toBe("0 0 24 24");
-      expect(result.groups["brand-icons"].meta["icon-b"]).toBe("0 0 32 32");
+      expect(result.groups.core!.spriteKey).toBe("svg/sprite.svg");
+      expect(result.groups["brand-icons"]!.spriteKey).toBe("svg/brand.svg");
+      expect(result.groups.core!.meta["icon-a"]).toBe("0 0 24 24");
+      expect(result.groups["brand-icons"]!.meta["icon-b"]).toBe("0 0 32 32");
     } finally {
       fetchSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });

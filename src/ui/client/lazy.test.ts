@@ -8,15 +8,10 @@ interface MockObserver {
   disconnect: () => void;
 }
 
-type ObserverConstructor = new (
-  callback: IntersectionObserverCallback,
-  options?: IntersectionObserverInit,
-) => MockObserver;
+type ObserverConstructor = new (callback: IntersectionObserverCallback, options?: IntersectionObserverInit) => MockObserver;
 
 interface LazyGlobalMock {
-  document: {
-    querySelector: (selector: string) => Element | null;
-  };
+  document: { querySelector: (selector: string) => Element | null };
   IntersectionObserver: ObserverConstructor;
 }
 
@@ -35,21 +30,19 @@ describe("lazy", () => {
     disconnectCount = 0;
     capturedOptions = undefined;
 
-    lg.document = {
-      querySelector: (selector: string) =>
-        selector === "[data-ref='target']" ? mockElement : null,
-    };
+    lg.document = { querySelector: (selector: string) => (selector === "[data-ref='target']" ? mockElement : null) };
 
     // biome-ignore lint/complexity/useArrowFunction: arrow functions cannot be constructed with `new`
-    lg.IntersectionObserver = function (
-      callback: IntersectionObserverCallback,
-      options?: IntersectionObserverInit,
-    ): MockObserver {
+    lg.IntersectionObserver = function (callback: IntersectionObserverCallback, options?: IntersectionObserverInit): MockObserver {
       capturedCallback = callback;
       capturedOptions = options;
       return {
-        observe: (el: Element) => { observedElements.push(el); },
-        disconnect: () => { disconnectCount++; },
+        observe: (el: Element) => {
+          observedElements.push(el);
+        },
+        disconnect: () => {
+          disconnectCount++;
+        },
       };
     } as unknown as ObserverConstructor;
   });
@@ -72,7 +65,10 @@ describe("lazy", () => {
     lazy({
       ref: "target",
       load: () => Promise.resolve(mod),
-      init: (m, el) => { initMod = m; initEl = el; },
+      init: (m, el) => {
+        initMod = m;
+        initEl = el;
+      },
     });
 
     capturedCallback([makeEntry(true)], {} as IntersectionObserver);
@@ -87,7 +83,9 @@ describe("lazy", () => {
     lazy({
       ref: "target",
       load: () => Promise.resolve({}),
-      init: (_m, el) => { receivedEl = el; },
+      init: (_m, el) => {
+        receivedEl = el;
+      },
     });
     capturedCallback([makeEntry(true)], {} as IntersectionObserver);
     await Promise.resolve();
@@ -109,22 +107,12 @@ describe("lazy", () => {
   });
 
   it("passes rootMargin to the IntersectionObserver constructor", () => {
-    lazy({
-      ref: "target",
-      rootMargin: "200px",
-      load: () => Promise.resolve({}),
-      init: () => {},
-    });
+    lazy({ ref: "target", rootMargin: "200px", load: () => Promise.resolve({}), init: () => {} });
     expect(capturedOptions?.rootMargin).toBe("200px");
   });
 
   it("passes threshold to the IntersectionObserver constructor", () => {
-    lazy({
-      ref: "target",
-      threshold: 0.5,
-      load: () => Promise.resolve({}),
-      init: () => {},
-    });
+    lazy({ ref: "target", threshold: 0.5, load: () => Promise.resolve({}), init: () => {} });
     expect(capturedOptions?.threshold).toBe(0.5);
   });
 
@@ -139,7 +127,9 @@ describe("lazy", () => {
     lazy({
       ref: "target",
       load: () => Promise.resolve({}),
-      init: () => { initCalled = true; },
+      init: () => {
+        initCalled = true;
+      },
     });
     capturedCallback([makeEntry(false)], {} as IntersectionObserver);
     await Promise.resolve();
@@ -160,7 +150,7 @@ interface ScriptGlobalMock {
 const sg = globalThis as unknown as ScriptGlobalMock;
 
 interface MockScriptElement {
-  listeners: Record<string, { handler: EventListener; options?: AddEventListenerOptions }>;
+  listeners: Record<string, { handler: EventListener; options?: AddEventListenerOptions | undefined }>;
   addEventListener: (event: string, handler: EventListener, options?: AddEventListenerOptions) => void;
 }
 
@@ -205,53 +195,31 @@ describe("loadScriptOnEvent", () => {
         return mockTrigger;
       },
       createElement: (_tag: string) => mockScript,
-      head: {
-        appendChild: (el: MockScript) => appendedScripts.push(el),
-      },
+      head: { appendChild: (el: MockScript) => appendedScripts.push(el) },
     };
   });
 
   it("attaches an event listener to the target element", () => {
-    loadScriptOnEvent({
-      triggerSelector: "[data-ref='trigger']",
-      event: "focus",
-      scriptSrc: "https://example.com/script.js",
-      integrity: false,
-    });
+    loadScriptOnEvent({ triggerSelector: "[data-ref='trigger']", event: "focus", scriptSrc: "https://example.com/script.js", integrity: false });
     expect(mockTrigger.listeners.focus).toBeDefined();
   });
 
   it("uses { once: true } so the listener fires only once", () => {
-    loadScriptOnEvent({
-      triggerSelector: "[data-ref='trigger']",
-      event: "focus",
-      scriptSrc: "https://example.com/script.js",
-      integrity: false,
-    });
+    loadScriptOnEvent({ triggerSelector: "[data-ref='trigger']", event: "focus", scriptSrc: "https://example.com/script.js", integrity: false });
     expect(mockTrigger.listeners.focus?.options).toEqual({ once: true });
   });
 
   it("appends a script tag when the event fires", () => {
-    loadScriptOnEvent({
-      triggerSelector: "[data-ref='trigger']",
-      event: "focus",
-      scriptSrc: "https://example.com/script.js",
-      integrity: false,
-    });
-    mockTrigger.listeners.focus.handler(new Event("focus"));
+    loadScriptOnEvent({ triggerSelector: "[data-ref='trigger']", event: "focus", scriptSrc: "https://example.com/script.js", integrity: false });
+    mockTrigger.listeners.focus!.handler(new Event("focus"));
     expect(appendedScripts).toHaveLength(1);
-    expect(appendedScripts[0].src).toBe("https://example.com/script.js");
-    expect(appendedScripts[0].async).toBe(true);
+    expect(appendedScripts[0]!.src).toBe("https://example.com/script.js");
+    expect(appendedScripts[0]!.async).toBe(true);
   });
 
   it("does nothing when the trigger element is not found", () => {
     sg.document.querySelector = () => null;
-    loadScriptOnEvent({
-      triggerSelector: "[data-ref='missing']",
-      event: "focus",
-      scriptSrc: "https://example.com/script.js",
-      integrity: false,
-    });
+    loadScriptOnEvent({ triggerSelector: "[data-ref='missing']", event: "focus", scriptSrc: "https://example.com/script.js", integrity: false });
     expect(appendedScripts).toHaveLength(0);
   });
 
@@ -260,13 +228,8 @@ describe("loadScriptOnEvent", () => {
       if (selector.startsWith("script[src=")) return {}; // existing script found
       return mockTrigger;
     };
-    loadScriptOnEvent({
-      triggerSelector: "[data-ref='trigger']",
-      event: "focus",
-      scriptSrc: "https://example.com/script.js",
-      integrity: false,
-    });
-    mockTrigger.listeners.focus.handler(new Event("focus"));
+    loadScriptOnEvent({ triggerSelector: "[data-ref='trigger']", event: "focus", scriptSrc: "https://example.com/script.js", integrity: false });
+    mockTrigger.listeners.focus!.handler(new Event("focus"));
     expect(appendedScripts).toHaveLength(0);
   });
 
@@ -279,7 +242,7 @@ describe("loadScriptOnEvent", () => {
       integrity: false,
       onLoad,
     });
-    mockTrigger.listeners.focus.handler(new Event("focus"));
+    mockTrigger.listeners.focus!.handler(new Event("focus"));
     expect(mockScript.loadListeners).toContain(onLoad);
   });
 
@@ -290,19 +253,14 @@ describe("loadScriptOnEvent", () => {
       scriptSrc: "https://example.com/script.js",
       integrity: "sha384-abc123",
     });
-    mockTrigger.listeners.focus.handler(new Event("focus"));
+    mockTrigger.listeners.focus!.handler(new Event("focus"));
     expect(mockScript.integrity).toBe("sha384-abc123");
     expect(mockScript.crossOrigin).toBe("anonymous");
   });
 
   it("does not set integrity or crossOrigin when integrity is false", () => {
-    loadScriptOnEvent({
-      triggerSelector: "[data-ref='trigger']",
-      event: "focus",
-      scriptSrc: "https://example.com/script.js",
-      integrity: false,
-    });
-    mockTrigger.listeners.focus.handler(new Event("focus"));
+    loadScriptOnEvent({ triggerSelector: "[data-ref='trigger']", event: "focus", scriptSrc: "https://example.com/script.js", integrity: false });
+    mockTrigger.listeners.focus!.handler(new Event("focus"));
     expect(mockScript.integrity).toBe("");
     expect(mockScript.crossOrigin).toBe("");
   });
@@ -356,22 +314,22 @@ describe("loadStylesheet", () => {
 
   it("creates and appends a link element with correct rel and href", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
-    mockLink.listeners.load(new Event("load"));
+    mockLink.listeners.load!(new Event("load"));
     await promise;
     expect(appendedLinks).toHaveLength(1);
-    expect(appendedLinks[0].rel).toBe("stylesheet");
-    expect(appendedLinks[0].href).toBe("/assets/css/maplibre-gl.css");
+    expect(appendedLinks[0]!.rel).toBe("stylesheet");
+    expect(appendedLinks[0]!.href).toBe("/assets/css/maplibre-gl.css");
   });
 
   it("resolves the promise when the load event fires", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
-    mockLink.listeners.load(new Event("load"));
+    mockLink.listeners.load!(new Event("load"));
     await expect(promise).resolves.toBeUndefined();
   });
 
   it("rejects the promise when the error event fires", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
-    mockLink.listeners.error(new Event("error"));
+    mockLink.listeners.error!(new Event("error"));
     await expect(promise).rejects.toThrow("Failed to load stylesheet: /assets/css/maplibre-gl.css");
   });
 
@@ -384,17 +342,17 @@ describe("loadStylesheet", () => {
 
   it("sets integrity and crossOrigin when integrity argument is provided", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", "sha384-xyz");
-    mockLink.listeners.load(new Event("load"));
+    mockLink.listeners.load!(new Event("load"));
     await promise;
-    expect(appendedLinks[0].integrity).toBe("sha384-xyz");
-    expect(appendedLinks[0].crossOrigin).toBe("anonymous");
+    expect(appendedLinks[0]!.integrity).toBe("sha384-xyz");
+    expect(appendedLinks[0]!.crossOrigin).toBe("anonymous");
   });
 
   it("does not set integrity or crossOrigin when integrity is false", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
-    mockLink.listeners.load(new Event("load"));
+    mockLink.listeners.load!(new Event("load"));
     await promise;
-    expect(appendedLinks[0].integrity).toBe("");
-    expect(appendedLinks[0].crossOrigin).toBe("");
+    expect(appendedLinks[0]!.integrity).toBe("");
+    expect(appendedLinks[0]!.crossOrigin).toBe("");
   });
 });

@@ -1,7 +1,6 @@
 /** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import {
   asyncDialogTrigger,
   dependentSelect,
@@ -17,10 +16,7 @@ import {
 } from "./htmx-patterns";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("SWAP", () => {
@@ -72,13 +68,7 @@ describe("inlineValidation", () => {
   });
 
   it("overrides all defaults", () => {
-    const attrs = inlineValidation({
-      get: "/v",
-      target: "#t",
-      swap: "innerHTML",
-      trigger: "input",
-      sync: "this:abort",
-    });
+    const attrs = inlineValidation({ get: "/v", target: "#t", swap: "innerHTML", trigger: "input", sync: "this:abort" });
     expect(attrs["hx-swap"]).toBe("innerHTML");
     expect(attrs["hx-trigger"]).toBe("input");
     expect(attrs["hx-sync"]).toBe("this:abort");
@@ -99,13 +89,8 @@ describe("paginatedTableLink", () => {
   });
 
   it("merges extra query map and page param overrides last (appears once)", () => {
-    const attrs = paginatedTableLink({
-      get: "/items",
-      target: "#t",
-      page: 2,
-      query: { filter: "active", page: "99" },
-    });
-    const url = attrs["hx-get"];
+    const attrs = paginatedTableLink({ get: "/items", target: "#t", page: 2, query: { filter: "active", page: "99" } });
+    const url = attrs["hx-get"]!;
     expect(url).toContain("filter=active");
     expect(url).toContain("page=2");
     expect((url.match(/page=/g) ?? []).length).toBe(1);
@@ -118,22 +103,14 @@ describe("paginatedTableLink", () => {
 
   it("handles absolute URL base path correctly", () => {
     // Absolute URLs still resolve — path+search portion is preserved
-    const attrs = paginatedTableLink({
-      get: "https://api.example.com/items",
-      target: "#t",
-      page: 2,
-    });
+    const attrs = paginatedTableLink({ get: "https://api.example.com/items", target: "#t", page: 2 });
     expect(attrs["hx-get"]).toContain("page=2");
   });
 });
 
 describe("asyncDialogTrigger", () => {
   it("includes hx-get, target, default swap=innerHTML, and dialog attrs", () => {
-    const attrs = asyncDialogTrigger({
-      get: "/modal",
-      target: "#modal-host",
-      dialogId: "my-dialog",
-    });
+    const attrs = asyncDialogTrigger({ get: "/modal", target: "#modal-host", dialogId: "my-dialog" });
     expect(attrs["hx-get"]).toBe("/modal");
     expect(attrs["hx-target"]).toBe("#modal-host");
     expect(attrs["hx-swap"]).toBe("innerHTML");
@@ -143,12 +120,7 @@ describe("asyncDialogTrigger", () => {
   });
 
   it("overrides swap", () => {
-    const attrs = asyncDialogTrigger({
-      get: "/m",
-      target: "#t",
-      dialogId: "d",
-      swap: "outerHTML",
-    });
+    const attrs = asyncDialogTrigger({ get: "/m", target: "#t", dialogId: "d", swap: "outerHTML" });
     expect(attrs["hx-swap"]).toBe("outerHTML");
   });
 });
@@ -189,13 +161,7 @@ describe("formSubmit", () => {
   });
 
   it("overrides disabledElt and includes encoding/pushUrl", () => {
-    const attrs = formSubmit({
-      post: "/submit",
-      target: "#form",
-      disabledElt: ".btn",
-      encoding: "multipart/form-data",
-      pushUrl: "/done",
-    });
+    const attrs = formSubmit({ post: "/submit", target: "#form", disabledElt: ".btn", encoding: "multipart/form-data", pushUrl: "/done" });
     expect(attrs["hx-disabled-elt"]).toBe(".btn");
     expect(attrs["hx-encoding"]).toBe("multipart/form-data");
     expect(attrs["hx-push-url"]).toBe("/done");
@@ -212,9 +178,7 @@ describe("oobSwap", () => {
   });
 
   it("strategy + selector → strategy:selector", () => {
-    expect(oobSwap({ strategy: "beforeend", selector: "#list" })).toEqual({
-      "hx-swap-oob": "beforeend:#list",
-    });
+    expect(oobSwap({ strategy: "beforeend", selector: "#list" })).toEqual({ "hx-swap-oob": "beforeend:#list" });
   });
 
   it("strategy alone (no selector) → strategy string", () => {
@@ -239,11 +203,7 @@ describe("toastOob", () => {
   });
 
   it("uses custom selector and strategy", async () => {
-    const node = toastOob({
-      toast: { title: "Custom" },
-      selector: "#notifications",
-      strategy: "afterend",
-    });
+    const node = toastOob({ toast: { title: "Custom" }, selector: "#notifications", strategy: "afterend" });
     const out = await render(node);
     expect(out).toContain("afterend:#notifications");
   });

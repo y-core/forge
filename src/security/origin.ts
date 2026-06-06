@@ -1,9 +1,10 @@
-import type { MiddlewareHandler } from "hono";
+import type { Middleware } from "@remix-run/fetch-router";
 import type { OriginResult } from "./types";
 
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+/** @internal */
+export const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 
-/** Pure function: checks Origin/Referer headers against the allowed list regardless of HTTP method. @public */
+/** Pure function: checks Origin/Referer headers against the allowed list. @public */
 export function verifyOrigin(request: Request, allowedOrigins: string[]): OriginResult {
   const origin = request.headers.get("Origin");
 
@@ -26,12 +27,12 @@ export function verifyOrigin(request: Request, allowedOrigins: string[]): Origin
   return { ok: false, reason: "missing" };
 }
 
-/** Middleware that rejects requests from disallowed or missing origins (403). Safe methods (GET/HEAD/OPTIONS/TRACE) are exempt from the check. @public */
-export function originGuard(allowedOrigins: string[]): MiddlewareHandler {
-  return async (c, next) => {
-    if (SAFE_METHODS.has(c.req.method.toUpperCase())) return next();
-    const result = verifyOrigin(c.req.raw, allowedOrigins);
-    if (!result.ok) return c.text("Forbidden", 403);
+/** Middleware that rejects requests from disallowed or missing origins (403). Safe methods are exempt. @public */
+export function originGuard(allowedOrigins: string[]): Middleware {
+  return async (context, next) => {
+    if (SAFE_METHODS.has(context.method.toUpperCase())) return next();
+    const result = verifyOrigin(context.request, allowedOrigins);
+    if (!result.ok) return new Response("Forbidden", { status: 403 });
     return next();
   };
 }

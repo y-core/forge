@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { KVListResult, KVNamespace } from "../storage/kv/types";
-import type { KvLogMetadata } from "./kv-channel";
 import { kvLogChannel } from "./kv-channel";
+import type { KvLogMetadata } from "./types";
 
 interface StubEntry {
   value: string;
@@ -21,7 +21,10 @@ function makeKvStub(): KVNamespace & { _store: Map<string, StubEntry> } {
       return Promise.resolve({ value: entry?.value ?? null, metadata: entry?.metadata ?? null });
     },
     put(key: string, value: string | ArrayBuffer, opts?: { expirationTtl?: number; metadata?: unknown }): Promise<void> {
-      _store.set(key, { value: value as string, metadata: opts?.metadata, expirationTtl: opts?.expirationTtl });
+      const entry: StubEntry = { value: value as string };
+      if (opts?.metadata !== undefined) entry.metadata = opts.metadata;
+      if (opts?.expirationTtl !== undefined) entry.expirationTtl = opts.expirationTtl;
+      _store.set(key, entry);
       return Promise.resolve();
     },
     delete(key: string): Promise<void> {
@@ -42,14 +45,16 @@ function makeKvStub(): KVNamespace & { _store: Map<string, StubEntry> } {
   return ns;
 }
 
-function makeRecord(overrides?: Partial<{ level: "debug" | "info" | "warn" | "error"; prefix: string; message: string; timestamp: string; data: Record<string, unknown> }>) {
-  return {
-    level: "info" as const,
-    prefix: "test",
-    message: "hello",
-    timestamp: "2026-05-31T10:00:00.000Z",
-    ...overrides,
-  };
+function makeRecord(
+  overrides?: Partial<{
+    level: "debug" | "info" | "warn" | "error";
+    prefix: string;
+    message: string;
+    timestamp: string;
+    data: Record<string, unknown>;
+  }>,
+) {
+  return { level: "info" as const, prefix: "test", message: "hello", timestamp: "2026-05-31T10:00:00.000Z", ...overrides };
 }
 
 describe("kvLogChannel — write", () => {
@@ -71,7 +76,7 @@ describe("kvLogChannel — write", () => {
 
     await channel(record);
 
-    const entry = [...stub._store.values()][0];
+    const entry = [...stub._store.values()][0]!;
     expect(JSON.parse(entry.value)).toMatchObject({ message: "stored", level: "info" });
   });
 
@@ -81,7 +86,7 @@ describe("kvLogChannel — write", () => {
 
     await channel(makeRecord());
 
-    const entry = [...stub._store.values()][0];
+    const entry = [...stub._store.values()][0]!;
     expect(entry.expirationTtl).toBe(300);
   });
 
@@ -91,7 +96,7 @@ describe("kvLogChannel — write", () => {
 
     await channel(makeRecord({ level: "warn", prefix: "svc", message: "watch out" }));
 
-    const meta = [...stub._store.values()][0].metadata as KvLogMetadata;
+    const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
     expect(meta.level).toBe("warn");
     expect(meta.prefix).toBe("svc");
     expect(meta.message).toBe("watch out");
@@ -104,7 +109,7 @@ describe("kvLogChannel — write", () => {
 
     await channel(makeRecord({ data: { requestId: "req-abc", other: 1 } }));
 
-    const meta = [...stub._store.values()][0].metadata as KvLogMetadata;
+    const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
     expect(meta.requestId).toBe("req-abc");
   });
 
@@ -114,7 +119,7 @@ describe("kvLogChannel — write", () => {
 
     await channel(makeRecord());
 
-    const meta = [...stub._store.values()][0].metadata as KvLogMetadata;
+    const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
     expect("requestId" in meta).toBe(false);
   });
 });
@@ -129,12 +134,7 @@ describe("kvLogChannel — purge", () => {
     }
 
     // maxLogs=3, highWater=4 → 6 entries is above highWater, should purge down to maxLogs=3
-    const channel = kvLogChannel(stub, {
-      prefix: "logs",
-      maxLogs: 3,
-      highWater: 4,
-      purgeProbability: 1,
-    });
+    const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 3, highWater: 4, purgeProbability: 1 });
 
     await channel(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" }));
 
@@ -147,12 +147,7 @@ describe("kvLogChannel — purge", () => {
     const stub = makeKvStub();
     stub._store.set("logs||2026-05-31T01:00:00.000Z||aaa", { value: "{}" });
 
-    const channel = kvLogChannel(stub, {
-      prefix: "logs",
-      maxLogs: 3,
-      highWater: 5,
-      purgeProbability: 1,
-    });
+    const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 3, highWater: 5, purgeProbability: 1 });
 
     await channel(makeRecord());
 
@@ -166,12 +161,7 @@ describe("kvLogChannel — purge", () => {
       stub._store.set(`logs||2026-05-31T0${i}:00:00.000Z||x`, { value: "{}" });
     }
 
-    const channel = kvLogChannel(stub, {
-      prefix: "logs",
-      maxLogs: 2,
-      highWater: 3,
-      purgeProbability: 0,
-    });
+    const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 2, highWater: 3, purgeProbability: 0 });
 
     await channel(makeRecord());
 
@@ -187,7 +177,10 @@ describe("kvLogChannel — flush (via createLogger)", () => {
       ...makeKvStub(),
       put(_k: string, _v: string, _o: unknown): Promise<void> {
         return new Promise<void>((resolve) => {
-          setTimeout(() => { order.push("put-done"); resolve(); }, 10);
+          setTimeout(() => {
+            order.push("put-done");
+            resolve();
+          }, 10);
         });
       },
     } as unknown as KVNamespace & { _store: Map<string, StubEntry> };

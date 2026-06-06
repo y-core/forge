@@ -3,21 +3,8 @@ import { createCommand } from "../cli/command";
 import type { Command } from "../cli/types";
 import { createTag, isWorkingTreeClean } from "./git";
 import { updatePackageVersion } from "./pkg";
-import type { VersionResult } from "./types";
+import type { ReleaseCommandConfig, ReleaseDeps, VersionResult } from "./types";
 import { resolveVersion } from "./version";
-
-export interface ReleaseCommandConfig {
-  cwd: string;
-  tagPrefix?: string;
-  stageFiles?: string[];
-}
-
-interface ReleaseDeps {
-  isWorkingTreeClean: (cwd: string) => boolean;
-  resolveVersion: (opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult;
-  updatePackageVersion: (version: string, cwd: string) => void;
-  createTag: (cwd: string, tag: string) => void;
-}
 
 const releaseFlags = {
   dry: { type: "boolean" as const, short: "n", description: "Show what would happen without making changes" },
@@ -45,7 +32,7 @@ export function createReleaseCommand(
         exit(1);
       }
 
-      const result = deps.resolveVersion({ explicit, cwd, tagPrefix });
+      const result = deps.resolveVersion({ ...(explicit !== undefined ? { explicit } : {}), cwd, tagPrefix });
 
       if (result.reason === "in-sync") {
         console.log(`Already at ${result.version} — nothing to release.`);

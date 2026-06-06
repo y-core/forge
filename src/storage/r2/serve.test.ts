@@ -31,11 +31,19 @@ function makeObjectBody(overrides: Partial<StoredObject> = {}): ObjectBody {
 function makeBackend(obj: ObjectBody | null): ObjectStorageBackend {
   return {
     name: "test",
-    async put() { return obj ?? makeObjectBody(); },
-    async get(_key, _opts) { return obj; },
-    async head(_key) { return obj; },
+    async put() {
+      return obj ?? makeObjectBody();
+    },
+    async get(_key, _opts) {
+      return obj;
+    },
+    async head(_key) {
+      return obj;
+    },
     async delete() {},
-    async list() { return { objects: [], truncated: false }; },
+    async list() {
+      return { objects: [], truncated: false };
+    },
   };
 }
 
@@ -69,7 +77,7 @@ describe("serveObject — 304 (conditional GET)", () => {
 describe("serveObject — 206 (range request)", () => {
   it("returns 206 with Content-Range header for a byte range", async () => {
     const backend = makeBackend(makeObjectBody({ size: 100 }));
-    const req = new Request("http://x/test.txt", { headers: { "Range": "bytes=0-9" } });
+    const req = new Request("http://x/test.txt", { headers: { Range: "bytes=0-9" } });
     const res = await serveObject(backend, req, "test.txt");
     expect(res.status).toBe(206);
     expect(res.headers.get("Content-Range")).toBe("bytes 0-9/100");
@@ -78,7 +86,7 @@ describe("serveObject — 206 (range request)", () => {
 
   it("returns 206 for open-ended range", async () => {
     const backend = makeBackend(makeObjectBody({ size: 50 }));
-    const req = new Request("http://x/test.txt", { headers: { "Range": "bytes=10-" } });
+    const req = new Request("http://x/test.txt", { headers: { Range: "bytes=10-" } });
     const res = await serveObject(backend, req, "test.txt");
     expect(res.status).toBe(206);
     expect(res.headers.get("Content-Range")).toBe("bytes 10-49/50");
@@ -88,7 +96,7 @@ describe("serveObject — 206 (range request)", () => {
 describe("serveObject — 416 (unsatisfiable range)", () => {
   it("returns 416 for offset beyond size", async () => {
     const backend = makeBackend(makeObjectBody({ size: 10 }));
-    const req = new Request("http://x/test.txt", { headers: { "Range": "bytes=20-30" } });
+    const req = new Request("http://x/test.txt", { headers: { Range: "bytes=20-30" } });
     const res = await serveObject(backend, req, "test.txt");
     expect(res.status).toBe(416);
     expect(res.headers.get("Content-Range")).toBe("bytes */10");
@@ -96,7 +104,7 @@ describe("serveObject — 416 (unsatisfiable range)", () => {
 
   it("returns 416 for invalid range syntax", async () => {
     const backend = makeBackend(makeObjectBody());
-    const req = new Request("http://x/test.txt", { headers: { "Range": "invalid" } });
+    const req = new Request("http://x/test.txt", { headers: { Range: "invalid" } });
     const res = await serveObject(backend, req, "test.txt");
     expect(res.status).toBe(416);
   });
@@ -107,5 +115,29 @@ describe("serveObject — 404", () => {
     const backend = makeBackend(null);
     const res = await serveObject(backend, new Request("http://x/missing.txt"), "missing.txt");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("serveObject — Content-Disposition", () => {
+  it("emits an ASCII filename plus an RFC 5987 filename* for a plain name", async () => {
+    const backend = makeBackend(makeObjectBody({ key: "files/report final.pdf" }));
+    const res = await serveObject(backend, new Request("http://x/f"), "files/report final.pdf", { contentDisposition: "attachment" });
+    expect(res.headers.get("Content-Disposition")).toBe(`attachment; filename="report final.pdf"; filename*=UTF-8''report%20final.pdf`);
+  });
+
+  it("strips quotes from the fallback and percent-encodes non-ASCII in filename*", async () => {
+    const backend = makeBackend(makeObjectBody({ key: 'na"me-é.txt' }));
+    const res = await serveObject(backend, new Request("http://x/f"), 'na"me-é.txt', { contentDisposition: "inline" });
+    const cd = res.headers.get("Content-Disposition") ?? "";
+    // Quote removed from the quoted fallback so it cannot break out of the attribute.
+    expect(cd).toContain('filename="name-é.txt"');
+    // RFC 5987 ext-value encodes the quote (%22) and the é (%C3%A9).
+    expect(cd).toContain("filename*=UTF-8''na%22me-%C3%A9.txt");
+  });
+
+  it("omits Content-Disposition when no disposition is requested", async () => {
+    const backend = makeBackend(makeObjectBody());
+    const res = await serveObject(backend, new Request("http://x/test.txt"), "test.txt");
+    expect(res.headers.get("Content-Disposition")).toBeNull();
   });
 });

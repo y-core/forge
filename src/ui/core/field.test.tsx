@@ -1,19 +1,12 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
-import {
-  fieldDescriptionId,
-  fieldErrorId,
-  fieldId,
-} from "./field";
+import { renderToString } from "../../jsx/render-to-string";
+import { fieldDescriptionId, fieldErrorId, fieldId } from "./field";
 import { Field } from "./field-layout";
 import { Input } from "./input";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("fieldId helpers", () => {
@@ -33,8 +26,8 @@ describe("fieldId helpers", () => {
 describe("Field primitives", () => {
   it("wires Field.Label to the control id via explicit name prop", async () => {
     const out = await render(
-      <Field name="email">
-        <Field.Label name="email">Email address</Field.Label>
+      <Field name='email'>
+        <Field.Label name='email'>Email address</Field.Label>
         <Field.Content>
           <Input field={{ name: "email" }} />
         </Field.Content>
@@ -47,11 +40,11 @@ describe("Field primitives", () => {
 
   it("adds data-invalid to the field and aria-invalid to the control", async () => {
     const out = await render(
-      <Field name="email" invalid>
-        <Field.Label name="email">Email</Field.Label>
+      <Field name='email' invalid>
+        <Field.Label name='email'>Email</Field.Label>
         <Field.Content>
           <Input field={{ name: "email", invalid: true }} />
-          <Field.Error name="email">Email is required.</Field.Error>
+          <Field.Error name='email'>Email is required.</Field.Error>
         </Field.Content>
       </Field>,
     );
@@ -62,12 +55,12 @@ describe("Field primitives", () => {
 
   it("wires description and error ids into aria-describedby", async () => {
     const out = await render(
-      <Field name="message" invalid>
-        <Field.Label name="message">Message</Field.Label>
+      <Field name='message' invalid>
+        <Field.Label name='message'>Message</Field.Label>
         <Field.Content>
           <Input field={{ name: "message", invalid: true }} />
-          <Field.Description name="message">Minimum 15 characters</Field.Description>
-          <Field.Error name="message">Required</Field.Error>
+          <Field.Description name='message'>Minimum 15 characters</Field.Description>
+          <Field.Error name='message'>Required</Field.Error>
         </Field.Content>
       </Field>,
     );
@@ -76,8 +69,8 @@ describe("Field primitives", () => {
 
   it("inherits disabled state on the control", async () => {
     const out = await render(
-      <Field name="name" disabled>
-        <Field.Label name="name">Name</Field.Label>
+      <Field name='name' disabled>
+        <Field.Label name='name'>Name</Field.Label>
         <Field.Content>
           <Input field={{ name: "name", disabled: true }} />
         </Field.Content>
@@ -89,15 +82,10 @@ describe("Field primitives", () => {
 
   it("preserves explicit control props over field defaults", async () => {
     const out = await render(
-      <Field name="name" invalid>
-        <Field.Label name="name">Name</Field.Label>
+      <Field name='name' invalid>
+        <Field.Label name='name'>Name</Field.Label>
         <Field.Content>
-          <Input
-            id="custom-id"
-            aria-describedby="custom-help"
-            aria-invalid="false"
-            field={{ name: "name", invalid: true }}
-          />
+          <Input id='custom-id' aria-describedby='custom-help' aria-invalid='false' field={{ name: "name", invalid: true }} />
         </Field.Content>
       </Field>,
     );
@@ -109,8 +97,8 @@ describe("Field primitives", () => {
   it("renders Field.Group with stack classes", async () => {
     const out = await render(
       <Field.Group>
-        <Field name="name">
-          <Field.Label name="name">Name</Field.Label>
+        <Field name='name'>
+          <Field.Label name='name'>Name</Field.Label>
           <Field.Content>
             <Input field={{ name: "name" }} />
           </Field.Content>
@@ -134,7 +122,7 @@ describe("Field primitives", () => {
   it("renders Field.Title and Field.Separator with explicit slots", async () => {
     const out = await render(
       <Field.Group>
-        <Field name="name">
+        <Field name='name'>
           <Field.Title>Name</Field.Title>
           <Field.Content>
             <Input field={{ name: "name" }} />

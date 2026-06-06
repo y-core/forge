@@ -28,9 +28,7 @@ function makeKVStub(): KVNamespace & { _store: Map<string, { value: string | Arr
     },
     list(opts?: { prefix?: string }): Promise<KVListResult> {
       const pfx = opts?.prefix ?? "";
-      const keys = [..._store.keys()]
-        .filter((k) => k.startsWith(pfx))
-        .map((name) => ({ name, metadata: _store.get(name)?.metadata }));
+      const keys = [..._store.keys()].filter((k) => k.startsWith(pfx)).map((name) => ({ name, metadata: _store.get(name)?.metadata }));
       return Promise.resolve({ keys, list_complete: true });
     },
     _store,
@@ -92,7 +90,10 @@ describe("createKVStore — getOrSet (cache-aside)", () => {
     const stub = makeKVStub();
     const store = createKVStore<number>(stub);
     let calls = 0;
-    const factory = async () => { calls++; return 99; };
+    const factory = async () => {
+      calls++;
+      return 99;
+    };
 
     const first = await store.getOrSet("counter", factory, { ttl: 60 });
     expect(first).toEqual({ ok: true, data: 99 });

@@ -2,47 +2,29 @@ import { argv as processArgv, exit as processExit } from "node:process";
 import { CliError, formatError } from "./errors";
 import { formatHelp } from "./help";
 import { collectFlags, parseArgs } from "./parse";
-import type { CliIO, CommandBase } from "./types";
-
-// Internal type used to invoke run without knowing the specific flag type.
-// CommandBase omits run deliberately; we recover it here via an assertion.
-type AnyFlags = Record<string, boolean | string | undefined>;
-type CallableCommand = { run?: (args: string[], flags: AnyFlags) => void | Promise<void> };
+import type { AnyFlags, CallableCommand, CliIO, CommandBase } from "./types";
 
 function validateArgs(command: CommandBase, args: string[]): void {
   const v = command.args;
   switch (v.kind) {
     case "none":
-      if (args.length > 0)
-        throw new CliError("invalid-args", `Command "${command.name}" takes no arguments, got ${args.length}`);
+      if (args.length > 0) throw new CliError("invalid-args", `Command "${command.name}" takes no arguments, got ${args.length}`);
       break;
     case "exact":
       if (args.length !== v.count)
-        throw new CliError(
-          "invalid-args",
-          `Command "${command.name}" requires exactly ${v.count} argument(s), got ${args.length}`,
-        );
+        throw new CliError("invalid-args", `Command "${command.name}" requires exactly ${v.count} argument(s), got ${args.length}`);
       break;
     case "min":
       if (args.length < v.min)
-        throw new CliError(
-          "invalid-args",
-          `Command "${command.name}" requires at least ${v.min} argument(s), got ${args.length}`,
-        );
+        throw new CliError("invalid-args", `Command "${command.name}" requires at least ${v.min} argument(s), got ${args.length}`);
       break;
     case "max":
       if (args.length > v.max)
-        throw new CliError(
-          "invalid-args",
-          `Command "${command.name}" requires at most ${v.max} argument(s), got ${args.length}`,
-        );
+        throw new CliError("invalid-args", `Command "${command.name}" requires at most ${v.max} argument(s), got ${args.length}`);
       break;
     case "range":
       if (args.length < v.min || args.length > v.max)
-        throw new CliError(
-          "invalid-args",
-          `Command "${command.name}" requires ${v.min}–${v.max} argument(s), got ${args.length}`,
-        );
+        throw new CliError("invalid-args", `Command "${command.name}" requires ${v.min}–${v.max} argument(s), got ${args.length}`);
       break;
   }
 }
@@ -60,8 +42,10 @@ export async function execute(root: CommandBase, argv?: string[], io?: CliIO): P
     let current: CommandBase = root;
     let remaining = tokens;
 
-    while (remaining.length > 0 && !remaining[0].startsWith("-")) {
-      const sub = current.commands.find((c) => c.name === remaining[0]);
+    while (remaining.length > 0) {
+      const head = remaining[0];
+      if (head === undefined || head.startsWith("-")) break;
+      const sub = current.commands.find((c) => c.name === head);
       if (!sub) break;
       current = sub;
       remaining = remaining.slice(1);

@@ -1,32 +1,22 @@
-import type { Env } from "hono";
-import { Hono } from "hono";
 import { registerConfig } from "../config/registry";
-import { escapeHtml } from "../http/escape";
-import { createLogger } from "../logging/logger";
-import type { Logger } from "../logging/types";
+import { Forge } from "./forge-app";
 import type { AppOptions } from "./types";
 
-/** Creates a Hono app with a structured error boundary. Security headers must be applied explicitly via `makeSecurityHeaders`. @public */
-export function createApp<E extends Env = Env>(options?: AppOptions<E>): Hono<E> {
-  const app = new Hono<E>();
-  const logger = options?.logger ?? createLogger("app");
+/** Creates a Forge app with a structured error boundary. @public */
+export function createApp<Bindings extends object = Record<string, unknown>>(options?: AppOptions<Bindings>): Forge<Bindings> {
+  const app = new Forge<Bindings>(options?.logger);
 
   if (options?.config) {
     registerConfig(app, options.config);
+    // biome-ignore lint/suspicious/noExplicitAny: Config<T> is generic; stored as unknown internally
+    app.configStore = options.config as any;
   }
-
-  app.onError((err, c) => {
-    if (options?.onError) {
-      return options.onError(err, c);
-    }
-    const reqLog = (c.var as { logger?: Logger }).logger;
-    (reqLog ?? logger).error("Unhandled error", { error: err.message });
-    const detail = options?.isDebug?.(c) ? `<p>${escapeHtml(err.message)}</p>` : "<p>An unexpected error occurred.</p>";
-    return c.html(
-      `<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1>${detail}</body></html>`,
-      500,
-    );
-  });
+  if (options?.onError) {
+    app.setOnError(options.onError);
+  }
+  if (options?.isDebug) {
+    app.setIsDebug(options.isDebug);
+  }
 
   return app;
 }

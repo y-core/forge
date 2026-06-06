@@ -13,8 +13,6 @@ export interface BuildOptions {
   minify?: boolean;
   /** Path for the generated assets module. Default: ".forge/assets.ts" */
   assetsPath?: string;
-  /** @deprecated Use assetsPath. Kept for CLI --out flag forwarding. */
-  manifestPath?: string;
 }
 
 export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Promise<void> {
@@ -25,15 +23,14 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   const manifest: Record<string, string> = {};
   let spriteGroups: Record<string, SpriteGroupResult> = {};
 
+  const minifyOpts = opts?.minify !== undefined ? { minify: opts.minify } : {};
+
   for (const css of config.css) {
-    const mapping = buildCSS(css, { outDir: publicDir, minify: opts?.minify, hash: shouldHash });
+    const mapping = buildCSS(css, { outDir: publicDir, ...minifyOpts, hash: shouldHash });
     Object.assign(manifest, mapping);
   }
 
-  for (const bundle of config.js.bundles) {
-    const mapping = await buildJS(bundle, { outDir: publicDir, minify: opts?.minify, hash: shouldHash });
-    Object.assign(manifest, mapping);
-  }
+  Object.assign(manifest, await buildJS(config.js.bundles, { outDir: publicDir, ...minifyOpts, hash: shouldHash }));
 
   copyAssets(config.copy, publicDir);
 
@@ -51,8 +48,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
     await buildIcons(config.icons);
   }
 
-  // opts.manifestPath is the legacy --out flag; assetsPath takes precedence.
-  const outputPath = opts?.assetsPath ?? opts?.manifestPath ?? ".forge/assets.ts";
+  const outputPath = opts?.assetsPath ?? ".forge/assets.ts";
   await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath);
 
   if (shouldHash) {

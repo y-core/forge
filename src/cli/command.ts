@@ -1,14 +1,15 @@
 import type { Command, CommandBase, CommandConfig, FlagDefs } from "./types";
 
 export function createCommand<F extends FlagDefs = FlagDefs>(config: CommandConfig<F>): Command<F> {
-  return {
+  const command: Command<F> = {
     name: config.name,
     description: config.description ?? "",
     flags: (config.flags ?? {}) as F,
     args: config.args ?? { kind: "none" },
-    run: config.run,
     commands: [],
   };
+  if (config.run) command.run = config.run;
+  return command;
 }
 
 export function addCommand(parent: CommandBase, child: CommandBase): void {

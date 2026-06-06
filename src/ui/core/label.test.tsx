@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Label } from "./label";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Label", () => {
@@ -39,12 +36,12 @@ describe("Label", () => {
   });
 
   it("passes the for attribute through", async () => {
-    const out = await render(<Label for="email-field">Email</Label>);
+    const out = await render(<Label for='email-field'>Email</Label>);
     expect(out).toContain('for="email-field"');
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Label class="my-label">Text</Label>);
+    const out = await render(<Label class='my-label'>Text</Label>);
     expect(out).toContain("my-label");
     expect(out).toContain("text-sm");
   });

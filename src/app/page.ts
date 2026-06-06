@@ -1,79 +1,57 @@
-import type { Env } from "hono";
-import type { InferConfig } from "../config/config";
+import type { RequestHandler } from "@remix-run/fetch-router";
+import { getAppContext } from "../context/types";
 import { CacheControl } from "../http/headers";
 import { toError } from "../result/result";
-import type { RouteModule } from "../router/types";
-import type { PageDefinition } from "./types";
+import { ConfigKey } from "./config-middleware";
+import type { CacheDirective, PageDefinition } from "./types";
 
-function toArray<T>(value: T | T[]): T[] {
-  return Array.isArray(value) ? value : [value];
+function buildCacheHeader(cache: "no-store" | CacheDirective | undefined): string | undefined {
+  if (cache === "no-store") return new CacheControl({ noStore: true }).toString();
+  if (cache && typeof cache === "object") {
+    const scope = cache.scope ?? "public";
+    return new CacheControl({ [scope]: true, maxAge: cache.maxAge }).toString();
+  }
+  return undefined;
 }
 
-/** Wraps a view function with optional caching, custom headers, middleware, and error recovery. @public */
-export function definePage<
-  E extends Env = Env,
-  LoaderData = unknown,
-  ActionData = unknown,
->(def: PageDefinition<E, LoaderData, ActionData>): RouteModule<E, LoaderData, ActionData> {
-  const middleware = def.middleware ? toArray(def.middleware) : [];
-  const loader = def.loader;
-  const action = def.action;
-
-  function applyHeaders(c: Parameters<typeof def.view>[0]): void {
-    if (def.cache === "no-store") {
-      c.header("cache-control", new CacheControl({ noStore: true }).toString());
-    } else if (def.cache && typeof def.cache === "object") {
-      const scope = def.cache.scope ?? "public";
-      c.header(
-        "cache-control",
-        new CacheControl({ [scope]: true, maxAge: def.cache.maxAge }).toString(),
-      );
-    }
-
-    if (def.headers) {
-      for (const [key, value] of Object.entries(def.headers)) {
-        c.header(key, value);
-      }
+function applyResponseHeaders(res: Response, def: { cache?: PageDefinition["cache"]; headers?: Record<string, string> }): Response {
+  const cacheHeader = buildCacheHeader(def.cache);
+  if (!cacheHeader && !def.headers) return res;
+  const headers = new Headers(res.headers);
+  if (cacheHeader) headers.set("cache-control", cacheHeader);
+  if (def.headers) {
+    for (const [key, value] of Object.entries(def.headers)) {
+      headers.set(key, value);
     }
   }
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
-  return {
-    middleware: middleware.length > 0 ? middleware : undefined,
-    ...(loader
-      ? {
-          loader: async (c, config: InferConfig<E>) => {
-            applyHeaders(c);
-            try {
-              return await loader(c, config);
-            } catch (err) {
-              if (def.onError) return def.onError(toError(err), c);
-              throw err;
-            }
-          },
-        }
-      : {}),
-    ...(action
-      ? {
-          action: async (c, config: InferConfig<E>) => {
-            applyHeaders(c);
-            try {
-              return await action(c, config);
-            } catch (err) {
-              if (def.onError) return def.onError(toError(err), c);
-              throw err;
-            }
-          },
-        }
-      : {}),
-    view: async (c, config: InferConfig<E>, state) => {
-      applyHeaders(c);
+/** Wraps a view/loader into a RequestHandler with caching, custom headers, and error recovery. @public */
+export function definePage<Bindings = Record<string, unknown>, ConfigData = unknown, LoaderData = unknown, ActionData = unknown>(
+  def: PageDefinition<Bindings, ConfigData, LoaderData, ActionData>,
+): RequestHandler {
+  return async (context) => {
+    // biome-ignore lint/suspicious/noExplicitAny: config resolved via provideRequestState
+    const config = context.get(ConfigKey) as ConfigData;
+    const c = getAppContext<Bindings>(context);
 
-      try {
-        return await def.view(c, config, state);
-      } catch (err) {
-        if (def.onError) return def.onError(toError(err), c);
-        throw err;
+    try {
+      let data: LoaderData | undefined;
+      if (def.loader) {
+        const result = await def.loader(c, config);
+        if (result instanceof Response) {
+          return applyResponseHeaders(result, def);
+        }
+        data = result as LoaderData;
       }
-    },
+
+      const state = { data: data as LoaderData, actionData: undefined as ActionData, method: "GET" as const };
+      const viewRes = await def.view(c, config, state);
+      return applyResponseHeaders(viewRes, def);
+    } catch (err) {
+      if (def.onError) return def.onError(toError(err), c);
+      throw err;
+    }
   };
 }

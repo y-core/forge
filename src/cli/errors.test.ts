@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import type { CliErrorKind } from "./errors";
 import { CliError, formatError } from "./errors";
+import type { CliErrorKind } from "./types";
 
 describe("CliError — constructor", () => {
   it("sets name to CliError", () => {
@@ -53,14 +53,8 @@ describe("formatError", () => {
   });
 
   it("formats each kind correctly", () => {
-    expect(formatError(new CliError("unknown-flag", "Unknown flag: --foo"))).toBe(
-      "Error: Unknown flag: --foo",
-    );
-    expect(formatError(new CliError("invalid-args", "Too many arguments"))).toBe(
-      "Error: Too many arguments",
-    );
-    expect(formatError(new CliError("missing-command", "No command provided"))).toBe(
-      "Error: No command provided",
-    );
+    expect(formatError(new CliError("unknown-flag", "Unknown flag: --foo"))).toBe("Error: Unknown flag: --foo");
+    expect(formatError(new CliError("invalid-args", "Too many arguments"))).toBe("Error: Too many arguments");
+    expect(formatError(new CliError("missing-command", "No command provided"))).toBe("Error: No command provided");
   });
 });

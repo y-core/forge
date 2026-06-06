@@ -6,6 +6,7 @@ export { collectFlags, parseArgs } from "./parse";
 export type {
   ArgValidator,
   BooleanFlagDef,
+  CliErrorKind,
   CliIO,
   Command,
   CommandBase,

@@ -19,27 +19,27 @@ describe("createLogger", () => {
   it("outputs valid JSON", () => {
     const log = createLogger("test");
     log.info("hello");
-    expect(() => JSON.parse(captured[0])).not.toThrow();
+    expect(() => JSON.parse(captured[0]!)).not.toThrow();
   });
 
   it("includes the prefix in output", () => {
     const log = createLogger("my-prefix");
     log.info("hello");
-    const obj = JSON.parse(captured[0]);
+    const obj = JSON.parse(captured[0]!);
     expect(obj.prefix).toBe("my-prefix");
   });
 
   it("includes the message in output", () => {
     const log = createLogger("test");
     log.warn("something wrong");
-    const obj = JSON.parse(captured[0]);
+    const obj = JSON.parse(captured[0]!);
     expect(obj.message).toBe("something wrong");
   });
 
   it("includes a timestamp in output", () => {
     const log = createLogger("test");
     log.error("bad");
-    const obj = JSON.parse(captured[0]);
+    const obj = JSON.parse(captured[0]!);
     expect(typeof obj.timestamp).toBe("string");
     expect(() => new Date(obj.timestamp)).not.toThrow();
   });
@@ -47,30 +47,34 @@ describe("createLogger", () => {
   it("includes the log level", () => {
     const log = createLogger("test");
     log.debug("debug msg");
-    const obj = JSON.parse(captured[0]);
+    const obj = JSON.parse(captured[0]!);
     expect(obj.level).toBe("debug");
   });
 
   it("includes extra data fields when provided", () => {
     const log = createLogger("test");
     log.info("with data", { userId: "abc" });
-    const obj = JSON.parse(captured[0]);
+    const obj = JSON.parse(captured[0]!);
     expect(obj.userId).toBe("abc");
   });
 
   it("dispatches to multiple channels", () => {
     const records1: LogRecord[] = [];
     const records2: LogRecord[] = [];
-    const ch1: LogChannel = (r) => { records1.push(r); };
-    const ch2: LogChannel = (r) => { records2.push(r); };
+    const ch1: LogChannel = (r) => {
+      records1.push(r);
+    };
+    const ch2: LogChannel = (r) => {
+      records2.push(r);
+    };
 
     const log = createLogger("multi", { channels: [ch1, ch2] });
     log.info("broadcast");
 
     expect(records1).toHaveLength(1);
     expect(records2).toHaveLength(1);
-    expect(records1[0].message).toBe("broadcast");
-    expect(records2[0].message).toBe("broadcast");
+    expect(records1[0]!.message).toBe("broadcast");
+    expect(records2[0]!.message).toBe("broadcast");
   });
 
   it("flush awaits pending async channel writes", async () => {
@@ -101,7 +105,7 @@ describe("createLogger", () => {
     const log = createLogger("default-ch");
     log.info("check default");
     expect(captured).toHaveLength(1);
-    const obj = JSON.parse(captured[0]);
+    const obj = JSON.parse(captured[0]!);
     expect(obj.level).toBe("info");
   });
 
@@ -113,53 +117,64 @@ describe("createLogger", () => {
 
   it("LogRecord includes data field when data is provided", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => { records.push(r); };
+    const ch: LogChannel = (r) => {
+      records.push(r);
+    };
     const log = createLogger("rec-test", { channels: [ch] });
 
     log.warn("with data", { key: "val" });
 
-    expect(records[0].data).toStrictEqual({ key: "val" });
+    expect(records[0]!.data).toStrictEqual({ key: "val" });
   });
 
   it("LogRecord omits data field when no data provided", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => { records.push(r); };
+    const ch: LogChannel = (r) => {
+      records.push(r);
+    };
     const log = createLogger("rec-test", { channels: [ch] });
 
     log.info("no data");
 
-    expect("data" in records[0]).toBe(false);
+    expect("data" in records[0]!).toBe(false);
   });
 });
 
 describe("createLogger — child()", () => {
   it("child merges bindings into data on records", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => { records.push(r); };
+    const ch: LogChannel = (r) => {
+      records.push(r);
+    };
     const log = createLogger("svc", { channels: [ch] });
     const child = log.child({ requestId: "abc-123" });
 
     child.info("handler called");
 
-    expect(records[0].data).toStrictEqual({ requestId: "abc-123" });
+    expect(records[0]!.data).toStrictEqual({ requestId: "abc-123" });
   });
 
   it("per-call data overrides a binding of the same key", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => { records.push(r); };
+    const ch: LogChannel = (r) => {
+      records.push(r);
+    };
     const log = createLogger("svc", { channels: [ch] });
     const child = log.child({ requestId: "original" });
 
     child.warn("override", { requestId: "overridden", extra: "val" });
 
-    expect(records[0].data).toStrictEqual({ requestId: "overridden", extra: "val" });
+    expect(records[0]!.data).toStrictEqual({ requestId: "overridden", extra: "val" });
   });
 
   it("parent and child share the same pending queue so one flush() drains both", async () => {
     const order: string[] = [];
     const asyncChannel: LogChannel = (_r) =>
       new Promise<void>((resolve) => {
-        setTimeout(() => { order.push("async"); resolve(); }, 10);
+        setTimeout(() => {
+          order.push("async");
+          resolve();
+        }, 10);
       });
 
     const log = createLogger("parent", { channels: [asyncChannel] });
@@ -176,8 +191,12 @@ describe("createLogger — child()", () => {
   it("child shares channels with parent — writes go to all channels", () => {
     const records1: LogRecord[] = [];
     const records2: LogRecord[] = [];
-    const ch1: LogChannel = (r) => { records1.push(r); };
-    const ch2: LogChannel = (r) => { records2.push(r); };
+    const ch1: LogChannel = (r) => {
+      records1.push(r);
+    };
+    const ch2: LogChannel = (r) => {
+      records2.push(r);
+    };
 
     const log = createLogger("p", { channels: [ch1, ch2] });
     const child = log.child({ userId: "u1" });
@@ -186,39 +205,45 @@ describe("createLogger — child()", () => {
 
     expect(records1).toHaveLength(1);
     expect(records2).toHaveLength(1);
-    expect(records1[0].data).toStrictEqual({ userId: "u1" });
+    expect(records1[0]!.data).toStrictEqual({ userId: "u1" });
   });
 
   it("child bindings do not affect the parent logger", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => { records.push(r); };
+    const ch: LogChannel = (r) => {
+      records.push(r);
+    };
     const log = createLogger("svc", { channels: [ch] });
     log.child({ requestId: "child-only" });
 
     log.info("parent msg");
 
-    expect("data" in records[0]).toBe(false);
+    expect("data" in records[0]!).toBe(false);
   });
 
   it("nested children accumulate bindings", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => { records.push(r); };
+    const ch: LogChannel = (r) => {
+      records.push(r);
+    };
     const log = createLogger("svc", { channels: [ch] });
     const child = log.child({ requestId: "r1" });
     const grandchild = child.child({ userId: "u1" });
 
     grandchild.debug("deep");
 
-    expect(records[0].data).toStrictEqual({ requestId: "r1", userId: "u1" });
+    expect(records[0]!.data).toStrictEqual({ requestId: "r1", userId: "u1" });
   });
 
   it("createLogger bindings option sets initial bindings", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => { records.push(r); };
+    const ch: LogChannel = (r) => {
+      records.push(r);
+    };
     const log = createLogger("svc", { channels: [ch], bindings: { service: "api" } });
 
     log.info("startup");
 
-    expect(records[0].data).toStrictEqual({ service: "api" });
+    expect(records[0]!.data).toStrictEqual({ service: "api" });
   });
 });

@@ -39,7 +39,12 @@ async function run(cmd: CommandBase, argv: string[], io: CliIO): Promise<void> {
 describe("execute()", () => {
   it("calls run handler with no args", async () => {
     let called = false;
-    const cmd = createCommand({ name: "root", run: () => { called = true; } });
+    const cmd = createCommand({
+      name: "root",
+      run: () => {
+        called = true;
+      },
+    });
     const { io } = makeIO();
     await run(cmd, [], io);
     expect(called).toBe(true);
@@ -50,7 +55,9 @@ describe("execute()", () => {
     const cmd = createCommand({
       name: "root",
       flags: { verbose: { type: "boolean", short: "v" } },
-      run: (_args, flags) => { received = flags; },
+      run: (_args, flags) => {
+        received = flags;
+      },
     });
     const { io } = makeIO();
     await run(cmd, ["-v"], io);
@@ -62,7 +69,9 @@ describe("execute()", () => {
     const cmd = createCommand({
       name: "root",
       args: { kind: "min", min: 1 },
-      run: (args) => { received = args; },
+      run: (args) => {
+        received = args;
+      },
     });
     const { io } = makeIO();
     await run(cmd, ["foo", "bar"], io);
@@ -72,7 +81,12 @@ describe("execute()", () => {
   it("routes to the correct subcommand", async () => {
     let ran = "none";
     const root = createCommand({ name: "root" });
-    const sub = createCommand({ name: "sub", run: () => { ran = "sub"; } });
+    const sub = createCommand({
+      name: "sub",
+      run: () => {
+        ran = "sub";
+      },
+    });
     addCommand(root, sub);
     const { io } = makeIO();
     await run(root, ["sub"], io);
@@ -83,7 +97,12 @@ describe("execute()", () => {
     let ran = "none";
     const root = createCommand({ name: "root" });
     const mid = createCommand({ name: "mid" });
-    const leaf = createCommand({ name: "leaf", run: () => { ran = "leaf"; } });
+    const leaf = createCommand({
+      name: "leaf",
+      run: () => {
+        ran = "leaf";
+      },
+    });
     addCommand(root, mid);
     addCommand(mid, leaf);
     const { io } = makeIO();
@@ -125,11 +144,7 @@ describe("execute()", () => {
   });
 
   it("writes to stderr and exits(1) on invalid arg count", async () => {
-    const cmd = createCommand({
-      name: "root",
-      args: { kind: "exact", count: 2 },
-      run: () => {},
-    });
+    const cmd = createCommand({ name: "root", args: { kind: "exact", count: 2 }, run: () => {} });
     const { io, err, state } = makeIO();
     await run(cmd, ["only-one"], io);
     expect(err[0]).toContain("Error:");
@@ -160,13 +175,12 @@ describe("execute()", () => {
 
   it("inherits persistent flags from parent across subcommand boundary", async () => {
     let received: Record<string, unknown> = {};
-    const root = createCommand({
-      name: "root",
-      flags: { debug: { type: "boolean", persistent: true } },
-    });
+    const root = createCommand({ name: "root", flags: { debug: { type: "boolean", persistent: true } } });
     const sub = createCommand({
       name: "sub",
-      run: (_args, flags) => { received = flags; },
+      run: (_args, flags) => {
+        received = flags;
+      },
     });
     addCommand(root, sub);
     const { io } = makeIO();

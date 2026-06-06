@@ -1,6 +1,6 @@
 ---
 title: Testing Discipline
-description: "bun test, co-located tests, *.test.ts, *.test.tsx, fakes over mocks, HTML entity exact-match assertions, bun:test primitives, describe it expect, validate-exports gate, bun run check, security test requirements, no substring matching"
+description: "bun test, co-located tests, *.test.ts, *.test.tsx, fakes over mocks, HTML entity exact-match assertions, bun:test primitives, describe it expect, validate-exports gate, bun run check, security test requirements pass and fail cases, declarative route registration, app.request helper, MINIMUM_ENV, mapHandler, no substring matching"
 weight: 35
 ---
 
@@ -121,7 +121,7 @@ can mask tree-shaking or re-export bugs that validate-exports is designed to cat
 
 ### 3a. The Encoding Map
 
-Hono JSX escapes dynamic content. When asserting rendered HTML, use the escaped forms:
+The JSX renderer escapes dynamic content. When asserting rendered HTML, use the escaped forms:
 
 | Character | Escaped form |
 |---|---|
@@ -131,8 +131,12 @@ Hono JSX escapes dynamic content. When asserting rendered HTML, use the escaped 
 | `>` (greater-than) | `&gt;` |
 | `"` in attributes | `&#34;` or `&quot;` |
 
-Static JSX content (string literals in JSX, not interpolated) is NOT escaped by
-Hono — only interpolated values are. Know the difference before writing assertions.
+Static JSX content (string literals in JSX, not interpolated) is NOT escaped by the
+renderer — only interpolated values are. Know the difference before writing assertions.
+
+> URL-bearing attributes are an exception: the renderer routes `href`/`src`/`action`/…
+> values through `safeUrl`, so a `javascript:` URL renders as `"#"`. Assert the sanitized
+> form when testing such attributes.
 
 ### 3b. Exact Match — Never Substring Matching
 
@@ -168,12 +172,14 @@ adjust the source code to match a wrong assertion.
 A fake is a minimal in-test implementation of a real interface. Construct it as a
 plain object literal typed to the interface:
 
+    import type { KVNamespace } from "@y-core/forge/storage/kv"
+
     const fakeKV: KVNamespace = {
-      get:             async (_key)        => null,
+      get:             async (_key, _opts) => null,
       put:             async (_key, _val)  => {},
       delete:          async (_key)        => {},
-      list:            async ()            => ({ keys: [], list_complete: true, cursor: "" }),
-      getWithMetadata: async ()            => ({ value: null, metadata: null }),
+      list:            async ()            => ({ keys: [], list_complete: true }),
+      getWithMetadata: async (_key, _opts) => ({ value: null, metadata: null }),
     }
 
 TypeScript enforces that all interface members are present. If the interface gains
@@ -222,6 +228,39 @@ Security-sensitive code requires BOTH a positive case (the guard allows a valid
 request) AND a negative case (the guard blocks an invalid request). A test suite
 with only the happy path is incomplete and must not be merged.
 
+Build the app under test the same way production does — **declaratively**. There is no
+imperative `app.get`/`app.post`/`app.all`; routes are registered as a name→`{ method,
+pattern }` map (`route()`) bound to a controller (`createController`) and installed with
+`app.map(routes, controller)`. Path-scoped middleware (security headers, guards) is added
+with `app.use("*", …)`. Drive requests through the built-in `app.request(path, init, env)`
+helper, which constructs a `Request`, runs the full middleware chain, and awaits any
+`ctx.waitUntil` work:
+
+    import { Forge } from "@y-core/forge/app"
+    import { route, createController } from "@y-core/forge/router"
+    import { makeSecurityHeaders } from "@y-core/forge/security"
+
+    // Minimal environment bindings the handlers read (KV, secrets, base URL, …).
+    const MINIMUM_ENV = {
+      BASE_URL: "https://example.com",
+      CSRF_SECRET: "a".repeat(64), // 32-byte hex
+    }
+
+    function buildApp() {
+      const app = new Forge<typeof MINIMUM_ENV>()
+      app.use("*", makeSecurityHeaders())
+      const routes = route({ contact: { method: "POST", pattern: "/contact" } })
+      app.map(routes, createController(routes, {
+        actions: { contact: { middleware: [csrfVerifyGuard], handler: contactHandler } },
+      }))
+      return app
+    }
+
+    const res = await buildApp().request("/contact", { method: "POST" }, MINIMUM_ENV)
+
+In a forge namespace's own unit tests, the test-only `mapHandler(app, method, pattern,
+action)` helper registers a single route without writing a full route map.
+
 | Feature | Required positive case | Required negative case |
 |---|---|---|
 | CSRF protection | Valid token → 200 | Missing or invalid token → 403 |
@@ -238,11 +277,15 @@ body fragment — not just the status code. This proves the error path renders
 correctly, not merely that it exits early.
 
     it("rejects missing CSRF token with 403", async () => {
-      const res = await app.request("/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "name=Alice&email=alice%40example.com",  // no csrf_token field
-      })
+      const res = await buildApp().request(
+        "/contact",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "name=Alice&email=alice%40example.com",  // no _csrf field
+        },
+        MINIMUM_ENV,
+      )
       expect(res.status).toBe(403)
       const html = await res.text()
       expect(html).toBe("Forbidden")

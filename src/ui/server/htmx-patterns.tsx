@@ -15,12 +15,7 @@ export const SWAP = {
   none: "none",
 } as const;
 
-function withQueryParam(
-  path: string,
-  key: string,
-  value: string,
-  extras?: Record<string, string>,
-): string {
+function withQueryParam(path: string, key: string, value: string, extras?: Record<string, string>): string {
   try {
     const url = new URL(path, "http://localhost");
     if (extras) {
@@ -49,7 +44,7 @@ export function liveSearch(p: LiveSearchProps): HxAttrs {
     target: p.target,
     swap: p.swap ?? SWAP.innerHtml,
     trigger: p.trigger ?? "input changed delay:300ms, search",
-    pushUrl: p.pushUrl,
+    ...(p.pushUrl !== undefined ? { pushUrl: p.pushUrl } : {}),
   });
 }
 
@@ -83,11 +78,7 @@ interface PaginatedTableProps {
 export function paginatedTableLink(p: PaginatedTableProps): HxAttrs {
   const pageParam = p.pageParam ?? "page";
   const url = withQueryParam(p.get, pageParam, String(p.page), p.query);
-  return hxAttrs({
-    get: url,
-    target: p.target,
-    swap: p.swap ?? SWAP.outerHtml,
-  });
+  return hxAttrs({ get: url, target: p.target, swap: p.swap ?? SWAP.outerHtml });
 }
 
 interface AsyncDialogTriggerProps {
@@ -99,11 +90,7 @@ interface AsyncDialogTriggerProps {
 
 export function asyncDialogTrigger(p: AsyncDialogTriggerProps): HxAttrs {
   return {
-    ...hxAttrs({
-      get: p.get,
-      target: p.target,
-      swap: p.swap ?? SWAP.innerHtml,
-    }),
+    ...hxAttrs({ get: p.get, target: p.target, swap: p.swap ?? SWAP.innerHtml }),
     "data-dialog-open": p.dialogId,
     "aria-haspopup": "dialog",
     "aria-controls": p.dialogId,
@@ -118,12 +105,7 @@ interface DependentSelectProps {
 }
 
 export function dependentSelect(p: DependentSelectProps): HxAttrs {
-  return hxAttrs({
-    get: p.get,
-    target: p.target,
-    swap: p.swap ?? SWAP.outerHtml,
-    trigger: p.trigger ?? "change",
-  });
+  return hxAttrs({ get: p.get, target: p.target, swap: p.swap ?? SWAP.outerHtml, trigger: p.trigger ?? "change" });
 }
 
 interface InfiniteScrollProps {
@@ -139,7 +121,7 @@ export function infiniteScroll(p: InfiniteScrollProps): HxAttrs {
     target: p.target,
     swap: p.swap ?? SWAP.beforeEnd,
     trigger: "revealed",
-    select: p.select,
+    ...(p.select !== undefined ? { select: p.select } : {}),
   });
 }
 
@@ -158,8 +140,8 @@ export function formSubmit(p: FormSubmitProps): HxAttrs {
     target: p.target,
     swap: p.swap ?? SWAP.outerHtml,
     disabledElt: p.disabledElt ?? "this",
-    encoding: p.encoding,
-    pushUrl: p.pushUrl,
+    ...(p.encoding !== undefined ? { encoding: p.encoding } : {}),
+    ...(p.pushUrl !== undefined ? { pushUrl: p.pushUrl } : {}),
   });
 }
 
@@ -188,13 +170,10 @@ interface ToastOobProps {
 }
 
 export function toastOob(p: ToastOobProps) {
-  const oobAttrs = oobSwap({
-    strategy: p.strategy ?? "beforeend",
-    selector: p.selector ?? "#toast-container",
-  });
+  const oobAttrs = oobSwap({ strategy: p.strategy ?? "beforeend", selector: p.selector ?? "#toast-container" });
   return (
     <div {...oobAttrs}>
-      <Toast variant={p.toast.variant}>
+      <Toast {...(p.toast.variant !== undefined ? { variant: p.toast.variant } : {})}>
         {p.toast.title ? <Toast.Title>{p.toast.title}</Toast.Title> : null}
         {p.toast.description ? <Toast.Description>{p.toast.description}</Toast.Description> : null}
       </Toast>

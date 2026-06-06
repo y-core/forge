@@ -23,10 +23,7 @@ export function collectFlags(command: CommandBase): FlagDefs {
   return result;
 }
 
-export function parseArgs<F extends FlagDefs>(
-  argv: string[],
-  flagDefs: F,
-): { args: string[]; flags: ResolvedFlags<F> } {
+export function parseArgs<F extends FlagDefs>(argv: string[], flagDefs: F): { args: string[]; flags: ResolvedFlags<F> } {
   const byName = new Map<string, [string, FlagDef]>();
   const byShort = new Map<string, [string, FlagDef]>();
 
@@ -42,6 +39,7 @@ export function parseArgs<F extends FlagDefs>(
 
   while (i < argv.length) {
     const token = argv[i];
+    if (token === undefined) break;
 
     if (token === "--") {
       stopFlags = true;
@@ -88,10 +86,11 @@ export function parseArgs<F extends FlagDefs>(
         i++;
       } else {
         i++;
-        if (i >= argv.length || argv[i].startsWith("-")) {
+        const value = argv[i];
+        if (value === undefined || value.startsWith("-")) {
           throw new CliError("missing-value", `Flag --${flagName} requires a value`);
         }
-        parsed[flagName] = argv[i];
+        parsed[flagName] = value;
         i++;
       }
     }

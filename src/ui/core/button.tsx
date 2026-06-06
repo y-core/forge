@@ -1,5 +1,5 @@
-import type { Child, FC, JSX } from "hono/jsx";
-import { cloneElement, isValidElement } from "hono/jsx";
+import { cloneElement, isValidElement } from "../../jsx/element";
+import type { Child, FC, JSX } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
@@ -18,57 +18,38 @@ const buttonVariants = cva({
       secondary: "border border-input text-foreground hover:bg-accent",
       ghost: "text-foreground hover:bg-accent",
     },
-    size: {
-      sm: "h-8 px-3 text-sm",
-      md: "h-10 px-4 text-sm",
-      lg: "h-12 px-6 text-base",
-    },
+    size: { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-sm", lg: "h-12 px-6 text-base" },
   },
-  defaultVariants: {
-    variant: "primary",
-    size: "md",
-  },
+  defaultVariants: { variant: "primary", size: "md" },
 });
 
-export const Button: FC<ButtonProps> = ({
-  variant,
-  size,
-  asChild = false,
-  type = "button",
-  disabled,
-  class: cls,
-  children,
-  ...rest
-}) => {
-  const className = buttonVariants({ variant, size, class: asClass(cls) });
+export const Button: FC<ButtonProps> = ({ variant, size, asChild = false, type = "button", disabled, class: cls, children, ...rest }) => {
+  const clsValue = asClass(cls);
+  const className = buttonVariants({
+    ...(variant !== undefined ? { variant } : {}),
+    ...(size !== undefined ? { size } : {}),
+    ...(clsValue !== undefined ? { class: clsValue } : {}),
+  });
 
   if (asChild) {
     if (!isValidElement(children)) {
       throw new Error("Button with asChild expects a single valid JSX element child.");
     }
 
-    const childClass = asClass(children.props.class);
-    const childTag = typeof children.tag === "string" ? children.tag : undefined;
+    const childClass = asClass(children.props.class as string | undefined);
+    const childType = typeof children.type === "string" ? children.type : undefined;
 
     return cloneElement(children, {
       ...rest,
-      ...(childTag === "button" ? { disabled, type } : {}),
-      ...(disabled && childTag !== "button"
-        ? { "aria-disabled": "true", "data-disabled": "true" }
-        : {}),
+      ...(childType === "button" ? { disabled, type } : {}),
+      ...(disabled && childType !== "button" ? { "aria-disabled": "true", "data-disabled": "true" } : {}),
       class: cn(className, childClass),
       "data-slot": "button",
-    }) as unknown as ReturnType<FC<ButtonProps>>;
+    }) as ReturnType<FC<ButtonProps>>;
   }
 
   return (
-    <button
-      type={type}
-      disabled={disabled}
-      data-slot="button"
-      class={className}
-      {...rest}
-    >
+    <button type={type} data-slot='button' class={className} {...(disabled !== undefined ? { disabled } : {})} {...rest}>
       {children}
     </button>
   );

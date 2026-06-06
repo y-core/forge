@@ -1,23 +1,6 @@
+import { bytesToHex, randomBytes } from "../crypto/mod";
 import type { KVNamespace } from "../storage/kv/types";
-import type { LogChannel, LogRecord } from "./types";
-
-/** @public */
-export interface KvLogChannelOptions {
-  prefix?: string;
-  defaultTtl?: number;
-  maxLogs?: number;
-  highWater?: number;
-  purgeProbability?: number;
-}
-
-/** Metadata stored alongside each KV log entry for zero-cost viewer listing. @public */
-export interface KvLogMetadata {
-  level: string;
-  prefix: string;
-  requestId?: string;
-  message: string;
-  timestamp: string;
-}
+import type { KvLogChannelOptions, KvLogMetadata, LogChannel, LogRecord } from "./types";
 
 const DEFAULT_PREFIX = "logs";
 const DEFAULT_TTL = 60 * 60 * 24 * 7; // 7 days
@@ -40,7 +23,10 @@ export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): Lo
   const listPrefix = `${prefix}||`;
 
   return async (record: LogRecord): Promise<void> => {
-    const rand = Math.random().toString(36).slice(2, 8);
+    // Crypto-random suffix (8 hex chars / 32 bits) so two records written in the same millisecond
+    // do not collide on the same KV key — KV is last-write-wins, and a collision silently drops a
+    // log line. `Math.random()` (≈31 bits, non-uniform across runtimes) made that more likely.
+    const rand = bytesToHex(randomBytes(4));
     const key = `${listPrefix}${record.timestamp}||${rand}`;
 
     const metadata: KvLogMetadata = {
@@ -48,15 +34,10 @@ export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): Lo
       prefix: record.prefix,
       message: record.message,
       timestamp: record.timestamp,
-      ...(record.data?.requestId !== undefined
-        ? { requestId: String(record.data.requestId) }
-        : {}),
+      ...(record.data?.requestId !== undefined ? { requestId: String(record.data.requestId) } : {}),
     };
 
-    const putPromise = kv.put(key, JSON.stringify(record), {
-      expirationTtl: defaultTtl,
-      metadata,
-    });
+    const putPromise = kv.put(key, JSON.stringify(record), { expirationTtl: defaultTtl, metadata });
 
     if (Math.random() >= purgeProbability) {
       return putPromise;
@@ -67,12 +48,7 @@ export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): Lo
   };
 }
 
-async function purge(
-  kv: KVNamespace,
-  listPrefix: string,
-  maxLogs: number,
-  highWater: number,
-): Promise<void> {
+async function purge(kv: KVNamespace, listPrefix: string, maxLogs: number, highWater: number): Promise<void> {
   const result = await kv.list({ prefix: listPrefix });
   if (result.keys.length <= highWater) return;
 

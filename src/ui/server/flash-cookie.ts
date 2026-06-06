@@ -1,4 +1,5 @@
-import type { Context } from "hono";
+import type { RequestContext } from "@remix-run/fetch-router";
+import { setPendingHeader } from "../../context/pending-headers";
 import { createSignedCookie } from "../../session/signed";
 import type { FlashMessage, FlashType } from "./flash";
 
@@ -11,12 +12,18 @@ export interface FlashCookieOptions {
 }
 
 export interface Flasher {
-  set(c: Context, messages: FlashMessage[]): Promise<void>;
-  get(c: Context): Promise<FlashMessage[]>;
-  success(c: Context, text: string): Promise<void>;
-  info(c: Context, text: string): Promise<void>;
-  warning(c: Context, text: string): Promise<void>;
-  error(c: Context, text: string): Promise<void>;
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant for cookie operations
+  set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void>;
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  get(c: RequestContext<any, any>): Promise<FlashMessage[]>;
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  success(c: RequestContext<any, any>, text: string): Promise<void>;
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  info(c: RequestContext<any, any>, text: string): Promise<void>;
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  warning(c: RequestContext<any, any>, text: string): Promise<void>;
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  error(c: RequestContext<any, any>, text: string): Promise<void>;
 }
 
 export function createFlash(options: FlashCookieOptions): Flasher {
@@ -27,14 +34,18 @@ export function createFlash(options: FlashCookieOptions): Flasher {
 
   const cookie = createSignedCookie(name, { secrets: options.secrets, path, maxAge, sameSite });
 
-  async function set(c: Context, messages: FlashMessage[]): Promise<void> {
-    c.header("set-cookie", await cookie.serialize(JSON.stringify(messages)), { append: true });
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  async function set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void> {
+    const serialized = await cookie.serialize(JSON.stringify(messages));
+    setPendingHeader(c, "set-cookie", serialized, { append: true });
   }
 
-  async function get(c: Context): Promise<FlashMessage[]> {
-    const raw = await cookie.parse(c.req.header("cookie") ?? null);
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  async function get(c: RequestContext<any, any>): Promise<FlashMessage[]> {
+    const raw = await cookie.parse(c.request.headers.get("cookie") ?? null);
     if (raw == null) return [];
-    c.header("set-cookie", await cookie.serialize("", { maxAge: 0, path }), { append: true });
+    const clearCookie = await cookie.serialize("", { maxAge: 0, path });
+    setPendingHeader(c, "set-cookie", clearCookie, { append: true });
     try {
       const v = JSON.parse(raw);
       return Array.isArray(v) ? (v as FlashMessage[]) : [];
@@ -43,16 +54,10 @@ export function createFlash(options: FlashCookieOptions): Flasher {
     }
   }
 
+  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
   function convenience(type: FlashType) {
-    return (c: Context, text: string) => set(c, [{ type, text }]);
+    return (c: RequestContext<any, any>, text: string) => set(c, [{ type, text }]);
   }
 
-  return {
-    set,
-    get,
-    success: convenience("success"),
-    info: convenience("info"),
-    warning: convenience("warning"),
-    error: convenience("error"),
-  };
+  return { set, get, success: convenience("success"), info: convenience("info"), warning: convenience("warning"), error: convenience("error") };
 }

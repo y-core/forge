@@ -1,6 +1,5 @@
 import type { KVNamespace } from "../../storage/kv/types";
-import type { KvLogMetadata } from "../kv-channel";
-import type { LogLevel } from "../types";
+import type { KvLogMetadata, LogLevel } from "../types";
 
 /** A single log row as returned by the viewer reader. @public */
 export interface LogRow {
@@ -38,11 +37,7 @@ export async function readLogs(kv: KVNamespace, query?: LogQuery): Promise<LogRe
   const kvPrefix = query?.prefix ? `${query.prefix}||` : "logs||";
   const limit = query?.limit ?? DEFAULT_LIMIT;
 
-  const result = await kv.list<KvLogMetadata>({
-    prefix: kvPrefix,
-    limit,
-    ...(query?.cursor ? { cursor: query.cursor } : {}),
-  });
+  const result = await kv.list<KvLogMetadata>({ prefix: kvPrefix, limit, ...(query?.cursor ? { cursor: query.cursor } : {}) });
 
   let rows: LogRow[] = result.keys
     .filter((k) => k.metadata !== undefined && k.metadata !== null)
@@ -64,15 +59,9 @@ export async function readLogs(kv: KVNamespace, query?: LogQuery): Promise<LogRe
     const term = query.q.toLowerCase();
     rows = rows.filter(
       (r) =>
-        r.message.toLowerCase().includes(term) ||
-        r.prefix.toLowerCase().includes(term) ||
-        (r.requestId?.toLowerCase().includes(term) ?? false),
+        r.message.toLowerCase().includes(term) || r.prefix.toLowerCase().includes(term) || (r.requestId?.toLowerCase().includes(term) ?? false),
     );
   }
 
-  return {
-    rows,
-    complete: result.list_complete,
-    ...(result.cursor ? { cursor: result.cursor } : {}),
-  };
+  return { rows, complete: result.list_complete, ...(result.cursor ? { cursor: result.cursor } : {}) };
 }

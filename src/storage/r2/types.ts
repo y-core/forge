@@ -1,3 +1,31 @@
+import type { AppContext } from "../../context/types";
+import type { Logger } from "../../logging/types";
+import type { Result } from "../../result/result";
+
+/** Options for serveObject. @public */
+export interface ServeOptions {
+  cacheControl?: string;
+  contentDisposition?: "inline" | "attachment";
+}
+
+/** Options for createSignedObjectUrl. @public */
+export interface SignedUrlOptions {
+  /** Seconds until the URL expires. Default: 3600. */
+  expiresInSeconds?: number;
+}
+
+/** Successful verification result. @public */
+export interface SignedUrlOk {
+  ok: true;
+  key: string;
+}
+
+/** Failed verification result. @public */
+export interface SignedUrlError {
+  ok: false;
+  reason: "expired" | "invalid-signature" | "invalid-format";
+}
+
 /** Neutral stored object — metadata only (from put/head). @public */
 export interface StoredObject {
   key: string;
@@ -132,4 +160,29 @@ export interface R2Bucket {
   head(key: string): Promise<R2Object | null>;
   delete(keys: string | string[]): Promise<void>;
   list(options?: R2ListOptions): Promise<R2ListResult>;
+}
+
+/** @public */
+export interface ObjectStoreOptions {
+  prefix?: string;
+  logger?: Logger;
+}
+
+/** @public */
+export interface ObjectStore {
+  readonly backend: ObjectStorageBackend;
+  delete(key: string | string[]): Promise<Result<void>>;
+  get(key: string, options?: StoreGetOptions): Promise<Result<ObjectBody | null>>;
+  head(key: string): Promise<Result<StoredObject | null>>;
+  list(options?: StoreListOptions): Promise<Result<ListObjectsResult>>;
+  put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null, options?: StorePutOptions): Promise<Result<StoredObject>>;
+  serveObject(request: Request, key: string, options?: ServeOptions): Promise<Response>;
+}
+
+/** Options for resolving an R2 binding from context. @public */
+export interface R2BindingOptions<Bindings = Record<string, unknown>> {
+  binding: (c: AppContext<Bindings>) => R2Bucket | undefined;
+  /** When true (default), throws if the binding is absent. Set false to return null instead. */
+  required?: boolean;
+  store?: ObjectStoreOptions;
 }

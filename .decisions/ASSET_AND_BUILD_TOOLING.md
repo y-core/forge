@@ -135,8 +135,9 @@ the appropriate single-step function (`buildCSS`, `buildJS`, etc.) followed by
 hashed path. The Worker serves assets at the hashed path; templates reference the
 logical name via `manifest.get(...)`.
 
-Pass the manifest into Hono context via middleware so all views can resolve asset
-paths without knowing the hash.
+Resolve the manifest once per request (or at module load for an immutable dist) and
+thread it through to views — e.g. via a `contextVar` accessor or the resolved app
+`Config` — so all views can resolve asset paths without knowing the hash.
 
 ### 3b. createSpriteRegistry — SVG Symbol Lookup
 
@@ -146,7 +147,7 @@ paths without knowing the hash.
     const icon = sprites.get("arrow-right")  // { id, viewBox, content }
 
 `createSpriteRegistry` parses the compiled sprite sheet and returns a registry that
-maps symbol IDs to their `viewBox` and inner SVG content. Use this in Hono JSX
+maps symbol IDs to their `viewBox` and inner SVG content. Use this in forge JSX
 components to render inline `<svg><use href="#id"/>` references with correct dimensions.
 
 ---

@@ -74,5 +74,9 @@ export function computed<T>(fn: () => T): ReadonlySignal<T> {
   effect(() => {
     s.value = fn();
   });
-  return { get value() { return s.value; } };
+  return {
+    get value() {
+      return s.value;
+    },
+  };
 }

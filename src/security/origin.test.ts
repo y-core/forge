@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
+import { Forge } from "../app/forge-app";
+import { mapHandler } from "../app/route-test-helper";
 import { originGuard, verifyOrigin } from "./origin";
 
 function makeApp(allowed: string[]) {
-  const app = new Hono();
+  const app = new Forge();
   app.use("*", originGuard(allowed));
-  app.get("/test", (c) => c.text("ok"));
-  app.post("/test", (c) => c.text("ok"));
+  mapHandler(app, "ANY", "/test", () => new Response("ok"));
   return app;
 }
 
@@ -15,19 +15,13 @@ describe("originGuard middleware", () => {
 
   it("allows a request with a matching Origin", async () => {
     const app = makeApp(ALLOWED);
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { Origin: "https://example.com" },
-    });
+    const res = await app.request("/test", { method: "POST", headers: { Origin: "https://example.com" } });
     expect(res.status).toBe(200);
   });
 
   it("returns 403 for a mismatched Origin", async () => {
     const app = makeApp(ALLOWED);
-    const res = await app.request("/test", {
-      method: "POST",
-      headers: { Origin: "https://evil.com" },
-    });
+    const res = await app.request("/test", { method: "POST", headers: { Origin: "https://evil.com" } });
     expect(res.status).toBe(403);
   });
 
@@ -54,34 +48,22 @@ const ALLOWED = ["https://example.com", "https://www.example.com"];
 
 describe("verifyOrigin", () => {
   it("allows a matching Origin header", () => {
-    const req = new Request("https://example.com/api/contact", {
-      method: "POST",
-      headers: { Origin: "https://example.com" },
-    });
+    const req = new Request("https://example.com/api/contact", { method: "POST", headers: { Origin: "https://example.com" } });
     expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: true });
   });
 
   it("rejects a disallowed Origin", () => {
-    const req = new Request("https://example.com/api/contact", {
-      method: "POST",
-      headers: { Origin: "https://evil.com" },
-    });
+    const req = new Request("https://example.com/api/contact", { method: "POST", headers: { Origin: "https://evil.com" } });
     expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "disallowed" });
   });
 
   it("falls back to Referer when Origin is absent and Referer matches", () => {
-    const req = new Request("https://example.com/api/contact", {
-      method: "POST",
-      headers: { Referer: "https://example.com/page" },
-    });
+    const req = new Request("https://example.com/api/contact", { method: "POST", headers: { Referer: "https://example.com/page" } });
     expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: true });
   });
 
   it("rejects when Referer origin does not match", () => {
-    const req = new Request("https://example.com/api/contact", {
-      method: "POST",
-      headers: { Referer: "https://evil.com/page" },
-    });
+    const req = new Request("https://example.com/api/contact", { method: "POST", headers: { Referer: "https://evil.com/page" } });
     expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "disallowed" });
   });
 
@@ -93,10 +75,7 @@ describe("verifyOrigin", () => {
   it("Origin takes precedence over Referer", () => {
     const req = new Request("https://example.com/api/contact", {
       method: "POST",
-      headers: {
-        Origin: "https://evil.com",
-        Referer: "https://example.com/page",
-      },
+      headers: { Origin: "https://evil.com", Referer: "https://example.com/page" },
     });
     expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "disallowed" });
   });

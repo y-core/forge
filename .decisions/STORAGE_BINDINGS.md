@@ -20,7 +20,7 @@ weight: 28
 - §1 storage/db: createD1Client, sql tagged template, resolveD1Client, validateD1Binding
 - §2 storage/kv: createKVStore, codecs (json/text/bytes), resolveKVStore, validateKVBinding
 - §3 storage/r2: createObjectStore, serveObject, signed URLs, r2Backend
-- §4 Binding resolve/validate pattern: validateXBinding vs resolveXClient
+- §4 Binding resolve/validate pattern: validateXBinding middleware vs resolveX resolver
 - §5 Dev degradation: handling absent bindings in local dev
 
 ---
@@ -56,42 +56,48 @@ import { sql, isSqlFragment } from "@y-core/forge/storage/db"
 
 const query = sql`SELECT * FROM users WHERE id = ${userId}`
 // sql returns a SqlFragment — parameterized, injection-safe
-const stmt = db.prepare(query)
+const rows = await db.query(query)   // D1Client.query/queryOne/execute/batch accept SqlFragment only
 ```
 
 `isSqlFragment(value)` is a type-guard that confirms a value is a `SqlFragment`,
 useful when writing generic query helpers that must reject raw strings.
 
-### 1c. resolveD1Client — From Bindings Object
+### 1c. resolveD1Client — From the Request Context
 
-`resolveD1Client` looks up a binding by name at runtime rather than requiring the
-caller to pass the binding reference directly. Prefer this in middleware and
-request handlers where `c.env` is the only available surface.
+`resolveD1Client` reads the binding out of the current request context inside a
+handler or middleware rather than requiring the caller to pass the binding
+reference directly. Provide a `binding` selector that picks the binding off
+`c.env`; the resolver builds the typed `D1Client` for you.
 
 ```typescript
 import { resolveD1Client } from "@y-core/forge/storage/db"
 
-const db = resolveD1Client(c.env, "DB")  // resolves binding by name
+const db = resolveD1Client(c, { binding: (c) => c.env.DB })  // resolves from context
 ```
 
-Throws a descriptive error when the named binding is absent so misconfiguration
-surfaces immediately at request time rather than as a null-dereference later.
+By default the resolver throws a descriptive error when the binding is absent so
+misconfiguration surfaces immediately at request time rather than as a
+null-dereference later. Pass `required: false` to receive `null` instead when the
+binding is optional in development.
 
-### 1d. validateD1Binding — Startup Validation
+### 1d. validateD1Binding — Binding Validation Middleware
 
-`validateD1Binding` returns an error string when the named binding is missing from
-`env`, or `null` when present. Collect the results and throw before the app begins
-serving requests.
+`validateD1Binding(name)` returns a `Middleware` that validates the named binding
+on the first request (and again whenever the env reference changes). It performs
+a functional shape check — not mere presence — confirming the bound value is an
+object whose `prepare` is a function, so a stray string or number bound to the
+name is rejected. On failure it throws a descriptive error; otherwise it calls
+`next()`.
 
 ```typescript
 import { validateD1Binding } from "@y-core/forge/storage/db"
 
-const error = validateD1Binding(c.env, "DB")
-if (error) throw new Error(`Missing D1 binding: ${error}`)
+app.use("*", validateD1Binding("DB"))  // shape-validates env.DB before handlers run
 ```
 
-Use inside `validateBindings()` at app startup to fail fast on missing bindings.
-See §4b for the recommended composition pattern.
+Register it with `app.use(...)` so the check runs once per env before any route
+handler executes and fails fast on a missing or mis-shaped binding. See §4b for
+composing checks across several namespaces.
 
 ---
 
@@ -148,14 +154,22 @@ with shorter TTLs are rejected by the platform.
 
 ### 2d. resolveKVStore and validateKVBinding
 
-Mirror the D1 pattern (§1c, §1d) for KV bindings. Pass codec options to
-`resolveKVStore` so the returned store is immediately typed.
+Mirror the D1 pattern (§1c, §1d) for KV bindings. `resolveKVStore(c, opts)` reads
+the binding from the request context via a `binding` selector; pass `store` codec
+options so the returned store is immediately typed. `validateKVBinding(name)`
+returns a `Middleware` that shape-validates the binding (the bound value must be
+an object whose `get` and `put` are functions) on the first request.
 
 ```typescript
 import { resolveKVStore, validateKVBinding } from "@y-core/forge/storage/kv"
 
-const store = resolveKVStore(c.env, "LOGS_KV", { codec: jsonCodec() })
-const error = validateKVBinding(c.env, "LOGS_KV")
+app.use("*", validateKVBinding("LOGS_KV"))  // shape check: typeof binding.get/put === "function"
+
+// inside a handler:
+const store = resolveKVStore(c, {
+    binding: (c) => c.env.LOGS_KV,
+    store: { codec: jsonCodec() },
+})
 ```
 
 ---
@@ -164,76 +178,102 @@ const error = validateKVBinding(c.env, "LOGS_KV")
 
 ### 3a. createObjectStore Factory
 
-`createObjectStore` wraps a raw `R2Bucket` binding. The returned `ObjectStore`
-exposes a consistent interface for get/put/delete operations with typed metadata.
+`createObjectStore` wraps an `ObjectStorageBackend` (not a raw `R2Bucket`). Adapt
+an R2 bucket with `r2Backend(bucket)` first (see §3d). The returned `ObjectStore`
+exposes a consistent interface for get/put/head/list/delete operations with typed
+metadata, plus a bound `serveObject` convenience.
 
 ```typescript
-import { createObjectStore } from "@y-core/forge/storage/r2"
+import { createObjectStore, r2Backend } from "@y-core/forge/storage/r2"
 
-const store = createObjectStore(c.env.ASSETS_BUCKET)
-// store: ObjectStore — typed wrapper around R2Bucket
+const store = createObjectStore(r2Backend(c.env.ASSETS_BUCKET))
+// store: ObjectStore — typed wrapper around an ObjectStorageBackend
 ```
 
-### 3b. serveObject — Direct Response from R2
+### 3b. serveObject — Direct Response from a Backend
 
-`serveObject` retrieves an R2 object and returns a fully-formed `Response` ready
-to return from a Hono handler, including correct `Content-Type` and caching
-headers. Returns `null` when the object does not exist.
+`serveObject(backend, request, key, options?)` retrieves an object from an
+`ObjectStorageBackend` and returns a fully-formed `Response` ready to return from
+a handler. It always returns a `Response`: 200 with the body, 206 for a satisfied
+`Range`, 304 for a matching `If-None-Match`, 404 when the object is absent, or 416
+for an unsatisfiable range. It sets `Content-Type`, `ETag`, `Accept-Ranges`,
+`Content-Length`, and `Cache-Control`.
 
 ```typescript
-import { serveObject } from "@y-core/forge/storage/r2"
+import { serveObject, r2Backend } from "@y-core/forge/storage/r2"
 
-const response = await serveObject(c.env.ASSETS_BUCKET, key, {
-    contentType: "image/png",
+const backend = r2Backend(c.env.ASSETS_BUCKET)
+return serveObject(backend, c.request, key, {
+    cacheControl: "public, max-age=3600",
+    contentDisposition: "attachment",
 })
-if (!response) return c.notFound()
-return response
 ```
 
-Always check for `null` — a missing object must produce a 404, not an unhandled
-rejection.
+`ServeOptions` accepts `cacheControl` (overrides the object's stored value) and
+`contentDisposition` (`"inline" | "attachment"`). When a disposition is set, the
+`Content-Disposition` header carries an RFC 5987 `filename*=UTF-8''…` parameter
+for the UTF-8 name plus a sanitized ASCII `filename="…"` fallback — the fallback
+strips quotes, backslashes, and control characters so the filename cannot break
+out of the quoted string. No `null` check is needed: a missing object yields a
+404 `Response`, never an unhandled rejection. `ObjectStore` exposes the same
+behavior as a bound method: `store.serveObject(c.request, key, options?)`.
 
 ### 3c. Signed URLs for Secure Object Access
 
-`createSignedObjectUrl` produces an HMAC-signed URL that expires after
-`expiresIn` seconds. Import the signing key once (per worker startup or request)
-using `importSigningKey`.
+`createSignedObjectUrl(signingKey, baseUrl, objectKey, options?)` produces an
+HMAC-SHA-256-signed URL that expires after `expiresInSeconds` (default `3600`).
+It appends `?key=`, `?exp=`, and `?sig=` to `baseUrl`. Import the signing key once
+(per worker startup or request) using `importSigningKey`.
 
 ```typescript
-import { createSignedObjectUrl, importSigningKey } from "@y-core/forge/storage/r2"
+import { createSignedObjectUrl, importSigningKey, verifySignedObjectUrl } from "@y-core/forge/storage/r2"
 
-const key = await importSigningKey(hexSecret)
-const signedUrl = await createSignedObjectUrl(objectKey, key, { expiresIn: 3600 })
+const signingKey = await importSigningKey(hexSecret)
+const signedUrl = await createSignedObjectUrl(signingKey, baseUrl, objectKey, {
+    expiresInSeconds: 3600,
+})
 ```
 
+The HMAC is computed over a length-prefixed payload — `${key.length}:${key}|${exp}` —
+so the `key`/`exp` boundary stays unambiguous even when the object key itself
+contains the `|` delimiter (defense-in-depth against a crafted key). The receiving
+route verifies with `verifySignedObjectUrl(signingKey, url)`, which checks expiry
+first and then performs a constant-time HMAC comparison, returning
+`{ ok: true, key }` or `{ ok: false, reason }` (`"expired" | "invalid-signature" | "invalid-format"`).
+
 `hexSecret` must come from a secret binding (`c.env.SIGNING_SECRET`), never from
-source code. Signed URLs are validated on the receiving route — do not serve
-objects from a signed URL path without verifying the signature first.
+source code. Do not serve objects from a signed URL path without verifying the
+signature first.
 
 ### 3d. r2Backend — Storage Backend Adapter
 
-`r2Backend(bucket)` creates an `ObjectStoreOptions`-compatible backend from an
-`R2Bucket`. Use it to wire R2 into higher-level object store operations or
-adapters that accept a backend parameter rather than a raw bucket.
+`r2Backend(bucket)` adapts a Cloudflare `R2Bucket` into an `ObjectStorageBackend`
+— the abstraction every R2 helper consumes. Pass the result as the first argument
+to `createObjectStore` or `serveObject`; both accept a backend rather than a raw
+bucket, which keeps the storage layer testable against an in-memory backend.
 
 ```typescript
 import { r2Backend, createObjectStore } from "@y-core/forge/storage/r2"
 
-const store = createObjectStore(c.env.ASSETS_BUCKET, {
-    backend: r2Backend(c.env.ASSETS_BUCKET),
+const store = createObjectStore(r2Backend(c.env.ASSETS_BUCKET), {
+    prefix: "uploads",
 })
 ```
 
 ### 3e. Binding Validation for R2
 
-`validateR2Binding` and `resolveObjectStore` follow the same pattern as D1 (§1c,
-§1d) and KV (§2d).
+`validateR2Binding(name)` (a `Middleware`) and `resolveObjectStore(c, opts)`
+follow the same pattern as D1 (§1c, §1d) and KV (§2d). The validation middleware
+shape-checks the binding (the bound value must be an object whose `get` and `put`
+are functions); the resolver wraps the bucket with `r2Backend` for you.
 
 ```typescript
 import { validateR2Binding, resolveObjectStore } from "@y-core/forge/storage/r2"
 
-const error = validateR2Binding(c.env, "ASSETS_BUCKET")
-const store = resolveObjectStore(c.env, "ASSETS_BUCKET")
+app.use("*", validateR2Binding("ASSETS_BUCKET"))  // shape check: typeof binding.get/put === "function"
+
+// inside a handler:
+const store = resolveObjectStore(c, { binding: (c) => c.env.ASSETS_BUCKET })
 ```
 
 ---
@@ -242,43 +282,49 @@ const store = resolveObjectStore(c.env, "ASSETS_BUCKET")
 
 ### 4a. Two-Function Pattern
 
-Every storage namespace provides two initialization functions that serve distinct
-lifecycle roles:
+Every storage namespace provides two functions that serve distinct lifecycle
+roles:
 
 | Function | When to use |
 |---|---|
-| `validateXBinding(env, name)` | Startup: check binding present, return error string or null |
-| `resolveXClient(env, name)` | Request time: get or create typed client from bindings |
+| `validateXBinding(name)` | Returns a `Middleware`; register via `app.use` to shape-check the binding on first request |
+| `resolveX(c, opts)` | Request time: read the binding off `c` via a `binding` selector and build the typed client/store |
 
-`validate*` functions are synchronous and return `string | null` — they never
-throw directly. Collect results and throw once after checking all bindings.
+`validate*` functions take only the Wrangler binding name and return a
+`Middleware`. On the first request (and whenever the env reference changes) the
+middleware runs a functional shape check — KV/R2 require `typeof binding.get` and
+`typeof binding.put` to be `"function"`; D1 requires `typeof binding.prepare` to
+be `"function"` — and throws a descriptive error on failure. A bare string or
+number bound to the name is rejected, not just an absent binding.
 
-`resolve*` functions are synchronous when the binding is present; they throw a
-descriptive `Error` when the binding is absent so misconfiguration is visible
-immediately.
+`resolve*` functions (`resolveD1Client`, `resolveKVStore`, `resolveObjectStore`)
+take the request context and an options object with a `binding: (c) => …`
+selector. They build the typed client/store, throwing a descriptive `Error` when
+the binding is absent; pass `required: false` to receive `null` instead.
 
-### 4b. validateBindings at Startup
+### 4b. Registering Binding Checks
 
-Compose all binding checks using `validateBindings` from `@y-core/forge/app`.
-The callback receives `env` and must return an array of `string | null` — one
-entry per binding check. Any non-null entry causes the worker to throw before
-it begins handling requests.
+Each `validateXBinding(name)` is a `Middleware`; register them with `app.use("*", …)`
+so every request first verifies its bindings before reaching a handler. The first
+mis-shaped binding throws, so the worker never serves a request with a broken
+binding.
 
 ```typescript
-import { validateBindings } from "@y-core/forge/app"
 import { validateD1Binding } from "@y-core/forge/storage/db"
 import { validateKVBinding } from "@y-core/forge/storage/kv"
 import { validateR2Binding } from "@y-core/forge/storage/r2"
 
-validateBindings(app, (env) => [
-    validateD1Binding(env, "DB"),
-    validateKVBinding(env, "LOGS_KV"),
-    validateR2Binding(env, "ASSETS_BUCKET"),
-])
+app.use("*", validateD1Binding("DB"))
+app.use("*", validateKVBinding("LOGS_KV"))
+app.use("*", validateR2Binding("ASSETS_BUCKET"))
 ```
 
-Place this call immediately after `createWorker` returns, before any routes are
-registered, so the worker never reaches a serving state with missing bindings.
+Each middleware caches the validated env reference, so the shape check runs once
+per env, not on every request. For checking arbitrary (non-storage) env fields,
+`validateBindings(schema)` from `@y-core/forge/app` returns a `Middleware` from
+any valibot schema — the storage helpers are thin wrappers over it. Register these
+before `app.map(routes, controller)` so the checks sit ahead of route handlers in
+the middleware chain.
 
 ---
 
@@ -292,19 +338,22 @@ namespace must be handled explicitly for non-critical features.
 
 Recommended guard patterns:
 
-- **KV logging**: check `c.env.LOGS_KV` before calling `createKVStore` or
-  constructing a `kvLogChannel`. Already implemented in the starter's
-  `src/worker.ts`.
+- **KV logging**: check `c.env.LOGS_KV` before constructing a `kvLogChannel`, and
+  fall back to just the console channel when it is absent. Already implemented in
+  the starter's `src/app/middleware.ts`.
 - **Rate limiting**: pass `required: false` to `rateLimit()` so the middleware
   becomes a no-op when the `RATE_LIMITER` binding is absent.
 - **D1**: provide in-memory or stub implementations for unit tests rather than
   conditionally skipping database logic in production code paths.
+- **Optional resolvers**: pass `required: false` to `resolveKVStore` /
+  `resolveObjectStore` / `resolveD1Client` to receive `null` instead of a throw
+  when the binding is absent.
 
 ```typescript
-// Guard pattern for optional KV binding
-const logChannel = c.env.LOGS_KV
-    ? kvLogChannel(createKVStore(c.env.LOGS_KV, { codec: jsonCodec() }))
-    : nullLogChannel()
+// Guard pattern for optional KV log channel (mirrors the starter)
+const channels = c.env.LOGS_KV
+    ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)]
+    : [consoleChannel()]
 ```
 
 ### 5b. Never Mock in Production Code
@@ -314,7 +363,7 @@ that are non-critical to correctness and security:
 
 | Feature | Absent binding strategy |
 |---|---|
-| Structured logging | Fall back to `nullLogChannel` |
+| Structured logging | Fall back to `consoleChannel` only (drop the KV channel) |
 | Rate limiting | No-op middleware (`required: false`) |
 | Analytics KV | Skip write, continue request |
 

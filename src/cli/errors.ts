@@ -1,4 +1,4 @@
-export type CliErrorKind = "unknown-flag" | "missing-value" | "invalid-args" | "missing-command";
+import type { CliErrorKind } from "./types";
 
 export class CliError extends Error {
   readonly kind: CliErrorKind;

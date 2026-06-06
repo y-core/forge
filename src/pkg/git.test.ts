@@ -4,14 +4,7 @@ import { describe, expect, it, mock } from "bun:test";
 const mockExecSync = mock((_cmd: string, _args?: string[], _opts?: unknown): string | Buffer => "");
 mock.module("node:child_process", () => ({ execFileSync: mockExecSync }));
 
-const {
-  gitExec,
-  isWorkingTreeClean,
-  getLatestTag,
-  getCommitsSinceTag,
-  getLastCommitMessage,
-  createTag,
-} = await import("./git");
+const { gitExec, isWorkingTreeClean, getLatestTag, getCommitsSinceTag, getLastCommitMessage, createTag } = await import("./git");
 
 describe("gitExec()", () => {
   it("returns trimmed stdout", () => {
@@ -60,10 +53,7 @@ describe("getCommitsSinceTag()", () => {
 
   it("splits commit lines into an array", () => {
     mockExecSync.mockReturnValue("abc1234 feat: add thing\ndef5678 fix: bug");
-    expect(getCommitsSinceTag("/cwd", "v0.1.0")).toEqual([
-      "abc1234 feat: add thing",
-      "def5678 fix: bug",
-    ]);
+    expect(getCommitsSinceTag("/cwd", "v0.1.0")).toEqual(["abc1234 feat: add thing", "def5678 fix: bug"]);
   });
 });
 
@@ -80,14 +70,14 @@ describe("createTag()", () => {
     mockExecSync.mockClear();
     createTag("/cwd", "v1.2.3");
     expect(mockExecSync.mock.calls).toHaveLength(1);
-    expect(mockExecSync.mock.calls[0][0]).toBe("git");
-    expect(mockExecSync.mock.calls[0][1]).toEqual(["tag", "v1.2.3"]);
+    expect(mockExecSync.mock.calls[0]![0]).toBe("git");
+    expect(mockExecSync.mock.calls[0]![1]).toEqual(["tag", "v1.2.3"]);
   });
 
   it("passes shell metacharacters in tag names as-is without interpretation", () => {
     mockExecSync.mockReturnValue("");
     mockExecSync.mockClear();
     createTag("/cwd", "v1.0.0; rm -rf /");
-    expect(mockExecSync.mock.calls[0][1]).toEqual(["tag", "v1.0.0; rm -rf /"]);
+    expect(mockExecSync.mock.calls[0]![1]).toEqual(["tag", "v1.0.0; rm -rf /"]);
   });
 });

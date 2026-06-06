@@ -64,7 +64,7 @@ describe("updatePackageVersion()", () => {
     writeSpy.mockClear();
     updatePackageVersion("1.3.0", "/cwd");
     expect(writeSpy.mock.calls).toHaveLength(1);
-    const written = writeSpy.mock.calls[0][1] as string;
+    const written = writeSpy.mock.calls[0]![1] as string;
     expect(JSON.parse(written).version).toBe("1.3.0");
   });
 
@@ -73,7 +73,7 @@ describe("updatePackageVersion()", () => {
     readSpy.mockReturnValue(JSON.stringify(pkg, null, 2));
     writeSpy.mockClear();
     updatePackageVersion("2.0.0", "/cwd");
-    const written = JSON.parse(writeSpy.mock.calls[0][1] as string);
+    const written = JSON.parse(writeSpy.mock.calls[0]![1] as string);
     expect(written.name).toBe("my-pkg");
     expect(written.description).toBe("test");
   });
@@ -83,7 +83,7 @@ describe("updatePackageVersion()", () => {
     readSpy.mockReturnValue(JSON.stringify(pkg, null, 4));
     writeSpy.mockClear();
     updatePackageVersion("1.1.0", "/cwd");
-    const written = writeSpy.mock.calls[0][1] as string;
+    const written = writeSpy.mock.calls[0]![1] as string;
     expect(written).toContain("    ");
   });
 
@@ -92,7 +92,7 @@ describe("updatePackageVersion()", () => {
     readSpy.mockReturnValue(JSON.stringify(pkg, null, 2));
     writeSpy.mockClear();
     updatePackageVersion("1.1.0", "/cwd");
-    const written = writeSpy.mock.calls[0][1] as string;
+    const written = writeSpy.mock.calls[0]![1] as string;
     expect(written.endsWith("\n")).toBe(true);
   });
 

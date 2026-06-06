@@ -20,15 +20,11 @@ export async function loadConfig(configPath?: string): Promise<ResolvedConfig> {
       publicDir: parsed.paths?.publicDir ?? "public/assets",
       publicPrefix: parsed.paths?.publicPrefix ?? "/assets",
     },
-    js: {
-      bundles: parsed.js?.bundles ?? [],
-    },
+    js: { bundles: parsed.js?.bundles ?? [] },
     css: parsed.css ?? [],
     copy: parsed.copy ?? [],
     sprites: parsed.sprites ?? {},
-    fonts: {
-      downloads: parsed.fonts?.downloads ?? [],
-    },
+    fonts: { downloads: parsed.fonts?.downloads ?? [] },
     icons: parsed.icons ?? null,
   };
 }

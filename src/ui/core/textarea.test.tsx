@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Textarea } from "./textarea";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Textarea", () => {
@@ -30,14 +27,14 @@ describe("Textarea", () => {
   });
 
   it("passes through id, name, and rows", async () => {
-    const out = await render(<Textarea id="msg" name="message" rows={5} />);
+    const out = await render(<Textarea id='msg' name='message' rows={5} />);
     expect(out).toContain('id="msg"');
     expect(out).toContain('name="message"');
     expect(out).toContain('rows="5"');
   });
 
   it("passes through the placeholder attribute", async () => {
-    const out = await render(<Textarea placeholder="Your message" />);
+    const out = await render(<Textarea placeholder='Your message' />);
     expect(out).toContain('placeholder="Your message"');
   });
 
@@ -48,13 +45,13 @@ describe("Textarea", () => {
   });
 
   it("passes through aria-describedby and aria-invalid", async () => {
-    const out = await render(<Textarea aria-describedby="desc" aria-invalid="true" />);
+    const out = await render(<Textarea aria-describedby='desc' aria-invalid='true' />);
     expect(out).toContain('aria-describedby="desc"');
     expect(out).toContain('aria-invalid="true"');
   });
 
   it("merges a custom class with the default classes", async () => {
-    const out = await render(<Textarea class="extra">text</Textarea>);
+    const out = await render(<Textarea class='extra'>text</Textarea>);
     expect(out).toContain("extra");
     expect(out).toContain("resize-y");
   });

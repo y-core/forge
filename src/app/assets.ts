@@ -1,20 +1,25 @@
-import type { Context, Env, Hono } from "hono";
-import type { InferConfig } from "../config/config";
+import type { RequestHandler } from "@remix-run/fetch-router";
+import { createController } from "@remix-run/fetch-router";
+import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 import { resolveConfig } from "../config/config";
 import { retrieveConfig } from "../config/registry";
-import type { AssetOptions, AssetsFetcher } from "./types";
+import { getAppContext } from "../context/types";
+import type { Forge } from "./forge-app";
+import type { AssetOptions, HasAssets } from "./types";
 
-type HasAssets = { Bindings: { ASSETS?: AssetsFetcher } };
-
-/** Registers the static-asset catch-all handler onto a Hono app. @public */
-export function applyAssets<E extends Env & HasAssets>(app: Hono<E>, options: AssetOptions<E>, path = "*"): void {
-  app.all(path, serveAssets(app, options));
+/** Registers the static-asset catch-all handler onto a Forge app. @public */
+export function applyAssets<Bindings extends HasAssets = HasAssets>(app: Forge<Bindings>, options: AssetOptions<Bindings>, path = "*"): void {
+  // A `Route` instance (rather than a `{ method, pattern }` literal) is required so the catch-all
+  // `"ANY"` method is preserved — the object form's `method` field excludes `"ANY"`.
+  const routes = createRoutes({ assets: new Route("ANY", path) });
+  app.map(routes, createController(routes, { actions: { assets: serveAssets(app, options) } }));
 }
 
 /** Route handler that serves static assets from the `ASSETS` binding, falling back to `notFoundView`. */
-export function serveAssets<E extends Env & HasAssets>(app: Hono<E>, options: AssetOptions<E>) {
-  return async (c: Context<E>): Promise<Response> => {
-    const configStore = retrieveConfig<InferConfig<E>>(app);
+export function serveAssets<Bindings extends HasAssets = HasAssets>(app: Forge<Bindings>, options: AssetOptions<Bindings>): RequestHandler {
+  return async (context) => {
+    const c = getAppContext<Bindings>(context);
+    const configStore = retrieveConfig(app);
     const config = resolveConfig(configStore, c.env);
     const assets = c.env.ASSETS;
 
@@ -22,11 +27,11 @@ export function serveAssets<E extends Env & HasAssets>(app: Hono<E>, options: As
       return options.notFoundView(c, config);
     }
 
-    if (c.req.raw.method !== "GET" && c.req.raw.method !== "HEAD") {
+    if (context.method !== "GET" && context.method !== "HEAD") {
       return options.notFoundView(c, config);
     }
 
-    const res = await assets.fetch(c.req.raw);
+    const res = await assets.fetch(context.request);
 
     if (res.status === 404) {
       return options.notFoundView(c, config);

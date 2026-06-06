@@ -1,13 +1,10 @@
+/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
-import { html } from "hono/html";
+import { renderToString } from "../../jsx/render-to-string";
 import { Card } from "./card";
 
 async function render(element: unknown): Promise<string> {
-  const app = new Hono();
-  app.get("/", (c) => c.html(html`${element}`));
-  const res = await app.request("/");
-  return res.text();
+  return String(await renderToString(element));
 }
 
 describe("Card", () => {
@@ -73,7 +70,7 @@ describe("Card", () => {
   });
 
   it("merges a custom class on the root element", async () => {
-    const out = await render(<Card class="extra">content</Card>);
+    const out = await render(<Card class='extra'>content</Card>);
     expect(out).toContain("extra");
     expect(out).toContain("rounded-2xl");
   });

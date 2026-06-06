@@ -1,28 +1,19 @@
 import { createLogger } from "../../logging/logger";
-import type { Logger } from "../../logging/types";
-import type { Result } from "../../result/result";
 import { result } from "../../result/result";
 import { inferContentType } from "./content-type";
-import type { ServeOptions } from "./serve";
 import { serveObject } from "./serve";
-import type { ListObjectsResult, ObjectBody, ObjectStorageBackend, StoredObject, StoreGetOptions, StoreListOptions, StorePutOptions } from "./types";
-
-/** @public */
-export interface ObjectStoreOptions {
-  prefix?: string;
-  logger?: Logger;
-}
-
-/** @public */
-export interface ObjectStore {
-  readonly backend: ObjectStorageBackend;
-  delete(key: string | string[]): Promise<Result<void>>;
-  get(key: string, options?: StoreGetOptions): Promise<Result<ObjectBody | null>>;
-  head(key: string): Promise<Result<StoredObject | null>>;
-  list(options?: StoreListOptions): Promise<Result<ListObjectsResult>>;
-  put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null, options?: StorePutOptions): Promise<Result<StoredObject>>;
-  serveObject(request: Request, key: string, options?: ServeOptions): Promise<Response>;
-}
+import type {
+  ListObjectsResult,
+  ObjectBody,
+  ObjectStorageBackend,
+  ObjectStore,
+  ObjectStoreOptions,
+  ServeOptions,
+  StoredObject,
+  StoreGetOptions,
+  StoreListOptions,
+  StorePutOptions,
+} from "./types";
 
 const PREFIX_SEP = "/";
 
@@ -63,20 +54,15 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
     },
 
     head(key) {
-      return result(() =>
-        backend.head(prefixKey(key)).then((obj) => (obj ? stripObjectPrefix(obj) : null)),
-      );
+      return result(() => backend.head(prefixKey(key)).then((obj) => (obj ? stripObjectPrefix(obj) : null)));
     },
 
     list(opts?) {
-      const listPrefix = prefix
-        ? opts?.prefix ? `${prefix}${PREFIX_SEP}${opts.prefix}` : `${prefix}${PREFIX_SEP}`
-        : opts?.prefix;
+      const listPrefix = prefix ? (opts?.prefix ? `${prefix}${PREFIX_SEP}${opts.prefix}` : `${prefix}${PREFIX_SEP}`) : opts?.prefix;
       return result(() =>
-        backend.list({ ...opts, prefix: listPrefix }).then((res): ListObjectsResult => ({
-          ...res,
-          objects: res.objects.map(stripObjectPrefix),
-        })),
+        backend
+          .list({ ...opts, ...(listPrefix !== undefined ? { prefix: listPrefix } : {}) })
+          .then((res): ListObjectsResult => ({ ...res, objects: res.objects.map(stripObjectPrefix) })),
       );
     },
 

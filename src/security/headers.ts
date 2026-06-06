@@ -1,29 +1,22 @@
-import type { Context, Env, MiddlewareHandler } from "hono";
-import { NONCE, secureHeaders } from "hono/secure-headers";
+import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 import { contextVar } from "../context/accessor";
+import { setPendingHeader } from "../context/pending-headers";
+import { base64urlEncode, randomBytes } from "../crypto/mod";
+import { NONCE } from "./nonce";
 import type { SecurityHeadersOptions } from "./types";
 
-/** Bare variable record set by Hono's `secureHeaders` middleware. @public */
-export type SecureHeadersContext = { secureHeadersNonce?: string };
-
-const CSP_DIRECTIVES = [
-  "scriptSrc",
-  "connectSrc",
-  "frameSrc",
-  "imgSrc",
-  "workerSrc",
-  "childSrc",
-] as const;
+const CSP_DIRECTIVES = ["scriptSrc", "connectSrc", "frameSrc", "imgSrc", "workerSrc", "childSrc"] as const;
 
 const secureHeadersNonce = contextVar<string>("secureHeadersNonce");
 
-/** Returns the CSP nonce Hono's `secureHeaders` sets for the current request, or "" when none is set. @public */
-export function getNonce<E extends Env>(c: Context<E>): string {
+/** Returns the CSP nonce set for the current request, or `""` when none is set. @public */
+// biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for nonce access
+export function getNonce(c: RequestContext<any, any>): string {
   return secureHeadersNonce.getOptional(c) ?? "";
 }
 
 /** Rejects empty or whitespace-only CSP source entries, which silently break the policy. */
-function assertValidDirective(name: string, sources: readonly unknown[]): void {
+function assertValidDirective(name: string, sources: readonly (string | symbol)[]): void {
   for (const source of sources) {
     if (typeof source === "string" && source.trim() === "") {
       throw new Error(`Invalid CSP directive "${name}": source entries must be non-empty strings`);
@@ -31,9 +24,7 @@ function assertValidDirective(name: string, sources: readonly unknown[]): void {
   }
 }
 
-/** Layers extra CSP sources onto a base policy, concatenating each directive's source list.
- *  Lets callers inject environment-specific sources (e.g. a dev-only script hash) onto a
- *  shared base policy without mutating it. @public */
+/** Layers extra CSP sources onto a base policy, concatenating each directive's source list. @public */
 export function mergeSecurityHeaders(base: SecurityHeadersOptions, extra: Partial<SecurityHeadersOptions>): SecurityHeadersOptions {
   const merged: SecurityHeadersOptions = { ...base };
   for (const key of CSP_DIRECTIVES) {
@@ -44,10 +35,73 @@ export function mergeSecurityHeaders(base: SecurityHeadersOptions, extra: Partia
   return merged;
 }
 
-/** Middleware factory that applies CSP, HSTS, referrer-policy, and permissions-policy headers. @public */
-export function makeSecurityHeaders(options?: SecurityHeadersOptions): MiddlewareHandler {
-  const { hstsMaxAge = 63072000 } = options ?? {};
+function generateNonce(): string {
+  return base64urlEncode(randomBytes(16));
+}
 
+function renderCspValues(values: readonly (string | symbol)[], nonce: string): string {
+  return values.map((v) => (v === NONCE ? `'nonce-${nonce}'` : (v as string))).join(" ");
+}
+
+function buildCsp(nonce: string, options?: SecurityHeadersOptions): string {
+  const scriptSrc = options?.scriptSrc ?? ["'self'", NONCE];
+  const connectSrc = options?.connectSrc ?? ["'self'"];
+  const frameSrc = options?.frameSrc ?? ["'self'"];
+  const imgSrc = options?.imgSrc ?? ["'self'", "data:"];
+
+  const parts: string[] = [
+    `default-src 'self'`,
+    `script-src ${renderCspValues(scriptSrc, nonce)}`,
+    // Deliberately strict: no `'unsafe-inline'`. Forge components emit zero inline `style=`
+    // attributes (the JSX renderer drops the `style` prop under this policy — see
+    // render-to-string.ts), so inline styles would be blocked by the browser and must not ship.
+    `style-src 'self'`,
+    `img-src ${renderCspValues(imgSrc, nonce)}`,
+    `font-src 'self'`,
+    `connect-src ${renderCspValues(connectSrc, nonce)}`,
+    `form-action 'self'`,
+    `frame-ancestors 'none'`,
+    `frame-src ${renderCspValues(frameSrc, nonce)}`,
+    `object-src 'none'`,
+    `base-uri 'self'`,
+    `upgrade-insecure-requests`,
+  ];
+  if (options?.workerSrc) parts.push(`worker-src ${renderCspValues(options.workerSrc, nonce)}`);
+  if (options?.childSrc) parts.push(`child-src ${renderCspValues(options.childSrc, nonce)}`);
+  return parts.join("; ");
+}
+
+/** Computes the full set of forge security headers for `nonce` and `options`. */
+function securityHeaderEntries(nonce: string, options?: SecurityHeadersOptions): [string, string][] {
+  const hstsMaxAge = options?.hstsMaxAge ?? 63072000;
+  return [
+    ["content-security-policy", buildCsp(nonce, options)],
+    ["strict-transport-security", `max-age=${hstsMaxAge}; includeSubDomains; preload`],
+    ["referrer-policy", "strict-origin-when-cross-origin"],
+    ["x-content-type-options", "nosniff"],
+    ["permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()"],
+    ["x-frame-options", "DENY"],
+  ];
+}
+
+/**
+ * Applies forge's security headers directly to `response`, returning a new Response.
+ * Used for out-of-band responses that never pass through the middleware chain (e.g. an
+ * error page produced before the chain runs). A fresh nonce is minted when none is supplied. @public
+ */
+export function applySecurityHeaders(response: Response, options?: SecurityHeadersOptions, nonce: string = generateNonce()): Response {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of securityHeaderEntries(nonce, options)) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+/**
+ * Middleware factory that applies CSP with a per-request nonce, HSTS, referrer-policy,
+ * x-content-type-options, and permissions-policy to every response. @public
+ */
+export function makeSecurityHeaders(options?: SecurityHeadersOptions): Middleware {
   const scriptSrc = options?.scriptSrc ?? ["'self'", NONCE];
   const connectSrc = options?.connectSrc ?? ["'self'"];
   const frameSrc = options?.frameSrc ?? ["'self'"];
@@ -60,30 +114,18 @@ export function makeSecurityHeaders(options?: SecurityHeadersOptions): Middlewar
   if (options?.workerSrc) assertValidDirective("workerSrc", options.workerSrc);
   if (options?.childSrc) assertValidDirective("childSrc", options.childSrc);
 
-  return secureHeaders({
-    contentSecurityPolicy: {
-      defaultSrc: ["'self'"],
-      scriptSrc,
-      styleSrc: ["'self'"],
-      imgSrc,
-      fontSrc: ["'self'"],
-      connectSrc,
-      formAction: ["'self'"],
-      frameAncestors: ["'none'"],
-      frameSrc,
-      objectSrc: ["'none'"],
-      baseUri: ["'self'"],
-      upgradeInsecureRequests: [],
-      ...(options?.workerSrc ? { workerSrc: options.workerSrc } : {}),
-      ...(options?.childSrc ? { childSrc: options.childSrc } : {}),
-    },
-    strictTransportSecurity: `max-age=${hstsMaxAge}; includeSubDomains; preload`,
-    referrerPolicy: "strict-origin-when-cross-origin",
-    permissionsPolicy: {
-      camera: [],
-      microphone: [],
-      geolocation: [],
-      payment: [],
-    },
-  });
+  return async (context, next) => {
+    const nonce = generateNonce();
+    secureHeadersNonce.set(context, nonce);
+
+    const response = await next();
+
+    // Queue headers on the pending channel so the single `applyHeaders` pass rebuilds the
+    // response body once, instead of each middleware constructing its own Response.
+    for (const [name, value] of securityHeaderEntries(nonce, options)) {
+      setPendingHeader(context, name, value);
+    }
+
+    return response;
+  };
 }

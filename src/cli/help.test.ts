@@ -61,10 +61,7 @@ describe("formatHelp()", () => {
   });
 
   it("shows flag name and description", () => {
-    const cmd = createCommand({
-      name: "foo",
-      flags: { verbose: { type: "boolean", short: "v", description: "Enable verbose output" } },
-    });
+    const cmd = createCommand({ name: "foo", flags: { verbose: { type: "boolean", short: "v", description: "Enable verbose output" } } });
     const help = formatHelp(cmd);
     expect(help).toContain("--verbose");
     expect(help).toContain("-v");
@@ -72,18 +69,12 @@ describe("formatHelp()", () => {
   });
 
   it("marks required string flags with (required)", () => {
-    const cmd = createCommand({
-      name: "foo",
-      flags: { output: { type: "string", required: true, description: "Output file" } },
-    });
+    const cmd = createCommand({ name: "foo", flags: { output: { type: "string", required: true, description: "Output file" } } });
     expect(formatHelp(cmd)).toContain("(required)");
   });
 
   it("does not mark optional string flags with (required)", () => {
-    const cmd = createCommand({
-      name: "foo",
-      flags: { output: { type: "string", description: "Output file" } },
-    });
+    const cmd = createCommand({ name: "foo", flags: { output: { type: "string", description: "Output file" } } });
     expect(formatHelp(cmd)).not.toContain("(required)");
   });
 

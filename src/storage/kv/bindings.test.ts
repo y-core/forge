@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { Hono } from "hono";
+import { Forge } from "../../app/forge-app";
+import { mapHandler } from "../../app/route-test-helper";
+import type { AppContext } from "../../context/types";
 import { resolveKVStore, validateKVBinding } from "./bindings";
 import type { KVNamespace } from "./types";
 
@@ -13,31 +15,32 @@ const stubNs = {
 
 describe("resolveKVStore", () => {
   it("returns a KVStore when the binding is present", async () => {
-    const app = new Hono<{ Bindings: { KV: KVNamespace } }>();
-    app.get("/", (c) => {
-      const store = resolveKVStore(c, { binding: (ctx) => (ctx.env as { KV?: KVNamespace }).KV });
-      return c.json({ hasStore: store !== null });
+    const app = new Forge<{ KV: KVNamespace }>();
+    mapHandler(app, "GET", "/", (c) => {
+      const ctx = c as AppContext<{ KV: KVNamespace }>;
+      const store = resolveKVStore(ctx, { binding: (appCtx) => (appCtx.env as { KV?: KVNamespace }).KV });
+      return Response.json({ hasStore: store !== null });
     });
     const res = await app.request("/", {}, { KV: stubNs });
     expect(await res.json()).toEqual({ hasStore: true });
   });
 
   it("throws when binding is absent and required is true (default)", async () => {
-    const app = new Hono();
-    app.onError((err, c) => c.text(err.message, 500));
-    app.get("/", (c) => {
-      resolveKVStore(c, { binding: () => undefined });
-      return c.text("ok");
+    const app = new Forge();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
+    mapHandler(app, "GET", "/", (c) => {
+      resolveKVStore(c as AppContext, { binding: () => undefined });
+      return new Response("ok");
     });
     const res = await app.request("/");
     expect(res.status).toBe(500);
   });
 
   it("returns null when binding is absent and required is false", async () => {
-    const app = new Hono();
-    app.get("/", (c) => {
-      const store = resolveKVStore(c, { binding: () => undefined, required: false });
-      return c.json({ hasStore: store !== null });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", (c) => {
+      const store = resolveKVStore(c as AppContext, { binding: () => undefined, required: false });
+      return Response.json({ hasStore: store !== null });
     });
     const res = await app.request("/");
     expect(await res.json()).toEqual({ hasStore: false });
@@ -46,19 +49,37 @@ describe("resolveKVStore", () => {
 
 describe("validateKVBinding", () => {
   it("passes when the binding exists", async () => {
-    const app = new Hono<{ Bindings: { MY_KV: KVNamespace } }>();
+    const app = new Forge<{ MY_KV: KVNamespace }>();
     app.use("*", validateKVBinding("MY_KV"));
-    app.get("/", (c) => c.text("ok"));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
     const res = await app.request("/", {}, { MY_KV: stubNs });
     expect(res.status).toBe(200);
   });
 
   it("throws when the binding is missing", async () => {
-    const app = new Hono();
-    app.onError((err, c) => c.text(err.message, 500));
+    const app = new Forge();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
     app.use("*", validateKVBinding("MY_KV"));
-    app.get("/", (c) => c.text("ok"));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
     const res = await app.request("/", {}, {});
+    expect(res.status).toBe(500);
+  });
+
+  it("rejects a value of the wrong shape (a string is not a KV namespace)", async () => {
+    const app = new Forge();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
+    app.use("*", validateKVBinding("MY_KV"));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+    const res = await app.request("/", {}, { MY_KV: "not-a-namespace" } as never);
+    expect(res.status).toBe(500);
+  });
+
+  it("rejects an object missing the put method", async () => {
+    const app = new Forge();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
+    app.use("*", validateKVBinding("MY_KV"));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+    const res = await app.request("/", {}, { MY_KV: { get: () => Promise.resolve(null) } } as never);
     expect(res.status).toBe(500);
   });
 });

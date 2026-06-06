@@ -1,4 +1,5 @@
-import { computed, createSignal, effect, type ReadonlySignal } from "./signal";
+import type { ReadonlySignal } from "./signal";
+import { computed, createSignal, effect } from "./signal";
 
 export interface ThemeControllerOptions {
   toggleSelector?: string;
@@ -15,9 +16,13 @@ export const FOUC_SCRIPT =
   `if(e==="${DARK_CLASS}"||(e==="${DEFAULT_PREF}"&&window.matchMedia("(prefers-color-scheme: dark)").matches)){` +
   `document.documentElement.classList.add("${DARK_CLASS}")}})();`;
 
-export let isDark: ReadonlySignal<boolean> = { get value() { return false; } };
-
 let mountedThemeCleanup: (() => void) | null = null;
+
+export let isDark: ReadonlySignal<boolean> = {
+  get value() {
+    return false;
+  },
+};
 
 /** Mounts theme preference controls and returns a cleanup function. Safe to call more than once. @public */
 export function mountTheme(options?: ThemeControllerOptions): () => void {
@@ -36,9 +41,7 @@ export function mountTheme(options?: ThemeControllerOptions): () => void {
 
   mql.addEventListener("change", onMediaChange);
 
-  isDark = computed(() =>
-    pref.value === "dark" || (pref.value === DEFAULT_PREF && mqlDark.value),
-  );
+  isDark = computed(() => pref.value === "dark" || (pref.value === DEFAULT_PREF && mqlDark.value));
 
   const disposeAttr = effect(() => {
     document.documentElement.setAttribute(THEME_ATTR, pref.value);
