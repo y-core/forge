@@ -28,14 +28,11 @@ export interface ErrorBoundaryProps {
   onError?: (error: Error) => void;
 }
 
-/** @public */
-export type Child = JSXNode;
-
 /** Function component: receives props, returns a JSX element (or null for no output). @public */
-export type FC<P = Record<string, unknown>> = (props: P & { children?: Child }) => JSXElement | null;
+export type FC<P = Record<string, unknown>> = (props: P & { children?: JSXNode }) => JSXElement | null;
 
 /** @public */
-export type PropsWithChildren<P = Record<string, unknown>> = P & { children?: Child };
+export type PropsWithChildren<P = Record<string, unknown>> = P & { children?: JSXNode };
 
 // ---------------------------------------------------------------------------
 // Common attribute sets shared across HTML elements
@@ -128,7 +125,7 @@ export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   popoverTargetAction?: "hide" | "show" | "toggle";
   accesskey?: string;
   autocapitalize?: "none" | "off" | "on" | "sentences" | "words" | "characters";
-  children?: Child;
+  children?: JSXNode;
   key?: unknown;
   ref?: unknown;
   dangerouslySetInnerHTML?: { __html: string };
@@ -463,7 +460,7 @@ interface SVGAttributes extends HtmxAttributes {
   class?: string;
   className?: string;
   style?: string | Record<string, string | number>;
-  children?: Child;
+  children?: JSXNode;
   key?: unknown;
   ref?: unknown;
   // `| undefined` on these lets SVG primitives (e.g. Icon) render attributes inline as

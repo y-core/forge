@@ -5,6 +5,7 @@ export { buildFonts } from "./fonts";
 export { hashFile, hashString } from "./hash";
 export { buildIcons } from "./icons";
 export { buildJS } from "./js";
+export { safeJoin } from "./paths";
 export type { BuildOptions } from "./pipeline";
 export { buildAll } from "./pipeline";
 export type { SpriteBuildResult, SpriteGroupResult } from "./sprites";

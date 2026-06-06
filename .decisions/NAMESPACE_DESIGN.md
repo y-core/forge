@@ -84,7 +84,7 @@ These two are exempted because they are shared utilities without circular risk.
 
 ## 3. Authoritative Namespace Catalog
 
-### 3a. Public Export Paths (all 25 from package.json)
+### 3a. Public Export Paths (all 28 from package.json)
 
 | Export Path | Source | Category | Key Exports |
 |---|---|---|---|
@@ -103,6 +103,7 @@ These two are exempted because they are shared utilities without circular risk.
 | `@y-core/forge/logging` | `src/logging/mod.ts` | Leaf | `createLogger`, `consoleChannel`, `kvLogChannel`, `requestLogger`, `requestLog` |
 | `@y-core/forge/logging/http` | `src/logging/http/mod.ts` | Integration | `logViewer`, `readLogs`, `LogFilterBar`, `LogLevelBadge`, `LogTable`, `LogTableBody` |
 | `@y-core/forge/pkg` | `src/pkg/mod.ts` | Integration | `createReleaseCommand`, `parseSemVer`, `bumpSemVer`, `formatSemVer` |
+| `@y-core/forge/render` | `src/jsx/render-to-string.ts` | Leaf | `renderToString` — renders a forge JSX tree to a `SafeHtml` string |
 | `@y-core/forge/result` | `src/result/mod.ts` | Leaf | `result`, `toError`, `Result`, `ValidationResult` |
 | `@y-core/forge/router` | `src/router/mod.ts` | Leaf | re-exports fetch-router: `route`, `createController`, `createAction`, `createRouter`, `createContextKey`, `RequestContext`, `get`/`post`/`put`/`patch`/`del`, `resource`, `createHref`; types `Controller`, `Middleware`, `RequestHandler`, `RouteMap` |
 | `@y-core/forge/security` | `src/security/mod.ts` | Integration | `makeSecurityHeaders`, `mergeSecurityHeaders`, `NONCE`, `requestId`, `requestIdCtx`, `isHxRequest`, `requireFormContentType`, `cors`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit`, `BaseUrlConfigSchema` |
@@ -113,6 +114,7 @@ These two are exempted because they are shared utilities without circular risk.
 | `@y-core/forge/ui` | `src/ui/mod.ts` | Integration | `Form`, `Field`, `FieldLabel`, `Input`, `Textarea`, `Select`, `Button`, `Alert`, `Card`, `Icon`, `cn`, `cva` |
 | `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | Leaf | `mountNav`, `mountTheme`, `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `FOUC_SCRIPT` |
 | `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | Leaf (sideEffect) | htmx bundle (import only for side effect) |
+| `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | Leaf | `Flash`, `FlashContainer`, `FlashOob`, `createFlash`, `hxAttrs`, HTMX header helpers (`hxTrigger`, `setPushUrl`, `setRedirect`, etc.), HTMX patterns (`formSubmit`, `liveSearch`, `infiniteScroll`, etc.), `ThemeToggle`, `Resumable` |
 | `@y-core/forge/validation` | `src/validation/mod.ts` | Leaf | `v` (valibot facade), `ValidationResult` |
 
 ### 3b. Internal Namespaces (no public export path)

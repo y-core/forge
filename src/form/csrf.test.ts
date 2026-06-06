@@ -306,6 +306,8 @@ describe("csrfProtection middleware with resolver secret", () => {
   it("resolves key via function, mints token on GET, validates on POST, and caches the key", async () => {
     let callCount = 0;
     const key = await importCsrfKey(HEX_SECRET);
+    // A single shared env object — both requests must use the same reference to hit the cache.
+    const sharedEnv = { CSRF_SECRET: HEX_SECRET };
 
     const app = new Forge();
     app.use(
@@ -320,16 +322,49 @@ describe("csrfProtection middleware with resolver secret", () => {
     mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
-    const getRes = await app.request("/test");
+    const getRes = await app.request("/test", undefined, sharedEnv);
     expect(getRes.status).toBe(200);
     const token = await getRes.text();
     expect(token).toContain(".");
 
-    const postRes = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token } });
+    const postRes = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token } }, sharedEnv);
     expect(postRes.status).toBe(200);
     expect(await postRes.text()).toBe("ok");
 
-    expect(callCount).toBe(1);
+    expect(callCount).toBe(1); // same env object → single key import (cache hit on POST)
+  });
+
+  it("re-resolves key for different env objects and rejects cross-env tokens", async () => {
+    let callCount = 0;
+    const keyA = await importCsrfKey("a".repeat(64));
+    const keyB = await importCsrfKey("b".repeat(64));
+    const envA = { CSRF_SECRET: "a".repeat(64) };
+    const envB = { CSRF_SECRET: "b".repeat(64) };
+
+    const app = new Forge();
+    app.use(
+      "*",
+      csrfProtection({
+        secret: async (c) => {
+          callCount++;
+          // biome-ignore lint/suspicious/noExplicitAny: test-only cast to read env secret
+          return ((c as any).env as { CSRF_SECRET: string }).CSRF_SECRET === "a".repeat(64) ? keyA : keyB;
+        },
+      }),
+    );
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "POST", "/test", () => new Response("ok"));
+
+    // Mint a token under envA (signed by keyA).
+    const getRes = await app.request("/test", undefined, envA);
+    const tokenFromA = await getRes.text();
+    expect(tokenFromA).toContain(".");
+
+    // Replay that token under envB — must fail: keyB cannot verify a keyA signature.
+    const postRes = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": tokenFromA } }, envB);
+    expect(postRes.status).toBe(403);
+
+    expect(callCount).toBe(2); // distinct env objects → resolver invoked once per env
   });
 });
 

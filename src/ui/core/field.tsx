@@ -1,4 +1,4 @@
-import type { Child, FC, JSX, PropsWithChildren } from "../../jsx/types";
+import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
@@ -16,7 +16,7 @@ interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children">
   invalid?: boolean;
   disabled?: boolean;
   orientation?: FieldOrientation;
-  children?: Child;
+  children?: JSXNode;
 }
 
 type LabelProps = JSX.IntrinsicElements["label"];

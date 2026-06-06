@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import type { SpriteGroup, Sprites } from "../types";
 import { fetchURL } from "./download";
 import { hashFile } from "./hash";
+import { safeJoin } from "./paths";
 
 export interface SpriteGroupResult {
   spriteKey: string;
@@ -43,12 +44,20 @@ export function extractViewBoxes(spriteContent: string): Record<string, string> 
   return meta;
 }
 
+/**
+ * Builds a single SVG sprite group and writes it to `publicDir`.
+ *
+ * **Output directory ownership:** `buildSpriteGroup` removes all `.svg` files (excluding
+ * hidden files) in `dirname(target)` on each rebuild to purge stale hashed filenames.
+ * Do not place hand-authored `.svg` files alongside generated sprites — they will be deleted.
+ * The path containment guard on `group.target` ensures deletions stay within `publicDir`.
+ */
 async function buildSpriteGroup(
   group: SpriteGroup,
   publicDir: string,
   shouldHash: boolean,
 ): Promise<{ mapping: Record<string, string>; spriteKey: string; meta: Record<string, string> } | null> {
-  const target = join(publicDir, group.target);
+  const target = safeJoin(publicDir, group.target);
   const spriteDir = dirname(target);
   mkdirSync(spriteDir, { recursive: true });
 
@@ -61,7 +70,7 @@ async function buildSpriteGroup(
       let content: string;
 
       if (isRemote) {
-        const cachePath = join(spriteDir, ".svg-cache", file);
+        const cachePath = safeJoin(spriteDir, ".svg-cache", file);
         await fetchURL(`${source.path}${file}`, cachePath);
         content = readFileSync(cachePath, "utf-8");
       } else {
@@ -109,17 +118,47 @@ async function buildSpriteGroup(
   const stem = group.target.slice(0, group.target.lastIndexOf("."));
   const hashedRelative = `${stem}.${hash}${ext}`;
 
-  renameSync(target, join(publicDir, hashedRelative));
+  renameSync(target, safeJoin(publicDir, hashedRelative));
 
   return { mapping: { [group.target]: hashedRelative }, spriteKey: group.target, meta: viewBoxMeta };
 }
 
+/**
+ * Best-effort SVG sanitizer for inline sprite content.
+ *
+ * Strips the most common injection vectors from SVG inner content before it is embedded
+ * in a sprite sheet served to end users. The production nonce CSP (`self`, NONCE,
+ * TURNSTILE) is the primary runtime control; this function is defense-in-depth.
+ *
+ * **Scope:** trusted sources (e.g. icon libraries you reference by URL in config).
+ * Untrusted / user-supplied SVGs are out of scope — use a full DOM-based sanitizer
+ * (e.g. DOMPurify) for that use case.
+ *
+ * **Note:** root-`<svg>` event handlers (`onload=` on the `<svg>` element itself) are
+ * already neutralised because `svgToSymbol` discards the root tag and re-emits only the
+ * inner content wrapped in a `<symbol>`.
+ */
 export function sanitizeSVG(content: string): string {
-  // Strip script tags (covers both inline and src-based scripts)
-  let result = content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-  // Strip event handler attributes (onclick, onload, onerror, etc.)
-  result = result.replace(/\s+on[a-zA-Z]+="[^"]*"/g, "");
-  result = result.replace(/\s+on[a-zA-Z]+='[^']*'/g, "");
+  let result = content;
+  // Strip script elements (inline and src-based)
+  result = result.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+  // Strip foreignObject elements (can embed arbitrary HTML / iframes)
+  result = result.replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, "");
+  // Strip style elements (CSS url(javascript:...) / expression() / data: URIs)
+  result = result.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
+  // Strip SMIL animate/set elements that retarget href/xlink:href (navigation attack)
+  result = result.replace(/<(?:animate|set)\b[^>]*\battributeName\s*=\s*["'](?:xlink:)?href["'][^>]*(?:\/>|>[\s\S]*?<\/(?:animate|set)>)/gi, "");
+  // Drop href / xlink:href attributes carrying dangerous URI schemes
+  result = result.replace(/\s+(?:xlink:)?href\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, (match, val: string) => {
+    const normalized = val
+      .replace(/^["']|["']$/g, "")
+      .toLowerCase()
+      .replace(/\s/g, "");
+    if (normalized.startsWith("javascript:") || normalized.startsWith("data:text/html")) return "";
+    return match;
+  });
+  // Strip event handler attributes (double-quoted, single-quoted, or unquoted values)
+  result = result.replace(/\s+on[a-zA-Z]+=(?:"[^"]*"|'[^']*'|[^\s"'>]+)/g, "");
   return result;
 }
 

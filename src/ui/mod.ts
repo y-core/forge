@@ -1,4 +1,4 @@
-export type { Child } from "../jsx/types";
+export type { JSXNode } from "../jsx/types";
 export type {
   AlertVariant,
   BadgeVariant,

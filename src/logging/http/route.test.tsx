@@ -1,12 +1,10 @@
 /** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../../app/forge-app";
+import { definePage } from "../../app/page";
 import { mapHandler } from "../../app/route-test-helper";
 import type { KVNamespace } from "../../storage/kv/types";
-import { createIcon } from "../../ui/core/icon";
-import { logViewer } from "./route";
-
-const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
+import { readLogViewer } from "./route";
 
 function makeKvStub(): KVNamespace {
   return {
@@ -18,15 +16,21 @@ function makeKvStub(): KVNamespace {
   } as unknown as KVNamespace;
 }
 
+// Drives the readLogViewer loader through a definePage, mirroring how an app composes it:
+// the HTMX partial short-circuits as a Response from the loader; the page view echoes the
+// loader data as JSON so the data-shape assertions can inspect it directly.
 function makeApp(options?: { basePath?: string }) {
   const app = new Forge();
-  const handler = logViewer({ kv: () => makeKvStub(), icon, ...options });
+  const handler = definePage({
+    loader: (c) => readLogViewer(c, { kv: () => makeKvStub(), ...options }),
+    view: (_c, _config, state) => Response.json(state.data),
+  });
   mapHandler(app, "GET", "/logs", handler);
   return app;
 }
 
-describe("logViewer loader — non-HTMX request", () => {
-  it("returns 200 with JSON data when HX-Request header is absent", async () => {
+describe("readLogViewer — non-HTMX request", () => {
+  it("returns the loader data when HX-Request header is absent", async () => {
     const app = makeApp();
     const res = await app.request("/logs");
     expect(res.status).toBe(200);
@@ -87,8 +91,8 @@ describe("logViewer loader — non-HTMX request", () => {
   });
 });
 
-describe("logViewer loader — HTMX request", () => {
-  it("returns 200 HTML response when HX-Request header is true", async () => {
+describe("readLogViewer — HTMX request", () => {
+  it("returns a 200 HTML <tbody> fragment when HX-Request header is true", async () => {
     const app = makeApp();
     const res = await app.request("/logs", { headers: { "HX-Request": "true" } });
     expect(res.status).toBe(200);
@@ -96,7 +100,7 @@ describe("logViewer loader — HTMX request", () => {
     expect(body).toContain("<tbody");
   });
 
-  it("returns an HTML content-type for HTMX partial", async () => {
+  it("returns an HTML content-type for the HTMX partial", async () => {
     const app = makeApp();
     const res = await app.request("/logs", { headers: { "HX-Request": "true" } });
     const contentType = res.headers.get("content-type") ?? "";

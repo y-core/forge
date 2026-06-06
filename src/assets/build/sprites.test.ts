@@ -29,7 +29,61 @@ describe("sanitizeSVG()", () => {
     expect(sanitizeSVG(input)).not.toContain("onclick");
   });
 
-  it("preserves safe SVG content", () => {
+  it("strips unquoted event handler attributes", () => {
+    const input = `<circle onload=evil()/>`;
+    expect(sanitizeSVG(input)).not.toContain("onload");
+  });
+
+  it("strips foreignObject blocks (arbitrary HTML / iframe embedding)", () => {
+    const input = `<rect/><foreignObject><iframe src="https://evil.com"/></foreignObject><path/>`;
+    const result = sanitizeSVG(input);
+    expect(result).not.toContain("foreignObject");
+    expect(result).not.toContain("iframe");
+    expect(result).toContain("<rect/>");
+    expect(result).toContain("<path/>");
+  });
+
+  it("strips style blocks (CSS url(javascript:...) / expressions)", () => {
+    const input = `<path/><style>path { background: url(javascript:alert(1)) }</style>`;
+    const result = sanitizeSVG(input);
+    expect(result).not.toContain("<style>");
+    expect(result).not.toContain("javascript:");
+    expect(result).toContain("<path/>");
+  });
+
+  it("strips href with javascript: scheme", () => {
+    const input = `<use href="javascript:alert(1)"/>`;
+    const result = sanitizeSVG(input);
+    expect(result).not.toContain("href=");
+    expect(result).not.toContain("javascript:");
+  });
+
+  it("strips xlink:href with javascript: scheme", () => {
+    const input = `<use xlink:href="javascript:alert(1)"/>`;
+    expect(sanitizeSVG(input)).not.toContain("xlink:href=");
+  });
+
+  it("strips href with data:text/html scheme", () => {
+    const input = `<a href="data:text/html,<script>alert(1)</script>">click</a>`;
+    expect(sanitizeSVG(input)).not.toContain(`href=`);
+  });
+
+  it("preserves safe href values (symbol references)", () => {
+    const input = `<use href="#icon-sun"/>`;
+    expect(sanitizeSVG(input)).toBe(input);
+  });
+
+  it("strips SMIL animate elements retargeting href", () => {
+    const input = `<animate attributeName="href" values="javascript:alert(1)"/>`;
+    expect(sanitizeSVG(input)).not.toContain("animate");
+  });
+
+  it("strips SMIL set elements retargeting xlink:href", () => {
+    const input = `<set attributeName="xlink:href" to="javascript:void(0)"/>`;
+    expect(sanitizeSVG(input)).not.toContain("<set");
+  });
+
+  it("preserves safe SVG content (exact match)", () => {
     const input = `<path d="M12 12" stroke="#163030" fill="none"/>`;
     expect(sanitizeSVG(input)).toBe(input);
   });

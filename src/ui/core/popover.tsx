@@ -1,8 +1,8 @@
-import type { Child, FC, JSX } from "../../jsx/types";
+import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
 
 interface PopoverProps extends Omit<JSX.IntrinsicElements["details"], "children"> {
-  children?: Child;
+  children?: JSXNode;
 }
 
 const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, ...props }) => (
@@ -12,7 +12,7 @@ const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, ...props }) => (
 );
 
 interface PopoverTriggerProps extends Omit<JSX.IntrinsicElements["summary"], "children"> {
-  children?: Child;
+  children?: JSXNode;
 }
 
 const PopoverTrigger: FC<PopoverTriggerProps> = ({ class: cls, children, ...props }) => (
@@ -31,7 +31,7 @@ interface PopoverContentProps {
   align?: PopoverAlign;
   side?: PopoverSide;
   class?: string;
-  children?: Child;
+  children?: JSXNode;
 }
 
 const alignClasses: Record<PopoverAlign, string> = { start: "left-0", center: "left-1/2 -translate-x-1/2", end: "right-0" };
