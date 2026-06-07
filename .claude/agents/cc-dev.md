@@ -63,12 +63,12 @@ Fall back to `Grep` only for YAML, markdown, or when `tsmcp` unreachable.
 
 **Import rules by concern:**
 - Handlers: service interfaces and view layer — never storage directly
-- Services: storage/binding interfaces — never handlers, never Hono context
+- Services: storage/binding interfaces — never handlers, never request context
 - No sibling-barrel imports — biome enforces this; do not import from a sibling namespace's `mod.ts`
 - New exports: must be added to the namespace `mod.ts`
 
 ### TypeScript/Web API Patterns
-- Context: Hono `c` context flows through every handler; pass explicit params to services — never thread raw context into service layer
+- Context: `RequestContext` flows through every handler; pass explicit params to services — never thread raw context into service layer
 - Errors: typed error sentinels (`ErrXxx` constants or discriminated unions) — never string-match on `error.message`
 - Logging: structured logger from `@y-core/forge/logging` — never `console.log` in production paths
 - Validation: validate at the handler boundary before calling services; use forge input-validation helpers
@@ -79,7 +79,7 @@ Fall back to `Grep` only for YAML, markdown, or when `tsmcp` unreachable.
 - Errors: `ErrXxx` prefix — `ErrUserNotFound`, `ErrEmailTaken`
 - Factories: `create` (exported), internal helpers unexported
 - Single responsibility — one exported function per exported concern
-- Named exports only — no default exports except Worker entry and Hono app factory
+- Named exports only — no default exports except Worker entry
 
 ## Build Verification
 

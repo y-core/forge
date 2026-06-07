@@ -139,7 +139,7 @@ Mock libraries are not installed and must not be added.
 
 ## HTML Entity Rules
 
-Hono JSX escapes interpolated dynamic content. When asserting rendered HTML, use escaped forms:
+forge JSX escapes interpolated dynamic content. When asserting rendered HTML, use escaped forms:
 
 | Character | Escaped form |
 |---|---|
@@ -149,7 +149,7 @@ Hono JSX escapes interpolated dynamic content. When asserting rendered HTML, use
 | `>` (greater-than) | `&gt;` |
 | `"` in attributes | `&#34;` or `&quot;` |
 
-Static JSX string literals (not interpolated) are NOT escaped by Hono — only interpolated values are. Know the difference before writing assertions.
+Static JSX string literals (not interpolated) are NOT escaped by forge — only interpolated values are. Know the difference before writing assertions.
 
 When a test fails unexpectedly on entity encoding, print the raw string:
 

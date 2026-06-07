@@ -267,9 +267,10 @@ class string. Combine with `cn` when additional conditional classes are needed:
 ### 4a. mountTheme — Dark Mode Controller
 
     import { mountTheme, FOUC_SCRIPT } from "@y-core/forge/ui/client"
+    import { rawHtml } from "@y-core/forge/http"
 
     // In layout <head> — runs synchronously before first paint:
-    <script dangerouslySetInnerHTML={{ __html: FOUC_SCRIPT }} />
+    <script>{rawHtml(FOUC_SCRIPT)}</script>
 
     // In <body> — wires the toggle button:
     <script>mountTheme()</script>

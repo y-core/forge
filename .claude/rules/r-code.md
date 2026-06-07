@@ -1,4 +1,4 @@
-# r-code — TypeScript/Hono/Workers Coding Rules
+# r-code — TypeScript/Workers Coding Rules
 
 > Ruleset for `cc-dev`. Read entirely before writing code.
 
@@ -26,7 +26,7 @@
 
 ### External Module Imports
 
-- Forge namespace imports use `@y-core/forge/{namespace}` — never reach into `node_modules` directly for wrapped dependencies (`hono`, `valibot`, `@remix-run/*`)
+- Forge namespace imports use `@y-core/forge/{namespace}` — never reach into `node_modules` directly for wrapped dependencies (`valibot`, `@remix-run/*`)
 - Within forge source, import from concrete source files (`./csrf.ts`), never from a sibling `mod.ts` barrel
 - `validation/mod` and `crypto/mod` are exempt from the no-sibling-barrel rule (biome enforces this; see NAMESPACE_DESIGN.md §2)
 - Never add `export * from ...` — named exports only in all `mod.ts` files

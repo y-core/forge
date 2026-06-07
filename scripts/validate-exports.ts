@@ -144,7 +144,7 @@ const pkgExports = (pkg as any).exports as Record<string, { import?: string; typ
 let failed = false;
 
 // Pre-compute the directory of every `mod.ts` barrel so the source→barrel scan can stop at
-// sub-namespace boundaries (e.g. `./logging` must not pull in `./logging/http` symbols).
+// sub-namespace boundaries (e.g. `./logging` must not pull in `./logging/show` symbols).
 const barrelDirs = new Set<string>();
 for (const entry of Object.values(pkgExports)) {
   const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);

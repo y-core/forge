@@ -1,6 +1,6 @@
 ---
 title: Security Hardening
-description: "makeSecurityHeaders, CSP nonce, getNonce, NONCE constant, mergeSecurityHeaders, CORS response rebuild, originGuard, verifyOrigin, crossOriginProtection Sec-Fetch-Site, rateLimit, requestId, requireFormContentType, isHxRequest, safeUrl JSX URL sanitization, parseFormData 413 byte cap, fragment escaping, R2 RFC 5987, storage shape checks, fallback 500 headers, transport-layer only, CSRF in form namespace, auth boundary"
+description: "makeSecurityHeaders, CSP nonce, getNonce, NONCE constant, mergeSecurityHeaders, CORS response rebuild, originGuard, verifyOrigin, crossOriginProtection Sec-Fetch-Site, rateLimit, requestId, requireFormContentType, safeUrl JSX URL sanitization, parseFormData 413 byte cap, fragment escaping, R2 RFC 5987, storage shape checks, fallback 500 headers, transport-layer only, CSRF in form namespace, auth boundary"
 weight: 22
 ---
 
@@ -22,7 +22,7 @@ weight: 22
 - §3 CORS and origin protection: cors(), originGuard, verifyOrigin, crossOriginProtection
 - §4 Rate limiting: rateLimit() with Workers binding
 - §5 Request identity: requestId(), requestIdCtx contextVar
-- §6 Content guards: requireFormContentType, isHxRequest
+- §6 Content guards: requireFormContentType (HTMX detection moved to `html/htmx` — see §6b)
 - §7 Transport-layer boundary: what is NOT in security
 - §8 Defense-in-depth across namespaces: JSX safeUrl, parseFormData byte cap, fragment escaping, R2 hardening, storage shape checks, fallback 500 headers
 
@@ -37,7 +37,6 @@ From `@y-core/forge/security` (`src/security/mod.ts`):
 - `NONCE` — constant string `"'nonce-{nonce}'"` for CSP scriptSrc
 - `requestId()` — middleware: injects X-Request-Id, sets requestIdCtx
 - `requestIdCtx` — contextVar accessor for the request ID string
-- `isHxRequest(c)` — returns true if HX-Request header is present
 - `requireFormContentType` — middleware: enforces application/x-www-form-urlencoded
 - `cors(options)` — CORS middleware factory
 - `matchOrigin(url, allowed)` — utility: checks if URL matches allowed origins
@@ -56,6 +55,7 @@ NOT in security (common mistake to avoid):
 - `timingSafeEqual`/`timingSafeEqualBytes` — in internal `src/crypto/` (`@internal`)
 - `csrfProtection`, `importCsrfKey`, `mintCsrf` — in `@y-core/forge/form`
 - `sessionMiddleware` — in `@y-core/forge/session`
+- `isHxRequest` — moved to `@y-core/forge/html/htmx` (it is a UX routing hint, not a security boundary)
 
 ---
 
@@ -318,25 +318,13 @@ that bypass browser same-site cookie protections:
 middleware. Do not use on API routes that accept JSON — apply only on HTML form
 submission endpoints.
 
-### 6b. isHxRequest — HTMX-Only Enforcement
+### 6b. HTMX Detection (moved)
 
-`isHxRequest(c)` returns `true` if the `HX-Request: true` header is present, indicating
-the request originated from an HTMX trigger. Use to restrict partial-HTML endpoints to
-HTMX consumers only:
+`isHxRequest` was previously exported from `security`. It now lives in
+`@y-core/forge/html/htmx` — see [HTMX.md](./HTMX.md) §1 for usage.
 
-    import { isHxRequest } from "@y-core/forge/security"
-    import { htmlResponse } from "@y-core/forge/http"
-    import type { AppContext } from "@y-core/forge/context"
-
-    // Registered as the handler for a declared route (e.g. `partials: { method: "GET", … }`).
-    const partialsResults = (c: AppContext) => {
-      if (!isHxRequest(c)) return new Response("Forbidden", { status: 403 })
-      return htmlResponse(<ResultsPartial />)
-    }
-
-`HX-Request` is a client-supplied header and can be spoofed — treat it as a UX guard,
-not a security boundary. Pair with `originGuard` or `crossOriginProtection` for actual
-enforcement.
+It remains a UX routing hint, not a security boundary. Always pair with `originGuard`
+or `crossOriginProtection` for actual enforcement.
 
 ---
 

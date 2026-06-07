@@ -5,6 +5,16 @@ interface PopoverProps extends Omit<JSX.IntrinsicElements["details"], "children"
   children?: JSXNode;
 }
 
+type PopoverAlign = "start" | "center" | "end";
+type PopoverSide = "bottom" | "top";
+
+interface PopoverContentProps {
+  align?: PopoverAlign;
+  side?: PopoverSide;
+  class?: string;
+  children?: JSXNode;
+}
+
 const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, ...props }) => (
   <details data-slot='popover' class={cn("relative inline-block", asClass(cls))} {...props}>
     {children}
@@ -23,16 +33,6 @@ const PopoverTrigger: FC<PopoverTriggerProps> = ({ class: cls, children, ...prop
     {children}
   </summary>
 );
-
-type PopoverAlign = "start" | "center" | "end";
-type PopoverSide = "bottom" | "top";
-
-interface PopoverContentProps {
-  align?: PopoverAlign;
-  side?: PopoverSide;
-  class?: string;
-  children?: JSXNode;
-}
 
 const alignClasses: Record<PopoverAlign, string> = { start: "left-0", center: "left-1/2 -translate-x-1/2", end: "right-0" };
 

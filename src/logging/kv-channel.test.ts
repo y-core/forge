@@ -57,12 +57,16 @@ function makeRecord(
   return { level: "info" as const, prefix: "test", message: "hello", timestamp: "2026-05-31T10:00:00.000Z", ...overrides };
 }
 
+function makeMeta(overrides?: Partial<KvLogMetadata>): KvLogMetadata {
+  return { level: "info", prefix: "svc", message: "test message", timestamp: "2026-05-31T10:00:00.000Z", ...overrides };
+}
+
 describe("kvLogChannel — write", () => {
   it("stores a time-ordered key under the prefix", async () => {
     const stub = makeKvStub();
     const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
 
-    await channel(makeRecord());
+    await channel.write(makeRecord());
 
     const keys = [...stub._store.keys()];
     expect(keys).toHaveLength(1);
@@ -74,7 +78,7 @@ describe("kvLogChannel — write", () => {
     const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
     const record = makeRecord({ message: "stored" });
 
-    await channel(record);
+    await channel.write(record);
 
     const entry = [...stub._store.values()][0]!;
     expect(JSON.parse(entry.value)).toMatchObject({ message: "stored", level: "info" });
@@ -84,7 +88,7 @@ describe("kvLogChannel — write", () => {
     const stub = makeKvStub();
     const channel = kvLogChannel(stub, { prefix: "logs", defaultTtl: 300, purgeProbability: 0 });
 
-    await channel(makeRecord());
+    await channel.write(makeRecord());
 
     const entry = [...stub._store.values()][0]!;
     expect(entry.expirationTtl).toBe(300);
@@ -94,7 +98,7 @@ describe("kvLogChannel — write", () => {
     const stub = makeKvStub();
     const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
 
-    await channel(makeRecord({ level: "warn", prefix: "svc", message: "watch out" }));
+    await channel.write(makeRecord({ level: "warn", prefix: "svc", message: "watch out" }));
 
     const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
     expect(meta.level).toBe("warn");
@@ -107,7 +111,7 @@ describe("kvLogChannel — write", () => {
     const stub = makeKvStub();
     const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
 
-    await channel(makeRecord({ data: { requestId: "req-abc", other: 1 } }));
+    await channel.write(makeRecord({ data: { requestId: "req-abc", other: 1 } }));
 
     const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
     expect(meta.requestId).toBe("req-abc");
@@ -117,7 +121,7 @@ describe("kvLogChannel — write", () => {
     const stub = makeKvStub();
     const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
 
-    await channel(makeRecord());
+    await channel.write(makeRecord());
 
     const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
     expect("requestId" in meta).toBe(false);
@@ -136,7 +140,7 @@ describe("kvLogChannel — purge", () => {
     // maxLogs=3, highWater=4 → 6 entries is above highWater, should purge down to maxLogs=3
     const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 3, highWater: 4, purgeProbability: 1 });
 
-    await channel(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" }));
+    await channel.write(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" }));
 
     // Should have at most maxLogs=3 entries (the newest)
     const remaining = [...stub._store.keys()].filter((k) => k.startsWith("logs||")).sort();
@@ -149,10 +153,35 @@ describe("kvLogChannel — purge", () => {
 
     const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 3, highWater: 5, purgeProbability: 1 });
 
-    await channel(makeRecord());
+    await channel.write(makeRecord());
 
     // Only 2 total — no purge
     expect(stub._store.size).toBe(2);
+  });
+
+  it("passes a numeric limit to kv.list during purge (bounded page)", async () => {
+    let capturedListOpts: { prefix?: string; limit?: number } | undefined;
+
+    const baseStub = makeKvStub();
+    for (let i = 1; i <= 6; i++) {
+      const ts = `2026-05-31T0${i}:00:00.000Z`;
+      baseStub._store.set(`logs||${ts}||aaa`, { value: "{}" });
+    }
+
+    const originalList = baseStub.list.bind(baseStub);
+    const trackingKv = {
+      ...baseStub,
+      list(opts?: { prefix?: string; limit?: number; cursor?: string }) {
+        capturedListOpts = opts;
+        return originalList(opts);
+      },
+    } as unknown as KVNamespace & { _store: Map<string, StubEntry> };
+
+    const channel = kvLogChannel(trackingKv, { prefix: "logs", maxLogs: 3, highWater: 4, purgeProbability: 1 });
+    await channel.write(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" }));
+
+    expect(typeof capturedListOpts?.limit).toBe("number");
+    expect(capturedListOpts?.limit).toBe(1000);
   });
 
   it("does not purge when purgeProbability is 0", async () => {
@@ -163,10 +192,137 @@ describe("kvLogChannel — purge", () => {
 
     const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 2, highWater: 3, purgeProbability: 0 });
 
-    await channel(makeRecord());
+    await channel.write(makeRecord());
 
     // All original plus the new one; nothing purged
     expect(stub._store.size).toBe(11);
+  });
+});
+
+describe("kvLogChannel — read", () => {
+  it("returns all rows from KV metadata", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||aaa", { value: "{}", metadata: makeMeta({ message: "first" }) });
+    stub._store.set("logs||2026-05-31T11:00:00.000Z||bbb", { value: "{}", metadata: makeMeta({ message: "second" }) });
+
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!();
+
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows[0]!.message).toBe("first");
+    expect(result.rows[1]!.message).toBe("second");
+  });
+
+  it("returns empty rows when KV has no entries", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!();
+    expect(result.rows).toHaveLength(0);
+    expect(result.complete).toBe(true);
+  });
+
+  it("maps KV metadata fields onto LogRow", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||aaa", {
+      value: "{}",
+      metadata: makeMeta({ level: "warn", prefix: "api", message: "slow request", requestId: "req-xyz" }),
+    });
+
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!();
+    const row = result.rows[0]!;
+
+    expect(row.level).toBe("warn");
+    expect(row.prefix).toBe("api");
+    expect(row.message).toBe("slow request");
+    expect(row.requestId).toBe("req-xyz");
+    expect(row.timestamp).toBe("2026-05-31T10:00:00.000Z");
+  });
+
+  it("filters rows by exact level", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||a", { value: "{}", metadata: makeMeta({ level: "info" }) });
+    stub._store.set("logs||2026-05-31T10:00:01.000Z||b", { value: "{}", metadata: makeMeta({ level: "error" }) });
+    stub._store.set("logs||2026-05-31T10:00:02.000Z||c", { value: "{}", metadata: makeMeta({ level: "warn" }) });
+
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!({ level: "error" });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.level).toBe("error");
+  });
+
+  it("returns all rows when level is not specified", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||a", { value: "{}", metadata: makeMeta({ level: "debug" }) });
+    stub._store.set("logs||2026-05-31T10:00:01.000Z||b", { value: "{}", metadata: makeMeta({ level: "error" }) });
+
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!({});
+
+    expect(result.rows).toHaveLength(2);
+  });
+
+  it("filters by message substring (case-insensitive)", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||a", { value: "{}", metadata: makeMeta({ message: "Email delivery failed" }) });
+    stub._store.set("logs||2026-05-31T10:00:01.000Z||b", { value: "{}", metadata: makeMeta({ message: "Contact form submitted" }) });
+
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!({ q: "email" });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.message).toBe("Email delivery failed");
+  });
+
+  it("filters by prefix substring", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||a", { value: "{}", metadata: makeMeta({ prefix: "contact" }) });
+    stub._store.set("logs||2026-05-31T10:00:01.000Z||b", { value: "{}", metadata: makeMeta({ prefix: "email" }) });
+
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!({ q: "contact" });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.prefix).toBe("contact");
+  });
+
+  it("filters by requestId substring", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||a", { value: "{}", metadata: makeMeta({ requestId: "cf-ray-12345" }) });
+    stub._store.set("logs||2026-05-31T10:00:01.000Z||b", { value: "{}", metadata: makeMeta({ requestId: "cf-ray-99999" }) });
+
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!({ q: "12345" });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.requestId).toBe("cf-ray-12345");
+  });
+
+  it("combines level and text filters", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||a", { value: "{}", metadata: makeMeta({ level: "error", message: "failed" }) });
+    stub._store.set("logs||2026-05-31T10:00:01.000Z||b", { value: "{}", metadata: makeMeta({ level: "info", message: "failed" }) });
+    stub._store.set("logs||2026-05-31T10:00:02.000Z||c", { value: "{}", metadata: makeMeta({ level: "error", message: "ok" }) });
+
+    const channel = kvLogChannel(stub);
+    const result = await channel.read!({ level: "error", q: "failed" });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.level).toBe("error");
+    expect(result.rows[0]!.message).toBe("failed");
+  });
+
+  it("read uses the channel's configured prefix (not the default 'logs')", async () => {
+    const stub = makeKvStub();
+    stub._store.set("app-logs||2026-05-31T10:00:00.000Z||a", { value: "{}", metadata: makeMeta({ message: "in prefix" }) });
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||b", { value: "{}", metadata: makeMeta({ message: "outside" }) });
+
+    const channel = kvLogChannel(stub, { prefix: "app-logs" });
+    const result = await channel.read!();
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.message).toBe("in prefix");
   });
 });
 

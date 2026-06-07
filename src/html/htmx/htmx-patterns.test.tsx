@@ -12,7 +12,6 @@ import {
   oobSwap,
   paginatedTableLink,
   SWAP,
-  toastOob,
 } from "./htmx-patterns";
 
 async function render(element: unknown): Promise<string> {
@@ -189,22 +188,5 @@ describe("oobSwap", () => {
 describe("oobAppend", () => {
   it("returns beforeend:<selector>", () => {
     expect(oobAppend("#flash")).toEqual({ "hx-swap-oob": "beforeend:#flash" });
-  });
-});
-
-describe("toastOob", () => {
-  it("renders toast markup with default hx-swap-oob to #toast-container", async () => {
-    const node = toastOob({ toast: { title: "Done", description: "It worked" } });
-    const out = await render(node);
-    expect(out).toContain("hx-swap-oob");
-    expect(out).toContain("beforeend:#toast-container");
-    expect(out).toContain("Done");
-    expect(out).toContain("It worked");
-  });
-
-  it("uses custom selector and strategy", async () => {
-    const node = toastOob({ toast: { title: "Custom" }, selector: "#notifications", strategy: "afterend" });
-    const out = await render(node);
-    expect(out).toContain("afterend:#notifications");
   });
 });

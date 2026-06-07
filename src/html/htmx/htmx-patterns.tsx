@@ -1,7 +1,5 @@
 /** @jsxImportSource @y-core/forge */
 
-import type { ToastVariant } from "../core/toast";
-import { Toast } from "../core/toast";
 import type { HxAttrs } from "./htmx-attrs";
 import { hxAttrs } from "./htmx-attrs";
 
@@ -161,22 +159,4 @@ export function oobSwap(p: OobSwapProps): HxAttrs {
 
 export function oobAppend(selector: string): HxAttrs {
   return oobSwap({ strategy: "beforeend", selector });
-}
-
-interface ToastOobProps {
-  toast: { title?: string; description?: string; variant?: ToastVariant };
-  selector?: string;
-  strategy?: string;
-}
-
-export function toastOob(p: ToastOobProps) {
-  const oobAttrs = oobSwap({ strategy: p.strategy ?? "beforeend", selector: p.selector ?? "#toast-container" });
-  return (
-    <div {...oobAttrs}>
-      <Toast {...(p.toast.variant !== undefined ? { variant: p.toast.variant } : {})}>
-        {p.toast.title ? <Toast.Title>{p.toast.title}</Toast.Title> : null}
-        {p.toast.description ? <Toast.Description>{p.toast.description}</Toast.Description> : null}
-      </Toast>
-    </div>
-  );
 }

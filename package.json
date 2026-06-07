@@ -85,6 +85,10 @@
       "types": "./src/jsx/jsx-runtime.ts",
       "import": "./src/jsx/jsx-runtime.ts"
     },
+    "./html/htmx": {
+      "types": "./src/html/htmx/mod.ts",
+      "import": "./src/html/htmx/mod.ts"
+    },
     "./http": {
       "types": "./src/http/mod.ts",
       "import": "./src/http/mod.ts"
@@ -101,9 +105,9 @@
       "types": "./src/logging/mod.ts",
       "import": "./src/logging/mod.ts"
     },
-    "./logging/http": {
-      "types": "./src/logging/http/mod.ts",
-      "import": "./src/logging/http/mod.ts"
+    "./logging/show": {
+      "types": "./src/logging/show/mod.ts",
+      "import": "./src/logging/show/mod.ts"
     },
     "./pkg": {
       "types": "./src/pkg/mod.ts",
@@ -141,6 +145,10 @@
       "types": "./src/ui/server/mod.ts",
       "import": "./src/ui/server/mod.ts"
     },
+    "./ui/show": {
+      "types": "./src/ui/show/mod.ts",
+      "import": "./src/ui/show/mod.ts"
+    },
     "./storage/db": {
       "types": "./src/storage/db/mod.ts",
       "import": "./src/storage/db/mod.ts"
@@ -167,6 +175,7 @@
     "src/crypto/",
     "src/cli/",
     "src/form/",
+    "src/html/",
     "src/http/",
     "src/jsx/",
     "src/logging/",

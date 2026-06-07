@@ -9,3 +9,16 @@
  * @public
  */
 export const NONCE: unique symbol = Symbol("@y-core/forge/csp-nonce");
+
+/**
+ * Cloudflare Turnstile CDN origin — add to `scriptSrc`, `connectSrc`, and `frameSrc`
+ * when Turnstile is active. Exported as a typed constant so consumers avoid hardcoding
+ * the string and can swap the import if the origin ever changes.
+ *
+ * @example
+ * ```ts
+ * makeSecurityHeaders({ scriptSrc: ["'self'", NONCE, TURNSTILE_CSP] })
+ * ```
+ * @public
+ */
+export const TURNSTILE_CSP = "https://challenges.cloudflare.com" as const;

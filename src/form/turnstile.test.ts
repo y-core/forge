@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { verifyTurnstile } from "./turnstile";
 
 const SECRET = "test-secret-key";
+const HOSTNAME = "example.com";
 const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 let savedFetch: typeof globalThis.fetch;
@@ -30,22 +31,22 @@ function withCapturedRequest(fn: (request: { url: string; body?: string; signal?
 
 describe("verifyTurnstile", () => {
   it("returns missing-token when the token is absent", async () => {
-    const result = await verifyTurnstile(new FormData(), SECRET);
+    const result = await verifyTurnstile(new FormData(), SECRET, { expectedHostname: HOSTNAME });
     expect(result).toEqual({ ok: false, reason: "missing-token" });
   });
 
   it("returns ok:true when verification passes", async () => {
-    mockFetch({ success: true });
+    mockFetch({ success: true, hostname: HOSTNAME });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(await verifyTurnstile(fd, SECRET)).toEqual({ ok: true });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME })).toEqual({ ok: true });
   });
 
   it("returns verification-failed when Turnstile returns success:false", async () => {
     mockFetch({ success: false });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "bad-token");
-    expect(await verifyTurnstile(fd, SECRET)).toEqual({ ok: false, reason: "verification-failed" });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME })).toEqual({ ok: false, reason: "verification-failed" });
   });
 
   it("posts the secret and token to the Turnstile endpoint", async () => {
@@ -55,12 +56,12 @@ describe("verifyTurnstile", () => {
     withCapturedRequest(({ body, url }) => {
       capturedBody = body;
       capturedUrl = url;
-      return new Response(JSON.stringify({ success: true }));
+      return new Response(JSON.stringify({ success: true, hostname: HOSTNAME }));
     });
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
-    await verifyTurnstile(fd, SECRET);
+    await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME });
 
     expect(capturedUrl).toBe(TURNSTILE_URL);
     expect(JSON.parse(capturedBody!)).toEqual({ response: "tok", secret: SECRET });
@@ -71,12 +72,12 @@ describe("verifyTurnstile", () => {
 
     withCapturedRequest(({ body }) => {
       capturedBody = body;
-      return new Response(JSON.stringify({ success: true }));
+      return new Response(JSON.stringify({ success: true, hostname: HOSTNAME }));
     });
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
-    await verifyTurnstile(fd, SECRET, "cf-turnstile-response", "1.2.3.4");
+    await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME }, "cf-turnstile-response", "1.2.3.4");
 
     expect(JSON.parse(capturedBody!)).toEqual({ remoteip: "1.2.3.4", response: "tok", secret: SECRET });
   });
@@ -86,12 +87,12 @@ describe("verifyTurnstile", () => {
 
     withCapturedRequest(({ signal }) => {
       capturedSignal = signal;
-      return new Response(JSON.stringify({ success: true }));
+      return new Response(JSON.stringify({ success: true, hostname: HOSTNAME }));
     });
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
-    await verifyTurnstile(fd, SECRET);
+    await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME });
 
     expect(capturedSignal).toBeDefined();
     expect(capturedSignal?.aborted).toBe(false);
@@ -112,7 +113,10 @@ describe("verifyTurnstile", () => {
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
-    expect(await verifyTurnstile(fd, SECRET, "cf-turnstile-response", undefined, { timeoutMs: 1 })).toEqual({ ok: false, reason: "timeout" });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, timeoutMs: 1 }, "cf-turnstile-response", undefined)).toEqual({
+      ok: false,
+      reason: "timeout",
+    });
   });
 
   it("returns network-error on fetch failures", async () => {
@@ -123,7 +127,7 @@ describe("verifyTurnstile", () => {
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(await verifyTurnstile(fd, SECRET)).toEqual({ ok: false, reason: "network-error" });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME })).toEqual({ ok: false, reason: "network-error" });
   });
 
   it("returns parse-error when the response body is not valid JSON", async () => {
@@ -132,36 +136,47 @@ describe("verifyTurnstile", () => {
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(await verifyTurnstile(fd, SECRET)).toEqual({ ok: false, reason: "parse-error" });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME })).toEqual({ ok: false, reason: "parse-error" });
   });
 
   it("returns hostname-mismatch when the hostname does not match", async () => {
     mockFetch({ hostname: "other.example.com", success: true });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(await verifyTurnstile(fd, SECRET, "cf-turnstile-response", undefined, { expectedHostname: "example.com" })).toEqual({
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME }, "cf-turnstile-response", undefined)).toEqual({
       ok: false,
       reason: "hostname-mismatch",
     });
   });
 
+  it("returns hostname-mismatch without calling fetch when expectedHostname is empty (fail-closed runtime guard)", async () => {
+    let fetchCalled = false;
+    withCapturedRequest(() => {
+      fetchCalled = true;
+      return new Response(JSON.stringify({ success: true, hostname: HOSTNAME }));
+    });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "tok");
+    const result = await verifyTurnstile(fd, SECRET, { expectedHostname: "" });
+    expect(result).toEqual({ ok: false, reason: "hostname-mismatch" });
+    expect(fetchCalled).toBe(false);
+  });
+
   it("returns action-mismatch when the action does not match", async () => {
-    mockFetch({ action: "other", success: true });
+    mockFetch({ action: "other", success: true, hostname: HOSTNAME });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(await verifyTurnstile(fd, SECRET, "cf-turnstile-response", undefined, { expectedAction: "contact" })).toEqual({
-      ok: false,
-      reason: "action-mismatch",
-    });
+    expect(
+      await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, expectedAction: "contact" }, "cf-turnstile-response", undefined),
+    ).toEqual({ ok: false, reason: "action-mismatch" });
   });
 
   it("returns cdata-mismatch when cdata does not match", async () => {
-    mockFetch({ cdata: "other", success: true });
+    mockFetch({ cdata: "other", success: true, hostname: HOSTNAME });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(await verifyTurnstile(fd, SECRET, "cf-turnstile-response", undefined, { expectedCData: "contact-form" })).toEqual({
-      ok: false,
-      reason: "cdata-mismatch",
-    });
+    expect(
+      await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, expectedCData: "contact-form" }, "cf-turnstile-response", undefined),
+    ).toEqual({ ok: false, reason: "cdata-mismatch" });
   });
 });

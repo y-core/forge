@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
+import { Forge } from "../../app/forge-app";
+import { mapHandler } from "../../app/route-test-helper";
 import { isHxRequest } from "./hx-request";
 
 describe("isHxRequest predicate", () => {

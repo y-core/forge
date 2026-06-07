@@ -10,6 +10,9 @@ export type {
   LoggerContext,
   LoggerOptions,
   LogLevel,
+  LogQuery,
+  LogReadResult,
   LogRecord,
+  LogRow,
   RequestLoggerOptions,
 } from "./types";

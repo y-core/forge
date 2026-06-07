@@ -92,7 +92,7 @@ registered (§3) so that `app.use` middleware wraps every matched route:
 
     // src/worker.ts
     const app = createApp<AppEnv>({ config: configStore, isDebug: (c) => configStore.get(c.env).debug })
-    applyMiddleware(app, security)        // app.use(...) registrations
+    app.use("*", makeSecurityHeaders(security))   // consumer helper wraps app.use() calls
     app.map(routes, controller)           // declarative route registration
     applyAssets(app, { notFoundView })    // static-asset catch-all
     export default app

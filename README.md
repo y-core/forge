@@ -44,7 +44,7 @@ The table below is a quick reference; the decision doc is the source of truth.
 | `@y-core/forge/http` | HTTP output — responses, headers, fragments |
 | `@y-core/forge/jsx` | JSX runtime |
 | `@y-core/forge/logging` | Structured logging |
-| `@y-core/forge/logging/http` | Log viewer UI & reader |
+| `@y-core/forge/logging/show` | Log viewer UI & reader |
 | `@y-core/forge/pkg` | Release & versioning |
 | `@y-core/forge/result` | Result monad |
 | `@y-core/forge/router` | Declarative route config |

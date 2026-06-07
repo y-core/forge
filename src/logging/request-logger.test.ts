@@ -8,8 +8,10 @@ function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
   const records: LogRecord[] = [];
   return {
     records,
-    channel: (r) => {
-      records.push(r);
+    channel: {
+      write: (r) => {
+        records.push(r);
+      },
     },
   };
 }
@@ -102,13 +104,15 @@ describe("requestLogger", () => {
 
   it("async channel writes are included in the flush", async () => {
     const order: string[] = [];
-    const asyncChannel: LogChannel = (_r) =>
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          order.push("async-done");
-          resolve();
-        }, 5);
-      });
+    const asyncChannel: LogChannel = {
+      write: (_r) =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            order.push("async-done");
+            resolve();
+          }, 5);
+        }),
+    };
 
     const app = new Forge();
     app.use("*", requestLogger({ channels: () => [asyncChannel] }));

@@ -1,6 +1,6 @@
 import { escapeHtml, safeUrl } from "../http/escape";
 import type { SafeHtml } from "../http/html";
-import { rawHtml } from "../http/html";
+import { isSafeHtml, rawHtml } from "../http/html";
 import { htmlResponse } from "../http/response";
 import { Fragment, isValidElement } from "./element";
 import type { JSXElement, JSXNode } from "./types";
@@ -37,31 +37,18 @@ const BOOLEAN_ATTRS = new Set([
 /** Attributes whose values are URLs — scheme-sanitized to block `javascript:`-style injection. */
 const URL_ATTRS = new Set(["href", "src", "action", "formaction", "poster", "cite", "background"]);
 
-/** Normalizes JSX attribute names to HTML attribute names. */
-function normalizeAttrName(name: string): string {
-  if (name === "className") return "class";
-  if (name === "htmlFor") return "for";
-  return name;
-}
-
 /** Renders element attributes to a string of `key="value"` pairs. */
 function renderAttributes(props: Record<string, unknown>, tag: string): string {
   let attrs = "";
   for (const [key, value] of Object.entries(props)) {
     // Skip non-attribute fields
-    if (key === "children" || key === "key" || key === "ref" || key === "dangerouslySetInnerHTML") {
+    if (key === "children" || key === "key") {
       continue;
-    }
-
-    // Skip React-style synthetic event handlers in SSR
-    if (key.length > 2 && key[0] === "o" && key[1] === "n") {
-      const third = key[2];
-      if (third !== undefined && third === third.toUpperCase()) continue;
     }
 
     if (value === null || value === undefined || value === false) continue;
 
-    const attrName = normalizeAttrName(key);
+    const attrName = key;
 
     // Inline styles are dropped: the shipped CSP uses `style-src 'self'` (no `'unsafe-inline'`),
     // so any `style="…"` attribute would be blocked by the browser. Keep it out of the HTML
@@ -97,17 +84,32 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
   return attrs;
 }
 
-async function renderNode(node: unknown): Promise<string> {
+/** Duck-type thenable check — avoids `instanceof Promise` so custom thenables (e.g. deferred islands) are also awaited. */
+function isAsync(value: unknown): value is PromiseLike<unknown> {
+  return value != null && typeof (value as Record<string, unknown>).then === "function";
+}
+
+/**
+ * Renders a node synchronously when possible; returns a Promise only when async components or
+ * async children are encountered. Avoids microtask overhead on fully-synchronous subtrees.
+ */
+function renderNodeSync(node: unknown): string | Promise<string> {
   if (node === null || node === undefined || node === false || node === true) return "";
   if (typeof node === "string") return escapeHtml(node);
   if (typeof node === "number") return String(node);
+
   if (Array.isArray(node)) {
-    const parts = await Promise.all(node.map(renderNode));
-    return parts.join("");
+    const parts = node.map(renderNodeSync);
+    // Fast path: all children rendered synchronously — join without entering the microtask queue.
+    if (parts.every((p): p is string => typeof p === "string")) {
+      return parts.join("");
+    }
+    return Promise.all(parts).then((ps) => ps.join(""));
   }
 
+  if (isSafeHtml(node)) return String(node);
+
   if (!isValidElement(node)) {
-    // Fallback: coerce unknown values to escaped string
     return escapeHtml(String(node));
   }
 
@@ -115,13 +117,16 @@ async function renderNode(node: unknown): Promise<string> {
 
   // Fragment: render children without a wrapper
   if (element.type === Fragment) {
-    return renderNode(element.props.children);
+    return renderNodeSync(element.props.children);
   }
 
-  // Function component: call it and render the result
+  // Function component: await only when the result is thenable
   if (typeof element.type === "function") {
-    const result = await element.type(element.props);
-    return renderNode(result);
+    const fnResult = element.type(element.props);
+    if (isAsync(fnResult)) {
+      return (fnResult as Promise<unknown>).then(renderNodeSync);
+    }
+    return renderNodeSync(fnResult);
   }
 
   // Intrinsic HTML/SVG element
@@ -132,25 +137,23 @@ async function renderNode(node: unknown): Promise<string> {
     return `<${tag}${attrs}>`;
   }
 
-  // dangerouslySetInnerHTML: emit raw, unescaped HTML
-  const dih = element.props.dangerouslySetInnerHTML as { __html: string } | null | undefined;
-  if (dih != null && typeof dih.__html === "string") {
-    return `<${tag}${attrs}>${dih.__html}</${tag}>`;
+  const children = renderNodeSync(element.props.children);
+  if (isAsync(children)) {
+    return children.then((c) => `<${tag}${attrs}>${c}</${tag}>`);
   }
-
-  const children = await renderNode(element.props.children);
   return `<${tag}${attrs}>${children}</${tag}>`;
 }
 
 /** Renders a JSX tree produced by the forge runtime to a `SafeHtml` value. @public */
 export async function renderToString(node: unknown): Promise<SafeHtml> {
-  return rawHtml(await renderNode(node));
+  return rawHtml(await renderNodeSync(node));
 }
 
 /**
  * Renders a JSX tree to a full-page HTML `Response`, prepending the HTML5 doctype.
  * Equivalent to `htmlResponse("<!DOCTYPE html>" + await renderToString(node), ...)`.
- * Use this in page handlers (`definePage` view functions, 404 handlers, etc.). @public
+ * Use this in page handlers (`definePage` view functions, 404 handlers, etc.).
+ * @public
  */
 export async function renderPage(node: JSXNode, init?: { status?: number; headers?: Record<string, string> }): Promise<Response> {
   return htmlResponse(`<!DOCTYPE html>${await renderToString(node)}`, init?.status ?? 200, init?.headers);
