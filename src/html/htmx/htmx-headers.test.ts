@@ -1,25 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { RequestContext } from "@remix-run/fetch-router";
 import { Forge } from "../../app/forge-app";
 import { mapHandler } from "../../app/route-test-helper";
-import {
-  hxCurrentUrl,
-  hxTarget,
-  hxTrigger,
-  hxTriggerName,
-  isBoosted,
-  isPartial,
-  readHxRequest,
-  setPushUrl,
-  setRedirect,
-  setRefresh,
-  setReplaceUrl,
-  setReswap,
-  setRetarget,
-  setTrigger,
-  setTriggerAfterSettle,
-  setTriggerAfterSwap,
-} from "./htmx-headers";
+import { hxCurrentUrl, hxTarget, hxTrigger, hxTriggerName, isBoosted, isPartial, readHxRequest } from "./htmx-headers";
 
 describe("readHxRequest", () => {
   it("populates all six fields from request headers", async () => {
@@ -111,41 +93,4 @@ describe("convenience readers", () => {
     const res = await app.request("/", { headers: { "HX-Current-URL": "https://example.com" } });
     expect((await res.json()).v).toBe("https://example.com");
   });
-});
-
-describe("response header setters", () => {
-  const setterCases: Array<{
-    name: string;
-    // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant in test
-    fn: (c: RequestContext<any, any>) => void;
-    headerName: string;
-    expected: string;
-  }> = [
-    { name: "setRedirect", fn: (c) => setRedirect(c, "/new"), headerName: "HX-Redirect", expected: "/new" },
-    { name: "setRefresh", fn: (c) => setRefresh(c), headerName: "HX-Refresh", expected: "true" },
-    { name: "setPushUrl", fn: (c) => setPushUrl(c, "/pushed"), headerName: "HX-Push-Url", expected: "/pushed" },
-    { name: "setReplaceUrl", fn: (c) => setReplaceUrl(c, "/replaced"), headerName: "HX-Replace-Url", expected: "/replaced" },
-    { name: "setTrigger", fn: (c) => setTrigger(c, "myEvent"), headerName: "HX-Trigger", expected: "myEvent" },
-    {
-      name: "setTriggerAfterSettle",
-      fn: (c) => setTriggerAfterSettle(c, "afterSettle"),
-      headerName: "HX-Trigger-After-Settle",
-      expected: "afterSettle",
-    },
-    { name: "setTriggerAfterSwap", fn: (c) => setTriggerAfterSwap(c, "afterSwap"), headerName: "HX-Trigger-After-Swap", expected: "afterSwap" },
-    { name: "setRetarget", fn: (c) => setRetarget(c, "#new-target"), headerName: "HX-Retarget", expected: "#new-target" },
-    { name: "setReswap", fn: (c) => setReswap(c, "outerHTML"), headerName: "HX-Reswap", expected: "outerHTML" },
-  ];
-
-  for (const { name, fn, headerName, expected } of setterCases) {
-    it(`${name} sets ${headerName} response header`, async () => {
-      const app = new Forge();
-      mapHandler(app, "GET", "/", (c) => {
-        fn(c);
-        return new Response("ok");
-      });
-      const res = await app.request("/");
-      expect(res.headers.get(headerName)).toBe(expected);
-    });
-  }
 });

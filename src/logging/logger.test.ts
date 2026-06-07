@@ -61,11 +61,15 @@ describe("createLogger", () => {
   it("dispatches to multiple channels", () => {
     const records1: LogRecord[] = [];
     const records2: LogRecord[] = [];
-    const ch1: LogChannel = (r) => {
-      records1.push(r);
+    const ch1: LogChannel = {
+      write: (r) => {
+        records1.push(r);
+      },
     };
-    const ch2: LogChannel = (r) => {
-      records2.push(r);
+    const ch2: LogChannel = {
+      write: (r) => {
+        records2.push(r);
+      },
     };
 
     const log = createLogger("multi", { channels: [ch1, ch2] });
@@ -79,13 +83,15 @@ describe("createLogger", () => {
 
   it("flush awaits pending async channel writes", async () => {
     const order: string[] = [];
-    const asyncChannel: LogChannel = (_r) =>
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          order.push("async-done");
-          resolve();
-        }, 10);
-      });
+    const asyncChannel: LogChannel = {
+      write: (_r) =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            order.push("async-done");
+            resolve();
+          }, 10);
+        }),
+    };
 
     const log = createLogger("flush-test", { channels: [asyncChannel] });
     log.info("trigger");
@@ -117,8 +123,10 @@ describe("createLogger", () => {
 
   it("LogRecord includes data field when data is provided", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => {
-      records.push(r);
+    const ch: LogChannel = {
+      write: (r) => {
+        records.push(r);
+      },
     };
     const log = createLogger("rec-test", { channels: [ch] });
 
@@ -129,8 +137,10 @@ describe("createLogger", () => {
 
   it("LogRecord omits data field when no data provided", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => {
-      records.push(r);
+    const ch: LogChannel = {
+      write: (r) => {
+        records.push(r);
+      },
     };
     const log = createLogger("rec-test", { channels: [ch] });
 
@@ -143,8 +153,10 @@ describe("createLogger", () => {
 describe("createLogger — child()", () => {
   it("child merges bindings into data on records", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => {
-      records.push(r);
+    const ch: LogChannel = {
+      write: (r) => {
+        records.push(r);
+      },
     };
     const log = createLogger("svc", { channels: [ch] });
     const child = log.child({ requestId: "abc-123" });
@@ -156,8 +168,10 @@ describe("createLogger — child()", () => {
 
   it("per-call data overrides a binding of the same key", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => {
-      records.push(r);
+    const ch: LogChannel = {
+      write: (r) => {
+        records.push(r);
+      },
     };
     const log = createLogger("svc", { channels: [ch] });
     const child = log.child({ requestId: "original" });
@@ -169,13 +183,15 @@ describe("createLogger — child()", () => {
 
   it("parent and child share the same pending queue so one flush() drains both", async () => {
     const order: string[] = [];
-    const asyncChannel: LogChannel = (_r) =>
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          order.push("async");
-          resolve();
-        }, 10);
-      });
+    const asyncChannel: LogChannel = {
+      write: (_r) =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            order.push("async");
+            resolve();
+          }, 10);
+        }),
+    };
 
     const log = createLogger("parent", { channels: [asyncChannel] });
     const child = log.child({ requestId: "r1" });
@@ -191,11 +207,15 @@ describe("createLogger — child()", () => {
   it("child shares channels with parent — writes go to all channels", () => {
     const records1: LogRecord[] = [];
     const records2: LogRecord[] = [];
-    const ch1: LogChannel = (r) => {
-      records1.push(r);
+    const ch1: LogChannel = {
+      write: (r) => {
+        records1.push(r);
+      },
     };
-    const ch2: LogChannel = (r) => {
-      records2.push(r);
+    const ch2: LogChannel = {
+      write: (r) => {
+        records2.push(r);
+      },
     };
 
     const log = createLogger("p", { channels: [ch1, ch2] });
@@ -210,8 +230,10 @@ describe("createLogger — child()", () => {
 
   it("child bindings do not affect the parent logger", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => {
-      records.push(r);
+    const ch: LogChannel = {
+      write: (r) => {
+        records.push(r);
+      },
     };
     const log = createLogger("svc", { channels: [ch] });
     log.child({ requestId: "child-only" });
@@ -223,8 +245,10 @@ describe("createLogger — child()", () => {
 
   it("nested children accumulate bindings", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => {
-      records.push(r);
+    const ch: LogChannel = {
+      write: (r) => {
+        records.push(r);
+      },
     };
     const log = createLogger("svc", { channels: [ch] });
     const child = log.child({ requestId: "r1" });
@@ -237,8 +261,10 @@ describe("createLogger — child()", () => {
 
   it("createLogger bindings option sets initial bindings", () => {
     const records: LogRecord[] = [];
-    const ch: LogChannel = (r) => {
-      records.push(r);
+    const ch: LogChannel = {
+      write: (r) => {
+        records.push(r);
+      },
     };
     const log = createLogger("svc", { channels: [ch], bindings: { service: "api" } });
 

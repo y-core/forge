@@ -149,6 +149,61 @@ describe("createObjectStore — prefix namespacing", () => {
   });
 });
 
+// ── Path traversal rejection ───────────────────────────────────────────────────
+
+describe("createObjectStore — key normalization (traversal prevention)", () => {
+  it("rejects get with a leading slash", async () => {
+    const store = createObjectStore(makeMemoryBackend());
+    const res = await store.get("/etc/passwd");
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects get with a '..' segment", async () => {
+    const store = createObjectStore(makeMemoryBackend());
+    const res = await store.get("../secret");
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects get with a '.' segment", async () => {
+    const store = createObjectStore(makeMemoryBackend());
+    const res = await store.get("a/./b");
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects delete with a traversal key in array", async () => {
+    const store = createObjectStore(makeMemoryBackend());
+    const res = await store.delete(["valid.txt", "../x"]);
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects list with a traversal prefix", async () => {
+    const store = createObjectStore(makeMemoryBackend());
+    const res = await store.list({ prefix: "../x" });
+    expect(res.ok).toBe(false);
+  });
+
+  it("allows a valid nested path", async () => {
+    const backend = makeMemoryBackend();
+    const store = createObjectStore(backend, { prefix: "tenant" });
+    await store.put("a/b/c.txt", "data");
+    expect(backend._store.has("tenant/a/b/c.txt")).toBe(true);
+  });
+
+  it("never hits the backend for a traversal get", async () => {
+    let backendCalled = false;
+    const spyBackend = {
+      ...makeMemoryBackend(),
+      get: async () => {
+        backendCalled = true;
+        return null;
+      },
+    } as unknown as ReturnType<typeof makeMemoryBackend>;
+    const store = createObjectStore(spyBackend);
+    await store.get("../secret");
+    expect(backendCalled).toBe(false);
+  });
+});
+
 // ── Content-type auto-inference ────────────────────────────────────────────────
 
 describe("createObjectStore — content-type inference on put", () => {

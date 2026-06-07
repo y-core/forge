@@ -4,6 +4,26 @@ import { cn } from "./utils/cn";
 export type ToastVariant = "default" | "success" | "info" | "warning" | "destructive";
 export type ToastPosition = "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
 
+interface ToastContainerProps {
+  id?: string;
+  position?: ToastPosition;
+  class?: string;
+}
+
+interface ToastProps {
+  variant?: ToastVariant;
+  dismissible?: boolean;
+  class?: string;
+}
+
+interface ToastTitleProps {
+  class?: string;
+}
+
+interface ToastDescriptionProps {
+  class?: string;
+}
+
 const toastVariantClasses: Record<ToastVariant, string> = {
   default: "border-border bg-background text-foreground",
   success: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -21,15 +41,11 @@ const positionClasses: Record<ToastPosition, string> = {
   "bottom-right": "bottom-4 right-4 items-end",
 };
 
-interface ToastContainerProps {
-  position?: ToastPosition;
-  class?: string;
-}
-
-const ToastContainer: FC<PropsWithChildren<ToastContainerProps>> = ({ position = "bottom-right", class: cls, children }) => (
+const ToastContainer: FC<PropsWithChildren<ToastContainerProps>> = ({ id, position = "bottom-right", class: cls, children }) => (
   <section
     data-slot='toast-container'
     data-position={position}
+    {...(id !== undefined ? { id } : {})}
     aria-label='Notifications'
     aria-live='polite'
     aria-atomic='false'
@@ -37,12 +53,6 @@ const ToastContainer: FC<PropsWithChildren<ToastContainerProps>> = ({ position =
     {children}
   </section>
 );
-
-interface ToastProps {
-  variant?: ToastVariant;
-  dismissible?: boolean;
-  class?: string;
-}
 
 const ToastRoot: FC<PropsWithChildren<ToastProps>> = ({ variant = "default", dismissible = false, class: cls, children }) => (
   <div
@@ -68,19 +78,11 @@ const ToastRoot: FC<PropsWithChildren<ToastProps>> = ({ variant = "default", dis
   </div>
 );
 
-interface ToastTitleProps {
-  class?: string;
-}
-
 const ToastTitle: FC<PropsWithChildren<ToastTitleProps>> = ({ class: cls, children }) => (
   <div data-slot='toast-title' class={cn("text-sm font-semibold leading-none", cls)}>
     {children}
   </div>
 );
-
-interface ToastDescriptionProps {
-  class?: string;
-}
 
 const ToastDescription: FC<PropsWithChildren<ToastDescriptionProps>> = ({ class: cls, children }) => (
   <div data-slot='toast-description' class={cn("text-sm opacity-90", cls)}>

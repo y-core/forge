@@ -1,5 +1,7 @@
+import type { SafeHtml } from "../http/html";
+
 /** A node in the forge SSR JSX tree. @public */
-export type JSXNode = JSXElement | string | number | boolean | null | undefined | JSXNode[];
+export type JSXNode = JSXElement | SafeHtml | string | number | boolean | null | undefined | JSXNode[];
 
 /** Component function — accepts any props object, returns a (possibly async) node. @internal */
 // biome-ignore lint/suspicious/noExplicitAny: JSX runtime must accept any component signature at the type-erasure level
@@ -11,21 +13,6 @@ export interface JSXElement {
   props: Record<string, unknown>;
   key?: unknown;
   $jsx: true;
-}
-
-export interface Context<T> {
-  defaultValue: T;
-}
-
-export interface SuspenseProps {
-  fallback?: JSXNode;
-  children?: JSXNode;
-}
-
-export interface ErrorBoundaryProps {
-  fallback?: JSXNode;
-  children?: JSXNode;
-  onError?: (error: Error) => void;
 }
 
 /** Function component: receives props, returns a JSX element (or null for no output). @public */
@@ -107,7 +94,6 @@ interface HtmxAttributes {
 export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   id?: string;
   class?: string;
-  className?: string;
   style?: string | Record<string, string | number>;
   title?: string;
   lang?: string;
@@ -121,14 +107,10 @@ export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   contenteditable?: boolean | "true" | "false" | "plaintext-only";
   draggable?: boolean | "true" | "false";
   popover?: "" | "auto" | "manual";
-  popoverTarget?: string;
-  popoverTargetAction?: "hide" | "show" | "toggle";
   accesskey?: string;
   autocapitalize?: "none" | "off" | "on" | "sentences" | "words" | "characters";
   children?: JSXNode;
   key?: unknown;
-  ref?: unknown;
-  dangerouslySetInnerHTML?: { __html: string };
   // data-* (catch-all for arbitrary data attributes)
   [key: `data-${string}`]: unknown;
 }
@@ -163,9 +145,7 @@ interface InputAttributes extends HTMLAttributes {
   type?: string;
   name?: string;
   value?: string | number | readonly string[];
-  defaultValue?: string | number | readonly string[];
   checked?: boolean;
-  defaultChecked?: boolean;
   disabled?: boolean;
   required?: boolean;
   readonly?: boolean;
@@ -193,7 +173,6 @@ interface InputAttributes extends HTMLAttributes {
 interface TextareaAttributes extends HTMLAttributes {
   name?: string;
   value?: string;
-  defaultValue?: string;
   disabled?: boolean;
   required?: boolean;
   readonly?: boolean;
@@ -211,7 +190,6 @@ interface TextareaAttributes extends HTMLAttributes {
 interface SelectAttributes extends HTMLAttributes {
   name?: string;
   value?: string | string[];
-  defaultValue?: string | string[];
   disabled?: boolean;
   required?: boolean;
   multiple?: boolean;
@@ -248,7 +226,6 @@ interface LabelAttributes extends HTMLAttributes {
   // `| undefined` lets a label keep `for={maybeId}` statically visible (so a11y lint can see the
   // association) while satisfying `exactOptionalPropertyTypes` when the id resolves to undefined.
   for?: string | undefined;
-  htmlFor?: string | undefined;
   form?: string;
 }
 
@@ -458,11 +435,9 @@ interface BaseAttributes extends HTMLAttributes {
 interface SVGAttributes extends HtmxAttributes {
   id?: string;
   class?: string;
-  className?: string;
   style?: string | Record<string, string | number>;
   children?: JSXNode;
   key?: unknown;
-  ref?: unknown;
   // `| undefined` on these lets SVG primitives (e.g. Icon) render attributes inline as
   // `width={maybe}` / `aria-label={maybe}` — keeping them statically visible to a11y lint —
   // while satisfying `exactOptionalPropertyTypes` when the value resolves to undefined.

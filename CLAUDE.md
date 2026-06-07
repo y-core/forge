@@ -1,6 +1,6 @@
 # CLAUDE.md — Architectural Constitution
 
-> Namespace-based shared library for Hono + Cloudflare Workers.
+> Namespace-based shared library for Cloudflare Workers.
 > Ships raw TypeScript. No build step. Consumed via `@y-core/forge/{namespace}` export map.
 
 ---
@@ -43,22 +43,23 @@ bun run lint:fix   # auto-fix lint/format issues
 
 ## Architecture
 
-Forge acts as a **facade** for its external dependencies (`hono/jsx` via `jsx`, `valibot` via `validation`, `@remix-run/*` via `session` and `http`). Consumers import from `@y-core/forge/{namespace}`, not from third-party packages directly.
+Forge acts as a **facade** for its external dependencies (`valibot` via `validation`, `@remix-run/*` via `router` and `app`). The `jsx` namespace is an **in-house SSR runtime** — not a facade for any third-party JSX library. Consumers import from `@y-core/forge/{namespace}`, not from third-party packages directly.
 
 **Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests (`*.test.ts`/`*.test.tsx`).
 
 ### Namespace classification
 
-**Leaf namespaces** (zero cross-namespace dependencies): `assets/build`, `assets/manifest`, `cli`, `config`, `form`, `http`, `jsx`, `logging`, `result`, `router`, `session`, `ui/client`, `validation`
+**Leaf namespaces** (zero cross-namespace dependencies): `assets/build`, `assets/manifest`, `cli`, `config`, `form`, `html/htmx`, `http`, `jsx`, `logging`, `result`, `router`, `session`, `ui/client`, `validation`
 
 **Integration namespaces** (compose across other namespaces):
 - `app` — imports from `form`, `http`, `logging`, `result`, `router`, `security`, `validation`
 - `assets` — imports from `validation` (schema and type definitions in `config.ts` / `types.ts`)
 - `security` — imports from `logging` (createLogger in rate-limit)
 - `ui/core` — imports from `form` (CSRF/honeypot field name constants)
+- `ui/server` — imports from `html/htmx` (oobAppend for flash OOB rendering) and `ui/core` (Toast for toastOob)
 - `pkg` — imports from `cli`
 
-### Namespace map (22 public namespaces)
+### Namespace map (25 public namespaces)
 
 | Import path | Category | Concern |
 |---|---|---|
@@ -68,11 +69,13 @@ Forge acts as a **facade** for its external dependencies (`hono/jsx` via `jsx`, 
 | `@y-core/forge/assets/manifest` | Leaf | Manifest reading & sprite registry |
 | `@y-core/forge/cli` | Leaf | CLI command framework |
 | `@y-core/forge/config` | Leaf | Environment config resolution |
+| `@y-core/forge/context` | Leaf | `contextVar`, `RequestContext`, `AppContext`, `Middleware` |
 | `@y-core/forge/form` | Leaf | Form parsing, CSRF & bot detection |
+| `@y-core/forge/html/htmx` | Leaf | HTMX detection, request readers, `hxHeaders` builder, attrs, patterns |
 | `@y-core/forge/http` | Leaf | HTTP output — responses, headers, escaping |
-| `@y-core/forge/jsx` | Leaf | JSX runtime (facade for hono/jsx) |
+| `@y-core/forge/jsx` | Leaf | JSX runtime (in-house SSR, not a React facade) |
 | `@y-core/forge/logging` | Leaf | Structured logging |
-| `@y-core/forge/logging/http` | Integration |
+| `@y-core/forge/logging/show` | Integration | Log viewer route + UI components |
 | `@y-core/forge/pkg` | Integration | Release & versioning tooling |
 | `@y-core/forge/result` | Leaf | Result monad |
 | `@y-core/forge/router` | Leaf | Declarative route config |
@@ -83,13 +86,13 @@ Forge acts as a **facade** for its external dependencies (`hono/jsx` via `jsx`, 
 | `@y-core/forge/storage/r2` | Leaf | R2 object storage |
 | `@y-core/forge/ui` | Integration | Server-side JSX components |
 | `@y-core/forge/ui/client` | Leaf | Browser-side UI scripts |
+| `@y-core/forge/ui/server` | Integration | Flash messages, ThemeToggle, Resumable, toast OOB |
 | `@y-core/forge/validation` | Leaf | Schema validation (facade for valibot) |
 
 **Internal namespaces** (no public export path — never import from outside forge):
-- `context` (`src/context/`) — `contextVar` accessor for Hono typed context vars
 - `crypto` (`src/crypto/`) — HMAC/timing-safe utilities (`@internal`) — used by `form`, `security`, `session`
 
-**Removed from earlier tables:** `timingSafeEqual`/`timingSafeEqualBytes` (moved to `@internal` `crypto` module); `requireHxRequest` → correct name is `isHxRequest`.
+**Removed from earlier tables:** `timingSafeEqual`/`timingSafeEqualBytes` (moved to `@internal` `crypto` module); `isHxRequest` moved from `security` to `html/htmx`.
 
 ---
 
@@ -99,9 +102,10 @@ Forge acts as a **facade** for its external dependencies (`hono/jsx` via `jsx`, 
 
 - [`AGENT_GUIDE.md`](.decisions/AGENT_GUIDE.md): document structure rules for tsmcp MCP efficiency
 - [`LIBRARY_ARCHITECTURE.md`](.decisions/LIBRARY_ARCHITECTURE.md): facade pattern, runtime-only, Web-APIs-only, leaf vs integration dependency tiers
-- [`NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md): mod.ts barrel rules, export * ban, no-sibling-barrel guard, authoritative 25-subpath catalog
+- [`NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md): mod.ts barrel rules, export * ban, no-sibling-barrel guard, authoritative 29-subpath catalog
 - [`PRODUCTION_TS_RULES.md`](.decisions/PRODUCTION_TS_RULES.md): six rules — zero globals, Result monad, validation first, testability, TSDoc, declarative
 - [`ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md): router namespace, middleware composition, context namespace
+- [`HTMX.md`](.decisions/HTMX.md): isHxRequest, HX-* header readers/setters, hxAttrs, SWAP, formSubmit, liveSearch, OOB patterns
 - [`SECURITY_HARDENING.md`](.decisions/SECURITY_HARDENING.md): makeSecurityHeaders, CSP nonce, CORS, rate limit, origin guards, transport-layer boundary
 - [`STRUCTURED_LOGGING.md`](.decisions/STRUCTURED_LOGGING.md): channels, requestLogger, KV log persistence, log viewer UI
 - [`ERROR_HANDLING.md`](.decisions/ERROR_HANDLING.md): Result monad, fragment renderers, fail-closed posture, error taxonomy
@@ -138,7 +142,7 @@ Components requiring client-side JS export only SSR markup from `ui/core`; clien
 
 ### `http` — all HTTP output concerns
 
-`http` is the canonical source for response builders, header value classes, and HTML escaping. Future additions: `jsonResponse()`, streaming utilities, content negotiation. Consumers import from `@y-core/forge/http`, not from `@remix-run/headers` or `hono/html` directly.
+`http` is the canonical source for response builders, header value classes, and HTML escaping. Future additions: `jsonResponse()`, streaming utilities, content negotiation. Consumers import from `@y-core/forge/http`, not from `@remix-run/headers` or `@remix-run/html-template` directly.
 
 ---
 

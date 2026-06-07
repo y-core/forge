@@ -10,7 +10,35 @@ export interface LogRecord {
   data?: Record<string, unknown>;
 }
 
-export type LogChannel = (record: LogRecord) => void | Promise<void>;
+/** A single log row as returned by the channel reader. @public */
+export interface LogRow {
+  key: string;
+  level: string;
+  prefix: string;
+  requestId?: string;
+  message: string;
+  timestamp: string;
+}
+
+/** Query parameters for reading logs. The channel owns its prefix. @public */
+export interface LogQuery {
+  level?: LogLevel;
+  q?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+/** Result of a channel read call including rows and an optional pagination cursor. @public */
+export interface LogReadResult {
+  rows: LogRow[];
+  cursor?: string;
+  complete: boolean;
+}
+
+export interface LogChannel {
+  write(record: LogRecord): void | Promise<void>;
+  read?(query?: LogQuery): Promise<LogReadResult>;
+}
 
 export interface LoggerOptions {
   channels?: LogChannel[];

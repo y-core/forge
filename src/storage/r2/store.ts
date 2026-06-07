@@ -17,6 +17,15 @@ import type {
 
 const PREFIX_SEP = "/";
 
+/** Rejects keys with leading '/' or any '.' / '..' path segment to prevent path-traversal. */
+function normalizeKey(key: string): string {
+  if (key.startsWith("/")) throw new Error(`Object key must not start with '/': ${key}`);
+  for (const seg of key.split("/")) {
+    if (seg === "." || seg === "..") throw new Error(`Object key must not contain '.' or '..' segments: ${key}`);
+  }
+  return key;
+}
+
 /** Creates an ObjectStore wrapping any ObjectStorageBackend with Result-wrapped ops and optional key prefix. @public */
 export function createObjectStore(backend: ObjectStorageBackend, options?: ObjectStoreOptions): ObjectStore {
   const prefix = options?.prefix;
@@ -40,13 +49,15 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
     backend,
 
     delete(key) {
-      const prefixed = Array.isArray(key) ? key.map(prefixKey) : prefixKey(key);
-      return result(() => backend.delete(prefixed));
+      return result(() => {
+        const prefixed = Array.isArray(key) ? key.map((k) => prefixKey(normalizeKey(k))) : prefixKey(normalizeKey(key));
+        return backend.delete(prefixed);
+      });
     },
 
     get(key, opts?) {
       return result(() =>
-        backend.get(prefixKey(key), opts).then((obj): ObjectBody | null => {
+        backend.get(prefixKey(normalizeKey(key)), opts).then((obj): ObjectBody | null => {
           if (!obj) return null;
           return prefix ? { ...obj, key: stripPrefix(obj.key) } : obj;
         }),
@@ -54,26 +65,33 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
     },
 
     head(key) {
-      return result(() => backend.head(prefixKey(key)).then((obj) => (obj ? stripObjectPrefix(obj) : null)));
+      return result(() => backend.head(prefixKey(normalizeKey(key))).then((obj) => (obj ? stripObjectPrefix(obj) : null)));
     },
 
     list(opts?) {
-      const listPrefix = prefix ? (opts?.prefix ? `${prefix}${PREFIX_SEP}${opts.prefix}` : `${prefix}${PREFIX_SEP}`) : opts?.prefix;
-      return result(() =>
-        backend
+      return result(() => {
+        const userPrefix = opts?.prefix !== undefined ? normalizeKey(opts.prefix) : undefined;
+        const listPrefix = prefix ? (userPrefix ? `${prefix}${PREFIX_SEP}${userPrefix}` : `${prefix}${PREFIX_SEP}`) : userPrefix;
+        return backend
           .list({ ...opts, ...(listPrefix !== undefined ? { prefix: listPrefix } : {}) })
-          .then((res): ListObjectsResult => ({ ...res, objects: res.objects.map(stripObjectPrefix) })),
-      );
+          .then((res): ListObjectsResult => ({ ...res, objects: res.objects.map(stripObjectPrefix) }));
+      });
     },
 
     put(key, value, opts) {
-      const fullKey = prefixKey(key);
-      const contentType = opts?.contentType ?? inferContentType(key);
-      return result(() => backend.put(fullKey, value, { ...opts, contentType }).then(stripObjectPrefix));
+      return result(() => {
+        const fullKey = prefixKey(normalizeKey(key));
+        const contentType = opts?.contentType ?? inferContentType(key);
+        return backend.put(fullKey, value, { ...opts, contentType }).then(stripObjectPrefix);
+      });
     },
 
     serveObject(request, key, opts?) {
-      return serveObject(backend, request, prefixKey(key), opts);
+      try {
+        return serveObject(backend, request, prefixKey(normalizeKey(key)), opts);
+      } catch {
+        return Promise.resolve(new Response(null, { status: 400 }));
+      }
     },
   };
 }

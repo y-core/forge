@@ -101,7 +101,7 @@ class FakeUserRepo implements UserRepo {
 
 ## Integration Tests
 
-Exercise the **full HTTP round-trip** via a test Hono app instance. Use when behavior is only observable through the combined effect of multiple layers.
+Exercise the **full HTTP round-trip** via a test forge app instance. Use when behavior is only observable through the combined effect of multiple layers.
 
 ### When to write integration (not unit) tests
 - Cookie attribute serialization (`HttpOnly`, `SameSite`, `Path`, `Max-Age`) — only visible in raw `Set-Cookie` header

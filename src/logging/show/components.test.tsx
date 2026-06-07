@@ -2,8 +2,8 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "../../jsx/render-to-string";
 import { createIcon } from "../../ui/core/icon";
+import type { LogRow } from "../types";
 import { LogFilterBar, LogLevelBadge, LogTableBody } from "./components";
-import type { LogRow } from "./reader";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 

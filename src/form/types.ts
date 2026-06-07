@@ -55,7 +55,7 @@ export type TurnstileResult =
 export interface TurnstileVerifyOptions {
   expectedAction?: string;
   expectedCData?: string;
-  expectedHostname?: string;
+  expectedHostname: string /** cross-site token replay prevention */;
   timeoutMs?: number;
 }
 

@@ -7,7 +7,7 @@ import { Input } from "../../ui/core/input";
 import { Select } from "../../ui/core/select";
 import { cn } from "../../ui/core/utils/cn";
 import { cva } from "../../ui/core/utils/cva";
-import type { LogRow } from "./reader";
+import type { LogRow } from "../types";
 
 /** Stable id of the log table tbody; shared so HTMX outerHTML swaps target the node the partial returns. @public */
 export const LOG_TBODY_ID = "log-tbody";

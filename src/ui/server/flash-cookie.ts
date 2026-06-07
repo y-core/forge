@@ -54,7 +54,6 @@ export function createFlash(options: FlashCookieOptions): Flasher {
     }
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
   function convenience(type: FlashType) {
     return (c: RequestContext<any, any>, text: string) => set(c, [{ type, text }]);
   }

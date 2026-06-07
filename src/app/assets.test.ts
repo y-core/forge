@@ -70,4 +70,26 @@ describe("serveAssets", () => {
     expect(res.status).toBe(404);
     expect(await res.text()).toContain("Not found");
   });
+
+  it("renders notFoundView for non-GET methods", async () => {
+    const app = new Forge<Bindings>();
+    mapHandler(
+      app,
+      "ANY",
+      "*",
+      serveAssets(app, { notFoundView: () => new Response("<h1>Not found</h1>", { status: 404, headers: { "content-type": "text/html" } }) }),
+    );
+    const env = { ASSETS: { fetch: async () => new Response("", { status: 200 }) } };
+    const res = await app.request("/main.abcd1234.js", { method: "POST" }, env as Bindings);
+    expect(res.status).toBe(404);
+  });
+
+  it("passes through Cache-Control from ASSETS without overwriting it (caching owned by _headers)", async () => {
+    // Asset caching is delegated to the declarative public/_headers file emitted by the build
+    // pipeline — the Worker must not inject or overwrite Cache-Control for any asset path.
+    const upstream = new Response("body{}", { status: 200, headers: { "Cache-Control": "no-store" } });
+    const { app, env } = makeApp(upstream);
+    const res = await app.request("/assets/main.205ed97c.css", {}, env as Bindings);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
 });

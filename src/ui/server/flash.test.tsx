@@ -10,19 +10,19 @@ async function render(element: unknown): Promise<string> {
 describe("Flash", () => {
   it("renders nothing for empty messages array", async () => {
     const out = await render(<Flash messages={[]} />);
-    expect(out).not.toContain('data-slot="alert"');
+    expect(out).not.toContain('data-slot="toast"');
   });
 
   it("renders nothing when messages is undefined", async () => {
     const out = await render(<Flash />);
-    expect(out).not.toContain('data-slot="alert"');
+    expect(out).not.toContain('data-slot="toast"');
   });
 
-  it("renders success alert with success variant", async () => {
+  it("renders success toast with success variant", async () => {
     const out = await render(<Flash messages={[{ type: "success", text: "Saved!" }]} />);
     expect(out).toContain('data-variant="success"');
     expect(out).toContain("Saved!");
-    expect(out).toContain('data-slot="alert"');
+    expect(out).toContain('data-slot="toast"');
   });
 
   it("maps error type to destructive variant", async () => {
@@ -58,30 +58,48 @@ describe("Flash", () => {
     expect(out).toContain('data-variant="destructive"');
   });
 
-  it("renders alerts as dismissible", async () => {
+  it("renders toasts as dismissible", async () => {
     const out = await render(<Flash messages={[{ type: "info", text: "Hello" }]} />);
-    expect(out).toContain('data-slot="alert-dismiss"');
+    expect(out).toContain('data-slot="toast-close"');
+  });
+
+  it("renders title when provided", async () => {
+    const out = await render(<Flash messages={[{ type: "success", text: "Body text", title: "Great news" }]} />);
+    expect(out).toContain('data-slot="toast-title"');
+    expect(out).toContain("Great news");
+    expect(out).toContain("Body text");
+  });
+
+  it("does not render title slot when title is omitted", async () => {
+    const out = await render(<Flash messages={[{ type: "info", text: "No title here" }]} />);
+    expect(out).not.toContain('data-slot="toast-title"');
+    expect(out).toContain("No title here");
   });
 });
 
 describe("FlashContainer", () => {
-  it("always renders div#flash with aria-live even when no messages", async () => {
+  it("always renders toast-container with id and aria-live even when no messages", async () => {
     const out = await render(<FlashContainer />);
-    expect(out).toContain('id="flash"');
+    expect(out).toContain('id="flash-container"');
     expect(out).toContain('aria-live="polite"');
-    expect(out).toContain('class="grid gap-2"');
+    expect(out).toContain('data-slot="toast-container"');
   });
 
   it("always renders wrapper even with empty messages array", async () => {
     const out = await render(<FlashContainer messages={[]} />);
-    expect(out).toContain('id="flash"');
+    expect(out).toContain('id="flash-container"');
   });
 
   it("renders messages inside the container", async () => {
     const out = await render(<FlashContainer messages={[{ type: "info", text: "Hello" }]} />);
-    expect(out).toContain('id="flash"');
+    expect(out).toContain('id="flash-container"');
     expect(out).toContain("Hello");
     expect(out).toContain('data-variant="info"');
+  });
+
+  it("reflects position prop as data-position attribute", async () => {
+    const out = await render(<FlashContainer position='top-right' />);
+    expect(out).toContain('data-position="top-right"');
   });
 });
 
@@ -89,7 +107,7 @@ describe("FlashOob", () => {
   it("renders nothing for empty messages array", async () => {
     const out = await render(<FlashOob messages={[]} />);
     expect(out).not.toContain("hx-swap-oob");
-    expect(out).not.toContain('data-slot="alert"');
+    expect(out).not.toContain('data-slot="toast"');
   });
 
   it("renders nothing when messages is undefined", async () => {
@@ -97,9 +115,9 @@ describe("FlashOob", () => {
     expect(out).not.toContain("hx-swap-oob");
   });
 
-  it("renders oob swap attr targeting #flash on each wrapper div", async () => {
+  it("renders oob swap attr targeting #flash-container on each wrapper div", async () => {
     const out = await render(<FlashOob messages={[{ type: "success", text: "Done" }]} />);
-    expect(out).toContain('hx-swap-oob="beforeend:#flash"');
+    expect(out).toContain('hx-swap-oob="beforeend:#flash-container"');
     expect(out).toContain("Done");
     expect(out).toContain('data-variant="success"');
   });
@@ -113,6 +131,12 @@ describe("FlashOob", () => {
         ]}
       />,
     );
-    expect((out.match(/hx-swap-oob="beforeend:#flash"/g) ?? []).length).toBe(2);
+    expect((out.match(/hx-swap-oob="beforeend:#flash-container"/g) ?? []).length).toBe(2);
+  });
+
+  it("uses custom selector and strategy when provided", async () => {
+    const out = await render(<FlashOob messages={[{ type: "info", text: "Custom" }]} selector='#notifications' strategy='afterend' />);
+    expect(out).toContain('hx-swap-oob="afterend:#notifications"');
+    expect(out).toContain("Custom");
   });
 });

@@ -1,30 +1,23 @@
-import { createLogger } from "../logging/logger";
 import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "./types";
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
-
-const logger = createLogger("turnstile");
 
 /**
  * Verifies a Cloudflare Turnstile token against the siteverify API.
  *
  * @remarks
- * Always pass `options.expectedHostname` in production. Without it the token's origin hostname is
- * not validated, so a token minted on an attacker-controlled site can be replayed against this
- * one (cross-site token replay). A runtime warning is logged when it is omitted. @public
+ * `options.expectedHostname`: required. Tokens minted on a different hostname cannot be replayed here.
+ * @public
  */
 export async function verifyTurnstile(
   formData: ReadonlyFormData,
   secretKey: string,
+  options: TurnstileVerifyOptions,
   tokenField = "cf-turnstile-response",
   remoteIp?: string,
-  options?: TurnstileVerifyOptions,
 ): Promise<TurnstileResult> {
-  if (!options?.expectedHostname) {
-    logger.warn(
-      "verifyTurnstile: expectedHostname not set — token hostname will not be validated. " +
-        "Set expectedHostname to prevent cross-site token replay.",
-    );
+  if (!options.expectedHostname) {
+    return { ok: false, reason: "hostname-mismatch" };
   }
   const token = formData.get(tokenField);
   if (typeof token !== "string" || token === "") {
@@ -69,15 +62,15 @@ export async function verifyTurnstile(
     return { ok: false, reason: "verification-failed" };
   }
 
-  if (options?.expectedHostname && data.hostname !== options.expectedHostname) {
+  if (data.hostname !== options.expectedHostname) {
     return { ok: false, reason: "hostname-mismatch" };
   }
 
-  if (options?.expectedAction && data.action !== options.expectedAction) {
+  if (options.expectedAction && data.action !== options.expectedAction) {
     return { ok: false, reason: "action-mismatch" };
   }
 
-  if (options?.expectedCData && data.cdata !== options.expectedCData) {
+  if (options.expectedCData && data.cdata !== options.expectedCData) {
     return { ok: false, reason: "cdata-mismatch" };
   }
 

@@ -97,18 +97,6 @@ describe("renderToString — HTML elements", () => {
     expect(String(await renderToString(el("input", { type: "text", disabled: false, required: true })))).toBe('<input type="text" required>');
   });
 
-  it("normalizes className to class", async () => {
-    const node = el("span", { className: "badge" });
-    node.props.children = "x";
-    expect(String(await renderToString(node))).toBe('<span class="badge">x</span>');
-  });
-
-  it("normalizes htmlFor to for", async () => {
-    const node = el("label", { htmlFor: "email-input" });
-    node.props.children = "Email";
-    expect(String(await renderToString(node))).toBe('<label for="email-input">Email</label>');
-  });
-
   it("drops the style attribute (CSP forbids inline styles)", async () => {
     const node = el("div", { style: { backgroundColor: "red", fontSize: 14 } });
     node.props.children = "";
@@ -145,17 +133,24 @@ describe("renderToString — HTML elements", () => {
   });
 });
 
-describe("renderToString — dangerouslySetInnerHTML", () => {
-  it("emits __html verbatim without escaping", async () => {
-    const raw = '<script>alert("xss")</script>';
-    const node = el("div", { dangerouslySetInnerHTML: { __html: raw } });
-    expect(String(await renderToString(node))).toBe(`<div>${raw}</div>`);
+describe("renderToString — SafeHtml child (rawHtml)", () => {
+  it("renders a rawHtml child verbatim without escaping", async () => {
+    const { rawHtml } = await import("../http/html");
+    const node = el("div", null);
+    node.props.children = rawHtml("<b>bold</b> &amp; <i>italic</i>");
+    expect(String(await renderToString(node))).toBe("<div><b>bold</b> &amp; <i>italic</i></div>");
   });
 
-  it("does not double-escape", async () => {
-    const raw = "&amp;";
-    const node = el("span", { dangerouslySetInnerHTML: { __html: raw } });
-    expect(String(await renderToString(node))).toBe("<span>&amp;</span>");
+  it("renders a rawHtml node directly (no element wrapper)", async () => {
+    const { rawHtml } = await import("../http/html");
+    const raw = rawHtml("<span>raw</span>");
+    expect(String(await renderToString(raw))).toBe("<span>raw</span>");
+  });
+
+  it("renders rawHtml alongside plain string children in an array", async () => {
+    const { rawHtml } = await import("../http/html");
+    const parts = ["prefix: ", rawHtml("<em>mid</em>"), " suffix"];
+    expect(String(await renderToString(parts))).toBe("prefix: <em>mid</em> suffix");
   });
 });
 
@@ -253,6 +248,44 @@ describe("renderToString — html tagged template", () => {
     // html.raw`` must be used inside the html tag function — it marks a value as pre-rendered
     const result = html`<!DOCTYPE html>${html.raw`${rendered}`}`;
     expect(String(result)).toBe("<!DOCTYPE html><title>My Page</title>");
+  });
+});
+
+describe("renderToString — mixed sync/async arrays and components", () => {
+  it("renders a mixed array of sync and async elements preserving order", async () => {
+    async function AsyncSpan({ text }: { text: string }) {
+      await Promise.resolve();
+      const s = el("span", null);
+      s.props.children = text;
+      return s;
+    }
+    const syncNode = el("em", null);
+    syncNode.props.children = "sync";
+    const asyncNode = el(AsyncSpan as unknown as ComponentFn, { text: "async" });
+    expect(String(await renderToString([syncNode, asyncNode]))).toBe("<em>sync</em><span>async</span>");
+  });
+
+  it("renders sync children under an async parent component", async () => {
+    async function Wrapper({ children }: { children?: unknown }) {
+      await Promise.resolve();
+      const d = el("div", null);
+      d.props.children = children;
+      return d;
+    }
+    const inner = el("span", null);
+    inner.props.children = "inner";
+    const node = el(Wrapper as unknown as ComponentFn, { children: inner });
+    expect(String(await renderToString(node))).toBe("<div><span>inner</span></div>");
+  });
+
+  it("renders a fully-sync array without going through Promise.all", async () => {
+    const li1 = el("li", null);
+    li1.props.children = "a";
+    const li2 = el("li", null);
+    li2.props.children = "b";
+    const li3 = el("li", null);
+    li3.props.children = "c";
+    expect(String(await renderToString([li1, li2, li3]))).toBe("<li>a</li><li>b</li><li>c</li>");
   });
 });
 

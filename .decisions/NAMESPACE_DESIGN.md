@@ -84,7 +84,7 @@ These two are exempted because they are shared utilities without circular risk.
 
 ## 3. Authoritative Namespace Catalog
 
-### 3a. Public Export Paths (all 28 from package.json)
+### 3a. Public Export Paths (all 29 from package.json)
 
 | Export Path | Source | Category | Key Exports |
 |---|---|---|---|
@@ -96,6 +96,7 @@ These two are exempted because they are shared utilities without circular risk.
 | `@y-core/forge/config` | `src/config/mod.ts` | Leaf | `Config`, `env`, `applyMapping`, `optionalGroup`, `resolveConfig` |
 | `@y-core/forge/context` | `src/context/mod.ts` | Leaf | `contextVar`, `createContextKey`, `RequestContext`, `EnvKey`, `ExecutionContextKey`; types `AppContext`, `Middleware`, `RequestHandler`, `ContextKey`, `ContextVar` |
 | `@y-core/forge/form` | `src/form/mod.ts` | Leaf | `readFields`, `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `createCsrfToken`, `isHoneypotFilled`, `verifyTurnstile`, `CsrfConfigSchema`, `TurnstileConfigSchema` |
+| `@y-core/forge/html/htmx` | `src/html/htmx/mod.ts` | Leaf | `isHxRequest`, `readHxRequest`, `isPartial`, `isBoosted`, `hxTrigger`, `hxTarget`, `hxHeaders`, `hxAttrs`, `SWAP`, `formSubmit`, `liveSearch`, `infiniteScroll`, `oobSwap`, `oobAppend`, etc. |
 | `@y-core/forge/http` | `src/http/mod.ts` | Leaf | `html`, `escapeHtml`, `htmlResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, `CacheControl`, `ContentType`, `SetCookie`, `Vary` |
 | `@y-core/forge/jsx-runtime` | `src/jsx/jsx-runtime.ts` | Leaf | JSX runtime (alias) |
 | `@y-core/forge/jsx-dev-runtime` | `src/jsx/jsx-dev-runtime.ts` | Leaf | JSX dev runtime (alias) |
@@ -106,7 +107,7 @@ These two are exempted because they are shared utilities without circular risk.
 | `@y-core/forge/render` | `src/jsx/render-to-string.ts` | Leaf | `renderToString` — renders a forge JSX tree to a `SafeHtml` string |
 | `@y-core/forge/result` | `src/result/mod.ts` | Leaf | `result`, `toError`, `Result`, `ValidationResult` |
 | `@y-core/forge/router` | `src/router/mod.ts` | Leaf | re-exports fetch-router: `route`, `createController`, `createAction`, `createRouter`, `createContextKey`, `RequestContext`, `get`/`post`/`put`/`patch`/`del`, `resource`, `createHref`; types `Controller`, `Middleware`, `RequestHandler`, `RouteMap` |
-| `@y-core/forge/security` | `src/security/mod.ts` | Integration | `makeSecurityHeaders`, `mergeSecurityHeaders`, `NONCE`, `requestId`, `requestIdCtx`, `isHxRequest`, `requireFormContentType`, `cors`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit`, `BaseUrlConfigSchema` |
+| `@y-core/forge/security` | `src/security/mod.ts` | Integration | `makeSecurityHeaders`, `mergeSecurityHeaders`, `NONCE`, `requestId`, `requestIdCtx`, `requireFormContentType`, `cors`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit`, `BaseUrlConfigSchema` |
 | `@y-core/forge/session` | `src/session/mod.ts` | Leaf | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
 | `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | Leaf | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment` |
 | `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | Leaf | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
@@ -114,7 +115,7 @@ These two are exempted because they are shared utilities without circular risk.
 | `@y-core/forge/ui` | `src/ui/mod.ts` | Integration | `Form`, `Field`, `FieldLabel`, `Input`, `Textarea`, `Select`, `Button`, `Alert`, `Card`, `Icon`, `cn`, `cva` |
 | `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | Leaf | `mountNav`, `mountTheme`, `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `FOUC_SCRIPT` |
 | `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | Leaf (sideEffect) | htmx bundle (import only for side effect) |
-| `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | Leaf | `Flash`, `FlashContainer`, `FlashOob`, `createFlash`, `hxAttrs`, HTMX header helpers (`hxTrigger`, `setPushUrl`, `setRedirect`, etc.), HTMX patterns (`formSubmit`, `liveSearch`, `infiniteScroll`, etc.), `ThemeToggle`, `Resumable` |
+| `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | Integration | `Flash`, `FlashContainer`, `FlashOob`, `createFlash`, `ThemeToggle`, `Resumable`, `toastOob` |
 | `@y-core/forge/validation` | `src/validation/mod.ts` | Leaf | `v` (valibot facade), `ValidationResult` |
 
 ### 3b. Internal Namespaces (no public export path)
@@ -129,8 +130,8 @@ because consumers need its `Middleware`/`AppContext` types and the `contextVar`
 accessor, which sit over fetch-router's `RequestContext`.)
 
 Note on stale references: earlier versions listed `timingSafeEqual` under security exports.
-The correct location is `src/crypto/mod.ts` (`@internal`). `isHxRequest` is the correct export
-name from security (not `requireHxRequest`).
+The correct location is `src/crypto/mod.ts` (`@internal`). `isHxRequest` was previously
+in security but moved to `@y-core/forge/html/htmx` — it is a UX hint, not a security primitive.
 
 ---
 
@@ -144,7 +145,7 @@ A namespace is leaf when:
 - It has zero imports from other forge namespaces
 
 Current leaf namespaces:
-`assets/build`, `assets/manifest`, `cli`, `config`, `form`, `http`, `jsx`, `logging`,
+`assets/build`, `assets/manifest`, `cli`, `config`, `form`, `html/htmx`, `http`, `jsx`, `logging`,
 `result`, `router`, `session`, `ui/client`, `validation`, `storage/db`, `storage/kv`, `storage/r2`
 
 ### 4b. Integration Namespace Rules
@@ -157,6 +158,7 @@ A namespace is integration when it explicitly composes across forge namespaces:
 | `assets` | Imports validation for schema and type definitions in `config.ts` / `types.ts` |
 | `security` | Imports logging for rate-limit `createLogger` internals |
 | `ui` | `ui/core` imports form for `CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT` |
+| `ui/server` | Imports `html/htmx` (OOB helpers) and `ui/core` (Toast for `toastOob`) |
 | `logging/http` | Imports logging + http + ui for log viewer components |
 | `pkg` | Imports cli for command framework |
 

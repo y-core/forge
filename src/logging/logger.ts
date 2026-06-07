@@ -14,7 +14,7 @@ function makeLogger(prefix: string, bindings: Record<string, unknown>, channels:
     const merged = hasBindings || data ? { ...bindings, ...(data ?? {}) } : undefined;
     const record: LogRecord = { level, prefix, message, timestamp: new Date().toISOString(), ...(merged !== undefined ? { data: merged } : {}) };
     for (const channel of channels) {
-      const result = channel(record);
+      const result = channel.write(record);
       if (result instanceof Promise) {
         pending.push(result);
       }
