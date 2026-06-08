@@ -1,13 +1,8 @@
-/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { renderToString } from "../../jsx/render-to-string";
+import { render } from "../../jsx/render-test-helper";
 import { fieldDescriptionId, fieldErrorId, fieldId } from "./field";
 import { Field } from "./field-layout";
 import { Input } from "./input";
-
-async function render(element: unknown): Promise<string> {
-  return String(await renderToString(element));
-}
 
 describe("fieldId helpers", () => {
   it("fieldId returns field-{name}", () => {

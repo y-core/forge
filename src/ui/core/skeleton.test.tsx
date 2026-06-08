@@ -1,11 +1,6 @@
-/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { renderToString } from "../../jsx/render-to-string";
+import { render } from "../../jsx/render-test-helper";
 import { Skeleton } from "./skeleton";
-
-async function render(element: unknown): Promise<string> {
-  return String(await renderToString(element));
-}
 
 describe("Skeleton", () => {
   it("renders a <div> with data-slot=skeleton", async () => {

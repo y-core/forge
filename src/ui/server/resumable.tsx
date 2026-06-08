@@ -1,3 +1,4 @@
+/** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge */
 
 import type { JSXNode } from "../../jsx/types";

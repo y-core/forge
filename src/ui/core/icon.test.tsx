@@ -1,11 +1,6 @@
-/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { renderToString } from "../../jsx/render-to-string";
+import { render } from "../../jsx/render-test-helper";
 import { Icon } from "./icon";
-
-async function render(element: unknown): Promise<string> {
-  return String(await renderToString(element));
-}
 
 describe("Icon component", () => {
   it("renders an svg with a use href combining the sprite and symbol", async () => {

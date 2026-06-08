@@ -1,11 +1,6 @@
-/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { renderToString } from "../../jsx/render-to-string";
+import { render } from "../../jsx/render-test-helper";
 import { Alert } from "./alert";
-
-async function render(element: unknown): Promise<string> {
-  return String(await renderToString(element));
-}
 
 describe("Alert", () => {
   it("renders the default variant classes", async () => {
