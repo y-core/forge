@@ -34,6 +34,7 @@ export interface ReleaseDeps {
   isWorkingTreeClean: (cwd: string) => boolean;
   resolveVersion: (opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult;
   updatePackageVersion: (version: string, cwd: string) => void;
+  commit: (cwd: string, message: string, files: string[]) => void;
   createTag: (cwd: string, tag: string) => void;
 }
 
