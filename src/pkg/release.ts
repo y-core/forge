@@ -3,7 +3,7 @@ import { createCommand } from "../cli/command";
 import type { Command } from "../cli/types";
 import { createTag, isWorkingTreeClean } from "./git";
 import { updatePackageVersion } from "./pkg";
-import type { ReleaseCommandConfig, ReleaseDeps, VersionResult } from "./types";
+import type { ReleaseCommandConfig, ReleaseDeps } from "./types";
 import { resolveVersion } from "./version";
 
 const releaseFlags = {

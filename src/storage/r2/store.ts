@@ -2,18 +2,7 @@ import { createLogger } from "../../logging/logger";
 import { result } from "../../result/result";
 import { inferContentType } from "./content-type";
 import { serveObject } from "./serve";
-import type {
-  ListObjectsResult,
-  ObjectBody,
-  ObjectStorageBackend,
-  ObjectStore,
-  ObjectStoreOptions,
-  ServeOptions,
-  StoredObject,
-  StoreGetOptions,
-  StoreListOptions,
-  StorePutOptions,
-} from "./types";
+import type { ListObjectsResult, ObjectBody, ObjectStorageBackend, ObjectStore, ObjectStoreOptions, StoredObject } from "./types";
 
 const PREFIX_SEP = "/";
 

@@ -9,11 +9,10 @@ export { createRedirectResponse, createRedirectResponse as redirect } from "@rem
  * `content-type: text/html` header. Accepts a `SafeHtml` value (e.g. from `renderToString`)
  * or a string. For HTMX partials that must NOT carry a DOCTYPE, use `fragmentResponse`.
  *
- * The optional `headers` map is merged on top of the defaults, letting callers inject extra
- * headers (e.g. security headers) for responses produced outside a handler. @public
+ * The optional `headers` map is merged; `content-type` always wins over caller-supplied values. @public
  */
 export function htmlResponse(body: string | SafeHtml, status = 200, headers?: Record<string, string>): Response {
-  return createHtmlResponse(body, { status, ...(headers ? { headers } : {}) });
+  return createHtmlResponse(body, { status, ...(headers ? { headers: { ...headers, "content-type": "text/html; charset=utf-8" } } : {}) });
 }
 
 /**
@@ -22,5 +21,5 @@ export function htmlResponse(body: string | SafeHtml, status = 200, headers?: Re
  * value or a string. Use `htmlResponse` for full documents. @public
  */
 export function fragmentResponse(body: string | SafeHtml, status = 200, headers?: Record<string, string>): Response {
-  return new Response(String(body), { status, headers: { "content-type": "text/html; charset=utf-8", ...headers } });
+  return new Response(String(body), { status, headers: { ...(headers ?? {}), "content-type": "text/html; charset=utf-8" } });
 }

@@ -57,3 +57,18 @@ describe("redirect", () => {
     expect(res.headers.get("Location")).toBe("/login");
   });
 });
+
+describe("fragmentResponse — content-type cannot be overridden by lowercase key", () => {
+  it("ignores a caller-supplied lowercase content-type: application/json and returns text/html", () => {
+    const res = fragmentResponse("<div>ok</div>", 200, { "content-type": "application/json" });
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  });
+});
+
+describe("htmlResponse — content-type cannot be overridden", () => {
+  it("ignores a caller-supplied application/json content-type and returns text/html", () => {
+    const res = htmlResponse("<p>ok</p>", 200, { "content-type": "application/json" });
+    // The createHtmlResponse helper forces content-type: text/html
+    expect(res.headers.get("content-type")).toMatch(/text\/html/);
+  });
+});

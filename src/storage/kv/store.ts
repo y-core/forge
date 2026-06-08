@@ -12,6 +12,10 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
   const defaultTtl = options?.defaultTtl;
   const logger = options?.logger ?? createLogger("storage/kv");
 
+  function validateKey(key: string): void {
+    if (key.includes("||")) throw new Error(`KV key must not contain "||": ${key}`);
+  }
+
   function prefixKey(key: string): string {
     return prefix ? `${prefix}${KV_PREFIX_SEPARATOR}${key}` : key;
   }
@@ -40,6 +44,7 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
   return {
     get(key) {
       return result(async () => {
+        validateKey(key);
         const raw = await getRaw(prefixKey(key));
         if (raw === null) return null;
         try {
@@ -53,6 +58,7 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
 
     getWithMeta<M = unknown>(key: string) {
       return result(async (): Promise<KVEntry<T, M>> => {
+        validateKey(key);
         const fullKey = prefixKey(key);
         const { value, metadata } =
           codec.type === "arrayBuffer"
@@ -64,18 +70,21 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
 
     set(key, value, opts) {
       return result(async () => {
+        validateKey(key);
         await kv.put(prefixKey(key), codec.encode(value), putOptions(opts));
       });
     },
 
     delete(key) {
       return result(async () => {
+        validateKey(key);
         await kv.delete(prefixKey(key));
       });
     },
 
     getOrSet(key, factory, opts) {
       return result(async () => {
+        validateKey(key);
         const raw = await getRaw(prefixKey(key));
         if (raw !== null) return codec.decode(raw);
         logger.debug("kv.miss", { key });

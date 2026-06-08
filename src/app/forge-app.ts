@@ -77,8 +77,8 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   }
 
   /** Declarative, map-based route registration — the canonical way to add routes. @public */
-  // biome-ignore lint/suspicious/noExplicitAny: generic route map API
   map(...args: Parameters<typeof this._setup.map>): void {
+    // biome-ignore lint/suspicious/noExplicitAny: generic route map API
     (this._setup.map as (...a: any[]) => void)(...args);
   }
 
@@ -191,13 +191,12 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     const url = path.startsWith("http") ? path : `http://localhost${path}`;
     const request = new Request(url, init);
     const pending: Promise<unknown>[] = [];
-    // biome-ignore lint/suspicious/noExplicitAny: mock context — cloudflare.d.ts adds extra fields only present in Workers runtime
-    const testCtx: ExecutionContext = {
+    const testCtx = {
       waitUntil: (p: Promise<unknown>) => {
         pending.push(p);
       },
       passThroughOnException: () => {},
-    } as any;
+    } as unknown as ExecutionContext;
     const res = await this.fetch(request, env, testCtx);
     if (pending.length > 0) {
       await Promise.all(pending);

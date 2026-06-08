@@ -63,4 +63,20 @@ describe("consoleChannel", () => {
     const ch = consoleChannel();
     expect(ch.read).toBeUndefined();
   });
+
+  it("reserved fields win — caller-supplied level in data cannot forge the real level", () => {
+    const ch = consoleChannel();
+    ch.write(makeRecord({ level: "error", message: "real message", data: { level: "debug", message: "forged" } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.level).toBe("error");
+    expect(obj.message).toBe("real message");
+  });
+
+  it("reserved fields win — caller-supplied timestamp in data is overridden by the record timestamp", () => {
+    const ch = consoleChannel();
+    ch.write(makeRecord({ timestamp: "2026-01-01T00:00:00.000Z", data: { timestamp: "fake" } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.timestamp).toBe("2026-01-01T00:00:00.000Z");
+    expect(obj.timestamp).not.toBe("fake");
+  });
 });

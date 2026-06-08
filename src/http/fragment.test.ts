@@ -20,10 +20,26 @@ describe("renderSuccess", () => {
   });
 
   it("accepts a custom successAttr", () => {
-    const html = String(renderSuccess("OK", { successAttr: 'data-status="success"' }));
+    const html = String(renderSuccess("OK", { successAttr: "data-status" }));
     expect(html).toBe(
-      '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-status="success"><p>OK</p></div>',
+      '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-status><p>OK</p></div>',
     );
+  });
+
+  it("throws on an invalid successAttr containing special characters", () => {
+    expect(() => renderSuccess("OK", { successAttr: 'data-status="success"' })).toThrow("Invalid successAttr");
+  });
+
+  it("does not throw for a valid successAttr like 'data-status'", () => {
+    expect(() => renderSuccess("OK", { successAttr: "data-status" })).not.toThrow();
+  });
+
+  it("throws when successAttr contains a space (e.g. 'on click')", () => {
+    expect(() => renderSuccess("OK", { successAttr: "on click" })).toThrow("Invalid successAttr");
+  });
+
+  it("throws when successAttr starts with a digit (e.g. '123bad')", () => {
+    expect(() => renderSuccess("OK", { successAttr: "123bad" })).toThrow("Invalid successAttr");
   });
 
   it("matches exact output consumed by worker tests", () => {

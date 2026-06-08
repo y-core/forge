@@ -1,6 +1,5 @@
 /** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { renderToString } from "../../jsx/render-to-string";
 import {
   asyncDialogTrigger,
   dependentSelect,
@@ -13,10 +12,6 @@ import {
   paginatedTableLink,
   SWAP,
 } from "./htmx-patterns";
-
-async function render(element: unknown): Promise<string> {
-  return String(await renderToString(element));
-}
 
 describe("SWAP", () => {
   it("has correct string values", () => {

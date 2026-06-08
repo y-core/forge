@@ -35,7 +35,7 @@ const BOOLEAN_ATTRS = new Set([
 ]);
 
 /** Attributes whose values are URLs — scheme-sanitized to block `javascript:`-style injection. */
-const URL_ATTRS = new Set(["href", "src", "action", "formaction", "poster", "cite", "background"]);
+const URL_ATTRS = new Set(["href", "src", "action", "formaction", "poster", "cite", "background", "xlink:href", "xml:base"]);
 
 /** Renders element attributes to a string of `key="value"` pairs. */
 function renderAttributes(props: Record<string, unknown>, tag: string): string {

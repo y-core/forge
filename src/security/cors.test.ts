@@ -139,3 +139,46 @@ describe("cors response rebuild", () => {
     expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 });
+
+describe("appendVary (via cors middleware)", () => {
+  it("sets Vary: Origin when the downstream response has no Vary header", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/no-vary", () => new Response("ok"));
+    const res = await app.request("/no-vary", { method: "GET", headers: { Origin: "https://example.com" } });
+    expect(res.headers.get("Vary")).toBe("Origin");
+  });
+
+  it("appends Origin to an existing Vary value without dropping downstream tokens", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/with-vary", () => new Response("ok", { headers: { Vary: "Accept-Encoding" } }));
+    const res = await app.request("/with-vary", { method: "GET", headers: { Origin: "https://example.com" } });
+    expect(res.headers.get("Vary")).toBe("Accept-Encoding, Origin");
+  });
+
+  it("does not duplicate Origin when downstream already sends Vary: Origin", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/already-origin", () => new Response("ok", { headers: { Vary: "Origin" } }));
+    const res = await app.request("/already-origin", { method: "GET", headers: { Origin: "https://example.com" } });
+    expect(res.headers.get("Vary")).toBe("Origin");
+  });
+
+  it("leaves Vary: * untouched and does not append Origin", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/vary-star", () => new Response("ok", { headers: { Vary: "*" } }));
+    const res = await app.request("/vary-star", { method: "GET", headers: { Origin: "https://example.com" } });
+    expect(res.headers.get("Vary")).toBe("*");
+  });
+
+  it("does not modify Vary when the origin is not in the allowed list", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/disallowed", () => new Response("ok", { headers: { Vary: "Accept-Encoding" } }));
+    const res = await app.request("/disallowed", { method: "GET", headers: { Origin: "https://evil.com" } });
+    // cors() passes the response through unmodified for disallowed origins
+    expect(res.headers.get("Vary")).toBe("Accept-Encoding");
+  });
+});

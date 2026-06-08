@@ -3,7 +3,7 @@ import { validateBindings } from "../../app/env";
 import type { AppContext } from "../../context/types";
 import { v } from "../../validation/mod";
 import { createD1Client } from "./client";
-import type { D1BindingOptions, D1Client, D1ClientOptions, D1Database } from "./types";
+import type { D1BindingOptions, D1Client } from "./types";
 
 /**
  * Middleware that validates a D1 database binding exists on first request.

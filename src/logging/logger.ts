@@ -1,6 +1,8 @@
 import { consoleChannel } from "./channels";
 import type { LogChannel, Logger, LoggerOptions, LogLevel, LogRecord } from "./types";
 
+const PENDING_CAP = 1000;
+
 /** Creates a structured logger that dispatches log records to one or more channels. @public */
 export function createLogger(prefix: string, options?: LoggerOptions): Logger {
   const channels: LogChannel[] = options?.channels ?? [consoleChannel()];
@@ -16,6 +18,10 @@ function makeLogger(prefix: string, bindings: Record<string, unknown>, channels:
     for (const channel of channels) {
       const result = channel.write(record);
       if (result instanceof Promise) {
+        if (pending.length >= PENDING_CAP) {
+          // Drop the oldest entry to prevent unbounded memory growth in long-lived loggers.
+          pending.splice(0, 1);
+        }
         pending.push(result);
       }
     }

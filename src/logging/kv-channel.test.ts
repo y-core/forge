@@ -326,6 +326,63 @@ describe("kvLogChannel — read", () => {
   });
 });
 
+describe("kvLogChannel — oversized message truncation", () => {
+  it("truncates message in metadata to 256 characters when message exceeds 256 chars", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+    const longMessage = "x".repeat(300);
+
+    await channel.write(makeRecord({ message: longMessage }));
+
+    const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
+    expect(meta.message.length).toBe(256);
+    expect(meta.message).toBe("x".repeat(256));
+  });
+
+  it("stores the full message in the KV value body even when metadata is truncated", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+    const longMessage = "y".repeat(300);
+
+    await channel.write(makeRecord({ message: longMessage }));
+
+    const entry = [...stub._store.values()][0]!;
+    const stored = JSON.parse(entry.value) as { message: string };
+    expect(stored.message).toBe(longMessage);
+  });
+
+  it("keeps message intact in metadata when message is exactly 256 chars", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+    const exactMessage = "a".repeat(256);
+
+    await channel.write(makeRecord({ message: exactMessage }));
+
+    const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
+    expect(meta.message.length).toBe(256);
+    expect(meta.message).toBe(exactMessage);
+  });
+});
+
+describe("kvLogChannel — purge error isolation", () => {
+  it("write resolves successfully even when kv.list throws during purge", async () => {
+    const throwingKv = {
+      ...makeKvStub(),
+      async put(_k: string, _v: string, _o: unknown): Promise<void> {
+        return Promise.resolve();
+      },
+      async list(_opts: unknown): Promise<never> {
+        throw new Error("KV list failed");
+      },
+    } as unknown as KVNamespace & { _store: Map<string, StubEntry> };
+
+    const channel = kvLogChannel(throwingKv, { prefix: "logs", purgeProbability: 1 });
+
+    // Must resolve — purge error must be swallowed, not propagated to caller
+    await expect(channel.write(makeRecord())).resolves.toBeUndefined();
+  });
+});
+
 describe("kvLogChannel — flush (via createLogger)", () => {
   it("the put promise lands in pending and flush awaits it", async () => {
     const order: string[] = [];

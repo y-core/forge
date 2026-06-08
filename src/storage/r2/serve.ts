@@ -2,11 +2,18 @@ import type { ObjectBody, ObjectStorageBackend, ServeOptions } from "./types";
 
 function parseRange(header: string): { offset?: number; length?: number; suffix?: number } | null {
   const suffixMatch = /^bytes=-(\d+)$/.exec(header);
-  if (suffixMatch) return { suffix: parseInt(suffixMatch[1] ?? "", 10) };
+  if (suffixMatch) {
+    const suffix = parseInt(suffixMatch[1] ?? "", 10);
+    if (Number.isNaN(suffix)) return null;
+    return { suffix };
+  }
   const match = /^bytes=(\d+)-(\d*)$/.exec(header);
   if (!match) return null;
   const offset = parseInt(match[1] ?? "", 10);
   const end = match[2] ? parseInt(match[2], 10) : undefined;
+  if (Number.isNaN(offset)) return null;
+  if (end !== undefined && Number.isNaN(end)) return null;
+  if (end !== undefined && offset > end) return null;
   return { offset, ...(end !== undefined ? { length: end - offset + 1 } : {}) };
 }
 

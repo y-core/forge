@@ -22,12 +22,15 @@ const URL_NOISE = /[\u0000-\u0020\u007f-\u009f]/g;
  * Sanitizes a URL for safe use in `href`/`src`-style attributes. Relative and scheme-less URLs
  * pass through unchanged; absolute URLs are allowed only for `http`/`https`/`mailto`/`tel`.
  * Dangerous schemes (`javascript:`, `vbscript:`, `data:`, …) — including ones obscured with
- * leading/embedded whitespace, control characters, or mixed case — return `"#"`. The caller is
- * still responsible for HTML-escaping the result. @public
+ * leading/embedded whitespace, control characters, or mixed case — return `"#"`.
+ * Protocol-relative URLs (`//host`, `\host`) are rejected.
+ * The caller is still responsible for HTML-escaping the result. @public
  */
 export function safeUrl(value: string): string {
   // Strip scheme-noise before detection (defeats `java\tscript:` / leading-newline tricks).
   const normalized = value.replace(URL_NOISE, "").toLowerCase();
+  // Protocol-relative URLs (`//host`, `\\host`, `/\host`) bypass scheme detection — reject them.
+  if (/^[/\\]{2}/.test(normalized)) return "#";
   const scheme = normalized.match(/^([a-z][a-z0-9+.-]*):/);
   // No scheme → relative URL: cannot trigger script execution, pass through.
   if (!scheme) return value;

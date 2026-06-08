@@ -13,8 +13,8 @@
 import { createSignal, effect, type Signal } from "./signal";
 
 /** Context handed to a scope's `setup` and action handlers.
-* @public
-**/
+ * @public
+ **/
 export interface ResumeContext {
   /** The `[data-scope]` element enclosing the interaction. */
   root: HTMLElement;
@@ -39,19 +39,29 @@ const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();
 const EVENTS = ["click", "input", "change", "submit"] as const;
 
 /** Registers a scope's setup + action handlers, keyed to a `data-scope` name.
-* @public
-**/
+ * @public
+ **/
 export function registerScope(name: string, def: ScopeDefinition): void {
   scopes.set(name, def);
 }
 
-/** Installs one delegated listener per supported event. Call once after registrations.
-* @public
-**/
-export function resume(): void {
+let teardown: (() => void) | null = null;
+
+/** Installs one delegated listener per supported event. Idempotent: a second call is a no-op
+ *  and returns the same teardown. Returns a disposer that removes all listeners. @public */
+export function resume(): () => void {
+  if (teardown) return teardown; // already mounted — no duplicate listeners
+  const handlers: Array<[string, EventListener]> = [];
   for (const type of EVENTS) {
-    document.addEventListener(type, (event) => dispatch(type, event));
+    const handler: EventListener = (event) => dispatch(type, event);
+    document.addEventListener(type, handler);
+    handlers.push([type, handler]);
   }
+  teardown = () => {
+    for (const [type, handler] of handlers) document.removeEventListener(type, handler);
+    teardown = null;
+  };
+  return teardown;
 }
 
 function dispatch(type: string, event: Event): void {

@@ -71,9 +71,10 @@ describe("optionalGroup — null when required fields missing", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when a required field is an empty string", () => {
+  it("treats an empty string as a present value (not null) for required fields", () => {
+    // `== null` check: empty string is a present value; only undefined/null triggers null.
     const result = v.parse(emailGroup, { apiKey: "key", from: "", to: "to@example.com" });
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
   });
 
   it("returns null when required: all and any field is missing", () => {
@@ -83,6 +84,38 @@ describe("optionalGroup — null when required fields missing", () => {
 
   it("returns null for turnstile when both fields are absent", () => {
     const result = v.parse(turnstileGroup, {});
+    expect(result).toBeNull();
+  });
+});
+
+describe("optionalGroup — falsy required field values are treated as present, not absent", () => {
+  const group = optionalGroup({ count: v.unknown(), flag: v.unknown(), label: v.unknown() }, { required: "all" });
+
+  it("treats the value 0 as present (not absent)", () => {
+    const result = v.parse(group, { count: 0, flag: true, label: "x" });
+    expect(result).not.toBeNull();
+    expect((result as { count: number }).count).toBe(0);
+  });
+
+  it("treats an empty string as present (not absent)", () => {
+    const result = v.parse(group, { count: 1, flag: true, label: "" });
+    expect(result).not.toBeNull();
+    expect((result as { label: string }).label).toBe("");
+  });
+
+  it("treats false as present (not absent)", () => {
+    const result = v.parse(group, { count: 1, flag: false, label: "x" });
+    expect(result).not.toBeNull();
+    expect((result as { flag: boolean }).flag).toBe(false);
+  });
+
+  it("treats null as absent and returns null", () => {
+    const result = v.parse(group, { count: null, flag: true, label: "x" });
+    expect(result).toBeNull();
+  });
+
+  it("treats undefined as absent and returns null", () => {
+    const result = v.parse(group, { count: undefined, flag: true, label: "x" });
     expect(result).toBeNull();
   });
 });

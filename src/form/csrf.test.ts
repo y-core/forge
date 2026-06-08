@@ -287,7 +287,7 @@ describe("csrfProtection middleware with typed resolver", () => {
     const app = new Forge<TestBindings>();
     app.use(
       "*",
-      csrfProtection<TestBindings>({
+      csrfProtection({
         secret: async (c) => {
           capturedSecret = (c as AppContext<TestBindings>).env.MY_SECRET;
           return key;
