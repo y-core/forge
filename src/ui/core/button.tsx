@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource @y-core/forge */
 import { cloneElement, isValidElement } from "../../jsx/element";
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
