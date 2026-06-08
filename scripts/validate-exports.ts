@@ -11,6 +11,10 @@ const PUBLISHED_FILES = new Set((pkg as { files?: string[] }).files ?? []);
 // cannot be imported. Static parsing still runs; runtime import is skipped.
 const BROWSER_ONLY = new Set(["./ui/client", "./ui/client/htmx", "./ui/show/client"]);
 
+// Side-effect-only modules: intentionally export no values (they mutate globals or perform
+// one-time registration). ./register sets globalThis.React as a classic-runtime fallback.
+const SIDE_EFFECT_ONLY = new Set(["./register"]);
+
 function parseBarrelExports(filePath: string): { values: string[]; hasExportStar: boolean; hasTypeExports: boolean } {
   const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");
 
@@ -201,12 +205,16 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
       console.log(`  ok ${specifier} (browser-only side-effect — no exports)`);
       continue;
     }
+    if (SIDE_EFFECT_ONLY.has(specifier)) {
+      console.log(`  ok ${specifier} (side-effect-only — no exports)`);
+      continue;
+    }
     console.error(`FAIL ${specifier}: no value exports found in barrel`);
     failed = true;
     continue;
   }
 
-  if (BROWSER_ONLY.has(specifier)) {
+  if (BROWSER_ONLY.has(specifier) || SIDE_EFFECT_ONLY.has(specifier)) {
     console.log(`  ok ${specifier} (browser-only — ${values.length} exports parsed)`);
     continue;
   }

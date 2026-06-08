@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.29",
+  "version": "0.0.30",
   "type": "module",
   "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
   "scripts": {
@@ -8,14 +8,16 @@
     "lint": "biome check src/",
     "lint:fix": "biome check --write src/",
     "test": "bun test",
-    "check": "bun run typecheck && bun run lint && bun test && bun run validate-exports",
+    "check": "bun run typecheck && bun run lint && bun test && bun run validate-exports && bun run validate-jsx",
     "validate-exports": "bun run scripts/validate-exports.ts",
+    "validate-jsx": "bun run scripts/validate-jsx.ts",
     "prepublishOnly": "bun run check",
     "release": "bun run scripts/release.ts"
   },
   "sideEffects": [
     "./src/ui/client/htmx.ts",
-    "./src/ui/show/client.ts"
+    "./src/ui/show/client.ts",
+    "./src/jsx/register.ts"
   ],
   "dependencies": {
     "@remix-run/cookie": "^0.5.4",
@@ -169,6 +171,10 @@
     "./validation": {
       "types": "./src/validation/mod.ts",
       "import": "./src/validation/mod.ts"
+    },
+    "./register": {
+      "types": "./src/jsx/register.ts",
+      "import": "./src/jsx/register.ts"
     }
   },
   "files": [
