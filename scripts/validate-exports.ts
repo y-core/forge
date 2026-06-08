@@ -9,7 +9,7 @@ const PUBLISHED_FILES = new Set((pkg as { files?: string[] }).files ?? []);
 
 // Only ./ui/client imports DOM globals (document, window, MutationObserver) and
 // cannot be imported. Static parsing still runs; runtime import is skipped.
-const BROWSER_ONLY = new Set(["./ui/client", "./ui/client/htmx"]);
+const BROWSER_ONLY = new Set(["./ui/client", "./ui/client/htmx", "./ui/show/client"]);
 
 function parseBarrelExports(filePath: string): { values: string[]; hasExportStar: boolean; hasTypeExports: boolean } {
   const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");
@@ -195,6 +195,10 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   if (values.length === 0) {
     if (hasTypeExports) {
       console.log(`  ok ${specifier} (type-only barrel — no runtime exports)`);
+      continue;
+    }
+    if (BROWSER_ONLY.has(specifier)) {
+      console.log(`  ok ${specifier} (browser-only side-effect — no exports)`);
       continue;
     }
     console.error(`FAIL ${specifier}: no value exports found in barrel`);

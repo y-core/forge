@@ -1,12 +1,40 @@
 /** @jsxImportSource @y-core/forge */
 
 import type { AppContext } from "../../context/types";
+import { joinPath } from "../../http/path";
 import { fragmentResponse } from "../../http/response";
 import { renderToString } from "../../jsx/render-to-string";
 import type { ForgeIcon } from "../core/icon";
-import { DependentFragment, PaginateFragment, PreviewFragment, SearchFragment, ToastFragment, ValidateFragment } from "./demos";
-import type { ShowcasePaths } from "./paths";
-import { showcasePaths } from "./paths";
+import { DependentFragment, PaginateFragment, PreviewFragment, SearchFragment, ToastFragment, ValidateFragment } from "./sections";
+
+// ─── ShowcasePaths ────────────────────────────────────────────────────────────
+
+/** URL paths for the showcase module — single source of truth so page and controller never drift. @public */
+export interface ShowcasePaths {
+  page: string;
+  preview: string;
+  validate: string;
+  search: string;
+  paginate: string;
+  dependent: string;
+  toast: string;
+}
+
+/** Returns all showcase paths derived from a base path. Pass `apiPath` to serve API
+ * endpoints under a different prefix than the page. @public */
+export function showcasePaths(basePath: string, apiPath?: string): ShowcasePaths {
+  const page = joinPath(basePath);
+  const api = joinPath(apiPath ?? basePath);
+  return {
+    page,
+    preview: joinPath(api, "preview"),
+    validate: joinPath(api, "validate"),
+    search: joinPath(api, "search"),
+    paginate: joinPath(api, "paginate"),
+    dependent: joinPath(api, "dependent"),
+    toast: joinPath(api, "toast"),
+  };
+}
 
 // ─── ShowcaseData ────────────────────────────────────────────────────────────
 
@@ -16,8 +44,11 @@ export interface ShowcaseData {
 }
 
 /** Loader for the main showcase page. @public */
-export function loadShowcase<Bindings = Record<string, unknown>>(_c: AppContext<Bindings>, opts: { basePath?: string } = {}): ShowcaseData {
-  return { paths: showcasePaths(opts.basePath ?? "/showcase") };
+export function loadShowcase<Bindings = Record<string, unknown>>(
+  _c: AppContext<Bindings>,
+  opts: { basePath?: string; apiPath?: string } = {},
+): ShowcaseData {
+  return { paths: showcasePaths(opts.basePath ?? "/showcase", opts.apiPath) };
 }
 
 // ─── Preview ─────────────────────────────────────────────────────────────────

@@ -17,8 +17,8 @@ import { Textarea } from "../core/textarea";
 import { Toast } from "../core/toast";
 import { createUI } from "../create-ui";
 import { FlashContainer } from "../server/flash";
-import { DependentDemoSection, PaginateDemoSection, PreviewDemoSection, SearchDemoSection, ToastDemoSection, ValidateDemoSection } from "./demos";
 import type { ShowcaseData } from "./route";
+import { DependentSection, PaginateSection, PreviewSection, SearchSection, ToastSection, ValidateSection } from "./sections";
 
 // ─── TOC ─────────────────────────────────────────────────────────────────────
 
@@ -266,7 +266,7 @@ const TextareaSection: FC = () => (
   </CatalogSection>
 );
 
-const ToastSection: FC = () => (
+const ToastCatalog: FC = () => (
   <CatalogSection id='toast' title='Toast'>
     <Toast variant='default'>
       <Toast.Title>Default</Toast.Title>
@@ -311,25 +311,33 @@ const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "m
 
 // ─── Resumability island ─────────────────────────────────────────────────────
 
+const FILTER_ITEMS = ["Alert", "Avatar", "Badge", "Button", "Card", "Input", "Spinner", "Textarea", "Toast"];
+
 const ResumableSection: FC = () => (
   <section id='resumable' class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
     <div>
       <h2 class='text-base font-semibold text-foreground'>Resumable</h2>
       <p class='mt-1 text-sm text-muted-foreground'>
-        Delegated-hydration island. State serialised into <code>data-state</code>; the scope resumes on first interaction, never on page load.
+        Live-filtering list. State serialised into <code>data-state</code>; the scope resumes on first interaction, never on page load. The result
+        count is a <code>computed()</code>-derived value — no server roundtrip needed.
       </p>
     </div>
-    <div data-scope='show-counter' data-state='{"count":0}'>
-      <div class='flex items-center gap-6'>
-        <span class='text-4xl font-mono font-bold text-foreground' data-ref='count'>
-          0
-        </span>
-        <Button variant='secondary' size='md' data-on-click='inc'>
-          Increment
-        </Button>
-        <Button variant='ghost' size='md' data-on-click='reset'>
-          Reset
-        </Button>
+    <div data-scope='show-filter' data-state='{"query":""}'>
+      <div class='space-y-3'>
+        <div>
+          <Label for='filter-input'>Filter components</Label>
+          <Input id='filter-input' type='text' name='filter' placeholder='Type to filter…' class='mt-1 max-w-xs' data-on-input='filter' />
+        </div>
+        <p class='text-sm text-muted-foreground'>
+          Showing <span data-ref='count'>{FILTER_ITEMS.length}</span> results
+        </p>
+        <ul class='space-y-1'>
+          {FILTER_ITEMS.map((name) => (
+            <li key={name} data-filter-item class='text-sm text-foreground'>
+              {name}
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   </section>
@@ -370,18 +378,18 @@ export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ForgeIcon<"spinner"
         <SkeletonSection />
         <SpinnerSection icon={icon} />
         <TextareaSection />
-        <ToastSection />
+        <ToastCatalog />
       </div>
 
       {/* HTMX demos */}
       <section id='htmx-demos' class='scroll-mt-24 space-y-6'>
         <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>HTMX Demos</h2>
-        <PreviewDemoSection paths={paths} icon={icon} />
-        <ValidateDemoSection paths={paths} />
-        <SearchDemoSection paths={paths} />
-        <PaginateDemoSection paths={paths} />
-        <DependentDemoSection paths={paths} icon={icon} />
-        <ToastDemoSection paths={paths} />
+        <PreviewSection paths={paths} icon={icon} />
+        <ValidateSection paths={paths} />
+        <SearchSection paths={paths} />
+        <PaginateSection paths={paths} />
+        <DependentSection paths={paths} icon={icon} />
+        <ToastSection paths={paths} />
       </section>
 
       {/* Theme toggle */}

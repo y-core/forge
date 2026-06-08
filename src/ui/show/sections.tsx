@@ -7,8 +7,7 @@ import { Field } from "../core/field-layout";
 import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { FlashOob } from "../server/flash";
-import type { ShowcasePaths } from "./paths";
-import type { DependentData, PaginateData, PreviewData, SearchData, ToastData, ValidateData } from "./route";
+import type { DependentData, PaginateData, PreviewData, SearchData, ShowcasePaths, ToastData, ValidateData } from "./route";
 
 // ─── Stable swap-target ids ─────────────────────────────────────────────────
 /** @public */ export const SHOW_SEARCH_ID = "show-search-results";
@@ -227,14 +226,14 @@ export const ToastFragment: FC<{ data: ToastData }> = ({ data }) => {
 
 // ─── Demo section wrappers ────────────────────────────────────────────────────
 
-interface DemoSectionProps {
+interface SectionProps {
   id: string;
   title: string;
   description: string;
   children: unknown;
 }
 
-const DemoSection: FC<DemoSectionProps> = ({ id, title, description, children }) => (
+const Section: FC<SectionProps> = ({ id, title, description, children }) => (
   <section id={id} class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
     <div>
       <h2 class='text-lg font-semibold text-foreground'>{title}</h2>
@@ -245,11 +244,11 @@ const DemoSection: FC<DemoSectionProps> = ({ id, title, description, children })
 );
 
 /** Preview demo: choose variant + size, see a live Button. @public */
-export const PreviewDemoSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
+export const PreviewSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
   paths,
   icon: Icon,
 }) => (
-  <DemoSection id='demo-preview' title='Live Preview' description='Choose variant and size — the button updates live via HTMX GET.'>
+  <Section id='demo-preview' title='Live Preview' description='Choose variant and size — the button updates live via HTMX GET.'>
     <form class='flex flex-wrap items-end gap-3' hx-get={paths.preview} hx-target={`#${SHOW_PREVIEW_ID}`} hx-swap='outerHTML' hx-trigger='change'>
       <div class='flex flex-col gap-1.5'>
         <label class='text-sm font-medium text-foreground' for='preview-variant'>
@@ -307,12 +306,12 @@ export const PreviewDemoSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spi
       </div>
     </form>
     <PreviewFragment data={{ variant: "primary", size: "md" }} icon={Icon} />
-  </DemoSection>
+  </Section>
 );
 
 /** Validate demo: inline email validation. @public */
-export const ValidateDemoSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
-  <DemoSection
+export const ValidateSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
+  <Section
     id='demo-validate'
     title='Inline Validation'
     description='Type an email — validation runs on blur via HTMX GET, swapping only the field.'>
@@ -322,12 +321,12 @@ export const ValidateDemoSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => 
     <p class='text-xs text-muted-foreground'>
       Uses <code>inlineValidation()</code> from <code>@y-core/forge/html/htmx</code>.
     </p>
-  </DemoSection>
+  </Section>
 );
 
 /** Search demo: live-filtered component list. @public */
-export const SearchDemoSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
-  <DemoSection id='demo-search' title='Live Search' description='Filter components by name — results update as you type via HTMX GET.'>
+export const SearchSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
+  <Section id='demo-search' title='Live Search' description='Filter components by name — results update as you type via HTMX GET.'>
     <div class='space-y-4'>
       <input
         type='search'
@@ -341,27 +340,27 @@ export const SearchDemoSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
     <p class='text-xs text-muted-foreground'>
       Uses <code>liveSearch()</code> with 300 ms debounce.
     </p>
-  </DemoSection>
+  </Section>
 );
 
 /** Paginate demo: table with next/prev navigation. @public */
-export const PaginateDemoSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
-  <DemoSection id='demo-paginate' title='Paginated Table' description='Navigate pages — the table body swaps via HTMX GET.'>
+export const PaginateSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
+  <Section id='demo-paginate' title='Paginated Table' description='Navigate pages — the table body swaps via HTMX GET.'>
     <div class='overflow-x-auto rounded-xl border border-border'>
       <PaginateFragment data={{ page: 1, paths }} />
     </div>
     <p class='text-xs text-muted-foreground'>
       Uses <code>paginatedTableLink()</code> helper on each page button.
     </p>
-  </DemoSection>
+  </Section>
 );
 
 /** Dependent select demo: category drives items. @public */
-export const DependentDemoSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
+export const DependentSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
   paths,
   icon: Icon,
 }) => (
-  <DemoSection id='demo-dependent' title='Dependent Select' description='Choose a food category — the items select repopulates via HTMX GET.'>
+  <Section id='demo-dependent' title='Dependent Select' description='Choose a food category — the items select repopulates via HTMX GET.'>
     <div class='flex flex-wrap gap-6 max-w-sm'>
       <div class='flex flex-col gap-1.5 flex-1 min-w-32'>
         <label class='text-sm font-medium text-foreground' for='dependent-category'>
@@ -397,12 +396,12 @@ export const DependentDemoSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"s
     <p class='text-xs text-muted-foreground'>
       Uses <code>dependentSelect()</code> helper.
     </p>
-  </DemoSection>
+  </Section>
 );
 
 /** Toast demo: trigger OOB flash toasts. @public */
-export const ToastDemoSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
-  <DemoSection id='demo-toast' title='Flash Toast (OOB)' description='Click a type — a toast is injected OOB into #flash-container via HTMX GET.'>
+export const ToastSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
+  <Section id='demo-toast' title='Flash Toast (OOB)' description='Click a type — a toast is injected OOB into #flash-container via HTMX GET.'>
     <div class='flex flex-wrap gap-3'>
       {(["success", "info", "warning", "error"] as const).map((type) => (
         <Button key={type} variant='secondary' size='sm' hx-get={`${paths.toast}?type=${type}`} hx-swap='none'>
@@ -413,5 +412,5 @@ export const ToastDemoSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
     <p class='text-xs text-muted-foreground'>
       Uses <code>FlashOob</code> with <code>hx-swap-oob</code> targeting <code>#flash-container</code>.
     </p>
-  </DemoSection>
+  </Section>
 );

@@ -3,7 +3,6 @@ import { describe, expect, it } from "bun:test";
 import { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
 import { mapHandler } from "../../app/route-test-helper";
-import { showcasePaths } from "./paths";
 import {
   loadDependent,
   loadPaginate,
@@ -18,6 +17,7 @@ import {
   renderSearch,
   renderToast,
   renderValidate,
+  showcasePaths,
 } from "./route";
 
 // ─── Stub icon ────────────────────────────────────────────────────────────────

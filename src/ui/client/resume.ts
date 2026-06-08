@@ -12,7 +12,9 @@
 
 import { createSignal, effect, type Signal } from "./signal";
 
-/** Context handed to a scope's `setup` and action handlers. @public */
+/** Context handed to a scope's `setup` and action handlers.
+* @public
+**/
 export interface ResumeContext {
   /** The `[data-scope]` element enclosing the interaction. */
   root: HTMLElement;
@@ -22,7 +24,9 @@ export interface ResumeContext {
   state: Record<string, Signal<unknown>>;
 }
 
-/** A registered scope: one-time setup plus a map of named action handlers. @public */
+/** A registered scope: one-time setup plus a map of named action handlers.
+ * @public
+ **/
 export interface ScopeDefinition {
   /** Bind DOM-mutating effects ONCE on first resume (no `el` — not tied to one event). */
   setup?: (ctx: Omit<ResumeContext, "el">) => void;
@@ -34,12 +38,16 @@ const scopes = new Map<string, ScopeDefinition>();
 const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();
 const EVENTS = ["click", "input", "change", "submit"] as const;
 
-/** Registers a scope's setup + action handlers, keyed to a `data-scope` name. @public */
+/** Registers a scope's setup + action handlers, keyed to a `data-scope` name.
+* @public
+**/
 export function registerScope(name: string, def: ScopeDefinition): void {
   scopes.set(name, def);
 }
 
-/** Installs one delegated listener per supported event. Call once after registrations. @public */
+/** Installs one delegated listener per supported event. Call once after registrations.
+* @public
+**/
 export function resume(): void {
   for (const type of EVENTS) {
     document.addEventListener(type, (event) => dispatch(type, event));
