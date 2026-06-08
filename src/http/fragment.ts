@@ -15,9 +15,12 @@ const ERROR_CLASSES = "rounded-2xl border border-red-200 bg-red-50 px-4 py-3 tex
 /** Renders an HTML success banner with an escaped message and optional custom class. @public */
 export function renderSuccess(message: string, options?: FragmentOptions): SafeHtml {
   const cls = escapeHtml(options?.class ?? SUCCESS_CLASSES);
-  // `successAttr` is, by contract, a raw attribute fragment (e.g. `data-status="success"`), so it
+  // `successAttr` is, by contract, a raw attribute name (e.g. `data-success`), so it
   // is interpolated verbatim. It is developer-supplied configuration, never user input.
   const attr = options?.successAttr ?? "data-success";
+  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(attr)) {
+    throw new Error(`Invalid successAttr: ${attr}`);
+  }
   return rawHtml(`<div class="${cls}" ${attr}><p>${escapeHtml(message)}</p></div>`);
 }
 

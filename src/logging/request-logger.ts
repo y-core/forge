@@ -1,9 +1,8 @@
 import type { Middleware } from "@remix-run/fetch-router";
 import { contextVar } from "../context/accessor";
-import type { AppContext } from "../context/types";
 import { getAppContext } from "../context/types";
 import { createLogger } from "./logger";
-import type { LogChannel, Logger, RequestLoggerOptions } from "./types";
+import type { Logger, RequestLoggerOptions } from "./types";
 
 export const requestLog = contextVar<Logger>("logger");
 

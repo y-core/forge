@@ -4,7 +4,7 @@ import type { AppContext } from "../../context/types";
 import { v } from "../../validation/mod";
 import { r2Backend } from "./r2-backend";
 import { createObjectStore } from "./store";
-import type { ObjectStore, ObjectStoreOptions, R2BindingOptions, R2Bucket } from "./types";
+import type { ObjectStore, R2BindingOptions } from "./types";
 
 /**
  * Middleware that validates an R2 bucket binding exists on first request.

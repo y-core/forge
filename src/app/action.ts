@@ -16,7 +16,6 @@ export function defineAction<Input, Bindings = Record<string, unknown>, ConfigDa
   def: ActionDefinition<Input, Bindings, ConfigData>,
 ): RequestHandler {
   return async (context) => {
-    // biome-ignore lint/suspicious/noExplicitAny: config resolved via provideRequestState
     const config = context.get(ConfigKey) as ConfigData;
     const c = getAppContext<Bindings>(context);
 

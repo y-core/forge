@@ -13,8 +13,8 @@ const DEFAULT_LIMIT = 50;
  * Async log channel that writes records to Cloudflare KV with time-ordered keys and reads
  * them back via the same key convention. Keys are `{prefix}||{isoTimestamp}||{rand}`,
  * enabling lexicographic oldest-first listing. Metadata is stored alongside each entry so
- * the viewer can list rows without per-row reads. A probabilistic high/low-water purge keeps
- * total entry count bounded. @public
+ * the viewer can list rows without per-row reads. A probabilistic high/low-water purge provides
+ * a best-effort soft cap; the TTL is the hard backstop. @public
  */
 export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): LogChannel {
   const prefix = options?.prefix ?? DEFAULT_PREFIX;
@@ -32,12 +32,15 @@ export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): Lo
       const rand = bytesToHex(randomBytes(4));
       const key = `${listPrefix}${record.timestamp}||${rand}`;
 
+      const safeMessage = record.message.slice(0, 256);
+      const safeRequestId = (record.data?.requestId != null ? String(record.data.requestId) : "").slice(0, 64);
+
       const metadata: KvLogMetadata = {
         level: record.level,
         prefix: record.prefix,
-        message: record.message,
+        message: safeMessage,
         timestamp: record.timestamp,
-        ...(record.data?.requestId !== undefined ? { requestId: String(record.data.requestId) } : {}),
+        ...(safeRequestId ? { requestId: safeRequestId } : {}),
       };
 
       const putPromise = kv.put(key, JSON.stringify(record), { expirationTtl: defaultTtl, metadata });
@@ -46,8 +49,8 @@ export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): Lo
         return putPromise;
       }
 
-      await Promise.all([putPromise, purge(kv, listPrefix, maxLogs, highWater)]);
-      return undefined;
+      void purge(kv, listPrefix, maxLogs, highWater).catch(() => {});
+      return putPromise;
     },
 
     async read(query?: LogQuery): Promise<LogReadResult> {
@@ -84,7 +87,7 @@ export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): Lo
 }
 
 async function purge(kv: KVNamespace, listPrefix: string, maxLogs: number, highWater: number): Promise<void> {
-  // Purge is probabilistic and best-effort; a single bounded page is sufficient to prevent unbounded growth.
+  // Purge is probabilistic and best-effort; the TTL is the hard backstop against unbounded growth.
   const result = await kv.list({ prefix: listPrefix, limit: 1000 });
   if (result.keys.length <= highWater) return;
 

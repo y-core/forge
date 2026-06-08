@@ -68,4 +68,32 @@ describe("safeUrl", () => {
     expect(safeUrl("data:text/html,<script>alert(1)</script>")).toBe("#");
     expect(safeUrl("vbscript:msgbox(1)")).toBe("#");
   });
+
+  it("neutralizes protocol-relative URLs starting with //", () => {
+    expect(safeUrl("//evil.com")).toBe("#");
+  });
+
+  it("neutralizes protocol-relative URLs starting with double backslash", () => {
+    expect(safeUrl("\\\\evil.com")).toBe("#");
+  });
+
+  it("neutralizes mixed-slash protocol-relative URLs (/\\)", () => {
+    expect(safeUrl("/\\evil.com")).toBe("#");
+  });
+
+  it("passes a single leading slash (root-relative path) unchanged", () => {
+    expect(safeUrl("/path")).toBe("/path");
+  });
+
+  it("passes an https URL unchanged", () => {
+    expect(safeUrl("https://example.com")).toBe("https://example.com");
+  });
+
+  it("passes a mailto URL unchanged", () => {
+    expect(safeUrl("mailto:a@b.com")).toBe("mailto:a@b.com");
+  });
+
+  it("passes a plain relative URL unchanged", () => {
+    expect(safeUrl("foo/bar")).toBe("foo/bar");
+  });
 });

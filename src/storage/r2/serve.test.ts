@@ -108,6 +108,33 @@ describe("serveObject — 416 (unsatisfiable range)", () => {
     const res = await serveObject(backend, req, "test.txt");
     expect(res.status).toBe(416);
   });
+
+  it("returns 416 for an inverted range (end < start)", async () => {
+    const backend = makeBackend(makeObjectBody({ size: 1000 }));
+    const req = new Request("http://x/test.txt", { headers: { Range: "bytes=500-200" } });
+    const res = await serveObject(backend, req, "test.txt");
+    expect(res.status).toBe(416);
+    expect(res.headers.get("Content-Range")).toBe("bytes */*");
+  });
+
+  it("returns 416 for NaN range boundaries (non-numeric start and end)", async () => {
+    const backend = makeBackend(makeObjectBody({ size: 1000 }));
+    const req = new Request("http://x/test.txt", { headers: { Range: "bytes=abc-def" } });
+    const res = await serveObject(backend, req, "test.txt");
+    expect(res.status).toBe(416);
+    expect(res.headers.get("Content-Range")).toBe("bytes */*");
+  });
+});
+
+describe("serveObject — 206 (valid range parse)", () => {
+  it("returns 206 for a well-formed range bytes=0-499", async () => {
+    const backend = makeBackend(makeObjectBody({ size: 1000 }));
+    const req = new Request("http://x/test.txt", { headers: { Range: "bytes=0-499" } });
+    const res = await serveObject(backend, req, "test.txt");
+    expect(res.status).toBe(206);
+    expect(res.headers.get("Content-Range")).toBe("bytes 0-499/1000");
+    expect(res.headers.get("Content-Length")).toBe("500");
+  });
 });
 
 describe("serveObject — 404", () => {

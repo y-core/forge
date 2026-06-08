@@ -2,7 +2,7 @@ import type { Middleware } from "@remix-run/fetch-router";
 import type { AppContext } from "../context/types";
 import { getAppContext } from "../context/types";
 import { createLogger } from "../logging/logger";
-import type { RateLimitBinding, RateLimitOptions } from "./types";
+import type { RateLimitOptions } from "./types";
 
 const DEFAULT_MESSAGE = "Too many requests. Please try again later.";
 

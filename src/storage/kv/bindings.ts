@@ -3,7 +3,7 @@ import { validateBindings } from "../../app/env";
 import type { AppContext } from "../../context/types";
 import { v } from "../../validation/mod";
 import { createKVStore } from "./store";
-import type { KVBindingOptions, KVNamespace, KVStore, KVStoreOptions } from "./types";
+import type { KVBindingOptions, KVStore } from "./types";
 
 /**
  * Middleware that validates a KV namespace binding exists on first request.

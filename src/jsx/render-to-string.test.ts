@@ -319,4 +319,24 @@ describe("renderToString — URL attribute sanitization", () => {
     const node = el("div", { id: "javascript:notaurl" });
     expect(String(await renderToString(node))).toBe('<div id="javascript:notaurl"></div>');
   });
+
+  it("neutralizes xlink:href with javascript: scheme to '#'", async () => {
+    const node = el("a", { "xlink:href": "javascript:alert(1)", children: "icon" });
+    expect(String(await renderToString(node))).toBe('<a xlink:href="#">icon</a>');
+  });
+
+  it("passes a benign xlink:href fragment reference unchanged", async () => {
+    const node = el("a", { "xlink:href": "#icon", children: "x" });
+    expect(String(await renderToString(node))).toBe('<a xlink:href="#icon">x</a>');
+  });
+
+  it("neutralizes xml:base with javascript: scheme to '#'", async () => {
+    const node = el("image", { "xml:base": "javascript:void(0)" });
+    expect(String(await renderToString(node))).toBe('<image xml:base="#"></image>');
+  });
+
+  it("passes a safe xml:base URL unchanged", async () => {
+    const node = el("image", { "xml:base": "https://cdn.example.com" });
+    expect(String(await renderToString(node))).toBe('<image xml:base="https://cdn.example.com"></image>');
+  });
 });

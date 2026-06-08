@@ -170,7 +170,7 @@ export type { CsrfSecretResolver };
  * the resolver, ensuring per-environment isolation. Falls back to no-cache when `env` is
  * absent. @public
  */
-export function csrfProtection<Bindings = Record<string, unknown>>(options: {
+export function csrfProtection(options: {
   // biome-ignore lint/suspicious/noExplicitAny: context shape varies
   secret: (context: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
   tokenField?: string;

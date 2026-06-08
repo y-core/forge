@@ -15,6 +15,18 @@ export function matchOrigin(origin: string, patterns: string[]): boolean {
   return false;
 }
 
+/** Appends a token to the response's Vary header without dropping existing tokens. */
+function appendVary(headers: Headers, token: string): void {
+  const existing = headers.get("Vary");
+  if (existing == null || existing.trim() === "") {
+    headers.set("Vary", token);
+    return;
+  }
+  if (existing.trim() === "*") return; // Vary: * already means "varies on everything"
+  const present = existing.split(",").some((t) => t.trim().toLowerCase() === token.toLowerCase());
+  if (!present) headers.set("Vary", `${existing}, ${token}`);
+}
+
 /** Middleware that adds CORS response headers for allowed origins. @public */
 export function cors(options: CorsOptions): Middleware {
   const {
@@ -62,7 +74,7 @@ export function cors(options: CorsOptions): Middleware {
       const headers = new Headers(res.headers);
       headers.set("Access-Control-Allow-Origin", resolveAcao(origin));
       if (credentials) headers.set("Access-Control-Allow-Credentials", "true");
-      headers.set("Vary", "Origin");
+      appendVary(headers, "Origin");
       return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
     }
     return res;

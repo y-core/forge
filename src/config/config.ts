@@ -63,11 +63,11 @@ export function optionalGroup<T extends Record<string, v.GenericSchema>>(
     v.transform((raw: unknown): Output => {
       const input = (raw !== null && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
       for (const key of requiredKeys) {
-        if (!input[key]) return null;
+        if (input[key] == null) return null;
       }
       const result: Record<string, unknown> = { ...input };
       for (const [key, defaultVal] of Object.entries(defaults)) {
-        if (!result[key]) result[key] = defaultVal;
+        if (result[key] == null) result[key] = defaultVal;
       }
       return result as Output;
     }),

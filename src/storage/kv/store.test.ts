@@ -129,3 +129,35 @@ describe("createKVStore — log-sink write smoke test", () => {
     expect(res).toEqual({ ok: true, data: "event happened" });
   });
 });
+
+describe("createKVStore — || key rejection", () => {
+  it("get with a valid key does not throw", async () => {
+    const store = createKVStore(makeKVStub());
+    const res = await store.get("valid-key");
+    expect(res.ok).toBe(true);
+  });
+
+  it("get with a key containing || returns ok:false with a message referencing ||", async () => {
+    const store = createKVStore(makeKVStub());
+    const res = await store.get("prefix||suffix");
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.message).toContain("||");
+  });
+
+  it("set with a key containing || returns ok:false with a message referencing ||", async () => {
+    const store = createKVStore(makeKVStub());
+    const res = await store.set("prefix||suffix", "value");
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.message).toContain("||");
+  });
+
+  it("delete with a key containing || returns ok:false with a message referencing ||", async () => {
+    const store = createKVStore(makeKVStub());
+    const res = await store.delete("prefix||suffix");
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.message).toContain("||");
+  });
+});
