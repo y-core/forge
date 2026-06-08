@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge */
+/** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
 import { FIELD_LABEL_CLASSES, FieldDescription, FieldError, FieldLabel, FieldRoot } from "./field";
 import { Separator } from "./separator";

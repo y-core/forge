@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge */
+/** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
 import type { FieldDescriptor } from "./field";
 import { fieldControlProps } from "./field";

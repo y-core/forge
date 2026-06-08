@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge */
+/** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";

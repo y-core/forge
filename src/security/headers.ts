@@ -3,9 +3,20 @@ import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
 import { base64urlEncode, randomBytes } from "../crypto/mod";
 import { NONCE } from "./nonce";
-import type { SecurityHeadersOptions } from "./types";
+import type { PermissionsPolicyOptions, SecurityHeadersOptions } from "./types";
 
 const CSP_DIRECTIVES = ["scriptSrc", "connectSrc", "frameSrc", "imgSrc", "workerSrc", "childSrc"] as const;
+
+const PERMISSIONS_POLICY_FEATURES = ["camera", "microphone", "geolocation", "payment"] as const;
+
+function renderAllowlist(sources?: string[]): string {
+  if (!sources || sources.length === 0) return "()";
+  return `(${sources.map((s) => (s === "self" || s === "*" || s === "src" ? s : `"${s}"`)).join(" ")})`;
+}
+
+function buildPermissionsPolicy(o?: PermissionsPolicyOptions): string {
+  return PERMISSIONS_POLICY_FEATURES.map((f) => `${f}=${renderAllowlist(o ? o[f] : undefined)}`).join(", ");
+}
 
 const secureHeadersNonce = contextVar<string>("secureHeadersNonce");
 
@@ -32,6 +43,7 @@ export function mergeSecurityHeaders(base: SecurityHeadersOptions, extra: Partia
     if (extraSources) merged[key] = [...(base[key] ?? []), ...extraSources];
   }
   if (extra.hstsMaxAge !== undefined) merged.hstsMaxAge = extra.hstsMaxAge;
+  if (extra.permissionsPolicy) merged.permissionsPolicy = { ...base.permissionsPolicy, ...extra.permissionsPolicy };
   return merged;
 }
 
@@ -79,7 +91,7 @@ function securityHeaderEntries(nonce: string, options?: SecurityHeadersOptions):
     ["strict-transport-security", `max-age=${hstsMaxAge}; includeSubDomains; preload`],
     ["referrer-policy", "strict-origin-when-cross-origin"],
     ["x-content-type-options", "nosniff"],
-    ["permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()"],
+    ["permissions-policy", buildPermissionsPolicy(options?.permissionsPolicy)],
     ["x-frame-options", "DENY"],
   ];
 }

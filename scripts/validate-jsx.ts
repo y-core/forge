@@ -6,7 +6,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = resolve(ROOT, "src");
 
 const PRAGMA_RUNTIME = "@jsxRuntime automatic";
-const PRAGMA_SOURCE = "@jsxImportSource @y-core/forge";
+const PRAGMA_SOURCE = "@jsxImportSource @y-core/forge/jsx";
 
 function collectTsx(dir: string): string[] {
   const out: string[] = [];
@@ -32,7 +32,7 @@ for (const file of files) {
     const rel = file.slice(ROOT.length + 1);
     console.error(`FAIL ${rel}`);
     if (missingRuntime) console.error(`  missing: /** @jsxRuntime automatic */`);
-    if (missingSource) console.error(`  missing: /** @jsxImportSource @y-core/forge */`);
+    if (missingSource) console.error(`  missing: /** @jsxImportSource @y-core/forge/jsx */`);
     failed = true;
   }
 }

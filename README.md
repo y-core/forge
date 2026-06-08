@@ -22,7 +22,7 @@ Every namespace is single-purpose and independently useful. Tightly coupled modu
 
 ## Supported Environments
 
-forge ships its TypeScript/TSX **source** directly — there is no build step and no emitted `.d.ts`. Consuming it therefore requires a **TypeScript-aware bundler** that resolves `.ts`/`.tsx` and is configured with `jsxImportSource: "@y-core/forge"` (e.g. esbuild, Bun, Vite, or Wrangler). A plain-JavaScript consumer, or one relying on `tsc`-style resolution of compiled `.js`, cannot import forge.
+forge ships its TypeScript/TSX **source** directly — there is no build step and no emitted `.d.ts`. Consuming it therefore requires a **TypeScript-aware bundler** that resolves `.ts`/`.tsx` and is configured with `jsxImportSource: "@y-core/forge/jsx"` (e.g. esbuild, Bun, Vite, or Wrangler). A plain-JavaScript consumer, or one relying on `tsc`-style resolution of compiled `.js`, cannot import forge.
 
 ---
 

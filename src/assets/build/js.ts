@@ -65,7 +65,7 @@ export async function buildJS(bundles: JsBundle[], opts: { outDir: string; minif
         minify: opts.minify ?? false,
         platform: "browser",
         jsx: "automatic",
-        jsxImportSource: "@y-core/forge",
+        jsxImportSource: "@y-core/forge/jsx",
         chunkNames: "chunks/[name]-[hash]",
         entryNames: shouldHash ? "[name]-[hash]" : "[name]",
         metafile: true,

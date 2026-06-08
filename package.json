@@ -80,11 +80,7 @@
       "types": "./src/jsx/jsx-dev-runtime.ts",
       "import": "./src/jsx/jsx-dev-runtime.ts"
     },
-    "./jsx-dev-runtime": {
-      "types": "./src/jsx/jsx-dev-runtime.ts",
-      "import": "./src/jsx/jsx-dev-runtime.ts"
-    },
-    "./jsx-runtime": {
+    "./jsx/jsx-runtime": {
       "types": "./src/jsx/jsx-runtime.ts",
       "import": "./src/jsx/jsx-runtime.ts"
     },
@@ -172,7 +168,7 @@
       "types": "./src/validation/mod.ts",
       "import": "./src/validation/mod.ts"
     },
-    "./register": {
+    "./jsx/register": {
       "types": "./src/jsx/register.ts",
       "import": "./src/jsx/register.ts"
     }

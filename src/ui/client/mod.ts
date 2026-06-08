@@ -6,6 +6,8 @@ export type { ResumeContext, ScopeDefinition } from "./resume";
 export { registerScope, resume } from "./resume";
 export type { ReadonlySignal, Signal } from "./signal";
 export { computed, createSignal, effect } from "./signal";
+export type { SpeechRecognitionOptions } from "./speech-recognition";
+export { mountSpeechRecognition } from "./speech-recognition";
 export type { ThemeControllerOptions } from "./theme";
 export { DARK_CLASS, DEFAULT_PREF, FOUC_SCRIPT, isDark, mountTheme, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 export type { TurnstileOptions } from "./turnstile";

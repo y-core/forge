@@ -13,7 +13,7 @@ const BROWSER_ONLY = new Set(["./ui/client", "./ui/client/htmx", "./ui/show/clie
 
 // Side-effect-only modules: intentionally export no values (they mutate globals or perform
 // one-time registration). ./register sets globalThis.React as a classic-runtime fallback.
-const SIDE_EFFECT_ONLY = new Set(["./register"]);
+const SIDE_EFFECT_ONLY = new Set(["./jsx/register"]);
 
 function parseBarrelExports(filePath: string): { values: string[]; hasExportStar: boolean; hasTypeExports: boolean } {
   const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");

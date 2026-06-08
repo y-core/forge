@@ -17,6 +17,14 @@ export interface BaseUrlConfig extends ParsedUrl {
   allowedOrigins: string[];
 }
 
+/** Permissions-Policy allowlists; omitted features default to `()` (disabled). @public */
+export interface PermissionsPolicyOptions {
+  microphone?: string[];
+  camera?: string[];
+  geolocation?: string[];
+  payment?: string[];
+}
+
 export interface SecurityHeadersOptions {
   scriptSrc?: CspValue;
   connectSrc?: CspValue;
@@ -25,6 +33,7 @@ export interface SecurityHeadersOptions {
   workerSrc?: CspValue;
   childSrc?: CspValue;
   hstsMaxAge?: number;
+  permissionsPolicy?: PermissionsPolicyOptions;
 }
 
 export type OriginResult = { ok: true } | { ok: false; reason: "missing" | "disallowed" };

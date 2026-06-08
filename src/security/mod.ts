@@ -14,6 +14,7 @@ export type {
   DeriveAllowedOriginsOptions,
   OriginResult,
   ParsedUrl,
+  PermissionsPolicyOptions,
   RateLimitBinding,
   RateLimitOptions,
   RequestIdContext,

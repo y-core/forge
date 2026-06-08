@@ -83,6 +83,41 @@ describe("makeSecurityHeaders — directive validation", () => {
   });
 });
 
+describe("makeSecurityHeaders — permissions-policy", () => {
+  it("defaults to fail-closed for all four features", async () => {
+    const headers = await headersFor(makeSecurityHeaders());
+    expect(headers.get("permissions-policy")).toBe("camera=(), microphone=(), geolocation=(), payment=()");
+  });
+
+  it("enables microphone with self keyword", async () => {
+    const headers = await headersFor(makeSecurityHeaders({ permissionsPolicy: { microphone: ["self"] } }));
+    const policy = headers.get("permissions-policy") ?? "";
+    expect(policy).toContain("microphone=(self)");
+    expect(policy).toContain("camera=()");
+  });
+
+  it("quotes non-keyword origins in the allowlist", async () => {
+    const headers = await headersFor(makeSecurityHeaders({ permissionsPolicy: { microphone: ["https://example.com"] } }));
+    const policy = headers.get("permissions-policy") ?? "";
+    expect(policy).toContain('microphone=("https://example.com")');
+  });
+});
+
+describe("mergeSecurityHeaders — permissionsPolicy", () => {
+  it("merges features independently, extra overrides base per-feature", () => {
+    const base = { permissionsPolicy: { camera: ["self"] as string[] } };
+    const merged = mergeSecurityHeaders(base, { permissionsPolicy: { microphone: ["self"] } });
+    expect(merged.permissionsPolicy?.camera).toEqual(["self"]);
+    expect(merged.permissionsPolicy?.microphone).toEqual(["self"]);
+  });
+
+  it("does not mutate base permissionsPolicy", () => {
+    const base = { permissionsPolicy: { camera: ["self"] as string[] } };
+    mergeSecurityHeaders(base, { permissionsPolicy: { camera: ["*"] } });
+    expect(base.permissionsPolicy?.camera).toEqual(["self"]);
+  });
+});
+
 describe("mergeSecurityHeaders", () => {
   it("concatenates sources onto a single directive", () => {
     const base = { scriptSrc: ["'self'"], connectSrc: ["'self'"] };

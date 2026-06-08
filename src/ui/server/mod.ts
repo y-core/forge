@@ -10,4 +10,5 @@ export { Flash, FlashContainer, FlashOob } from "./flash";
 export type { FlashCookieOptions, Flasher } from "./flash-cookie";
 export { createFlash } from "./flash-cookie";
 export { Resumable } from "./resumable";
+export { SpeechRecognition } from "./speech-recognition";
 export { ThemeToggle } from "./theme-toggle";

@@ -17,7 +17,7 @@
     "skipLibCheck": true,
     "types": [],
     "jsx": "react-jsx",
-    "jsxImportSource": "@y-core/forge"
+    "jsxImportSource": "@y-core/forge/jsx"
   },
   "include": [
     "src/**/*.ts",

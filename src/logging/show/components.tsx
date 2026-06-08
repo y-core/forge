@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge */
+/** @jsxImportSource @y-core/forge/jsx */
 import type { FC } from "../../jsx/types";
 import { Button } from "../../ui/core/button";
 import { Field } from "../../ui/core/field-layout";
