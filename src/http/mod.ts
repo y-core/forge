@@ -13,4 +13,5 @@ export type {
 export { Accept, CacheControl, ContentDisposition, ContentRange, ContentType, Range, SetCookie, Vary } from "./headers";
 export type { HtmlTemplateTag, SafeHtml } from "./html";
 export { html, isSafeHtml, rawHtml } from "./html";
+export { joinPath } from "./path";
 export { createRedirectResponse, fragmentResponse, htmlResponse, redirect } from "./response";

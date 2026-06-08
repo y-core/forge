@@ -14,7 +14,8 @@
     "release": "bun run scripts/release.ts"
   },
   "sideEffects": [
-    "./src/ui/client/htmx.ts"
+    "./src/ui/client/htmx.ts",
+    "./src/ui/show/client.ts"
   ],
   "dependencies": {
     "@remix-run/cookie": "^0.5.4",
@@ -148,6 +149,10 @@
     "./ui/show": {
       "types": "./src/ui/show/mod.ts",
       "import": "./src/ui/show/mod.ts"
+    },
+    "./ui/show/client": {
+      "types": "./src/ui/show/client.ts",
+      "import": "./src/ui/show/client.ts"
     },
     "./storage/db": {
       "types": "./src/storage/db/mod.ts",
