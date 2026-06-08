@@ -6,6 +6,7 @@ interface MockDeps {
   isWorkingTreeClean: Mock<(cwd: string) => boolean>;
   resolveVersion: Mock<(opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult>;
   updatePackageVersion: Mock<(version: string, cwd: string) => void>;
+  commit: Mock<(cwd: string, message: string, files: string[]) => void>;
   createTag: Mock<(cwd: string, tag: string) => void>;
 }
 
@@ -14,6 +15,7 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     isWorkingTreeClean: mock((_cwd: string) => true),
     resolveVersion: mock((_opts: unknown): VersionResult => ({ version: "1.1.0", reason: "auto-patch", previous: "v1.0.0" })),
     updatePackageVersion: mock((_version: string, _cwd: string): void => {}),
+    commit: mock((_cwd: string, _message: string, _files: string[]): void => {}),
     createTag: mock((_cwd: string, _tag: string): void => {}),
     ...overrides,
   };
@@ -41,20 +43,47 @@ describe("createReleaseCommand()", () => {
     expect(deps.resolveVersion.mock.calls[0]![0]).toMatchObject({ cwd: "/my/project" });
   });
 
-  it("dry-run mode does not call updatePackageVersion or createTag", () => {
+  it("dry-run mode does not call updatePackageVersion, commit, or createTag", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
     cmd.run?.([], { dry: true, "allow-dirty": true });
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(0);
+    expect(deps.commit.mock.calls).toHaveLength(0);
     expect(deps.createTag.mock.calls).toHaveLength(0);
   });
 
-  it("non-dry-run calls updatePackageVersion and createTag", () => {
+  it("non-dry-run calls updatePackageVersion, commit, and createTag", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
     cmd.run?.([], { dry: false, "allow-dirty": true });
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(1);
+    expect(deps.commit.mock.calls).toHaveLength(1);
     expect(deps.createTag.mock.calls).toHaveLength(1);
+  });
+
+  it("commits staged files before creating the tag", () => {
+    const callOrder: string[] = [];
+    const deps = makeDeps({
+      commit: mock((_cwd, _msg, _files) => {
+        callOrder.push("commit");
+      }),
+      createTag: mock((_cwd, _tag) => {
+        callOrder.push("createTag");
+      }),
+    });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    cmd.run?.([], { dry: false, "allow-dirty": true });
+    expect(callOrder).toEqual(["commit", "createTag"]);
+  });
+
+  it("commit receives the correct message and stageFiles", () => {
+    const deps = makeDeps();
+    const cmd = createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "bun.lock"] }, deps);
+    cmd.run?.([], { dry: false, "allow-dirty": true });
+    const [cwd, message, files] = deps.commit.mock.calls[0]!;
+    expect(cwd).toBe("/project");
+    expect(message).toBe("chore: release 1.1.0");
+    expect(files).toEqual(["package.json", "bun.lock"]);
   });
 
   it("in-sync returns early without tagging", () => {
@@ -65,7 +94,7 @@ describe("createReleaseCommand()", () => {
     expect(deps.createTag.mock.calls).toHaveLength(0);
   });
 
-  it("post-release message reflects default stageFiles", () => {
+  it("post-release message includes push instructions", () => {
     const deps = makeDeps();
     const logs: string[] = [];
     const origLog = console.log;
@@ -76,21 +105,8 @@ describe("createReleaseCommand()", () => {
     } finally {
       console.log = origLog;
     }
-    expect(logs.some((l) => l.includes("git add package.json"))).toBe(true);
-  });
-
-  it("post-release message reflects custom stageFiles", () => {
-    const deps = makeDeps();
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (msg: string) => logs.push(msg);
-    try {
-      const cmd = createReleaseCommand({ cwd: "/project", stageFiles: ["package.json"] }, deps);
-      cmd.run?.([], { dry: false, "allow-dirty": true });
-    } finally {
-      console.log = origLog;
-    }
-    expect(logs.some((l) => l.includes("git add package.json"))).toBe(true);
+    expect(logs.some((l) => l.includes("git push && git push --tags"))).toBe(true);
+    expect(logs.some((l) => l.includes("git add"))).toBe(false);
   });
 
   it("checks dirty tree when allow-dirty is false", () => {

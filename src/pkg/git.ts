@@ -33,6 +33,11 @@ export function getLastCommitMessage(cwd: string): string {
   return gitExec(["log", "-1", "--format=%s"], cwd);
 }
 
+export function commit(cwd: string, message: string, files: string[]): void {
+  gitExec(["add", ...files], cwd);
+  gitExec(["commit", "-m", message], cwd);
+}
+
 export function createTag(cwd: string, tag: string): void {
   gitExec(["tag", tag], cwd);
 }
