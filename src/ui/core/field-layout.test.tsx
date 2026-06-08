@@ -1,4 +1,3 @@
-/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "../../jsx/render-to-string";
 import { Field } from "./field-layout";

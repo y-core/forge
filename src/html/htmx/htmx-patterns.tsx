@@ -1,5 +1,3 @@
-/** @jsxImportSource @y-core/forge */
-
 import type { HxAttrs } from "./htmx-attrs";
 import { hxAttrs } from "./htmx-attrs";
 

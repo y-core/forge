@@ -1,3 +1,4 @@
+/** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge */
 
 import { dependentSelect, inlineValidation, liveSearch, paginatedTableLink } from "../../html/htmx/htmx-patterns";

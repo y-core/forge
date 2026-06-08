@@ -196,6 +196,6 @@
     "README.md",
     "!**/*.test.ts",
     "!**/*.test.tsx",
-    "!**/route-test-helper.ts"
+    "!**/*-test-helper.ts"
   ]
 }

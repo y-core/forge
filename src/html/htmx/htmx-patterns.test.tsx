@@ -1,4 +1,3 @@
-/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
 import {
   asyncDialogTrigger,

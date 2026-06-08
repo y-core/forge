@@ -1,3 +1,4 @@
+/** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge */
 
 import { oobSwap } from "../../html/htmx/htmx-patterns";

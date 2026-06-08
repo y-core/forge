@@ -1,15 +1,10 @@
-/** @jsxImportSource @y-core/forge */
 import { describe, expect, it } from "bun:test";
-import { renderToString } from "../../jsx/render-to-string";
+import { render } from "../../jsx/render-test-helper";
 import { Field } from "./field-layout";
 import { createIcon } from "./icon";
 import { Select } from "./select";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
-
-async function render(element: unknown): Promise<string> {
-  return String(await renderToString(element));
-}
 
 describe("Select", () => {
   it("renders a <select> element", async () => {
