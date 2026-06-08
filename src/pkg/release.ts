@@ -1,7 +1,7 @@
 import { exit } from "node:process";
 import { createCommand } from "../cli/command";
 import type { Command } from "../cli/types";
-import { createTag, isWorkingTreeClean } from "./git";
+import { commit, createTag, isWorkingTreeClean } from "./git";
 import { updatePackageVersion } from "./pkg";
 import type { ReleaseCommandConfig, ReleaseDeps } from "./types";
 import { resolveVersion } from "./version";
@@ -13,7 +13,7 @@ const releaseFlags = {
 
 export function createReleaseCommand(
   config: ReleaseCommandConfig,
-  deps: ReleaseDeps = { isWorkingTreeClean, resolveVersion, updatePackageVersion, createTag },
+  deps: ReleaseDeps = { isWorkingTreeClean, resolveVersion, updatePackageVersion, commit, createTag },
 ): Command<typeof releaseFlags> {
   const { cwd, tagPrefix = "v", stageFiles = ["package.json"] } = config;
 
@@ -50,11 +50,10 @@ export function createReleaseCommand(
       }
 
       deps.updatePackageVersion(result.version, cwd);
+      deps.commit(cwd, `chore: release ${result.version}`, stageFiles);
       deps.createTag(cwd, tag);
 
-      console.log(`\nTagged ${tag}. Stage and commit the version bump files, then push:`);
-      console.log(`  git add ${stageFiles.join(" ")}`);
-      console.log(`  git commit -m "chore: release ${result.version}"`);
+      console.log(`\nTagged ${tag}. Push:`);
       console.log(`  git push && git push --tags`);
     },
   });
