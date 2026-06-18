@@ -57,7 +57,7 @@ The table below is a quick reference; the decision doc is the source of truth.
 | `@y-core/forge/ui` | Server-side JSX components |
 | `@y-core/forge/ui/client` | Browser-side UI scripts |
 | `@y-core/forge/ui/client/htmx` | HTMX bundle (sideEffect) |
-| `@y-core/forge/validation` | Schema validation (valibot) |
+| `@y-core/forge/validation` | Schema validation (valibot) | 
 
 ---
 
