@@ -5,6 +5,7 @@ export {
   getLatestTag,
   gitExec,
   isWorkingTreeClean,
+  tagExists,
 } from "./git";
 export { readPackageVersion, updatePackageVersion } from "./pkg";
 export { createReleaseCommand } from "./release";

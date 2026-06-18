@@ -13,6 +13,7 @@ declare module "bun:test" {
     mock: { calls: Parameters<T>[]; results: { type: "return" | "throw"; value: ReturnType<T> }[] };
     mockImplementation(fn: T): this;
     mockReturnValue(value: ReturnType<T>): this;
+    mockReturnValueOnce(value: ReturnType<T>): this;
     mockResolvedValue(value: Awaited<ReturnType<T>>): this;
     mockResolvedValueOnce(value: Awaited<ReturnType<T>>): this;
     mockClear(): this;

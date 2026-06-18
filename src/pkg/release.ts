@@ -1,7 +1,7 @@
 import { exit } from "node:process";
 import { createCommand } from "../cli/command";
 import type { Command } from "../cli/types";
-import { commit, createTag, isWorkingTreeClean } from "./git";
+import { commit, createTag, isWorkingTreeClean, tagExists } from "./git";
 import { updatePackageVersion } from "./pkg";
 import type { ReleaseCommandConfig, ReleaseDeps } from "./types";
 import { resolveVersion } from "./version";
@@ -13,7 +13,7 @@ const releaseFlags = {
 
 export function createReleaseCommand(
   config: ReleaseCommandConfig,
-  deps: ReleaseDeps = { isWorkingTreeClean, resolveVersion, updatePackageVersion, commit, createTag },
+  deps: ReleaseDeps = { isWorkingTreeClean, resolveVersion, updatePackageVersion, commit, tagExists, createTag },
 ): Command<typeof releaseFlags> {
   const { cwd, tagPrefix = "v", stageFiles = ["package.json"] } = config;
 
@@ -49,8 +49,16 @@ export function createReleaseCommand(
         return;
       }
 
+      if (deps.tagExists(cwd, tag)) {
+        console.log(`\nTag ${tag} already exists — nothing to release.`);
+        return;
+      }
+
       deps.updatePackageVersion(result.version, cwd);
-      deps.commit(cwd, `chore: release ${result.version}`, stageFiles);
+      const committed = deps.commit(cwd, `chore: release ${result.version}`, stageFiles);
+      if (!committed) {
+        console.log(`  package.json already at ${result.version} — skipping commit.`);
+      }
       deps.createTag(cwd, tag);
 
       console.log(`\nTagged ${tag}. Push:`);

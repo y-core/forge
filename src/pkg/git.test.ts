@@ -4,7 +4,7 @@ import { describe, expect, it, mock } from "bun:test";
 const mockExecSync = mock((_cmd: string, _args?: string[], _opts?: unknown): string | Buffer => "");
 mock.module("node:child_process", () => ({ execFileSync: mockExecSync }));
 
-const { gitExec, isWorkingTreeClean, getLatestTag, getCommitsSinceTag, getLastCommitMessage, createTag } = await import("./git");
+const { gitExec, isWorkingTreeClean, getLatestTag, getCommitsSinceTag, getLastCommitMessage, createTag, commit, tagExists } = await import("./git");
 
 describe("gitExec()", () => {
   it("returns trimmed stdout", () => {
@@ -17,6 +17,30 @@ describe("gitExec()", () => {
       throw new Error("exit code 128");
     });
     expect(() => gitExec(["status"], "/cwd")).toThrow("git status failed:");
+    mockExecSync.mockReturnValue("");
+  });
+
+  it("uses stderr text when error has non-empty stderr", () => {
+    mockExecSync.mockImplementation(() => {
+      throw { stderr: "nothing to commit, working tree clean", stdout: "", message: "Command failed" };
+    });
+    expect(() => gitExec(["commit", "-m", "test"], "/cwd")).toThrow("git commit failed: nothing to commit, working tree clean");
+    mockExecSync.mockReturnValue("");
+  });
+
+  it("falls back to stdout when stderr is empty", () => {
+    mockExecSync.mockImplementation(() => {
+      throw { stderr: "", stdout: "some stdout text", message: "Command failed" };
+    });
+    expect(() => gitExec(["commit", "-m", "test"], "/cwd")).toThrow("git commit failed: some stdout text");
+    mockExecSync.mockReturnValue("");
+  });
+
+  it("falls back to message when both stderr and stdout are empty", () => {
+    mockExecSync.mockImplementation(() => {
+      throw { stderr: "", stdout: "", message: "Command failed: git commit" };
+    });
+    expect(() => gitExec(["commit", "-m", "test"], "/cwd")).toThrow("git commit failed: Command failed: git commit");
     mockExecSync.mockReturnValue("");
   });
 });
@@ -79,5 +103,59 @@ describe("createTag()", () => {
     mockExecSync.mockClear();
     createTag("/cwd", "v1.0.0; rm -rf /");
     expect(mockExecSync.mock.calls[0]![1]).toEqual(["tag", "v1.0.0; rm -rf /"]);
+  });
+});
+
+describe("commit()", () => {
+  it("returns false and does not call git commit when nothing is staged", () => {
+    mockExecSync.mockClear();
+    // First call: git add (returns ""), second call: git diff --cached --name-only (returns "")
+    mockExecSync.mockReturnValueOnce("");
+    mockExecSync.mockReturnValueOnce("");
+
+    const result = commit("/cwd", "chore: release 1.0.0", ["package.json"]);
+
+    expect(result).toBe(false);
+    // git add was called
+    expect(mockExecSync.mock.calls).toHaveLength(2);
+    expect(mockExecSync.mock.calls[0]![1]).toEqual(["add", "package.json"]);
+    // git diff --cached was called
+    expect(mockExecSync.mock.calls[1]![1]).toEqual(["diff", "--cached", "--name-only"]);
+    // git commit was NOT called
+    const commitCall = mockExecSync.mock.calls.find((c) => Array.isArray(c[1]) && (c[1] as string[]).includes("commit"));
+    expect(commitCall).toBeUndefined();
+
+    mockExecSync.mockReturnValue("");
+  });
+
+  it("returns true and calls git commit when files are staged", () => {
+    mockExecSync.mockClear();
+    // First call: git add, second call: git diff --cached (non-empty), third call: git commit
+    mockExecSync.mockReturnValueOnce("");
+    mockExecSync.mockReturnValueOnce("package.json");
+    mockExecSync.mockReturnValueOnce("");
+
+    const result = commit("/cwd", "chore: release 1.0.0", ["package.json"]);
+
+    expect(result).toBe(true);
+    expect(mockExecSync.mock.calls).toHaveLength(3);
+    expect(mockExecSync.mock.calls[0]![1]).toEqual(["add", "package.json"]);
+    expect(mockExecSync.mock.calls[1]![1]).toEqual(["diff", "--cached", "--name-only"]);
+    expect(mockExecSync.mock.calls[2]![1]).toEqual(["commit", "-m", "chore: release 1.0.0"]);
+
+    mockExecSync.mockReturnValue("");
+  });
+});
+
+describe("tagExists()", () => {
+  it("returns true when git tag --list returns a non-empty string", () => {
+    mockExecSync.mockReturnValue("v1.2.3");
+    expect(tagExists("/cwd", "v1.2.3")).toBe(true);
+    mockExecSync.mockReturnValue("");
+  });
+
+  it("returns false when git tag --list returns an empty string", () => {
+    mockExecSync.mockReturnValue("");
+    expect(tagExists("/cwd", "v1.2.3")).toBe(false);
   });
 });

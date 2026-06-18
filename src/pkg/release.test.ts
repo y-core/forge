@@ -6,7 +6,8 @@ interface MockDeps {
   isWorkingTreeClean: Mock<(cwd: string) => boolean>;
   resolveVersion: Mock<(opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult>;
   updatePackageVersion: Mock<(version: string, cwd: string) => void>;
-  commit: Mock<(cwd: string, message: string, files: string[]) => void>;
+  commit: Mock<(cwd: string, message: string, files: string[]) => boolean>;
+  tagExists: Mock<(cwd: string, tag: string) => boolean>;
   createTag: Mock<(cwd: string, tag: string) => void>;
 }
 
@@ -15,7 +16,8 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     isWorkingTreeClean: mock((_cwd: string) => true),
     resolveVersion: mock((_opts: unknown): VersionResult => ({ version: "1.1.0", reason: "auto-patch", previous: "v1.0.0" })),
     updatePackageVersion: mock((_version: string, _cwd: string): void => {}),
-    commit: mock((_cwd: string, _message: string, _files: string[]): void => {}),
+    commit: mock((_cwd: string, _message: string, _files: string[]): boolean => true),
+    tagExists: mock((_cwd: string, _tag: string): boolean => false),
     createTag: mock((_cwd: string, _tag: string): void => {}),
     ...overrides,
   };
@@ -64,10 +66,11 @@ describe("createReleaseCommand()", () => {
   it("commits staged files before creating the tag", () => {
     const callOrder: string[] = [];
     const deps = makeDeps({
-      commit: mock((_cwd, _msg, _files) => {
+      commit: mock((_cwd, _msg, _files): boolean => {
         callOrder.push("commit");
+        return true;
       }),
-      createTag: mock((_cwd, _tag) => {
+      createTag: mock((_cwd, _tag): void => {
         callOrder.push("createTag");
       }),
     });
@@ -128,5 +131,54 @@ describe("createReleaseCommand()", () => {
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
     cmd.run?.([], { dry: true, "allow-dirty": false });
     expect(deps.isWorkingTreeClean.mock.calls).toHaveLength(0);
+  });
+
+  it("tag already exists — skips all mutations", () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    const deps = makeDeps({ tagExists: mock((_cwd: string, _tag: string): boolean => true) });
+    try {
+      const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+      cmd.run?.([], { dry: false, "allow-dirty": true });
+    } finally {
+      console.log = origLog;
+    }
+    expect(deps.updatePackageVersion.mock.calls).toHaveLength(0);
+    expect(deps.commit.mock.calls).toHaveLength(0);
+    expect(deps.createTag.mock.calls).toHaveLength(0);
+    expect(logs.some((l) => l.includes("Tag v1.1.0 already exists — nothing to release."))).toBe(true);
+  });
+
+  it("idempotent recovery — commit skipped but tag still created", () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    const deps = makeDeps({ commit: mock((_cwd: string, _message: string, _files: string[]): boolean => false) });
+    try {
+      const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+      cmd.run?.([], { dry: false, "allow-dirty": true });
+    } finally {
+      console.log = origLog;
+    }
+    expect(deps.updatePackageVersion.mock.calls).toHaveLength(1);
+    expect(deps.commit.mock.calls).toHaveLength(1);
+    expect(deps.createTag.mock.calls).toHaveLength(1);
+    expect(logs.some((l) => l.includes("package.json already at 1.1.0 — skipping commit."))).toBe(true);
+  });
+
+  it("normal path — commit returns true, no skip message logged", () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    const deps = makeDeps({ commit: mock((_cwd: string, _message: string, _files: string[]): boolean => true) });
+    try {
+      const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+      cmd.run?.([], { dry: false, "allow-dirty": true });
+    } finally {
+      console.log = origLog;
+    }
+    expect(deps.createTag.mock.calls).toHaveLength(1);
+    expect(logs.some((l) => l.includes("skipping commit"))).toBe(false);
   });
 });

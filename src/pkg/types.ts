@@ -34,7 +34,9 @@ export interface ReleaseDeps {
   isWorkingTreeClean: (cwd: string) => boolean;
   resolveVersion: (opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult;
   updatePackageVersion: (version: string, cwd: string) => void;
-  commit: (cwd: string, message: string, files: string[]) => void;
+  /** Stages `files` and commits. Returns `false` (no error) when nothing was staged. */
+  commit: (cwd: string, message: string, files: string[]) => boolean;
+  tagExists: (cwd: string, tag: string) => boolean;
   createTag: (cwd: string, tag: string) => void;
 }
 
