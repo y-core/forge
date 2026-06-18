@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge */
+/** @jsxImportSource @y-core/forge/jsx */
 
 import { dependentSelect, inlineValidation, liveSearch, paginatedTableLink } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";

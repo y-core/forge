@@ -1,6 +1,9 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.31",
+  "version": "0.0.32",
+  "bin": {
+    "forge-assets": "./src/assets/cli/bin.ts"
+  },
   "type": "module",
   "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
   "scripts": {

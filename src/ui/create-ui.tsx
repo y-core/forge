@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge */
+/** @jsxImportSource @y-core/forge/jsx */
 import type { FC, PropsWithChildren } from "../jsx/types";
 import type { ForgeIcon } from "./core/icon";
 import { Select as RawSelect } from "./core/select";
