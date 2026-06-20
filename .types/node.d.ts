@@ -14,6 +14,7 @@ declare module "node:process" {
 declare const process: {
   exit(code?: number): never;
   cwd(): string;
+  env: Record<string, string | undefined>;
 };
 
 declare module "node:path" {

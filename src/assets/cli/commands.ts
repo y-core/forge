@@ -24,7 +24,7 @@ export function createAssetsCommands(): CommandBase {
         out: { type: "string", description: "Output path for the generated assets module (default: .forge/assets.ts)" },
       },
       run: async (_args, flags) => {
-        const config = await loadConfig(flags.config);
+        const config = await loadConfig(flags.config, process.env);
         await buildAll(config, { minify: flags.minify, ...(flags.out !== undefined ? { assetsPath: flags.out } : {}) });
       },
     }),
@@ -37,7 +37,7 @@ export function createAssetsCommands(): CommandBase {
       description: "Build CSS only",
       flags: { minify: { type: "boolean", description: "Minify output" }, config: { type: "string", description: "Path to assets.config.ts" } },
       run: async (_args, flags) => {
-        const config = await loadConfig(flags.config);
+        const config = await loadConfig(flags.config, process.env);
         for (const css of config.css) {
           buildCSS(css, { outDir: config.paths.publicDir, minify: flags.minify });
         }
@@ -52,7 +52,7 @@ export function createAssetsCommands(): CommandBase {
       description: "Build JavaScript bundles only",
       flags: { minify: { type: "boolean", description: "Minify output" }, config: { type: "string", description: "Path to assets.config.ts" } },
       run: async (_args, flags) => {
-        const config = await loadConfig(flags.config);
+        const config = await loadConfig(flags.config, process.env);
         await buildJS(config.js.bundles, { outDir: config.paths.publicDir, minify: flags.minify });
       },
     }),
@@ -65,7 +65,7 @@ export function createAssetsCommands(): CommandBase {
       description: "Download fonts",
       flags: { config: { type: "string", description: "Path to assets.config.ts" } },
       run: async (_args, flags) => {
-        const config = await loadConfig(flags.config);
+        const config = await loadConfig(flags.config, process.env);
         await buildFonts(config.fonts, config.paths.publicDir);
       },
     }),
@@ -78,7 +78,7 @@ export function createAssetsCommands(): CommandBase {
       description: "Build icon outputs (SVG, PNG, ICO, web app manifest)",
       flags: { config: { type: "string", description: "Path to assets.config.ts" } },
       run: async (_args, flags) => {
-        const config = await loadConfig(flags.config);
+        const config = await loadConfig(flags.config, process.env);
         if (config.icons) await buildIcons(config.icons);
       },
     }),
@@ -96,7 +96,7 @@ export function createAssetsCommands(): CommandBase {
         config: { type: "string", description: "Path to assets.config.ts" },
       },
       run: async (_args, flags) => {
-        const config = await loadConfig(flags.config);
+        const config = await loadConfig(flags.config, process.env);
         await buildSprites(config.sprites, config.paths.publicDir, { hash: flags.minify });
       },
     }),

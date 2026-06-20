@@ -1,5 +1,4 @@
 import { resolve } from "node:path";
-import { env as processEnv } from "node:process";
 import { v } from "../validation/mod";
 import type { AssetsConfig, DefineValue, EnvRef, FlagRef, ResolvedConfig, ResolvedJsBundle } from "./types";
 import { AssetsConfigSchema } from "./types";
@@ -27,7 +26,7 @@ export function resolveDefine(value: DefineValue, source: Record<string, string 
   return JSON.stringify(value);
 }
 
-export async function loadConfig(configPath?: string): Promise<ResolvedConfig> {
+export async function loadConfig(configPath?: string, env: Record<string, string | undefined> = {}): Promise<ResolvedConfig> {
   const resolvedPath = resolve(configPath ?? "assets.config.ts");
   // Dynamic import handles both .ts (Bun) and pre-compiled .js
   // biome-ignore lint/suspicious/noExplicitAny: dynamic module has unknown shape
@@ -38,7 +37,7 @@ export async function loadConfig(configPath?: string): Promise<ResolvedConfig> {
   const bundles: ResolvedJsBundle[] = (parsed.js?.bundles ?? []).map((bundle) => {
     const { define: rawDefine, ...rest } = bundle;
     if (!rawDefine) return rest;
-    return { ...rest, define: Object.fromEntries(Object.entries(rawDefine).map(([k, val]) => [k, resolveDefine(val, processEnv)])) };
+    return { ...rest, define: Object.fromEntries(Object.entries(rawDefine).map(([k, val]) => [k, resolveDefine(val, env)])) };
   });
 
   return {
