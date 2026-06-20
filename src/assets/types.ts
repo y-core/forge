@@ -1,11 +1,25 @@
 import { v } from "../validation/mod";
 
+export type EnvRef = { readonly __env: string };
+export type FlagRef = { readonly __flag: string };
+export type DefineValue = string | number | boolean | null | EnvRef | FlagRef;
+
+const DefineValueSchema = v.union([
+  v.string(),
+  v.number(),
+  v.boolean(),
+  v.null_(),
+  v.object({ __env: v.string() }),
+  v.object({ __flag: v.string() }),
+]);
+
 const JsBundleSchema = v.object({
   entry: v.string(),
   outdir: v.string(),
   splitting: v.optional(v.boolean()),
   format: v.optional(v.picklist(["esm", "cjs", "iife"] as const)),
   minify: v.optional(v.boolean()),
+  define: v.optional(v.record(v.string(), DefineValueSchema)),
 });
 
 const IconOutputSchema = v.union([
@@ -47,6 +61,7 @@ export const AssetsConfigSchema = v.object({
 });
 
 export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
+export type ResolvedJsBundle = Omit<JsBundle, "define"> & { define?: Record<string, string> };
 export type CssBuild = v.InferOutput<typeof CssBuildSchema>;
 export type CopyEntry = v.InferOutput<typeof CopyEntrySchema>;
 export type SpriteSource = v.InferOutput<typeof SpriteSourceSchema>;
@@ -66,7 +81,7 @@ export interface ResolvedPaths {
 
 export interface ResolvedConfig {
   paths: ResolvedPaths;
-  js: { bundles: JsBundle[] };
+  js: { bundles: ResolvedJsBundle[] };
   css: CssBuild[];
   copy: CopyEntry[];
   sprites: Sprites;

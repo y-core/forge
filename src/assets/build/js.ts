@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
-import type { JsBundle } from "../types";
+import type { ResolvedJsBundle } from "../types";
 import { safeJoin } from "./paths";
 
 /**
@@ -11,14 +11,17 @@ import { safeJoin } from "./paths";
  * alongside generated output — they will be deleted. The path containment guard ensures
  * deletions stay within `opts.outDir`.
  */
-export async function buildJS(bundles: JsBundle[], opts: { outDir: string; minify?: boolean; hash?: boolean }): Promise<Record<string, string>> {
+export async function buildJS(
+  bundles: ResolvedJsBundle[],
+  opts: { outDir: string; minify?: boolean; hash?: boolean },
+): Promise<Record<string, string>> {
   if (bundles.length === 0) return {};
 
   const shouldHash = opts.hash ?? false;
   const absPublicDir = resolve(opts.outDir);
 
   // Group bundles by resolved outdir so each outdir is cleaned exactly once.
-  const byOutdir = new Map<string, JsBundle[]>();
+  const byOutdir = new Map<string, ResolvedJsBundle[]>();
   for (const bundle of bundles) {
     const key = safeJoin(absPublicDir, bundle.outdir);
     const group = byOutdir.get(key) ?? [];
@@ -43,18 +46,19 @@ export async function buildJS(bundles: JsBundle[], opts: { outDir: string; minif
     rmSync(join(outdir, "chunks"), { recursive: true, force: true });
     mkdirSync(outdir, { recursive: true });
 
-    // Sub-group by (format, splitting) — these are esbuild per-build settings.
-    const bySubKey = new Map<string, JsBundle[]>();
+    // Sub-group by (format, splitting, define) — these are esbuild per-build settings.
+    const bySubKey = new Map<string, ResolvedJsBundle[]>();
     for (const bundle of group) {
-      const subKey = `${bundle.format ?? "esm"}:${bundle.splitting ?? false}`;
+      const subKey = `${bundle.format ?? "esm"}:${bundle.splitting ?? false}:${JSON.stringify(bundle.define ?? {})}`;
       const sub = bySubKey.get(subKey) ?? [];
       sub.push(bundle);
       bySubKey.set(subKey, sub);
     }
 
     for (const [subKey, subGroup] of bySubKey) {
-      const [format, splittingStr] = subKey.split(":");
+      const [format = "esm", splittingStr = "false"] = subKey.split(":");
       const splitting = splittingStr === "true";
+      const define = subGroup[0]?.define;
 
       const result = await esbuild.build({
         entryPoints: subGroup.map((b) => b.entry),
@@ -69,11 +73,12 @@ export async function buildJS(bundles: JsBundle[], opts: { outDir: string; minif
         chunkNames: "chunks/[name]-[hash]",
         entryNames: shouldHash ? "[name]-[hash]" : "[name]",
         metafile: true,
+        ...(define !== undefined ? { define } : {}),
       });
 
       for (const bundle of subGroup) {
         const absEntry = resolve(bundle.entry);
-        for (const [outPath, meta] of Object.entries(result.metafile.outputs)) {
+        for (const [outPath, meta] of Object.entries(result.metafile?.outputs ?? {})) {
           if (meta.entryPoint && resolve(meta.entryPoint) === absEntry) {
             const relPath = relative(absPublicDir, resolve(outPath)).replace(/\\/g, "/");
             const logicalName = `${basename(bundle.entry, extname(bundle.entry))}.js`;
