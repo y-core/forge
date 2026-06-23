@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { registerScope, resume } from "./resume";
+import { registerScope, resume, resumeScope } from "./resume";
 
 // The number of event types that resume() installs delegated listeners for.
-// Mirrors the EVENTS tuple in resume.ts: ["click", "input", "change", "submit"]
+// Mirrors SCOPE_EVENTS in ../scope-events.ts: ["click", "input", "change", "submit"]
 const EVENT_COUNT = 4;
 
 // ---------------------------------------------------------------------------
@@ -17,8 +17,11 @@ interface DocStub {
   addCalls: Array<[string, EventListener]>;
   removeCalls: Array<[string, EventListener]>;
   listeners: ListenerRegistry;
+  /** Elements returned from `querySelectorAll("[data-scope]")` — drives the eager-resume pass. */
+  scopeElements: HTMLElement[];
   addEventListener: (type: string, handler: EventListener) => void;
   removeEventListener: (type: string, handler: EventListener) => void;
+  querySelectorAll: (sel: string) => HTMLElement[];
 }
 
 interface GlobalMock {
@@ -31,11 +34,13 @@ function makeDocStub(): DocStub {
   const listeners: ListenerRegistry = {};
   const addCalls: Array<[string, EventListener]> = [];
   const removeCalls: Array<[string, EventListener]> = [];
+  const scopeElements: HTMLElement[] = [];
 
   return {
     addCalls,
     removeCalls,
     listeners,
+    scopeElements,
     addEventListener(type, handler) {
       addCalls.push([type, handler]);
       listeners[type] = [...(listeners[type] ?? []), handler];
@@ -44,7 +49,15 @@ function makeDocStub(): DocStub {
       removeCalls.push([type, handler]);
       listeners[type] = (listeners[type] ?? []).filter((h) => h !== handler);
     },
+    querySelectorAll(sel) {
+      return sel === "[data-scope]" ? scopeElements : [];
+    },
   };
+}
+
+/** Minimal `[data-scope]` element stub: just the `dataset` fields the resume runtime reads. */
+function makeScopeRoot(scope: string, state?: Record<string, unknown>): HTMLElement {
+  return { dataset: { scope, state: state ? JSON.stringify(state) : undefined } } as unknown as HTMLElement;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,5 +196,134 @@ describe("resume", () => {
     clickListeners[0]!(event);
 
     expect(callCount).toBe(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. Eager pass: resume() hydrates an eager scope at install time (no interaction)
+  // -------------------------------------------------------------------------
+  it("eager-resumes a scope whose def has eager:true during resume()", () => {
+    let setupRuns = 0;
+    const scopeName = `test-eager-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      eager: true,
+      setup: () => {
+        setupRuns++;
+      },
+      on: {},
+    });
+
+    doc.scopeElements.push(makeScopeRoot(scopeName));
+
+    currentDisposer = resume();
+
+    // setup ran with zero interaction.
+    expect(setupRuns).toBe(1);
+  });
+
+  it("does not eager-resume a scope without eager:true", () => {
+    let setupRuns = 0;
+    const scopeName = `test-lazy-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      setup: () => {
+        setupRuns++;
+      },
+      on: {},
+    });
+
+    doc.scopeElements.push(makeScopeRoot(scopeName));
+
+    currentDisposer = resume();
+
+    expect(setupRuns).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. Generic registerScope<"foo"> still dispatches its action
+  // -------------------------------------------------------------------------
+  it("dispatches an action from a scope registered with a generic action union", () => {
+    let called = false;
+    const scopeName = `test-generic-${Math.random().toString(36).slice(2)}`;
+    registerScope<"foo">(scopeName, {
+      on: {
+        foo: () => {
+          called = true;
+        },
+      },
+    });
+
+    currentDisposer = resume();
+
+    const root = {
+      dataset: { scope: scopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? root : null),
+      getAttribute: () => null,
+    };
+    const el = {
+      closest: (sel: string) => {
+        if (sel === "[data-on-click]") return el;
+        if (sel === "[data-scope]") return root;
+        return null;
+      },
+      getAttribute: (k: string) => (k === "data-on-click" ? "foo" : null),
+      dataset: {},
+    };
+    const target = { closest: (sel: string) => (sel === "[data-on-click]" ? el : null) };
+
+    doc.listeners.click![0]!(makeSyntheticEvent("click", target));
+
+    expect(called).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resumeScope — imperative single-scope resume
+// ---------------------------------------------------------------------------
+
+describe("resumeScope", () => {
+  let doc: DocStub;
+
+  beforeEach(() => {
+    doc = makeDocStub();
+    g.document = doc;
+  });
+
+  it("hydrates data-state into signals and runs setup once", () => {
+    let setupRuns = 0;
+    const scopeName = `test-resumescope-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      setup: () => {
+        setupRuns++;
+      },
+      on: {},
+    });
+
+    const root = makeScopeRoot(scopeName, { query: "hello" });
+    const state = resumeScope(root);
+
+    expect(setupRuns).toBe(1);
+    expect(state?.query?.value).toBe("hello");
+  });
+
+  it("is idempotent: a second call returns the same state without re-running setup", () => {
+    let setupRuns = 0;
+    const scopeName = `test-resumescope-idem-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      setup: () => {
+        setupRuns++;
+      },
+      on: {},
+    });
+
+    const root = makeScopeRoot(scopeName, { n: 1 });
+    const first = resumeScope(root);
+    const second = resumeScope(root);
+
+    expect(setupRuns).toBe(1);
+    expect(second).toBe(first);
+  });
+
+  it("returns undefined when the element names no registered scope", () => {
+    const root = makeScopeRoot(`unregistered-${Math.random().toString(36).slice(2)}`);
+    expect(resumeScope(root)).toBeUndefined();
   });
 });

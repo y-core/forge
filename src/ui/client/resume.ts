@@ -10,6 +10,7 @@
  * @public
  */
 
+import { SCOPE_EVENTS } from "../scope-events";
 import { createSignal, effect, type Signal } from "./signal";
 
 /** Context handed to a scope's `setup` and action handlers.
@@ -24,25 +25,29 @@ export interface ResumeContext {
   state: Record<string, Signal<unknown>>;
 }
 
-/** A registered scope: one-time setup plus a map of named action handlers.
+/** A registered scope: one-time setup plus a map of named action handlers. Generic over the
+ * action-name union `A` (defaults to `string`, so existing callers infer it from their `on`
+ * object literal with no change).
  * @public
  **/
-export interface ScopeDefinition {
+export interface ScopeDefinition<A extends string = string> {
+  /** Resume at `resume()` time instead of waiting for the first interaction. */
+  eager?: boolean;
   /** Bind DOM-mutating effects ONCE on first resume (no `el` — not tied to one event). */
   setup?: (ctx: Omit<ResumeContext, "el">) => void;
   /** Action handlers keyed by the `data-on-<event>` value. */
-  on: Record<string, (ctx: ResumeContext, event: Event) => void>;
+  on: Record<A, (ctx: ResumeContext, event: Event) => void>;
 }
 
 const scopes = new Map<string, ScopeDefinition>();
 const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();
-const EVENTS = ["click", "input", "change", "submit"] as const;
 
-/** Registers a scope's setup + action handlers, keyed to a `data-scope` name.
+/** Registers a scope's setup + action handlers, keyed to a `data-scope` name. Generic over the
+ * action-name union `A`, inferred from the `on` object literal.
  * @public
  **/
-export function registerScope(name: string, def: ScopeDefinition): void {
-  scopes.set(name, def);
+export function registerScope<A extends string = string>(name: string, def: ScopeDefinition<A>): void {
+  scopes.set(name, def as ScopeDefinition);
 }
 
 let teardown: (() => void) | null = null;
@@ -52,7 +57,7 @@ let teardown: (() => void) | null = null;
 export function resume(): () => void {
   if (teardown) return teardown; // already mounted — no duplicate listeners
   const handlers: Array<[string, EventListener]> = [];
-  for (const type of EVENTS) {
+  for (const type of SCOPE_EVENTS) {
     const handler: EventListener = (event) => dispatch(type, event);
     document.addEventListener(type, handler);
     handlers.push([type, handler]);
@@ -61,7 +66,31 @@ export function resume(): () => void {
     for (const [type, handler] of handlers) document.removeEventListener(type, handler);
     teardown = null;
   };
+  // Eager pass: scopes that opt out of lazy resume are hydrated immediately.
+  for (const el of document.querySelectorAll<HTMLElement>("[data-scope]")) {
+    const def = scopes.get(el.dataset.scope ?? "");
+    if (def?.eager) ensureResumed(el, def);
+  }
   return teardown;
+}
+
+/** Hydrates a scope's state into signals and runs its `setup` exactly once. Idempotent: a
+ * second call returns the already-built state without re-running `setup`. */
+function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, Signal<unknown>> {
+  let state = resumed.get(root);
+  if (!state) {
+    state = hydrateState(root.dataset.state);
+    resumed.set(root, state);
+    def.setup?.({ root, state });
+  }
+  return state;
+}
+
+/** Resume a single scope now (idempotent); returns its signal state, or `undefined` if the
+ * element's `data-scope` names no registered scope. @public */
+export function resumeScope(root: HTMLElement): Record<string, Signal<unknown>> | undefined {
+  const def = scopes.get(root.dataset.scope ?? "");
+  return def ? ensureResumed(root, def) : undefined;
 }
 
 function dispatch(type: string, event: Event): void {
@@ -73,13 +102,7 @@ function dispatch(type: string, event: Event): void {
   const def = scopes.get(root.dataset.scope ?? "");
   if (!def) return;
 
-  let state = resumed.get(root);
-  if (!state) {
-    // First interaction with this scope → resume it.
-    state = hydrateState(root.dataset.state);
-    resumed.set(root, state);
-    def.setup?.({ root, state });
-  }
+  const state = ensureResumed(root, def);
   def.on[action]?.({ root, el, state }, event);
 }
 
