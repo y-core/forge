@@ -1,6 +1,6 @@
 ---
 title: UI Components
-description: "forge JSX components, renderToString, safeUrl, getNonce, Form, Field, Input, Select, Button, Switch, Slider, Alert, Card, Icon, cn, cva, SSR components, ui/core, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
+description: "forge JSX components, renderToString, safeUrl, getNonce, Form, Field, FormField, Input, Select, Button, Switch, Slider, fieldAttr, bindField, parseControlValue, Alert, Card, Icon, createIcon, cn, cva, SSR components, ui/core, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
 weight: 30
 ---
 
@@ -22,7 +22,8 @@ weight: 30
 
 ## 0. Quick Reference
 
-- §1 ui/core namespace: Form, Field, Input, Button, Switch, Slider, Alert, Card, Icon, cn, cva
+- §1 ui/core namespace: Form, Field (layout), FormField, Input, Button, Switch, Slider, Alert, Card, Icon, cn, cva
+- §1j generic field binding: fieldAttr (ui/server) + bindField/parseControlValue/applyControlValue (ui/client)
 - §2 SSR component patterns: composing Field+FieldLabel+FieldError+Input
 - §3 cn and cva: class name utilities for conditional and variant styling
 - §4 ui/client namespace: mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, signals
@@ -52,19 +53,23 @@ data attributes (`hx-post`, `hx-get`, `hx-target`, `hx-swap`, etc.). No client-s
 submission logic is added — behavior is delegated entirely to HTMX or native form
 submission.
 
-### 1b. Field Components — Accessible Form Fields
+### 1b. FormField Components — Accessible Form Fields
 
-    import { Field, FieldLabel, FieldError, FieldDescription, Input } from "@y-core/forge/ui"
+> **Naming:** `FormField` is the `<fieldset>`-based accessible form field (formerly
+> exported as `Field`). The bare name `Field` now refers to the lightweight **layout**
+> field — a label + control with no form semantics (see §1i).
+
+    import { FormField, FieldLabel, FieldError, FieldDescription, Input } from "@y-core/forge/ui"
     import { fieldId, fieldErrorId, fieldDescriptionId } from "@y-core/forge/ui"
 
-    <Field name="email">
+    <FormField name="email">
       <FieldLabel>Email</FieldLabel>
       <Input type="email" name="email" />
       <FieldDescription>We'll never share your email.</FieldDescription>
       <FieldError>{errors.email}</FieldError>
-    </Field>
+    </FormField>
 
-`Field` provides a scoped context for its `name` prop. `FieldLabel`, `FieldDescription`,
+`FormField` provides a scoped context for its `name` prop. `FieldLabel`, `FieldDescription`,
 and `FieldError` auto-wire `for`/`id`/`aria-describedby` relationships via the ID
 helpers:
 
@@ -141,9 +146,13 @@ HTMX response fragments (see §2b). `AlertTitle` renders as a `<p>` with strong 
 
     <Icon name="arrow-right" size={20} />
 
-`Icon` renders an inline SVG from the forge icon registry. `createIcon(pathData)` builds
-a named icon component from raw SVG path data for custom icons not in the registry.
-`size` sets both `width` and `height` attributes (default `16`).
+`Icon` renders an `<svg><use href="sprite#symbol">` from a sprite sheet. `createIcon(sprite, meta)`
+binds a sprite URL to a typed `ForgeIcon` whose `name` is narrowed to the sprite's `icon-*` keys
+(viewBox resolved from `meta`). `createIcon(sprite)` — **no `meta`** — yields a permissive
+`ForgeIcon<string>` for apps whose icon set is dynamic (names not known at compile time); the viewBox
+comes from the `viewBox` prop. A `ForgeIcon<string>` is assignable to any narrower `ForgeIcon<Name>`
+(contravariance), so it still satisfies components that require a specific icon (e.g. `Select`'s
+`chevron-down`).
 
 ### 1h. Switch and Slider Components
 
@@ -162,6 +171,39 @@ forge stays markup-only per §6). Both accept all standard `<input>` attributes,
 delegation/`data-*` attributes through, and take an optional `field` descriptor that wires
 `id` / `name` / `aria-*` exactly like `Input` / `Select` / `Textarea` (§1c).
 
+### 1i. Field (layout) Component
+
+    import { Field } from "@y-core/forge/ui"
+
+    <Field label="Field of view"><Slider min={10} max={120} value={50} output /></Field>
+    <Field label="Device" orientation="horizontal"><Select …/></Field>
+
+`Field` is a lightweight **layout** primitive — a caption (`<span data-slot="field-label">`) tightly
+bound to its control children, with no form semantics. It is distinct from `FormField` (§1b, the
+`<fieldset>`-based accessible form field): use `Field` for settings rows and labelled controls that
+aren't validated form fields, `FormField` when you need `name`/`invalid`/error/description wiring.
+`orientation` is `"vertical"` (default) or `"horizontal"`; theme-token styled and `class`-overridable.
+
+### 1j. Generic field binding (`fieldAttr` + `bindField`)
+
+forge owns the generic glue between a control and a reactive signal; the app supplies the signal
+record and any domain effects layered on it.
+
+    // SSR (ui/server): name the bound field; pair with scopeAttrs for the event → action
+    import { scopeAttrs, fieldAttr } from "@y-core/forge/ui/server"
+    <Switch {...scopeAttrs({ onChange: "bindField" })} {...fieldAttr("gridVisible")} checked={v} />
+
+    // Client (ui/client): register the bindField action over a SignalRecord
+    import { bindField, parseControlValue, applyControlValue } from "@y-core/forge/ui/client"
+    registerScope("settings", { on: { bindField: bindField(sig), ...appActions } })
+
+`fieldAttr(name)` stamps `data-field`. `bindField(signals)` returns a resumable-scope action that, on
+the bound event, reads `data-field`, parses the control's value by the target signal's current type
+(`parseControlValue`: boolean→`checked`, number→`Number(value)`, else string), and writes
+`signals[field]`. `applyControlValue` is the inverse — seed an uncontrolled input from a typed value
+(e.g. after a programmatic reset). Domain effects (persist, render, readouts) stay app-side as
+additional effects on the same signals.
+
 ---
 
 ## 2. SSR Component Patterns
@@ -171,7 +213,7 @@ delegation/`data-*` attributes through, and take an optional `field` descriptor 
 ### 2a. Form with Validation Errors Pattern
 
     <Form hx-post="/api/contact" hx-target="#contact-result">
-      <Field name="name">
+      <FormField name="name">
         <FieldLabel>Name</FieldLabel>
         <Input
           name="name"
@@ -179,8 +221,8 @@ delegation/`data-*` attributes through, and take an optional `field` descriptor 
           aria-describedby={fieldErrorId("name")}
         />
         <FieldError>{errors?.name}</FieldError>
-      </Field>
-      <Field name="email">
+      </FormField>
+      <FormField name="email">
         <FieldLabel>Email</FieldLabel>
         <Input
           type="email"
@@ -189,7 +231,7 @@ delegation/`data-*` attributes through, and take an optional `field` descriptor 
           aria-describedby={fieldErrorId("email")}
         />
         <FieldError>{errors?.email}</FieldError>
-      </Field>
+      </FormField>
       <Button type="submit">Submit</Button>
     </Form>
     <div id="contact-result" data-ref="contact-result" />

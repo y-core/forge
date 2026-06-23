@@ -162,6 +162,63 @@ export interface R2Bucket {
   list(options?: R2ListOptions): Promise<R2ListResult>;
 }
 
+// ── R2 structural contract (the consumed surface) ──────────────────────────
+//
+// The `*Like` shapes below describe *only* what `r2Backend` reads off a bucket —
+// 5 methods plus a handful of object fields. They are deliberately a structural
+// **supertype** of both forge's own neutral `R2Bucket` (above) AND Cloudflare's
+// runtime `R2Bucket` (abstract-class `R2Object` with extra members, overloaded
+// `put`/`get`, discriminated-union `list` return). Constraining a binding
+// resolver to `B extends R2BucketLike` lets the compiler prove each concrete
+// platform binding meets the contract — no cast at the call site. `get`/`list`
+// options are `unknown` (the adapter passes them straight through), sidestepping
+// the divergent branded option/range types.
+
+/** Read surface of an R2 object the adapter consumes (a structural supertype of
+ *  Cloudflare's `R2Object`). @public */
+export interface R2ObjectLike {
+  key: string;
+  size: number;
+  etag: string;
+  httpEtag: string;
+  uploaded: Date;
+  httpMetadata?: R2HttpMetadata;
+  customMetadata?: Record<string, string>;
+}
+
+/** Read surface of an R2 object body the adapter consumes. @public */
+export interface R2ObjectBodyLike extends R2ObjectLike {
+  readonly body: ReadableStream;
+  readonly bodyUsed: boolean;
+  arrayBuffer(): Promise<ArrayBuffer>;
+  text(): Promise<string>;
+  blob(): Promise<Blob>;
+}
+
+/** List-result surface the adapter consumes. @public */
+export interface R2ListLike {
+  objects: R2ObjectLike[];
+  truncated: boolean;
+  cursor?: string;
+  delimitedPrefixes?: string[];
+}
+
+/** Put-options surface the adapter constructs. @public */
+export interface R2PutLike {
+  httpMetadata?: R2HttpMetadata;
+  customMetadata?: Record<string, string>;
+}
+
+/** Structural contract — the consumed surface of an R2 bucket binding. Both forge's
+ *  neutral `R2Bucket` and Cloudflare's runtime `R2Bucket` satisfy it. @public */
+export interface R2BucketLike {
+  put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null | Blob, options?: R2PutLike): Promise<R2ObjectLike>;
+  get(key: string, options?: unknown): Promise<R2ObjectBodyLike | null>;
+  head(key: string): Promise<R2ObjectLike | null>;
+  delete(keys: string | string[]): Promise<void>;
+  list(options?: unknown): Promise<R2ListLike>;
+}
+
 /** @public */
 export interface ObjectStoreOptions {
   prefix?: string;
@@ -179,9 +236,11 @@ export interface ObjectStore {
   serveObject(request: Request, key: string, options?: ServeOptions): Promise<Response>;
 }
 
-/** Options for resolving an R2 binding from context. @public */
-export interface R2BindingOptions<Bindings = Record<string, unknown>> {
-  binding: (c: AppContext<Bindings>) => R2Bucket | undefined;
+/** Options for resolving an R2 binding from context. The binding return is constrained to the
+ *  structural contract `B extends R2BucketLike` so any platform bucket (forge's neutral type or
+ *  Cloudflare's runtime type) is accepted cast-free. @public */
+export interface R2BindingOptions<Bindings = Record<string, unknown>, B extends R2BucketLike = R2Bucket> {
+  binding: (c: AppContext<Bindings>) => B | undefined;
   /** When true (default), throws if the binding is absent. Set false to return null instead. */
   required?: boolean;
   store?: ObjectStoreOptions;

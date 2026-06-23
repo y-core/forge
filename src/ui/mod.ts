@@ -20,6 +20,7 @@ export {
   FIELD_LABEL_CLASSES,
   Field,
   Form,
+  FormField,
   fieldControlProps,
   fieldDescriptionId,
   fieldErrorId,

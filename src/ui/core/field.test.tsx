@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { render } from "../../jsx/render-test-helper";
 import { fieldDescriptionId, fieldErrorId, fieldId } from "./field";
-import { Field } from "./field-layout";
+import { FormField } from "./field-layout";
 import { Input } from "./input";
 
 describe("fieldId helpers", () => {
@@ -21,12 +21,12 @@ describe("fieldId helpers", () => {
 describe("Field primitives", () => {
   it("wires Field.Label to the control id via explicit name prop", async () => {
     const out = await render(
-      <Field name='email'>
-        <Field.Label name='email'>Email address</Field.Label>
-        <Field.Content>
+      <FormField name='email'>
+        <FormField.Label name='email'>Email address</FormField.Label>
+        <FormField.Content>
           <Input field={{ name: "email" }} />
-        </Field.Content>
-      </Field>,
+        </FormField.Content>
+      </FormField>,
     );
     expect(out).toContain('for="field-email"');
     expect(out).toContain('id="field-email"');
@@ -35,13 +35,13 @@ describe("Field primitives", () => {
 
   it("adds data-invalid to the field and aria-invalid to the control", async () => {
     const out = await render(
-      <Field name='email' invalid>
-        <Field.Label name='email'>Email</Field.Label>
-        <Field.Content>
+      <FormField name='email' invalid>
+        <FormField.Label name='email'>Email</FormField.Label>
+        <FormField.Content>
           <Input field={{ name: "email", invalid: true }} />
-          <Field.Error name='email'>Email is required.</Field.Error>
-        </Field.Content>
-      </Field>,
+          <FormField.Error name='email'>Email is required.</FormField.Error>
+        </FormField.Content>
+      </FormField>,
     );
     expect(out).toContain('data-invalid="true"');
     expect(out).toContain('aria-invalid="true"');
@@ -50,26 +50,26 @@ describe("Field primitives", () => {
 
   it("wires description and error ids into aria-describedby", async () => {
     const out = await render(
-      <Field name='message' invalid>
-        <Field.Label name='message'>Message</Field.Label>
-        <Field.Content>
+      <FormField name='message' invalid>
+        <FormField.Label name='message'>Message</FormField.Label>
+        <FormField.Content>
           <Input field={{ name: "message", invalid: true }} />
-          <Field.Description name='message'>Minimum 15 characters</Field.Description>
-          <Field.Error name='message'>Required</Field.Error>
-        </Field.Content>
-      </Field>,
+          <FormField.Description name='message'>Minimum 15 characters</FormField.Description>
+          <FormField.Error name='message'>Required</FormField.Error>
+        </FormField.Content>
+      </FormField>,
     );
     expect(out).toContain('aria-describedby="field-message-description field-message-error"');
   });
 
   it("inherits disabled state on the control", async () => {
     const out = await render(
-      <Field name='name' disabled>
-        <Field.Label name='name'>Name</Field.Label>
-        <Field.Content>
+      <FormField name='name' disabled>
+        <FormField.Label name='name'>Name</FormField.Label>
+        <FormField.Content>
           <Input field={{ name: "name", disabled: true }} />
-        </Field.Content>
-      </Field>,
+        </FormField.Content>
+      </FormField>,
     );
     expect(out).toContain('data-disabled="true"');
     expect(out).toMatch(/\bdisabled(?!:)/);
@@ -77,12 +77,12 @@ describe("Field primitives", () => {
 
   it("preserves explicit control props over field defaults", async () => {
     const out = await render(
-      <Field name='name' invalid>
-        <Field.Label name='name'>Name</Field.Label>
-        <Field.Content>
+      <FormField name='name' invalid>
+        <FormField.Label name='name'>Name</FormField.Label>
+        <FormField.Content>
           <Input id='custom-id' aria-describedby='custom-help' aria-invalid='false' field={{ name: "name", invalid: true }} />
-        </Field.Content>
-      </Field>,
+        </FormField.Content>
+      </FormField>,
     );
     expect(out).toContain('id="custom-id"');
     expect(out).toContain('aria-invalid="false"');
@@ -91,14 +91,14 @@ describe("Field primitives", () => {
 
   it("renders Field.Group with stack classes", async () => {
     const out = await render(
-      <Field.Group>
-        <Field name='name'>
-          <Field.Label name='name'>Name</Field.Label>
-          <Field.Content>
+      <FormField.Group>
+        <FormField name='name'>
+          <FormField.Label name='name'>Name</FormField.Label>
+          <FormField.Content>
             <Input field={{ name: "name" }} />
-          </Field.Content>
-        </Field>
-      </Field.Group>,
+          </FormField.Content>
+        </FormField>
+      </FormField.Group>,
     );
     expect(out).toContain('data-slot="field-group"');
     expect(out).toContain("@container/field-group");
@@ -106,9 +106,9 @@ describe("Field primitives", () => {
 
   it("renders Field.Set and Field.Legend with explicit slots", async () => {
     const out = await render(
-      <Field.Set>
-        <Field.Legend>Contact details</Field.Legend>
-      </Field.Set>,
+      <FormField.Set>
+        <FormField.Legend>Contact details</FormField.Legend>
+      </FormField.Set>,
     );
     expect(out).toContain('data-slot="field-set"');
     expect(out).toContain('data-slot="field-legend"');
@@ -116,15 +116,15 @@ describe("Field primitives", () => {
 
   it("renders Field.Title and Field.Separator with explicit slots", async () => {
     const out = await render(
-      <Field.Group>
-        <Field name='name'>
-          <Field.Title>Name</Field.Title>
-          <Field.Content>
+      <FormField.Group>
+        <FormField name='name'>
+          <FormField.Title>Name</FormField.Title>
+          <FormField.Content>
             <Input field={{ name: "name" }} />
-          </Field.Content>
-        </Field>
-        <Field.Separator>or</Field.Separator>
-      </Field.Group>,
+          </FormField.Content>
+        </FormField>
+        <FormField.Separator>or</FormField.Separator>
+      </FormField.Group>,
     );
     expect(out).toContain('data-slot="field-title"');
     expect(out).toContain('data-slot="field-separator"');

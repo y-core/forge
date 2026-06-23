@@ -7,7 +7,7 @@ import { Avatar } from "../core/avatar";
 import { Badge } from "../core/badge";
 import { Button } from "../core/button";
 import { Card } from "../core/card";
-import { Field } from "../core/field-layout";
+import { FormField } from "../core/field-layout";
 import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Label } from "../core/label";
@@ -167,24 +167,24 @@ const FieldSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "m
   return (
     <CatalogSection id='field' title='Field'>
       <div class='w-full max-w-xs space-y-4'>
-        <Field name='text-field'>
-          <Field.Label name='text-field'>Label</Field.Label>
+        <FormField name='text-field'>
+          <FormField.Label name='text-field'>Label</FormField.Label>
           <Input type='text' name='text-field' placeholder='Placeholder' field={{ name: "text-field" }} />
-          <Field.Description name='text-field'>Helper text for this field.</Field.Description>
-        </Field>
-        <Field name='error-field' invalid>
-          <Field.Label name='error-field'>Invalid Field</Field.Label>
+          <FormField.Description name='text-field'>Helper text for this field.</FormField.Description>
+        </FormField>
+        <FormField name='error-field' invalid>
+          <FormField.Label name='error-field'>Invalid Field</FormField.Label>
           <Input type='text' name='error-field' value='bad input' field={{ name: "error-field", invalid: true }} />
-          <Field.Error name='error-field'>This field has an error.</Field.Error>
-        </Field>
-        <Field name='select-field'>
-          <Field.Label name='select-field'>Select</Field.Label>
+          <FormField.Error name='error-field'>This field has an error.</FormField.Error>
+        </FormField>
+        <FormField name='select-field'>
+          <FormField.Label name='select-field'>Select</FormField.Label>
           <Select name='select-field' field={{ name: "select-field" }}>
             <Select.Option value=''>Choose…</Select.Option>
             <Select.Option value='a'>Option A</Select.Option>
             <Select.Option value='b'>Option B</Select.Option>
           </Select>
-        </Field>
+        </FormField>
       </div>
     </CatalogSection>
   );

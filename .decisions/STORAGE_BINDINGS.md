@@ -302,6 +302,48 @@ take the request context and an options object with a `binding: (c) => …`
 selector. They build the typed client/store, throwing a descriptive `Error` when
 the binding is absent; pass `required: false` to receive `null` instead.
 
+### 4c. Structural Contracts — Cast-Free Platform Bindings
+
+Each storage namespace publishes *neutral* interfaces (`R2Bucket`, `KVNamespace`,
+`D1Database`) so consumers don't couple to `@cloudflare/workers-types`. But a
+binding selector pinned to the *exact* neutral type conflates two boundaries: what
+the resolver **accepts** (the platform binding off `c.env.X` — Cloudflare's runtime
+type) versus what the adapter **exposes** (the neutral store it produces). The
+adapter only ever **consumes a small structural surface** — for R2, five methods
+plus ~8 read fields — yet the neutral type demands the consumer's binding *equal*
+the full type. For KV that happens to be assignable; for R2 it is not (Cloudflare's
+abstract-class `R2Object` with extra members, overloaded `put`/`get`, and a
+discriminated-union `list` return), which forced an `as unknown as R2Bucket` cast
+at every R2 call site.
+
+The fix is a **structural contract typed to exactly the consumed surface**, paired
+with a **generic resolver constrained to it**:
+
+| Backend | Contract (consumed surface) | Generic resolver |
+|---|---|---|
+| R2 | `R2BucketLike` (+ `R2ObjectLike` / `R2ObjectBodyLike` / `R2ListLike` / `R2PutLike`) | `resolveObjectStore<Bindings, B extends R2BucketLike>` |
+| KV | `KVNamespaceLike` | `resolveKVStore<Bindings, T, NS extends KVNamespaceLike>` |
+| D1 | `D1DatabaseLike` | `resolveD1Client<Bindings, DB extends D1DatabaseLike>` |
+
+The `*Like` interfaces are a structural **supertype** of both forge's own neutral
+type *and* the platform's runtime type — `get`/`list` options are `unknown` (the
+adapter passes them straight through), sidestepping the divergent branded option
+and range types. Because the binding return is constrained to the contract
+(`B extends R2BucketLike`) rather than pinned to the neutral type, the compiler
+**infers** `B` from the selector and **proves** the concrete platform binding meets
+the contract — at every call site, no cast:
+
+```typescript
+// Cast-free: B is inferred as Cloudflare's R2Bucket and proven to satisfy R2BucketLike.
+const store = resolveObjectStore(c, { binding: (c) => c.env.DOCUMENTS })
+```
+
+`r2Backend(bucket: R2BucketLike)` is likewise widened to the contract — the
+neutral `R2Bucket`, the platform bucket, and an in-memory test stub all satisfy it.
+Where a platform *brand* genuinely forces a cast (e.g. a divergent stream type read
+*through* the adapter), localise it **once inside the adapter**, never in a resolver
+or any consumer.
+
 ### 4b. Registering Binding Checks
 
 Each `validateXBinding(name)` is a `Middleware`; register them with `app.use("*", …)`

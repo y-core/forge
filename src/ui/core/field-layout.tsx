@@ -75,7 +75,7 @@ const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({ class: cls
   </div>
 );
 
-export const Field = Object.assign(FieldRoot, {
+export const FormField = Object.assign(FieldRoot, {
   Label: FieldLabel,
   Description: FieldDescription,
   Error: FieldError,

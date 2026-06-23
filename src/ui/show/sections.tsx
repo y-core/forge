@@ -4,7 +4,7 @@
 import { dependentSelect, inlineValidation, liveSearch, paginatedTableLink } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
 import { Button } from "../core/button";
-import { Field } from "../core/field-layout";
+import { FormField } from "../core/field-layout";
 import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { FlashOob } from "../server/flash";
@@ -93,16 +93,16 @@ export const ValidateFragment: FC<{ data: ValidateData }> = ({ data }) => {
   const isValid = data.email.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email);
   const showError = data.email.length > 0 && !isValid;
   return (
-    <Field id={SHOW_VALIDATE_ID} name='email' invalid={showError}>
-      <Field.Label name='email'>Email</Field.Label>
+    <FormField id={SHOW_VALIDATE_ID} name='email' invalid={showError}>
+      <FormField.Label name='email'>Email</FormField.Label>
       <Input type='email' name='email' placeholder='you@example.com' value={data.email} field={{ name: "email", invalid: showError }} />
-      {showError ? <Field.Error name='email'>Please enter a valid email address.</Field.Error> : null}
+      {showError ? <FormField.Error name='email'>Please enter a valid email address.</FormField.Error> : null}
       {isValid ? (
-        <Field.Description name='email' class='text-emerald-600'>
+        <FormField.Description name='email' class='text-emerald-600'>
           Looks good!
-        </Field.Description>
+        </FormField.Description>
       ) : null}
-    </Field>
+    </FormField>
   );
 };
 

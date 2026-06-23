@@ -24,20 +24,30 @@ export interface D1Client {
   queryOne<T = unknown>(fragment: SqlFragment): Promise<Result<T | null>>;
 }
 
-/** Options for resolving a D1 binding from context. @public */
-export interface D1BindingOptions<Bindings = Record<string, unknown>> {
-  binding: (c: AppContext<Bindings>) => D1Database | undefined;
+/** Options for resolving a D1 binding from context. The binding return is constrained to the
+ *  structural contract `DB extends D1DatabaseLike` so any platform database (forge's neutral type
+ *  or Cloudflare's runtime type) is accepted cast-free. @public */
+export interface D1BindingOptions<Bindings = Record<string, unknown>, DB extends D1DatabaseLike = D1Database> {
+  binding: (c: AppContext<Bindings>) => DB | undefined;
   /** When true (default), throws if the binding is absent. Set false to return null instead. */
   required?: boolean;
   client?: D1ClientOptions;
 }
 
-/** Minimal structural D1Database — type-only, erases at runtime. @public */
-export interface D1Database {
+/**
+ * Structural contract — the consumed surface of a D1 database binding. Typed loosely enough that
+ * both forge's neutral `D1Database` and Cloudflare's runtime `D1Database` (an abstract class with
+ * extra `withSession`/`dump` members and richer `D1Result` meta) satisfy it. Constraining a resolver
+ * to `DB extends D1DatabaseLike` proves any platform database meets the contract cast-free. @public
+ */
+export interface D1DatabaseLike {
   prepare(query: string): D1PreparedStatement;
   batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
   exec(query: string): Promise<{ count: number; duration: number }>;
 }
+
+/** Minimal structural D1Database — type-only, erases at runtime. @public */
+export interface D1Database extends D1DatabaseLike {}
 
 /** @public */
 export interface D1PreparedStatement {

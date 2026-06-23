@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC } from "../../jsx/types";
 import { Button } from "../../ui/core/button";
-import { Field } from "../../ui/core/field-layout";
+import { FormField } from "../../ui/core/field-layout";
 import type { ForgeIcon } from "../../ui/core/icon";
 import { Input } from "../../ui/core/input";
 import { Select } from "../../ui/core/select";
@@ -59,12 +59,12 @@ interface LogFilterBarProps {
 /** Filter form for the log viewer — level selector, text search, and HTMX-powered submit. @public */
 export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAction, icon }) => (
   <form class='flex flex-wrap sm:flex-nowrap items-end gap-3' hx-get={formAction} hx-target={`#${targetId}`} hx-swap='outerHTML' hx-push-url='true'>
-    <Field name='q' class='flex-1 min-w-xs'>
-      <Field.Label name='q'>Search</Field.Label>
+    <FormField name='q' class='flex-1 min-w-xs'>
+      <FormField.Label name='q'>Search</FormField.Label>
       <Input name='q' type='search' placeholder='message, prefix, requestId…' value={q ?? ""} field={{ name: "q" }} />
-    </Field>
-    <Field name='level' class='flex-1 max-w-xs'>
-      <Field.Label name='level'>Level</Field.Label>
+    </FormField>
+    <FormField name='level' class='flex-1 max-w-xs'>
+      <FormField.Label name='level'>Level</FormField.Label>
       <Select name='level' field={{ name: "level" }} icon={icon}>
         <Select.Option value='' selected={!level}>
           All
@@ -82,7 +82,7 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
           error
         </Select.Option>
       </Select>
-    </Field>
+    </FormField>
     <Button type='submit' variant='secondary' size='md'>
       Filter
     </Button>

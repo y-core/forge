@@ -8,6 +8,7 @@ export type {
   KVListOptions,
   KVListResult,
   KVNamespace,
+  KVNamespaceLike,
   KVPutOptions,
   KVSetOptions,
   KVStore,

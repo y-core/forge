@@ -1,5 +1,5 @@
 import { bytesToHex, randomBytes } from "../crypto/mod";
-import type { KVNamespace } from "../storage/kv/types";
+import type { KVNamespaceLike } from "../storage/kv/types";
 import type { KvLogChannelOptions, KvLogMetadata, LogChannel, LogQuery, LogReadResult, LogRecord, LogRow } from "./types";
 
 const DEFAULT_PREFIX = "logs";
@@ -16,7 +16,7 @@ const DEFAULT_LIMIT = 50;
  * the viewer can list rows without per-row reads. A probabilistic high/low-water purge provides
  * a best-effort soft cap; the TTL is the hard backstop. @public
  */
-export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): LogChannel {
+export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: NS, options?: KvLogChannelOptions): LogChannel {
   const prefix = options?.prefix ?? DEFAULT_PREFIX;
   const defaultTtl = options?.defaultTtl ?? DEFAULT_TTL;
   const maxLogs = options?.maxLogs ?? DEFAULT_MAX_LOGS;
@@ -86,7 +86,7 @@ export function kvLogChannel(kv: KVNamespace, options?: KvLogChannelOptions): Lo
   };
 }
 
-async function purge(kv: KVNamespace, listPrefix: string, maxLogs: number, highWater: number): Promise<void> {
+async function purge(kv: KVNamespaceLike, listPrefix: string, maxLogs: number, highWater: number): Promise<void> {
   // Purge is probabilistic and best-effort; the TTL is the hard backstop against unbounded growth.
   const result = await kv.list({ prefix: listPrefix, limit: 1000 });
   if (result.keys.length <= highWater) return;

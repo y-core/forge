@@ -3,7 +3,7 @@ import { Forge } from "../../app/forge-app";
 import { mapHandler } from "../../app/route-test-helper";
 import type { AppContext } from "../../context/types";
 import { resolveD1Client, validateD1Binding } from "./bindings";
-import type { D1Database, D1PreparedStatement, D1Result } from "./types";
+import type { D1BindingOptions, D1Database, D1DatabaseLike, D1PreparedStatement, D1Result } from "./types";
 
 const stubDb: D1Database = {
   prepare(): D1PreparedStatement {
@@ -57,6 +57,50 @@ describe("resolveD1Client", () => {
     });
     const res = await app.request("/");
     expect(await res.json()).toEqual({ hasClient: false });
+  });
+});
+
+// ── Cloudflare-shaped contract proof (compile-time) ────────────────────────
+// Mirrors the divergent shape of Cloudflare's real D1 binding — an abstract class
+// with extra `withSession`/`dump` members, an overloaded `first`, a generic `run`,
+// and a richer `D1Result` whose `meta` has all-required fields plus an index
+// signature. The structural contract `D1DatabaseLike` must accept it cast-free.
+
+interface CfD1Meta {
+  duration: number;
+  size_after: number;
+  rows_read: number;
+  rows_written: number;
+  last_row_id: number;
+  changed_db: boolean;
+  changes: number;
+}
+type CfD1Result<T = unknown> = { success: true; meta: CfD1Meta & Record<string, unknown>; results: T[] };
+interface CfD1PreparedStatement {
+  bind(...values: unknown[]): CfD1PreparedStatement;
+  first<T = unknown>(colName: string): Promise<T | null>;
+  first<T = Record<string, unknown>>(): Promise<T | null>;
+  run<T = Record<string, unknown>>(): Promise<CfD1Result<T>>;
+  all<T = Record<string, unknown>>(): Promise<CfD1Result<T>>;
+  raw<T = unknown[]>(options?: { columnNames?: boolean }): Promise<T[]>;
+}
+interface CfD1Database {
+  prepare(query: string): CfD1PreparedStatement;
+  batch<T = unknown>(statements: CfD1PreparedStatement[]): Promise<CfD1Result<T>[]>;
+  exec(query: string): Promise<{ count: number; duration: number }>;
+  withSession(constraintOrBookmark?: string): unknown;
+  dump(): Promise<ArrayBuffer>;
+}
+
+describe("D1DatabaseLike structural contract", () => {
+  it("accepts a Cloudflare-shaped D1 database without a cast", () => {
+    type Accepts = CfD1Database extends D1DatabaseLike ? true : false;
+    const accepts: Accepts = true;
+
+    const opts: D1BindingOptions<{ DB: CfD1Database }, CfD1Database> = { binding: (c) => c.env.DB };
+
+    expect(accepts).toBe(true);
+    expect(typeof opts.binding).toBe("function");
   });
 });
 

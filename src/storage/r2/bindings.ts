@@ -4,7 +4,7 @@ import type { AppContext } from "../../context/types";
 import { v } from "../../validation/mod";
 import { r2Backend } from "./r2-backend";
 import { createObjectStore } from "./store";
-import type { ObjectStore, R2BindingOptions } from "./types";
+import type { ObjectStore, R2BindingOptions, R2Bucket, R2BucketLike } from "./types";
 
 /**
  * Middleware that validates an R2 bucket binding exists on first request.
@@ -33,9 +33,9 @@ export function validateR2Binding(name: string): Middleware {
  * Resolves an ObjectStore from the current request context using an R2 backend.
  * Returns null when binding is absent and `required` is false; throws otherwise. @public
  */
-export function resolveObjectStore<Bindings = Record<string, unknown>>(
+export function resolveObjectStore<Bindings = Record<string, unknown>, B extends R2BucketLike = R2Bucket>(
   c: AppContext<Bindings>,
-  opts: R2BindingOptions<Bindings>,
+  opts: R2BindingOptions<Bindings, B>,
 ): ObjectStore | null {
   const bucket = opts.binding(c);
   if (!bucket) {

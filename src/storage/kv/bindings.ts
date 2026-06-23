@@ -3,7 +3,7 @@ import { validateBindings } from "../../app/env";
 import type { AppContext } from "../../context/types";
 import { v } from "../../validation/mod";
 import { createKVStore } from "./store";
-import type { KVBindingOptions, KVStore } from "./types";
+import type { KVBindingOptions, KVNamespace, KVNamespaceLike, KVStore } from "./types";
 
 /**
  * Middleware that validates a KV namespace binding exists on first request.
@@ -32,9 +32,9 @@ export function validateKVBinding(name: string): Middleware {
  * Resolves a KVStore from the current request context.
  * Returns null when binding is absent and `required` is false; throws otherwise. @public
  */
-export function resolveKVStore<Bindings = Record<string, unknown>, T = unknown>(
+export function resolveKVStore<Bindings = Record<string, unknown>, T = unknown, NS extends KVNamespaceLike = KVNamespace>(
   c: AppContext<Bindings>,
-  opts: KVBindingOptions<Bindings, T>,
+  opts: KVBindingOptions<Bindings, T, NS>,
 ): KVStore<T> | null {
   const ns = opts.binding(c);
   if (!ns) {

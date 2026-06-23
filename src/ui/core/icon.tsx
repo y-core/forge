@@ -59,16 +59,27 @@ export const Icon: FC<IconProps> = ({
   </svg>
 );
 
+/** Icon-name set derived from a sprite meta map's `icon-*` keys. */
+type SpriteIconName<M> = keyof M extends `icon-${infer N}` ? N : never;
+
 /**
- * Factory that binds a sprite URL and viewBox metadata to produce a typed Icon component.
- * The returned component's `name` prop is narrowed to the icon names found in `meta`.
+ * Factory that binds a sprite URL to produce a typed Icon component.
+ *
+ * With a `meta` map, the returned component's `name` prop is narrowed to the sprite's
+ * `icon-*` keys and the viewBox is resolved from `meta`. Without `meta`, the component
+ * accepts any `name: string` — for apps whose icon set is dynamic (e.g. tool names not
+ * known at compile time) — and the viewBox comes from the `viewBox` prop (or the
+ * symbol's own). A meta-less `ForgeIcon<string>` is assignable to any narrower
+ * `ForgeIcon<Name>` by contravariance, so it can still satisfy components that require a
+ * specific icon (e.g. `Select`'s `chevron-down`).
  */
-export function createIcon<M extends Record<string, string>>(sprite: string, meta: M) {
-  type Name = keyof M extends `icon-${infer N}` ? N : never;
-  return function BoundIcon(p: Omit<IconProps, "symbol" | "sprite"> & { name: Name }) {
+export function createIcon(sprite: string): ForgeIcon<string>;
+export function createIcon<M extends Record<string, string>>(sprite: string, meta: M): ForgeIcon<SpriteIconName<M>>;
+export function createIcon(sprite: string, meta?: Record<string, string>): ForgeIcon<string> {
+  return function BoundIcon(p: Omit<IconProps, "symbol" | "sprite"> & { name: string }) {
     const { name, viewBox, ...rest } = p;
     const id = `icon-${String(name)}`;
-    const resolvedViewBox = viewBox ?? (meta as Record<string, string>)[id];
+    const resolvedViewBox = viewBox ?? meta?.[id];
     return <Icon {...rest} sprite={sprite} symbol={id} {...(resolvedViewBox !== undefined ? { viewBox: resolvedViewBox } : {})} />;
   };
 }

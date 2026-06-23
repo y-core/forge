@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { render } from "../../jsx/render-test-helper";
-import { Icon } from "./icon";
+import { createIcon, type ForgeIcon, Icon } from "./icon";
 
 describe("Icon component", () => {
   it("renders an svg with a use href combining the sprite and symbol", async () => {
@@ -45,5 +45,27 @@ describe("Icon component", () => {
   it("renders with a fragment-only href when no sprite is provided", async () => {
     const out = await render(<Icon symbol='icon-logo' />);
     expect(out).toContain('href="#icon-logo"');
+  });
+});
+
+describe("createIcon", () => {
+  it("binds a sprite + meta and resolves the viewBox from meta", async () => {
+    const AppIcon = createIcon("/assets/sprite.svg", { "icon-phone": "0 0 24 24" });
+    const out = await render(<AppIcon name='phone' />);
+    expect(out).toContain('href="/assets/sprite.svg#icon-phone"');
+    expect(out).toContain('viewBox="0 0 24 24"');
+  });
+
+  it("without meta accepts any name and resolves the viewBox from the prop", async () => {
+    const AppIcon = createIcon("/assets/sprite.svg");
+    const out = await render(<AppIcon name='dynamic-tool' viewBox='0 0 32 32' />);
+    expect(out).toContain('href="/assets/sprite.svg#icon-dynamic-tool"');
+    expect(out).toContain('viewBox="0 0 32 32"');
+  });
+
+  it("yields a ForgeIcon<string> assignable to a narrower ForgeIcon (contravariance)", () => {
+    const wide = createIcon("/assets/sprite.svg");
+    const narrow: ForgeIcon<"chevron-down"> = wide;
+    expect(typeof narrow).toBe("function");
   });
 });

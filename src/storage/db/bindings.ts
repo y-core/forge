@@ -3,7 +3,7 @@ import { validateBindings } from "../../app/env";
 import type { AppContext } from "../../context/types";
 import { v } from "../../validation/mod";
 import { createD1Client } from "./client";
-import type { D1BindingOptions, D1Client } from "./types";
+import type { D1BindingOptions, D1Client, D1Database, D1DatabaseLike } from "./types";
 
 /**
  * Middleware that validates a D1 database binding exists on first request.
@@ -28,7 +28,10 @@ export function validateD1Binding(name: string): Middleware {
  * Resolves a D1Client from the current request context.
  * Returns null when binding is absent and `required` is false; throws otherwise. @public
  */
-export function resolveD1Client<Bindings = Record<string, unknown>>(c: AppContext<Bindings>, opts: D1BindingOptions<Bindings>): D1Client | null {
+export function resolveD1Client<Bindings = Record<string, unknown>, DB extends D1DatabaseLike = D1Database>(
+  c: AppContext<Bindings>,
+  opts: D1BindingOptions<Bindings, DB>,
+): D1Client | null {
   const db = opts.binding(c);
   if (!db) {
     if (opts.required === false) return null;

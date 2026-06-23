@@ -12,8 +12,14 @@ export interface KvCodec<T> {
   decode(raw: string | ArrayBuffer): T;
 }
 
-/** Minimal structural KV namespace — type-only, erases at runtime. @public */
-export interface KVNamespace {
+/**
+ * Structural contract — the consumed surface of a KV namespace binding. Typed loosely enough
+ * (overloaded `get`/`getWithMetadata`, `unknown` put-options sidestepped via `KVPutOptions`) that
+ * both forge's neutral `KVNamespace` and Cloudflare's runtime `KVNamespace` satisfy it. Constraining
+ * a resolver to `NS extends KVNamespaceLike` proves any platform namespace meets the contract
+ * cast-free. @public
+ */
+export interface KVNamespaceLike {
   delete(key: string): Promise<void>;
   get(key: string, options: { type: "text" }): Promise<string | null>;
   get(key: string, options: { type: "arrayBuffer" }): Promise<ArrayBuffer | null>;
@@ -22,6 +28,9 @@ export interface KVNamespace {
   put(key: string, value: string | ArrayBuffer, options?: KVPutOptions): Promise<void>;
   list<M = unknown>(options?: KVListOptions): Promise<KVListResult<M>>;
 }
+
+/** Minimal structural KV namespace — type-only, erases at runtime. @public */
+export interface KVNamespace extends KVNamespaceLike {}
 
 /** @public */
 export interface KVPutOptions {
@@ -82,9 +91,11 @@ export interface KVStore<T = unknown> {
   list<M = unknown>(options?: KVListOptions): Promise<Result<{ keys: KVListEntry<M>[]; cursor?: string; complete: boolean }>>;
 }
 
-/** Options for resolving a KV binding from context. @public */
-export interface KVBindingOptions<Bindings = Record<string, unknown>, T = unknown> {
-  binding: (c: AppContext<Bindings>) => KVNamespace | undefined;
+/** Options for resolving a KV binding from context. The binding return is constrained to the
+ *  structural contract `NS extends KVNamespaceLike` so any platform namespace (forge's neutral type
+ *  or Cloudflare's runtime type) is accepted cast-free. @public */
+export interface KVBindingOptions<Bindings = Record<string, unknown>, T = unknown, NS extends KVNamespaceLike = KVNamespace> {
+  binding: (c: AppContext<Bindings>) => NS | undefined;
   /** When true (default), throws if the binding is absent. Set false to return null instead. */
   required?: boolean;
   store?: KVStoreOptions<T>;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { render } from "../../jsx/render-test-helper";
-import { Field } from "./field-layout";
+import { FormField } from "./field-layout";
 import { createIcon } from "./icon";
 import { Select } from "./select";
 
@@ -57,14 +57,14 @@ describe("Select", () => {
 
   it("wires id and for via explicit field and name props", async () => {
     const out = await render(
-      <Field name='choice'>
-        <Field.Label name='choice'>Choice</Field.Label>
-        <Field.Content>
+      <FormField name='choice'>
+        <FormField.Label name='choice'>Choice</FormField.Label>
+        <FormField.Content>
           <Select icon={icon} field={{ name: "choice" }}>
             <Select.Option value='a'>A</Select.Option>
           </Select>
-        </Field.Content>
-      </Field>,
+        </FormField.Content>
+      </FormField>,
     );
     expect(out).toContain('id="field-choice"');
     expect(out).toContain('for="field-choice"');
