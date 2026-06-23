@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.37",
+  "version": "0.0.38",
   "bin": {
     "forge-assets": "./src/assets/cli/bin.ts"
   },
