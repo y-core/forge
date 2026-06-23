@@ -32,7 +32,9 @@ export {
   Select,
   Separator,
   Skeleton,
+  Slider,
   Spinner,
+  Switch,
   Textarea,
   Toast,
 } from "./core/mod";
