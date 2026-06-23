@@ -1,6 +1,6 @@
 ---
 title: UI Components
-description: "forge JSX components, renderToString, safeUrl, getNonce, Form, Field, Input, Select, Button, Alert, Card, Icon, cn, cva, SSR components, ui/core, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
+description: "forge JSX components, renderToString, safeUrl, getNonce, Form, Field, Input, Select, Button, Switch, Slider, Alert, Card, Icon, cn, cva, SSR components, ui/core, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
 weight: 30
 ---
 
@@ -22,7 +22,7 @@ weight: 30
 
 ## 0. Quick Reference
 
-- §1 ui/core namespace: Form, Field, Input, Button, Alert, Card, Icon, cn, cva
+- §1 ui/core namespace: Form, Field, Input, Button, Switch, Slider, Alert, Card, Icon, cn, cva
 - §2 SSR component patterns: composing Field+FieldLabel+FieldError+Input
 - §3 cn and cva: class name utilities for conditional and variant styling
 - §4 ui/client namespace: mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, signals
@@ -144,6 +144,23 @@ HTMX response fragments (see §2b). `AlertTitle` renders as a `<p>` with strong 
 `Icon` renders an inline SVG from the forge icon registry. `createIcon(pathData)` builds
 a named icon component from raw SVG path data for custom icons not in the registry.
 `size` sets both `width` and `height` attributes (default `16`).
+
+### 1h. Switch and Slider Components
+
+    import { Switch, Slider } from "@y-core/forge/ui"
+
+    <Switch checked name="grid">Snap to grid</Switch>
+    <Slider min={0} max={100} step={1} value={40} output />
+
+`Switch` renders a CSS-only toggle: a `sr-only` `<input type="checkbox" role="switch">`
+holds state and focus while sibling `peer-checked:` / `peer-focus-visible:` utilities
+paint the decorative (`aria-hidden`) track and thumb — no client JS. Optional `children`
+render as a trailing label inside the wrapping `<label>`. `Slider` renders a native
+`<input type="range">` styled cross-browser via `accent-primary`; pass `output` to wrap it
+with an `<output>` readout seeded to `value` (mirroring it on input is a consumer concern —
+forge stays markup-only per §6). Both accept all standard `<input>` attributes, spread
+delegation/`data-*` attributes through, and take an optional `field` descriptor that wires
+`id` / `name` / `aria-*` exactly like `Input` / `Select` / `Textarea` (§1c).
 
 ---
 
