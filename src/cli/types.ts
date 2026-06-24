@@ -71,6 +71,19 @@ export interface CliIO {
 
 export type CliErrorKind = "unknown-flag" | "missing-value" | "invalid-args" | "missing-command";
 
+/** Map of tool command → install hint, surfaced verbatim when the tool is missing. */
+export type ToolHints = Record<string, string>;
+
+/** A logger bound to a `[scope]` prefix. */
+export interface ScopedLogger {
+  /** Progress line to stdout: `[scope] msg`. */
+  info(msg: string): void;
+  /** Warning line to stderr: `[scope] msg`. */
+  warn(msg: string): void;
+  /** Completion line to stdout: `[scope] msg`. */
+  done(msg: string): void;
+}
+
 // Internal types used to invoke run without knowing the specific flag type.
 // CommandBase omits run deliberately; we recover it here via an assertion.
 export type AnyFlags = Record<string, boolean | string | undefined>;

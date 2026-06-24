@@ -18,6 +18,7 @@ declare const process: {
 };
 
 declare module "node:path" {
+  export const delimiter: string;
   export function resolve(...paths: string[]): string;
   export function dirname(path: string): string;
   export function join(...paths: string[]): string;
@@ -60,6 +61,15 @@ declare module "node:child_process" {
   }
   export function execSync(command: string, options?: ExecSyncOptions): Buffer | string;
   export function execFileSync(file: string, args?: string[], options?: ExecSyncOptions): Buffer | string;
+  interface SpawnSyncOptions {
+    cwd?: string;
+    stdio?: string | string[];
+    env?: Record<string, string | undefined>;
+  }
+  interface SpawnSyncReturns {
+    status: number | null;
+  }
+  export function spawnSync(command: string, args?: string[], options?: SpawnSyncOptions): SpawnSyncReturns;
 }
 
 declare module "node:crypto" {
