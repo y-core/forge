@@ -1,5 +1,5 @@
 export { requireFormContentType } from "./content-type";
-export { checkCrossOriginProtection, crossOriginProtection } from "./cop";
+export { checkCrossOriginProtection, crossOriginProtection, originProtection } from "./cop";
 export { cors, matchOrigin } from "./cors";
 export { applySecurityHeaders, getNonce, makeSecurityHeaders, mergeSecurityHeaders } from "./headers";
 export { NONCE, TURNSTILE_CSP } from "./nonce";
@@ -12,6 +12,7 @@ export type {
   CrossOriginProtectionOptions,
   CspSourceValue,
   DeriveAllowedOriginsOptions,
+  OriginProtectionOptions,
   OriginResult,
   ParsedUrl,
   PermissionsPolicyOptions,

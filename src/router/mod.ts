@@ -15,6 +15,7 @@ export { createAction, createContextKey, createController, createMiddleware, cre
 export type {
   BuildRoute,
   FormOptions,
+  RequestMethod,
   ResourceMethod,
   ResourceOptions,
   ResourcesMethod,
@@ -30,3 +31,6 @@ export type { CreateHrefArgs } from "@remix-run/route-pattern/href";
 export { CreateHrefError, createHref } from "@remix-run/route-pattern/href";
 export type { JoinPatterns } from "@remix-run/route-pattern/join";
 export { joinPatterns } from "@remix-run/route-pattern/join";
+// Route-table introspection
+export type { RouteFilter } from "./filter";
+export { routePaths } from "./filter";

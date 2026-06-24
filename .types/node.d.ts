@@ -29,6 +29,7 @@ declare module "node:path" {
 
 declare module "node:url" {
   export function fileURLToPath(url: string | URL): string;
+  export function pathToFileURL(path: string): { href: string };
 }
 
 declare module "node:fs" {
@@ -68,6 +69,7 @@ declare module "node:child_process" {
   }
   interface SpawnSyncReturns {
     status: number | null;
+    error?: Error;
   }
   export function spawnSync(command: string, args?: string[], options?: SpawnSyncOptions): SpawnSyncReturns;
 }

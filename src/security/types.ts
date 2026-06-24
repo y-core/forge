@@ -50,6 +50,13 @@ export interface CrossOriginProtectionOptions {
   allowMissingHeader?: boolean;
 }
 
+export interface OriginProtectionOptions<Bindings = Record<string, unknown>> {
+  /** Allowed origins for the Origin/Referer fallback (applied only when Sec-Fetch-Site is
+   *  absent). A static list, or a per-request resolver over the app context (e.g. parsed
+   *  BASE_URL config). */
+  allowedOrigins: string[] | ((c: AppContext<Bindings>) => string[]);
+}
+
 export interface RateLimitBinding {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }

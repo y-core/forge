@@ -2,7 +2,8 @@
   "name": "@y-core/forge",
   "version": "0.0.39",
   "bin": {
-    "forge-assets": "./src/assets/cli/bin.ts"
+    "forge-assets": "./src/assets/cli/bin.ts",
+    "forge-cfgen": "./src/validation/cli/bin.ts"
   },
   "type": "module",
   "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
@@ -170,6 +171,10 @@
     "./validation": {
       "types": "./src/validation/mod.ts",
       "import": "./src/validation/mod.ts"
+    },
+    "./validation/cli": {
+      "types": "./src/validation/cli/mod.ts",
+      "import": "./src/validation/cli/mod.ts"
     },
     "./jsx/register": {
       "types": "./src/jsx/register.ts",
