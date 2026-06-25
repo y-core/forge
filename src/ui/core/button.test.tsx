@@ -40,6 +40,19 @@ describe("Button", () => {
     expect(out).toContain("px-6");
   });
 
+  it("renders icon size classes", async () => {
+    const out = await render(<Button size='icon'>Click</Button>);
+    expect(out).toContain("size-9");
+    expect(out).toContain("p-0");
+    expect(out).not.toContain("px-");
+  });
+
+  it("renders icon-sm size classes", async () => {
+    const out = await render(<Button size='icon-sm'>Click</Button>);
+    expect(out).toContain("size-[34px]");
+    expect(out).toContain("p-0");
+  });
+
   it("defaults to type=button", async () => {
     const out = await render(<Button>Click</Button>);
     expect(out).toContain('type="button"');

@@ -54,4 +54,24 @@ describe("Slider", () => {
     expect(out).toContain('aria-invalid="true"');
     expect(out).toContain('aria-describedby="field-opacity-description field-opacity-error"');
   });
+
+  it("horizontal orientation (default) uses the standard horizontal base classes", async () => {
+    const out = await render(<Slider min={0} max={10} value={5} />);
+    expect(out).toContain("w-full");
+    expect(out).toContain("h-2");
+    expect(out).not.toContain("writing-mode");
+  });
+
+  it("vertical orientation adds writing-mode and direction classes to the slider", async () => {
+    const out = await render(<Slider min={0} max={10} value={5} orientation='vertical' />);
+    expect(out).toContain("[writing-mode:vertical-lr]");
+    expect(out).toContain("[direction:rtl]");
+  });
+
+  it("vertical orientation with output wraps in a flex-col container", async () => {
+    const out = await render(<Slider min={0} max={10} value={5} orientation='vertical' output />);
+    expect(out).toContain('data-slot="slider-wrapper"');
+    expect(out).toContain("flex-col");
+    expect(out).toContain("items-center");
+  });
 });

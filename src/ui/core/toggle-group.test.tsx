@@ -79,4 +79,23 @@ describe("ToggleGroup", () => {
     expect(out).toContain("Perspective");
     expect(out).toContain("Parallel");
   });
+
+  it("defaults to horizontal orientation with no data-orientation attribute override", async () => {
+    const out = await render(<ToggleGroup />);
+    expect(out).toContain('data-orientation="horizontal"');
+    expect(out).toContain('aria-orientation="horizontal"');
+    expect(out).not.toContain("flex-col");
+  });
+
+  it("vertical orientation stamps data-orientation and adds flex-col to the group", async () => {
+    const out = await render(<ToggleGroup orientation='vertical' />);
+    expect(out).toContain('data-orientation="vertical"');
+    expect(out).toContain('aria-orientation="vertical"');
+    expect(out).toContain("flex-col");
+  });
+
+  it("item includes the arbitrary vertical ancestor variant class for border override", async () => {
+    const out = await render(<ToggleGroup.Item>X</ToggleGroup.Item>);
+    expect(out).toContain("[data-slot=toggle-group][data-orientation=vertical]");
+  });
 });
