@@ -21,8 +21,6 @@ const ITEM_BASE =
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:border-l " +
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:border-t-0 " +
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:rounded-none " +
-  "[[data-slot=toggle-group][data-orientation=vertical]_&]:first:rounded-l-none " +
-  "[[data-slot=toggle-group][data-orientation=vertical]_&]:last:rounded-r-none " +
   // Vertical first/last: top/bottom borders + rounding.
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:first:border-t " +
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:first:rounded-t-md " +

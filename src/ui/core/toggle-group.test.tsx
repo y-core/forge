@@ -98,4 +98,12 @@ describe("ToggleGroup", () => {
     const out = await render(<ToggleGroup.Item>X</ToggleGroup.Item>);
     expect(out).toContain("[data-slot=toggle-group][data-orientation=vertical]");
   });
+
+  it("item carries vertical rounded-t-md and rounded-b-md but not rounded-l-none or rounded-r-none overrides", async () => {
+    const out = await render(<ToggleGroup.Item>X</ToggleGroup.Item>);
+    expect(out).toContain("]:first:rounded-t-md");
+    expect(out).toContain("]:last:rounded-b-md");
+    expect(out).not.toContain("]:first:rounded-l-none");
+    expect(out).not.toContain("]:last:rounded-r-none");
+  });
 });
