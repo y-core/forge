@@ -38,6 +38,7 @@ const SEARCH_CORPUS = [
   "Spinner",
   "Textarea",
   "Toast",
+  "ToggleGroup",
 ];
 
 const TABLE_ROWS = [
@@ -59,6 +60,7 @@ const TABLE_ROWS = [
   { id: 16, name: "Spinner", category: "Feedback" },
   { id: 17, name: "Textarea", category: "Form" },
   { id: 18, name: "Toast", category: "Feedback" },
+  { id: 19, name: "ToggleGroup", category: "Action" },
 ];
 
 const PAGE_SIZE = 6;

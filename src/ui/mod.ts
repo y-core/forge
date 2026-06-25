@@ -38,5 +38,6 @@ export {
   Switch,
   Textarea,
   Toast,
+  ToggleGroup,
 } from "./core/mod";
 export { createUI } from "./create-ui";

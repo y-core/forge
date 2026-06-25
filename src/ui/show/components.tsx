@@ -16,6 +16,7 @@ import { Separator } from "../core/separator";
 import { Skeleton } from "../core/skeleton";
 import { Textarea } from "../core/textarea";
 import { Toast } from "../core/toast";
+import { ToggleGroup } from "../core/toggle-group";
 import { createUI } from "../create-ui";
 import { FlashContainer } from "../server/flash";
 import type { ShowcaseData } from "./route";
@@ -39,6 +40,7 @@ const SECTIONS = [
   { id: "spinner", label: "Spinner" },
   { id: "textarea", label: "Textarea" },
   { id: "toast", label: "Toast" },
+  { id: "toggle-group", label: "ToggleGroup" },
   { id: "htmx-demos", label: "HTMX Demos" },
   { id: "theme", label: "Theme" },
   { id: "resumable", label: "Resumable" },
@@ -267,6 +269,30 @@ const TextareaSection: FC = () => (
   </CatalogSection>
 );
 
+const ToggleGroupSection: FC = () => (
+  <CatalogSection id='toggle-group' title='ToggleGroup'>
+    <ToggleGroup aria-label='Camera projection'>
+      <ToggleGroup.Item pressed title='Perspective' aria-label='Perspective'>
+        Perspective
+      </ToggleGroup.Item>
+      <ToggleGroup.Item title='Parallel' aria-label='Parallel'>
+        Parallel
+      </ToggleGroup.Item>
+    </ToggleGroup>
+    <ToggleGroup aria-label='Alignment'>
+      <ToggleGroup.Item title='Left' aria-label='Left'>
+        L
+      </ToggleGroup.Item>
+      <ToggleGroup.Item pressed title='Center' aria-label='Center'>
+        C
+      </ToggleGroup.Item>
+      <ToggleGroup.Item title='Right' aria-label='Right'>
+        R
+      </ToggleGroup.Item>
+    </ToggleGroup>
+  </CatalogSection>
+);
+
 const ToastCatalog: FC = () => (
   <CatalogSection id='toast' title='Toast'>
     <Toast variant='default'>
@@ -380,6 +406,7 @@ export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ForgeIcon<"spinner"
         <SpinnerSection icon={icon} />
         <TextareaSection />
         <ToastCatalog />
+        <ToggleGroupSection />
       </div>
 
       {/* HTMX demos */}

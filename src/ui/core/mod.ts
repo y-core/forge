@@ -27,5 +27,6 @@ export { Spinner } from "./spinner";
 export { Switch } from "./switch";
 export { Textarea } from "./textarea";
 export { Toast, type ToastPosition, type ToastVariant } from "./toast";
+export { ToggleGroup } from "./toggle-group";
 export { asClass, cn } from "./utils/cn";
 export { cva } from "./utils/cva";
