@@ -47,3 +47,30 @@ export function bindField<T extends Record<string, unknown>>(signals: SignalReco
     writeSignal(signals, field, parseControlValue(el as unknown as ControlElement, signals[field].value));
   };
 }
+
+/**
+ * Build a resumable-scope action that binds a button group (segmented control) to a `SignalRecord`.
+ * Unlike {@link bindField}, which reads `checked`/`value` from the control element, `bindGroup`
+ * reads the `data-value` attribute stamped by `bindControls` `ToggleGroup.Item` and writes
+ * it as a **raw string** into `signals[field]` — button elements cannot express boolean or numeric
+ * values, so `parseControlValue` is bypassed.
+ *
+ * On click, it resolves the nearest ancestor with both `data-field` and `data-value` via
+ * `closest("[data-field][data-value]")` — this handles clicks on inner `<svg>` or `<span>` children
+ * that don't carry those attributes directly. Register alongside `bindField`:
+ *
+ *     registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } })
+ *
+ * Pressed-state reconciliation (`.active` class, `aria-pressed`) stays app-side as an effect on the
+ * same signal — forge writes the value only. @public
+ */
+export function bindGroup<T extends Record<string, unknown>>(signals: SignalRecord<T>): (ctx: ResumeContext) => void {
+  return ({ el }) => {
+    const target = el.closest("[data-field][data-value]") as (HTMLElement & { dataset: DOMStringMap }) | null;
+    if (target == null) return;
+    const field = target.dataset.field as keyof T | undefined;
+    const value = target.dataset.value;
+    if (field == null || !(field in signals) || value == null) return;
+    writeSignal(signals, field, value as T[typeof field]);
+  };
+}

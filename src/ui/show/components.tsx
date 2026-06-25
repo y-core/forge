@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import type { FC } from "../../jsx/types";
+import { bindIcon } from "../compose/icon";
 import { Alert } from "../core/alert";
 import { Avatar } from "../core/avatar";
 import { Badge } from "../core/badge";
@@ -17,7 +18,6 @@ import { Skeleton } from "../core/skeleton";
 import { Textarea } from "../core/textarea";
 import { Toast } from "../core/toast";
 import { ToggleGroup } from "../core/toggle-group";
-import { createUI } from "../create-ui";
 import { FlashContainer } from "../server/flash";
 import type { ShowcaseData } from "./route";
 import { DependentSection, PaginateSection, PreviewSection, SearchSection, ToastSection, ValidateSection } from "./sections";
@@ -165,7 +165,7 @@ const CardSection: FC = () => (
 );
 
 const FieldSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({ icon }) => {
-  const { Select } = createUI(icon);
+  const { Select } = bindIcon(icon);
   return (
     <CatalogSection id='field' title='Field'>
       <div class='w-full max-w-xs space-y-4'>
@@ -252,7 +252,7 @@ const SkeletonSection: FC = () => (
 );
 
 const SpinnerSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({ icon }) => {
-  const { Spinner: BoundSpinner } = createUI(icon);
+  const { Spinner: BoundSpinner } = bindIcon(icon);
   return (
     <CatalogSection id='spinner' title='Spinner'>
       <BoundSpinner size='sm' />
@@ -321,7 +321,7 @@ const ToastCatalog: FC = () => (
 // ─── Theme section ────────────────────────────────────────────────────────────
 
 const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({ icon }) => {
-  const { ThemeToggle } = createUI(icon);
+  const { ThemeToggle } = bindIcon(icon);
   return (
     <section id='theme' class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
       <div>

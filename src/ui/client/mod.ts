@@ -1,4 +1,4 @@
-export { applyControlValue, bindField, parseControlValue } from "./field-binding";
+export { applyControlValue, bindField, bindGroup, parseControlValue } from "./bind";
 export type { LazyImportOptions, LazyLoadOptions } from "./lazy";
 export { lazy, loadScriptOnEvent, loadStylesheet } from "./lazy";
 export type { NavControllerOptions } from "./nav";

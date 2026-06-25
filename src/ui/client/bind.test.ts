@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { applyControlValue, bindField, parseControlValue } from "./field-binding";
+import { applyControlValue, bindField, bindGroup, parseControlValue } from "./bind";
 import type { ResumeContext } from "./resume";
 import { signalRecord } from "./signal-record";
 
@@ -38,6 +38,12 @@ function fakeCtx(dataset: Record<string, string>, control: { checked?: boolean; 
   return { el: { dataset, checked: control.checked ?? false, value: control.value ?? "" } } as unknown as ResumeContext;
 }
 
+/** Build a fake ResumeContext for group binding: `el` has `closest` resolving to an element
+ *  with `data-field` + `data-value` dataset, simulating a click on a group item button. */
+function fakeGroupCtx(elDataset: Record<string, string>, closestResult: { dataset: Record<string, string> } | null): ResumeContext {
+  return { el: { dataset: elDataset, closest: (_selector: string) => closestResult } } as unknown as ResumeContext;
+}
+
 describe("bindField", () => {
   it("writes a control's parsed value into the matching signal", () => {
     const sig = signalRecord({ gridVisible: false, fov: 50 });
@@ -57,5 +63,48 @@ describe("bindField", () => {
     action(fakeCtx({}, { checked: true }));
     action(fakeCtx({ field: "nope" }, { checked: true }));
     expect(sig.gridVisible.value).toBe(false);
+  });
+});
+
+describe("bindGroup", () => {
+  it("writes the raw data-value string into the matching signal", () => {
+    const sig = signalRecord({ projection: "perspective" });
+    const action = bindGroup(sig);
+
+    action(fakeGroupCtx({}, { dataset: { field: "projection", value: "parallel" } }));
+    expect(sig.projection.value).toBe("parallel");
+  });
+
+  it("resolves data-field and data-value from the closest ancestor", () => {
+    const sig = signalRecord({ projection: "perspective" });
+    const action = bindGroup(sig);
+
+    // el is an inner child (e.g. <svg>); closest resolves to the parent button
+    action(fakeGroupCtx({ unrelated: "x" }, { dataset: { field: "projection", value: "parallel" } }));
+    expect(sig.projection.value).toBe("parallel");
+  });
+
+  it("is a no-op when closest returns null (no ancestor with both attrs)", () => {
+    const sig = signalRecord({ projection: "perspective" });
+    const action = bindGroup(sig);
+
+    action(fakeGroupCtx({}, null));
+    expect(sig.projection.value).toBe("perspective");
+  });
+
+  it("is a no-op when the field is not in signals", () => {
+    const sig = signalRecord({ projection: "perspective" });
+    const action = bindGroup(sig);
+
+    action(fakeGroupCtx({}, { dataset: { field: "unknown", value: "parallel" } }));
+    expect(sig.projection.value).toBe("perspective");
+  });
+
+  it("is a no-op when data-value is missing from the target", () => {
+    const sig = signalRecord({ projection: "perspective" });
+    const action = bindGroup(sig);
+
+    action(fakeGroupCtx({}, { dataset: { field: "projection" } }));
+    expect(sig.projection.value).toBe("perspective");
   });
 });

@@ -61,7 +61,7 @@ runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
 - Variant-driven styling through `cva`, conditional class merging through `cn`.
 - An accessible field system: controls inside a `FormField` inherit `id`, `name`, `aria-invalid`, and
   `aria-describedby`.
-- Sprite-backed icons bound once per app with `createIcon` / `createUI`.
+- Sprite-backed icons bound once per app with `createIcon` / `bindIcon`.
 
 ### Usage
 
@@ -97,7 +97,7 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `Form` | `<form>` | HTMX attributes pass through; no client submission logic. |
 | `FormField` | `<fieldset>` | Accessible form field with `name` / `invalid` / `disabled`. Compounds: `FormField.Label`, `FormField.Description`, `FormField.Error`. |
 | `Field` | layout row | Lightweight label + control row — no form semantics. |
-| `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` (use `createUI`). |
+| `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` (use `bindIcon`). |
 | `Button` | `<button>` | `variant`: `"primary" | "secondary" | "ghost"`; `size`: `"sm" | "md" | "lg"`. |
 | `Alert` | `<div role="alert">` | `variant`: `AlertVariant`. Compounds: `Alert.Title`, `Alert.Description`. |
 | `Card` | bordered container | Compounds: `Card.Header`, `Card.Title`, `Card.Description`, `Card.Content`, `Card.Footer`. |
@@ -107,7 +107,8 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `Switch`, `Slider` | styled `<input>` | CSS-only toggle / native range; accept an optional `field` descriptor. |
 | `Progress`, `Separator`, `Skeleton`, `Spinner`, `Popover`, `Label` | misc primitives | `Spinner` requires an `icon`. |
 | `Icon`, `createIcon` | `<svg><use>` | Sprite-backed icon and its factory. |
-| `createUI` | factory | Binds `Spinner` / `Select` / `ThemeToggle` to one app icon. |
+| `bindIcon` | factory | Binds `Spinner` / `Select` / `ThemeToggle` to one app icon. |
+| `bindControls` | factory | Pre-binds `Switch` / `Slider` / `Select` / `ToggleGroup.Item` to a scope action + `data-field`. |
 | `cn`, `cva` | class utilities | Class merging and class-variance authority. |
 
 #### `FormField` — accessible form fields
@@ -148,20 +149,20 @@ import { Field, Slider, Select } from "@y-core/forge/ui";
 
 `orientation` is `"vertical"` (default), `"horizontal"`, or `"responsive"`.
 
-#### Icons — `createIcon` and `createUI`
+#### Icons — `createIcon` and `bindIcon`
 
 Several components (`Select`, `Spinner`, and the server-only `ThemeToggle`) render an icon and accept an
 `icon` prop typed as `ForgeIcon<Name>`. Bind your app's sprite once with `createIcon`, then either pass
-the bound icon directly or pre-bind the icon-consuming components with `createUI`:
+the bound icon directly or pre-bind the icon-consuming components with `bindIcon`:
 
 ```tsx
-import { createIcon, createUI } from "@y-core/forge/ui";
+import { createIcon, bindIcon } from "@y-core/forge/ui";
 
 // Bind the sprite URL once. With a meta map, `name` is narrowed to the sprite's `icon-*` keys.
 const icon = createIcon("/assets/icons.svg", { "icon-spinner": "0 0 24 24", "icon-chevron-down": "0 0 24 24" });
 
 // Pre-bind icon-consuming components so call sites omit the `icon` prop.
-const { Spinner, Select, ThemeToggle } = createUI(icon);
+const { Spinner, Select, ThemeToggle } = bindIcon(icon);
 
 <Select name="country">
   <Select.Option value="us">United States</Select.Option>
@@ -172,10 +173,61 @@ const { Spinner, Select, ThemeToggle } = createUI(icon);
 <Spinner size="md" />
 ```
 
-`createUI(icon)` requires an icon supplying every glyph forge's bound components need: `spinner`,
+`bindIcon(icon)` requires an icon supplying every glyph forge's bound components need: `spinner`,
 `chevron-down`, `sun`, `moon`, `monitor`. `createIcon(sprite)` without a `meta` map yields a permissive
 `ForgeIcon<string>` for apps whose icon set is dynamic; a `ForgeIcon<string>` is assignable to any
 narrower `ForgeIcon<Name>` by contravariance.
+
+#### Bound controls — `bindControls`
+
+`bindControls<A>(action?)` pre-binds `Switch`, `Slider`, `Select`, and `ToggleGroup.Item` to
+a resumable-scope action and a `SignalRecord` field, mirroring the `bindIcon(icon)` pattern. Capture
+the action name once; call sites write a single `bind` prop instead of manually spreading `scopeAttrs`
++ `fieldAttr` on every control. `A` is the app's action-name union — typed against the same union as
+`registerScope<A>`, so a typo is a compile error.
+
+```tsx
+import { bindControls } from "@y-core/forge/ui";
+import { bindField, bindGroup, registerScope, signalRecord } from "@y-core/forge/ui/client";
+import { Resumable } from "@y-core/forge/ui/server";
+
+// --- Server (SSR view) ---
+// Call once with the app's action-name union:
+const Bound = bindControls<ChromeAction>("bindField");
+
+// Each control needs only a `bind` prop:
+<Resumable name="chrome" state={settings}>
+  <Bound.Switch bind="gridVisible" checked={settings.gridVisible}>Grid</Bound.Switch>
+  <Bound.Slider bind="fov" min={1} max={120} value={settings.fov} output />
+  <Bound.Select bind="language" icon={AppIcon}>
+    <Bound.Select.Option value="en">English</Bound.Select.Option>
+  </Bound.Select>
+  <Bound.ToggleGroup aria-label="Projection">
+    <Bound.ToggleGroup.Item bind="projection" value="perspective" pressed={settings.projection === "perspective"}>
+      Perspective
+    </Bound.ToggleGroup.Item>
+    <Bound.ToggleGroup.Item bind="projection" value="parallel" pressed={settings.projection === "parallel"}>
+      Parallel
+    </Bound.ToggleGroup.Item>
+  </Bound.ToggleGroup>
+</Resumable>
+
+// --- Client ---
+const sig = signalRecord(settings);
+registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
+```
+
+**`bind` vs `field`:** the `bind` prop is orthogonal to the existing `field?: FieldDescriptor`. `field`
+wires `id` / `name` / `aria-*` for form accessibility; `bind` wires `data-field` + `data-on-<event>`
+for signal binding. Both may coexist on one control.
+
+**`ToggleGroup.Item` + `bindGroup`:** `Bound.ToggleGroup.Item` takes a required `value` prop stamped as
+`data-value`. Pair it with the client-side `bindGroup(signals)` action (from `@y-core/forge/ui/client`),
+which reads `data-field` + `data-value` on click and writes the raw string into the matching signal,
+bypassing `parseControlValue` (button groups can't express boolean/number values). The `bindField`
+action handles `Switch` / `Slider` / `Select` (which read `checked` / `value` directly from the
+element). Pressed-state reconciliation — updating `.active` classes and `aria-pressed` — stays
+app-side as an effect on the same signal.
 
 #### `cn` and `cva` — class utilities
 
@@ -240,7 +292,7 @@ so a `javascript:`-style value collapses to `"#"` in the emitted HTML.
 - DOM controllers (`mountNav`, `mountTheme`, `mountTurnstile`) — each idempotent and returning a cleanup
   function.
 - Theme management with a FOUC-prevention inline script (`FOUC_SCRIPT`).
-- Generic control↔signal field binding (`bindField`, `parseControlValue`, `applyControlValue`).
+- Generic control↔signal field binding (`bindField`, `bindGroup`, `parseControlValue`, `applyControlValue`).
 - Lazy resource loading (`lazy`, `loadScriptOnEvent`, `loadStylesheet`).
 
 ### Usage
@@ -326,6 +378,20 @@ registerScope("settings", { on: { bindField: bindField(sig) } });
 current type, and writes `signals[field]`. `parseControlValue(el, current)` does the typed parse
 (boolean → `checked`, number → `Number(value)`, else `value` string); `applyControlValue(el, value)` is
 the inverse — seed an uncontrolled input from a typed value after a programmatic reset.
+
+`bindGroup(signals)` is the companion action for button-group (segmented) controls stamped by
+`bindControls` `ToggleGroup.Item`. On click it resolves the nearest ancestor with both
+`data-field` and `data-value` via `closest("[data-field][data-value]")` — handling clicks on inner
+`<svg>` or `<span>` — then writes the raw `data-value` string into `signals[field]`, bypassing
+`parseControlValue` (button groups can't express boolean or numeric values). Register it alongside
+`bindField`:
+
+```typescript
+import { bindField, bindGroup, signalRecord, registerScope } from "@y-core/forge/ui/client";
+
+const sig = signalRecord({ gridVisible: true, fov: 50, projection: "perspective" });
+registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
+```
 
 #### Theme controller
 
@@ -450,7 +516,7 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 | `Resumable` | component | Wraps children in a `data-scope` + serialized `data-state` island. |
 | `scopeAttrs(props)` | helper | Builds typed `data-on-<event>` delegation attributes for a scope. |
 | `fieldAttr(name)` | helper | Stamps `data-field` so the client `bindField` action knows which signal to write. |
-| `ThemeToggle` | component | Theme-cycle button (needs an `icon`; bind via `createUI`). |
+| `ThemeToggle` | component | Theme-cycle button (needs an `icon`; bind via `bindIcon`). |
 
 `createFlash(options)` takes `FlashCookieOptions` (`secrets`, optional `name` / `path` / `maxAge` /
 `sameSite`); defaults are `name: "flash"`, `path: "/"`, `maxAge: 60`, `sameSite: "Lax"`. `flash.get`

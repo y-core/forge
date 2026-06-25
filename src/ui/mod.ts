@@ -1,4 +1,6 @@
 export type { JSXNode } from "../jsx/types";
+export { bindControls } from "./compose/controls";
+export { bindIcon } from "./compose/icon";
 export type {
   AlertVariant,
   BadgeVariant,
@@ -40,4 +42,3 @@ export {
   Toast,
   ToggleGroup,
 } from "./core/mod";
-export { createUI } from "./create-ui";

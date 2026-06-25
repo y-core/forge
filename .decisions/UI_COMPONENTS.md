@@ -23,7 +23,7 @@ weight: 30
 ## 0. Quick Reference
 
 - §1 ui/core namespace: Form, Field (layout), FormField, Input, Button, Switch, Slider, Alert, Card, Icon, cn, cva
-- §1j generic field binding: fieldAttr (ui/server) + bindField/parseControlValue/applyControlValue (ui/client)
+- §1j generic field binding: fieldAttr (ui/server) + bindField/bindGroup/parseControlValue/applyControlValue (ui/client); bindControls pre-binds wrappers; bind vs field distinction; bindGroup/data-value for segmented controls
 - §2 SSR component patterns: composing Field+FieldLabel+FieldError+Input
 - §3 cn and cva: class name utilities for conditional and variant styling
 - §4 ui/client namespace: mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, signals
@@ -184,7 +184,7 @@ bound to its control children, with no form semantics. It is distinct from `Form
 aren't validated form fields, `FormField` when you need `name`/`invalid`/error/description wiring.
 `orientation` is `"vertical"` (default) or `"horizontal"`; theme-token styled and `class`-overridable.
 
-### 1j. Generic field binding (`fieldAttr` + `bindField`)
+### 1j. Generic field binding (`fieldAttr` + `bindField` + `bindGroup`)
 
 forge owns the generic glue between a control and a reactive signal; the app supplies the signal
 record and any domain effects layered on it.
@@ -194,8 +194,8 @@ record and any domain effects layered on it.
     <Switch {...scopeAttrs({ onChange: "bindField" })} {...fieldAttr("gridVisible")} checked={v} />
 
     // Client (ui/client): register the bindField action over a SignalRecord
-    import { bindField, parseControlValue, applyControlValue } from "@y-core/forge/ui/client"
-    registerScope("settings", { on: { bindField: bindField(sig), ...appActions } })
+    import { bindField, bindGroup, parseControlValue, applyControlValue } from "@y-core/forge/ui/client"
+    registerScope("settings", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig), ...appActions } })
 
 `fieldAttr(name)` stamps `data-field`. `bindField(signals)` returns a resumable-scope action that, on
 the bound event, reads `data-field`, parses the control's value by the target signal's current type
@@ -203,6 +203,30 @@ the bound event, reads `data-field`, parses the control's value by the target si
 `signals[field]`. `applyControlValue` is the inverse — seed an uncontrolled input from a typed value
 (e.g. after a programmatic reset). Domain effects (persist, render, readouts) stay app-side as
 additional effects on the same signals.
+
+**`bind` vs `field` distinction:** the `bind` prop (on `bindControls` wrappers) drives the
+`data-field` / `data-on-*` signal-binding contract; the `field?: FieldDescriptor` prop on `Input` /
+`Select` / `Switch` drives `id` / `name` / `aria-*` form-accessibility wiring. They are orthogonal
+and may coexist on one control.
+
+**Bound control wrappers — `bindControls`:** call once with the app's action-name union `A`
+and a scope action name; get back `{ Switch, Slider, Select, ToggleGroup }` where each component
+pre-spreads `scopeAttrs` + `fieldAttr` from a single `bind` prop instead of requiring manual spread
+at every call site.
+
+    import { bindControls } from "@y-core/forge/ui"
+    const Bound = bindControls<ChromeAction>("bindField")
+    // Switch/Slider bind onChange/onInput; ToggleGroup.Item binds onClick
+    <Bound.Switch bind="gridVisible" checked={v}>Grid</Bound.Switch>
+    <Bound.Slider bind="fov" min={1} max={120} value={v} output />
+    <Bound.ToggleGroup.Item bind="projection" value="perspective" pressed={v === "perspective"}>…</Bound.ToggleGroup.Item>
+
+**`bindGroup` + `data-value` — segmented controls:** `Bound.ToggleGroup.Item` takes a required
+`value` prop stamped as `data-value` (forge's private server↔client contract). The client-side
+`bindGroup(signals)` action resolves `el.closest("[data-field][data-value]")` (handles inner
+`<svg>` / `<span>` click targets), then writes the raw `data-value` string into `signals[field]`,
+bypassing `parseControlValue` (button groups cannot express boolean / number). Pressed-state
+reconciliation (`.active` class, `aria-pressed`) stays app-side as an effect on the same signal.
 
 ---
 
