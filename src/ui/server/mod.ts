@@ -15,4 +15,3 @@ export type { ResumableProps } from "./resumable";
 export { Resumable } from "./resumable";
 export type { ScopeAttrsProps } from "./scope-attrs";
 export { scopeAttrs } from "./scope-attrs";
-export { ThemeToggle } from "./theme-toggle";

@@ -9,7 +9,5 @@ export type { ReadonlySignal, Signal } from "./signal";
 export { computed, createSignal, effect } from "./signal";
 export type { SignalRecord } from "./signal-record";
 export { signalRecord, writeSignal } from "./signal-record";
-export type { ThemeControllerOptions } from "./theme";
-export { DARK_CLASS, DEFAULT_PREF, FOUC_SCRIPT, isDark, mountTheme, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 export type { TurnstileOptions } from "./turnstile";
 export { mountTurnstile } from "./turnstile";

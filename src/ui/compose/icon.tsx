@@ -1,17 +1,19 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, PropsWithChildren } from "../../jsx/types";
+import { Navbar as RawNavbar } from "../chrome/navbar";
+import { ThemeToggle as RawThemeToggle } from "../chrome/theme-toggle";
 import type { ForgeIcon } from "../core/icon";
 import { Select as RawSelect } from "../core/select";
 import { Spinner as RawSpinner } from "../core/spinner";
-import { ThemeToggle as RawThemeToggle } from "../server/theme-toggle";
 
 /** Icon names every `bindIcon` component requires. The injected icon must supply all of them. */
-type UIIconName = "spinner" | "chevron-down" | "sun" | "moon" | "monitor";
+type UIIconName = "spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close";
 
 type SpinnerProps = Omit<Parameters<typeof RawSpinner>[0], "icon">;
 type SelectProps = Omit<Parameters<typeof RawSelect>[0], "icon">;
 type ThemeToggleProps = Omit<Parameters<typeof RawThemeToggle>[0], "icon">;
+type NavbarProps = Omit<Parameters<typeof RawNavbar>[0], "icon">;
 
 /**
  * Binds sprite-backed forge components to an app-provided icon, mirroring the `createIcon`
@@ -29,5 +31,7 @@ export function bindIcon(icon: ForgeIcon<UIIconName>) {
 
   const ThemeToggle: FC<ThemeToggleProps> = (props) => <RawThemeToggle {...props} icon={icon} />;
 
-  return { Spinner, Select, ThemeToggle };
+  const Navbar: FC<NavbarProps> = (props) => <RawNavbar {...props} icon={icon} />;
+
+  return { Spinner, Select, ThemeToggle, Navbar };
 }

@@ -3,9 +3,7 @@
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
 
-type ToggleGroupProps = JSX.IntrinsicElements["fieldset"] & {
-  orientation?: "horizontal" | "vertical";
-};
+type ToggleGroupProps = JSX.IntrinsicElements["fieldset"] & { orientation?: "horizontal" | "vertical" };
 type ToggleGroupItemProps = JSX.IntrinsicElements["button"] & { pressed?: boolean };
 
 const GROUP_BASE = "flex justify-center min-w-0 border-0 m-0 p-0";
@@ -29,6 +27,7 @@ const ITEM_ACTIVE = "bg-primary text-primary-foreground hover:bg-primary";
 
 const ToggleGroupRoot: FC<PropsWithChildren<ToggleGroupProps>> = ({ class: cls, orientation = "horizontal", children, ...rest }) => (
   <fieldset
+    role='toolbar'
     data-slot='toggle-group'
     data-orientation={orientation}
     aria-orientation={orientation}

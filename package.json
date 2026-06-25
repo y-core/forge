@@ -21,6 +21,7 @@
   "sideEffects": [
     "./src/ui/client/htmx.ts",
     "./src/ui/show/client.ts",
+    "./src/ui/chrome/client.ts",
     "./src/jsx/register.ts"
   ],
   "dependencies": {
@@ -135,6 +136,14 @@
     "./ui": {
       "types": "./src/ui/mod.ts",
       "import": "./src/ui/mod.ts"
+    },
+    "./ui/chrome": {
+      "types": "./src/ui/chrome/mod.ts",
+      "import": "./src/ui/chrome/mod.ts"
+    },
+    "./ui/chrome/client": {
+      "types": "./src/ui/chrome/client.ts",
+      "import": "./src/ui/chrome/client.ts"
     },
     "./ui/client": {
       "types": "./src/ui/client/mod.ts",

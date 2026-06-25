@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "../../jsx/render-to-string";
 import { createIcon } from "../core/icon";
@@ -6,9 +8,20 @@ import { ThemeToggle } from "./theme-toggle";
 const icon = createIcon("/sprite.svg", { "icon-sun": "0 0 24 24", "icon-moon": "0 0 24 24", "icon-monitor": "0 0 24 24" });
 
 describe("ThemeToggle", () => {
-  it("renders the theme-toggle button hook", async () => {
+  it("wraps the button in a resumable theme scope", async () => {
     const html = String(await renderToString(<ThemeToggle icon={icon} />));
-    expect(html).toContain('data-ref="theme-toggle"');
+    expect(html).toContain('data-scope="theme"');
+    expect(html).toContain('data-state="{&quot;pref&quot;:&quot;system&quot;}"');
+  });
+
+  it("uses data-on-click cycleTheme instead of data-ref", async () => {
+    const html = String(await renderToString(<ThemeToggle icon={icon} />));
+    expect(html).toContain('data-on-click="cycleTheme"');
+    expect(html).not.toContain('data-ref="theme-toggle"');
+  });
+
+  it("renders the theme-toggle button with aria-label", async () => {
+    const html = String(await renderToString(<ThemeToggle icon={icon} />));
     expect(html).toContain('aria-label="Toggle theme"');
   });
 

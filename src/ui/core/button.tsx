@@ -20,13 +20,7 @@ const buttonVariants = cva({
       secondary: "border border-input text-foreground hover:bg-accent",
       ghost: "text-foreground hover:bg-accent",
     },
-    size: {
-      sm: "h-8 px-3 text-sm",
-      md: "h-10 px-4 text-sm",
-      lg: "h-12 px-6 text-base",
-      icon: "size-9 p-0",
-      "icon-sm": "size-[34px] p-0",
-    },
+    size: { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-sm", lg: "h-12 px-6 text-base", icon: "size-9 p-0", "icon-sm": "size-[34px] p-0" },
   },
   defaultVariants: { variant: "primary", size: "md" },
 });

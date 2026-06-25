@@ -164,7 +164,7 @@ const CardSection: FC = () => (
   </CatalogSection>
 );
 
-const FieldSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({ icon }) => {
+const FieldSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => {
   const { Select } = bindIcon(icon);
   return (
     <CatalogSection id='field' title='Field'>
@@ -192,7 +192,7 @@ const FieldSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "m
   );
 };
 
-const IconSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({ icon: Icon }) => (
+const IconSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon: Icon }) => (
   <CatalogSection id='icon' title='Icon'>
     <div class='flex items-center gap-4'>
       <Icon name='spinner' width={20} height={20} />
@@ -251,7 +251,7 @@ const SkeletonSection: FC = () => (
   </CatalogSection>
 );
 
-const SpinnerSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({ icon }) => {
+const SpinnerSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => {
   const { Spinner: BoundSpinner } = bindIcon(icon);
   return (
     <CatalogSection id='spinner' title='Spinner'>
@@ -320,7 +320,7 @@ const ToastCatalog: FC = () => (
 
 // ─── Theme section ────────────────────────────────────────────────────────────
 
-const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({ icon }) => {
+const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => {
   const { ThemeToggle } = bindIcon(icon);
   return (
     <section id='theme' class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
@@ -373,10 +373,10 @@ const ResumableSection: FC = () => (
 // ─── ShowcaseContent ──────────────────────────────────────────────────────────
 
 /** Full showcase page content — Layout-less; the consuming app wraps this in its own Layout. @public */
-export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
-  data,
-  icon,
-}) => {
+export const ShowcaseContent: FC<{
+  data: ShowcaseData;
+  icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close">;
+}> = ({ data, icon }) => {
   const { paths } = data;
   return (
     <main id='main-content' class='mx-auto max-w-4xl px-6 py-10 lg:px-10 space-y-12'>

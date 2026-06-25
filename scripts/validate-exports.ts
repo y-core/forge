@@ -9,7 +9,7 @@ const PUBLISHED_FILES = new Set((pkg as { files?: string[] }).files ?? []);
 
 // Only ./ui/client imports DOM globals (document, window, MutationObserver) and
 // cannot be imported. Static parsing still runs; runtime import is skipped.
-const BROWSER_ONLY = new Set(["./ui/client", "./ui/client/htmx", "./ui/show/client"]);
+const BROWSER_ONLY = new Set(["./ui/client", "./ui/client/htmx", "./ui/show/client", "./ui/chrome/client"]);
 
 // Side-effect-only modules: intentionally export no values (they mutate globals or perform
 // one-time registration). ./register sets globalThis.React as a classic-runtime fallback.

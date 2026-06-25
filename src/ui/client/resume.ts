@@ -33,14 +33,17 @@ export interface ResumeContext {
 export interface ScopeDefinition<A extends string = string> {
   /** Resume at `resume()` time instead of waiting for the first interaction. */
   eager?: boolean;
-  /** Bind DOM-mutating effects ONCE on first resume (no `el` — not tied to one event). */
-  setup?: (ctx: Omit<ResumeContext, "el">) => void;
+  /** Bind DOM-mutating effects ONCE on first resume (no `el` — not tied to one event).
+   * May return a disposer; if it does, the disposer is called when `resume()`'s teardown runs. */
+  // biome-ignore lint/suspicious/noConfusingVoidType: void in union is intentional — allows implicit-return setups
+  setup?: (ctx: Omit<ResumeContext, "el">) => void | (() => void);
   /** Action handlers keyed by the `data-on-<event>` value. */
   on: Record<A, (ctx: ResumeContext, event: Event) => void>;
 }
 
 const scopes = new Map<string, ScopeDefinition>();
 const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();
+const disposers: Array<() => void> = [];
 
 /** Registers a scope's setup + action handlers, keyed to a `data-scope` name. Generic over the
  * action-name union `A`, inferred from the `on` object literal.
@@ -64,6 +67,7 @@ export function resume(): () => void {
   }
   teardown = () => {
     for (const [type, handler] of handlers) document.removeEventListener(type, handler);
+    for (const d of disposers.splice(0)) d();
     teardown = null;
   };
   // Eager pass: scopes that opt out of lazy resume are hydrated immediately.
@@ -81,7 +85,8 @@ function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, 
   if (!state) {
     state = hydrateState(root.dataset.state);
     resumed.set(root, state);
-    def.setup?.({ root, state });
+    const dispose = def.setup?.({ root, state });
+    if (dispose) disposers.push(dispose);
   }
   return state;
 }
