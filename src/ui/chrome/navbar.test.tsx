@@ -158,10 +158,10 @@ describe("Navbar — placement", () => {
     expect(out).toContain("backdrop-blur");
   });
 
-  it("forwards passthrough nav attributes (id, data-testid) to the root", async () => {
+  it("forwards passthrough nav attributes (id, data-ref) to the root", async () => {
     const config: NavConfig = { sections: [{ items: [{ label: "A", href: "a" }] }] };
-    const out = await render(<Navbar config={config} resolveHref={id} icon={icon} id='main-nav' data-testid='nav' />);
+    const out = await render(<Navbar config={config} resolveHref={id} icon={icon} id='main-nav' data-ref='nav' />);
     expect(out).toContain('id="main-nav"');
-    expect(out).toContain('data-testid="nav"');
+    expect(out).toContain('data-ref="nav"');
   });
 });

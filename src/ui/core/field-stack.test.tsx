@@ -6,13 +6,13 @@ describe("Field (layout)", () => {
   it("renders a label caption bound to its control children", async () => {
     const out = await render(
       <Field label='Field of view'>
-        <input data-testid='control' />
+        <input data-ref='control' />
       </Field>,
     );
     expect(out).toContain('data-slot="field"');
     expect(out).toContain('data-slot="field-label"');
     expect(out).toContain("Field of view");
-    expect(out).toContain('data-testid="control"');
+    expect(out).toContain('data-ref="control"');
   });
 
   it("defaults to vertical orientation", async () => {
@@ -34,7 +34,7 @@ describe("Field (layout)", () => {
   });
 
   it("spreads arbitrary attributes onto the wrapper", async () => {
-    const out = await render(<Field label='X' data-testid='fov-field' />);
-    expect(out).toContain('data-testid="fov-field"');
+    const out = await render(<Field label='X' data-ref='fov-field' />);
+    expect(out).toContain('data-ref="fov-field"');
   });
 });

@@ -26,10 +26,10 @@ describe("Switch", () => {
   });
 
   it("spreads delegation attributes onto the input", async () => {
-    const out = await render(<Switch data-on-change='toggle' data-setting='grid' data-testid='grid-switch' />);
+    const out = await render(<Switch data-on-change='toggle' data-setting='grid' data-ref='grid-switch' />);
     expect(out).toContain('data-on-change="toggle"');
     expect(out).toContain('data-setting="grid"');
-    expect(out).toContain('data-testid="grid-switch"');
+    expect(out).toContain('data-ref="grid-switch"');
   });
 
   it("passes the disabled attribute through", async () => {

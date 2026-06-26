@@ -24,10 +24,10 @@ describe("Slider", () => {
   });
 
   it("spreads delegation attributes onto the input", async () => {
-    const out = await render(<Slider data-on-input='setOpacity' data-setting='opacity' data-testid='opacity-slider' />);
+    const out = await render(<Slider data-on-input='setOpacity' data-setting='opacity' data-ref='opacity-slider' />);
     expect(out).toContain('data-on-input="setOpacity"');
     expect(out).toContain('data-setting="opacity"');
-    expect(out).toContain('data-testid="opacity-slider"');
+    expect(out).toContain('data-ref="opacity-slider"');
   });
 
   it("passes the disabled attribute through", async () => {

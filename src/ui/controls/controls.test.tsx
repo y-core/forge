@@ -18,13 +18,13 @@ describe("controls/Switch", () => {
     expect(out).toContain('data-field="gridVisible"');
   });
 
-  it("passes checked and data-testid through to the underlying input", async () => {
+  it("passes checked and data-ref through to the underlying input", async () => {
     const out = await render(
-      <Switch bind='gridVisible' checked={false} data-testid='grid-switch'>
+      <Switch bind='gridVisible' checked={false} data-ref='grid-switch'>
         Grid
       </Switch>,
     );
-    expect(out).toContain('data-testid="grid-switch"');
+    expect(out).toContain('data-ref="grid-switch"');
     expect(out).toContain("checked");
   });
 
@@ -54,12 +54,12 @@ describe("controls/Slider", () => {
     expect(out).toContain('data-field="fov"');
   });
 
-  it("passes min, max, value, and data-testid through", async () => {
-    const out = await render(<Slider bind='fov' min={10} max={120} value={60} data-testid='fov-slider' />);
+  it("passes min, max, value, and data-ref through", async () => {
+    const out = await render(<Slider bind='fov' min={10} max={120} value={60} data-ref='fov-slider' />);
     expect(out).toContain('min="10"');
     expect(out).toContain('max="120"');
     expect(out).toContain('value="60"');
-    expect(out).toContain('data-testid="fov-slider"');
+    expect(out).toContain('data-ref="fov-slider"');
   });
 
   it("renders the output readout when output=true", async () => {
@@ -99,13 +99,13 @@ describe("controls/Select", () => {
     expect(out).toContain("English");
   });
 
-  it("passes data-testid through", async () => {
+  it("passes data-ref through", async () => {
     const out = await render(
-      <Select bind='language' icon={icon} data-testid='lang-select'>
+      <Select bind='language' icon={icon} data-ref='lang-select'>
         <Select.Option value='en'>English</Select.Option>
       </Select>,
     );
-    expect(out).toContain('data-testid="lang-select"');
+    expect(out).toContain('data-ref="lang-select"');
   });
 
   it("honours a custom action name via the action prop", async () => {
@@ -132,16 +132,16 @@ describe("controls/ToggleGroup.Item", () => {
     expect(out).toContain('data-on-click="bindGroup"');
   });
 
-  it("passes pressed, aria-label, title, and data-testid through", async () => {
+  it("passes pressed, aria-label, title, and data-ref through", async () => {
     const out = await render(
-      <ToggleGroup.Item bind='projection' value='parallel' pressed={false} aria-label='Parallel' title='Parallel' data-testid='cam-parallel'>
+      <ToggleGroup.Item bind='projection' value='parallel' pressed={false} aria-label='Parallel' title='Parallel' data-ref='cam-parallel'>
         Parallel
       </ToggleGroup.Item>,
     );
     expect(out).toContain('aria-pressed="false"');
     expect(out).toContain('aria-label="Parallel"');
     expect(out).toContain('title="Parallel"');
-    expect(out).toContain('data-testid="cam-parallel"');
+    expect(out).toContain('data-ref="cam-parallel"');
   });
 
   it("does not forward bind or value as button attributes", async () => {
@@ -172,9 +172,9 @@ describe("controls/ToggleGroup.Item", () => {
     expect(out).toContain('data-on-click="myAction"');
   });
 
-  it("root group passes aria-label and data-testid through", async () => {
-    const out = await render(<ToggleGroup aria-label='Views' data-testid='view-group' />);
+  it("root group passes aria-label and data-ref through", async () => {
+    const out = await render(<ToggleGroup aria-label='Views' data-ref='view-group' />);
     expect(out).toContain('aria-label="Views"');
-    expect(out).toContain('data-testid="view-group"');
+    expect(out).toContain('data-ref="view-group"');
   });
 });

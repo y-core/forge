@@ -4,11 +4,11 @@ import { ToggleGroup } from "./toggle-group";
 
 describe("ToggleGroup", () => {
   it("root emits data-slot=toggle-group on a fieldset", async () => {
-    const out = await render(<ToggleGroup aria-label='Projection' data-testid='projection-group' />);
+    const out = await render(<ToggleGroup aria-label='Projection' data-ref='projection-group' />);
     expect(out).toContain('data-slot="toggle-group"');
     expect(out).toContain("<fieldset");
     expect(out).toContain('aria-label="Projection"');
-    expect(out).toContain('data-testid="projection-group"');
+    expect(out).toContain('data-ref="projection-group"');
   });
 
   it("root includes base layout classes", async () => {
@@ -42,15 +42,15 @@ describe("ToggleGroup", () => {
     expect(out).not.toContain("bg-primary");
   });
 
-  it("item spreads data-on-click, data-mode, data-testid, and title", async () => {
+  it("item spreads data-on-click, data-mode, data-ref, and title", async () => {
     const out = await render(
-      <ToggleGroup.Item data-on-click='cameraMode' data-mode='perspective' data-testid='cam-perspective' title='Perspective'>
+      <ToggleGroup.Item data-on-click='cameraMode' data-mode='perspective' data-ref='cam-perspective' title='Perspective'>
         P
       </ToggleGroup.Item>,
     );
     expect(out).toContain('data-on-click="cameraMode"');
     expect(out).toContain('data-mode="perspective"');
-    expect(out).toContain('data-testid="cam-perspective"');
+    expect(out).toContain('data-ref="cam-perspective"');
     expect(out).toContain('title="Perspective"');
   });
 
@@ -68,10 +68,10 @@ describe("ToggleGroup", () => {
   it("item renders label children inside a full group", async () => {
     const out = await render(
       <ToggleGroup aria-label='Views'>
-        <ToggleGroup.Item pressed data-testid='perspective-btn'>
+        <ToggleGroup.Item pressed data-ref='perspective-btn'>
           Perspective
         </ToggleGroup.Item>
-        <ToggleGroup.Item data-testid='parallel-btn'>Parallel</ToggleGroup.Item>
+        <ToggleGroup.Item data-ref='parallel-btn'>Parallel</ToggleGroup.Item>
       </ToggleGroup>,
     );
     expect(out).toContain('data-slot="toggle-group"');
