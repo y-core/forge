@@ -55,7 +55,9 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/storage/db` | D1 database client | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/storage/kv` | Workers KV typed store | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/storage/r2` | R2 object storage | [src/storage/README.md](src/storage/README.md) |
-| `@y-core/forge/ui` | Server-side JSX components | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/core` | Server-side JSX component library | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/controls` | Pre-bound signal-binding wrappers | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/assets` | Forge icon asset manifest (`forgeUiSpriteSources`) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/client` | Browser-side UI scripts | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/client/htmx` | HTMX bundle (side-effect) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/server` | SSR-only: Flash, Resumable, ThemeToggle | [src/ui/README.md](src/ui/README.md) |
@@ -135,7 +137,7 @@ Quick one-line orientation for each namespace — see the linked README for comp
 
 **[`@y-core/forge/storage`](src/storage/README.md)** — typed wrappers over Cloudflare D1 (`storage/db`), Workers KV (`storage/kv`), and R2 (`storage/r2`); all operations return `Result<T>`; signed URL support for R2.
 
-**[`@y-core/forge/ui`](src/ui/README.md)** — JSX component library (`Alert`, `Button`, `Card`, `Field`, `Form`, `Input`, …); `ui/client` signals + island hydration; `ui/server` SSR Flash/Resumable/ThemeToggle.
+**[`@y-core/forge/ui`](src/ui/README.md)** — `ui/core`: JSX component library (`Alert`, `Button`, `Card`, `Field`, `Form`, `Input`, …); `ui/controls`: pre-bound signal-binding wrappers (`Switch`, `Slider`, `Select`, `ToggleGroup`); `ui/assets`: `forgeUiSpriteSources()` manifest for forge's 7 icon glyphs; `ui/client`: signals + island hydration; `ui/server`: SSR Flash/Resumable/ThemeToggle.
 
 **[`@y-core/forge/validation`](src/validation/README.md)** — the `v` valibot namespace + `ValidationResult<T>`; `validation/cli` generates typed Cloudflare env declarations from `wrangler.jsonc` (`forge-cfgen` bin).
 

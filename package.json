@@ -81,6 +81,10 @@
       "types": "./src/form/mod.ts",
       "import": "./src/form/mod.ts"
     },
+    "./jsx": {
+      "types": "./src/jsx/mod.ts",
+      "import": "./src/jsx/mod.ts"
+    },
     "./jsx/jsx-dev-runtime": {
       "types": "./src/jsx/jsx-dev-runtime.ts",
       "import": "./src/jsx/jsx-dev-runtime.ts"
@@ -133,9 +137,17 @@
       "types": "./src/session/mod.ts",
       "import": "./src/session/mod.ts"
     },
-    "./ui": {
-      "types": "./src/ui/mod.ts",
-      "import": "./src/ui/mod.ts"
+    "./ui/assets": {
+      "types": "./src/ui/assets/mod.ts",
+      "import": "./src/ui/assets/mod.ts"
+    },
+    "./ui/controls": {
+      "types": "./src/ui/controls/mod.ts",
+      "import": "./src/ui/controls/mod.ts"
+    },
+    "./ui/core": {
+      "types": "./src/ui/core/mod.ts",
+      "import": "./src/ui/core/mod.ts"
     },
     "./ui/chrome": {
       "types": "./src/ui/chrome/mod.ts",

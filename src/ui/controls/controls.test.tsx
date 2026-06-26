@@ -1,18 +1,18 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 import { render } from "../../jsx/render-test-helper";
 import { createIcon } from "../core/icon";
-import { bindControls } from "./controls";
+import { Select, Slider, Switch, ToggleGroup } from "./mod";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
-const Bound = bindControls("bindField");
-const Custom = bindControls("myAction");
 
-describe("bindControls — Switch", () => {
+describe("controls/Switch", () => {
   it("emits data-on-change and data-field on the input", async () => {
     const out = await render(
-      <Bound.Switch bind='gridVisible' checked={true}>
+      <Switch bind='gridVisible' checked={true}>
         Grid
-      </Bound.Switch>,
+      </Switch>,
     );
     expect(out).toContain('data-on-change="bindField"');
     expect(out).toContain('data-field="gridVisible"');
@@ -20,9 +20,9 @@ describe("bindControls — Switch", () => {
 
   it("passes checked and data-testid through to the underlying input", async () => {
     const out = await render(
-      <Bound.Switch bind='gridVisible' checked={false} data-testid='grid-switch'>
+      <Switch bind='gridVisible' checked={false} data-testid='grid-switch'>
         Grid
-      </Bound.Switch>,
+      </Switch>,
     );
     expect(out).toContain('data-testid="grid-switch"');
     expect(out).toContain("checked");
@@ -30,32 +30,32 @@ describe("bindControls — Switch", () => {
 
   it("renders children as label text", async () => {
     const out = await render(
-      <Bound.Switch bind='shadows' checked={true}>
+      <Switch bind='shadows' checked={true}>
         Shadows
-      </Bound.Switch>,
+      </Switch>,
     );
     expect(out).toContain("Shadows");
   });
 
-  it("honours a custom action name", async () => {
+  it("honours a custom action name via the action prop", async () => {
     const out = await render(
-      <Custom.Switch bind='x' checked={false}>
+      <Switch bind='x' checked={false} action='myAction'>
         X
-      </Custom.Switch>,
+      </Switch>,
     );
     expect(out).toContain('data-on-change="myAction"');
   });
 });
 
-describe("bindControls — Slider", () => {
+describe("controls/Slider", () => {
   it("emits data-on-input and data-field on the range input", async () => {
-    const out = await render(<Bound.Slider bind='fov' min={10} max={120} value={50} />);
+    const out = await render(<Slider bind='fov' min={10} max={120} value={50} />);
     expect(out).toContain('data-on-input="bindField"');
     expect(out).toContain('data-field="fov"');
   });
 
   it("passes min, max, value, and data-testid through", async () => {
-    const out = await render(<Bound.Slider bind='fov' min={10} max={120} value={60} data-testid='fov-slider' />);
+    const out = await render(<Slider bind='fov' min={10} max={120} value={60} data-testid='fov-slider' />);
     expect(out).toContain('min="10"');
     expect(out).toContain('max="120"');
     expect(out).toContain('value="60"');
@@ -63,22 +63,22 @@ describe("bindControls — Slider", () => {
   });
 
   it("renders the output readout when output=true", async () => {
-    const out = await render(<Bound.Slider bind='fov' min={10} max={120} value={75} output />);
+    const out = await render(<Slider bind='fov' min={10} max={120} value={75} output />);
     expect(out).toContain('data-slot="slider-output"');
   });
 
-  it("honours a custom action name", async () => {
-    const out = await render(<Custom.Slider bind='y' min={0} max={1} value={0} />);
+  it("honours a custom action name via the action prop", async () => {
+    const out = await render(<Slider bind='y' min={0} max={1} value={0} action='myAction' />);
     expect(out).toContain('data-on-input="myAction"');
   });
 });
 
-describe("bindControls — Select", () => {
+describe("controls/Select", () => {
   it("emits data-on-change and data-field on the select element", async () => {
     const out = await render(
-      <Bound.Select bind='language' icon={icon}>
-        <Bound.Select.Option value='en'>English</Bound.Select.Option>
-      </Bound.Select>,
+      <Select bind='language' icon={icon}>
+        <Select.Option value='en'>English</Select.Option>
+      </Select>,
     );
     expect(out).toContain('data-on-change="bindField"');
     expect(out).toContain('data-field="language"');
@@ -86,12 +86,12 @@ describe("bindControls — Select", () => {
 
   it("renders the chevron icon and children options", async () => {
     const out = await render(
-      <Bound.Select bind='language' icon={icon}>
-        <Bound.Select.Option value='en' selected>
+      <Select bind='language' icon={icon}>
+        <Select.Option value='en' selected>
           English
-        </Bound.Select.Option>
-        <Bound.Select.Option value='fr'>French</Bound.Select.Option>
-      </Bound.Select>,
+        </Select.Option>
+        <Select.Option value='fr'>French</Select.Option>
+      </Select>,
     );
     expect(out).toContain("<use");
     expect(out).toContain('value="en"');
@@ -101,42 +101,42 @@ describe("bindControls — Select", () => {
 
   it("passes data-testid through", async () => {
     const out = await render(
-      <Bound.Select bind='language' icon={icon} data-testid='lang-select'>
-        <Bound.Select.Option value='en'>English</Bound.Select.Option>
-      </Bound.Select>,
+      <Select bind='language' icon={icon} data-testid='lang-select'>
+        <Select.Option value='en'>English</Select.Option>
+      </Select>,
     );
     expect(out).toContain('data-testid="lang-select"');
   });
 
-  it("honours a custom action name", async () => {
+  it("honours a custom action name via the action prop", async () => {
     const out = await render(
-      <Custom.Select bind='z' icon={icon}>
-        <Custom.Select.Option value='a'>A</Custom.Select.Option>
-      </Custom.Select>,
+      <Select bind='z' icon={icon} action='myAction'>
+        <Select.Option value='a'>A</Select.Option>
+      </Select>,
     );
     expect(out).toContain('data-on-change="myAction"');
   });
 });
 
-describe("bindControls — ToggleGroup.Item", () => {
+describe("controls/ToggleGroup.Item", () => {
   it("emits data-field, data-value, and data-on-click on the button", async () => {
     const out = await render(
-      <Bound.ToggleGroup aria-label='Projection'>
-        <Bound.ToggleGroup.Item bind='projection' value='perspective' pressed>
+      <ToggleGroup aria-label='Projection'>
+        <ToggleGroup.Item bind='projection' value='perspective' pressed>
           Perspective
-        </Bound.ToggleGroup.Item>
-      </Bound.ToggleGroup>,
+        </ToggleGroup.Item>
+      </ToggleGroup>,
     );
     expect(out).toContain('data-field="projection"');
     expect(out).toContain('data-value="perspective"');
-    expect(out).toContain('data-on-click="bindField"');
+    expect(out).toContain('data-on-click="bindGroup"');
   });
 
   it("passes pressed, aria-label, title, and data-testid through", async () => {
     const out = await render(
-      <Bound.ToggleGroup.Item bind='projection' value='parallel' pressed={false} aria-label='Parallel' title='Parallel' data-testid='cam-parallel'>
+      <ToggleGroup.Item bind='projection' value='parallel' pressed={false} aria-label='Parallel' title='Parallel' data-testid='cam-parallel'>
         Parallel
-      </Bound.ToggleGroup.Item>,
+      </ToggleGroup.Item>,
     );
     expect(out).toContain('aria-pressed="false"');
     expect(out).toContain('aria-label="Parallel"');
@@ -146,34 +146,34 @@ describe("bindControls — ToggleGroup.Item", () => {
 
   it("does not forward bind or value as button attributes", async () => {
     const out = await render(
-      <Bound.ToggleGroup.Item bind='projection' value='perspective'>
+      <ToggleGroup.Item bind='projection' value='perspective'>
         P
-      </Bound.ToggleGroup.Item>,
+      </ToggleGroup.Item>,
     );
     expect(out).not.toContain("bind=");
     expect(out).toContain('data-value="perspective"');
   });
 
-  it("renders text and icon children", async () => {
+  it("renders text children", async () => {
     const out = await render(
-      <Bound.ToggleGroup.Item bind='projection' value='perspective'>
+      <ToggleGroup.Item bind='projection' value='perspective'>
         Perspective
-      </Bound.ToggleGroup.Item>,
+      </ToggleGroup.Item>,
     );
     expect(out).toContain("Perspective");
   });
 
-  it("honours a custom action name", async () => {
+  it("honours a custom action name via the action prop", async () => {
     const out = await render(
-      <Custom.ToggleGroup.Item bind='p' value='q'>
+      <ToggleGroup.Item bind='p' value='q' action='myAction'>
         Q
-      </Custom.ToggleGroup.Item>,
+      </ToggleGroup.Item>,
     );
     expect(out).toContain('data-on-click="myAction"');
   });
 
   it("root group passes aria-label and data-testid through", async () => {
-    const out = await render(<Bound.ToggleGroup aria-label='Views' data-testid='view-group' />);
+    const out = await render(<ToggleGroup aria-label='Views' data-testid='view-group' />);
     expect(out).toContain('aria-label="Views"');
     expect(out).toContain('data-testid="view-group"');
   });

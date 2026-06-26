@@ -1,10 +1,12 @@
 # `@y-core/forge/ui`
 
-Source-distributed UI primitives for forge apps, split across six import sub-paths. The family covers
-server-rendered JSX components (`@y-core/forge/ui`), browser-side controllers and a framework-free
-reactive runtime (`@y-core/forge/ui/client`), SSR-only stateful components (`@y-core/forge/ui/server`),
-the pinned HTMX bundle (`@y-core/forge/ui/client/htmx`), and a ready-made component showcase
-(`@y-core/forge/ui/show`, `@y-core/forge/ui/show/client`).
+Source-distributed UI primitives for forge apps, split across nine import sub-paths. The family covers
+server-rendered JSX primitives (`@y-core/forge/ui/core`), pre-bound signal-binding wrappers
+(`@y-core/forge/ui/controls`), forge's self-owned icon asset manifest (`@y-core/forge/ui/assets`),
+browser-side controllers and a framework-free reactive runtime (`@y-core/forge/ui/client`), SSR-only
+stateful components (`@y-core/forge/ui/server`), the pinned HTMX bundle
+(`@y-core/forge/ui/client/htmx`), and a ready-made component showcase (`@y-core/forge/ui/show`,
+`@y-core/forge/ui/show/client`).
 
 Every component is a thin wrapper over a native element with default Tailwind styling, predictable prop
 pass-through, and explicit composition. Field state and icon sprites are owned through composition, not
@@ -17,7 +19,9 @@ configuration.
 
 ## Table of Contents
 
-- [`@y-core/forge/ui`](#y-coreforgeui-1) — server-side JSX component library
+- [`@y-core/forge/ui/core`](#y-coreforgeuicore) — server-side JSX component library
+- [`@y-core/forge/ui/controls`](#y-coreforgeuicontrols) — pre-bound signal-binding wrapper layer
+- [`@y-core/forge/ui/assets`](#y-coreforgeuiassets) — forge's self-owned icon asset manifest
 - [`@y-core/forge/ui/client`](#y-coreforgeuiclient) — browser controllers + signals runtime
 - [`@y-core/forge/ui/server`](#y-coreforgeuiserver) — SSR-only Flash, Resumable, ThemeToggle
 - [`@y-core/forge/ui/client/htmx`](#y-coreforgeuiclienthtmx) — HTMX bundle (side-effect import)
@@ -48,9 +52,9 @@ runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
 
 ---
 
-## `@y-core/forge/ui`
+## `@y-core/forge/ui/core`
 
-> Import path: `@y-core/forge/ui` → `src/ui/mod.ts`
+> Import path: `@y-core/forge/ui/core` → `src/ui/core/mod.ts`
 
 ### Features
 
@@ -61,14 +65,14 @@ runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
 - Variant-driven styling through `cva`, conditional class merging through `cn`.
 - An accessible field system: controls inside a `FormField` inherit `id`, `name`, `aria-invalid`, and
   `aria-describedby`.
-- Sprite-backed icons bound once per app with `createIcon` / `bindIcon`.
+- Sprite-backed icons via `createIcon`; icon-consuming components accept an `icon` prop directly.
 
 ### Usage
 
 ```tsx
 import {
   Card, Button, Form, FormField, Input, Textarea, Alert,
-} from "@y-core/forge/ui";
+} from "@y-core/forge/ui/core";
 
 const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }) => (
   <Card class="w-96">
@@ -97,7 +101,7 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `Form` | `<form>` | HTMX attributes pass through; no client submission logic. |
 | `FormField` | `<fieldset>` | Accessible form field with `name` / `invalid` / `disabled`. Compounds: `FormField.Label`, `FormField.Description`, `FormField.Error`. |
 | `Field` | layout row | Lightweight label + control row — no form semantics. |
-| `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` (use `bindIcon`). |
+| `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` prop (a `ForgeIcon`). |
 | `Button` | `<button>` | `variant`: `"primary" | "secondary" | "ghost"`; `size`: `"sm" | "md" | "lg"`. |
 | `Alert` | `<div role="alert">` | `variant`: `AlertVariant`. Compounds: `Alert.Title`, `Alert.Description`. |
 | `Card` | bordered container | Compounds: `Card.Header`, `Card.Title`, `Card.Description`, `Card.Content`, `Card.Footer`. |
@@ -105,10 +109,9 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `Badge` | `<span>` | `variant`: `BadgeVariant`. |
 | `Avatar` | avatar | Compound: `Avatar.Fallback`. |
 | `Switch`, `Slider` | styled `<input>` | CSS-only toggle / native range; accept an optional `field` descriptor. |
-| `Progress`, `Separator`, `Skeleton`, `Spinner`, `Popover`, `Label` | misc primitives | `Spinner` requires an `icon`. |
+| `ToggleGroup`, `ToggleGroup.Item` | button group | Segmented control; `Item` takes `pressed` for initial state. |
+| `Progress`, `Separator`, `Skeleton`, `Spinner`, `Popover`, `Label` | misc primitives | `Spinner` requires an `icon` prop. |
 | `Icon`, `createIcon` | `<svg><use>` | Sprite-backed icon and its factory. |
-| `bindIcon` | factory | Binds `Spinner` / `Select` / `ThemeToggle` to one app icon. |
-| `bindControls` | factory | Pre-binds `Switch` / `Slider` / `Select` / `ToggleGroup.Item` to a scope action + `data-field`. |
 | `cn`, `cva` | class utilities | Class merging and class-variance authority. |
 
 #### `FormField` — accessible form fields
@@ -127,7 +130,7 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 internally when given a `field` prop. `FIELD_LABEL_CLASSES` is the shared label class string.
 
 ```tsx
-import { fieldErrorId } from "@y-core/forge/ui";
+import { fieldErrorId } from "@y-core/forge/ui/core";
 
 <Input name="email" type="email" aria-describedby={fieldErrorId("email")} />
 ```
@@ -141,7 +144,7 @@ unconditionally.
 validated form fields; use `FormField` when you need `name` / `invalid` / error / description wiring.
 
 ```tsx
-import { Field, Slider, Select } from "@y-core/forge/ui";
+import { Field, Slider, Select } from "@y-core/forge/ui/core";
 
 <Field label="Field of view"><Slider min={10} max={120} value={50} output /></Field>
 <Field label="Device" orientation="horizontal"><Select name="device" icon={icon}>…</Select></Field>
@@ -149,85 +152,33 @@ import { Field, Slider, Select } from "@y-core/forge/ui";
 
 `orientation` is `"vertical"` (default), `"horizontal"`, or `"responsive"`.
 
-#### Icons — `createIcon` and `bindIcon`
+#### Icons — `createIcon`
 
 Several components (`Select`, `Spinner`, and the server-only `ThemeToggle`) render an icon and accept an
-`icon` prop typed as `ForgeIcon<Name>`. Bind your app's sprite once with `createIcon`, then either pass
-the bound icon directly or pre-bind the icon-consuming components with `bindIcon`:
+`icon` prop typed as `ForgeIcon<Name>`. Bind your app's sprite once with `createIcon` and pass it at
+each call site:
 
 ```tsx
-import { createIcon, bindIcon } from "@y-core/forge/ui";
+import { createIcon, Select, Spinner } from "@y-core/forge/ui/core";
 
-// Bind the sprite URL once. With a meta map, `name` is narrowed to the sprite's `icon-*` keys.
-const icon = createIcon("/assets/icons.svg", { "icon-spinner": "0 0 24 24", "icon-chevron-down": "0 0 24 24" });
+// Bind the sprite URL once. Without a meta map, `name` is `string` (permissive).
+const AppIcon = createIcon("/assets/icons.svg");
 
-// Pre-bind icon-consuming components so call sites omit the `icon` prop.
-const { Spinner, Select, ThemeToggle } = bindIcon(icon);
-
-<Select name="country">
+<Select name="country" icon={AppIcon}>
   <Select.Option value="us">United States</Select.Option>
   <Select.OptGroup label="Europe">
     <Select.Option value="uk">United Kingdom</Select.Option>
   </Select.OptGroup>
 </Select>
-<Spinner size="md" />
+<Spinner icon={AppIcon} size="md" />
 ```
 
-`bindIcon(icon)` requires an icon supplying every glyph forge's bound components need: `spinner`,
-`chevron-down`, `sun`, `moon`, `monitor`. `createIcon(sprite)` without a `meta` map yields a permissive
-`ForgeIcon<string>` for apps whose icon set is dynamic; a `ForgeIcon<string>` is assignable to any
-narrower `ForgeIcon<Name>` by contravariance.
+`createIcon(sprite)` without a `meta` map yields a permissive `ForgeIcon<string>` for apps whose icon
+set is dynamic; a `ForgeIcon<string>` is assignable to any narrower `ForgeIcon<Name>` by
+contravariance, so the same `AppIcon` can satisfy `ThemeToggle`'s `ForgeIcon<"sun"|"moon"|"monitor">`
+or `Select`'s `ForgeIcon<"chevron-down">`.
 
-#### Bound controls — `bindControls`
-
-`bindControls<A>(action?)` pre-binds `Switch`, `Slider`, `Select`, and `ToggleGroup.Item` to
-a resumable-scope action and a `SignalRecord` field, mirroring the `bindIcon(icon)` pattern. Capture
-the action name once; call sites write a single `bind` prop instead of manually spreading `scopeAttrs`
-+ `fieldAttr` on every control. `A` is the app's action-name union — typed against the same union as
-`registerScope<A>`, so a typo is a compile error.
-
-```tsx
-import { bindControls } from "@y-core/forge/ui";
-import { bindField, bindGroup, registerScope, signalRecord } from "@y-core/forge/ui/client";
-import { Resumable } from "@y-core/forge/ui/server";
-
-// --- Server (SSR view) ---
-// Call once with the app's action-name union:
-const Bound = bindControls<ChromeAction>("bindField");
-
-// Each control needs only a `bind` prop:
-<Resumable name="chrome" state={settings}>
-  <Bound.Switch bind="gridVisible" checked={settings.gridVisible}>Grid</Bound.Switch>
-  <Bound.Slider bind="fov" min={1} max={120} value={settings.fov} output />
-  <Bound.Select bind="language" icon={AppIcon}>
-    <Bound.Select.Option value="en">English</Bound.Select.Option>
-  </Bound.Select>
-  <Bound.ToggleGroup aria-label="Projection">
-    <Bound.ToggleGroup.Item bind="projection" value="perspective" pressed={settings.projection === "perspective"}>
-      Perspective
-    </Bound.ToggleGroup.Item>
-    <Bound.ToggleGroup.Item bind="projection" value="parallel" pressed={settings.projection === "parallel"}>
-      Parallel
-    </Bound.ToggleGroup.Item>
-  </Bound.ToggleGroup>
-</Resumable>
-
-// --- Client ---
-const sig = signalRecord(settings);
-registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
-```
-
-**`bind` vs `field`:** the `bind` prop is orthogonal to the existing `field?: FieldDescriptor`. `field`
-wires `id` / `name` / `aria-*` for form accessibility; `bind` wires `data-field` + `data-on-<event>`
-for signal binding. Both may coexist on one control.
-
-**`ToggleGroup.Item` + `bindGroup`:** `Bound.ToggleGroup.Item` takes a required `value` prop stamped as
-`data-value`. Pair it with the client-side `bindGroup(signals)` action (from `@y-core/forge/ui/client`),
-which reads `data-field` + `data-value` on click and writes the raw string into the matching signal,
-bypassing `parseControlValue` (button groups can't express boolean/number values). The `bindField`
-action handles `Switch` / `Slider` / `Select` (which read `checked` / `value` directly from the
-element). Pressed-state reconciliation — updating `.active` classes and `aria-pressed` — stays
-app-side as an effect on the same signal.
+#### `cn` and `cva` — class utilities
 
 #### `cn` and `cva` — class utilities
 
@@ -235,7 +186,7 @@ app-side as an effect on the same signal.
 authority — build a variant function once, call it with a variant map to resolve a class string:
 
 ```tsx
-import { cn, cva } from "@y-core/forge/ui";
+import { cn, cva } from "@y-core/forge/ui/core";
 
 const button = cva({
   base: "inline-flex items-center rounded-md font-medium",
@@ -257,7 +208,7 @@ them through `fragmentResponse` or `htmlResponse` (`@y-core/forge/http`):
 ```tsx
 import { renderToString } from "@y-core/forge/render";
 import { fragmentResponse } from "@y-core/forge/http";
-import { Alert } from "@y-core/forge/ui";
+import { Alert } from "@y-core/forge/ui/core";
 
 // HTMX fragment — no DOCTYPE, swapped into an existing document.
 return fragmentResponse(await renderToString(
@@ -274,7 +225,112 @@ so a `javascript:`-style value collapses to `"#"` in the emitted HTML.
 ### Types
 
 `AlertVariant`, `BadgeVariant`, `ToastVariant`, `ToastPosition`, `FieldDescriptor`, `ForgeIcon`,
-`IconProps`, `JSXNode`.
+`IconProps`.
+
+---
+
+## `@y-core/forge/ui/controls`
+
+> Import path: `@y-core/forge/ui/controls` → `src/ui/controls/mod.ts`
+
+### Features
+
+Pre-bound wrappers over the `ui/core` primitives — the "bound decoration" layer. Each control mirrors
+its `ui/core` sibling in name and prop shape, adding only a required `bind` prop (`data-field`) and an
+optional `action` prop (`data-on-<event>` value). The JS module system acts as the "factory": import
+`Switch` from `@y-core/forge/ui/controls` and it's already decorated; import from `@y-core/forge/ui/core`
+for the undecorated primitive. Alias to disambiguate if both are in scope:
+
+```tsx
+import { Switch } from "@y-core/forge/ui/controls";
+import { Switch as SwitchPrimitive } from "@y-core/forge/ui/core";
+```
+
+### Usage
+
+```tsx
+import { Switch, Slider, Select, ToggleGroup } from "@y-core/forge/ui/controls";
+import { bindField, bindGroup, registerScope, signalRecord } from "@y-core/forge/ui/client";
+import { Resumable } from "@y-core/forge/ui/server";
+
+// --- Server (SSR view) ---
+<Resumable name="chrome" state={settings}>
+  <Switch bind="gridVisible" checked={settings.gridVisible}>Grid</Switch>
+  <Slider bind="fov" min={1} max={120} value={settings.fov} output />
+  <Select bind="language" icon={AppIcon}>
+    <Select.Option value="en">English</Select.Option>
+  </Select>
+  <ToggleGroup aria-label="Projection">
+    <ToggleGroup.Item bind="projection" value="perspective" pressed={settings.projection === "perspective"}>
+      Perspective
+    </ToggleGroup.Item>
+    <ToggleGroup.Item bind="projection" value="parallel" pressed={settings.projection === "parallel"}>
+      Parallel
+    </ToggleGroup.Item>
+  </ToggleGroup>
+</Resumable>
+
+// --- Client ---
+const sig = signalRecord(settings);
+registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
+```
+
+### Core Components & APIs
+
+| Export | Wraps | Binding |
+|---|---|---|
+| `Switch` | `core/Switch` | `bind` → `data-field`; `onChange` → `action` (default `"bindField"`) |
+| `Slider` | `core/Slider` | `bind` → `data-field`; `onInput` → `action` (default `"bindField"`) |
+| `Select` | `core/Select` | `bind` → `data-field`; `onChange` → `action` (default `"bindField"`); forwards required `icon`; re-exports `.Option`, `.OptGroup` |
+| `ToggleGroup` | `core/ToggleGroup` | Pass-through root; `.Item` adds `bind` → `data-field`, `value` → `data-value`, `onClick` → `action` (default `"bindGroup"`) |
+
+**`bind` vs `field`:** the `bind` prop is orthogonal to the existing `field?: FieldDescriptor`. `field`
+wires `id` / `name` / `aria-*` for form accessibility; `bind` wires `data-field` + `data-on-<event>`
+for signal binding. Both may coexist on one control.
+
+**`ToggleGroup.Item` + `bindGroup`:** the `.Item` takes a required `value` prop stamped as `data-value`.
+Pair it with the client-side `bindGroup(signals)` action, which reads `data-field` + `data-value` on
+click and writes the raw string into the matching signal, bypassing `parseControlValue` (button groups
+can't express boolean/number values). The `bindField` action handles `Switch` / `Slider` / `Select`.
+
+---
+
+## `@y-core/forge/ui/assets`
+
+> Import path: `@y-core/forge/ui/assets` → `src/ui/assets/mod.ts`
+
+### Features
+
+Forge owns all 7 of its UI glyphs: `spinner`, `chevron-down`, `hamburger`, `close` (in
+`src/ui/assets/core/`) plus `sun`, `moon`, `monitor` (in `src/ui/assets/theme/`). The asset manifest
+exposes them as a `SpriteSource[]` so the consumer's build config never has to hand-list forge's
+internal filenames or reach into `node_modules` paths.
+
+### Usage
+
+```typescript
+import { forgeUiSpriteSources } from "@y-core/forge/ui/assets";
+import { defineAssets } from "@y-core/forge/assets";
+
+export default defineAssets({
+  spriteSources: [
+    ...forgeUiSpriteSources(),          // forge's 7 glyphs, self-described
+    { path: "./src/assets/icons", files: ["tool-select.svg", "tool-push-pull.svg", ...] },
+  ],
+  // …
+});
+```
+
+`forgeUiSpriteSources()` returns two `SpriteSource` objects with absolute paths resolved via
+`import.meta.url` — safe regardless of where forge is installed in `node_modules`.
+
+### Core Components & APIs
+
+| Export | Kind | Description |
+|---|---|---|
+| `forgeUiSpriteSources()` | function | Returns `SpriteSource[]` for all forge UI glyphs. Spread into `spriteSources` in your assets config. |
+| `FORGE_UI_ICON_NAMES` | `const` tuple | The 7 glyph names as a `readonly` tuple — use for type narrowing or validation. |
+| `ForgeUiIconName` | type | `"spinner" | "chevron-down" | "hamburger" | "close" | "sun" | "moon" | "monitor"`. |
 
 ---
 
@@ -380,7 +436,7 @@ current type, and writes `signals[field]`. `parseControlValue(el, current)` does
 the inverse — seed an uncontrolled input from a typed value after a programmatic reset.
 
 `bindGroup(signals)` is the companion action for button-group (segmented) controls stamped by
-`bindControls` `ToggleGroup.Item`. On click it resolves the nearest ancestor with both
+`controls/` `ToggleGroup.Item`. On click it resolves the nearest ancestor with both
 `data-field` and `data-value` via `closest("[data-field][data-value]")` — handling clicks on inner
 `<svg>` or `<span>` — then writes the raw `data-value` string into `signals[field]`, bypassing
 `parseControlValue` (button groups can't express boolean or numeric values). Register it alongside
@@ -516,7 +572,7 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 | `Resumable` | component | Wraps children in a `data-scope` + serialized `data-state` island. |
 | `scopeAttrs(props)` | helper | Builds typed `data-on-<event>` delegation attributes for a scope. |
 | `fieldAttr(name)` | helper | Stamps `data-field` so the client `bindField` action knows which signal to write. |
-| `ThemeToggle` | component | Theme-cycle button (needs an `icon`; bind via `bindIcon`). |
+| `ThemeToggle` | component | Theme-cycle button; requires an `icon` prop (`ForgeIcon`). |
 
 `createFlash(options)` takes `FlashCookieOptions` (`secrets`, optional `name` / `path` / `maxAge` /
 `sameSite`); defaults are `name: "flash"`, `path: "/"`, `maxAge: 60`, `sameSite: "Lax"`. `flash.get`
@@ -582,8 +638,9 @@ it, and never import htmx from a CDN — this entry pins the version through for
 
 ### Usage
 
-`ShowcaseContent` is layout-less — wrap it in your app's `Layout`. It needs the showcase data and a bound
-icon supplying `spinner`, `chevron-down`, `sun`, `moon`, `monitor`:
+`ShowcaseContent` is layout-less — wrap it in your app's `Layout`. It needs the showcase data and an
+`icon` prop (a `ForgeIcon` supplying forge's required glyphs — all present if you include
+`forgeUiSpriteSources()` in your assets config):
 
 ```tsx
 import { loadShowcase, ShowcaseContent } from "@y-core/forge/ui/show";

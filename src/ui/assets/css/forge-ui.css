@@ -28,4 +28,16 @@
   html[data-theme-preference="system"] .theme-system-icon { display: contents; }
   html:not([data-theme-preference])    .theme-system-icon { display: contents; }
 
+  /* Chromium ≥131 wraps closed-<details> content in ::details-content with
+     content-visibility: hidden — an ancestor-level gate that suppresses the
+     content div regardless of its own display value.  The Navbar renders its
+     desktop bar from a closed <details> and drives show/hide through the
+     content div's display (hidden / md:flex / group-open:flex), so neutralise
+     this redundant UA gate.  Unknown pseudo-elements are dropped by engines
+     that lack ::details-content (Firefox, Safari, older Chromium), leaving
+     their legacy display-based behaviour intact. */
+  [data-slot="navbar"]::details-content {
+    content-visibility: visible;
+  }
+
 }

@@ -102,13 +102,19 @@ function dispatch(type: string, event: Event): void {
   const el = (event.target as Element | null)?.closest<HTMLElement>(`[data-on-${type}]`);
   if (!el) return;
   const action = el.getAttribute(`data-on-${type}`);
-  const root = el.closest<HTMLElement>("[data-scope]");
-  if (!action || !root) return;
-  const def = scopes.get(root.dataset.scope ?? "");
-  if (!def) return;
-
-  const state = ensureResumed(root, def);
-  def.on[action]?.({ root, el, state }, event);
+  if (!action) return;
+  let scopeEl = el.closest<HTMLElement>("[data-scope]");
+  while (scopeEl) {
+    const def = scopes.get(scopeEl.dataset.scope ?? "");
+    if (def) {
+      const state = ensureResumed(scopeEl, def);
+      if (def.on[action]) {
+        def.on[action]({ root: scopeEl, el, state }, event);
+        return;
+      }
+    }
+    scopeEl = scopeEl.parentElement?.closest<HTMLElement>("[data-scope]") ?? null;
+  }
 }
 
 function hydrateState(raw: string | undefined): Record<string, Signal<unknown>> {

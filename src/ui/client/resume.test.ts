@@ -273,6 +273,135 @@ describe("resume", () => {
 
     expect(called).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // 8. Bubbling: unhandled action walks up to the enclosing scope
+  // -------------------------------------------------------------------------
+  it("bubbles an unhandled action from an inner scope to the outer scope", () => {
+    let outerCalled = false;
+    const outerScopeName = `test-outer-${Math.random().toString(36).slice(2)}`;
+    const innerScopeName = `test-inner-${Math.random().toString(36).slice(2)}`;
+
+    registerScope(outerScopeName, {
+      on: {
+        "bubble-action": () => {
+          outerCalled = true;
+        },
+      },
+    });
+    registerScope(innerScopeName, { on: {} }); // no handler — should bubble
+
+    currentDisposer = resume();
+
+    const outerRoot = {
+      dataset: { scope: outerScopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? outerRoot : null),
+      parentElement: { closest: (_s: string) => null },
+    };
+    const innerRoot = {
+      dataset: { scope: innerScopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? innerRoot : null),
+      parentElement: { closest: (_s: string) => outerRoot },
+    };
+    const el = {
+      closest: (sel: string) => {
+        if (sel === "[data-on-click]") return el;
+        if (sel === "[data-scope]") return innerRoot;
+        return null;
+      },
+      getAttribute: (k: string) => (k === "data-on-click" ? "bubble-action" : null),
+      dataset: {},
+    };
+    const target = { closest: (sel: string) => (sel === "[data-on-click]" ? el : null) };
+
+    doc.listeners.click![0]!(makeSyntheticEvent("click", target));
+
+    expect(outerCalled).toBe(true);
+  });
+
+  it("fires the inner scope handler when it owns the action (does not bubble to outer)", () => {
+    let innerCalled = false;
+    let outerCalled = false;
+    const outerScopeName = `test-outer-stop-${Math.random().toString(36).slice(2)}`;
+    const innerScopeName = `test-inner-stop-${Math.random().toString(36).slice(2)}`;
+
+    registerScope(outerScopeName, {
+      on: {
+        "stop-action": () => {
+          outerCalled = true;
+        },
+      },
+    });
+    registerScope(innerScopeName, {
+      on: {
+        "stop-action": () => {
+          innerCalled = true;
+        },
+      },
+    });
+
+    currentDisposer = resume();
+
+    const outerRoot = {
+      dataset: { scope: outerScopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? outerRoot : null),
+      parentElement: { closest: (_s: string) => null },
+    };
+    const innerRoot = {
+      dataset: { scope: innerScopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? innerRoot : null),
+      parentElement: { closest: (_s: string) => outerRoot },
+    };
+    const el = {
+      closest: (sel: string) => {
+        if (sel === "[data-on-click]") return el;
+        if (sel === "[data-scope]") return innerRoot;
+        return null;
+      },
+      getAttribute: (k: string) => (k === "data-on-click" ? "stop-action" : null),
+      dataset: {},
+    };
+    const target = { closest: (sel: string) => (sel === "[data-on-click]" ? el : null) };
+
+    doc.listeners.click![0]!(makeSyntheticEvent("click", target));
+
+    expect(innerCalled).toBe(true);
+    expect(outerCalled).toBe(false);
+  });
+
+  it("single-scope dispatch still fires when there is no parent scope (regression)", () => {
+    let called = false;
+    const scopeName = `test-single-bubble-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      on: {
+        "solo-action": () => {
+          called = true;
+        },
+      },
+    });
+
+    currentDisposer = resume();
+
+    const root = {
+      dataset: { scope: scopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? root : null),
+      parentElement: { closest: (_s: string) => null },
+    };
+    const el = {
+      closest: (sel: string) => {
+        if (sel === "[data-on-click]") return el;
+        if (sel === "[data-scope]") return root;
+        return null;
+      },
+      getAttribute: (k: string) => (k === "data-on-click" ? "solo-action" : null),
+      dataset: {},
+    };
+    const target = { closest: (sel: string) => (sel === "[data-on-click]" ? el : null) };
+
+    doc.listeners.click![0]!(makeSyntheticEvent("click", target));
+
+    expect(called).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

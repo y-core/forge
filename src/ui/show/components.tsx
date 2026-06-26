@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import type { FC } from "../../jsx/types";
-import { bindIcon } from "../compose/icon";
+import { ThemeToggle } from "../chrome/theme-toggle";
 import { Alert } from "../core/alert";
 import { Avatar } from "../core/avatar";
 import { Badge } from "../core/badge";
@@ -13,8 +13,10 @@ import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Label } from "../core/label";
 import { Progress } from "../core/progress";
+import { Select } from "../core/select";
 import { Separator } from "../core/separator";
 import { Skeleton } from "../core/skeleton";
+import { Spinner } from "../core/spinner";
 import { Textarea } from "../core/textarea";
 import { Toast } from "../core/toast";
 import { ToggleGroup } from "../core/toggle-group";
@@ -164,33 +166,30 @@ const CardSection: FC = () => (
   </CatalogSection>
 );
 
-const FieldSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => {
-  const { Select } = bindIcon(icon);
-  return (
-    <CatalogSection id='field' title='Field'>
-      <div class='w-full max-w-xs space-y-4'>
-        <FormField name='text-field'>
-          <FormField.Label name='text-field'>Label</FormField.Label>
-          <Input type='text' name='text-field' placeholder='Placeholder' field={{ name: "text-field" }} />
-          <FormField.Description name='text-field'>Helper text for this field.</FormField.Description>
-        </FormField>
-        <FormField name='error-field' invalid>
-          <FormField.Label name='error-field'>Invalid Field</FormField.Label>
-          <Input type='text' name='error-field' value='bad input' field={{ name: "error-field", invalid: true }} />
-          <FormField.Error name='error-field'>This field has an error.</FormField.Error>
-        </FormField>
-        <FormField name='select-field'>
-          <FormField.Label name='select-field'>Select</FormField.Label>
-          <Select name='select-field' field={{ name: "select-field" }}>
-            <Select.Option value=''>Choose…</Select.Option>
-            <Select.Option value='a'>Option A</Select.Option>
-            <Select.Option value='b'>Option B</Select.Option>
-          </Select>
-        </FormField>
-      </div>
-    </CatalogSection>
-  );
-};
+const FieldSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => (
+  <CatalogSection id='field' title='Field'>
+    <div class='w-full max-w-xs space-y-4'>
+      <FormField name='text-field'>
+        <FormField.Label name='text-field'>Label</FormField.Label>
+        <Input type='text' name='text-field' placeholder='Placeholder' field={{ name: "text-field" }} />
+        <FormField.Description name='text-field'>Helper text for this field.</FormField.Description>
+      </FormField>
+      <FormField name='error-field' invalid>
+        <FormField.Label name='error-field'>Invalid Field</FormField.Label>
+        <Input type='text' name='error-field' value='bad input' field={{ name: "error-field", invalid: true }} />
+        <FormField.Error name='error-field'>This field has an error.</FormField.Error>
+      </FormField>
+      <FormField name='select-field'>
+        <FormField.Label name='select-field'>Select</FormField.Label>
+        <Select name='select-field' field={{ name: "select-field" }} icon={icon}>
+          <Select.Option value=''>Choose…</Select.Option>
+          <Select.Option value='a'>Option A</Select.Option>
+          <Select.Option value='b'>Option B</Select.Option>
+        </Select>
+      </FormField>
+    </div>
+  </CatalogSection>
+);
 
 const IconSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon: Icon }) => (
   <CatalogSection id='icon' title='Icon'>
@@ -251,16 +250,13 @@ const SkeletonSection: FC = () => (
   </CatalogSection>
 );
 
-const SpinnerSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => {
-  const { Spinner: BoundSpinner } = bindIcon(icon);
-  return (
-    <CatalogSection id='spinner' title='Spinner'>
-      <BoundSpinner size='sm' />
-      <BoundSpinner size='md' />
-      <BoundSpinner size='lg' />
-    </CatalogSection>
-  );
-};
+const SpinnerSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => (
+  <CatalogSection id='spinner' title='Spinner'>
+    <Spinner icon={icon} size='sm' />
+    <Spinner icon={icon} size='md' />
+    <Spinner icon={icon} size='lg' />
+  </CatalogSection>
+);
 
 const TextareaSection: FC = () => (
   <CatalogSection id='textarea' title='Textarea'>
@@ -320,21 +316,18 @@ const ToastCatalog: FC = () => (
 
 // ─── Theme section ────────────────────────────────────────────────────────────
 
-const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => {
-  const { ThemeToggle } = bindIcon(icon);
-  return (
-    <section id='theme' class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
-      <div>
-        <h2 class='text-base font-semibold text-foreground'>Theme</h2>
-        <p class='mt-1 text-sm text-muted-foreground'>Cycle light → dark → system. Preference is stored in localStorage.</p>
-      </div>
-      <div class='flex items-center gap-4'>
-        <ThemeToggle />
-        <span class='text-sm text-muted-foreground'>Click to cycle themes</span>
-      </div>
-    </section>
-  );
-};
+const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => (
+  <section id='theme' class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
+    <div>
+      <h2 class='text-base font-semibold text-foreground'>Theme</h2>
+      <p class='mt-1 text-sm text-muted-foreground'>Cycle light → dark → system. Preference is stored in localStorage.</p>
+    </div>
+    <div class='flex items-center gap-4'>
+      <ThemeToggle icon={icon} />
+      <span class='text-sm text-muted-foreground'>Click to cycle themes</span>
+    </div>
+  </section>
+);
 
 // ─── Resumability island ─────────────────────────────────────────────────────
 

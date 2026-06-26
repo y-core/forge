@@ -51,7 +51,7 @@ export function bindField<T extends Record<string, unknown>>(signals: SignalReco
 /**
  * Build a resumable-scope action that binds a button group (segmented control) to a `SignalRecord`.
  * Unlike {@link bindField}, which reads `checked`/`value` from the control element, `bindGroup`
- * reads the `data-value` attribute stamped by `bindControls` `ToggleGroup.Item` and writes
+ * reads the `data-value` attribute stamped by the `controls/` ToggleGroup.Item and writes
  * it as a **raw string** into `signals[field]` — button elements cannot express boolean or numeric
  * values, so `parseControlValue` is bypassed.
  *
