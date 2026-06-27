@@ -71,6 +71,23 @@ registerScope<"cycleTheme">("theme", {
 });
 
 // ---------------------------------------------------------------------------
+// toolbar scope
+// ---------------------------------------------------------------------------
+
+registerScope("toolbar", {
+  setup: ({ root }) => {
+    const onOutsideClick = (event: Event) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      for (const el of root.querySelectorAll<HTMLDetailsElement>("details[open]")) if (!el.contains(target)) el.open = false;
+    };
+    document.addEventListener("click", onOutsideClick);
+    return () => document.removeEventListener("click", onOutsideClick);
+  },
+  on: {},
+});
+
+// ---------------------------------------------------------------------------
 // navbar scope
 // ---------------------------------------------------------------------------
 
