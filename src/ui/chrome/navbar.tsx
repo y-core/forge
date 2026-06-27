@@ -103,10 +103,8 @@ const placementVariants = cva({
 });
 
 /** Top-level entries read as a menubar button; nested entries read as full-width menu rows. */
-const TRIGGER_TOP =
-  "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring";
-const ROW =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring";
+const TRIGGER_TOP = "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-accent group-open/popover:text-accent-foreground";
+const ROW = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-accent group-open/popover:text-accent-foreground";
 
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). */
 function filterAttrs(item: NavItem, activeFilters: string[]): Record<string, unknown> {
@@ -143,15 +141,7 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
         <Popover.Trigger class={depth === 0 ? TRIGGER_TOP : ROW}>
           <span>{item.label}</span>
           <span aria-hidden='true' class='text-xs opacity-70'>
-            <ctx.icon
-              name='chevron-down'
-              width={16}
-              height={16}
-              stroke='currentColor'
-              stroke-width={1.5}
-              stroke-linecap='round'
-              stroke-linejoin='round'
-            />
+            <ctx.icon name='chevron-down' width={16} height={16} stroke='currentColor' stroke-width={1.5} stroke-linecap='round' stroke-linejoin='round' />
           </span>
         </Popover.Trigger>
         <Popover.Content>{item.items.map((child) => renderItem(child, depth + 1, ctx))}</Popover.Content>

@@ -18,7 +18,7 @@ interface PopoverContentProps {
 }
 
 const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, ...props }) => (
-  <details data-slot='popover' class={cn("relative inline-block", asClass(cls))} {...props}>
+  <details data-slot='popover' class={cn("relative inline-block group/popover", asClass(cls))} {...props}>
     {children}
   </details>
 );

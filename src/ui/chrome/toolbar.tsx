@@ -100,17 +100,13 @@ const railVariants = cva({
 });
 
 const flyoutVariants = cva({
-  base: "absolute top-0 z-10 p-2 pb-2.5 min-w-52",
+  base: "absolute top-0 z-10 p-2 pb-2.5 min-w-52 rounded-xl border border-border bg-popover text-popover-foreground shadow-md",
   variants: { placement: { left: "left-full ml-2", right: "right-full mr-2", top: "top-full left-0 mt-2", bottom: "bottom-full left-0 mb-2" } },
   defaultVariants: { placement: "left" },
 });
 
-const TRIGGER_CLS =
-  "list-none cursor-pointer outline-none rounded-lg flex items-center justify-center size-9 " +
-  "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring";
-
+const TRIGGER_CLS = "list-none cursor-pointer outline-none rounded-lg flex items-center justify-center size-9 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-primary group-open/popover:text-primary-foreground";
 const FLYOUT_TITLE_CLS = "text-[11px] font-semibold text-muted-foreground uppercase tracking-wider pt-0.5 pb-1.5 px-0.5";
-
 const FLYOUT_BODY_CLS = "flex flex-col items-stretch gap-3.5 pt-1 pb-0.5 px-0.5 max-h-[60vh] overflow-y-auto";
 
 function isVerticalPlacement(placement: ToolbarPlacement): boolean {
@@ -147,7 +143,7 @@ function renderItem<A extends string>(item: ToolbarItem<A>, placement: ToolbarPl
   // popover
   const { icon, label, ref, content, compact } = item;
   return (
-    <details data-slot='toolbar-popover' name={flyoutGroup} class='relative flex flex-col items-center w-full'>
+    <details data-slot='toolbar-popover' name={flyoutGroup} class='group/popover relative flex flex-col items-center w-full'>
       <summary data-slot='toolbar-trigger' data-ref={ref} class={TRIGGER_CLS} title={label} aria-label={label}>
         <Icon name={icon} viewBox='0 0 24 24' class='w-5 h-5' />
       </summary>
