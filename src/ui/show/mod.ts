@@ -1,4 +1,6 @@
 export { ShowcaseContent } from "./components";
+export type { ShowcaseIcon, ShowcaseOptions, ShowcaseUiRoutes } from "./register";
+export { registerShowcase, showcaseRoutes } from "./register";
 export type {
   DependentData,
   PaginateData,
