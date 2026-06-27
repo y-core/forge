@@ -75,4 +75,19 @@ describe("Alert", () => {
     const out = await render(<Alert>Message</Alert>);
     expect(out).not.toContain('data-slot="alert-dismiss"');
   });
+
+  it("stamps data-scope=alert on root when dismissible", async () => {
+    const out = await render(<Alert dismissible>Message</Alert>);
+    expect(out).toContain('data-scope="alert"');
+  });
+
+  it("stamps data-on-click=dismiss on the dismiss button when dismissible", async () => {
+    const out = await render(<Alert dismissible>Message</Alert>);
+    expect(out).toContain('data-on-click="dismiss"');
+  });
+
+  it("does not stamp data-scope when not dismissible", async () => {
+    const out = await render(<Alert>Message</Alert>);
+    expect(out).not.toContain("data-scope=");
+  });
 });

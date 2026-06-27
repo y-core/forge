@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, PropsWithChildren } from "../../jsx/types";
+import { scopeAttrs } from "../server/scope-attrs";
 import { cn } from "./utils/cn";
 
 export type ToastVariant = "default" | "success" | "info" | "warning" | "destructive";
@@ -15,6 +16,7 @@ interface ToastContainerProps {
 interface ToastProps {
   variant?: ToastVariant;
   dismissible?: boolean;
+  duration?: number;
   class?: string;
 }
 
@@ -56,29 +58,39 @@ const ToastContainer: FC<PropsWithChildren<ToastContainerProps>> = ({ id, positi
   </section>
 );
 
-const ToastRoot: FC<PropsWithChildren<ToastProps>> = ({ variant = "default", dismissible = false, class: cls, children }) => (
-  <div
-    data-slot='toast'
-    data-variant={variant}
-    role='status'
-    aria-atomic='true'
-    class={cn("relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg", toastVariantClasses[variant], dismissible && "pr-10", cls)}>
-    <div data-slot='toast-body' class='flex-1 space-y-1'>
-      {children}
+const ToastRoot: FC<PropsWithChildren<ToastProps>> = ({ variant = "default", dismissible = false, duration, class: cls, children }) => {
+  const interactive = dismissible || (duration !== undefined && duration > 0);
+  return (
+    <div
+      data-slot='toast'
+      data-variant={variant}
+      role='status'
+      aria-atomic='true'
+      {...(interactive ? { "data-scope": "toast", "data-state": JSON.stringify({ duration }) } : {})}
+      class={cn(
+        "relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg",
+        toastVariantClasses[variant],
+        dismissible && "pr-10",
+        cls,
+      )}>
+      <div data-slot='toast-body' class='flex-1 space-y-1'>
+        {children}
+      </div>
+      {dismissible ? (
+        <button
+          type='button'
+          data-slot='toast-close'
+          aria-label='Dismiss notification'
+          {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
+          class='absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring'>
+          <span aria-hidden='true' class='text-sm leading-none'>
+            ×
+          </span>
+        </button>
+      ) : null}
     </div>
-    {dismissible ? (
-      <button
-        type='button'
-        data-slot='toast-close'
-        aria-label='Dismiss notification'
-        class='absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring'>
-        <span aria-hidden='true' class='text-sm leading-none'>
-          ×
-        </span>
-      </button>
-    ) : null}
-  </div>
-);
+  );
+};
 
 const ToastTitle: FC<PropsWithChildren<ToastTitleProps>> = ({ class: cls, children }) => (
   <div data-slot='toast-title' class={cn("text-sm font-semibold leading-none", cls)}>

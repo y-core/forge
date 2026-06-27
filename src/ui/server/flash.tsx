@@ -14,13 +14,15 @@ export interface FlashMessage {
   title?: string;
 }
 
+const FLASH_DURATION_MS = 5000;
+
 function variantFor(t: FlashType): ToastVariant {
   if (t === "error") return "destructive";
   return t;
 }
 
 const FlashToast: FC<{ message: FlashMessage }> = ({ message }) => (
-  <Toast variant={variantFor(message.type)} dismissible>
+  <Toast variant={variantFor(message.type)} dismissible duration={FLASH_DURATION_MS}>
     {message.title ? <Toast.Title>{message.title}</Toast.Title> : null}
     <Toast.Description>{message.text}</Toast.Description>
   </Toast>

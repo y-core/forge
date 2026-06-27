@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, PropsWithChildren } from "../../jsx/types";
+import { scopeAttrs } from "../server/scope-attrs";
 import { cn } from "./utils/cn";
 
 const variantClasses = {
@@ -23,6 +24,7 @@ const AlertRoot: FC<PropsWithChildren<AlertProps>> = ({ variant = "default", dis
   <div
     data-slot='alert'
     data-variant={variant}
+    {...(dismissible ? { "data-scope": "alert" } : {})}
     class={cn("relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm", variantClasses[variant], dismissible && "pr-8", cls)}>
     {children}
     {dismissible ? (
@@ -30,6 +32,7 @@ const AlertRoot: FC<PropsWithChildren<AlertProps>> = ({ variant = "default", dis
         type='button'
         data-slot='alert-dismiss'
         aria-label='Dismiss'
+        {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
         class='absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring'>
         <span aria-hidden='true' class='text-base leading-none'>
           ×

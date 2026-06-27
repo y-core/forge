@@ -66,6 +66,35 @@ describe("Toast", () => {
     expect(out).toContain("pr-10");
   });
 
+  it("stamps data-scope and data-state when dismissible", async () => {
+    const out = await render(<Toast dismissible>Message</Toast>);
+    expect(out).toContain('data-scope="toast"');
+    expect(out).toContain("data-state=");
+  });
+
+  it("stamps data-on-click=dismiss on the close button when dismissible", async () => {
+    const out = await render(<Toast dismissible>Message</Toast>);
+    expect(out).toContain('data-on-click="dismiss"');
+  });
+
+  it("stamps data-scope and data-state with duration when duration > 0", async () => {
+    const out = await render(<Toast duration={3000}>Message</Toast>);
+    expect(out).toContain('data-scope="toast"');
+    // data-state is HTML-attribute-encoded: " → &quot;
+    expect(out).toContain("&quot;duration&quot;:3000");
+  });
+
+  it("does not stamp data-scope when neither dismissible nor duration set", async () => {
+    const out = await render(<Toast>Message</Toast>);
+    expect(out).not.toContain("data-scope=");
+    expect(out).not.toContain("data-state=");
+  });
+
+  it("does not stamp data-scope when duration is 0", async () => {
+    const out = await render(<Toast duration={0}>Message</Toast>);
+    expect(out).not.toContain("data-scope=");
+  });
+
   it("merges a custom class", async () => {
     const out = await render(<Toast class='my-toast'>Hello</Toast>);
     expect(out).toContain("my-toast");
