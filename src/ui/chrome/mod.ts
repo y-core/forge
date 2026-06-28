@@ -14,5 +14,6 @@ export type {
   ToolbarProps,
   ToolbarSeparator,
   ToolbarSlot,
+  ToolbarTitleAction,
 } from "./toolbar";
 export { Toolbar } from "./toolbar";

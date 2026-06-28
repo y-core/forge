@@ -27,8 +27,20 @@ export interface ToolbarAction<A extends string = string> {
   size?: "icon" | "icon-sm";
 }
 
+/** An action button rendered inline on a popover's flyout title row. @public */
+export interface ToolbarTitleAction<A extends string = string> {
+  /** App sprite glyph, rendered via the bound `icon`. */
+  icon: string;
+  /** Tooltip + aria-label. */
+  label: string;
+  /** Delegated action dispatched on click (bubbles to an ancestor scope). */
+  action: A;
+  /** data-ref (test/parity hook). */
+  ref?: string;
+}
+
 /** Root rail item that opens a placement-aware flyout of arbitrary content. @public */
-export interface ToolbarPopover {
+export interface ToolbarPopover<A extends string = string> {
   kind: "popover";
   /** Sprite glyph name for the trigger icon. */
   icon: string;
@@ -40,6 +52,8 @@ export interface ToolbarPopover {
   content: JSXNode;
   /** Shrink flyout to content width (no min-w-52 floor). */
   compact?: boolean;
+  /** Optional action button stamped inline on the flyout title row. */
+  titleAction?: ToolbarTitleAction<A>;
 }
 
 /** @public */
@@ -54,7 +68,7 @@ export interface ToolbarSlot {
 }
 
 /** @public */
-export type ToolbarItem<A extends string = string> = ToolbarAction<A> | ToolbarPopover | ToolbarSeparator | ToolbarSlot;
+export type ToolbarItem<A extends string = string> = ToolbarAction<A> | ToolbarPopover<A> | ToolbarSeparator | ToolbarSlot;
 
 /** A cluster of items; a separator is auto-emitted between sibling groups. @public */
 export interface ToolbarGroup<A extends string = string> {
@@ -141,15 +155,27 @@ function renderItem<A extends string>(item: ToolbarItem<A>, placement: ToolbarPl
   }
 
   // popover
-  const { icon, label, ref, content, compact } = item;
+  const { icon, label, ref, content, compact, titleAction } = item;
   return (
     <details data-slot='toolbar-popover' name={flyoutGroup} class='group/popover relative flex flex-col items-center w-full'>
       <summary data-slot='toolbar-trigger' data-ref={ref} class={TRIGGER_CLS} title={label} aria-label={label}>
         <Icon name={icon} viewBox='0 0 24 24' class='w-5 h-5' />
       </summary>
       <div data-slot='toolbar-flyout' data-compact={compact ? "" : undefined} class={flyoutVariants({ placement })}>
-        <div data-slot='toolbar-flyout-title' class={FLYOUT_TITLE_CLS}>
-          {label}
+        <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
+          <span>{label}</span>
+          {titleAction && (
+            <Button
+              data-slot='toolbar-title-action'
+              data-ref={titleAction.ref}
+              variant='ghost'
+              size='icon-sm'
+              title={titleAction.label}
+              aria-label={titleAction.label}
+              {...scopeAttrs<A>({ onClick: titleAction.action })}>
+              <Icon name={titleAction.icon} viewBox='0 0 24 24' class='w-4 h-4' />
+            </Button>
+          )}
         </div>
         <div data-slot='toolbar-flyout-body' class={FLYOUT_BODY_CLS}>
           {content}
