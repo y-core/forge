@@ -61,4 +61,16 @@ describe("Switch", () => {
     const out = await render(<Switch>Snap to grid</Switch>);
     expect(out).toContain("Snap to grid");
   });
+
+  it("defaults to label-after orientation with data-orientation and no flex-row-reverse", async () => {
+    const out = await render(<Switch />);
+    expect(out).toContain('data-orientation="label-after"');
+    expect(out).not.toContain("flex-row-reverse");
+  });
+
+  it("label-before orientation stamps data-orientation and adds flex-row-reverse", async () => {
+    const out = await render(<Switch orientation='label-before' />);
+    expect(out).toContain('data-orientation="label-before"');
+    expect(out).toContain("flex-row-reverse");
+  });
 });

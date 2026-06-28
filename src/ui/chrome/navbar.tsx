@@ -141,7 +141,15 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
         <Popover.Trigger class={depth === 0 ? TRIGGER_TOP : ROW}>
           <span>{item.label}</span>
           <span aria-hidden='true' class='text-xs opacity-70'>
-            <ctx.icon name='chevron-down' width={16} height={16} stroke='currentColor' stroke-width={1.5} stroke-linecap='round' stroke-linejoin='round' />
+            <ctx.icon
+              name='chevron-down'
+              width={16}
+              height={16}
+              stroke='currentColor'
+              stroke-width={1.5}
+              stroke-linecap='round'
+              stroke-linejoin='round'
+            />
           </span>
         </Popover.Trigger>
         <Popover.Content>{item.items.map((child) => renderItem(child, depth + 1, ctx))}</Popover.Content>

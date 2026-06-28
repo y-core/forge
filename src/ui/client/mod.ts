@@ -3,6 +3,8 @@ export type { LazyImportOptions, LazyLoadOptions } from "./lazy";
 export { lazy, loadScriptOnEvent, loadStylesheet } from "./lazy";
 export type { NavControllerOptions } from "./nav";
 export { mountNav } from "./nav";
+export type { RepeatOptions } from "./repeat";
+export { repeat } from "./repeat";
 export type { ResumeContext, ScopeDefinition } from "./resume";
 export { registerScope, resume, resumeScope } from "./resume";
 export type { ReadonlySignal, Signal } from "./signal";

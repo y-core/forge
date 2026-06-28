@@ -43,4 +43,19 @@ describe("Progress", () => {
     expect(out).toContain("my-progress");
     expect(out).toContain("rounded-full");
   });
+
+  it("defaults to horizontal orientation with data-orientation and h-2 w-full", async () => {
+    const out = await render(<Progress />);
+    expect(out).toContain('data-orientation="horizontal"');
+    expect(out).toContain("h-2");
+    expect(out).toContain("w-full");
+  });
+
+  it("vertical orientation stamps data-orientation and flips to w-2 h-full", async () => {
+    const out = await render(<Progress orientation='vertical' />);
+    expect(out).toContain('data-orientation="vertical"');
+    expect(out).toContain("h-full");
+    expect(out).toContain("w-2");
+    expect(out).not.toContain("h-2 w-full");
+  });
 });
