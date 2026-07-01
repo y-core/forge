@@ -1,7 +1,8 @@
+export { Accordion } from "./accordion";
 export { Alert, type AlertVariant } from "./alert";
 export { Avatar } from "./avatar";
 export { Badge, type BadgeVariant } from "./badge";
-export { Button } from "./button";
+export { Button, type ButtonProps, type ButtonSize } from "./button";
 export { Card } from "./card";
 export {
   FIELD_LABEL_CLASSES,
@@ -27,6 +28,6 @@ export { Spinner } from "./spinner";
 export { Switch } from "./switch";
 export { Textarea } from "./textarea";
 export { Toast, type ToastPosition, type ToastVariant } from "./toast";
-export { ToggleGroup } from "./toggle-group";
+export { ToggleGroup, type ToggleGroupItemSize } from "./toggle-group";
 export { asClass, cn } from "./utils/cn";
 export { cva } from "./utils/cva";

@@ -5,7 +5,7 @@ import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
-interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
+export interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   variant?: "primary" | "secondary" | "ghost";
   size?: "sm" | "md" | "lg" | "icon" | "icon-sm";
   asChild?: boolean;
@@ -24,6 +24,8 @@ const buttonVariants = cva({
   },
   defaultVariants: { variant: "primary", size: "md" },
 });
+
+export type ButtonSize = NonNullable<ButtonProps["size"]>;
 
 export const Button: FC<ButtonProps> = ({ variant, size, asChild = false, type = "button", disabled, class: cls, children, ...rest }) => {
   const clsValue = asClass(cls);
