@@ -157,7 +157,7 @@ When a subsection describes a known pattern, name the pattern in the title:
 | `### Routes` | `### 5a. createController Action Map and app.map Registration` |
 | `### Domain Errors` | `### 1b. Domain Error Sentinels and HTTP Status Mapping` |
 | `### Interface at the consumer` | `### 4a. Service Interface Defined at Consumer Layer` |
-| `### Security headers` | `### 6b. makeSecurityHeaders CSP Nonce Injection Pattern` |
+| `### Security headers` | `### 6b. createSecurityHeaders CSP Nonce Injection Pattern` |
 
 ### 3c. Use Parallel Title Structure Within a Section
 

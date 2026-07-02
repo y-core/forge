@@ -5,6 +5,7 @@ import { mapHandler } from "../../app/route-test-helper";
 import type { KVNamespace } from "../../storage/kv/types";
 import { kvLogChannel } from "../kv-channel";
 import type { LogChannel } from "../types";
+import type { LogViewerAccess } from "./route";
 import { loadLogViewer, renderLogFragment } from "./route";
 
 function makeKvStub(): KVNamespace {
@@ -19,10 +20,10 @@ function makeKvStub(): KVNamespace {
 
 // Drives the loadLogViewer loader through a definePage, mirroring how an app composes it.
 // The view branches on HX-Request: HTMX requests get the <tbody> fragment; others get JSON.
-function makeApp(options?: { basePath?: string }) {
+function makeApp(options?: { basePath?: string; access?: LogViewerAccess }) {
   const app = new Forge();
   const handler = definePage({
-    loader: (c) => loadLogViewer(c, { channel: () => kvLogChannel(makeKvStub()), ...options }),
+    loader: (c) => loadLogViewer(c, { channel: () => kvLogChannel(makeKvStub()), access: "allow-unauthenticated", ...options }),
     view: (c, _config, state) => (c.request.headers.get("HX-Request") === "true" ? renderLogFragment(state.data) : Response.json(state.data)),
   });
   mapHandler(app, "GET", "/logs", handler);
@@ -94,7 +95,7 @@ describe("loadLogViewer — non-HTMX request", () => {
     const writeOnlyChannel: LogChannel = { write: () => {} };
     const app = new Forge();
     const handler = definePage({
-      loader: (c) => loadLogViewer(c, { channel: () => writeOnlyChannel }),
+      loader: (c) => loadLogViewer(c, { channel: () => writeOnlyChannel, access: "allow-unauthenticated" }),
       view: (_c, _config, state) => Response.json(state.data),
     });
     mapHandler(app, "GET", "/logs", handler);
@@ -104,6 +105,57 @@ describe("loadLogViewer — non-HTMX request", () => {
     const data = await res.json();
     expect(data.rows).toEqual([]);
     expect(data.complete).toBe(true);
+  });
+});
+
+describe("loadLogViewer — access control", () => {
+  it("denies with exactly 403 Forbidden when the access predicate returns false", async () => {
+    const app = makeApp({ access: () => false });
+    const res = await app.request("/logs");
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("never touches the channel when access is denied", async () => {
+    let channelResolved = false;
+    const app = new Forge();
+    const handler = definePage({
+      loader: (c) =>
+        loadLogViewer(c, {
+          access: async () => false,
+          channel: () => {
+            channelResolved = true;
+            return kvLogChannel(makeKvStub());
+          },
+        }),
+      view: (_c, _config, state) => Response.json(state.data),
+    });
+    mapHandler(app, "GET", "/logs", handler);
+
+    const res = await app.request("/logs");
+    expect(res.status).toBe(403);
+    expect(channelResolved).toBe(false);
+  });
+
+  it("proceeds when the access predicate returns true", async () => {
+    const app = makeApp({ access: async (c) => c.request.headers.get("x-admin") === "yes" });
+    const res = await app.request("/logs", { headers: { "x-admin": "yes" } });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.rows).toEqual([]);
+  });
+
+  it("denies the HTMX fragment path as well (guard runs in the shared loader)", async () => {
+    const app = makeApp({ access: () => false });
+    const res = await app.request("/logs", { headers: { "HX-Request": "true" } });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it('proceeds when access is the explicit "allow-unauthenticated" literal', async () => {
+    const app = makeApp({ access: "allow-unauthenticated" });
+    const res = await app.request("/logs");
+    expect(res.status).toBe(200);
   });
 });
 

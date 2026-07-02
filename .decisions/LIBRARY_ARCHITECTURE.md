@@ -184,7 +184,7 @@ Apps (like `forge-starter`) compose forge namespaces they need:
 
     import { createApp, applyAssets } from "@y-core/forge/app"
     import { route, createController } from "@y-core/forge/router"
-    import { makeSecurityHeaders } from "@y-core/forge/security"
+    import { createSecurityHeaders } from "@y-core/forge/security"
     import { requestLogger } from "@y-core/forge/logging"
 
 Each import is a separate namespace. No single barrel pulls them all in together.

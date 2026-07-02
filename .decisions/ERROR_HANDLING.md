@@ -20,7 +20,7 @@ weight: 24
 - §2 Fragment renderers: `renderError`, `renderSuccess`, `renderValidationErrors`, `fragmentResponse`
 - §3 `htmlResponse`: wraps JSX in full HTML response; `html` tag; `escapeHtml`
 - §4 Fail-closed posture: 503 when critical context missing, not silent fallback
-- §5 Error taxonomy: expected vs unexpected vs infrastructure errors; the error boundary
+- §5 Error taxonomy: expected vs unexpected vs infrastructure errors; the error boundary; §5e startup invariants — env validation and binding resolvers throw, store operations return Result
 - §6 Review checklist: error handling items
 
 ---
@@ -375,6 +375,30 @@ handling so individual handlers stay thin:
 `view` throws and no hook is set, the error re-throws so the router error
 boundary (§5b) handles it. Use these hooks for per-route recovery instead of
 wrapping handlers in ad-hoc `try/catch`.
+
+### 5e. Startup Invariants — Env Validation and Binding Resolvers Throw
+
+A missing or malformed Worker binding/secret is a **deployment defect**, not a
+runtime condition to degrade around. These surfaces therefore `throw` a plain
+`Error` (Infrastructure tier) instead of returning `Result`:
+
+- `Config.get` / config `resolve` (`config` namespace)
+- `validateEnv` and the `validateBindings` middleware (`app` namespace)
+- Storage binding resolvers: `resolveKVStore`, `resolveD1Client`,
+  `resolveObjectStore` (`storage/*` namespaces)
+
+Env/config validation failures all throw the normalized message shape
+`Invalid environment: <path>: <message>; …`, produced by the shared
+`formatValidationIssues` helper (`@y-core/forge/validation`) — never hand-roll
+the issue formatting. Storage resolvers throw
+`"<KV namespace|D1 database|R2 bucket> binding not available"` when the binding
+is absent; passing `required: false` opts into a `null` return for
+non-security-critical features (§4b).
+
+The dividing line: **resolving** a binding throws (startup invariant, fail
+closed — §4a); **operating** on a resolved store returns `Result<T,E>` (expected
+runtime failures — §5a). See
+[STORAGE_BINDINGS.md](./STORAGE_BINDINGS.md) §4a for the resolver pattern.
 
 ---
 

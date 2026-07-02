@@ -67,6 +67,22 @@ runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
   `aria-describedby`.
 - Sprite-backed icons via `createIcon`; icon-consuming components accept an `icon` prop directly.
 
+### Attribute pass-through contract
+
+Every component forwards **unrecognized props** — including arbitrary `data-*` and `aria-*` attributes — onto its root (or designated inner) element. Each component destructures only its own declared props and spreads the rest, so client-side binding conventions (`data-ref`, `data-on-click`, custom hooks for test selectors) attach without re-wrapping forge components:
+
+```tsx
+<Button data-ref='save-btn' data-on-click='saveDoc'>Save</Button>
+// → <button … data-ref="save-btn" data-on-click="saveDoc">Save</button>
+```
+
+Two renderer-level rules apply to forwarded attributes (see `src/jsx/render-to-string.ts`):
+
+- Values are **HTML-escaped** (`data-note="a&b"` renders `data-note="a&amp;b"`); URL-bearing attributes (`href`, `src`, …) are additionally scheme-sanitized via `safeUrl`.
+- `style` is **dropped** — forge's CSP has no `style-src 'unsafe-inline'`, so inline styles would be blocked by the browser and must not ship.
+
+This contract is pinned by pass-through tests in `ui/controls/controls.test.tsx`, `ui/core/button.test.tsx`, and `ui/core/field.test.tsx`.
+
 ### Usage
 
 ```tsx

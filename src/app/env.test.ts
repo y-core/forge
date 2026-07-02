@@ -13,12 +13,10 @@ describe("validateEnv", () => {
     expect(result.DATABASE_URL).toBe("postgres://localhost/db");
   });
 
-  it("throws when a required field is missing", () => {
-    expect(() => validateEnv({}, schema)).toThrow("Invalid environment");
-  });
-
-  it("throws with the field name in the error message", () => {
-    expect(() => validateEnv({}, schema)).toThrow("DATABASE_URL");
+  it("throws the exact normalized message when a required field is missing", () => {
+    expect(() => validateEnv({}, schema)).toThrow(
+      new Error('Invalid environment: DATABASE_URL: Invalid key: Expected "DATABASE_URL" but received undefined'),
+    );
   });
 
   it("succeeds when an optional field is absent", () => {

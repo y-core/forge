@@ -37,7 +37,7 @@ export type ArgValidator =
   | { kind: "max"; max: number }
   | { kind: "range"; min: number; max: number };
 
-export interface CommandConfig<F extends FlagDefs = FlagDefs> {
+export interface CommandDefinition<F extends FlagDefs = FlagDefs> {
   name: string;
   description?: string;
   flags?: F;

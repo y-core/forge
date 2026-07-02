@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Config } from "../config/config";
-import { makeSecurityHeaders } from "../security/headers";
+import { csrfProtection, importCsrfKey } from "../form/csrf";
+import { createSecurityHeaders } from "../security/headers";
+import { rateLimit } from "../security/rate-limit";
 import { v } from "../validation/mod";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
@@ -160,7 +162,7 @@ describe("createApp", () => {
 describe("error path carries security headers (F9)", () => {
   it("attaches CSP, HSTS, and X-Content-Type-Options to a 500 response", async () => {
     const app = new Forge();
-    app.use("*", makeSecurityHeaders());
+    app.use("*", createSecurityHeaders());
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("x");
     });
@@ -170,6 +172,43 @@ describe("error path carries security headers (F9)", () => {
     expect(res.headers.get("content-security-policy")).not.toBeNull();
     expect(res.headers.get("strict-transport-security")).toBe("max-age=63072000; includeSubDomains; preload");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("attaches security headers to a CSRF 403 rejection", async () => {
+    const key = await importCsrfKey("a".repeat(64));
+    const app = new Forge();
+    app.use("*", createSecurityHeaders());
+    app.use("*", csrfProtection({ secret: () => key }));
+    mapHandler(app, "POST", "/submit", () => new Response("should not reach"));
+
+    const res = await app.request("/submit", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "name=Alice", // no CSRF token
+    });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
+    expect(res.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+  });
+
+  it("attaches security headers to a rate-limit 429 rejection", async () => {
+    type Env = { LIMITER: { limit(o: { key: string }): Promise<{ success: boolean }> } };
+    const app = new Forge<Env>();
+    app.use("*", createSecurityHeaders());
+    app.use("*", rateLimit<Env>({ limiter: (c) => c.env.LIMITER }));
+    mapHandler(app, "POST", "/submit", () => new Response("should not reach"));
+
+    const res = await app.request(
+      "/submit",
+      { method: "POST", headers: { "CF-Connecting-IP": "203.0.113.7" } },
+      { LIMITER: { limit: async () => ({ success: false }) } },
+    );
+    expect(res.status).toBe(429);
+    expect(await res.text()).toBe("Too many requests. Please try again later.");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
   });
 });
 
@@ -196,7 +235,7 @@ describe("/admin/* middleware matching (F3)", () => {
 describe("security headers without a session (F10/F11)", () => {
   it("emits CSP and HSTS on the session-less path", async () => {
     const app = new Forge();
-    app.use("*", makeSecurityHeaders());
+    app.use("*", createSecurityHeaders());
     mapHandler(app, "GET", "/", () => new Response("ok"));
 
     const res = await app.request("/");
@@ -207,11 +246,70 @@ describe("security headers without a session (F10/F11)", () => {
 
   it("builds headers once and leaves the response body intact", async () => {
     const app = new Forge();
-    app.use("*", makeSecurityHeaders());
+    app.use("*", createSecurityHeaders());
     mapHandler(app, "GET", "/ok", () => new Response("ok"));
 
     const res = await app.request("/ok");
     expect(await res.text()).toBe("ok");
     expect(res.headers.get("content-security-policy")).not.toBeNull();
+  });
+});
+
+describe("createApp — ordered wiring", () => {
+  it("invokes middleware, routes, and finalize callbacks in order at construction", () => {
+    const order: string[] = [];
+    createApp({ middleware: () => order.push("middleware"), routes: () => order.push("routes"), finalize: () => order.push("finalize") });
+    expect(order).toEqual(["middleware", "routes", "finalize"]);
+  });
+
+  it("registers the asset catch-all last so real routes win", async () => {
+    const app = createApp({
+      routes: (a) => mapHandler(a, "GET", "/page", () => new Response("real route")),
+      assets: { notFoundView: () => new Response("not found", { status: 404 }) },
+    });
+
+    const route = await app.request("/page");
+    expect(await route.text()).toBe("real route");
+
+    const missing = await app.request("/nope");
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toBe("not found");
+  });
+
+  it("finalize routes are registered before the asset catch-all", async () => {
+    const app = createApp({
+      finalize: (a) => mapHandler(a, "GET", "/dev/logs", () => new Response("dev route")),
+      assets: { notFoundView: () => new Response("not found", { status: 404 }) },
+    });
+
+    const res = await app.request("/dev/logs");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("dev route");
+  });
+
+  it("middleware registered via the wiring field wraps routed handlers", async () => {
+    const order: string[] = [];
+    const app = createApp({
+      middleware: (a) =>
+        a.use("*", async (_c, next) => {
+          order.push("guard");
+          return next();
+        }),
+      routes: (a) =>
+        mapHandler(a, "GET", "/", () => {
+          order.push("handler");
+          return new Response("ok");
+        }),
+    });
+
+    await app.request("/");
+    expect(order).toEqual(["guard", "handler"]);
+  });
+
+  it("remains backward compatible with no wiring fields", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/", () => new Response("plain"));
+    const res = await app.request("/");
+    expect(await res.text()).toBe("plain");
   });
 });

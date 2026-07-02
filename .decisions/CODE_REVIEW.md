@@ -67,7 +67,7 @@ Group by file, then severity (critical first).
 
     ## EXAMPLE — correct barrel
     // mod.ts
-    export { makeSecurityHeaders, mergeSecurityHeaders } from './headers'
+    export { createSecurityHeaders, mergeSecurityHeaders } from './headers'
     export { getNonce } from './nonce'
 
 ### 2b. No-Sibling-Barrel Import Rule

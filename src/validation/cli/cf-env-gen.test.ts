@@ -5,14 +5,14 @@
  *  extraction, registry ordering, `v.optional` policy), `collectVars` (typed
  *  `wrangler.jsonc` vars + `.dev.vars` secrets, refinements, dedupe precedence),
  *  and `emit` (header + single `v` import) — plus the command surface
- *  (`cf-env-command.ts`): `makeGenEnv` flag defaults and `loadOptions` merge.
+ *  (`cf-env-command.ts`): `createGenEnv` flag defaults and `loadOptions` merge.
  */
 
 import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadOptions, makeGenEnv } from "./cf-env-command";
+import { createGenEnv, loadOptions } from "./cf-env-command";
 import { collectBindings, collectVars, DEFAULT_OPTIONS, type Entry, emit, type GenOptions, HEADER, REGISTRY, stripJsonc } from "./cf-env-gen";
 
 const CHECK = '(x) => typeof x === "object" && x !== null';
@@ -162,9 +162,9 @@ describe("DEFAULT_OPTIONS", () => {
   });
 });
 
-describe("makeGenEnv", () => {
+describe("createGenEnv", () => {
   it("declares path flags with sensible defaults and an optional --config", () => {
-    const cmd = makeGenEnv();
+    const cmd = createGenEnv();
     expect(cmd.name).toBe("gen-env");
     expect(cmd.flags.wrangler).toEqual({ type: "string", default: "wrangler.jsonc", description: "Path to wrangler.jsonc" });
     expect(cmd.flags["dev-vars"]).toEqual({ type: "string", default: ".dev.vars", description: "Path to .dev.vars" });

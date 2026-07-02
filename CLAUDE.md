@@ -58,6 +58,7 @@ Forge acts as a **facade** for its external dependencies (`valibot` via `validat
 - `ui/core` — imports from `form` (CSRF/honeypot field name constants)
 - `ui/server` — imports from `html/htmx` (oobAppend for flash OOB rendering) and `ui/core` (Toast for toastOob)
 - `pkg` — imports from `cli`
+- `testing` — imports from `app` (ConfigKey, AssetsFetcher), `context`, `form` (CSRF primitives), `logging` (requestLog, Logger), `storage/kv` (KVNamespace types); test-code-only utilities
 
 ### Namespace map (25 public namespaces)
 
@@ -84,6 +85,7 @@ Forge acts as a **facade** for its external dependencies (`valibot` via `validat
 | `@y-core/forge/storage/db` | Leaf | D1 database client |
 | `@y-core/forge/storage/kv` | Leaf | Workers KV typed store |
 | `@y-core/forge/storage/r2` | Leaf | R2 object storage |
+| `@y-core/forge/testing` | Integration | Shared test utilities (test code only) |
 | `@y-core/forge/ui` | Integration | Server-side JSX components |
 | `@y-core/forge/ui/client` | Leaf | Browser-side UI scripts |
 | `@y-core/forge/ui/server` | Integration | Flash messages, ThemeToggle, Resumable, toast OOB |
@@ -106,7 +108,7 @@ Forge acts as a **facade** for its external dependencies (`valibot` via `validat
 - [`PRODUCTION_TS_RULES.md`](.decisions/PRODUCTION_TS_RULES.md): six rules — zero globals, Result monad, validation first, testability, TSDoc, declarative
 - [`ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md): router namespace, middleware composition, context namespace
 - [`HTMX.md`](.decisions/HTMX.md): isHxRequest, HX-* header readers/setters, hxAttrs, SWAP, formSubmit, liveSearch, OOB patterns
-- [`SECURITY_HARDENING.md`](.decisions/SECURITY_HARDENING.md): makeSecurityHeaders, CSP nonce, CORS, rate limit, origin guards, transport-layer boundary
+- [`SECURITY_HARDENING.md`](.decisions/SECURITY_HARDENING.md): createSecurityHeaders, CSP nonce, CORS, rate limit, origin guards, transport-layer boundary
 - [`STRUCTURED_LOGGING.md`](.decisions/STRUCTURED_LOGGING.md): channels, requestLogger, KV log persistence, log viewer UI
 - [`ERROR_HANDLING.md`](.decisions/ERROR_HANDLING.md): Result monad, fragment renderers, fail-closed posture, error taxonomy
 - [`INPUT_VALIDATION.md`](.decisions/INPUT_VALIDATION.md): valibot v facade, form parsing, CSRF, honeypot, Turnstile

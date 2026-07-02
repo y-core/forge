@@ -20,7 +20,7 @@ weight: 35
 - §2 Co-located test files: `source.ts` → `source.test.ts`, same directory
 - §3 HTML entity exact-match assertion rule: never substring matching
 - §4 Fakes over mocks: interface implementation pattern
-- §5 Security test requirements: both pass AND fail cases required
+- §5 Security test requirements: both pass AND fail cases required; §5d matrix row-to-test coverage map
 - §6 `bun run check` gate: typecheck + lint + test + validate-exports
 
 ---
@@ -107,7 +107,7 @@ importing test helpers.
 ### 2c. Import from Relative Paths in Tests
 
     // In src/security/headers.test.ts:
-    import { makeSecurityHeaders } from "./headers"
+    import { createSecurityHeaders } from "./headers"
     import { requestId }           from "./request-id"
 
 Always import from the concrete source file, not from the namespace barrel
@@ -238,7 +238,7 @@ helper, which constructs a `Request`, runs the full middleware chain, and awaits
 
     import { Forge } from "@y-core/forge/app"
     import { route, createController } from "@y-core/forge/router"
-    import { makeSecurityHeaders } from "@y-core/forge/security"
+    import { createSecurityHeaders } from "@y-core/forge/security"
 
     // Minimal environment bindings the handlers read (KV, secrets, base URL, …).
     const MINIMUM_ENV = {
@@ -248,7 +248,7 @@ helper, which constructs a `Request`, runs the full middleware chain, and awaits
 
     function buildApp() {
       const app = new Forge<typeof MINIMUM_ENV>()
-      app.use("*", makeSecurityHeaders())
+      app.use("*", createSecurityHeaders())
       const routes = route({ contact: { method: "POST", pattern: "/contact" } })
       app.map(routes, createController(routes, {
         actions: { contact: { middleware: [csrfVerifyGuard], handler: contactHandler } },
@@ -293,10 +293,29 @@ correctly, not merely that it exits early.
 
 ### 5c. No Mocking of Security Primitives
 
-Do not mock `makeSecurityHeaders`, `verifyCsrfToken`, or other security primitives
+Do not mock `createSecurityHeaders`, `verifyCsrfToken`, or other security primitives
 to make tests pass. Test with real implementations against a fake binding. If the
 real implementation is too hard to invoke in a test, that is a testability signal —
 refactor the code to accept injectable dependencies, not a signal to mock.
+
+### 5d. Security Matrix — Row-to-Test Coverage Map
+
+Where each row of the §5a matrix is covered at integration level (through
+`app.request()` with real primitives), as of 2026-07-02:
+
+| Matrix row | Covering tests |
+|---|---|
+| CSRF valid → 200 / invalid → 403 | `src/form/csrf.test.ts` (mint-then-verify, invalid header, missing token, path mismatch, subject mismatch) |
+| CSRF 403 carries security headers | `src/app/app.test.ts` "error path carries security headers (F9)" |
+| Origin same → 200 / cross or missing → 403 | `src/security/origin.test.ts`, `src/security/cop.test.ts` (Sec-Fetch-Site + Origin/Referer fallback) |
+| Rate limit under → 200 / over → 429 / binding absent → 503 / key unresolvable → 503 | `src/security/rate-limit.test.ts`; 429-carries-headers in `src/app/app.test.ts` (F9) |
+| Input validation ok / issues | `src/app/action.test.ts` (pipeline), `src/validation/format-issues.test.ts` |
+| Body size under / over (Content-Length fast path) | `src/form/parse-form-data.test.ts`, `src/app/action.test.ts` |
+| Body size over (streaming, no Content-Length) | `src/form/parse-form-data.test.ts` (direct), `src/app/action.test.ts` (full chain, exact 413 fragment) |
+| Content-Type valid / invalid → 415 | `src/security/content-type.test.ts` |
+| Log-viewer access allow / deny → 403 | `src/logging/show/route.test.tsx` |
+| `isHxRequest` guard | **N/A** — `isHxRequest` is a routing hint for full-page vs fragment renders, not a security boundary (`src/html/htmx/mod.ts`); there is no guard middleware to test |
+| Auth middleware valid / expired session | **N/A** — no `auth` namespace exists yet (NAMESPACE_DESIGN.md §5a growth rule); add this row's tests with that namespace |
 
 ---
 

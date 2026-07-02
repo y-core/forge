@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createCookie } from "@remix-run/cookie";
+import { createSession, createSessionId, Session } from "@remix-run/session";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 import { createMemorySessionStorage } from "@remix-run/session/memory-storage";
 import { Forge } from "../app/forge-app";
@@ -156,5 +157,26 @@ describe("sessionMiddleware with memory storage", () => {
 
     const readRes = await app.request("/read", { headers: { cookie: `__session=${sessionId}` } });
     expect(await readRes.text()).toBe("Saved!");
+  });
+});
+
+describe("session primitives (facade re-exports)", () => {
+  it("createSessionId returns unique non-empty string ids", () => {
+    const a = createSessionId();
+    const b = createSessionId();
+    expect(typeof a).toBe("string");
+    expect(a.length).toBeGreaterThan(0);
+    expect(a).not.toBe(b);
+  });
+
+  it("createSession and new Session() expose an id and typed get/set", () => {
+    const s = createSession();
+    expect(typeof s.id).toBe("string");
+    s.set("user", "jane");
+    expect(s.get("user")).toBe("jane");
+
+    const direct = new Session();
+    expect(typeof direct.id).toBe("string");
+    expect(direct.id).not.toBe(s.id);
   });
 });

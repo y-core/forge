@@ -3,7 +3,20 @@ import type { Result } from "../../result/result";
 import { result } from "../../result/result";
 import type { D1Client, D1ClientOptions, D1Database, D1Result, SqlFragment } from "./types";
 
-/** Creates a D1Client accepting only SqlFragment — raw string SQL is rejected by the type system. @public */
+/**
+ * Creates a D1Client accepting only SqlFragment — raw string SQL is rejected by the type
+ * system, so bind parameters are enforced by construction. All operations return
+ * `Result<T, E>`; resolution failures throw instead (see `resolveD1Client`).
+ *
+ * @example
+ * ```typescript
+ * const db = createD1Client(c.env.DB);
+ * const r = await db.query<User>(sql`SELECT * FROM users WHERE id = ${id}`);
+ * if (!r.ok) return fragmentResponse(renderError("Lookup failed."), 503);
+ * const users = r.value; // User[]
+ * ```
+ * @public
+ */
 export function createD1Client(db: D1Database, options?: D1ClientOptions): D1Client {
   const logger = options?.logger ?? createLogger("storage/db");
 

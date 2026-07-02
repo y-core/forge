@@ -51,7 +51,7 @@ Use factory functions to create stateful behavior. The factory captures config
 
 ```typescript
 import type { Middleware } from "@y-core/forge/router"
-export function makeSecurityHeaders(options: SecurityHeadersOptions): Middleware {
+export function createSecurityHeaders(options: SecurityHeadersOptions): Middleware {
   // options captured at middleware creation time — immutable
   return async (c, next) => {
     // request-scoped work uses c (the RequestContext); return the downstream Response

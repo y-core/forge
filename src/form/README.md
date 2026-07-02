@@ -171,6 +171,29 @@ Behaviour by method:
   `tokenField` form field, and verifies it against the current pathname (and `subject`, if configured).
   On **any** failure it short-circuits with a bare `403` `Response` and never calls `next()`.
 
+#### Binding tokens to a session (recommended when a session exists)
+
+Path binding alone does not stop a token minted in one user's browser from being replayed by
+another user against the same path. When the app has sessions, bind the token to the session id —
+the standard composition is a one-line `subject` resolver reading `sessionCtx`:
+
+```ts
+import { csrfProtection } from "@y-core/forge/form";
+import { sessionCtx } from "@y-core/forge/session";
+
+const csrfGuard = csrfProtection({
+  secret: (c) => resolveCsrfKey(c),
+  // Token is minted AND verified against the current session id — a token minted under
+  // one session verifies only under that session (mismatch → 403, reason "subject-mismatch").
+  subject: (c) => sessionCtx.getOptional(c)?.id,
+});
+```
+
+Register `sessionMiddleware` **before** `csrfGuard` so the session exists when the subject is
+resolved. `form` and `session` are independent leaf namespaces — this composition lives in the
+consuming app, which is why forge does not auto-wire it. The subject-mismatch contract is pinned
+by the integration test in `csrf.test.ts` ("subject binding — wrong session returns 403").
+
 ### CSRF context accessors — `csrfTokenCtx`, `csrfMinterCtx`
 
 ```ts

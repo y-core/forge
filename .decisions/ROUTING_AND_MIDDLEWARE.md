@@ -18,7 +18,7 @@ weight: 21
 
 - §1 router namespace: `route()` (route map), `createController`, `app.map`, the `Middleware` type
 - §2 Page vs action routes: `definePage`, `defineAction`, `healthCheck`, controller middleware
-- §3 Middleware composition and ordering rules (`app.use` global, controller-level route middleware)
+- §3 Middleware composition and ordering rules (`app.use` global, controller-level route middleware); §3e `applyMiddlewareChain` canonical chain builder
 - §4 context namespace: `contextVar` typed accessor (internal, no public export)
 - §5 Route lifecycle: loader/view/action shapes and the response helpers
 
@@ -92,7 +92,7 @@ registered (§3) so that `app.use` middleware wraps every matched route:
 
     // src/worker.ts
     const app = createApp<AppEnv>({ config: configStore, isDebug: (c) => configStore.get(c.env).debug })
-    app.use("*", makeSecurityHeaders(security))   // consumer helper wraps app.use() calls
+    app.use("*", createSecurityHeaders(security))   // consumer helper wraps app.use() calls
     app.map(routes, controller)           // declarative route registration
     applyAssets(app, { notFoundView })    // static-asset catch-all
     export default app
@@ -180,7 +180,7 @@ runs for every request whose URL matches `path`. Route-level middleware is decla
 
 Recommended `app.use` registration order:
 
-1. `makeSecurityHeaders` — injects CSP/HSTS/XFO headers and the per-request nonce.
+1. `createSecurityHeaders` — injects CSP/HSTS/XFO headers and the per-request nonce.
 2. `requestId` — generates and stores a request ID in context.
 3. `requestLogger` — logs request method, path, status, and duration.
 4. `cors` (scoped to `/api/*`) — adds CORS headers for API routes only.
@@ -214,12 +214,27 @@ cheap rejections occur before expensive ones.
 
 ### 3d. Security Middleware Placement
 
-`makeSecurityHeaders` must always be the first `app.use("*", ...)` registration. It sets the nonce
-used by CSP. Any middleware that reads or writes security headers must run after it. See
-[SECURITY_HARDENING.md](./SECURITY_HARDENING.md) for the full nonce and CSP contract. Response
-headers added by forge middleware are queued on an internal pending-header channel and flushed once
-by the app's outermost header pass — middleware should add headers through that channel (or by
-returning a `Response`), never by mutating an already-sent response.
+`createSecurityHeaders` sets the per-request CSP nonce, so it must be registered before any
+middleware or handler that reads the nonce or security headers (session, guards, views). Pure
+tracing middleware (`requestId`, `requestLogger`) may precede it — they neither read nor render
+with the nonce. See [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) for the full nonce and CSP
+contract. Response headers added by forge middleware are queued on an internal pending-header
+channel and flushed once by the app's outermost header pass — middleware should add headers
+through that channel (or by returning a `Response`), never by mutating an already-sent response.
+
+### 3e. applyMiddlewareChain Canonical Chain Builder
+
+`applyMiddlewareChain(app, options)` (`@y-core/forge/app`) is the primary way to register the
+global chain — it encodes the canonical order once, so consumers stop re-deriving it:
+
+    requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders)
+      → validateBindings(bindings) → session → per-path guards (origin → rateLimit → middleware[])
+
+Every slot except `securityHeaders` is optional; omitted slots are skipped without disturbing the
+relative order of the rest. `session` and per-path `middleware[]` accept prebuilt `Middleware`
+values (e.g. `sessionMiddleware(...)`, `csrfProtection(...)`), which keeps the `app` namespace free
+of `session`/route-specific dependencies. Hand-written `app.use` chains remain valid for layouts
+the builder cannot express, but must respect §3d.
 
 ---
 

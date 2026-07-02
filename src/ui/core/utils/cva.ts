@@ -2,7 +2,7 @@ type VariantMap = Record<string, string>;
 type VariantConfig = Record<string, VariantMap>;
 type DefaultVariants<V extends VariantConfig> = { [K in keyof V]?: keyof V[K] };
 
-export interface CVAConfig<V extends VariantConfig> {
+export interface CVADefinition<V extends VariantConfig> {
   base?: string;
   variants?: V;
   defaultVariants?: DefaultVariants<V>;
@@ -12,7 +12,7 @@ export type CVAProps<V extends VariantConfig> = {
   [K in keyof V]?: keyof V[K];
 } & { class?: string };
 
-export function cva<V extends VariantConfig>(config: CVAConfig<V>) {
+export function cva<V extends VariantConfig>(config: CVADefinition<V>) {
   const base = config.base ?? "";
   const variants = config.variants;
   const defaultVariants = config.defaultVariants ?? ({} as DefaultVariants<V>);

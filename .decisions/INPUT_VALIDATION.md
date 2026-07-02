@@ -184,6 +184,23 @@ controller action's `middleware` array. See
 [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) for route-level middleware placement
 patterns.
 
+**Session-bearing apps must bind the token to the session.** Path binding alone does not
+stop cross-user token replay against the same path. When `sessionMiddleware` is present,
+wire the per-request `subject` resolver — this is the standard pattern:
+
+    import { sessionCtx } from "@y-core/forge/session"
+
+    export const csrfVerifyGuard: Middleware = csrfProtection({
+      secret: (c) => importCsrfKey(configStore.get(c.env).security.csrf.secret),
+      subject: (c) => sessionCtx.getOptional(c)?.id,   // mint AND verify per session
+    })
+
+Register `sessionMiddleware` before the guard so the session exists when the subject
+resolves. A token minted under one session fails verification under another with reason
+`subject-mismatch` → `403` (contract pinned by the subject-binding test in
+`src/form/csrf.test.ts`). `form` and `session` are independent leaf namespaces, so this
+composition lives in the consuming app — forge does not auto-wire it.
+
 ### 3b. importCsrfKey and importCsrfKeyRing — Secret Import
 
 CSRF secrets are hex-encoded strings (minimum 32 hex characters = 16 bytes). Import

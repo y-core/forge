@@ -162,6 +162,38 @@ describe("defineAction", () => {
     expect(res.status).toBe(413);
   });
 
+  it("rejects an oversized streaming body (no Content-Length) with the exact 413 fragment", async () => {
+    // A ReadableStream body carries no Content-Length, so only parseFormData's streaming
+    // byte counter can catch it — this pins the chunked-transfer bypass defense end-to-end.
+    const app = makeApp(
+      defineAction<TestData>({
+        parse: (fd) => ({ name: fd.get("name") as string }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        handle: () => new Response("success"),
+      }),
+    );
+    const big = `name=${"x".repeat(200_000)}`;
+    const bytes = new TextEncoder().encode(big);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+
+    const res = await app.request("/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: stream,
+      duplex: "half",
+    } as unknown as RequestInit);
+
+    expect(res.status).toBe(413);
+    expect(await res.text()).toBe(
+      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
+    );
+  });
+
   it("logs server-side when the handler throws", async () => {
     const logs: string[] = [];
     const originalLog = console.log;

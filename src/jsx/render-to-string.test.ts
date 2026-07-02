@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { createElement as el, Fragment } from "./element";
-import { renderToString } from "./render-to-string";
+import { cloneElement, createElement as el, Fragment, isValidElement } from "./element";
+import { renderPage, renderToString } from "./render-to-string";
 import type { ComponentFn } from "./types";
 
 // Helpers to construct trees without JSX syntax so the tsconfig jsxImportSource
@@ -338,5 +338,37 @@ describe("renderToString — URL attribute sanitization", () => {
   it("passes a safe xml:base URL unchanged", async () => {
     const node = el("image", { "xml:base": "https://cdn.example.com" });
     expect(String(await renderToString(node))).toBe('<image xml:base="https://cdn.example.com"></image>');
+  });
+});
+
+describe("renderPage", () => {
+  it("returns a full-page Response with a leading doctype and html content-type", async () => {
+    const res = await renderPage(el("main", { children: "hi" }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type") ?? "").toContain("text/html");
+    expect(await res.text()).toBe("<!DOCTYPE html><main>hi</main>");
+  });
+
+  it("applies a custom status and headers", async () => {
+    const res = await renderPage(el("p", { children: "gone" }), { status: 410, headers: { "cache-control": "no-store" } });
+    expect(res.status).toBe(410);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
+describe("isValidElement / cloneElement", () => {
+  it("isValidElement accepts elements and rejects plain values", () => {
+    expect(isValidElement(el("div", {}))).toBe(true);
+    expect(isValidElement("div")).toBe(false);
+    expect(isValidElement({})).toBe(false);
+    expect(isValidElement(null)).toBe(false);
+  });
+
+  it("cloneElement merges props and renders the merged result", async () => {
+    const base = el("button", { type: "button", children: "Go" });
+    const cloned = cloneElement(base, { "data-ref": "b1" });
+    expect(String(await renderToString(cloned))).toBe('<button type="button" data-ref="b1">Go</button>');
+    // Original is untouched:
+    expect(String(await renderToString(base))).toBe('<button type="button">Go</button>');
   });
 });

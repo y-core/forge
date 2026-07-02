@@ -34,6 +34,23 @@ export interface SecurityHeadersOptions {
   childSrc?: CspValue;
   hstsMaxAge?: number;
   permissionsPolicy?: PermissionsPolicyOptions;
+  /** Cross-Origin-Opener-Policy. `same-origin` isolates the browsing context group; use
+   *  `same-origin-allow-popups` if the app opens OAuth/payment popups that must retain a
+   *  window reference. @defaultValue "same-origin" */
+  crossOriginOpenerPolicy?: "same-origin" | "same-origin-allow-popups" | "unsafe-none";
+  /** Cross-Origin-Resource-Policy. `same-origin` blocks other origins from embedding this
+   *  Worker's responses; use `cross-origin` for intentionally embeddable assets/APIs.
+   *  @defaultValue "same-origin" */
+  crossOriginResourcePolicy?: "same-origin" | "same-site" | "cross-origin";
+  /** Cross-Origin-Embedder-Policy. Opt-in only — `require-corp` breaks any subresource
+   *  without CORP/CORS opt-in, so forge never sets it by default. */
+  crossOriginEmbedderPolicy?: "require-corp" | "credentialless";
+}
+
+/** `SecurityHeadersOptions` plus an explicit CSP nonce for `applySecurityHeaders`. @public */
+export interface ApplySecurityHeadersOptions extends SecurityHeadersOptions {
+  /** CSP nonce to embed; a fresh nonce is minted when omitted. */
+  nonce?: string;
 }
 
 export type OriginResult = { ok: true } | { ok: false; reason: "missing" | "disallowed" };

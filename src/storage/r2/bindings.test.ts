@@ -37,6 +37,7 @@ describe("resolveObjectStore", () => {
     });
     const res = await app.request("/");
     expect(res.status).toBe(500);
+    expect(await res.text()).toBe("R2 bucket binding not available");
   });
 
   it("returns null when binding is absent and required is false", async () => {

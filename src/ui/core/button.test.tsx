@@ -92,4 +92,14 @@ describe("Button", () => {
     expect(out).toContain('data-slot="button"');
     expect(out).toContain("inline-flex");
   });
+
+  it("forwards arbitrary data-* attributes with HTML-escaped values", async () => {
+    const out = await render(
+      <Button data-test-hook='cta' data-note='a&b'>
+        Go
+      </Button>,
+    );
+    expect(out).toContain('data-test-hook="cta"');
+    expect(out).toContain('data-note="a&amp;b"');
+  });
 });

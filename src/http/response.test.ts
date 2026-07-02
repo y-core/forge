@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { fragmentResponse, htmlResponse, redirect } from "./response";
+import { createRedirectResponse, fragmentResponse, htmlResponse, redirect } from "./response";
 
 describe("htmlResponse", () => {
   it("defaults to status 200", () => {
@@ -70,5 +70,11 @@ describe("htmlResponse — content-type cannot be overridden", () => {
     const res = htmlResponse("<p>ok</p>", 200, { "content-type": "application/json" });
     // The createHtmlResponse helper forces content-type: text/html
     expect(res.headers.get("content-type")).toMatch(/text\/html/);
+  });
+});
+
+describe("createRedirectResponse", () => {
+  it("is the same function as the redirect alias", () => {
+    expect(createRedirectResponse).toBe(redirect);
   });
 });

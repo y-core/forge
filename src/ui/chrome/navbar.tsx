@@ -47,7 +47,7 @@ export interface NavSection {
 }
 
 /** The full navbar configuration the app feeds to {@link Navbar}. @public */
-export interface NavConfig {
+export interface NavDefinition {
   /** Top-level sections (typically 2 = ends, or 3 = ends + center). */
   sections: NavSection[];
 }
@@ -61,7 +61,7 @@ export type NavPlacement = "top" | "bottom" | "left" | "right";
  */
 export interface NavbarProps extends Omit<JSX.IntrinsicElements["nav"], "children"> {
   /** Nested navbar configuration (`sections → items → items …`). */
-  config: NavConfig;
+  config: NavDefinition;
   /** Resolves a route-map key to a URL — REQUIRED, since `href` is always a key. */
   resolveHref: (key: string) => string;
   /** Fills string-keyed slots (e.g. `{ user_name: <span/>, signout: <button/> }`). */
@@ -103,8 +103,10 @@ const placementVariants = cva({
 });
 
 /** Top-level entries read as a menubar button; nested entries read as full-width menu rows. */
-const TRIGGER_TOP = "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-accent group-open/popover:text-accent-foreground";
-const ROW = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-accent group-open/popover:text-accent-foreground";
+const TRIGGER_TOP =
+  "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-accent group-open/popover:text-accent-foreground";
+const ROW =
+  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-accent group-open/popover:text-accent-foreground";
 
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). */
 function filterAttrs(item: NavItem, activeFilters: string[]): Record<string, unknown> {
@@ -174,7 +176,7 @@ function renderSection(section: NavSection, ctx: NavRenderCtx): JSXNode {
 }
 
 /**
- * A configuration-driven, responsive navbar/menubar. The app feeds a nested {@link NavConfig}
+ * A configuration-driven, responsive navbar/menubar. The app feeds a nested {@link NavDefinition}
  * (`sections → items → items …`); on desktop it renders a horizontal bar of `<details>` dropdowns
  * with nested submenus, and on mobile it collapses to a hamburger-toggled `<details>` — all without
  * JavaScript. A small resumable scope (`navbar`) adds outside-click-close and runtime auth filtering.

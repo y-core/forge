@@ -169,10 +169,14 @@ This convention keeps alert noise low: 404s and 422s stay at `warn` and do not p
 
 ### 5a. loadLogViewer — Symmetric Read via Channel
 
-`loadLogViewer` reads log entries by calling `channel.read?(query)` on the channel
-supplied through `options.channel`. The channel owns its prefix and storage mechanics,
-so the viewer is agnostic to KV key format. If the channel has no `read` method,
-`loadLogViewer` returns `{ rows: [], complete: true }` — an empty table with no error.
+`loadLogViewer` first evaluates the **required** `access` option — `false` returns a
+`403 Forbidden` `Response` before the channel is touched; the literal
+`"allow-unauthenticated"` is the explicit, greppable opt-out for deliberately public
+(dev-only) mounts. On allow, it reads log entries by calling `channel.read?(query)` on
+the channel supplied through `options.channel`. The channel owns its prefix and storage
+mechanics, so the viewer is agnostic to KV key format. If the channel has no `read`
+method, `loadLogViewer` returns `{ rows: [], complete: true }` — an empty table with no
+error.
 
     import { loadLogViewer, renderLogFragment } from "@y-core/forge/logging/http"
     import { kvLogChannel } from "@y-core/forge/logging"
@@ -181,6 +185,7 @@ so the viewer is agnostic to KV key format. If the channel has no `read` method,
     definePage<AppEnv, AppConfig, LogViewerLoaderData>({
       loader: (c) => loadLogViewer(c, {
         channel: (cc) => kvLogChannel(cc.env.LOGS_KV!),
+        access: (cc) => isAdmin(cc),          // required — 403 when false
         basePath: "/admin/logs",
       }),
       view: async (c, config, state) => {
@@ -192,13 +197,20 @@ so the viewer is agnostic to KV key format. If the channel has no `read` method,
     })
 
 `loadLogViewer` reads optional `?level=`, `?q=`, and `?cursor=` query parameters for
-filtering and cursor-based pagination. It always returns `LogViewerLoaderData`.
+filtering and cursor-based pagination. It returns `LogViewerLoaderData`, or a `403`
+`Response` on denial (which `definePage` loaders short-circuit on).
 
 ### 5b. LogViewerOptions
+
+    type LogViewerAccess<Bindings = Record<string, unknown>> =
+      | ((c: AppContext<Bindings>) => boolean | Promise<boolean>)
+      | "allow-unauthenticated";
 
     type LogViewerOptions<Bindings = Record<string, unknown>> = {
       /** Returns the log channel to read from. Called per request. */
       channel: (c: AppContext<Bindings>) => LogChannel;
+      /** Required access decision; runs before the channel is touched. */
+      access: LogViewerAccess<Bindings>;
       /** URL path prefix where the viewer is mounted (used for HTMX targets). */
       basePath?: string;
     };
@@ -206,6 +218,8 @@ filtering and cursor-based pagination. It always returns `LogViewerLoaderData`.
 The `channel` factory is called once per request. For `kvLogChannel`, the channel
 captures the KV namespace and prefix at construction time and uses both for write
 and read — the viewer always reads from the same key space the logger writes to.
+`access` is required because logs expose request paths, ids, and error messages —
+forgetting a guard is a compile error, and public mounts must opt out explicitly.
 
 ### 5c. Log Viewer UI Components
 

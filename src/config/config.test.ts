@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { v } from "../validation/mod";
-import { applyMapping, Config, env, optionalGroup } from "./config";
+import { applyMapping, Config, env, optionalGroup, resolveConfig } from "./config";
 
 // --- applyMapping ---
 
@@ -179,9 +179,9 @@ describe("Config", () => {
     expect(parseCount).toBe(1);
   });
 
-  it("get() throws on invalid env", () => {
+  it("get() throws the exact normalized message on invalid env", () => {
     const cfg = new Config(testDescriptor.map, testDescriptor.schema);
-    expect(() => cfg.get({})).toThrow("Invalid environment");
+    expect(() => cfg.get({})).toThrow(new Error("Invalid environment: dbUrl: Invalid type: Expected string but received undefined"));
   });
 
   it("seed() overrides resolution without calling get()", () => {
@@ -218,5 +218,17 @@ describe("Config", () => {
 
     const result = cfg.get({ DB_URL: "postgres://prod", MODE: "dev" });
     expect(result.dbUrl).toBe("dev://override");
+  });
+});
+
+describe("resolveConfig", () => {
+  it("returns the store's resolved config when a store is given", () => {
+    const cfg = new Config(testDescriptor.map, testDescriptor.schema);
+    const resolved = resolveConfig(cfg, { DB_URL: "postgres://resolved" });
+    expect(resolved).toEqual({ dbUrl: "postgres://resolved", mode: undefined });
+  });
+
+  it("returns an empty object when no store is registered", () => {
+    expect(resolveConfig(undefined, { ANY: "thing" })).toEqual({});
   });
 });

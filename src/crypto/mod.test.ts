@@ -6,6 +6,7 @@ import {
   hexToBytes,
   hmacSign,
   hmacVerify,
+  importHmacKey,
   importHmacKeyFromHex,
   randomBytes,
   sha256,
@@ -235,5 +236,21 @@ describe("hmacSign / hmacVerify", () => {
     const data = utf8Encode("binary data");
     const sig = await hmacSign(key, data);
     expect(await hmacVerify(key, data, sig)).toBe(true);
+  });
+});
+
+describe("importHmacKey", () => {
+  it("imports raw bytes as a signing key that round-trips sign/verify", async () => {
+    const key = await importHmacKey(randomBytes(32));
+    const sig = await hmacSign(key, "payload");
+    expect(await hmacVerify(key, "payload", sig)).toBe(true);
+    expect(await hmacVerify(key, "tampered", sig)).toBe(false);
+  });
+
+  it("produces the same signatures as importHmacKeyFromHex for equal key material", async () => {
+    const hex = "ab".repeat(16);
+    const fromHex = await importHmacKeyFromHex(hex, "secret");
+    const fromBytes = await importHmacKey(hexToBytes(hex));
+    expect(await hmacSign(fromBytes, "x")).toEqual(await hmacSign(fromHex, "x"));
   });
 });

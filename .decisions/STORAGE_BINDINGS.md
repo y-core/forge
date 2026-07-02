@@ -302,6 +302,14 @@ take the request context and an options object with a `binding: (c) => …`
 selector. They build the typed client/store, throwing a descriptive `Error` when
 the binding is absent; pass `required: false` to receive `null` instead.
 
+**Resolver error policy — throw vs `Result`.** A missing binding is a deployment
+defect (startup invariant), so `resolve*` **throws** — it never returns a
+`Result`. Once resolved, all store/client *operations* return `Result<T, E>`
+because runtime storage failures are expected errors. The boundary is:
+resolution throws (fail closed), operations return `Result`. The `required:
+false` escape hatch is for non-security-critical features only (see §5 and
+[ERROR_HANDLING.md](./ERROR_HANDLING.md) §4, §5e).
+
 ### 4c. Structural Contracts — Cast-Free Platform Bindings
 
 Each storage namespace publishes *neutral* interfaces (`R2Bucket`, `KVNamespace`,

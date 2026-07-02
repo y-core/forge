@@ -362,7 +362,7 @@ class string. Combine with `cn` when additional conditional classes are needed:
 class on `<html>` before the browser paints. This prevents flash-of-unstyled-content
 (FOUC) on dark mode. `mountTheme()` attaches click handlers to the theme toggle button.
 The script hash for `FOUC_SCRIPT` must be included in the CSP `script-src` via
-`makeSecurityHeaders` (see [SECURITY_HARDENING.md](./SECURITY_HARDENING.md)). Any other
+`createSecurityHeaders` (see [SECURITY_HARDENING.md](./SECURITY_HARDENING.md)). Any other
 inline `<script>` rendered server-side must carry the per-request nonce, obtained with
 `getNonce(c)` from `@y-core/forge/security` and emitted as `<script nonce={getNonce(c)}>`.
 

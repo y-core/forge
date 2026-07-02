@@ -178,3 +178,37 @@ describe("controls/ToggleGroup.Item", () => {
     expect(out).toContain('data-ref="view-group"');
   });
 });
+
+// Contract: unrecognized props — any data-*/aria-* attribute — forward to the underlying
+// element with HTML-escaped values. Consumers (e.g. cad-forge's chrome binding convention)
+// rely on this instead of re-wrapping controls.
+describe("controls — arbitrary attribute pass-through", () => {
+  it("Switch forwards an arbitrary data-* attribute", async () => {
+    const out = await render(<Switch bind='b' data-test-hook='sw' />);
+    expect(out).toContain('data-test-hook="sw"');
+  });
+
+  it("Slider forwards an arbitrary data-* attribute", async () => {
+    const out = await render(<Slider bind='b' data-test-hook='sl' />);
+    expect(out).toContain('data-test-hook="sl"');
+  });
+
+  it("Select forwards an arbitrary data-* attribute", async () => {
+    const out = await render(<Select bind='b' icon={icon} data-test-hook='se' />);
+    expect(out).toContain('data-test-hook="se"');
+  });
+
+  it("ToggleGroup.Item forwards an arbitrary data-* attribute", async () => {
+    const out = await render(
+      <ToggleGroup.Item bind='b' value='v' data-test-hook='tg'>
+        V
+      </ToggleGroup.Item>,
+    );
+    expect(out).toContain('data-test-hook="tg"');
+  });
+
+  it("HTML-escapes forwarded attribute values", async () => {
+    const out = await render(<Switch bind='b' data-note='a&b "quoted"' />);
+    expect(out).toContain('data-note="a&amp;b &quot;quoted&quot;"');
+  });
+});

@@ -47,6 +47,7 @@ describe("resolveD1Client", () => {
     });
     const res = await app.request("/");
     expect(res.status).toBe(500);
+    expect(await res.text()).toBe("D1 database binding not available");
   });
 
   it("returns null when binding is absent and required is false", async () => {

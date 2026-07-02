@@ -61,7 +61,14 @@ export function loadScriptOnEvent(options: LazyLoadOptions): void {
   );
 }
 
-/** Dynamically loads a stylesheet; resolves when loaded, rejects on error. */
+/**
+ * Dynamically loads a stylesheet by appending a `<link rel="stylesheet">` to `document.head`.
+ * Resolves once the stylesheet's `load` event fires; rejects with
+ * `Error("Failed to load stylesheet: <href>")` on the `error` event (bad URL, network
+ * failure, or integrity mismatch). Idempotent: if a link with the same `href` already
+ * exists, resolves immediately without appending a duplicate. Pass `integrity: false`
+ * to skip subresource-integrity attributes (e.g. same-origin assets).
+ */
 export function loadStylesheet(href: string, integrity: string | false): Promise<void> {
   if (document.querySelector(`link[rel="stylesheet"][href="${href}"]`)) {
     return Promise.resolve();

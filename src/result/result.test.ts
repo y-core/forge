@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Result } from "./result";
-import { result } from "./result";
+import { result, toError } from "./result";
 
 describe("result — sync success", () => {
   it("returns { ok: true, data } for a primitive", () => {
@@ -163,5 +163,24 @@ describe("result — type narrowing", () => {
       const _: string = r.data;
       expect(_).toBe("hello");
     }
+  });
+});
+
+describe("toError", () => {
+  it("returns an Error instance unchanged", () => {
+    const err = new Error("original");
+    expect(toError(err)).toBe(err);
+  });
+
+  it("wraps a thrown string into an Error with that message", () => {
+    const err = toError("plain string failure");
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe("plain string failure");
+  });
+
+  it("wraps a non-string, non-Error value into an Error", () => {
+    const err = toError({ code: 42 });
+    expect(err).toBeInstanceOf(Error);
+    expect(typeof err.message).toBe("string");
   });
 });

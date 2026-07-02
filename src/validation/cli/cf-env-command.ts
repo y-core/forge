@@ -2,8 +2,8 @@
  *
  *  A forge CLI command wrapping the pure `cf-env-gen` core with the host-facing concerns:
  *  file IO, sensible path defaults overridable per-flag, a `--config` policy module, and a
- *  biome format pass. Exposed both as the `@y-core/forge/validation/cli` API (`makeGenEnv`)
- *  and as the `forge-cfgen` bin — a consumer wires either `execute(makeGenEnv())` or a
+ *  biome format pass. Exposed both as the `@y-core/forge/validation/cli` API (`createGenEnv`)
+ *  and as the `forge-cfgen` bin — a consumer wires either `execute(createGenEnv())` or a
  *  `"gen:env": "forge-cfgen"` package.json script, plus an optional `--config` module.
  *
  *  Flags (all optional; paths resolve relative to the current working directory):
@@ -49,7 +49,7 @@ function formatWithBiome(outPath: string, cwd: string): void {
 /** Build the env-schema generator command: read wrangler+dev-vars → collect → emit → format.
  *  Returns the variance-safe `CommandBase` (the form `execute` accepts); the typed `run`
  *  handler is recovered internally by `execute`. @public */
-export function makeGenEnv(): CommandBase {
+export function createGenEnv(): CommandBase {
   const log = scopeLogger("gen-env");
 
   return createCommand({

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { RequestContext } from "@remix-run/fetch-router";
+import { createContextKey, RequestContext } from "@remix-run/fetch-router";
 import { contextVar } from "./accessor";
 
 function makeCtx() {
@@ -41,5 +41,16 @@ describe("contextVar", () => {
       v.set(c, "hello");
       expect(v.getOptional(c)).toBe("hello");
     });
+  });
+});
+
+describe("createContextKey", () => {
+  it("stores and retrieves a value on a context, isolated per key", () => {
+    const keyA = createContextKey<string>();
+    const keyB = createContextKey<string>();
+    const c = makeCtx();
+    c.set(keyA, "alpha");
+    expect(c.get(keyA)).toBe("alpha");
+    expect(c.get(keyB)).toBeUndefined();
   });
 });

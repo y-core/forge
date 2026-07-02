@@ -140,7 +140,7 @@ await execute(root, ["wasm", "--profile", "dev"], io);
 
 #### `createCommand(config)`
 
-Creates a command definition from a `CommandConfig`. The generic flag type `F` is inferred from
+Creates a command definition from a `CommandDefinition`. The generic flag type `F` is inferred from
 `config.flags`, so the `flags` argument passed to `run` is fully typed.
 
 | Field | Type | Description |
@@ -345,7 +345,7 @@ Formats a `CliError` for display as `Error: <message>`.
 
 | Type | Description |
 |---|---|
-| `CommandConfig<F>` | Input to `createCommand`: `name`, optional `description`, `flags`, `args`, `run`. |
+| `CommandDefinition<F>` | Input to `createCommand`: `name`, optional `description`, `flags`, `args`, `run`. |
 | `Command<F>` | A command definition with a typed `run`; extends `CommandBase`. |
 | `CommandBase` | Tree-structural command shape (`name`, `description`, `flags`, `args`, `parent`, `commands`) without the typed handler — used for parent/child links. |
 | `FlagDef` | A flag definition: `BooleanFlagDef \| StringFlagDef`. |

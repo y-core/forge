@@ -38,7 +38,7 @@ import {
 } from "@y-core/forge/app";
 import { renderPage } from "@y-core/forge/render";
 import { route, createController } from "@y-core/forge/router";
-import { makeSecurityHeaders, NONCE } from "@y-core/forge/security";
+import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
 import { v } from "@y-core/forge/validation";
 import { configStore, type AppConfig } from "./config";
 
@@ -54,7 +54,7 @@ const app = createApp<Bindings>({
 });
 
 // Global, path-scoped middleware. "*" matches everything; "/api/*" matches the prefix.
-app.use("*", makeSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
+app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
 app.use("*", validateBindings(v.object({ CSRF_SECRET: v.string() })));
 
 // Routes as data (single source of truth).
@@ -94,18 +94,36 @@ Creates a `Forge` instance with a structured error boundary.
 | `isDebug` | `(c: AppContext<Bindings>) => boolean` | When it returns `true`, the default `500` page includes the error message; otherwise a generic message is shown. Throwing inside `isDebug` is caught and treated as `false`. |
 | `onError` | `(error: Error, c: AppContext<Bindings>) => Response \| Promise<Response>` | Custom app-level error handler. Replaces the default `500` page. If it throws, forge falls back to the default page. |
 | `logger` | `Logger` | Custom logger injected into the error handler. Defaults to `createLogger("app")`. |
+| `middleware` | `(app: Forge<Bindings>) => void` | Wiring step 1 — register global middleware (typically one `applyMiddlewareChain` call). |
+| `routes` | `(app: Forge<Bindings>) => void` | Wiring step 2 — register routes (`app.map` calls). |
+| `finalize` | `(app: Forge<Bindings>) => void` | Wiring step 3 — late registrations (e.g. dev-only routes) that must precede the asset catch-all. |
+| `assets` | `AssetOptions<Bindings>` | Wiring step 4 — registers the static-asset catch-all **last**, so real routes always win. |
 
 All options are optional; `createApp()` with no arguments is valid. The generic `Bindings` parameter types `c.env` throughout the app.
 
-```ts
-import { createApp } from "@y-core/forge/app";
+The wiring fields make the whole bootstrap a single expression — `createApp` runs them in the enforced canonical order (`middleware` → `routes` → `finalize` → `assets`), so the register-last rule for the asset catch-all cannot be violated:
 
-const app = createApp<Bindings>({
+```ts
+import { applyMiddlewareChain, createApp } from "@y-core/forge/app";
+
+export default createApp<Bindings>({
   config: configStore,
   isDebug: (c) => configStore.get(c.env).site.debug,
   onError: (err, c) => renderErrorPage(c, err),
+  middleware: (app) =>
+    applyMiddlewareChain(app, {
+      logging: { channels: (c) => [consoleChannel()] },
+      securityHeaders: { scriptSrc: ["'self'", NONCE] },
+      bindings: EnvSchema,
+      guards: [{ paths: ["/api/save"], origin: { allowedOrigins: (c) => allowed(c) }, rateLimit: { limiter: (c) => c.env.RATE_LIMITER } }],
+    }),
+  routes: registerRoutes,
+  finalize: registerDevRoutes, // optional — e.g. /admin/logs in dev builds only
+  assets: { notFoundView: notFoundController },
 });
 ```
+
+Manual wiring (`createApp()` + `app.use` + `app.map` + `applyAssets`) remains fully supported for layouts the fields cannot express.
 
 ### `Forge` — the app object
 
@@ -189,6 +207,25 @@ The automatic error responses (all are HTMX-swappable fragments):
 | `422` | `validate` returns `{ ok: false }` (and no `onValidationError`). |
 | `500` | `handle` throws (and no `onError`); the failure is logged. |
 
+### `createHandlerFactory<Bindings, ConfigData>()`
+
+Returns `{ definePage, defineAction }` with the app's `Bindings` and `ConfigData` generics pre-bound, so individual route modules stop repeating them. Per-call generics (`LoaderData`, `ActionData`, `Input`) remain inferred as usual. Bind once in an `app/handlers.ts` module and import the bound pair everywhere:
+
+```ts
+// app/handlers.ts
+import { createHandlerFactory } from "@y-core/forge/app";
+export const { definePage, defineAction } = createHandlerFactory<Bindings, AppConfig>();
+
+// controllers/home.tsx — no generic arguments needed:
+import { definePage } from "../app/handlers";
+export const homePage = definePage({
+  loader: async (c, config) => ({ greeting: `Hello from ${config.site.name}` }),
+  view: (_c, _cfg, state) => renderPage(<Home greeting={state.data.greeting} />),
+});
+```
+
+The standalone `definePage`/`defineAction` exports are unchanged — the factory is sugar, not a replacement.
+
 ### `healthCheck(checks)`
 
 Returns a `RequestHandler` that runs each named predicate concurrently (`Promise.allSettled`) and responds with JSON. A check that throws or rejects is recorded as `false`.
@@ -227,12 +264,36 @@ applyAssets(app, {
 
 `serveAssets` is the underlying `RequestHandler` if you need to register it on a non-catch-all route yourself. It returns `notFoundView` on a `404` from the binding, on a missing `ASSETS` binding, or on a non-`GET`/`HEAD` method. Register `applyAssets` **last**, after `app.map`, so real routes take precedence over the catch-all.
 
+### `createErrorPage(options?)`
+
+Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` (and reusable as `definePage`'s `onError`). It preserves the default boundary's guarantees — the real error message appears **only** when `isDebug(c)` returns `true` (a throwing `isDebug` counts as `false`), and all interpolated content is HTML-escaped.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `isDebug` | `(c) => boolean` | `() => false` | Gate for showing `error.message`. |
+| `title` | `string` | `"Something went wrong"` | Page `<title>` and heading. |
+| `stylesheetHref` | `string \| ((c) => string)` | — | Optional stylesheet link (static or per-request, e.g. hashed asset path). A throwing resolver renders the page without the link. |
+| `homeHref` | `string` | — | Optional "Back to safety" link. |
+
+```ts
+import { createApp, createErrorPage } from "@y-core/forge/app";
+
+const onError = createErrorPage<Bindings>({
+  isDebug: (c) => configStore.get(c.env).site.debug,
+  stylesheetHref: "/assets/css/main.css",
+  homeHref: "/",
+});
+export default createApp<Bindings>({ config: configStore, onError });
+```
+
 ### `validateEnv(env, schema)` / `validateBindings(schema)`
 
 Two forms of binding validation against a valibot schema.
 
 - `validateEnv(env, schema)` — one-shot. Returns the typed, validated env, or **throws** `Error("Invalid environment: …")` with the offending paths. Call it at startup when you have the raw env in hand.
 - `validateBindings(schema)` — middleware form. Validates `c.env` on the first request, and again whenever the env reference changes (so a swapped binding set is re-checked). Throws on failure; it does not store or mutate the env — read bindings via `c.env` directly.
+
+In production apps the schema is **typically generated**, not hand-written: `forge-cfgen` (`bun run gen:env`, from `@y-core/forge/validation/cli`) emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, so the schema can never drift from the actual binding surface. Hand-written schemas remain fine for small surfaces. See the standard setup guide in [src/config/README.md](../config/README.md).
 
 ```ts
 import { validateEnv, validateBindings } from "@y-core/forge/app";
@@ -300,7 +361,7 @@ export const controller = createController(routes, {
 ### 3. Register on the app, then assets
 
 ```ts
-app.use("*", makeSecurityHeaders({ scriptSrc: ["'self'", NONCE] })); // globals first
+app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] })); // globals first
 app.map(routes, controller);                                          // routes
 applyAssets(app, { notFoundView });                                   // catch-all last
 export default app;
@@ -308,7 +369,14 @@ export default app;
 
 ### Middleware ordering
 
-Global middleware (`app.use`) runs before route-level middleware (in the controller action). Within each, handlers run left-to-right. `makeSecurityHeaders` should be the first `app.use("*", ...)` registration so its per-request nonce is available to everything downstream. See [`.decisions/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §3 for the full ordering contract.
+**Prefer `applyMiddlewareChain`** — it encodes the canonical global order once, so apps never re-derive it:
+
+```
+requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders)
+  → validateBindings(bindings) → session → per-path guards (origin → rateLimit → middleware[])
+```
+
+Global middleware (`app.use`) runs before route-level middleware (in the controller action); within each, handlers run left-to-right. When hand-writing a chain instead of using the builder, the load-bearing rule is: `createSecurityHeaders` must be registered **before any nonce consumer** (session, guards, views) — pure tracing middleware (`requestId`, `requestLogger`) may precede it. See [`.decisions/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §3d/§3e for the authoritative contract.
 
 ### Page rendering
 
@@ -387,6 +455,8 @@ Related docs:
 | `Forge` | class | The app object — a Workers-native router with `fetch`/`use`/`map`/`request`. |
 | `definePage` | function | Loader + view → `RequestHandler`, with caching and error recovery. |
 | `defineAction` | function | `parse → validate → handle` POST pipeline with auto error fragments. |
+| `createHandlerFactory` | function | Returns `definePage`/`defineAction` with `Bindings`/`ConfigData` pre-bound. |
+| `HandlerFactory` | type | The pre-bound pair returned by `createHandlerFactory`. |
 | `healthCheck` | function | Concurrent named checks → JSON `{ ok, checks }` (`200`/`503`). |
 | `applyAssets` | function | Registers the static-asset catch-all over the `ASSETS` binding. |
 | `serveAssets` | function | The underlying asset-serving `RequestHandler`. |

@@ -1,3 +1,4 @@
+import { formatValidationIssues } from "../validation/format-issues";
 import { v } from "../validation/validation";
 
 export type InferConfig<E> = E extends { Config: infer C } ? C : undefined;
@@ -25,8 +26,7 @@ function resolve<ConfigData>(env: object, descriptor: ConfigDescriptor<ConfigDat
   const mapped = applyMapping(record, descriptor.map);
   const result = v.safeParse(descriptor.schema, mapped);
   if (!result.success) {
-    const issues = result.issues.map((issue) => `${issue.path?.map((p) => p.key).join(".") ?? "root"}: ${issue.message}`).join("; ");
-    throw new Error(`Invalid environment: ${issues}`);
+    throw new Error(`Invalid environment: ${formatValidationIssues(result.issues)}`);
   }
   let config = result.output;
   if (descriptor.overrides?.detect(record)) {

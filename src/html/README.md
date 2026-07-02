@@ -297,9 +297,9 @@ return fragmentResponse(renderRow(item), 200, hxHeaders({ trigger: "rowAdded" })
 If an HTMX form posts to a route protected by Cloudflare Turnstile, the Turnstile widget and its challenge endpoint must be allowed by your Content-Security-Policy. Add `TURNSTILE_CSP` (from `@y-core/forge/security`) to the relevant CSP directives when building headers:
 
 ```ts
-import { makeSecurityHeaders, NONCE, TURNSTILE_CSP } from "@y-core/forge/security";
+import { createSecurityHeaders, NONCE, TURNSTILE_CSP } from "@y-core/forge/security";
 
-makeSecurityHeaders({
+createSecurityHeaders({
   scriptSrc:  ["'self'", NONCE, TURNSTILE_CSP],
   connectSrc: ["'self'", TURNSTILE_CSP],
   frameSrc:   ["'self'", TURNSTILE_CSP],

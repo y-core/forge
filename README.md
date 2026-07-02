@@ -131,7 +131,7 @@ Quick one-line orientation for each namespace — see the linked README for comp
 
 **[`@y-core/forge/router`](src/router/README.md)** — `route()` builds a typed route map; `createController` binds handlers; `routePaths` introspects patterns; curated re-exports of `@remix-run/fetch-router`.
 
-**[`@y-core/forge/security`](src/security/README.md)** — `makeSecurityHeaders` sets CSP + hardening headers; `cors` / `originGuard` validate origins; `rateLimit` enforces request budgets; `requestId` propagates `CF-Ray`.
+**[`@y-core/forge/security`](src/security/README.md)** — `createSecurityHeaders` sets CSP + hardening headers; `cors` / `originGuard` validate origins; `rateLimit` enforces request budgets; `requestId` propagates `CF-Ray`.
 
 **[`@y-core/forge/session`](src/session/README.md)** — `sessionMiddleware` reads/writes sessions conditionally (unchanged requests stay cacheable); `createSignedCookie` enforces `httpOnly`, `secure`, and HMAC signing.
 

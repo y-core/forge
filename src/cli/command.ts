@@ -1,6 +1,6 @@
-import type { Command, CommandBase, CommandConfig, FlagDefs } from "./types";
+import type { Command, CommandBase, CommandDefinition, FlagDefs } from "./types";
 
-export function createCommand<F extends FlagDefs = FlagDefs>(config: CommandConfig<F>): Command<F> {
+export function createCommand<F extends FlagDefs = FlagDefs>(config: CommandDefinition<F>): Command<F> {
   const command: Command<F> = {
     name: config.name,
     description: config.description ?? "",

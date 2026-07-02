@@ -90,6 +90,42 @@ const setCookie = await themeCookie.serialize("dark");
 
 ---
 
+## Anonymous sessions — the standard pattern
+
+For per-visitor persistence without accounts (settings, drafts, preferences), use `createAnonymousSession` with a KV binding. The cookie carries **only an opaque session id** (signed, `httpOnly`, `SameSite=Lax`); all session data lives server-side in KV under that id with a sliding TTL. Handlers persist state with plain `session.set(...)` — there is no manual id bookkeeping, no hand-rolled KV keying, and no per-isolate middleware caching to invent (the factory caches internally, keyed by `(cookieName, secure, secret)` so secret rotation rebuilds).
+
+```typescript
+import { createAnonymousSession, sessionCtx } from "@y-core/forge/session";
+
+// One registration — secrets and bindings resolve from the request env:
+app.use("*", createAnonymousSession<AppEnv>({
+  cookieName: "app_session",
+  secret: (c) => c.env.SESSION_SECRET,   // ≥ 32 chars, enforced
+  kv: (c) => c.env.SESSIONS_KV,          // server-side session store
+}));
+
+// In a handler — this is the entire persistence story:
+const session = sessionCtx.get(c);
+session.set("settings", validated.settings);  // dirty → saved to KV, Set-Cookie (id only)
+const settings = session.get("settings");     // read back on any later request
+```
+
+### Choosing the storage backend
+
+| | KV storage (`kv` given) | Cookie storage (`kv` omitted) |
+|---|---|---|
+| Data location | Server-side (Workers KV) | Serialized into the cookie |
+| Size limit | KV value limits (MBs) | ~4 KB total cookie budget |
+| Client data exposure | None — opaque id only | Data rides on every request |
+| Revocation | Delete the KV key | Impossible until cookie expiry |
+| Extra infrastructure | One KV namespace | None |
+
+Prefer KV storage for anything beyond a couple of tiny values. `createKVSessionStorage(kv, { prefix?, ttlSeconds? })` is also exported standalone for use with `sessionMiddleware` directly — it is the durable sibling of `createMemorySessionStorage` and follows the same storage contract (`read` never throws; `save` returns the id when dirty, `""` when destroyed, `null` when unchanged).
+
+> `secure: false` exists **only** for plain-http test servers (browsers drop `Secure` cookies over http). The cookie remains signed + `httpOnly` + `SameSite=Lax` in every configuration.
+
+---
+
 ## Core Components & APIs
 
 ### `sessionMiddleware(storage, cookie)`
@@ -206,6 +242,26 @@ Use `createCookie` for non-sensitive values. For sensitive cookies, use `createS
 ## Security
 
 This namespace handles cookies and session state. Session and cookie management is deliberately **out of scope for `@y-core/forge/security`**, which covers transport-layer hardening only — these primitives live here instead.
+
+### Prefer server-side session storage
+
+With `createKVSessionStorage` (or `createAnonymousSession({ kv })`), the cookie carries only an opaque session id: no session data ever reaches the client, the ~4 KB cookie budget stops mattering, and a session can be revoked server-side by deleting its KV record — none of which cookie storage can offer. Reserve cookie storage for a couple of tiny, non-sensitive values.
+
+### Bind CSRF tokens to the session
+
+When the app also uses CSRF protection (`@y-core/forge/form`), bind tokens to the session id so a token minted in one user's browser cannot be replayed by another — wire `sessionCtx` into `csrfProtection`'s `subject` resolver:
+
+```typescript
+import { csrfProtection } from "@y-core/forge/form";
+import { sessionCtx } from "@y-core/forge/session";
+
+const csrfGuard = csrfProtection({
+  secret: (c) => resolveCsrfKey(c),
+  subject: (c) => sessionCtx.getOptional(c)?.id,
+});
+```
+
+Register `sessionMiddleware` before the CSRF guard. See the "Binding tokens to a session" section in [src/form/README.md](../form/README.md) for the full pattern.
 
 ### Always sign and harden session cookies
 

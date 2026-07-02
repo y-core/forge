@@ -97,6 +97,12 @@ The `forge-cfgen` env-schema generator. It reads a Cloudflare `wrangler.jsonc` c
 
 ### Usage
 
+The generator is one third of the **standard three-part env setup** (see the full guide in [src/config/README.md](../config/README.md)):
+
+1. **`src/app/env.config.ts`** — optional hand-written policy, a `Partial<GenOptions>`: e.g. `optional: new Set(["RATE_LIMITER"])` for bindings absent under `wrangler dev`, `refinements: { SESSION_SECRET: { minLength: 32 } }` for per-var constraints.
+2. **`src/app/env.schema.ts`** — the **generated** module (`EnvSchema` + `type Env`), committed and regenerated whenever `wrangler.jsonc` bindings change.
+3. **`validateBindings(EnvSchema)`** (`@y-core/forge/app`) — registered as middleware so the contract is enforced on the first request.
+
 Run the generator as a `package.json` script:
 
 ```json
@@ -149,9 +155,9 @@ To call the generator programmatically (e.g. wiring it into a custom CLI via `ex
 
 ```typescript
 import { execute } from "@y-core/forge/cli";
-import { makeGenEnv } from "@y-core/forge/validation/cli";
+import { createGenEnv } from "@y-core/forge/validation/cli";
 
-await execute(makeGenEnv());
+await execute(createGenEnv());
 ```
 
 ### Core Components & APIs
@@ -160,7 +166,7 @@ await execute(makeGenEnv());
 
 | Export | Signature | Description |
 |---|---|---|
-| `makeGenEnv` | `() => CommandBase` | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge-cfgen` bin entry. |
+| `createGenEnv` | `() => CommandBase` | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge-cfgen` bin entry. |
 | `readWranglerConfig` | `(path: string) => Record<string, unknown>` | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped). |
 | `loadOptions` | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given. |
 

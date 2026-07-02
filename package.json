@@ -154,6 +154,10 @@
       "types": "./src/storage/r2/mod.ts",
       "import": "./src/storage/r2/mod.ts"
     },
+    "./testing": {
+      "types": "./src/testing/mod.ts",
+      "import": "./src/testing/mod.ts"
+    },
     "./ui/assets": {
       "types": "./src/ui/assets/mod.ts",
       "import": "./src/ui/assets/mod.ts"
@@ -227,6 +231,7 @@
     "src/security/",
     "src/session/",
     "src/storage/",
+    "src/testing/",
     "src/ui/",
     "src/validation/",
     "templates/",

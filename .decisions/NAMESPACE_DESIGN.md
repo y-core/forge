@@ -1,6 +1,6 @@
 ---
 title: Namespace Design
-description: "barrel exports, mod.ts pattern, export star ban, namespace catalog, validate-exports gate, sibling-barrel guard, biome import rule, growth rules, namespace classification, no circular dependencies, when to add namespace"
+description: "barrel exports, mod.ts pattern, export star ban, namespace catalog, validate-exports gate, sibling-barrel guard, biome import rule, growth rules, namespace classification, no circular dependencies, when to add namespace, naming convention, create prefix, Config Options Definition suffix"
 weight: 15
 ---
 
@@ -20,7 +20,7 @@ weight: 15
 - §2 No-sibling-barrel rule: the biome.json guard that prevents circular deps
 - §3 Namespace catalog: all 25 package.json subpaths with source locations
 - §4 Leaf vs integration: classification table
-- §5 Growth rules: when/how to add namespaces (security→auth, app→handler, etc.)
+- §5 Growth rules: when/how to add namespaces (security→auth, app→handler, etc.); §5e factory create* prefix and Config/Options/Definition type-suffix naming convention
 - §6 When to add a namespace: criteria and checklist
 
 ---
@@ -84,7 +84,7 @@ These two are exempted because they are shared utilities without circular risk.
 
 ## 3. Authoritative Namespace Catalog
 
-### 3a. Public Export Paths (all 29 from package.json)
+### 3a. Public Export Paths (all 30 from package.json)
 
 | Export Path | Source | Category | Key Exports |
 |---|---|---|---|
@@ -107,11 +107,12 @@ These two are exempted because they are shared utilities without circular risk.
 | `@y-core/forge/render` | `src/jsx/render-to-string.ts` | Leaf | `renderToString` — renders a forge JSX tree to a `SafeHtml` string |
 | `@y-core/forge/result` | `src/result/mod.ts` | Leaf | `result`, `toError`, `Result`, `ValidationResult` |
 | `@y-core/forge/router` | `src/router/mod.ts` | Leaf | re-exports fetch-router: `route`, `createController`, `createAction`, `createRouter`, `createContextKey`, `RequestContext`, `get`/`post`/`put`/`patch`/`del`, `resource`, `createHref`; types `Controller`, `Middleware`, `RequestHandler`, `RouteMap` |
-| `@y-core/forge/security` | `src/security/mod.ts` | Integration | `makeSecurityHeaders`, `mergeSecurityHeaders`, `NONCE`, `requestId`, `requestIdCtx`, `requireFormContentType`, `cors`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit`, `BaseUrlConfigSchema` |
+| `@y-core/forge/security` | `src/security/mod.ts` | Integration | `createSecurityHeaders`, `mergeSecurityHeaders`, `NONCE`, `requestId`, `requestIdCtx`, `requireFormContentType`, `cors`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit`, `BaseUrlConfigSchema` |
 | `@y-core/forge/session` | `src/session/mod.ts` | Leaf | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
 | `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | Leaf | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment` |
 | `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | Leaf | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
 | `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | Leaf | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `importSigningKey` |
+| `@y-core/forge/testing` | `src/testing/mod.ts` | Integration | `createTestContext`, `mockExecutionContext`, `nullLogger`, `mintTestCsrfToken`, `fakeKV`, `fakeAssetsFetcher` — test code only |
 | `@y-core/forge/ui` | `src/ui/mod.ts` | Integration | `Form`, `Field`, `FieldLabel`, `Input`, `Textarea`, `Select`, `Button`, `Alert`, `Card`, `Icon`, `cn`, `cva` |
 | `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | Leaf | `mountNav`, `mountTheme`, `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `FOUC_SCRIPT` |
 | `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | Leaf (sideEffect) | htmx bundle (import only for side effect) |
@@ -191,6 +192,26 @@ extract all pipeline builders into a new `@y-core/forge/handler` namespace.
 
 `http` is the canonical source for response builders, header value classes, and HTML
 escaping. Future: `jsonResponse()`, streaming utilities, content negotiation.
+
+### 5e. Exported Factory and Type Naming Convention
+
+Factory functions use the `create*` prefix — never `make*` (`createApp`,
+`createSecurityHeaders`, `createD1Client`). Request-time binding accessors use
+`resolve*` (`resolveKVStore`, `resolveObjectStore`).
+
+Exported option/shape types use a suffix chosen by what the type *is*:
+
+| Suffix | Meaning | Examples |
+|---|---|---|
+| `*Config` | Validated/resolved **data shape**, typically schema-backed | `CsrfConfig`, `AssetsConfig`, `BaseUrlConfig` |
+| `*Options` | **Behavior configuration** passed to a factory/function/middleware | `SecurityHeadersOptions`, `KVStoreOptions`, `RateLimitOptions` |
+| `*Definition` | **Declarative handler/component shape** consumed by a builder | `PageDefinition`, `ActionDefinition`, `NavDefinition` |
+| `*Descriptor` / `*Def` | Fine-grained declarative **member shapes** within a definition | `ConfigDescriptor`, `FieldDescriptor`, `FlagDef`, `BindingDef` |
+
+A declarative shape must not be named `*Config` (that suffix implies validated env/data);
+behavior knobs must not be named `*Config` or `*Definition`. See
+[.claude/rules/r-code.md](../.claude/rules/r-code.md) Naming Conventions for the
+enforcement wording used by cc-dev.
 
 ---
 

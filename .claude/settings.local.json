@@ -3,8 +3,15 @@
     "allow": [
       "mcp__tsmcp__decisions_read",
       "mcp__tsmcp__lsp_find_references",
+      "Bash(bun *)",
+      "Bash(bun run *)",
       "Bash(bun test *)",
-      "Bash(bun run *)"
+      "Bash(bun x *)",
+      "Bash(bunx biome *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(echo \"exit=$?\")",
+      "Bash(rg *)",
+      "Bash(xargs ls -la)"
     ]
   },
   "enabledMcpjsonServers": [

@@ -5,7 +5,18 @@ import type { KVEntry, KVListEntry, KVListOptions, KVNamespace, KVSetOptions, KV
 
 const KV_PREFIX_SEPARATOR = "||";
 
-/** Creates a typed KV store wrapping a KVNamespace with codec, prefix, and Result-wrapped ops. @public */
+/**
+ * Creates a typed KV store wrapping a KVNamespace with codec, prefix, and Result-wrapped ops.
+ * When `options.codec` is omitted, values are encoded with `jsonCodec()` (JSON.stringify/parse).
+ *
+ * @example
+ * ```typescript
+ * const settings = createKVStore<Settings>(c.env.SETTINGS_KV, { prefix: "settings", defaultTtl: 3600 });
+ * const r = await settings.get(sessionId); // Result<Settings | null>
+ * if (r.ok && r.value) applySettings(r.value);
+ * ```
+ * @public
+ */
 export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOptions<T>): KVStore<T> {
   const prefix = options?.prefix;
   const codec: KvCodec<T> = (options?.codec ?? jsonCodec()) as KvCodec<T>;

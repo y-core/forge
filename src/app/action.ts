@@ -11,7 +11,24 @@ import type { ActionDefinition } from "./types";
 
 const logger = createLogger("action");
 
-/** Wires a parse → validate → handle pipeline into a POST handler with structured error responses. @public */
+/**
+ * Wires a parse → validate → handle pipeline into a POST handler with structured error
+ * responses: oversized body → 413 fragment, unparseable body or throwing `parse` → 400,
+ * failed `validate` → validation-errors fragment, throwing `handle` → logged 500 fragment.
+ *
+ * @example
+ * ```typescript
+ * export const contactAction = defineAction<ContactInput, Bindings, AppConfig>({
+ *   parse: (formData) => readFields(formData, ["name", "email", "message"]),
+ *   validate: (data) => validateContact(data), // ValidationResult<ContactInput>
+ *   handle: async (data, c, config) => {
+ *     await sendEmail(config.email, data);
+ *     return fragmentResponse(renderSuccess("Thanks — we'll be in touch."));
+ *   },
+ * });
+ * ```
+ * @public
+ */
 export function defineAction<Input, Bindings = Record<string, unknown>, ConfigData = unknown>(
   def: ActionDefinition<Input, Bindings, ConfigData>,
 ): RequestHandler {

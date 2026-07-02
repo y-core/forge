@@ -76,7 +76,7 @@ export interface ToolbarGroup<A extends string = string> {
 }
 
 /** Full toolbar configuration. @public */
-export interface ToolbarConfig<A extends string = string> {
+export interface ToolbarDefinition<A extends string = string> {
   groups: ToolbarGroup<A>[];
 }
 
@@ -89,7 +89,7 @@ export type ToolbarPlacement = "left" | "right" | "top" | "bottom";
  * @public
  */
 export interface ToolbarProps<A extends string = string> extends Omit<JSX.IntrinsicElements["nav"], "children"> {
-  config: ToolbarConfig<A>;
+  config: ToolbarDefinition<A>;
   /** App sprite icon — glyph names are app-defined. Required. */
   icon: ForgeIcon<string>;
   /** Edge the rail pins to. Default `"left"`. */
@@ -119,7 +119,8 @@ const flyoutVariants = cva({
   defaultVariants: { placement: "left" },
 });
 
-const TRIGGER_CLS = "list-none cursor-pointer outline-none rounded-lg flex items-center justify-center size-9 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-primary group-open/popover:text-primary-foreground";
+const TRIGGER_CLS =
+  "list-none cursor-pointer outline-none rounded-lg flex items-center justify-center size-9 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-primary group-open/popover:text-primary-foreground";
 const FLYOUT_TITLE_CLS = "text-[11px] font-semibold text-muted-foreground uppercase tracking-wider pt-0.5 pb-1.5 px-0.5";
 const FLYOUT_BODY_CLS = "flex flex-col items-stretch gap-3.5 pt-1 pb-0.5 px-0.5 max-h-[60vh] overflow-y-auto";
 
@@ -200,7 +201,7 @@ function renderGroup<A extends string>(group: ToolbarGroup<A>, placement: Toolba
  * natively via `<details name>` for exclusive open and outside-click-close
  * (handled by the `toolbar` resumable scope). Zero JavaScript for open/close.
  *
- * Feed a {@link ToolbarConfig} and an `icon` prop (the app sprite binding).
+ * Feed a {@link ToolbarDefinition} and an `icon` prop (the app sprite binding).
  * The `placement` drives flex direction and flyout position.
  *
  * @public

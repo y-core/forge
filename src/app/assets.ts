@@ -7,7 +7,22 @@ import { getAppContext } from "../context/types";
 import type { Forge } from "./forge-app";
 import type { AssetOptions, HasAssets } from "./types";
 
-/** Registers the static-asset catch-all handler onto a Forge app. @public */
+/**
+ * Registers the static-asset catch-all handler onto a Forge app.
+ *
+ * `path` defaults to `"*"` — a catch-all that matches every request the router has not
+ * already claimed, which is why this must be the **last** registration (after `app.map`
+ * calls); anything registered later is shadowed. `createApp({ assets })` enforces this
+ * ordering automatically. Non-`GET`/`HEAD` methods and missing assets fall through to
+ * `options.notFoundView`.
+ *
+ * @example
+ * ```typescript
+ * app.map(routes, controller);          // real routes first
+ * applyAssets(app, { notFoundView });   // catch-all last
+ * ```
+ * @public
+ */
 export function applyAssets<Bindings extends HasAssets = HasAssets>(app: Forge<Bindings>, options: AssetOptions<Bindings>, path = "*"): void {
   // A `Route` instance (rather than a `{ method, pattern }` literal) is required so the catch-all
   // `"ANY"` method is preserved — the object form's `method` field excludes `"ANY"`.

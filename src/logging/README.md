@@ -238,16 +238,23 @@ import {
 
 #### `loadLogViewer(context, options)`
 
-A route loader. It reads `?level=`, `?q=`, and `?cursor=` from the request URL, calls
+A route loader. It first evaluates the **required** `access` option — a denial returns a
+`403 Forbidden` `Response` (which `definePage` loaders short-circuit on) before the channel is
+touched. On allow, it reads `?level=`, `?q=`, and `?cursor=` from the request URL, calls
 `options.channel(c).read?(query)`, and returns `LogViewerLoaderData`. If the channel has no
 `read` method, it returns `{ rows: [], complete: true }` — an empty table, not an error.
-Forge does not gate access; mount the route behind auth middleware in the consuming app.
+
+Logs expose request paths, request ids, and error messages, so an unguarded viewer is an
+information leak: `access` is required at the type level. Forgetting a guard is a compile
+error; a deliberately public mount must say so with the greppable literal
+`access: "allow-unauthenticated"`.
 
 `LogViewerOptions`:
 
 | Option | Type | Description |
 |---|---|---|
 | `channel` | `(c) => LogChannel` | Per-request factory for the channel to read from. |
+| `access` | `((c) => boolean \| Promise<boolean>) \| "allow-unauthenticated"` | **Required.** Access decision, run before the channel is touched; `false` → `403 Forbidden`. A throwing predicate propagates to the error boundary (fail closed). |
 | `basePath` | `string` | URL prefix the viewer is mounted at, used for HTMX targets. Defaults to `/admin/logs`. |
 
 #### `renderLogFragment(data)`
@@ -264,6 +271,7 @@ import type { LogViewerLoaderData } from "@y-core/forge/logging/show";
 definePage<AppEnv, AppConfig, LogViewerLoaderData>({
   loader: (c) => loadLogViewer(c, {
     channel: (cc) => kvLogChannel(cc.env.LOGS_KV!),
+    access: (cc) => isAdmin(sessionCtx.getOptional(cc)),  // required — 403 when false
     basePath: "/admin/logs",
   }),
   view: async (c, _config, state) => {

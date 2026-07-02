@@ -8,10 +8,11 @@
 
 ### Naming Conventions
 
-- **Functions**: camelCase, verb-first (`getUser`, `parseUrl`, `makeSecurityHeaders`, `createD1Client`)
+- **Functions**: camelCase, verb-first (`getUser`, `parseUrl`, `createSecurityHeaders`, `createD1Client`)
 - **Errors**: named `Error` subclasses or sentinel strings (`ErrNotFound`, `class CsrfError extends Error`)
 - **Types/Interfaces**: PascalCase (`SecurityHeadersOptions`, `KVStore`, `RouteConfig`)
-- **Constructors/Factories**: `create*` or `make*` prefix for factory functions (`createApp`, `makeSecurityHeaders`)
+- **Constructors/Factories**: `create*` prefix for factory functions (`createApp`, `createSecurityHeaders`) — never `make*`; `resolve*` for request-time binding accessors (`resolveKVStore`)
+- **Option/shape types**: `*Config` = validated data shape (`CsrfConfig`); `*Options` = factory/function behavior config (`SecurityHeadersOptions`); `*Definition` = declarative handler/component shape (`PageDefinition`, `NavDefinition`); `*Descriptor`/`*Def` = fine-grained declarative member shapes (`FieldDescriptor`, `FlagDef`). See NAMESPACE_DESIGN.md §5e.
 - **Test fakes**: `fake` prefix (`fakeKV`, `fakeLogger`, `fakeContext`)
 - **Constants**: SCREAMING_SNAKE_CASE for module-level constants (`CSRF_FIELD_DEFAULT`, `NONCE`)
 

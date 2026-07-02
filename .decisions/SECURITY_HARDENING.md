@@ -1,6 +1,6 @@
 ---
 title: Security Hardening
-description: "makeSecurityHeaders, CSP nonce, getNonce, NONCE constant, mergeSecurityHeaders, CORS response rebuild, originGuard, verifyOrigin, crossOriginProtection Sec-Fetch-Site, rateLimit, requestId, requireFormContentType, safeUrl JSX URL sanitization, parseFormData 413 byte cap, fragment escaping, R2 RFC 5987, storage shape checks, fallback 500 headers, transport-layer only, CSRF in form namespace, auth boundary"
+description: "createSecurityHeaders, CSP nonce, getNonce, NONCE constant, mergeSecurityHeaders, CORS response rebuild, originGuard, verifyOrigin, crossOriginProtection Sec-Fetch-Site, rateLimit, requestId, requireFormContentType, safeUrl JSX URL sanitization, parseFormData 413 byte cap, fragment escaping, R2 RFC 5987, storage shape checks, fallback 500 headers, transport-layer only, CSRF in form namespace, auth boundary"
 weight: 22
 ---
 
@@ -18,7 +18,7 @@ weight: 22
 ## 0. Quick Reference
 
 - §1 Security namespace exports: complete list of what security/ ships
-- §2 makeSecurityHeaders and CSP nonce: factory, NONCE constant, mergeSecurityHeaders
+- §2 createSecurityHeaders and CSP nonce: factory, NONCE constant, mergeSecurityHeaders; §2e OWASP default-header audit (COOP/CORP defaults, COEP opt-in)
 - §3 CORS and origin protection: cors(), originGuard, verifyOrigin, crossOriginProtection
 - §4 Rate limiting: rateLimit() with Workers binding
 - §5 Request identity: requestId(), requestIdCtx contextVar
@@ -32,7 +32,7 @@ weight: 22
 
 From `@y-core/forge/security` (`src/security/mod.ts`):
 
-- `makeSecurityHeaders(options)` — middleware factory for security headers
+- `createSecurityHeaders(options)` — middleware factory for security headers
 - `mergeSecurityHeaders(base, override)` — merge two SecurityHeadersOptions
 - `NONCE` — constant string `"'nonce-{nonce}'"` for CSP scriptSrc
 - `requestId()` — middleware: injects X-Request-Id, sets requestIdCtx
@@ -44,8 +44,9 @@ From `@y-core/forge/security` (`src/security/mod.ts`):
 - `originGuard(allowed)`, `verifyOrigin(req, allowed)` — origin allowlist enforcement
 - `rateLimit(options)` — Workers rate limiting middleware
 - `BaseUrlConfigSchema`, `deriveAllowedOrigins`, `parseUrl` — URL/origin config helpers
-- `applySecurityHeaders(response, options?, nonce?)` — applies the headers directly to a
-  Response (for out-of-band responses that never pass through the middleware chain)
+- `applySecurityHeaders(response, options?)` — applies the headers directly to a
+  Response (for out-of-band responses that never pass through the middleware chain);
+  `options` is `ApplySecurityHeadersOptions` (`SecurityHeadersOptions` + optional explicit `nonce`)
 - `getNonce(c)` — returns the per-request CSP nonce (or `""` when none is set)
 - Type exports: `CorsOptions`, `CrossOriginProtectionOptions`, `RateLimitBinding/Options`,
   `RequestIdContext`, `BaseUrlConfig`, `OriginResult`, `ParsedUrl`, `SecurityHeadersOptions`, etc.
@@ -59,18 +60,18 @@ NOT in security (common mistake to avoid):
 
 ---
 
-## 2. makeSecurityHeaders and CSP Nonce
+## 2. createSecurityHeaders and CSP Nonce
 
-### 2a. makeSecurityHeaders Factory Pattern
+### 2a. createSecurityHeaders Factory Pattern
 
-`makeSecurityHeaders` generates a unique nonce per request (16 random bytes,
+`createSecurityHeaders` generates a unique nonce per request (16 random bytes,
 base64url-encoded), injects it into the CSP `script-src` directive, and stores it on the request context in an
 internal context variable that `getNonce(c)` reads back. Every request gets a fresh nonce
 — static nonces defeat the purpose of CSP nonce enforcement. The computed headers are
 queued on the per-request pending-header channel and flushed once by the app's outermost
 `applyHeaders` pass, rather than each middleware rebuilding its own Response.
 
-    import { makeSecurityHeaders, NONCE, type SecurityHeadersOptions } from "@y-core/forge/security"
+    import { createSecurityHeaders, NONCE, type SecurityHeadersOptions } from "@y-core/forge/security"
 
     const securityHeaders: SecurityHeadersOptions = {
       scriptSrc: ["'self'", NONCE, "https://challenges.cloudflare.com"],
@@ -78,14 +79,14 @@ queued on the per-request pending-header channel and flushed once by the app's o
       frameSrc:   ["'self'", "https://challenges.cloudflare.com"],
     }
 
-    app.use("*", makeSecurityHeaders(securityHeaders))
+    app.use("*", createSecurityHeaders(securityHeaders))
 
 Register once at the app level via `app.use("*", ...)` so all routes inherit the headers.
 
 ### 2b. NONCE Constant
 
 `NONCE` is the string literal `"'nonce-{nonce}'"` — a placeholder in `scriptSrc` that
-`makeSecurityHeaders` replaces with the actual per-request nonce value at runtime.
+`createSecurityHeaders` replaces with the actual per-request nonce value at runtime.
 Using the constant (rather than a hand-written string) makes the placeholder
 recognizable and avoids typos.
 
@@ -129,9 +130,10 @@ Retrieve the per-request nonce inside view components to attach it to inline scr
       return <script nonce={nonce} src="/assets/js/main.js" />
     }
 
-`getNonce(c)` reads the per-request nonce stored in context by `makeSecurityHeaders`;
-it throws if called before the middleware has run, so always register
-`makeSecurityHeaders` first via `app.use("*", ...)`.
+`getNonce(c)` reads the per-request nonce stored in context by `createSecurityHeaders`.
+It never throws: when the middleware has not run it returns `""`, which renders an empty
+`nonce` attribute that the CSP will not honor — register `createSecurityHeaders` before
+any nonce consumer so the value is always present (see ROUTING_AND_MIDDLEWARE.md §3d).
 
 > URL attributes in JSX (`href`, `src`, `action`, …) are sanitized automatically at
 > render time: the renderer routes those attribute values through `safeUrl`
@@ -139,6 +141,24 @@ it throws if called before the middleware has run, so always register
 > `vbscript:`, `data:`, including obfuscated variants) to `"#"`. This complements the
 > nonce-based CSP — even a missed nonce cannot turn a user-controlled URL into script
 > execution.
+
+### 2e. Default Header Set — OWASP Baseline Audit
+
+Audit of the emitted default header set against the OWASP secure-headers baseline
+(2026-07-02), with the decision taken for each candidate:
+
+| Header | Default | Decision |
+|---|---|---|
+| `Content-Security-Policy` | strict, per-request nonce | present since v0 |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | present since v0 |
+| `X-Content-Type-Options` | `nosniff` | present since v0 |
+| `X-Frame-Options` | `DENY` | present since v0 (redundant with `frame-ancestors 'none'`, kept for legacy UAs) |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | present since v0 |
+| `Permissions-Policy` | `camera/microphone/geolocation/payment` all `()` | present since v0 |
+| `Cross-Origin-Opener-Policy` | `same-origin` | **added as default** — overridable via `crossOriginOpenerPolicy` (`same-origin-allow-popups` for OAuth/payment popups) |
+| `Cross-Origin-Resource-Policy` | `same-origin` | **added as default** — overridable via `crossOriginResourcePolicy` (`cross-origin` for embeddable resources) |
+| `Cross-Origin-Embedder-Policy` | not emitted | **opt-in only** via `crossOriginEmbedderPolicy` — `require-corp` breaks any subresource lacking CORP/CORS opt-in |
+| `Cache-Control` on sensitive responses | per-route | route concern (`definePage({ cache })`, `healthCheck` sets `no-store`) — not a blanket default |
 
 ---
 
@@ -229,6 +249,14 @@ globally, to target high-risk endpoints (form submissions, API mutations):
         contact: { middleware: [rateLimitGuard, csrfVerifyGuard], handler: contactHandler },
       },
     })
+
+**Key trust boundary.** The default key is the `CF-Connecting-IP` header, which is only
+trustworthy when the Worker actually runs behind Cloudflare's edge — a directly-reachable
+origin or another platform lets clients forge it to evade or poison the limit. Off
+Cloudflare, always supply a custom `key`. A missing header (or a throwing `key` function)
+fails closed with `503`. For key-selection strategies (per-IP vs per-session vs
+route-scoped composite keys), see the "Choosing a rate-limit key" section in
+`src/security/README.md`.
 
 ### 4b. required: false for Dev Graceful Degradation
 
@@ -349,7 +377,7 @@ logic runs.
 | Feature | Correct namespace |
 |---|---|
 | CSRF token minting/verification | `@y-core/forge/form` |
-| Session management | `@y-core/forge/session` |
+| Session management | `@y-core/forge/session` — standard pattern: `createAnonymousSession` with KV-backed storage (opaque id-only cookie, server-side data + revocation); see `src/session/README.md` |
 | Authentication (JWT, OAuth, magic links) | Future: `@y-core/forge/auth` |
 | Permissions/RBAC | Future: `@y-core/forge/auth` |
 | `timingSafeEqual` / `timingSafeEqualBytes` | Internal `src/crypto/` (`@internal`) |
@@ -421,7 +449,7 @@ name is rejected at the boundary rather than failing deep inside a handler.
 ### 8f. Fallback 500 Carries Baseline Security Headers
 
 When an error is thrown **outside** the middleware chain (router internals, before the
-consumer's `makeSecurityHeaders` can run), the app's last-resort 500 still ships a
+consumer's `createSecurityHeaders` can run), the app's last-resort 500 still ships a
 baseline-hardened response: `Content-Type: text/html; charset=utf-8`,
 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`, and
 `Referrer-Policy: no-referrer`. Errors thrown **inside** the chain flow back through the

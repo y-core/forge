@@ -33,10 +33,7 @@ const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children }) => (
 );
 
 const AccordionItem: FC<AccordionItemProps> = ({ class: cls, children, ...props }) => (
-  <details
-    data-slot='accordion-item'
-    class={cn("group/accordion-item border-b border-border last:border-b-0", asClass(cls))}
-    {...props}>
+  <details data-slot='accordion-item' class={cn("group/accordion-item border-b border-border last:border-b-0", asClass(cls))} {...props}>
     {children}
   </details>
 );
@@ -71,8 +68,4 @@ const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, childre
  * Icon-agnostic — inject the app's sprite-bound `ForgeIcon` via `Accordion.Trigger`'s
  * `icon` prop; the sprite URL never leaks into this component. @public
  */
-export const Accordion = Object.assign(AccordionRoot, {
-  Item: AccordionItem,
-  Trigger: AccordionTrigger,
-  Content: AccordionContent,
-});
+export const Accordion = Object.assign(AccordionRoot, { Item: AccordionItem, Trigger: AccordionTrigger, Content: AccordionContent });

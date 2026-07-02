@@ -4,6 +4,7 @@ import type { AppContext } from "../context/types";
 import type { ReadonlyFormData } from "../form/types";
 import type { Logger } from "../logging/types";
 import type { ValidationResult } from "../result/result";
+import type { Forge } from "./forge-app";
 
 /** @public */
 export interface AppOptions<Bindings = Record<string, unknown>> {
@@ -12,6 +13,14 @@ export interface AppOptions<Bindings = Record<string, unknown>> {
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
   /** Custom logger injected into the app error handler. */
   logger?: Logger;
+  /** Wiring step 1 — register global middleware (e.g. via `applyMiddlewareChain`). */
+  middleware?: (app: Forge<Bindings & object>) => void;
+  /** Wiring step 2 — register routes (`app.map` calls). */
+  routes?: (app: Forge<Bindings & object>) => void;
+  /** Wiring step 3 — late registrations (e.g. dev-only routes) that must precede the asset catch-all. */
+  finalize?: (app: Forge<Bindings & object>) => void;
+  /** Wiring step 4 — registers the static-asset catch-all last, so real routes always win. */
+  assets?: AssetOptions<Bindings>;
 }
 
 /** @public */

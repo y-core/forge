@@ -26,7 +26,13 @@ export function validateD1Binding(name: string): Middleware {
 
 /**
  * Resolves a D1Client from the current request context.
- * Returns null when binding is absent and `required` is false; throws otherwise. @public
+ *
+ * @remarks
+ * A missing binding is a deployment defect (startup invariant), so this **throws**
+ * `Error("D1 database binding not available")` rather than returning a `Result` —
+ * fail closed, per ERROR_HANDLING.md §5e. Pass `required: false` to opt into a `null`
+ * return for non-security-critical features. Queries on the resolved client return
+ * `Result<T, E>`: resolution throws, operation failures do not. @public
  */
 export function resolveD1Client<Bindings = Record<string, unknown>, DB extends D1DatabaseLike = D1Database>(
   c: AppContext<Bindings>,

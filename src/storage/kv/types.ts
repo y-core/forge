@@ -55,8 +55,11 @@ export interface KVListResult<M = unknown> {
 
 /** @public */
 export interface KVStoreOptions<T = unknown> {
+  /** Key prefix, joined with `||`; keys themselves must not contain `||`. */
   prefix?: string;
+  /** Value codec. @defaultValue `jsonCodec()` — JSON.stringify/parse */
   codec?: KvCodec<T>;
+  /** Default TTL in seconds applied to `set` when no per-call `ttl` is given. */
   defaultTtl?: number;
   logger?: Logger;
 }

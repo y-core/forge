@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../jsx/render-test-helper";
 import { fieldDescriptionId, fieldErrorId, fieldId } from "./field";
 import { FormField } from "./field-layout";
+import { Field } from "./field-stack";
 import { Input } from "./input";
 
 describe("fieldId helpers", () => {
@@ -129,5 +130,17 @@ describe("Field primitives", () => {
     expect(out).toContain('data-slot="field-title"');
     expect(out).toContain('data-slot="field-separator"');
     expect(out).toContain('data-slot="field-separator-content"');
+  });
+});
+
+describe("Field — arbitrary attribute pass-through", () => {
+  it("forwards data-* attributes to the root with escaped values", async () => {
+    const out = await render(
+      <Field label='Email' data-test-hook='email-field' data-note='a&b'>
+        <Input field={{ name: "email" }} />
+      </Field>,
+    );
+    expect(out).toContain('data-test-hook="email-field"');
+    expect(out).toContain('data-note="a&amp;b"');
   });
 });

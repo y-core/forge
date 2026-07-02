@@ -30,7 +30,13 @@ export function validateKVBinding(name: string): Middleware {
 
 /**
  * Resolves a KVStore from the current request context.
- * Returns null when binding is absent and `required` is false; throws otherwise. @public
+ *
+ * @remarks
+ * A missing binding is a deployment defect (startup invariant), so this **throws**
+ * `Error("KV namespace binding not available")` rather than returning a `Result` —
+ * fail closed, per ERROR_HANDLING.md §5e. Pass `required: false` to opt into a `null`
+ * return for non-security-critical features. Operations on the resolved store return
+ * `Result<T, E>`: resolution throws, operation failures do not. @public
  */
 export function resolveKVStore<Bindings = Record<string, unknown>, T = unknown, NS extends KVNamespaceLike = KVNamespace>(
   c: AppContext<Bindings>,

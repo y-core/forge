@@ -40,6 +40,7 @@ Create `assets.config.ts` at the project root and export the result of `defineAs
 
 ```ts
 import { defineAssetsConfig, env, flag } from "@y-core/forge/assets";
+import { forgeUiSpriteSources } from "@y-core/forge/ui/assets";
 
 export default defineAssetsConfig({
   paths: {
@@ -65,7 +66,12 @@ export default defineAssetsConfig({
   sprites: {
     ui: {
       target: "sprites/ui.svg",
-      sources: [{ path: "src/assets/svg/", files: ["arrow-right.svg", "close.svg"] }],
+      sources: [
+        // forge's own UI glyphs (spinner, chevron-down, theme icons, …) — self-described,
+        // so a forge upgrade adding icons never requires touching this list.
+        ...forgeUiSpriteSources(),
+        { path: "src/assets/svg/", files: ["arrow-right.svg", "close.svg"] },
+      ],
     },
   },
   fonts: {
@@ -155,6 +161,8 @@ When the config has sprite groups, the generated module also exports a typed ico
 `CssBuild`: `{ tool: "tailwindcss"; input: string; output: string }`.
 `CopyEntry`: `{ from: string; to: string }`.
 `SpriteGroup`: `{ target: string; sources: SpriteSource[] }`, where `SpriteSource` is `{ path: string; files: string[] }`. A `path` starting with `http://` / `https://` is fetched and cached; otherwise it is read from disk.
+
+> **Standard pattern:** spread `...forgeUiSpriteSources()` (from `@y-core/forge/ui/assets`) as the first source of the group your components use. It returns absolute paths to all forge UI glyphs, so consumers never hand-list `node_modules/@y-core/forge/...` paths — see the config example above and [src/ui/README.md](../ui/README.md).
 `FontDownload`: `{ url: string; to: string }`.
 `IconOutput` is a discriminated union on `kind`: `"svg"`, `"png"` (`size`, optional `manifest`), `"ico"` (`sizes`), `"manifest"`.
 

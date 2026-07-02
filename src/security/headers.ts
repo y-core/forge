@@ -3,7 +3,7 @@ import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
 import { base64urlEncode, randomBytes } from "../crypto/mod";
 import { NONCE } from "./nonce";
-import type { PermissionsPolicyOptions, SecurityHeadersOptions } from "./types";
+import type { ApplySecurityHeadersOptions, PermissionsPolicyOptions, SecurityHeadersOptions } from "./types";
 
 const CSP_DIRECTIVES = ["scriptSrc", "connectSrc", "frameSrc", "imgSrc", "workerSrc", "childSrc"] as const;
 
@@ -20,7 +20,16 @@ function buildPermissionsPolicy(o?: PermissionsPolicyOptions): string {
 
 const secureHeadersNonce = contextVar<string>("secureHeadersNonce");
 
-/** Returns the CSP nonce set for the current request, or `""` when none is set. @public */
+/**
+ * Returns the CSP nonce that `createSecurityHeaders` set for the current request.
+ *
+ * @remarks
+ * Never throws. When the middleware has not run (out-of-band responses, misordered chains,
+ * bare test contexts) it returns `""` — an empty `nonce` attribute the CSP will not honor,
+ * so scripts relying on it fail closed rather than executing unnonced. Register
+ * `createSecurityHeaders` before any nonce consumer. For responses built entirely outside
+ * the chain, mint the nonce yourself and pass it via `applySecurityHeaders(response, { nonce })`. @public
+ */
 // biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for nonce access
 export function getNonce(c: RequestContext<any, any>): string {
   return secureHeadersNonce.getOptional(c) ?? "";
@@ -44,6 +53,9 @@ export function mergeSecurityHeaders(base: SecurityHeadersOptions, extra: Partia
   }
   if (extra.hstsMaxAge !== undefined) merged.hstsMaxAge = extra.hstsMaxAge;
   if (extra.permissionsPolicy) merged.permissionsPolicy = { ...base.permissionsPolicy, ...extra.permissionsPolicy };
+  if (extra.crossOriginOpenerPolicy !== undefined) merged.crossOriginOpenerPolicy = extra.crossOriginOpenerPolicy;
+  if (extra.crossOriginResourcePolicy !== undefined) merged.crossOriginResourcePolicy = extra.crossOriginResourcePolicy;
+  if (extra.crossOriginEmbedderPolicy !== undefined) merged.crossOriginEmbedderPolicy = extra.crossOriginEmbedderPolicy;
   return merged;
 }
 
@@ -86,24 +98,33 @@ function buildCsp(nonce: string, options?: SecurityHeadersOptions): string {
 /** Computes the full set of forge security headers for `nonce` and `options`. */
 function securityHeaderEntries(nonce: string, options?: SecurityHeadersOptions): [string, string][] {
   const hstsMaxAge = options?.hstsMaxAge ?? 63072000;
-  return [
+  const entries: [string, string][] = [
     ["content-security-policy", buildCsp(nonce, options)],
     ["strict-transport-security", `max-age=${hstsMaxAge}; includeSubDomains; preload`],
     ["referrer-policy", "strict-origin-when-cross-origin"],
     ["x-content-type-options", "nosniff"],
     ["permissions-policy", buildPermissionsPolicy(options?.permissionsPolicy)],
     ["x-frame-options", "DENY"],
+    ["cross-origin-opener-policy", options?.crossOriginOpenerPolicy ?? "same-origin"],
+    ["cross-origin-resource-policy", options?.crossOriginResourcePolicy ?? "same-origin"],
   ];
+  // COEP is opt-in: `require-corp` breaks every subresource lacking CORP/CORS opt-in.
+  if (options?.crossOriginEmbedderPolicy) {
+    entries.push(["cross-origin-embedder-policy", options.crossOriginEmbedderPolicy]);
+  }
+  return entries;
 }
 
 /**
  * Applies forge's security headers directly to `response`, returning a new Response.
  * Used for out-of-band responses that never pass through the middleware chain (e.g. an
- * error page produced before the chain runs). A fresh nonce is minted when none is supplied. @public
+ * error page produced before the chain runs). A fresh nonce is minted when `options.nonce`
+ * is omitted. @public
  */
-export function applySecurityHeaders(response: Response, options?: SecurityHeadersOptions, nonce: string = generateNonce()): Response {
+export function applySecurityHeaders(response: Response, options?: ApplySecurityHeadersOptions): Response {
+  const { nonce = generateNonce(), ...headerOptions } = options ?? {};
   const headers = new Headers(response.headers);
-  for (const [name, value] of securityHeaderEntries(nonce, options)) {
+  for (const [name, value] of securityHeaderEntries(nonce, headerOptions)) {
     headers.set(name, value);
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
@@ -113,7 +134,7 @@ export function applySecurityHeaders(response: Response, options?: SecurityHeade
  * Middleware factory that applies CSP with a per-request nonce, HSTS, referrer-policy,
  * x-content-type-options, and permissions-policy to every response. @public
  */
-export function makeSecurityHeaders(options?: SecurityHeadersOptions): Middleware {
+export function createSecurityHeaders(options?: SecurityHeadersOptions): Middleware {
   const scriptSrc = options?.scriptSrc ?? ["'self'", NONCE];
   const connectSrc = options?.connectSrc ?? ["'self'"];
   const frameSrc = options?.frameSrc ?? ["'self'"];

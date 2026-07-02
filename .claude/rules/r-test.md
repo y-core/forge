@@ -190,7 +190,7 @@ it("rejects missing CSRF token with 403", async () => {
 })
 ```
 
-Do not mock `makeSecurityHeaders`, `verifyCsrfToken`, or other security primitives. Test with real implementations against fake bindings.
+Do not mock `createSecurityHeaders`, `verifyCsrfToken`, or other security primitives. Test with real implementations against fake bindings.
 
 ---
 

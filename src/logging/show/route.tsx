@@ -9,25 +9,43 @@ import type { LogViewerLoaderData } from "./components";
 import { LOG_TBODY_ID, LogTableBody } from "./components";
 
 /**
- * Options for the log viewer loader. Forge does not gate access — mount the route behind
- * auth middleware in the consuming app. @public
+ * Access decision for the log viewer. Either a per-request predicate (return `false` to deny
+ * with a `403`), or the explicit literal `"allow-unauthenticated"` for viewers that are
+ * intentionally public (dev-only mounts). There is no implicit-open default. @public
+ */
+export type LogViewerAccess<Bindings = Record<string, unknown>> =
+  | ((c: AppContext<Bindings>) => boolean | Promise<boolean>)
+  | "allow-unauthenticated";
+
+/**
+ * Options for the log viewer loader. Logs expose request paths, request ids, and error
+ * messages, so `access` is required — forgetting a guard is a compile error, and opting
+ * out is an explicit, greppable literal. @public
  */
 export type LogViewerOptions<Bindings = Record<string, unknown>> = {
   /** Returns the log channel to read from. Called per request. */
   channel: (c: AppContext<Bindings>) => LogChannel;
+  /** Required access decision; runs before the channel is touched. */
+  access: LogViewerAccess<Bindings>;
   /** URL path prefix where the viewer is mounted (used for HTMX targets). */
   basePath?: string;
 };
 
 /**
- * Log viewer loader. Reads the requested log page via the channel and returns `LogViewerLoaderData`.
- * Use inside `definePage`'s `loader`; pass the result to `renderLogFragment` (HTMX)
- * or `LogViewerContent` (full page) in the `view`. The app owns access control. @public
+ * Log viewer loader. Evaluates `access` first — a denial returns a `403 Forbidden` `Response`
+ * (which `definePage` loaders short-circuit on) without touching the channel. On allow, reads
+ * the requested log page via the channel and returns `LogViewerLoaderData`. Use inside
+ * `definePage`'s `loader`; pass the data to `renderLogFragment` (HTMX) or `LogViewerContent`
+ * (full page) in the `view`. A throwing `access` predicate propagates to the error boundary
+ * (fail closed). @public
  */
 export async function loadLogViewer<Bindings = Record<string, unknown>>(
   c: AppContext<Bindings>,
   options: LogViewerOptions<Bindings>,
-): Promise<LogViewerLoaderData> {
+): Promise<LogViewerLoaderData | Response> {
+  if (options.access !== "allow-unauthenticated" && !(await options.access(c))) {
+    return new Response("Forbidden", { status: 403 });
+  }
   const basePath = options.basePath ?? "/admin/logs";
   const channel = options.channel(c);
   const level = c.url.searchParams.get("level") as LogLevel | undefined;

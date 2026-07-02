@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
 import { execute } from "../../cli/execute";
-import { makeGenEnv } from "./cf-env-command";
+import { createGenEnv } from "./cf-env-command";
 
-await execute(makeGenEnv());
+await execute(createGenEnv());

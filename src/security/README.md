@@ -12,7 +12,7 @@ This namespace operates on the raw HTTP layer — before any application logic r
 
 | Feature | Entry point |
 |---|---|
-| Security headers (CSP nonce, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy) | `makeSecurityHeaders`, `applySecurityHeaders`, `mergeSecurityHeaders`, `getNonce`, `NONCE`, `TURNSTILE_CSP` |
+| Security headers (CSP nonce, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy) | `createSecurityHeaders`, `applySecurityHeaders`, `mergeSecurityHeaders`, `getNonce`, `NONCE`, `TURNSTILE_CSP` |
 | CORS | `cors`, `matchOrigin` |
 | Origin allowlist enforcement | `originGuard`, `verifyOrigin` |
 | Cross-origin (Fetch Metadata) protection | `crossOriginProtection`, `checkCrossOriginProtection`, `originProtection` |
@@ -27,11 +27,13 @@ All middleware factories return a Forge `Middleware` (`@remix-run/fetch-router`)
 
 ## Usage
 
-Register `makeSecurityHeaders` and `requestId` once at the app level; apply route-specific guards (`cors`, `originGuard`, `rateLimit`, `requireFormContentType`) only where needed.
+Register `createSecurityHeaders` and `requestId` once at the app level; apply route-specific guards (`cors`, `originGuard`, `rateLimit`, `requireFormContentType`) only where needed.
+
+> Apps composing the full global chain should prefer `applyMiddlewareChain` (`@y-core/forge/app`) — it registers these in the canonical order automatically (see [ROUTING_AND_MIDDLEWARE.md](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §3e). The manual registrations below remain valid; the one ordering rule is that `createSecurityHeaders` precedes any nonce consumer (`requestId`/logging may come first).
 
 ```typescript
 import {
-  makeSecurityHeaders,
+  createSecurityHeaders,
   requestId,
   cors,
   NONCE,
@@ -39,7 +41,7 @@ import {
 
 // App-wide: every response gets a fresh CSP nonce + hardened headers, and a request ID.
 app.use("*", requestId());
-app.use("*", makeSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
+app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
 
 // Route-scoped: CORS only on the API surface that is consumed cross-origin.
 app.use("/api/*", cors({ origins: ["https://app.example.com"] }));
@@ -57,13 +59,13 @@ export function Page(c: AppContext) {
 }
 ```
 
-`getNonce(c)` returns the nonce that `makeSecurityHeaders` minted for the current request, or `""` when none is set — so always register `makeSecurityHeaders` first.
+`getNonce(c)` returns the nonce that `createSecurityHeaders` minted for the current request, or `""` when none is set — so always register `createSecurityHeaders` first.
 
 ---
 
 ## Core Components & APIs
 
-### `makeSecurityHeaders(options?)`
+### `createSecurityHeaders(options?)`
 
 Middleware factory. Mints a fresh per-request nonce (16 random bytes, base64url-encoded), substitutes it into any directive containing the `NONCE` placeholder, and queues the full header set on the per-request pending-header channel (flushed once by the app's outer `applyHeaders` pass, rather than each middleware rebuilding its own `Response`).
 
@@ -77,6 +79,9 @@ Headers set on every response:
 | `X-Content-Type-Options` | `nosniff` |
 | `Permissions-Policy` | `camera`, `microphone`, `geolocation`, `payment` — each `()` (disabled) unless allowlisted |
 | `X-Frame-Options` | `DENY` |
+| `Cross-Origin-Opener-Policy` | `same-origin` — use `same-origin-allow-popups` if the app opens OAuth/payment popups |
+| `Cross-Origin-Resource-Policy` | `same-origin` — use `cross-origin` for intentionally embeddable resources |
+| `Cross-Origin-Embedder-Policy` | **not set** — opt in via `crossOriginEmbedderPolicy` (`require-corp` breaks any subresource without CORP/CORS opt-in) |
 
 `SecurityHeadersOptions`:
 
@@ -90,11 +95,14 @@ Headers set on every response:
 | `childSrc` | `CspSourceValue[]` | — | Emitted only when provided |
 | `hstsMaxAge` | `number` | `63072000` | HSTS `max-age` in seconds |
 | `permissionsPolicy` | `PermissionsPolicyOptions` | all disabled | `{ camera?, microphone?, geolocation?, payment? }` allowlists |
+| `crossOriginOpenerPolicy` | `"same-origin" \| "same-origin-allow-popups" \| "unsafe-none"` | `"same-origin"` | COOP; loosen for OAuth/payment popup flows |
+| `crossOriginResourcePolicy` | `"same-origin" \| "same-site" \| "cross-origin"` | `"same-origin"` | CORP; loosen for embeddable assets/APIs |
+| `crossOriginEmbedderPolicy` | `"require-corp" \| "credentialless"` | — (not emitted) | COEP; opt-in only |
 
 The factory rejects empty or whitespace-only directive source entries (which would silently break the policy) by throwing at construction time.
 
 ```typescript
-import { makeSecurityHeaders, NONCE, TURNSTILE_CSP, type SecurityHeadersOptions } from "@y-core/forge/security";
+import { createSecurityHeaders, NONCE, TURNSTILE_CSP, type SecurityHeadersOptions } from "@y-core/forge/security";
 
 const headers: SecurityHeadersOptions = {
   scriptSrc:  ["'self'", NONCE, TURNSTILE_CSP],
@@ -102,12 +110,12 @@ const headers: SecurityHeadersOptions = {
   frameSrc:   ["'self'", TURNSTILE_CSP],
 };
 
-app.use("*", makeSecurityHeaders(headers));
+app.use("*", createSecurityHeaders(headers));
 ```
 
 ### `NONCE`
 
-A `unique symbol` placeholder. Place it in a CSP directive's source array (`scriptSrc: ["'self'", NONCE]`); `makeSecurityHeaders` substitutes the real per-request value (`'nonce-<base64url>'`) when the response is built.
+A `unique symbol` placeholder. Place it in a CSP directive's source array (`scriptSrc: ["'self'", NONCE]`); `createSecurityHeaders` substitutes the real per-request value (`'nonce-<base64url>'`) when the response is built.
 
 > **Never emit `NONCE` to clients directly.** It is a build-time marker, not a header value. The actual nonce for a request is obtained via `getNonce(c)`.
 
@@ -117,16 +125,40 @@ The Cloudflare Turnstile CDN origin (`"https://challenges.cloudflare.com"`) as a
 
 ### `getNonce(context)`
 
-Returns the per-request CSP nonce that `makeSecurityHeaders` set on the context, or `""` when none is set. Use it in view components to attach the nonce to inline scripts.
+Returns the per-request CSP nonce that `createSecurityHeaders` set on the context, or `""` when none is set. Use it in view components to attach the nonce to inline scripts.
 
-### `applySecurityHeaders(response, options?, nonce?)`
+#### Getting the nonce into your markup
 
-Applies the full header set directly to a `Response`, returning a new `Response`. Use for out-of-band responses that never pass through the middleware chain (for example an error page produced before the chain runs). When no `nonce` is supplied a fresh one is minted.
+There are exactly two supported paths, depending on whether the response passes through the middleware chain:
+
+1. **Through the chain (normal case):** register `createSecurityHeaders` before any nonce consumer; views read the value with `getNonce(c)` and attach it to script tags. The `NONCE` placeholder in CSP directives is substituted with the same value, so the header and the markup always agree.
+
+   ```tsx
+   const nonce = getNonce(c);
+   return <script nonce={nonce} src="/assets/js/main.js" />;
+   ```
+
+2. **Outside the chain (out-of-band responses):** mint your own nonce, render the markup with it, then harden the response with the same value so header and markup agree:
+
+   ```typescript
+   const nonce = crypto.randomUUID().replaceAll("-", "");
+   const page = htmlResponse(renderErrorPage(nonce));
+   return applySecurityHeaders(page, { nonce });
+   ```
+
+**Failure mode:** `getNonce` never throws. If `createSecurityHeaders` did not run, it returns `""` — the empty `nonce` attribute will not satisfy the CSP, so the affected script fails closed (blocked) instead of executing unnonced. If scripts are unexpectedly blocked, check the middleware registration order first (see [ROUTING_AND_MIDDLEWARE.md §3d](../../.decisions/ROUTING_AND_MIDDLEWARE.md)).
+
+### `applySecurityHeaders(response, options?)`
+
+Applies the full header set directly to a `Response`, returning a new `Response`. Use for out-of-band responses that never pass through the middleware chain (for example an error page produced before the chain runs). `options` is `ApplySecurityHeadersOptions` — all `SecurityHeadersOptions` fields plus an optional explicit `nonce`; when `options.nonce` is omitted a fresh one is minted.
 
 ```typescript
 import { applySecurityHeaders } from "@y-core/forge/security";
 
 const hardened = applySecurityHeaders(new Response("oops", { status: 500 }));
+
+// With an explicit nonce (e.g. to match markup already rendered with it):
+const withNonce = applySecurityHeaders(page, { scriptSrc: ["'self'", NONCE], nonce });
 ```
 
 ### `mergeSecurityHeaders(base, extra)`
@@ -234,6 +266,27 @@ Declare the binding in `wrangler.jsonc`:
 
 > The default key (`CF-Connecting-IP`) is only trustworthy when the Worker runs behind Cloudflare. On other platforms a client can forge it — always supply a custom `key`. If the default key throws because the header is absent, the request fails closed with `503`.
 
+#### Choosing a rate-limit key
+
+The key defines *what* gets throttled — pick it to match the abuse you are defending against:
+
+| Strategy | Key | When |
+|---|---|---|
+| Per-IP (default) | `CF-Connecting-IP` header | Anonymous endpoints behind Cloudflare. Coarse: NAT/CGNAT users share an IP; botnets rotate IPs. |
+| Per-session | `key: (c) => sessionCtx.get(c).id` | Session-bearing apps — throttles the actor, not the network. The `sessionCtx` import couples *your app* (not forge) to `@y-core/forge/session`. |
+| Route-scoped composite | `key: (c) => \`${c.url.pathname}:${c.request.headers.get("CF-Connecting-IP")}\`` | One shared binding across several routes, each with an independent budget per client. |
+
+```typescript
+import { sessionCtx } from "@y-core/forge/session";
+
+const perSession = rateLimit<AppEnv>({
+  limiter: (c) => c.env.RATE_LIMITER,
+  key: (c) => sessionCtx.get(c).id, // register sessionMiddleware BEFORE this guard
+});
+```
+
+A `key` function that throws (e.g. `sessionCtx.get` before the session middleware ran) fails closed with `503` — same as the missing-header case.
+
 ### `requestId()` / `requestIdCtx`
 
 `requestId()` is middleware that propagates the `CF-Ray` header (or a generated `crypto.randomUUID()` when absent) as the request ID: it stores the value in `requestIdCtx` and sets the `x-request-id` response header. `requestIdCtx` is the typed context accessor for reading it back.
@@ -297,7 +350,7 @@ This namespace is **transport-layer only**. The guards below are the building bl
 
 ### CSP nonces vs. inline scripts
 
-`makeSecurityHeaders` emits a strict CSP with **no `'unsafe-inline'`** for either `script-src` or `style-src`. Every inline `<script>` must carry the per-request nonce from `getNonce(c)`; inline `style=` attributes are dropped by the JSX renderer because the policy forbids them. A static nonce defeats the mechanism — the factory always mints a fresh one per request.
+`createSecurityHeaders` emits a strict CSP with **no `'unsafe-inline'`** for either `script-src` or `style-src`. Every inline `<script>` must carry the per-request nonce from `getNonce(c)`; inline `style=` attributes are dropped by the JSX renderer because the policy forbids them. A static nonce defeats the mechanism — the factory always mints a fresh one per request.
 
 ### CSRF defense lives in two places
 
@@ -363,21 +416,21 @@ The default `rateLimit` key (`CF-Connecting-IP`) is forgeable off Cloudflare. Of
 
 ### Out-of-band responses keep their headers
 
-Responses produced **outside** the middleware chain (router internals, a 500 thrown before the chain runs) never see `makeSecurityHeaders`. Use `applySecurityHeaders(response, options?, nonce?)` to harden them explicitly. The app's last-resort `500` already ships a baseline-hardened response (`X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`, `Referrer-Policy: no-referrer`), so no error path emits an unprotected response.
+Responses produced **outside** the middleware chain (router internals, a 500 thrown before the chain runs) never see `createSecurityHeaders`. Use `applySecurityHeaders(response, options?)` to harden them explicitly (pass `options.nonce` to reuse a nonce already embedded in the markup). The app's last-resort `500` already ships a baseline-hardened response (`X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`, `Referrer-Policy: no-referrer`), so no error path emits an unprotected response.
 
 ### Dev/prod CSP split without leakage
 
 Keep dev-only CSP sources (live-reload hashes, local tooling origins) out of the production policy by computing them in the dev worker entry only, via `mergeSecurityHeaders`:
 
 ```typescript
-import { makeSecurityHeaders, mergeSecurityHeaders } from "@y-core/forge/security";
+import { createSecurityHeaders, mergeSecurityHeaders } from "@y-core/forge/security";
 
 // production base — shared
 export const baseHeaders = { scriptSrc: ["'self'", NONCE] };
 
 // dev worker entry (src/worker.dev.ts) — never imported by production
 export default createWorker(
-  makeSecurityHeaders(
+  createSecurityHeaders(
     mergeSecurityHeaders(baseHeaders, { scriptSrc: [WRANGLER_LIVE_RELOAD_HASH] }),
   ),
 );
