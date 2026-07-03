@@ -42,9 +42,11 @@ const CssBuildSchema = v.object({ tool: v.literal("tailwindcss"), input: v.strin
 
 const CopyEntrySchema = v.object({ from: v.string(), to: v.string() });
 
-const SpriteSourceSchema = v.object({ path: v.string(), files: v.array(v.string()) });
+const SpriteFileEntrySchema = v.union([v.string(), v.object({ key: v.string(), file: v.string() })]);
 
-const SpriteGroupSchema = v.object({ target: v.string(), sources: v.array(SpriteSourceSchema) });
+const SpriteSourceSchema = v.object({ path: v.string(), files: v.array(SpriteFileEntrySchema) });
+
+const SpriteGroupSchema = v.object({ target: v.string(), sources: v.array(SpriteSourceSchema), prefix: v.optional(v.string()) });
 
 const FontDownloadSchema = v.object({ url: v.string(), to: v.string() });
 
@@ -64,6 +66,7 @@ export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
 export type ResolvedJsBundle = Omit<JsBundle, "define"> & { define?: Record<string, string> };
 export type CssBuild = v.InferOutput<typeof CssBuildSchema>;
 export type CopyEntry = v.InferOutput<typeof CopyEntrySchema>;
+export type SpriteFileEntry = v.InferOutput<typeof SpriteFileEntrySchema>;
 export type SpriteSource = v.InferOutput<typeof SpriteSourceSchema>;
 export type SpriteGroup = v.InferOutput<typeof SpriteGroupSchema>;
 export type Sprites = Record<string, SpriteGroup>;

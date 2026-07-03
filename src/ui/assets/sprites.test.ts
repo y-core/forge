@@ -26,8 +26,9 @@ describe("forgeUiSpriteSources", () => {
 
   it("every named glyph has a real svg file on disk", () => {
     for (const source of forgeUiSpriteSources()) {
-      for (const file of source.files) {
-        expect(existsSync(join(source.path, file))).toBe(true);
+      for (const entry of source.files) {
+        const filename = typeof entry === "string" ? entry : entry.file;
+        expect(existsSync(join(source.path, filename))).toBe(true);
       }
     }
   });

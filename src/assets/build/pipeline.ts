@@ -89,7 +89,7 @@ async function generateAssetsModule(
         const metaEntries = Object.entries(group.meta)
           .map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`)
           .join("\n");
-        return `const ${constName} = {\n${metaEntries}\n} as const;\n\nexport const ${exportName} = createIcon(assets.path(${JSON.stringify(group.spriteKey)}), ${constName});`;
+        return `const ${constName} = {\n${metaEntries}\n} as const;\n\nexport const ${exportName} = createIcon(assets.path(${JSON.stringify(group.spriteKey)}), ${constName}, ${JSON.stringify(group.prefix)});`;
       })
       .join("\n\n");
 

@@ -8,10 +8,11 @@
       "Bash(bun test *)",
       "Bash(bun x *)",
       "Bash(bunx biome *)",
+      "Bash(cargo test *)",
       "Bash(echo \"exit: $?\")",
       "Bash(echo \"exit=$?\")",
-      "Bash(rg *)",
-      "Bash(xargs ls -la)"
+      "Bash(python3 -)",
+      "Bash(rg *)"
     ]
   },
   "enabledMcpjsonServers": [

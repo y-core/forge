@@ -151,6 +151,81 @@ describe("buildSprites()", () => {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("{ key, file } entry uses key as symbol id, not filename stem", async () => {
+    const tmpDir = join(tmpdir(), `forge-sprites-keyfile-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tmpDir, { recursive: true });
+    const svg = `<svg viewBox="0 0 24 24"><path d="M0 0"/></svg>`;
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(svg, { status: 200 }));
+    try {
+      const sprites = {
+        icons: {
+          target: "svg/sprite.svg",
+          sources: [{ path: "https://example.com/", files: [{ key: "mouse-pointer-2", file: "select.svg" }] }],
+        },
+      };
+      const result = await buildSprites(sprites, tmpDir);
+      expect(result.groups.icons!.meta["icon-mouse-pointer-2"]).toBe("0 0 24 24");
+      expect(result.groups.icons!.meta["icon-select"]).toBeUndefined();
+    } finally {
+      fetchSpy.mockRestore();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("custom prefix is used for symbol ids and stored in SpriteGroupResult", async () => {
+    const tmpDir = join(tmpdir(), `forge-sprites-prefix-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tmpDir, { recursive: true });
+    const svg = `<svg viewBox="0 0 32 32"><path d="M0 0"/></svg>`;
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(svg, { status: 200 }));
+    try {
+      const sprites = {
+        cursors: {
+          target: "svg/cursors.svg",
+          prefix: "cursor-",
+          sources: [{ path: "https://example.com/", files: ["orbit.svg"] }],
+        },
+      };
+      const result = await buildSprites(sprites, tmpDir);
+      expect(result.groups.cursors!.prefix).toBe("cursor-");
+      expect(result.groups.cursors!.meta["cursor-orbit"]).toBe("0 0 32 32");
+      expect(result.groups.cursors!.meta["icon-orbit"]).toBeUndefined();
+    } finally {
+      fetchSpy.mockRestore();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("last-wins dedup: later source with same key overrides earlier symbol", async () => {
+    const tmpDir = join(tmpdir(), `forge-sprites-dedup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tmpDir, { recursive: true });
+    const svgFirst = `<svg viewBox="0 0 24 24"><circle r="12"/></svg>`;
+    const svgLast = `<svg viewBox="0 0 32 32"><path d="M0 0"/></svg>`;
+    const fetchSpy = spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(svgFirst, { status: 200 }))
+      .mockResolvedValueOnce(new Response(svgLast, { status: 200 }));
+    try {
+      const sprites = {
+        icons: {
+          target: "svg/sprite.svg",
+          sources: [
+            { path: "https://example.com/base/", files: [{ key: "select", file: "a.svg" }] },
+            { path: "https://example.com/override/", files: [{ key: "select", file: "b.svg" }] },
+          ],
+        },
+      };
+      const result = await buildSprites(sprites, tmpDir);
+      // Only one symbol with key "select"; its viewBox comes from the second (overriding) source.
+      expect(result.groups.icons!.meta["icon-select"]).toBe("0 0 32 32");
+      const { readFileSync: readFile } = await import("node:fs");
+      const spriteContent = readFile(join(tmpDir, "svg", "sprite.svg"), "utf-8");
+      const matches = [...spriteContent.matchAll(/id="icon-select"/g)];
+      expect(matches).toHaveLength(1);
+    } finally {
+      fetchSpy.mockRestore();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("extractViewBoxes()", () => {
@@ -178,68 +253,84 @@ describe("extractViewBoxes()", () => {
 });
 
 describe("svgToSymbol()", () => {
-  it("wraps inner content in a symbol with the filename as id", () => {
+  it("wraps inner content in a symbol with the given key and prefix", () => {
     const svg = `<svg viewBox="0 0 24 24"><path d="M12 12"/></svg>`;
-    const result = svgToSymbol(svg, "sun.svg");
-    expect(result).toContain(`id="icon-sun"`);
-    expect(result).toContain(`viewBox="0 0 24 24"`);
-    expect(result).toContain(`d="M12 12"`);
+    const result = svgToSymbol(svg, "sun", "icon-");
+    expect(result?.id).toBe("icon-sun");
+    expect(result?.symbol).toContain(`id="icon-sun"`);
+    expect(result?.symbol).toContain(`viewBox="0 0 24 24"`);
+    expect(result?.symbol).toContain(`d="M12 12"`);
+  });
+
+  it("uses the key directly — no basename stripping", () => {
+    const svg = `<svg viewBox="0 0 24 24"><circle r="10"/></svg>`;
+    const result = svgToSymbol(svg, "mouse-pointer-2", "icon-");
+    expect(result?.id).toBe("icon-mouse-pointer-2");
+    expect(result?.symbol).toContain(`id="icon-mouse-pointer-2"`);
+  });
+
+  it("uses a custom prefix in the symbol id", () => {
+    const svg = `<svg viewBox="0 0 32 32"><path d="M0 0"/></svg>`;
+    const result = svgToSymbol(svg, "orbit", "cursor-");
+    expect(result?.id).toBe("cursor-orbit");
+    expect(result?.symbol).toContain(`id="cursor-orbit"`);
+    expect(result?.symbol).toContain(`viewBox="0 0 32 32"`);
   });
 
   it("uses default viewBox when missing", () => {
     const svg = `<svg><circle r="10"/></svg>`;
-    const result = svgToSymbol(svg, "circle.svg");
-    expect(result).toContain(`viewBox="0 0 24 24"`);
+    const result = svgToSymbol(svg, "circle", "icon-");
+    expect(result?.symbol).toContain(`viewBox="0 0 24 24"`);
   });
 
   it("returns null for malformed SVG", () => {
-    expect(svgToSymbol("not svg at all", "bad.svg")).toBeNull();
+    expect(svgToSymbol("not svg at all", "bad", "icon-")).toBeNull();
   });
 
   it("strips event handlers from symbol content", () => {
     const svg = `<svg viewBox="0 0 24 24"><path onclick="evil()"/></svg>`;
-    const result = svgToSymbol(svg, "bad.svg");
-    expect(result).not.toContain("onclick");
+    const result = svgToSymbol(svg, "bad", "icon-");
+    expect(result?.symbol).not.toContain("onclick");
   });
 
   it("propagates root fill and stroke to child shape elements", () => {
     const svg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/></svg>`;
-    const result = svgToSymbol(svg, "sun.svg") ?? "";
-    expect(result).toContain(`fill="none"`);
-    expect(result).toContain(`stroke="currentColor"`);
-    expect(result).toContain(`stroke-width="2"`);
-    expect(result).toContain(`stroke-linecap="round"`);
-    expect(result).toContain(`stroke-linejoin="round"`);
+    const result = svgToSymbol(svg, "sun", "icon-");
+    expect(result?.symbol).toContain(`fill="none"`);
+    expect(result?.symbol).toContain(`stroke="currentColor"`);
+    expect(result?.symbol).toContain(`stroke-width="2"`);
+    expect(result?.symbol).toContain(`stroke-linecap="round"`);
+    expect(result?.symbol).toContain(`stroke-linejoin="round"`);
   });
 
   it("does not overwrite existing child attributes during propagation", () => {
     const svg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 12" fill="red"/></svg>`;
-    const result = svgToSymbol(svg, "icon.svg") ?? "";
-    expect(result).toContain(`fill="red"`);
-    expect(result).not.toContain(`fill="none"`);
-    expect(result).toContain(`stroke="currentColor"`);
+    const result = svgToSymbol(svg, "icon", "icon-");
+    expect(result?.symbol).toContain(`fill="red"`);
+    expect(result?.symbol).not.toContain(`fill="none"`);
+    expect(result?.symbol).toContain(`stroke="currentColor"`);
   });
 
   it("skips propagation when root has no presentational attributes", () => {
     const svg = `<svg viewBox="23 122 314 95"><path d="M70 217" fill="#366" fill-rule="nonzero"/></svg>`;
-    const result = svgToSymbol(svg, "logo.svg") ?? "";
-    expect(result).not.toContain(`stroke=`);
-    expect(result).toContain(`fill="#366"`);
-    expect(result).toContain(`fill-rule="nonzero"`);
+    const result = svgToSymbol(svg, "logo", "icon-");
+    expect(result?.symbol).not.toContain(`stroke=`);
+    expect(result?.symbol).toContain(`fill="#366"`);
+    expect(result?.symbol).toContain(`fill-rule="nonzero"`);
   });
 
   it("normalizes non-zero-origin viewBox to '0 0 w h' and wraps content in translate", () => {
     const svg = `<svg viewBox="147.9 43 583.1 313"><path d="M577.1 43"/></svg>`;
-    const result = svgToSymbol(svg, "logo.svg") ?? "";
-    expect(result).toContain(`viewBox="0 0 583.1 313"`);
-    expect(result).toContain(`transform="translate(-147.9 -43)"`);
-    expect(result).toContain(`d="M577.1 43"`);
+    const result = svgToSymbol(svg, "logo", "icon-");
+    expect(result?.symbol).toContain(`viewBox="0 0 583.1 313"`);
+    expect(result?.symbol).toContain(`transform="translate(-147.9 -43)"`);
+    expect(result?.symbol).toContain(`d="M577.1 43"`);
   });
 
   it("does not add translate wrapper for zero-origin viewBox", () => {
     const svg = `<svg viewBox="0 0 24 24"><path d="M12 12"/></svg>`;
-    const result = svgToSymbol(svg, "icon.svg") ?? "";
-    expect(result).toContain(`viewBox="0 0 24 24"`);
-    expect(result).not.toContain(`transform=`);
+    const result = svgToSymbol(svg, "icon", "icon-");
+    expect(result?.symbol).toContain(`viewBox="0 0 24 24"`);
+    expect(result?.symbol).not.toContain(`transform=`);
   });
 });

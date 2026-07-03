@@ -8,6 +8,7 @@ import { safeJoin } from "./paths";
 export interface SpriteGroupResult {
   spriteKey: string;
   meta: Record<string, string>;
+  prefix: string;
 }
 
 export interface SpriteBuildResult {
@@ -22,7 +23,7 @@ export async function buildSprites(sprites: Sprites, publicDir: string, opts?: {
     const result = await buildSpriteGroup(group, publicDir, opts?.hash ?? false);
     if (result) {
       Object.assign(mapping, result.mapping);
-      groups[key] = { spriteKey: result.spriteKey, meta: result.meta };
+      groups[key] = { spriteKey: result.spriteKey, meta: result.meta, prefix: result.prefix };
     }
   }
   return { mapping, groups };
@@ -56,25 +57,27 @@ async function buildSpriteGroup(
   group: SpriteGroup,
   publicDir: string,
   shouldHash: boolean,
-): Promise<{ mapping: Record<string, string>; spriteKey: string; meta: Record<string, string> } | null> {
+): Promise<{ mapping: Record<string, string>; spriteKey: string; meta: Record<string, string>; prefix: string } | null> {
   const target = safeJoin(publicDir, group.target);
   const spriteDir = dirname(target);
   mkdirSync(spriteDir, { recursive: true });
 
-  const symbols: string[] = [];
+  const prefix = group.prefix ?? "icon-";
+  const symbolMap = new Map<string, string>();
 
   for (const source of group.sources) {
     const isRemote = source.path.startsWith("http://") || source.path.startsWith("https://");
 
-    for (const file of source.files) {
+    for (const rawEntry of source.files) {
+      const entry = typeof rawEntry === "string" ? { key: basename(rawEntry, ".svg"), file: rawEntry } : rawEntry;
       let content: string;
 
       if (isRemote) {
-        const cachePath = safeJoin(spriteDir, ".svg-cache", file);
-        await fetchURL(`${source.path}${file}`, cachePath);
+        const cachePath = safeJoin(spriteDir, ".svg-cache", entry.file);
+        await fetchURL(`${source.path}${entry.file}`, cachePath);
         content = readFileSync(cachePath, "utf-8");
       } else {
-        const filePath = join(source.path, file);
+        const filePath = join(source.path, entry.file);
         if (!existsSync(filePath)) {
           console.warn(`[forge-assets] SVG not found, skipping: ${filePath}`);
           continue;
@@ -82,17 +85,17 @@ async function buildSpriteGroup(
         content = readFileSync(filePath, "utf-8");
       }
 
-      const symbol = svgToSymbol(content, file);
-      if (symbol) symbols.push(symbol);
+      const result = svgToSymbol(content, entry.key, prefix);
+      if (result) symbolMap.set(result.id, result.symbol);
     }
   }
 
-  if (symbols.length === 0) {
+  if (symbolMap.size === 0) {
     console.warn(`[forge-assets] No symbols produced for ${group.target}, skipping write`);
     return null;
   }
 
-  const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">\n${symbols.join("\n")}\n</svg>`;
+  const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">\n${[...symbolMap.values()].join("\n")}\n</svg>`;
 
   // Clean up old sprite files (hashed or not) before writing.
   try {
@@ -110,7 +113,7 @@ async function buildSpriteGroup(
   const viewBoxMeta = extractViewBoxes(sprite);
 
   if (!shouldHash) {
-    return { mapping: { [group.target]: group.target }, spriteKey: group.target, meta: viewBoxMeta };
+    return { mapping: { [group.target]: group.target }, spriteKey: group.target, meta: viewBoxMeta, prefix };
   }
 
   const hash = hashFile(target);
@@ -120,7 +123,7 @@ async function buildSpriteGroup(
 
   renameSync(target, safeJoin(publicDir, hashedRelative));
 
-  return { mapping: { [group.target]: hashedRelative }, spriteKey: group.target, meta: viewBoxMeta };
+  return { mapping: { [group.target]: hashedRelative }, spriteKey: group.target, meta: viewBoxMeta, prefix };
 }
 
 /**
@@ -195,7 +198,7 @@ function propagateRootAttrs(inner: string, rootAttrs: Partial<Record<string, str
   });
 }
 
-export function svgToSymbol(svgContent: string, filename: string): string | null {
+export function svgToSymbol(svgContent: string, key: string, prefix: string): { id: string; symbol: string } | null {
   const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/i);
   const rawViewBox = viewBoxMatch?.[1] ?? "0 0 24 24";
 
@@ -218,6 +221,6 @@ export function svgToSymbol(svgContent: string, filename: string): string | null
   const propagated = propagateRootAttrs(sanitized, rootAttrs);
   const inner = hasOffset ? `<g transform="translate(${-minX} ${-minY})">${propagated}</g>` : propagated;
 
-  const id = `icon-${basename(filename, ".svg")}`;
-  return `  <symbol id="${id}" viewBox="${viewBox}">${inner}</symbol>`;
+  const id = `${prefix}${key}`;
+  return { id, symbol: `  <symbol id="${id}" viewBox="${viewBox}">${inner}</symbol>` };
 }
