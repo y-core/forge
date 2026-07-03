@@ -48,10 +48,10 @@ export function extractViewBoxes(spriteContent: string): Record<string, string> 
 /**
  * Builds a single SVG sprite group and writes it to `publicDir`.
  *
- * **Output directory ownership:** `buildSpriteGroup` removes all `.svg` files (excluding
- * hidden files) in `dirname(target)` on each rebuild to purge stale hashed filenames.
- * Do not place hand-authored `.svg` files alongside generated sprites — they will be deleted.
- * The path containment guard on `group.target` ensures deletions stay within `publicDir`.
+ * **Cleanup scope:** on each rebuild, only files whose name matches this group's target
+ * stem (e.g. `icons.svg`, `icons.<hash>.svg`) are removed from `dirname(target)`. Sibling
+ * sprite groups sharing the same output directory are not affected, and hand-authored files
+ * with a different stem are preserved.
  */
 async function buildSpriteGroup(
   group: SpriteGroup,
@@ -97,10 +97,18 @@ async function buildSpriteGroup(
 
   const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">\n${[...symbolMap.values()].join("\n")}\n</svg>`;
 
-  // Clean up old sprite files (hashed or not) before writing.
+  // Clean up this group's old sprite files (hashed or not) before writing.
+  // Scoped to the group's own target stem so sibling sprite groups that share
+  // this output directory are not deleted.
+  const targetStem = basename(group.target, ".svg");
   try {
     for (const entry of readdirSync(spriteDir, { withFileTypes: true })) {
-      if (entry.isFile() && entry.name.endsWith(".svg") && !entry.name.startsWith(".")) {
+      if (
+        entry.isFile() &&
+        entry.name.endsWith(".svg") &&
+        !entry.name.startsWith(".") &&
+        (entry.name === `${targetStem}.svg` || entry.name.startsWith(`${targetStem}.`))
+      ) {
         rmSync(join(spriteDir, entry.name));
       }
     }

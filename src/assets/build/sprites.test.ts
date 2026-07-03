@@ -1,5 +1,5 @@
 import { describe, expect, it, spyOn } from "bun:test";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSprites, extractViewBoxes, sanitizeSVG, svgToSymbol } from "./sprites";
@@ -192,6 +192,26 @@ describe("buildSprites()", () => {
       expect(result.groups.cursors!.meta["icon-orbit"]).toBeUndefined();
     } finally {
       fetchSpy.mockRestore();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("sibling groups sharing an output directory both survive (coexistence)", async () => {
+    const tmpDir = join(tmpdir(), `forge-sprites-sibling-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const srcDir = join(tmpDir, "svg-src");
+    mkdirSync(srcDir, { recursive: true });
+    const svgContent = `<svg viewBox="0 0 24 24"><path d="M0 0"/></svg>`;
+    writeFileSync(join(srcDir, "arrow.svg"), svgContent);
+    writeFileSync(join(srcDir, "orbit.svg"), svgContent);
+    try {
+      const sprites = {
+        icons: { target: "sprite/icons.svg", sources: [{ path: srcDir, files: ["arrow.svg"] }] },
+        cursors: { target: "sprite/cursors.svg", sources: [{ path: srcDir, files: ["orbit.svg"] }] },
+      };
+      await buildSprites(sprites, tmpDir);
+      expect(existsSync(join(tmpDir, "sprite", "icons.svg"))).toBe(true);
+      expect(existsSync(join(tmpDir, "sprite", "cursors.svg"))).toBe(true);
+    } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
