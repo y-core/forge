@@ -1,12 +1,12 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.57",
+  "version": "0.0.58",
   "bin": {
     "forge-assets": "./src/assets/cli/bin.ts",
     "forge-cfgen": "./src/validation/cli/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities for Cloudflare Workers \u2014 HTMX + Tailwind",
+  "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "lint": "biome check src/",
