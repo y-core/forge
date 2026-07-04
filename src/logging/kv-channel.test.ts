@@ -326,6 +326,44 @@ describe("kvLogChannel — read", () => {
   });
 });
 
+describe("kvLogChannel — readEntry", () => {
+  it("returns the full stored record for a listed key, including data.stack", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+    await channel.write(makeRecord({ level: "error", message: "client crash", data: { stack: "Error: boom\n  at main.ts:1" } }));
+
+    const key = [...stub._store.keys()][0]!;
+    const record = await channel.readEntry!(key);
+
+    expect(record?.level).toBe("error");
+    expect(record?.message).toBe("client crash");
+    expect(record?.data?.stack).toBe("Error: boom\n  at main.ts:1");
+  });
+
+  it("returns null for a missing key", async () => {
+    const channel = kvLogChannel(makeKvStub(), { prefix: "logs" });
+    expect(await channel.readEntry!("logs||2026-05-31T10:00:00.000Z||none")).toBeNull();
+  });
+
+  it("returns null for a key outside the channel prefix", async () => {
+    const stub = makeKvStub();
+    stub._store.set("secrets||token", { value: '{"level":"info"}' });
+
+    const channel = kvLogChannel(stub, { prefix: "logs" });
+
+    expect(await channel.readEntry!("secrets||token")).toBeNull();
+  });
+
+  it("returns null when the stored value is not valid JSON", async () => {
+    const stub = makeKvStub();
+    stub._store.set("logs||2026-05-31T10:00:00.000Z||bad", { value: "not-json" });
+
+    const channel = kvLogChannel(stub, { prefix: "logs" });
+
+    expect(await channel.readEntry!("logs||2026-05-31T10:00:00.000Z||bad")).toBeNull();
+  });
+});
+
 describe("kvLogChannel — oversized message truncation", () => {
   it("truncates message in metadata to 256 characters when message exceeds 256 chars", async () => {
     const stub = makeKvStub();

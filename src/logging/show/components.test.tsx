@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "../../jsx/render-to-string";
 import { createIcon } from "../../ui/core/icon";
-import type { LogRow } from "../types";
-import { LogFilterBar, LogLevelBadge, LogTableBody } from "./components";
+import type { LogRecord, LogRow } from "../types";
+import { LogDetailCell, LogFilterBar, LogLevelBadge, LogTableBody } from "./components";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
@@ -84,6 +84,46 @@ describe("LogTableBody", () => {
   it("renders the id attribute on tbody when provided", async () => {
     const html = String(await renderToString(<LogTableBody id='log-tbody' rows={[]} complete={true} loadMoreAction='/admin/logs' />));
     expect(html).toContain('<tbody id="log-tbody">');
+  });
+});
+
+describe("LogTableBody — detail toggle", () => {
+  it("the message cell issues an hx-get for the row's detail", async () => {
+    const html = String(await renderToString(<LogTableBody rows={[row()]} complete={true} loadMoreAction='/admin/logs' />));
+    expect(html).toContain(`hx-get="/admin/logs?detail=${encodeURIComponent(row().key)}"`);
+    expect(html).toContain('hx-target="closest td"');
+  });
+
+  it("URL-encodes the row key in the detail link", async () => {
+    const html = String(
+      await renderToString(
+        <LogTableBody rows={[row({ key: "logs||2026-05-31T10:00:00.000Z||x" })]} complete={true} loadMoreAction='/admin/logs' />,
+      ),
+    );
+    expect(html).toContain("detail=logs%7C%7C2026-05-31T10%3A00%3A00.000Z%7C%7Cx");
+  });
+});
+
+describe("LogDetailCell", () => {
+  const record: LogRecord = {
+    level: "error",
+    prefix: "client",
+    message: "uncaught",
+    timestamp: "2026-05-31T10:00:00.000Z",
+    data: { stack: "Error: boom\n  at main.ts:1" },
+  };
+
+  it("renders the full record as pretty-printed JSON including the stack", async () => {
+    const html = String(await renderToString(<LogDetailCell record={record} />));
+    expect(html).toContain("<pre");
+    expect(html).toContain("uncaught");
+    expect(html).toContain("main.ts:1");
+  });
+
+  it("renders a not-found message for a null record", async () => {
+    const html = String(await renderToString(<LogDetailCell record={null} />));
+    expect(html).toContain("Log entry not found or expired.");
+    expect(html).not.toContain("<pre");
   });
 });
 

@@ -159,10 +159,7 @@ describe("buildSprites()", () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(svg, { status: 200 }));
     try {
       const sprites = {
-        icons: {
-          target: "svg/sprite.svg",
-          sources: [{ path: "https://example.com/", files: [{ key: "mouse-pointer-2", file: "select.svg" }] }],
-        },
+        icons: { target: "svg/sprite.svg", sources: [{ path: "https://example.com/", files: [{ key: "mouse-pointer-2", file: "select.svg" }] }] },
       };
       const result = await buildSprites(sprites, tmpDir);
       expect(result.groups.icons!.meta["icon-mouse-pointer-2"]).toBe("0 0 24 24");
@@ -180,11 +177,7 @@ describe("buildSprites()", () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(svg, { status: 200 }));
     try {
       const sprites = {
-        cursors: {
-          target: "svg/cursors.svg",
-          prefix: "cursor-",
-          sources: [{ path: "https://example.com/", files: ["orbit.svg"] }],
-        },
+        cursors: { target: "svg/cursors.svg", prefix: "cursor-", sources: [{ path: "https://example.com/", files: ["orbit.svg"] }] },
       };
       const result = await buildSprites(sprites, tmpDir);
       expect(result.groups.cursors!.prefix).toBe("cursor-");

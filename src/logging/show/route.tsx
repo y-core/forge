@@ -4,9 +4,9 @@
 import type { AppContext } from "../../context/types";
 import { fragmentResponse } from "../../http/response";
 import { renderToString } from "../../jsx/render-to-string";
-import type { LogChannel, LogLevel, LogQuery, LogReadResult } from "../types";
+import type { LogChannel, LogLevel, LogQuery, LogReadResult, LogRecord } from "../types";
 import type { LogViewerLoaderData } from "./components";
-import { LOG_TBODY_ID, LogTableBody } from "./components";
+import { LOG_TBODY_ID, LogDetailCell, LogTableBody } from "./components";
 
 /**
  * Access decision for the log viewer. Either a per-request predicate (return `false` to deny
@@ -48,6 +48,13 @@ export async function loadLogViewer<Bindings = Record<string, unknown>>(
   }
   const basePath = options.basePath ?? "/admin/logs";
   const channel = options.channel(c);
+
+  const detailKey = c.url.searchParams.get("detail");
+  if (detailKey) {
+    const record = (await channel.readEntry?.(detailKey)) ?? null;
+    return renderLogDetailFragment(record);
+  }
+
   const level = c.url.searchParams.get("level") as LogLevel | undefined;
   const q = c.url.searchParams.get("q") || undefined;
   const cursor = c.url.searchParams.get("cursor") || undefined;
@@ -80,5 +87,15 @@ export async function renderLogFragment(data: LogViewerLoaderData): Promise<Resp
       loadMoreAction={data.basePath}
     />,
   );
+  return fragmentResponse(body);
+}
+
+/**
+ * Renders the expanded detail `<td>` HTMX partial for one stored record — the `outerHTML`
+ * replacement of a clicked message cell. `loadLogViewer` returns this automatically when a
+ * `?detail=<key>` query parameter is present. @public
+ */
+export async function renderLogDetailFragment(record: LogRecord | null): Promise<Response> {
+  const body = await renderToString(<LogDetailCell record={record} />);
   return fragmentResponse(body);
 }

@@ -184,6 +184,89 @@ describe("loadLogViewer — HTMX request (via view branch)", () => {
   });
 });
 
+describe("loadLogViewer — detail view", () => {
+  function makeDetailApp(channel: LogChannel) {
+    const app = new Forge();
+    const handler = definePage({
+      loader: (c) => loadLogViewer(c, { channel: () => channel, access: "allow-unauthenticated" }),
+      view: (_c, _config, state) => Response.json(state.data),
+    });
+    mapHandler(app, "GET", "/logs", handler);
+    return app;
+  }
+
+  it("returns the detail fragment when ?detail= is present", async () => {
+    const channel: LogChannel = {
+      write: () => {},
+      readEntry: () =>
+        Promise.resolve({
+          level: "error",
+          prefix: "client",
+          message: "uncaught",
+          timestamp: "2026-05-31T10:00:00.000Z",
+          data: { stack: "Error: boom\n  at main.ts:1" },
+        }),
+    };
+    const app = makeDetailApp(channel);
+
+    const res = await app.request(`/logs?detail=${encodeURIComponent("logs||2026-05-31T10:00:00.000Z||aaa")}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type") ?? "").toContain("text/html");
+    const body = await res.text();
+    expect(body).toContain("uncaught");
+    expect(body).toContain("main.ts:1");
+  });
+
+  it("passes the requested key through to readEntry", async () => {
+    let requestedKey: string | undefined;
+    const channel: LogChannel = {
+      write: () => {},
+      readEntry: (key) => {
+        requestedKey = key;
+        return Promise.resolve(null);
+      },
+    };
+    const app = makeDetailApp(channel);
+
+    await app.request(`/logs?detail=${encodeURIComponent("logs||2026-05-31T10:00:00.000Z||bbb")}`);
+
+    expect(requestedKey).toBe("logs||2026-05-31T10:00:00.000Z||bbb");
+  });
+
+  it("renders not-found for a missing entry", async () => {
+    const channel: LogChannel = { write: () => {}, readEntry: () => Promise.resolve(null) };
+    const app = makeDetailApp(channel);
+
+    const res = await app.request("/logs?detail=missing");
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Log entry not found or expired.");
+  });
+
+  it("renders not-found when the channel has no readEntry", async () => {
+    const app = makeDetailApp({ write: () => {} });
+
+    const res = await app.request("/logs?detail=anything");
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Log entry not found or expired.");
+  });
+
+  it("access is still enforced on the detail path", async () => {
+    const app = new Forge();
+    const handler = definePage({
+      loader: (c) => loadLogViewer(c, { channel: () => kvLogChannel(makeKvStub()), access: () => false }),
+      view: (_c, _config, state) => Response.json(state.data),
+    });
+    mapHandler(app, "GET", "/logs", handler);
+
+    const res = await app.request("/logs?detail=anything");
+
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("renderLogFragment — direct unit tests", () => {
   it("returns 200 with text/html content-type", async () => {
     const res = await renderLogFragment({ rows: [], complete: true, basePath: "/admin/logs" });

@@ -8,7 +8,7 @@ import { Input } from "../../ui/core/input";
 import { Select } from "../../ui/core/select";
 import { cn } from "../../ui/core/utils/cn";
 import { cva } from "../../ui/core/utils/cva";
-import type { LogRow } from "../types";
+import type { LogRecord, LogRow } from "../types";
 
 /** Stable id of the log table tbody; shared so HTMX outerHTML swaps target the node the partial returns. @public */
 export const LOG_TBODY_ID = "log-tbody";
@@ -146,7 +146,16 @@ export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, cursor, complete
           <LogLevelBadge level={row.level} />
         </td>
         <td class={cn("py-2 pr-4 font-mono text-xs", "text-brand-700")}>{row.prefix}</td>
-        <td class='py-2 pr-4 max-w-xs truncate text-brand-900'>{row.message}</td>
+        <td class='py-2 pr-4 max-w-xs truncate text-brand-900'>
+          <button
+            type='button'
+            class='cursor-pointer text-left hover:underline'
+            hx-get={`${loadMoreAction}?detail=${encodeURIComponent(row.key)}`}
+            hx-target='closest td'
+            hx-swap='outerHTML'>
+            {row.message}
+          </button>
+        </td>
         <td class='py-2 pr-4 font-mono text-xs text-brand-500'>{row.requestId ?? "—"}</td>
       </tr>
     ))}
@@ -165,6 +174,23 @@ export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, cursor, complete
       </tr>
     )}
   </tbody>
+);
+
+/**
+ * Expanded detail cell — the message `<td>` after a detail toggle, showing the full stored
+ * record (including `data.stack` when present) as pretty-printed JSON. Rendered as the
+ * HTMX `outerHTML` replacement of the clicked message cell. @public
+ */
+export const LogDetailCell: FC<{ record: LogRecord | null }> = ({ record }) => (
+  <td class='py-2 pr-4 text-brand-900'>
+    {record === null ? (
+      <span class='text-sm text-brand-500'>Log entry not found or expired.</span>
+    ) : (
+      <pre class='max-w-2xl overflow-x-auto whitespace-pre-wrap break-all rounded bg-brand-50 p-2 font-mono text-xs text-brand-800'>
+        {JSON.stringify(record, null, 2)}
+      </pre>
+    )}
+  </td>
 );
 
 /** Full log viewer content — filter bar and table. @public */

@@ -1,6 +1,25 @@
 import type { AppContext } from "../context/types";
 
-export type LogLevel = "debug" | "info" | "warn" | "error";
+/** All log levels in severity order, least to most severe. @public */
+export const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
+
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+const LEVEL_ORDER: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+
+/** Returns true when `level` is at or above `min` in the `debug < info < warn < error` ordering. @public */
+export function levelAtLeast(level: LogLevel, min: LogLevel): boolean {
+  return LEVEL_ORDER[level] >= LEVEL_ORDER[min];
+}
+
+/**
+ * Parses a level string (e.g. a `LOG_LEVEL` env var) case-insensitively; returns `fallback`
+ * when the value is unset or not a known level. @public
+ */
+export function parseLogLevel(value: string | undefined, fallback: LogLevel): LogLevel {
+  const normalized = value?.trim().toLowerCase();
+  return (LOG_LEVELS as readonly string[]).includes(normalized ?? "") ? (normalized as LogLevel) : fallback;
+}
 
 export interface LogRecord {
   level: LogLevel;
@@ -38,11 +57,15 @@ export interface LogReadResult {
 export interface LogChannel {
   write(record: LogRecord): void | Promise<void>;
   read?(query?: LogQuery): Promise<LogReadResult>;
+  /** Reads back the full stored record for one row key (e.g. for a viewer detail view). @public */
+  readEntry?(key: string): Promise<LogRecord | null>;
 }
 
 export interface LoggerOptions {
   channels?: LogChannel[];
   bindings?: Record<string, unknown>;
+  /** Records below this level are dropped before reaching any channel. Children inherit it. */
+  minLevel?: LogLevel;
 }
 
 export interface Logger {
@@ -67,6 +90,8 @@ export interface RequestLoggerOptions<Bindings = Record<string, unknown>> {
   /** Factory called once per request; return the channels to write log records to. */
   channels: (c: AppContext<Bindings>) => LogChannel[];
   bindings?: (c: AppContext<Bindings>) => Record<string, unknown>;
+  /** Static level, or a per-request resolver (e.g. from an env var); `undefined` means no filtering. */
+  minLevel?: LogLevel | ((c: AppContext<Bindings>) => LogLevel | undefined);
 }
 
 /** @public */

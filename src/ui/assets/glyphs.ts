@@ -17,10 +17,7 @@ export type GlyphSource = Record<string, GlyphEntry>;
 export function parseSpriteGlyphs(svgText: string, prefix = "icon-"): GlyphSource {
   if (!svgText) return {};
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const symbolRe = new RegExp(
-    `<symbol\\s+id="${escaped}([^"]+)"\\s+viewBox="([^"]+)">((?:[\\s\\S])*?)</symbol>`,
-    "g",
-  );
+  const symbolRe = new RegExp(`<symbol\\s+id="${escaped}([^"]+)"\\s+viewBox="([^"]+)">((?:[\\s\\S])*?)</symbol>`, "g");
   const result: GlyphSource = {};
   for (;;) {
     const match = symbolRe.exec(svgText);

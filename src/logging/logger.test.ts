@@ -150,6 +150,49 @@ describe("createLogger", () => {
   });
 });
 
+describe("createLogger — minLevel", () => {
+  function capture(): { records: LogRecord[]; ch: LogChannel } {
+    const records: LogRecord[] = [];
+    return {
+      records,
+      ch: {
+        write: (r) => {
+          records.push(r);
+        },
+      },
+    };
+  }
+
+  it("drops records below minLevel before any channel sees them", () => {
+    const { records, ch } = capture();
+    const log = createLogger("svc", { channels: [ch], minLevel: "warn" });
+
+    log.debug("d");
+    log.info("i");
+
+    expect(records).toHaveLength(0);
+  });
+
+  it("passes records at and above minLevel", () => {
+    const { records, ch } = capture();
+    const log = createLogger("svc", { channels: [ch], minLevel: "warn" });
+
+    log.warn("w");
+    log.error("e");
+
+    expect(records.map((r) => r.level)).toStrictEqual(["warn", "error"]);
+  });
+
+  it("no minLevel means no filtering", () => {
+    const { records, ch } = capture();
+    const log = createLogger("svc", { channels: [ch] });
+
+    log.debug("d");
+
+    expect(records).toHaveLength(1);
+  });
+});
+
 describe("createLogger — child()", () => {
   it("child merges bindings into data on records", () => {
     const records: LogRecord[] = [];
@@ -257,6 +300,23 @@ describe("createLogger — child()", () => {
     grandchild.debug("deep");
 
     expect(records[0]!.data).toStrictEqual({ requestId: "r1", userId: "u1" });
+  });
+
+  it("minLevel is inherited by children", () => {
+    const records: LogRecord[] = [];
+    const ch: LogChannel = {
+      write: (r) => {
+        records.push(r);
+      },
+    };
+    const log = createLogger("svc", { channels: [ch], minLevel: "warn" });
+    const child = log.child({ requestId: "r1" });
+
+    child.info("dropped");
+    child.error("kept");
+
+    expect(records).toHaveLength(1);
+    expect(records[0]!.message).toBe("kept");
   });
 
   it("createLogger bindings option sets initial bindings", () => {

@@ -1,5 +1,6 @@
 import { consoleChannel } from "./channels";
 import type { LogChannel, Logger, LoggerOptions, LogLevel, LogRecord } from "./types";
+import { levelAtLeast } from "./types";
 
 const PENDING_CAP = 1000;
 
@@ -7,11 +8,18 @@ const PENDING_CAP = 1000;
 export function createLogger(prefix: string, options?: LoggerOptions): Logger {
   const channels: LogChannel[] = options?.channels ?? [consoleChannel()];
   const pending: Promise<void>[] = [];
-  return makeLogger(prefix, options?.bindings ?? {}, channels, pending);
+  return makeLogger(prefix, options?.bindings ?? {}, channels, pending, options?.minLevel);
 }
 
-function makeLogger(prefix: string, bindings: Record<string, unknown>, channels: LogChannel[], pending: Promise<void>[]): Logger {
+function makeLogger(
+  prefix: string,
+  bindings: Record<string, unknown>,
+  channels: LogChannel[],
+  pending: Promise<void>[],
+  minLevel?: LogLevel,
+): Logger {
   function dispatch(level: LogLevel, message: string, data?: Record<string, unknown>): void {
+    if (minLevel !== undefined && !levelAtLeast(level, minLevel)) return;
     const hasBindings = Object.keys(bindings).length > 0;
     const merged = hasBindings || data ? { ...bindings, ...(data ?? {}) } : undefined;
     const record: LogRecord = { level, prefix, message, timestamp: new Date().toISOString(), ...(merged !== undefined ? { data: merged } : {}) };
@@ -37,7 +45,7 @@ function makeLogger(prefix: string, bindings: Record<string, unknown>, channels:
       await Promise.all(toAwait);
     },
     child(extra: Record<string, unknown>): Logger {
-      return makeLogger(prefix, { ...bindings, ...extra }, channels, pending);
+      return makeLogger(prefix, { ...bindings, ...extra }, channels, pending, minLevel);
     },
   };
 }

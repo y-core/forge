@@ -6,7 +6,7 @@
     "forge-cfgen": "./src/validation/cli/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
+  "description": "Server-rendered web utilities for Cloudflare Workers \u2014 HTMX + Tailwind",
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "lint": "biome check src/",
@@ -161,6 +161,10 @@
     "./ui/assets": {
       "types": "./src/ui/assets/mod.ts",
       "import": "./src/ui/assets/mod.ts"
+    },
+    "./ui/assets/glyphs": {
+      "types": "./src/ui/assets/glyphs.ts",
+      "import": "./src/ui/assets/glyphs.ts"
     },
     "./ui/controls": {
       "types": "./src/ui/controls/mod.ts",

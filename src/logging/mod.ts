@@ -1,7 +1,9 @@
-export { consoleChannel } from "./channels";
+export { consoleChannel, withMinLevel } from "./channels";
 export { kvLogChannel } from "./kv-channel";
 export { createLogger } from "./logger";
 export { requestLog, requestLogger } from "./request-logger";
+export type { SerializedError } from "./serialize-error";
+export { serializeError } from "./serialize-error";
 export type {
   KvLogChannelOptions,
   KvLogMetadata,
@@ -16,3 +18,4 @@ export type {
   LogRow,
   RequestLoggerOptions,
 } from "./types";
+export { LOG_LEVELS, levelAtLeast, parseLogLevel } from "./types";

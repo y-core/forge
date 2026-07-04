@@ -83,6 +83,19 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
 
       return { rows, complete: result.list_complete, ...(result.cursor ? { cursor: result.cursor } : {}) };
     },
+
+    async readEntry(key: string): Promise<LogRecord | null> {
+      // Only keys under this channel's prefix are readable — the viewer must not become
+      // an arbitrary-KV read oracle via a crafted detail key.
+      if (!key.startsWith(listPrefix)) return null;
+      const value = await kv.get(key, { type: "text" });
+      if (value === null) return null;
+      try {
+        return JSON.parse(value) as LogRecord;
+      } catch {
+        return null;
+      }
+    },
   };
 }
 

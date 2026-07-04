@@ -18,6 +18,8 @@ log.info("server started", { port: 8787 });
 - **Channel fan-out** — one logger writes to any number of channels; `console` and KV in parallel.
 - **Symmetric channels** — a channel exposes `write` and an optional `read`, so the same `kvLogChannel` that persists logs also backs the log viewer UI.
 - **Child loggers** — `child(bindings)` clones a logger with merged context fields (e.g. a per-request `requestId`) sharing the same channels and pending-flush queue.
+- **Min-level filtering** — a logger-wide `minLevel` (inherited by children) drops records before any channel sees them, and `withMinLevel(channel, min)` gates a single channel so e.g. console gets the full stream while KV keeps only `warn`+. `parseLogLevel` turns a `LOG_LEVEL` env var into a `LogLevel`.
+- **Error serialization** — `serializeError(err)` converts any thrown value into a JSON-safe `{ name, message, stack? }` for structured `data` fields; it never throws.
 - **Async-safe flushing** — pending KV writes are tracked and awaited via `flush()`; `requestLogger` flushes them through `executionCtx.waitUntil` so the response is not blocked.
 - **Request logging middleware** — one record per request with method, path, status, and duration, with the level derived from the response status code.
 - **KV persistence** — time-ordered keys, per-entry metadata for zero-cost listing, TTL retention, and a probabilistic soft-cap purge.
@@ -73,6 +75,7 @@ Creates a structured logger that dispatches records to its channels.
 | `prefix` | `string` | Label written to every record's `prefix` field. |
 | `options.channels` | `LogChannel[]` | Channels to fan records out to. Defaults to `[consoleChannel()]`. |
 | `options.bindings` | `Record<string, unknown>` | Static fields merged into every record's `data`. |
+| `options.minLevel` | `LogLevel` | Records below this level are dropped before any channel sees them. Children inherit it. |
 
 Returns a `Logger`:
 
@@ -91,11 +94,14 @@ optional `read`.
 interface LogChannel {
   write(record: LogRecord): void | Promise<void>;
   read?(query?: LogQuery): Promise<LogReadResult>;
+  readEntry?(key: string): Promise<LogRecord | null>;
 }
 ```
 
 A channel without `read` (such as `consoleChannel`) is write-only; the log viewer renders an
-empty table for it rather than erroring.
+empty table for it rather than erroring. `readEntry` returns the full stored record for one
+row key — the viewer's detail view uses it to show fields (such as a stack trace in `data`)
+that don't fit in list metadata.
 
 ### `LogRecord`
 
@@ -119,6 +125,49 @@ shaped `{ ...data, level, prefix, message, timestamp }`. Reserved fields win ove
 import { consoleChannel } from "@y-core/forge/logging";
 
 const log = createLogger("dev", { channels: [consoleChannel()] });
+```
+
+### `withMinLevel(channel, min)`
+
+Wraps a channel so only records at or above `min` are written; `read`/`readEntry` pass
+through unchanged. Use it to fan one logger out at different verbosities per channel —
+the typical production split keeps the full stream on console (`wrangler tail`) while a
+capped KV namespace retains only `warn`+:
+
+```ts
+import { consoleChannel, kvLogChannel, withMinLevel } from "@y-core/forge/logging";
+
+const channels = [consoleChannel(), withMinLevel(kvLogChannel(env.LOGS_KV), "warn")];
+```
+
+### `parseLogLevel(value, fallback)` and `levelAtLeast(level, min)`
+
+`parseLogLevel` turns an untrusted string (typically a `LOG_LEVEL` env var) into a
+`LogLevel`, case-insensitively, returning `fallback` when unset or invalid. `levelAtLeast`
+compares two levels in the `debug < info < warn < error` ordering. `LOG_LEVELS` is the
+ordered tuple of all levels.
+
+```ts
+import { parseLogLevel } from "@y-core/forge/logging";
+
+const minLevel = parseLogLevel(env.LOG_LEVEL, "info");
+```
+
+### `serializeError(err)`
+
+Converts any thrown value into a JSON-safe `SerializedError` — `{ name, message, stack? }`.
+Safe on non-`Error` values (thrown strings, numbers, `null`) and never throws, so it is
+usable directly on a `catch` binding:
+
+```ts
+import { serializeError } from "@y-core/forge/logging";
+
+try {
+  await risky();
+} catch (err) {
+  log.error("import: parse failed", { error: serializeError(err) });
+  throw err;
+}
 ```
 
 ### `kvLogChannel(kv, options?)`
@@ -182,6 +231,7 @@ app.get("/orders", (c) => {
 | `prefix` | `string` | Record prefix. Defaults to `"request"`. |
 | `channels` | `(c) => LogChannel[]` | Per-request factory returning the channels to write to. |
 | `bindings` | `(c) => Record<string, unknown>` | Per-request fields merged into every record (e.g. `requestId`). |
+| `minLevel` | `LogLevel \| ((c) => LogLevel \| undefined)` | Logger-wide floor, static or resolved per request (e.g. `(c) => parseLogLevel(c.env.LOG_LEVEL, "info")`). `undefined` means no filtering. |
 
 ## Integration Guide
 
@@ -203,6 +253,10 @@ level is derived from the response status code:
 
 This keeps alert noise low: 404s and 422s stay at `warn`. `requestLogger` never emits
 `debug`; reserve `debug` for explicit `createLogger` use and avoid it in production configs.
+
+If `next()` throws (an error escaping the app's own boundaries), `requestLogger` emits one
+`error` record with `serializeError(err)` under `data.error` (no `status` field) and
+rethrows; the flush still runs.
 
 ### No PII in logs
 
@@ -244,6 +298,12 @@ touched. On allow, it reads `?level=`, `?q=`, and `?cursor=` from the request UR
 `options.channel(c).read?(query)`, and returns `LogViewerLoaderData`. If the channel has no
 `read` method, it returns `{ rows: [], complete: true }` — an empty table, not an error.
 
+When a `?detail=<key>` parameter is present (issued by a row's message-cell toggle), the
+loader instead reads the full stored record via `channel.readEntry?.(key)` and returns the
+detail fragment `Response` directly — an expanded `<td>` with the pretty-printed record,
+including fields like `data.stack` that never fit in list metadata. A missing entry (expired
+TTL, purged, or a channel without `readEntry`) renders a not-found cell, not an error.
+
 Logs expose request paths, request ids, and error messages, so an unguarded viewer is an
 information leak: `access` is required at the type level. Forgetting a guard is a compile
 error; a deliberately public mount must say so with the greppable literal
@@ -262,6 +322,12 @@ error; a deliberately public mount must say so with the greppable literal
 Renders just the `<tbody>` HTMX partial (id `LOG_TBODY_ID`) from loader data and returns it as
 a fragment `Response`. Return this from the view when the request is an HTMX request
 (`HX-Request === "true"`); otherwise render the full page with `LogViewerContent`.
+
+#### `renderLogDetailFragment(record)`
+
+Renders the expanded detail `<td>` partial for one stored record (or the not-found cell for
+`null`). `loadLogViewer` calls this automatically for `?detail=` requests; it is exported for
+views that route detail requests themselves.
 
 ```ts
 import { loadLogViewer, renderLogFragment, LogViewerContent } from "@y-core/forge/logging/show";
@@ -294,12 +360,15 @@ All components are JSX (`FC`) and SSR-only.
 | `LogTableBody` | The `<tbody>` only — the HTMX swap target. Props: `{ rows, cursor?, complete, loadMoreAction, id? }`. |
 | `LogFilterBar` | Level/text filter `<form>` that submits via HTMX. Props: `{ level?, q?, targetId, formAction, icon }`. |
 | `LogLevelBadge` | Inline colored badge for a level. Props: `{ level }`. |
+| `LogDetailCell` | Expanded message `<td>` showing the full record as pretty-printed JSON (or a not-found note). Props: `{ record: LogRecord \| null }`. |
 | `LOG_TBODY_ID` | Stable id (`"log-tbody"`) of the table body, shared so HTMX `outerHTML` swaps target the node the partial returns. |
 
 The filter bar issues an `hx-get` to `formAction` targeting `#targetId` with `outerHTML`
 swap; the table's load-more button appends `?cursor=` to `loadMoreAction` and swaps the
 closest `<tbody>`. Use `LOG_TBODY_ID` as both `tbodyId`/`targetId` so the full-page and
-partial renders agree on the swap target.
+partial renders agree on the swap target. Each row's message cell issues an `hx-get` with
+`?detail=<row key>` and swaps itself (`closest td` / `outerHTML`) for the expanded
+`LogDetailCell` the server returns.
 
 ### Types
 

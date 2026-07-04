@@ -5,7 +5,7 @@ describe("parseSpriteGlyphs()", () => {
   it("extracts key, viewBox, and markup with default icon- prefix", () => {
     const svg = `<svg><symbol id="icon-sun" viewBox="0 0 24 24"><circle r="10"/></symbol></svg>`;
     const result = parseSpriteGlyphs(svg);
-    expect(result["sun"]).toEqual({ viewBox: "0 0 24 24", markup: "<circle r=\"10\"/>" });
+    expect(result["sun"]).toEqual({ viewBox: "0 0 24 24", markup: '<circle r="10"/>' });
   });
 
   it("extracts multiple symbols", () => {
