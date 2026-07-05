@@ -51,9 +51,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   const outputPath = opts?.assetsPath ?? ".forge/assets.ts";
   await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath);
 
-  if (shouldHash) {
-    emitHeaders(publicDir);
-  }
+  emitHeaders(publicDir, shouldHash);
 }
 
 function toConstName(key: string): string {
@@ -122,8 +120,9 @@ export const assets = createManifest(DATA, ${JSON.stringify(publicPrefix)});
   writeFileSync(outputPath, content);
 }
 
-function emitHeaders(publicDir: string): void {
+function emitHeaders(publicDir: string, hashed: boolean): void {
   const headersPath = join(dirname(publicDir), "_headers");
-  const content = `/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n`;
+  const cacheControl = hashed ? "public, max-age=31536000, immutable" : "no-cache";
+  const content = `/assets/*\n  Cache-Control: ${cacheControl}\n`;
   writeFileSync(headersPath, content);
 }
