@@ -176,7 +176,7 @@ export function sanitizeSVG(content: string): string {
 const PROPAGATABLE_ATTRS = ["fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"] as const;
 const SHAPE_ELEMENTS = ["path", "rect", "circle", "line", "ellipse", "polygon", "polyline"];
 
-function extractRootAttrs(svgTag: string): Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>> {
+export function extractRootAttrs(svgTag: string): Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>> {
   const attrs: Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>> = {};
   for (const attr of PROPAGATABLE_ATTRS) {
     const match = svgTag.match(new RegExp(`${attr}="([^"]+)"`, "i"));
@@ -185,7 +185,7 @@ function extractRootAttrs(svgTag: string): Partial<Record<(typeof PROPAGATABLE_A
   return attrs;
 }
 
-function propagateRootAttrs(inner: string, rootAttrs: Partial<Record<string, string>>): string {
+export function propagateRootAttrs(inner: string, rootAttrs: Partial<Record<string, string>>): string {
   const entries = Object.entries(rootAttrs);
   if (entries.length === 0) return inner;
 

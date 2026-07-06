@@ -20,6 +20,7 @@ describe("buildAll() — emitHeaders", () => {
           sprites: {},
           fonts: { downloads: [] },
           icons: null,
+          cursors: null,
         },
         { minify: false },
       );
@@ -49,6 +50,7 @@ describe("buildAll() — emitHeaders", () => {
           sprites: {},
           fonts: { downloads: [] },
           icons: null,
+          cursors: null,
         },
         { minify: true },
       );

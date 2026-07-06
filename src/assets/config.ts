@@ -52,5 +52,6 @@ export async function loadConfig(configPath?: string, env: Record<string, string
     sprites: parsed.sprites ?? {},
     fonts: { downloads: parsed.fonts?.downloads ?? [] },
     icons: parsed.icons ?? null,
+    cursors: parsed.cursors ?? null,
   };
 }

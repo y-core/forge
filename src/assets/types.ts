@@ -48,6 +48,15 @@ const SpriteSourceSchema = v.object({ path: v.string(), files: v.array(SpriteFil
 
 const SpriteGroupSchema = v.object({ target: v.string(), sources: v.array(SpriteSourceSchema), prefix: v.optional(v.string()) });
 
+const CursorsConfigSchema = v.object({
+  target: v.string(),
+  template: v.object({ path: v.string(), file: v.string() }),
+  haloToken: v.optional(v.string()),
+  css: v.optional(v.string()),
+  themes: v.record(v.string(), v.string()),
+  sources: v.array(SpriteSourceSchema),
+});
+
 const FontDownloadSchema = v.object({ url: v.string(), to: v.string() });
 
 const PathsConfigSchema = v.object({ sourceDir: v.optional(v.string()), publicDir: v.optional(v.string()), publicPrefix: v.optional(v.string()) });
@@ -60,6 +69,7 @@ export const AssetsConfigSchema = v.object({
   sprites: v.optional(v.record(v.string(), SpriteGroupSchema)),
   fonts: v.optional(v.object({ downloads: v.optional(v.array(FontDownloadSchema)) })),
   icons: v.optional(IconsConfigSchema),
+  cursors: v.optional(CursorsConfigSchema),
 });
 
 export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
@@ -74,6 +84,7 @@ export type FontDownload = v.InferOutput<typeof FontDownloadSchema>;
 export type PathsConfig = v.InferOutput<typeof PathsConfigSchema>;
 export type IconOutput = v.InferOutput<typeof IconOutputSchema>;
 export type IconsConfig = v.InferOutput<typeof IconsConfigSchema>;
+export type CursorsConfig = v.InferOutput<typeof CursorsConfigSchema>;
 export type AssetsConfig = v.InferInput<typeof AssetsConfigSchema>;
 
 export interface ResolvedPaths {
@@ -90,4 +101,5 @@ export interface ResolvedConfig {
   sprites: Sprites;
   fonts: { downloads: FontDownload[] };
   icons: IconsConfig | null;
+  cursors: CursorsConfig | null;
 }

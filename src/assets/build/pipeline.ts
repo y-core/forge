@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { ResolvedConfig } from "../types";
 import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
+import { buildCursors } from "./cursors";
 import { buildFonts } from "./fonts";
 import { buildIcons } from "./icons";
 import { buildJS } from "./js";
@@ -22,6 +23,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
 
   const manifest: Record<string, string> = {};
   let spriteGroups: Record<string, SpriteGroupResult> = {};
+  let cursorBakes: Record<string, Record<string, string>> | undefined;
 
   const minifyOpts = opts?.minify !== undefined ? { minify: opts.minify } : {};
 
@@ -48,8 +50,17 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
     await buildIcons(config.icons);
   }
 
+  if (config.cursors) {
+    const cssKey = config.cursors.css ?? config.css[0]?.output;
+    const resolvedCss = cssKey !== undefined ? (manifest[cssKey] ?? cssKey) : undefined;
+    if (resolvedCss) {
+      const cssText = readFileSync(join(publicDir, resolvedCss), "utf-8");
+      cursorBakes = buildCursors(config.cursors, cssText);
+    }
+  }
+
   const outputPath = opts?.assetsPath ?? ".forge/assets.ts";
-  await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath);
+  await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath, cursorBakes);
 
   emitHeaders(publicDir, shouldHash);
 }
@@ -70,6 +81,7 @@ async function generateAssetsModule(
   spriteGroups: Record<string, SpriteGroupResult>,
   publicPrefix: string,
   outputPath: string,
+  cursorBakes?: Record<string, Record<string, string>>,
 ): Promise<void> {
   const dataEntries = Object.entries(manifest)
     .map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`)
@@ -113,6 +125,18 @@ ${dataEntries}
 
 export const assets = createManifest(DATA, ${JSON.stringify(publicPrefix)});
 `;
+  }
+
+  if (cursorBakes && Object.keys(cursorBakes).length > 0) {
+    const cursorEntries = Object.entries(cursorBakes)
+      .map(([cursor, themes]) => {
+        const themeEntries = Object.entries(themes)
+          .map(([theme, value]) => `    ${JSON.stringify(theme)}: ${JSON.stringify(value)},`)
+          .join("\n");
+        return `  ${JSON.stringify(cursor)}: {\n${themeEntries}\n  },`;
+      })
+      .join("\n");
+    content += `\nexport const CURSOR_BAKES: Record<string, Record<string, string>> = {\n${cursorEntries}\n};\n`;
   }
 
   if (existsSync(outputPath) && readFileSync(outputPath, "utf-8") === content) return;
