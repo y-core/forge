@@ -171,8 +171,6 @@ When the config has sprite groups, the generated module also exports a typed ico
 | Field | Type | Notes |
 |---|---|---|
 | `target` | `string` | Output CSS file path (relative to `publicDir`) |
-| `template` | `{ path: string; file: string }` | Global SVG template (used when a source has no per-source override) |
-| `haloToken` | `string?` | CSS custom property for the outer halo colour; default `--background` |
 | `css` | `string?` | Path to the compiled CSS file whose custom-property declarations are used for token resolution |
 | `themes` | `Record<string, string>` | Map of theme key → CSS selector, e.g. `{ light: ":root", dark: ".dark" }` |
 | `sources` | `CursorSource[]` | Cursor source directories (see below) |
@@ -184,7 +182,7 @@ When the config has sprite groups, the generated module also exports a typed ico
 |---|---|---|
 | `path` | `string` | Directory containing cursor SVG files |
 | `files` | `(string \| { key: string; file: string })[]` | File list — bare strings use the stem as the cursor key |
-| `template` | `{ path: string; file: string }?` | Per-source template override; falls back to `CursorsConfig.template` when absent |
+| `template` | `{ path: string; file: string }` | SVG template wrapper applied to every cursor in this source |
 
 ### `@y-core/forge/assets/build` — pipeline functions
 
@@ -314,16 +312,19 @@ Each `cssValue` is a complete CSS `cursor` property value:
 url("data:image/svg+xml,<encoded-svg>") <hx> <hy>, auto
 ```
 
-**Template SVGs** act as the outer wrapper. They receive four structural placeholders injected at bake time:
+**Template SVGs** act as the outer wrapper. They receive three structural placeholders injected at bake time:
 
 | Placeholder | Replaced with |
 |---|---|
 | `{{viewBox}}` | The cursor SVG's `viewBox` attribute value |
 | `{{markup}}` | The cursor SVG's sanitized inner geometry |
-| `{{halo}}` | Resolved hex for `haloToken` in the current theme |
 | `{{signal}}` | Resolved hex for the cursor's `data-cursor-token` in the current theme |
 
-A single global `template` is required. Individual `sources` may specify their own `template` to override it — useful when filled arrow cursors and thin snap-indicator cursors want different wrappers.
+`{{signal}}` is the only colour placeholder — it exists because the token *name* varies per cursor (each cursor SVG carries its own `data-cursor-token`). Every fixed colour in a template resolves through `cssvar(--name)` instead, including theme tokens straight from the compiled CSS (e.g. a halo layer writes `fill="cssvar(--background)"`).
+
+Each source declares its own `template`, so a collection of filled arrow cursors and a collection of thin snap-indicator cursors can use different wrappers.
+
+**XML comments are stripped from bakes.** Comment freely in templates and cursor SVGs — comments never reach the emitted data URI. Stripping happens before `cssvar()` resolution, so a commented-out `cssvar(--x)` reference neither resolves nor throws. (This also removes a footgun: a `--` inside a comment — say, a token name — is ill-formed XML, and browsers silently drop the whole cursor image.)
 
 **`cssvar(--name)` resolver** — anywhere in a template (or in cursor markup that gets injected via `{{markup}}`), write `cssvar(--my-token)` to resolve a CSS custom property to its baked hex at build time:
 
@@ -333,7 +334,7 @@ A single global `template` is required. Individual `sources` may specify their o
 
 `cssvar()` runs after `{{markup}}` substitution, so it resolves tokens authored inside cursor SVGs too. The token must be resolvable from the theme's token map (CSS declarations + `vars` overlay), otherwise the build **throws**. An unparseable-but-present colour value falls back to `#000000`.
 
-**Alpha** flows through the bake: when a resolved colour carries alpha — `rgb(0 0 0 / 0.28)`, `rgba(…, 0.28)`, `oklch(L C H / a)`, or `#rrggbbaa` — `cssvar()`, `{{halo}}`, and `{{signal}}` all bake an 8-digit `#rrggbbaa` hex, so a single token can carry both colour and opacity (no separate `fill-opacity` needed). `toHex` emits the shortest canonical form: opaque colours bake 6-digit `#rrggbb`, since a trailing `ff` alpha byte is redundant and only pads the data URI.
+**Alpha** flows through the bake: when a resolved colour carries alpha — `rgb(0 0 0 / 0.28)`, `rgba(…, 0.28)`, `oklch(L C H / a)`, or `#rrggbbaa` — `cssvar()` and `{{signal}}` bake an 8-digit `#rrggbbaa` hex, so a single token can carry both colour and opacity (no separate `fill-opacity` needed). `toHex` emits the shortest canonical form: opaque colours bake 6-digit `#rrggbb`, since a trailing `ff` alpha byte is redundant and only pads the data URI.
 
 **`vars`** lets you define build-time colour variables in config rather than CSS. A flat string applies to all themes; a nested record maps theme keys:
 

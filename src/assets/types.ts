@@ -50,12 +50,10 @@ const SpriteGroupSchema = v.object({ target: v.string(), sources: v.array(Sprite
 
 const TemplateRefSchema = v.object({ path: v.string(), file: v.string() });
 
-const CursorSourceSchema = v.object({ path: v.string(), files: v.array(SpriteFileEntrySchema), template: v.optional(TemplateRefSchema) });
+const CursorSourceSchema = v.object({ path: v.string(), files: v.array(SpriteFileEntrySchema), template: TemplateRefSchema });
 
 const CursorsConfigSchema = v.object({
   target: v.string(),
-  template: TemplateRefSchema,
-  haloToken: v.optional(v.string()),
   css: v.optional(v.string()),
   themes: v.record(v.string(), v.string()),
   sources: v.array(CursorSourceSchema),

@@ -77,8 +77,6 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
     }
   }
 
-  const haloToken = config.haloToken ?? "--background";
-
   const templateCache = new Map<string, string>();
   const loadTemplate = (t: { path: string; file: string }): string => {
     const p = join(t.path, t.file);
@@ -93,7 +91,7 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
   const result: Record<string, Record<string, string>> = {};
 
   for (const source of config.sources) {
-    const templateContent = loadTemplate(source.template ?? config.template);
+    const templateContent = loadTemplate(source.template);
 
     for (const rawEntry of source.files) {
       const entry = typeof rawEntry === "string" ? { key: rawEntry.replace(/\.svg$/, ""), file: rawEntry } : rawEntry;
@@ -104,10 +102,6 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
       const perTheme: Record<string, string> = {};
 
       for (const [theme, tokens] of Object.entries(themeTokens)) {
-        const haloRaw = resolveToken(haloToken, tokens);
-        const haloRgb = haloRaw ? parseColor(haloRaw) : null;
-        const halo = haloRgb ? toHex(haloRgb) : "#000000";
-
         const signalToken = meta.token;
         let signal = "#000000";
         if (signalToken !== undefined) {
@@ -119,8 +113,12 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
           signal = signalRgb ? toHex(signalRgb) : "#000000";
         }
 
-        const svg = substitute(templateContent, { viewBox: meta.viewBox, markup: meta.markup, halo, signal }, meta);
-        const resolved = resolveCssVars(svg, tokens, entry.key);
+        const svg = substitute(templateContent, { viewBox: meta.viewBox, markup: meta.markup, signal }, meta);
+        // Comments are authoring aids, not payload: they pad every data URI, a commented-out
+        // cssvar() would still resolve (and throw on a missing token), and any `--` inside a
+        // comment makes the whole SVG ill-formed XML — browsers then silently drop the cursor.
+        const uncommented = svg.replace(/<!--[\s\S]*?-->/g, "");
+        const resolved = resolveCssVars(uncommented, tokens, entry.key);
         const encoded = encodeURIComponent(resolved);
 
         const hotspot = meta.hotspot ?? "0 0";

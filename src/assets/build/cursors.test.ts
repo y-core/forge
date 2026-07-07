@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { CursorsConfig } from "../types";
 import { buildCursors } from "./cursors";
 
-const TEMPLATE = `<svg width="32" height="32" viewBox="{{viewBox}}"><g stroke="{{halo}}" fill="none">{{markup}}</g><g stroke="{{signal}}" fill="none">{{markup}}</g></svg>`;
+const TEMPLATE = `<svg width="32" height="32" viewBox="{{viewBox}}"><g stroke="cssvar(--background)" fill="none">{{markup}}</g><g stroke="{{signal}}" fill="none">{{markup}}</g></svg>`;
 
 const CURSOR_SVG = `<svg viewBox="0 0 24 24" data-cursor-token="--foreground" data-cursor-hotspot="6 4"><path d="M1 0"/></svg>`;
 
@@ -27,9 +27,8 @@ function setup(): { dir: string; config: CursorsConfig } {
   writeFileSync(join(dir, "select.svg"), CURSOR_SVG);
   const config: CursorsConfig = {
     target: "css/cursors.css",
-    template: { path: dir, file: "template.svg" },
     themes: { light: ":root", dark: ".dark" },
-    sources: [{ path: dir, files: [{ key: "select", file: "select.svg" }] }],
+    sources: [{ path: dir, files: [{ key: "select", file: "select.svg" }], template: { path: dir, file: "template.svg" } }],
   };
   return { dir, config };
 }
@@ -52,7 +51,7 @@ describe("buildCursors()", () => {
       expect(light).toContain(`d="M1 0"`);
       expect(dark).toContain(`d="M1 0"`);
 
-      // Different themes yield different resolved halo/signal colours.
+      // Different themes yield different resolved background/signal colours.
       expect(light).not.toBe(dark);
 
       expect(select.light!.startsWith(`url("data:image/svg+xml,`)).toBe(true);
@@ -72,9 +71,8 @@ describe("buildCursors()", () => {
       writeFileSync(join(dir, "select.svg"), `<svg viewBox="0 0 24 24" data-cursor-token="--nope"><path d="M1 0"/></svg>`);
       const config: CursorsConfig = {
         target: "css/cursors.css",
-        template: { path: dir, file: "template.svg" },
         themes: { light: ":root" },
-        sources: [{ path: dir, files: [{ key: "select", file: "select.svg" }] }],
+        sources: [{ path: dir, files: [{ key: "select", file: "select.svg" }], template: { path: dir, file: "template.svg" } }],
       };
       expect(() => buildCursors(config, CSS)).toThrow(/missing CSS token/);
     } finally {
@@ -82,7 +80,7 @@ describe("buildCursors()", () => {
     }
   });
 
-  it("per-source template override uses that source's template wrapper", () => {
+  it("each source bakes through its own template wrapper", () => {
     const dir = join(tmpdir(), `forge-cursors-per-src-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(dir, { recursive: true });
     try {
@@ -94,10 +92,9 @@ describe("buildCursors()", () => {
 
       const config: CursorsConfig = {
         target: "css/cursors.css",
-        template: { path: dir, file: "template-a.svg" },
         themes: { light: ":root" },
         sources: [
-          { path: dir, files: [{ key: "cursor-a", file: "cursor-a.svg" }] },
+          { path: dir, files: [{ key: "cursor-a", file: "cursor-a.svg" }], template: { path: dir, file: "template-a.svg" } },
           { path: dir, files: [{ key: "cursor-b", file: "cursor-b.svg" }], template: { path: dir, file: "template-b.svg" } },
         ],
       };
@@ -125,9 +122,8 @@ describe("buildCursors()", () => {
 
       const config: CursorsConfig = {
         target: "css/cursors.css",
-        template: { path: dir, file: "template.svg" },
         themes: { light: ":root", dark: ".dark" },
-        sources: [{ path: dir, files: [{ key: "cursor", file: "cursor.svg" }] }],
+        sources: [{ path: dir, files: [{ key: "cursor", file: "cursor.svg" }], template: { path: dir, file: "template.svg" } }],
         vars: { "--cursor-shadow": "#ff0000", "--cursor-accent": { light: "#0000ff", dark: "#00ff00" } },
       };
 
@@ -163,9 +159,8 @@ describe("buildCursors()", () => {
 `;
       const config: CursorsConfig = {
         target: "css/cursors.css",
-        template: { path: dir, file: "template.svg" },
         themes: { light: ":root", dark: ".dark" },
-        sources: [{ path: dir, files: [{ key: "cursor", file: "cursor.svg" }] }],
+        sources: [{ path: dir, files: [{ key: "cursor", file: "cursor.svg" }], template: { path: dir, file: "template.svg" } }],
         vars: { "--cursor-shadow": { light: "rgb(0 0 0 / 0.28)", dark: "rgb(0 0 0 / 0.45)" }, "--cursor-outline": "rgb(255 255 255 / 0.9)" },
       };
 
@@ -201,12 +196,42 @@ describe("buildCursors()", () => {
 
       const config: CursorsConfig = {
         target: "css/cursors.css",
-        template: { path: dir, file: "template.svg" },
         themes: { light: ":root" },
-        sources: [{ path: dir, files: [{ key: "cursor", file: "cursor.svg" }] }],
+        sources: [{ path: dir, files: [{ key: "cursor", file: "cursor.svg" }], template: { path: dir, file: "template.svg" } }],
       };
 
       expect(() => buildCursors(config, CSS)).toThrow(/missing token.*via cssvar/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("strips XML comments from bakes, including commented-out cssvar() refs and `--` hazards", () => {
+    const dir = join(tmpdir(), `forge-cursors-comments-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      // A `--` inside a comment is ill-formed XML, and a commented-out cssvar() must not
+      // resolve (or throw for a missing token) — both must vanish from the bake.
+      const template = `<svg viewBox="{{viewBox}}">
+  <!-- shadow layer uses the --cursor-shadow token -->
+  <!-- <rect fill="cssvar(--not-declared-anywhere)"/> -->
+  <rect fill="cssvar(--cursor-shadow)"/>{{markup}}</svg>`;
+      writeFileSync(join(dir, "template.svg"), template);
+      writeFileSync(join(dir, "cursor.svg"), `<svg viewBox="0 0 24 24"><!-- old glyph --><path d="M1 0"/></svg>`);
+
+      const config: CursorsConfig = {
+        target: "css/cursors.css",
+        themes: { light: ":root" },
+        sources: [{ path: dir, files: [{ key: "cursor", file: "cursor.svg" }], template: { path: dir, file: "template.svg" } }],
+        vars: { "--cursor-shadow": "#ff0000" },
+      };
+
+      const result = buildCursors(config, CSS);
+      const svg = decodeURIComponent(result.cursor!.light!);
+      expect(svg).not.toContain("<!--");
+      expect(svg).not.toContain("-->");
+      expect(svg).toContain('fill="#ff0000"');
+      expect(svg).toContain('d="M1 0"');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

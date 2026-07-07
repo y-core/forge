@@ -47,31 +47,36 @@ describe("AssetsConfigSchema", () => {
     expect(parsed.js?.bundles?.[0]?.define?.NAME).toBe("app");
   });
 
-  it("preserves cursors per-source template override through v.parse", () => {
+  it("preserves per-source cursor templates through v.parse", () => {
     const raw = {
       cursors: {
         target: "css/cursors.css",
-        template: { path: "src/svg", file: "template.svg" },
         themes: { light: ":root", dark: ".dark" },
         sources: [
-          { path: "src/svg/cursors", files: ["select.svg"] },
+          { path: "src/svg/cursors", files: ["select.svg"], template: { path: "src/svg", file: "template.svg" } },
           { path: "src/svg/snaps", files: ["snap.svg"], template: { path: "src/svg", file: "snap-template.svg" } },
         ],
       },
     };
     const parsed = v.parse(AssetsConfigSchema, raw);
     const sources = parsed.cursors?.sources;
-    expect(sources?.[0]?.template).toBeUndefined();
+    expect(sources?.[0]?.template).toEqual({ path: "src/svg", file: "template.svg" });
     expect(sources?.[1]?.template).toEqual({ path: "src/svg", file: "snap-template.svg" });
+  });
+
+  it("rejects a cursor source without a template", () => {
+    const raw = {
+      cursors: { target: "css/cursors.css", themes: { light: ":root" }, sources: [{ path: "src/svg/cursors", files: ["select.svg"] }] },
+    };
+    expect(() => v.parse(AssetsConfigSchema, raw)).toThrow();
   });
 
   it("preserves cursors vars (flat and per-theme) through v.parse", () => {
     const raw = {
       cursors: {
         target: "css/cursors.css",
-        template: { path: "src/svg", file: "template.svg" },
         themes: { light: ":root", dark: ".dark" },
-        sources: [{ path: "src/svg/cursors", files: ["select.svg"] }],
+        sources: [{ path: "src/svg/cursors", files: ["select.svg"], template: { path: "src/svg", file: "template.svg" } }],
         vars: { "--cursor-shadow": "#000000", "--cursor-accent": { light: "#0000ff", dark: "#00ff00" } },
       },
     };
