@@ -46,4 +46,37 @@ describe("AssetsConfigSchema", () => {
     expect(parsed.js?.bundles?.[0]?.define?.RETRIES).toBe(3);
     expect(parsed.js?.bundles?.[0]?.define?.NAME).toBe("app");
   });
+
+  it("preserves cursors per-source template override through v.parse", () => {
+    const raw = {
+      cursors: {
+        target: "css/cursors.css",
+        template: { path: "src/svg", file: "template.svg" },
+        themes: { light: ":root", dark: ".dark" },
+        sources: [
+          { path: "src/svg/cursors", files: ["select.svg"] },
+          { path: "src/svg/snaps", files: ["snap.svg"], template: { path: "src/svg", file: "snap-template.svg" } },
+        ],
+      },
+    };
+    const parsed = v.parse(AssetsConfigSchema, raw);
+    const sources = parsed.cursors?.sources;
+    expect(sources?.[0]?.template).toBeUndefined();
+    expect(sources?.[1]?.template).toEqual({ path: "src/svg", file: "snap-template.svg" });
+  });
+
+  it("preserves cursors vars (flat and per-theme) through v.parse", () => {
+    const raw = {
+      cursors: {
+        target: "css/cursors.css",
+        template: { path: "src/svg", file: "template.svg" },
+        themes: { light: ":root", dark: ".dark" },
+        sources: [{ path: "src/svg/cursors", files: ["select.svg"] }],
+        vars: { "--cursor-shadow": "#000000", "--cursor-accent": { light: "#0000ff", dark: "#00ff00" } },
+      },
+    };
+    const parsed = v.parse(AssetsConfigSchema, raw);
+    expect(parsed.cursors?.vars?.["--cursor-shadow"]).toBe("#000000");
+    expect(parsed.cursors?.vars?.["--cursor-accent"]).toEqual({ light: "#0000ff", dark: "#00ff00" });
+  });
 });

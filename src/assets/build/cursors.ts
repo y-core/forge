@@ -47,19 +47,54 @@ function substitute(template: string, replacements: Record<string, string>, meta
   });
 }
 
+function resolveCssVars(svg: string, tokens: Map<string, string>, key: string): string {
+  return svg.replace(/cssvar\(\s*(--[a-zA-Z0-9-]+)\s*\)/g, (_w, name: string) => {
+    const raw = resolveToken(name, tokens);
+    if (raw === null) throw new Error(`[forge-assets] cursor "${key}" references missing token "${name}" via cssvar()`);
+    const rgb = parseColor(raw);
+    return rgb ? toHex(rgb) : "#000000";
+  });
+}
+
 /**
  * Build all cursor bakes: for each cursor × theme, substitute the template SVG with the
  * cursor's geometry and theme-resolved colours, then emit a CSS `cursor` value with hotspot.
  * Returns `{ [cursorName]: { [themeKey]: 'url("data:image/svg+xml,...") hx hy, auto' } }`. @public
  */
 export function buildCursors(config: CursorsConfig, cssText: string): Record<string, Record<string, string>> {
-  const templateContent = readFileSync(join(config.template.path, config.template.file), "utf-8");
   const themeTokens = readThemeTokens(cssText, config.themes);
+
+  for (const [varName, varValue] of Object.entries(config.vars ?? {})) {
+    if (typeof varValue === "string") {
+      for (const map of Object.values(themeTokens)) {
+        map.set(varName, varValue);
+      }
+    } else {
+      for (const [theme, map] of Object.entries(themeTokens)) {
+        const value = varValue[theme];
+        if (value !== undefined) map.set(varName, value);
+      }
+    }
+  }
+
   const haloToken = config.haloToken ?? "--background";
+
+  const templateCache = new Map<string, string>();
+  const loadTemplate = (t: { path: string; file: string }): string => {
+    const p = join(t.path, t.file);
+    let c = templateCache.get(p);
+    if (c === undefined) {
+      c = readFileSync(p, "utf-8");
+      templateCache.set(p, c);
+    }
+    return c;
+  };
 
   const result: Record<string, Record<string, string>> = {};
 
   for (const source of config.sources) {
+    const templateContent = loadTemplate(source.template ?? config.template);
+
     for (const rawEntry of source.files) {
       const entry = typeof rawEntry === "string" ? { key: rawEntry.replace(/\.svg$/, ""), file: rawEntry } : rawEntry;
       const cursorContent = readFileSync(join(source.path, entry.file), "utf-8");
@@ -85,7 +120,8 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
         }
 
         const svg = substitute(templateContent, { viewBox: meta.viewBox, markup: meta.markup, halo, signal }, meta);
-        const encoded = encodeURIComponent(svg);
+        const resolved = resolveCssVars(svg, tokens, entry.key);
+        const encoded = encodeURIComponent(resolved);
 
         const hotspot = meta.hotspot ?? "0 0";
         const [hx = "0", hy = "0"] = hotspot.trim().split(/\s+/);

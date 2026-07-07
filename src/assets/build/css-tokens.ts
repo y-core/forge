@@ -19,7 +19,7 @@ function extractSelectorBlocks(cssText: string, selector: string): string[] {
     const between = cssText.slice(idx + needle.length, braceStart).trim();
     const prevChar = idx > 0 ? (cssText[idx - 1] ?? "") : "";
     const boundaryBefore = prevChar === "" || /[\s,}{]/.test(prevChar);
-    if (between.length > 0 && !between.startsWith(",") && !/^[.#:\[]/.test(between)) {
+    if (between.length > 0 && !between.startsWith(",") && !/^[.#:[]/.test(between)) {
       searchFrom = braceStart + 1;
       continue;
     }

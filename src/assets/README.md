@@ -166,6 +166,26 @@ When the config has sprite groups, the generated module also exports a typed ico
 `FontDownload`: `{ url: string; to: string }`.
 `IconOutput` is a discriminated union on `kind`: `"svg"`, `"png"` (`size`, optional `manifest`), `"ico"` (`sizes`), `"manifest"`.
 
+`CursorsConfig`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `target` | `string` | Output CSS file path (relative to `publicDir`) |
+| `template` | `{ path: string; file: string }` | Global SVG template (used when a source has no per-source override) |
+| `haloToken` | `string?` | CSS custom property for the outer halo colour; default `--background` |
+| `css` | `string?` | Path to the compiled CSS file whose custom-property declarations are used for token resolution |
+| `themes` | `Record<string, string>` | Map of theme key → CSS selector, e.g. `{ light: ":root", dark: ".dark" }` |
+| `sources` | `CursorSource[]` | Cursor source directories (see below) |
+| `vars` | `Record<string, string \| Record<string, string>>?` | Build-time color variables; a flat string applies to all themes, a nested record maps theme keys to values |
+
+`CursorSource`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `path` | `string` | Directory containing cursor SVG files |
+| `files` | `(string \| { key: string; file: string })[]` | File list — bare strings use the stem as the cursor key |
+| `template` | `{ path: string; file: string }?` | Per-source template override; falls back to `CursorsConfig.template` when absent |
+
 ### `@y-core/forge/assets/build` — pipeline functions
 
 | Export | Signature | Purpose |
@@ -174,6 +194,7 @@ When the config has sprite groups, the generated module also exports a typed ico
 | `buildJS` | `(bundles: ResolvedJsBundle[], opts: { outDir; minify?; hash? }) => Promise<Record<string, string>>` | esbuild bundling; returns logical→output mapping |
 | `buildCSS` | `(cssBuild: CssBuild, opts: { outDir; minify?; hash? }) => Record<string, string>` | Tailwind build for one entry |
 | `buildSprites` | `(sprites: Sprites, publicDir: string, opts?: { hash? }) => Promise<SpriteBuildResult>` | Assembles all sprite groups |
+| `buildCursors` | `(config: CursorsConfig, cssText: string) => Record<string, Record<string, string>>` | Bakes cursor data-URIs per cursor × theme |
 | `buildIcons` | `(config: IconsConfig) => Promise<void>` | Rasterises favicon/PWA icon outputs |
 | `buildFonts` | `(fonts: { downloads: FontDownload[] }, publicDir: string) => Promise<void>` | Downloads remote fonts |
 | `copyAssets` | `(copies: CopyEntry[], publicDir: string) => void` | Copies static files |
@@ -278,6 +299,61 @@ import { assets } from "@assets";
 ---
 
 ## Advanced
+
+### Cursor authoring
+
+`buildCursors` reads one or more source directories of cursor SVG files, bakes each cursor for every configured theme, and returns a `CURSOR_BAKES` object:
+
+```
+Record<cursorKey, Record<themeKey, cssValue>>
+```
+
+Each `cssValue` is a complete CSS `cursor` property value:
+
+```
+url("data:image/svg+xml,<encoded-svg>") <hx> <hy>, auto
+```
+
+**Template SVGs** act as the outer wrapper. They receive four structural placeholders injected at bake time:
+
+| Placeholder | Replaced with |
+|---|---|
+| `{{viewBox}}` | The cursor SVG's `viewBox` attribute value |
+| `{{markup}}` | The cursor SVG's sanitized inner geometry |
+| `{{halo}}` | Resolved hex for `haloToken` in the current theme |
+| `{{signal}}` | Resolved hex for the cursor's `data-cursor-token` in the current theme |
+
+A single global `template` is required. Individual `sources` may specify their own `template` to override it — useful when filled arrow cursors and thin snap-indicator cursors want different wrappers.
+
+**`cssvar(--name)` resolver** — anywhere in a template (or in cursor markup that gets injected via `{{markup}}`), write `cssvar(--my-token)` to resolve a CSS custom property to its baked hex at build time:
+
+```svg
+<rect fill="cssvar(--cursor-shadow)" />
+```
+
+`cssvar()` runs after `{{markup}}` substitution, so it resolves tokens authored inside cursor SVGs too. The token must be resolvable from the theme's token map (CSS declarations + `vars` overlay), otherwise the build **throws**. An unparseable-but-present colour value falls back to `#000000`.
+
+**`vars`** lets you define build-time colour variables in config rather than CSS. A flat string applies to all themes; a nested record maps theme keys:
+
+```ts
+cursors: {
+  vars: {
+    "--cursor-shadow": "#000000",                           // same in every theme
+    "--cursor-outline": { light: "#ffffff", dark: "#000000" }, // differs per theme
+  },
+}
+```
+
+`vars` entries can reference existing CSS tokens via `var(--x)` — the resolver follows `var()` chains just like CSS. Config values win over CSS-declared values of the same name.
+
+**`data-cursor-*` conventions** on the cursor SVG root `<svg>`:
+
+| Attribute | Role |
+|---|---|
+| `data-cursor-token` | CSS custom property name for the signal colour (the `{{signal}}` slot) |
+| `data-cursor-hotspot` | `"<x> <y>"` hotspot coordinates in the CSS `cursor` value |
+
+Both are optional; omitting `data-cursor-token` leaves `{{signal}}` as `#000000`, and omitting `data-cursor-hotspot` defaults to `0 0`.
 
 ### Sprite normalisation pipeline
 

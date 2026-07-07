@@ -3,6 +3,7 @@ export type {
   AssetsConfig,
   CopyEntry,
   CssBuild,
+  CursorSource,
   CursorsConfig,
   DefineValue,
   FontDownload,

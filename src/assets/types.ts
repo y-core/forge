@@ -48,13 +48,18 @@ const SpriteSourceSchema = v.object({ path: v.string(), files: v.array(SpriteFil
 
 const SpriteGroupSchema = v.object({ target: v.string(), sources: v.array(SpriteSourceSchema), prefix: v.optional(v.string()) });
 
+const TemplateRefSchema = v.object({ path: v.string(), file: v.string() });
+
+const CursorSourceSchema = v.object({ path: v.string(), files: v.array(SpriteFileEntrySchema), template: v.optional(TemplateRefSchema) });
+
 const CursorsConfigSchema = v.object({
   target: v.string(),
-  template: v.object({ path: v.string(), file: v.string() }),
+  template: TemplateRefSchema,
   haloToken: v.optional(v.string()),
   css: v.optional(v.string()),
   themes: v.record(v.string(), v.string()),
-  sources: v.array(SpriteSourceSchema),
+  sources: v.array(CursorSourceSchema),
+  vars: v.optional(v.record(v.string(), v.union([v.string(), v.record(v.string(), v.string())]))),
 });
 
 const FontDownloadSchema = v.object({ url: v.string(), to: v.string() });
@@ -84,6 +89,7 @@ export type FontDownload = v.InferOutput<typeof FontDownloadSchema>;
 export type PathsConfig = v.InferOutput<typeof PathsConfigSchema>;
 export type IconOutput = v.InferOutput<typeof IconOutputSchema>;
 export type IconsConfig = v.InferOutput<typeof IconsConfigSchema>;
+export type CursorSource = v.InferOutput<typeof CursorSourceSchema>;
 export type CursorsConfig = v.InferOutput<typeof CursorsConfigSchema>;
 export type AssetsConfig = v.InferInput<typeof AssetsConfigSchema>;
 
