@@ -63,6 +63,49 @@ describe("parseColor()", () => {
     expect(parseColor("hsl(120 50% 50%)")).toBeNull();
   });
 
+  it("returns alpha 1 for opaque literals in every format", () => {
+    expect(parseColor("#059669")![3]).toBe(1);
+    expect(parseColor("rgb(5, 150, 105)")![3]).toBe(1);
+    expect(parseColor("oklch(0.596 0.145 163.225)")![3]).toBe(1);
+  });
+
+  it("parses #rrggbbaa hex alpha", () => {
+    const rgba = parseColor("#00000047");
+    expect(rgba).not.toBeNull();
+    expect(rgba![0]).toBe(0);
+    expect(rgba![1]).toBe(0);
+    expect(rgba![2]).toBe(0);
+    expect(rgba![3]).toBeCloseTo(0x47 / 255, 6);
+  });
+
+  it("parses slash, rgba(), and percentage alpha forms to the same value", () => {
+    expect(parseColor("rgb(0 0 0 / 0.28)")![3]).toBeCloseTo(0.28, 6);
+    expect(parseColor("rgba(0, 0, 0, 0.28)")![3]).toBeCloseTo(0.28, 6);
+    expect(parseColor("rgb(0 0 0 / 28%)")![3]).toBeCloseTo(0.28, 6);
+  });
+
+  it("parses oklch slash alpha", () => {
+    const rgba = parseColor("oklch(0.596 0.145 163.225 / 0.5)");
+    expect(rgba).not.toBeNull();
+    expect(rgba![3]).toBeCloseTo(0.5, 6);
+    const opaque = parseColor("oklch(0.596 0.145 163.225)");
+    expect(rgba![0]).toBeCloseTo(opaque![0], 6);
+    expect(rgba![1]).toBeCloseTo(opaque![1], 6);
+    expect(rgba![2]).toBeCloseTo(opaque![2], 6);
+  });
+
+  it("color-mix interpolates alpha in the srgb path", () => {
+    const rgba = parseColor("color-mix(in srgb, rgb(0 0 0 / 0) 50%, #000000)");
+    expect(rgba).not.toBeNull();
+    expect(rgba![3]).toBeCloseTo(0.5, 6);
+  });
+
+  it("color-mix interpolates alpha in the oklch path", () => {
+    const rgba = parseColor("color-mix(in oklch, oklch(0 0 0 / 0.2) 50%, oklch(0 0 0 / 0.6))");
+    expect(rgba).not.toBeNull();
+    expect(rgba![3]).toBeCloseTo(0.4, 6);
+  });
+
   it("color-mix(in oklch, white 50%, black) produces a mid-gray", () => {
     const rgb = parseColor("color-mix(in oklch, oklch(1 0 0) 50%, oklch(0 0 0))");
     expect(rgb).not.toBeNull();
@@ -80,5 +123,16 @@ describe("parseColor()", () => {
 describe("toHex()", () => {
   it("formats [0, 1, 0.5] as #00ff80", () => {
     expect(toHex([0, 1, 0.5])).toBe("#00ff80");
+  });
+
+  it("appends the alpha byte only when alpha is below 1", () => {
+    expect(toHex([0, 0, 0, 0.28])).toBe("#00000047");
+    expect(toHex([0, 1, 0.5, 1])).toBe("#00ff80");
+    expect(toHex([0, 0, 0, 0])).toBe("#00000000");
+  });
+
+  it("round-trips a parsed alpha literal to 8-digit hex", () => {
+    expect(toHex(parseColor("rgb(0 0 0 / 0.28)")!)).toBe("#00000047");
+    expect(toHex(parseColor("#00000047")!)).toBe("#00000047");
   });
 });

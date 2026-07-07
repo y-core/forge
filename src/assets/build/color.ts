@@ -76,50 +76,56 @@ export function oklchToSrgb(l: number, c: number, h: number): [number, number, n
   return [srgbGamma(clip01(mapped[0])), srgbGamma(clip01(mapped[1])), srgbGamma(clip01(mapped[2]))];
 }
 
-/** Convert [r,g,b] in [0,1] to a `#rrggbb` hex string. @public */
-export function toHex(rgb: [number, number, number]): string {
-  const hex = rgb
-    .map((c) => {
-      const byte = Math.round(clip01(c) * 255);
-      return byte.toString(16).padStart(2, "0");
-    })
-    .join("");
-  return `#${hex}`;
+/**
+ * Convert [r,g,b] or [r,g,b,a] in [0,1] to the shortest canonical hex string.
+ *
+ * Emits `#rrggbb` for opaque colours (alpha omitted or `1`) and `#rrggbbaa` only when
+ * alpha is below 1 — a trailing `ff` byte would be redundant. @public
+ */
+export function toHex(rgb: [number, number, number] | [number, number, number, number]): string {
+  const byte = (c: number) =>
+    Math.round(clip01(c) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  const [r, g, b, a = 1] = rgb;
+  return `#${byte(r)}${byte(g)}${byte(b)}${a < 1 ? byte(a) : ""}`;
 }
 
 function parseNumber(token: string): number {
   return token.endsWith("%") ? Number.parseFloat(token.slice(0, -1)) / 100 : Number.parseFloat(token);
 }
 
-function parseHex(value: string): [number, number, number] | null {
-  const match = value.match(/^#([0-9a-fA-F]{6})$/);
+function parseHex(value: string): [number, number, number, number] | null {
+  const match = value.match(/^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/);
   if (!match?.[1]) return null;
   const int = Number.parseInt(match[1], 16);
-  return [((int >> 16) & 0xff) / 255, ((int >> 8) & 0xff) / 255, (int & 0xff) / 255];
+  const alpha = match[2] !== undefined ? Number.parseInt(match[2], 16) / 255 : 1;
+  return [((int >> 16) & 0xff) / 255, ((int >> 8) & 0xff) / 255, (int & 0xff) / 255, alpha];
 }
 
-function parseRgb(value: string): [number, number, number] | null {
+function parseRgb(value: string): [number, number, number, number] | null {
   const match = value.match(/^rgba?\(([^)]*)\)$/i);
   if (!match?.[1]) return null;
-  const parts = match[1]
-    .split(/[\s,/]+/)
-    .filter((p) => p.length > 0)
-    .slice(0, 3)
-    .map((p) => Number.parseFloat(p) / 255);
-  if (parts.length < 3 || parts.some((n) => Number.isNaN(n))) return null;
-  return [parts[0]!, parts[1]!, parts[2]!];
+  const parts = match[1].split(/[\s,/]+/).filter((p) => p.length > 0);
+  if (parts.length < 3) return null;
+  const channels = parts.slice(0, 3).map((p) => Number.parseFloat(p) / 255);
+  const alpha = parts[3] !== undefined ? parseNumber(parts[3]) : 1;
+  if (channels.some((n) => Number.isNaN(n)) || Number.isNaN(alpha)) return null;
+  return [channels[0]!, channels[1]!, channels[2]!, alpha];
 }
 
-function parseOklchArgs(value: string): { l: number; c: number; h: number } | null {
+function parseOklchArgs(value: string): { l: number; c: number; h: number; alpha: number } | null {
   const match = value.match(/^oklch\(([^)]*)\)$/i);
   if (!match?.[1]) return null;
-  const parts = match[1].split(/[\s,]+/).filter((p) => p.length > 0);
+  const [body = "", alphaToken] = match[1].split("/").map((s) => s.trim());
+  const parts = body.split(/[\s,]+/).filter((p) => p.length > 0);
   if (parts.length < 3) return null;
   const l = parseNumber(parts[0]!);
   const c = Number.parseFloat(parts[1]!);
   const h = Number.parseFloat(parts[2]!);
-  if (Number.isNaN(l) || Number.isNaN(c) || Number.isNaN(h)) return null;
-  return { l, c, h };
+  const alpha = alphaToken !== undefined && alphaToken.length > 0 ? parseNumber(alphaToken) : 1;
+  if (Number.isNaN(l) || Number.isNaN(c) || Number.isNaN(h) || Number.isNaN(alpha)) return null;
+  return { l, c, h, alpha };
 }
 
 function splitColorMix(inner: string): [string, string] | null {
@@ -149,7 +155,7 @@ function interpolateHue(h1: number, h2: number, t: number): number {
   return h1 + delta * t;
 }
 
-function parseColorMix(value: string): [number, number, number] | null {
+function parseColorMix(value: string): [number, number, number, number] | null {
   const match = value.match(/^color-mix\(\s*in\s+(oklch|srgb)\s*,\s*([\s\S]*)\)$/i);
   if (!match?.[1] || !match?.[2]) return null;
   const space = match[1].toLowerCase();
@@ -168,13 +174,14 @@ function parseColorMix(value: string): [number, number, number] | null {
     const l = o1.l + (o2.l - o1.l) * t;
     const c = o1.c + (o2.c - o1.c) * t;
     const h = interpolateHue(o1.h, o2.h, t);
-    return oklchToSrgb(l, c, h);
+    const [r, g, b] = oklchToSrgb(l, c, h);
+    return [r, g, b, o1.alpha + (o2.alpha - o1.alpha) * t];
   }
 
   const c1 = parseColor(first.color);
   const c2 = parseColor(second.color);
   if (!c1 || !c2) return null;
-  return [c1[0] + (c2[0] - c1[0]) * t, c1[1] + (c2[1] - c1[1]) * t, c1[2] + (c2[2] - c1[2]) * t];
+  return [c1[0] + (c2[0] - c1[0]) * t, c1[1] + (c2[1] - c1[1]) * t, c1[2] + (c2[2] - c1[2]) * t, c1[3] + (c2[3] - c1[3]) * t];
 }
 
 function normalizeOklchLiteral(value: string): string {
@@ -182,17 +189,21 @@ function normalizeOklchLiteral(value: string): string {
 }
 
 /**
- * Parse a CSS colour literal to normalized [r,g,b] in [0,1].
+ * Parse a CSS colour literal to normalized [r,g,b,a] in [0,1].
  *
- * Supports `oklch(L C H)` (with `%` on L), `rgb()`/`rgba()` (0–255 args), `#rrggbb` hex,
- * and `color-mix(in oklch|srgb, c1 p%, c2)`. Returns null for unrecognized formats. @public
+ * Supports `oklch(L C H)` (with `%` on L), `rgb()`/`rgba()` (0–255 args), `#rrggbb`/`#rrggbbaa`
+ * hex, and `color-mix(in oklch|srgb, c1 p%, c2)`. Alpha may be written as a slash component
+ * (`rgb(0 0 0 / 0.28)`, `oklch(0.6 0.1 160 / 50%)`), a fourth `rgba()` argument, or a trailing
+ * hex byte; it defaults to `1` when absent. Returns null for unrecognized formats. @public
  */
-export function parseColor(value: string): [number, number, number] | null {
+export function parseColor(value: string): [number, number, number, number] | null {
   const trimmed = value.trim();
   if (trimmed.startsWith("#")) return parseHex(trimmed);
   if (/^oklch\(/i.test(trimmed)) {
     const args = parseOklchArgs(trimmed);
-    return args ? oklchToSrgb(args.l, args.c, args.h) : null;
+    if (!args) return null;
+    const [r, g, b] = oklchToSrgb(args.l, args.c, args.h);
+    return [r, g, b, args.alpha];
   }
   if (/^rgba?\(/i.test(trimmed)) return parseRgb(trimmed);
   if (/^color-mix\(/i.test(trimmed)) return parseColorMix(trimmed);

@@ -149,6 +149,48 @@ describe("buildCursors()", () => {
     }
   });
 
+  it("vars with alpha bake to per-theme #rrggbbaa via cssvar(), and alpha signal tokens bake 8-digit", () => {
+    const dir = join(tmpdir(), `forge-cursors-alpha-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      const template = `<svg viewBox="{{viewBox}}"><rect fill="cssvar(--cursor-shadow)"/><circle stroke="cssvar(--cursor-outline)"/><g stroke="{{signal}}">{{markup}}</g></svg>`;
+      writeFileSync(join(dir, "template.svg"), template);
+      writeFileSync(join(dir, "cursor.svg"), `<svg viewBox="0 0 24 24" data-cursor-token="--signal-alpha"><path d="M1 0"/></svg>`);
+
+      const css = `
+:root { --signal-alpha: rgb(255 0 0 / 0.5); }
+.dark { --signal-alpha: rgb(255 0 0 / 0.5); }
+`;
+      const config: CursorsConfig = {
+        target: "css/cursors.css",
+        template: { path: dir, file: "template.svg" },
+        themes: { light: ":root", dark: ".dark" },
+        sources: [{ path: dir, files: [{ key: "cursor", file: "cursor.svg" }] }],
+        vars: { "--cursor-shadow": { light: "rgb(0 0 0 / 0.28)", dark: "rgb(0 0 0 / 0.45)" }, "--cursor-outline": "rgb(255 255 255 / 0.9)" },
+      };
+
+      const result = buildCursors(config, css);
+      const lightSvg = decodeURIComponent(result.cursor!.light!);
+      const darkSvg = decodeURIComponent(result.cursor!.dark!);
+
+      // Per-theme alpha vars bake to distinct 8-digit hex values.
+      expect(lightSvg).toContain('fill="#00000047"');
+      expect(darkSvg).toContain('fill="#00000073"');
+      expect(lightSvg).not.toContain('fill="#00000073"');
+      expect(darkSvg).not.toContain('fill="#00000047"');
+
+      // A flat alpha var bakes to the same 8-digit hex in every theme.
+      expect(lightSvg).toContain('stroke="#ffffffe6"');
+      expect(darkSvg).toContain('stroke="#ffffffe6"');
+
+      // An alpha-bearing signal token bakes 8-digit too.
+      expect(lightSvg).toContain('stroke="#ff000080"');
+      expect(darkSvg).toContain('stroke="#ff000080"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("throws when cssvar() references a missing token", () => {
     const dir = join(tmpdir(), `forge-cursors-cssvar-miss-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(dir, { recursive: true });

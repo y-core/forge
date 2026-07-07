@@ -333,13 +333,15 @@ A single global `template` is required. Individual `sources` may specify their o
 
 `cssvar()` runs after `{{markup}}` substitution, so it resolves tokens authored inside cursor SVGs too. The token must be resolvable from the theme's token map (CSS declarations + `vars` overlay), otherwise the build **throws**. An unparseable-but-present colour value falls back to `#000000`.
 
+**Alpha** flows through the bake: when a resolved colour carries alpha — `rgb(0 0 0 / 0.28)`, `rgba(…, 0.28)`, `oklch(L C H / a)`, or `#rrggbbaa` — `cssvar()`, `{{halo}}`, and `{{signal}}` all bake an 8-digit `#rrggbbaa` hex, so a single token can carry both colour and opacity (no separate `fill-opacity` needed). `toHex` emits the shortest canonical form: opaque colours bake 6-digit `#rrggbb`, since a trailing `ff` alpha byte is redundant and only pads the data URI.
+
 **`vars`** lets you define build-time colour variables in config rather than CSS. A flat string applies to all themes; a nested record maps theme keys:
 
 ```ts
 cursors: {
   vars: {
-    "--cursor-shadow": "#000000",                           // same in every theme
-    "--cursor-outline": { light: "#ffffff", dark: "#000000" }, // differs per theme
+    "--cursor-outline": "#ffffff",                          // same in every theme
+    "--cursor-shadow": { light: "rgb(0 0 0 / 0.28)", dark: "rgb(0 0 0 / 0.45)" }, // per-theme colour + alpha
   },
 }
 ```
