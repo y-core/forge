@@ -32,8 +32,6 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
     Object.assign(manifest, mapping);
   }
 
-  Object.assign(manifest, await buildJS(config.js.bundles, { outDir: publicDir, ...minifyOpts, hash: shouldHash }));
-
   copyAssets(config.copy, publicDir);
 
   if (Object.keys(config.sprites).length > 0) {
@@ -60,6 +58,16 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   }
 
   const outputPath = opts?.assetsPath ?? ".forge/assets.ts";
+  // Generate the assets module before bundling JS. The client bundle imports `@assets` for
+  // cursor bakes and sprite registries, all of which are ready by now — so esbuild always has
+  // a real, current module to resolve against, even on a clean tree with no prior build. The
+  // only thing still missing from the manifest is the JS bundles' own output filenames, which
+  // are consumed exclusively by server-side path resolution, never by the client bundle.
+  await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath, cursorBakes);
+
+  Object.assign(manifest, await buildJS(config.js.bundles, { outDir: publicDir, ...minifyOpts, hash: shouldHash }));
+
+  // Regenerate with the now-complete manifest (JS bundle output paths included) for SSR.
   await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath, cursorBakes);
 
   emitHeaders(publicDir, shouldHash);
