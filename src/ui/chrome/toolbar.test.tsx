@@ -61,3 +61,67 @@ describe("Toolbar — popover title", () => {
     expect(out).not.toContain('data-ref="undefined"');
   });
 });
+
+describe("Toolbar — native popover flyout", () => {
+  it("renders the trigger as a button invoking toggle-popover on the flyout id", async () => {
+    const config: ToolbarDefinition = { groups: [{ items: [{ kind: "popover", icon: "layers", label: "Layers", content: <div /> }] }] };
+    const out = await render(<Toolbar config={config} icon={icon} />);
+    expect(out).toContain('data-slot="toolbar-trigger"');
+    expect(out).toContain('command="toggle-popover"');
+    expect(out).toContain('commandfor="toolbar-flyout-0"');
+    expect(out).not.toContain("<summary");
+    expect(out).not.toContain("<details");
+  });
+
+  it("renders the flyout as a native popover carrying the linking id and placement", async () => {
+    const config: ToolbarDefinition = { groups: [{ items: [{ kind: "popover", icon: "layers", label: "Layers", content: <div /> }] }] };
+    const out = await render(<Toolbar config={config} icon={icon} placement='right' />);
+    expect(out).toContain('data-slot="toolbar-flyout"');
+    expect(out).toContain('id="toolbar-flyout-0"');
+    expect(out).toContain('popover="auto"');
+    expect(out).toContain('data-placement="right"');
+  });
+
+  it("mints a distinct id for each popover so triggers and flyouts stay paired", async () => {
+    const config: ToolbarDefinition = {
+      groups: [
+        {
+          items: [
+            { kind: "popover", icon: "a", label: "A", content: <div /> },
+            { kind: "popover", icon: "b", label: "B", content: <div /> },
+          ],
+        },
+      ],
+    };
+    const out = await render(<Toolbar config={config} icon={icon} />);
+    expect(out).toContain('commandfor="toolbar-flyout-0"');
+    expect(out).toContain('id="toolbar-flyout-0"');
+    expect(out).toContain('commandfor="toolbar-flyout-1"');
+    expect(out).toContain('id="toolbar-flyout-1"');
+  });
+});
+
+describe("Toolbar — action dispatch", () => {
+  it("emits data-on-click for a scope-dispatched action (default)", async () => {
+    const config: ToolbarDefinition = {
+      groups: [{ items: [{ kind: "action", icon: "cursor", label: "Select", action: "select", data: { "data-tool": "select" } }] }],
+    };
+    const out = await render(<Toolbar config={config} icon={icon} />);
+    expect(out).toContain('data-on-click="select"');
+    expect(out).toContain('data-tool="select"');
+    expect(out).not.toContain("command=");
+  });
+
+  it("emits a native --command targeting commandTarget when dispatch is command", async () => {
+    const config: ToolbarDefinition = {
+      groups: [
+        { items: [{ kind: "action", icon: "cursor", label: "Select", action: "select", dispatch: "command", data: { "data-tool": "select" } }] },
+      ],
+    };
+    const out = await render(<Toolbar config={config} icon={icon} commandTarget='#chrome-root' />);
+    expect(out).toContain('command="--select"');
+    expect(out).toContain('commandfor="chrome-root"');
+    expect(out).toContain('data-tool="select"');
+    expect(out).not.toContain('data-on-click="select"');
+  });
+});

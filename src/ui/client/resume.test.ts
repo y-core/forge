@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { registerScope, resume, resumeScope } from "./resume";
 
-// The number of event types that resume() installs delegated listeners for.
+// The number of scope-event types resume() installs delegated listeners for.
 // Mirrors SCOPE_EVENTS in ../scope-events.ts: ["click", "input", "change", "submit"]
 const EVENT_COUNT = 4;
+// resume() also installs one `command` listener for the native Invoker Commands bridge.
+const TOTAL_LISTENERS = EVENT_COUNT + 1;
 
 // ---------------------------------------------------------------------------
 // Document stub
@@ -101,7 +103,7 @@ describe("resume", () => {
     currentDisposer = resume();
     resume(); // second call — must be a no-op
 
-    expect(doc.addCalls).toHaveLength(EVENT_COUNT);
+    expect(doc.addCalls).toHaveLength(TOTAL_LISTENERS);
   });
 
   // -------------------------------------------------------------------------
@@ -123,7 +125,7 @@ describe("resume", () => {
 
     disposer();
 
-    expect(doc.removeCalls).toHaveLength(EVENT_COUNT);
+    expect(doc.removeCalls).toHaveLength(TOTAL_LISTENERS);
 
     // Every type that was added must also be removed (same handler reference).
     for (const [addType, addHandler] of doc.addCalls) {
@@ -139,10 +141,10 @@ describe("resume", () => {
     const firstDisposer = resume();
     firstDisposer(); // explicit teardown resets module-level state
 
-    // Second mount must add EVENT_COUNT more listeners (total 2 × EVENT_COUNT).
+    // Second mount must add a fresh full set of listeners (total 2 × TOTAL_LISTENERS).
     currentDisposer = resume();
 
-    expect(doc.addCalls).toHaveLength(EVENT_COUNT * 2);
+    expect(doc.addCalls).toHaveLength(TOTAL_LISTENERS * 2);
 
     // The new disposer must be a different function object.
     expect(currentDisposer).not.toBe(firstDisposer);
@@ -367,6 +369,72 @@ describe("resume", () => {
 
     expect(innerCalled).toBe(true);
     expect(outerCalled).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Native Invoker Commands bridge
+  // -------------------------------------------------------------------------
+  it("routes a --command CommandEvent to the scope handler via event.source", () => {
+    let called = 0;
+    const scopeName = `test-command-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      on: {
+        "do-thing": () => {
+          called++;
+        },
+      },
+    });
+
+    currentDisposer = resume();
+
+    const root = {
+      dataset: { scope: scopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? root : null),
+      parentElement: { closest: (_s: string) => null },
+    };
+    // event.source is the invoker button — the bridge uses it as `el`, so it must resolve its scope.
+    const source = { closest: (sel: string) => (sel === "[data-scope]" ? root : null), dataset: {} };
+    const event = Object.assign(new Event("command", { bubbles: true }), { command: "--do-thing", source });
+
+    const commandListeners = doc.listeners.command ?? [];
+    expect(commandListeners).toHaveLength(1);
+    commandListeners[0]!(event as unknown as Event);
+
+    expect(called).toBe(1);
+  });
+
+  it("ignores built-in commands with no -- prefix", () => {
+    let called = 0;
+    const scopeName = `test-builtin-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      on: {
+        "toggle-popover": () => {
+          called++;
+        },
+      },
+    });
+
+    currentDisposer = resume();
+
+    const root = {
+      dataset: { scope: scopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? root : null),
+      parentElement: { closest: (_s: string) => null },
+    };
+    const source = { closest: (sel: string) => (sel === "[data-scope]" ? root : null), dataset: {} };
+    const event = Object.assign(new Event("command"), { command: "toggle-popover", source });
+
+    (doc.listeners.command ?? [])[0]!(event as unknown as Event);
+
+    expect(called).toBe(0);
+  });
+
+  it("ignores a --command whose source is null", () => {
+    const scopeName = `test-nosource-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, { on: { x: () => {} } });
+    currentDisposer = resume();
+    const event = Object.assign(new Event("command"), { command: "--x", source: null });
+    expect(() => (doc.listeners.command ?? [])[0]!(event as unknown as Event)).not.toThrow();
   });
 
   it("single-scope dispatch still fires when there is no parent scope (regression)", () => {

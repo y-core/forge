@@ -147,14 +147,10 @@ const g = globalThis as unknown as { document: DocStub; window: { matchMedia(que
 // Helper: drive a scope definition's setup directly
 // ---------------------------------------------------------------------------
 
-function makeNavbarRoot(openDetails: HTMLDetailsElement[] = [], filterEls: HTMLElement[] = []): HTMLElement {
+function makeNavbarRoot(filterEls: HTMLElement[] = []): HTMLElement {
   return {
     dataset: { scope: "navbar", state: JSON.stringify({ filters: [] }) },
-    querySelectorAll: (sel: string): HTMLElement[] => {
-      if (sel === "details[open]") return openDetails as unknown as HTMLElement[];
-      if (sel === "[data-filter]") return filterEls;
-      return [];
-    },
+    querySelectorAll: (sel: string): HTMLElement[] => (sel === "[data-filter]" ? filterEls : []),
   } as unknown as HTMLElement;
 }
 
@@ -233,53 +229,11 @@ describe("navbar scope — logic", () => {
     g.document = doc;
   });
 
-  it("closes open <details> when an outside-click fires", () => {
-    let closed = false;
-    let _open = true;
-    const openDetail = {
-      get open() {
-        return _open;
-      },
-      set open(v: boolean) {
-        _open = v;
-        if (!v) closed = true;
-      },
-      contains: (_: Node) => false, // target is outside
-    } as unknown as HTMLDetailsElement;
-
-    const root = makeNavbarRoot([openDetail]);
-    const state = resumeScope(root); // triggers setup for any registered "navbar" scope
-    // Dispatch a click outside.
-    const target = {} as Node;
-    const clickListeners = doc.listeners.click ?? [];
-    expect(clickListeners.length).toBeGreaterThan(0);
-    const ev = new Event("click", { bubbles: true });
-    Object.defineProperty(ev, "target", { value: target });
-    for (const h of clickListeners) h(ev);
-    expect(closed).toBe(true);
-    expect(state).toBeDefined();
-  });
-
-  it("does not close a <details> when the click is inside it", () => {
-    let closed = false;
-    const target = {} as Node;
-    const openDetail = {
-      get open() {
-        return true;
-      },
-      set open(v: boolean) {
-        if (!v) closed = true;
-      },
-      contains: (n: Node) => n === target, // click is inside
-    } as unknown as HTMLDetailsElement;
-
-    const root = makeNavbarRoot([openDetail]);
-    resumeScope(root);
-
-    const ev = new Event("click", { bubbles: true });
-    Object.defineProperty(ev, "target", { value: target });
-    for (const h of doc.listeners.click ?? []) h(ev);
-    expect(closed).toBe(false);
+  it("does not install an outside-click listener (native popover light-dismiss replaces it)", () => {
+    const root = makeNavbarRoot();
+    resumeScope(root); // triggers the real "navbar" scope setup
+    // The navbar scope no longer sweeps open <details> on outside clicks.
+    expect((doc.listeners.click ?? []).length).toBe(0);
   });
 
   it("updates the filters signal when navbar:filters event fires", () => {
@@ -294,50 +248,24 @@ describe("navbar scope — logic", () => {
     expect(state.filters?.value).toEqual(["user"]);
   });
 
-  it("setup returns a disposer that removes the two document listeners", () => {
+  it("adds a navbar:filters listener whose disposer removes it on teardown", () => {
     // Fresh document stub so we count cleanly.
     const freshDoc = makeDocStub();
     g.document = freshDoc;
 
-    // Collect the navbar-specific listeners added (click + navbar:filters).
-    // We register a new named scope directly to isolate.
-    const name = `navbar-disposer-test-${Math.random().toString(36).slice(2)}`;
-    let clickHandler: EventListener | undefined;
-    let filtersHandler: EventListener | undefined;
-    registerScope(name, {
-      setup: ({ root: _root }) => {
-        const onOutside: EventListener = () => {};
-        const onFilters: EventListener = () => {};
-        clickHandler = onOutside;
-        filtersHandler = onFilters;
-        freshDoc.addEventListener("click", onOutside);
-        freshDoc.addEventListener("navbar:filters", onFilters);
-        return () => {
-          freshDoc.removeEventListener("click", onOutside);
-          freshDoc.removeEventListener("navbar:filters", onFilters);
-        };
-      },
-      on: {},
-    });
-
-    const root = makeScopeRoot(name);
-    const state = resumeScope(root);
+    const root = makeNavbarRoot();
+    const state = resumeScope(root); // triggers the real "navbar" scope setup
     expect(state).toBeDefined();
 
-    // Both listeners were added.
-    expect(freshDoc.addCalls.some(([t]) => t === "click")).toBe(true);
+    // The only document listener the navbar scope adds is navbar:filters.
     expect(freshDoc.addCalls.some(([t]) => t === "navbar:filters")).toBe(true);
+    expect(freshDoc.addCalls.some(([t]) => t === "click")).toBe(false);
 
-    // Now tear down via resume() — but we called resumeScope directly, so
-    // we instead verify the disposer was registered and that it removes them.
-    // Since we captured the disposer in capturedDispose above... actually
-    // with resumeScope the disposer is pushed to the global disposers array
-    // and run on resume teardown. Let's just verify the remove calls happen.
+    // resumeScope pushes the disposer to the global array; resume() teardown runs it.
     const td = resume();
-    td(); // this runs the global disposers array including our captured disposer
+    td();
 
-    expect(freshDoc.removeCalls.some(([t, h]) => t === "click" && h === clickHandler)).toBe(true);
-    expect(freshDoc.removeCalls.some(([t, h]) => t === "navbar:filters" && h === filtersHandler)).toBe(true);
+    expect(freshDoc.removeCalls.some(([t]) => t === "navbar:filters")).toBe(true);
   });
 });
 

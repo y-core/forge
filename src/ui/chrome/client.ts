@@ -71,24 +71,6 @@ registerScope<"cycleTheme">("theme", {
 });
 
 // ---------------------------------------------------------------------------
-// toolbar scope
-// ---------------------------------------------------------------------------
-
-registerScope("toolbar", {
-  setup: ({ root }) => {
-    const onOutsideClick = (event: Event) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      for (const el of root.querySelectorAll<HTMLDetailsElement>("details[data-slot='toolbar-popover'][open]"))
-        if (!el.contains(target)) el.open = false;
-    };
-    document.addEventListener("click", onOutsideClick);
-    return () => document.removeEventListener("click", onOutsideClick);
-  },
-  on: {},
-});
-
-// ---------------------------------------------------------------------------
 // navbar scope
 // ---------------------------------------------------------------------------
 
@@ -105,17 +87,7 @@ registerScope("navbar", {
       }
     });
 
-    // 2. Close any open <details> when a click lands outside the scope root.
-    const onOutsideClick = (event: Event) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      for (const el of root.querySelectorAll<HTMLDetailsElement>("details[open]")) {
-        if (!el.contains(target)) el.open = false;
-      }
-    };
-    document.addEventListener("click", onOutsideClick);
-
-    // 3. Apply runtime auth changes pushed by the app.
+    // 2. Apply runtime auth changes pushed by the app.
     const onFiltersEvent = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (filters && Array.isArray(detail)) filters.value = detail as string[];
@@ -123,7 +95,6 @@ registerScope("navbar", {
     document.addEventListener("navbar:filters", onFiltersEvent);
 
     return () => {
-      document.removeEventListener("click", onOutsideClick);
       document.removeEventListener("navbar:filters", onFiltersEvent);
     };
   },

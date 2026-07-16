@@ -76,12 +76,14 @@ export interface NavbarProps extends Omit<JSX.IntrinsicElements["nav"], "childre
   class?: string;
 }
 
-/** Threaded through the recursive renderers so they can resolve hrefs/slots, seed filters, and render icons. */
+/** Threaded through the recursive renderers so they can resolve hrefs/slots, seed filters, render
+ * icons, and mint a unique id per menu popover (trigger↔content `commandfor` link). */
 interface NavRenderCtx {
   resolveHref: (key: string) => string;
   slots?: Record<string, JSXNode> | undefined;
   activeFilters: string[];
   icon: ForgeIcon<"chevron-down" | "hamburger" | "close">;
+  seq: { n: number };
 }
 
 /**
@@ -104,9 +106,9 @@ const placementVariants = cva({
 
 /** Top-level entries read as a menubar button; nested entries read as full-width menu rows. */
 const TRIGGER_TOP =
-  "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-accent group-open/popover:text-accent-foreground";
+  "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring";
 const ROW =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring group-open/popover:bg-accent group-open/popover:text-accent-foreground";
+  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). */
 function filterAttrs(item: NavItem, activeFilters: string[]): Record<string, unknown> {
@@ -138,9 +140,10 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
   if ("slot" in item) return renderSlot(item, ctx);
 
   if ("items" in item) {
+    const id = `navbar-menu-${ctx.seq.n++}`;
     return (
       <Popover class={depth === 0 ? "" : "block w-full"} {...fattrs}>
-        <Popover.Trigger class={depth === 0 ? TRIGGER_TOP : ROW}>
+        <Popover.Trigger id={id} class={depth === 0 ? TRIGGER_TOP : ROW}>
           <span>{item.label}</span>
           <span aria-hidden='true' class='text-xs opacity-70'>
             <ctx.icon
@@ -154,7 +157,7 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
             />
           </span>
         </Popover.Trigger>
-        <Popover.Content>{item.items.map((child) => renderItem(child, depth + 1, ctx))}</Popover.Content>
+        <Popover.Content id={id}>{item.items.map((child) => renderItem(child, depth + 1, ctx))}</Popover.Content>
       </Popover>
     );
   }
@@ -177,9 +180,9 @@ function renderSection(section: NavSection, ctx: NavRenderCtx): JSXNode {
 
 /**
  * A configuration-driven, responsive navbar/menubar. The app feeds a nested {@link NavDefinition}
- * (`sections → items → items …`); on desktop it renders a horizontal bar of `<details>` dropdowns
- * with nested submenus, and on mobile it collapses to a hamburger-toggled `<details>` — all without
- * JavaScript. A small resumable scope (`navbar`) adds outside-click-close and runtime auth filtering.
+ * (`sections → items → items …`); on desktop it renders a horizontal bar of native `Popover`
+ * dropdowns with nested submenus (top-layer + light-dismiss, zero JS), and on mobile it collapses
+ * to a hamburger-toggled `<details>`. A small resumable scope (`navbar`) adds runtime auth filtering.
  *
  * Every `href` is a route-map key resolved via the required `resolveHref`. Items may carry `filters`
  * (auth tokens): an item shows only when one of its tokens is in the active set, seeded server-side
@@ -191,7 +194,7 @@ function renderSection(section: NavSection, ctx: NavRenderCtx): JSXNode {
  * @public
  */
 export const Navbar: FC<NavbarProps> = ({ config, resolveHref, slots, activeFilters = [], placement = "top", icon: Icon, class: cls, ...rest }) => {
-  const ctx: NavRenderCtx = { resolveHref, slots, activeFilters, icon: Icon };
+  const ctx: NavRenderCtx = { resolveHref, slots, activeFilters, icon: Icon, seq: { n: 0 } };
   return (
     <Resumable name='navbar' state={{ filters: activeFilters }}>
       <details data-slot='navbar' class={cn(placementVariants({ placement }), asClass(cls))} {...rest}>

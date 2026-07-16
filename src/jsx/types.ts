@@ -139,6 +139,12 @@ interface ButtonAttributes extends HTMLAttributes {
   autofocus?: boolean;
   popovertarget?: string;
   popovertargetaction?: "hide" | "show" | "toggle";
+  /** Native Invoker Commands: the command activated on the `commandfor` target when the button is
+   * pressed. Built-ins (`toggle-popover`, `show-modal`, `close`, …) are handled by the platform;
+   * custom commands are `--action` strings routed through the `CommandEvent` scope bridge. */
+  command?: string;
+  /** Native Invoker Commands: the id of the element this button acts on. */
+  commandfor?: string;
 }
 
 interface InputAttributes extends HTMLAttributes {

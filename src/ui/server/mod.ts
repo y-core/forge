@@ -6,6 +6,7 @@
  * Import only in SSR/Workers contexts — never in browser bundles.
  */
 
+export { commandAttrs } from "./command-attrs";
 export { fieldAttr } from "./field-attr";
 export type { FlashMessage, FlashType } from "./flash";
 export { Flash, FlashContainer, FlashOob } from "./flash";

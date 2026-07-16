@@ -7,6 +7,9 @@ import type { FC } from "../../jsx/types";
 export interface ResumableProps {
   /** The scope's registered name — must match the client-side `registerScope`. */
   name: string;
+  /** Optional element id on the scope root, so it can serve as a `commandfor` sink for custom
+   * Invoker commands (`commandAttrs`) that have no popover target. */
+  id?: string;
   /** Serializable initial state, rehydrated into signals on first interaction. */
   state?: Record<string, unknown>;
 }
@@ -17,8 +20,8 @@ export interface ResumableProps {
  * descendant carrying a `data-on-<event>` attribute, rebuilding `state` into signals.
  * @public
  */
-export const Resumable: FC<ResumableProps> = ({ name, state, children }) => (
-  <div data-scope={name} data-state={state ? JSON.stringify(state) : undefined}>
+export const Resumable: FC<ResumableProps> = ({ name, id, state, children }) => (
+  <div data-scope={name} {...(id !== undefined ? { id } : {})} data-state={state ? JSON.stringify(state) : undefined}>
     {children}
   </div>
 );

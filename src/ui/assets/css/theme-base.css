@@ -158,3 +158,54 @@ from the base stop-mapping below.
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
+
+/* ── Native Popover / Dialog primitives ───────────────────────────────────
+   Popover panels and toolbar flyouts render in the top layer (popover="auto"),
+   so normal-flow positioning can't reach the trigger. CSS Anchor Positioning
+   places them against the invoker — a popover's implicit anchor is the button
+   named by `commandfor` — keyed by the data attributes the SSR components emit. */
+
+[data-slot="popover-content"],
+[data-slot="toolbar-flyout"] {
+  position: fixed;
+  margin: 0;
+  inset: auto;
+}
+
+[data-slot="popover-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
+[data-slot="popover-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
+[data-slot="popover-content"][data-align="start"]  { left: anchor(left); }
+[data-slot="popover-content"][data-align="end"]    { right: anchor(right); }
+[data-slot="popover-content"][data-align="center"] { left: anchor(center); translate: -50% 0; }
+
+[data-slot="toolbar-flyout"][data-placement="left"]   { left: anchor(right); top: anchor(top); margin-left: 0.5rem; }
+[data-slot="toolbar-flyout"][data-placement="right"]  { right: anchor(left); top: anchor(top); margin-right: 0.5rem; }
+[data-slot="toolbar-flyout"][data-placement="top"]    { top: anchor(bottom); left: anchor(left); margin-top: 0.5rem; }
+[data-slot="toolbar-flyout"][data-placement="bottom"] { bottom: anchor(top); left: anchor(left); margin-bottom: 0.5rem; }
+
+/* Trigger stays highlighted while its popover is open (replaces the old <details open> group state). */
+[data-slot="popover"]:has(> [data-slot="popover-content"]:popover-open) > [data-slot="popover-trigger"] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+[data-slot="toolbar-popover"]:has(> [data-slot="toolbar-flyout"]:popover-open) > [data-slot="toolbar-trigger"] {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* Fallback for engines without anchor positioning: keep panels usable (a JS positioner can refine
+   placement per-browser if needed). */
+@supports not (top: anchor(bottom)) {
+  [data-slot="popover-content"],
+  [data-slot="toolbar-flyout"] { inset: auto auto 1rem 1rem; }
+}
+
+/* Modal dialogs center in the viewport; the platform provides the ::backdrop. */
+[data-slot="dialog"] {
+  margin: auto;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+}
+[data-slot="dialog"]::backdrop {
+  background-color: rgb(0 0 0 / 0.5);
+}

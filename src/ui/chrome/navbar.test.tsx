@@ -85,6 +85,24 @@ describe("Navbar — menus", () => {
     expect(out).toContain("Deep");
     expect(out).toContain('href="/route/deep"');
   });
+
+  it("links each menu trigger to its popover content via a shared commandfor/id", async () => {
+    const config: NavDefinition = { sections: [{ items: [{ label: "File", items: [{ label: "New", href: "new" }] }] }] };
+    const out = await render(<Navbar config={config} resolveHref={id} icon={icon} />);
+    expect(out).toContain('command="toggle-popover"');
+    expect(out).toContain('commandfor="navbar-menu-0"');
+    expect(out).toContain('id="navbar-menu-0"');
+    expect(out).toContain('popover="auto"');
+  });
+
+  it("mints a distinct id per nested menu popover", async () => {
+    const config: NavDefinition = {
+      sections: [{ items: [{ label: "Edit", items: [{ label: "More", items: [{ label: "Deep", href: "deep" }] }] }] }],
+    };
+    const out = await render(<Navbar config={config} resolveHref={id} icon={icon} />);
+    expect(out).toContain('commandfor="navbar-menu-0"');
+    expect(out).toContain('commandfor="navbar-menu-1"');
+  });
 });
 
 describe("Navbar — slots", () => {

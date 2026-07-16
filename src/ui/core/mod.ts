@@ -4,6 +4,7 @@ export { Avatar } from "./avatar";
 export { Badge, type BadgeVariant } from "./badge";
 export { Button, type ButtonProps, type ButtonSize } from "./button";
 export { Card } from "./card";
+export { Dialog } from "./dialog";
 export {
   FIELD_LABEL_CLASSES,
   type FieldDescriptor,

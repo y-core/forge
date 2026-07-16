@@ -65,6 +65,12 @@ export function resume(): () => void {
     document.addEventListener(type, handler);
     handlers.push([type, handler]);
   }
+  // Native Invoker Commands bridge: one delegated `command` listener routes custom `--action`
+  // commands into the same scope handler table the `data-on-*` events feed. Built-in commands
+  // (no `--` prefix) are left to the platform. Companion to the SCOPE_EVENTS listeners above.
+  const commandHandler: EventListener = (event) => dispatchCommand(event);
+  document.addEventListener("command", commandHandler);
+  handlers.push(["command", commandHandler]);
   teardown = () => {
     for (const [type, handler] of handlers) document.removeEventListener(type, handler);
     for (const d of disposers.splice(0)) d();
@@ -98,11 +104,9 @@ export function resumeScope(root: HTMLElement): Record<string, Signal<unknown>> 
   return def ? ensureResumed(root, def) : undefined;
 }
 
-function dispatch(type: string, event: Event): void {
-  const el = (event.target as Element | null)?.closest<HTMLElement>(`[data-on-${type}]`);
-  if (!el) return;
-  const action = el.getAttribute(`data-on-${type}`);
-  if (!action) return;
+/** Walk up from `el` through `[data-scope]` ancestors and invoke the first scope whose `on` table
+ * owns `action`, resuming it on the way. Shared by the `data-on-*` and `command` dispatchers. */
+function runAction(action: string, el: HTMLElement, event: Event): void {
   let scopeEl = el.closest<HTMLElement>("[data-scope]");
   while (scopeEl) {
     const def = scopes.get(scopeEl.dataset.scope ?? "");
@@ -115,6 +119,26 @@ function dispatch(type: string, event: Event): void {
     }
     scopeEl = scopeEl.parentElement?.closest<HTMLElement>("[data-scope]") ?? null;
   }
+}
+
+function dispatch(type: string, event: Event): void {
+  const el = (event.target as Element | null)?.closest<HTMLElement>(`[data-on-${type}]`);
+  if (!el) return;
+  const action = el.getAttribute(`data-on-${type}`);
+  if (!action) return;
+  runAction(action, el, event);
+}
+
+/** Bridge a native `CommandEvent` to the scope handler table. Only custom `--action` commands are
+ * routed; built-in commands (`toggle-popover`, `show-modal`, …) carry no `--` prefix and are left
+ * to the platform. The invoker (`event.source`) stands in for the `data-on-*` element. */
+function dispatchCommand(event: Event): void {
+  const command = (event as CommandEvent).command;
+  if (!command || command.slice(0, 2) !== "--") return;
+  // `source` is the invoker button (an HTMLElement) — stands in for the `data-on-*` element.
+  const source = (event as CommandEvent).source as HTMLElement | null;
+  if (!source) return;
+  runAction(command.slice(2), source, event);
 }
 
 function hydrateState(raw: string | undefined): Record<string, Signal<unknown>> {
