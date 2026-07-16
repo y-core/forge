@@ -210,8 +210,8 @@ Exported option/shape types use a suffix chosen by what the type *is*:
 
 A declarative shape must not be named `*Config` (that suffix implies validated env/data);
 behavior knobs must not be named `*Config` or `*Definition`. See
-[.claude/rules/r-code.md](../.claude/rules/r-code.md) Naming Conventions for the
-enforcement wording used by cc-dev.
+[.claude/agents/cc-dev.md](../.claude/agents/cc-dev.md) (Coding Ruleset → Naming Conventions)
+for the enforcement wording used by cc-dev.
 
 ---
 

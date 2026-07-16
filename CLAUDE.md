@@ -13,7 +13,7 @@
 - NEVER hardcode API keys, secrets, or credentials in source files
 - ALWAYS add exports to the namespace's `mod.ts`
 - ALWAYS co-locate tests (`*.test.ts` / `*.test.tsx`) with the source they test
-- ALWAYS run `bun run check` after changes
+- ALWAYS run local verification after changes (`bun run check`) — **delegate these runs to the verification agent (`cc-test`)**, never stream full gate output through a cc-plan or cc-dev agent. See _Verification Delegation_ under Toolchain.
 - ALWAYS account for HTML-encoded entities in test assertions for HTML output
 - ALWAYS enforce exact-match test assertions — never substring matching
 - Use native `rg` (ripgrep) for content search and `find` for file search
@@ -39,6 +39,16 @@ bun run lint:fix   # auto-fix lint/format issues
 
 **Avoid:** `tsc` (use `tsgo`), `bun-types` (use custom stub), `eslint`/`prettier` (use `biome`).
 
+### Verification Delegation
+
+Local verification gates — `bun run check`, `bun test`, and standalone lint/type/`validate-exports`
+runs — are **always delegated to the `cc-test` agent**, never run inline by `cc-plan` / `cc-dev`.
+Gate output (type errors, failing-test dumps, lint noise) is high-volume; keeping it on cc-test
+reserves cc-plan/cc-dev context for design and implementation. cc-test returns a terse verdict —
+`✓ green`, or `✗` with the failing steps and the minimal error excerpt — **never the full
+stream**; on failure cc-dev fixes and re-delegates rather than re-running the gate itself.
+Enforced by convention today (a `PreToolUse` hook could make it deterministic).
+
 ---
 
 ## Architecture
@@ -47,54 +57,16 @@ Forge acts as a **facade** for its external dependencies (`valibot` via `validat
 
 **Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests (`*.test.ts`/`*.test.tsx`).
 
-### Namespace classification
+**Leaf vs integration:** every namespace is either a **leaf** (zero cross-namespace forge imports —
+own directory + external npm packages only) or an **integration** namespace (explicitly composes
+across other forge namespaces). Classify before adding code; never introduce an undeclared
+cross-namespace dependency. The authoritative catalog — all public export paths, internal
+namespaces (e.g. `crypto`), and per-namespace classification — lives in
+[`.decisions/NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md) (§3 catalog, §4 classification,
+§6 new-namespace criteria).
 
-**Leaf namespaces** (zero cross-namespace dependencies): `assets/build`, `assets/manifest`, `cli`, `config`, `form`, `html/htmx`, `http`, `jsx`, `logging`, `result`, `router`, `session`, `ui/client`, `validation`
-
-**Integration namespaces** (compose across other namespaces):
-- `app` — imports from `form`, `http`, `logging`, `result`, `router`, `security`, `validation`
-- `assets` — imports from `validation` (schema and type definitions in `config.ts` / `types.ts`)
-- `security` — imports from `logging` (createLogger in rate-limit)
-- `ui/core` — imports from `form` (CSRF/honeypot field name constants)
-- `ui/server` — imports from `html/htmx` (oobAppend for flash OOB rendering) and `ui/core` (Toast for toastOob)
-- `pkg` — imports from `cli`
-- `testing` — imports from `app` (ConfigKey, AssetsFetcher), `context`, `form` (CSRF primitives), `logging` (requestLog, Logger), `storage/kv` (KVNamespace types); test-code-only utilities
-
-### Namespace map (25 public namespaces)
-
-| Import path | Category | Concern |
-|---|---|---|
-| `@y-core/forge/app` | Integration | App bootstrap & lifecycle |
-| `@y-core/forge/assets` | Integration | Asset config & metadata |
-| `@y-core/forge/assets/build` | Leaf | Asset build pipeline |
-| `@y-core/forge/assets/manifest` | Leaf | Manifest reading & sprite registry |
-| `@y-core/forge/cli` | Leaf | CLI command framework |
-| `@y-core/forge/config` | Leaf | Environment config resolution |
-| `@y-core/forge/context` | Leaf | `contextVar`, `RequestContext`, `AppContext`, `Middleware` |
-| `@y-core/forge/form` | Leaf | Form parsing, CSRF & bot detection |
-| `@y-core/forge/html/htmx` | Leaf | HTMX detection, request readers, `hxHeaders` builder, attrs, patterns |
-| `@y-core/forge/http` | Leaf | HTTP output — responses, headers, escaping |
-| `@y-core/forge/jsx` | Leaf | JSX runtime (in-house SSR, not a React facade) |
-| `@y-core/forge/logging` | Leaf | Structured logging |
-| `@y-core/forge/logging/show` | Integration | Log viewer route + UI components |
-| `@y-core/forge/pkg` | Integration | Release & versioning tooling |
-| `@y-core/forge/result` | Leaf | Result monad |
-| `@y-core/forge/router` | Leaf | Declarative route config |
-| `@y-core/forge/security` | Integration | Transport-layer request hardening |
-| `@y-core/forge/session` | Leaf | Session + cookie management |
-| `@y-core/forge/storage/db` | Leaf | D1 database client |
-| `@y-core/forge/storage/kv` | Leaf | Workers KV typed store |
-| `@y-core/forge/storage/r2` | Leaf | R2 object storage |
-| `@y-core/forge/testing` | Integration | Shared test utilities (test code only) |
-| `@y-core/forge/ui` | Integration | Server-side JSX components |
-| `@y-core/forge/ui/client` | Leaf | Browser-side UI scripts |
-| `@y-core/forge/ui/server` | Integration | Flash messages, ThemeToggle, Resumable, toast OOB |
-| `@y-core/forge/validation` | Leaf | Schema validation (facade for valibot) |
-
-**Internal namespaces** (no public export path — never import from outside forge):
-- `crypto` (`src/crypto/`) — HMAC/timing-safe utilities (`@internal`) — used by `form`, `security`, `session`
-
-**Removed from earlier tables:** `timingSafeEqual`/`timingSafeEqualBytes` (moved to `@internal` `crypto` module); `isHxRequest` moved from `security` to `html/htmx`.
+For namespace placement, barrel rules, and growth recipes, consult the governing `.decisions/`
+doc via the **Guide Index** — never duplicate that detail here.
 
 ---
 
@@ -120,31 +92,18 @@ Forge acts as a **facade** for its external dependencies (`valibot` via `validat
 
 ---
 
-## Growth rules
+## Growth Rules
 
-### `security` — transport-layer hardening only
+Add new code in the namespace its concern belongs to; follow the recipe in the governing doc —
+never duplicate a capability that already exists.
 
-`security` is **transport-layer request/response hardening**. It does not know about users, identities, or business logic.
-
-| Future feature | Belongs in | Rationale |
+| Adding… | Goes to | Recipe |
 |---|---|---|
-| Authentication (JWT, OAuth, session login) | NEW: `auth` | Application-layer identity, not transport hardening |
-| Permissions / RBAC | NEW: `auth` | Identity-aware access control |
-| CORS middleware | `security` | Transport-layer cross-origin policy |
-| Webhook signature verification | `security` | Request integrity verification |
-| API key management | NEW: `auth` | Identity/credential lifecycle |
-
-### `ui/core` — SSR-only components
-
-Components requiring client-side JS export only SSR markup from `ui/core`; client behavior goes in `ui/client`. If component count exceeds ~25, introduce sub-barrels (`ui/core/form/mod.ts`) but do NOT split the export map path — consumers always import from `@y-core/forge/ui`.
-
-### `app` — bootstrap and pipeline builders
-
-`app` contains bootstrap and lifecycle (`createApp`, `validateBindings`, `validateEnv`, `healthCheck`, `serveAssets`). The `definePage`/`defineAction` functions are pipeline builders. If a third pipeline variant is needed, extract all pipeline builders into a new `handler` namespace.
-
-### `http` — all HTTP output concerns
-
-`http` is the canonical source for response builders, header value classes, and HTML escaping. Future additions: `jsonResponse()`, streaming utilities, content negotiation. Consumers import from `@y-core/forge/http`, not from `@remix-run/headers` or `@remix-run/html-template` directly.
+| Authentication (JWT, OAuth, session login), permissions/RBAC, API-key lifecycle | NEW `auth` namespace — identity is application-layer, never `security` | `NAMESPACE_DESIGN.md` §5a |
+| CORS middleware, webhook signature verification | `security` (transport-layer request/response hardening only — no users, identities, or business logic) | `NAMESPACE_DESIGN.md` §5a, `SECURITY_HARDENING.md` |
+| SSR component | `ui/core` (markup only); client-side behavior goes in `ui/client`; consumers always import from `@y-core/forge/ui` | `NAMESPACE_DESIGN.md` §5b, `UI_COMPONENTS.md` |
+| Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | `NAMESPACE_DESIGN.md` §5c |
+| HTTP output concern (response builders, header value classes, HTML escaping, `jsonResponse()`, streaming, content negotiation) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | `NAMESPACE_DESIGN.md` §5d |
 
 ---
 
@@ -164,16 +123,6 @@ Registered in `.mcp.json`. Available in all agents.
 4. `mcp__tsmcp__lsp_document_symbols` — list all symbols in a specific file
 
 **Behavioral rule:** NEVER use Bash `grep` or `Read` on `.decisions/` files when tsmcp is available. NEVER load a full `.decisions/` file via `Read` — always use the section-aware tools.
-
-| Tool | Use |
-|------|-----|
-| `mcp__tsmcp__decisions_list` | List governing docs with section index — start here |
-| `mcp__tsmcp__decisions_read` | Read a doc or a specific section (`section: "5a"`) |
-| `mcp__tsmcp__decisions_search` | Search all governing docs by keyword |
-| `mcp__tsmcp__lsp_workspace_symbols` | Find types, functions, interfaces by name (indexed, fast) |
-| `mcp__tsmcp__lsp_find_references` | All callers / all implementors |
-| `mcp__tsmcp__lsp_definition` | Jump to any symbol definition |
-| `mcp__tsmcp__lsp_document_symbols` | List symbols in a TypeScript file by path |
 
 ---
 
