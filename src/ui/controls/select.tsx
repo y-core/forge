@@ -1,15 +1,9 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, PropsWithChildren } from "../../jsx/types";
 import { Select as CoreSelect } from "../core/select";
-import { fieldAttr } from "../server/field-attr";
-import { scopeAttrs } from "../server/scope-attrs";
+import { createBoundControl } from "./create-bound-control";
 
-type BoundSelectProps = Parameters<typeof CoreSelect>[0] & { bind: string; action?: string };
-
-const SelectRoot: FC<PropsWithChildren<BoundSelectProps>> = ({ bind, action = "bindField", ...props }) => (
-  <CoreSelect {...props} {...scopeAttrs({ onChange: action })} {...fieldAttr(bind)} />
-);
+const SelectRoot = createBoundControl(CoreSelect, { event: "onChange", defaultAction: "bindField" });
 
 /**
  * Pre-bound `Select` that stamps `data-on-change` + `data-field` for the resumable-scope

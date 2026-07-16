@@ -12,6 +12,7 @@ import {
   utf8Decode,
   utf8Encode,
 } from "../crypto/mod";
+import { err, ok } from "../result/result";
 import { CSRF_FIELD_DEFAULT } from "./constants";
 import { parseFormData } from "./parse-form-data";
 import type { CsrfKeyRing, CsrfResult, CsrfSecretResolver, CsrfTokenOptions, CsrfVerifyOptions } from "./types";
@@ -96,10 +97,10 @@ export async function verifyCsrfToken(
   const opts: CsrfVerifyOptions = typeof maxAgeMsOrOptions === "number" ? { maxAgeMs: maxAgeMsOrOptions } : maxAgeMsOrOptions;
   const maxAgeMs = opts.maxAgeMs ?? 3_600_000;
 
-  if (!token) return { ok: false, reason: "missing-token" };
+  if (!token) return err("missing-token");
 
   const dotIdx = token.indexOf(".");
-  if (dotIdx <= 0 || dotIdx === token.length - 1) return { ok: false, reason: "invalid-format" };
+  if (dotIdx <= 0 || dotIdx === token.length - 1) return err("invalid-format");
 
   const payloadEncoded = token.slice(0, dotIdx);
   const sigEncoded = token.slice(dotIdx + 1);
@@ -108,39 +109,39 @@ export async function verifyCsrfToken(
   try {
     sigBytes = base64urlDecode(sigEncoded);
   } catch {
-    return { ok: false, reason: "invalid-format" };
+    return err("invalid-format");
   }
 
   let payloadStr: string;
   try {
     payloadStr = utf8Decode(base64urlDecode(payloadEncoded));
   } catch {
-    return { ok: false, reason: "invalid-format" };
+    return err("invalid-format");
   }
 
   const parts = payloadStr.split("|");
-  if (parts.length !== 5) return { ok: false, reason: "invalid-format" };
+  if (parts.length !== 5) return err("invalid-format");
 
   const [_kid, tokenPath, tokenSubject, timestampStr] = parts as [string, string, string, string, string];
   const timestamp = Number(timestampStr);
-  if (!Number.isInteger(timestamp)) return { ok: false, reason: "expired" };
-  if (timestamp > Date.now() + CLOCK_SKEW_MS) return { ok: false, reason: "future-timestamp" };
-  if (Date.now() - timestamp > maxAgeMs) return { ok: false, reason: "expired" };
+  if (!Number.isInteger(timestamp)) return err("expired");
+  if (timestamp > Date.now() + CLOCK_SKEW_MS) return err("future-timestamp");
+  if (Date.now() - timestamp > maxAgeMs) return err("expired");
 
-  if (tokenPath !== path) return { ok: false, reason: "path-mismatch" };
+  if (tokenPath !== path) return err("path-mismatch");
 
   if (opts.subject !== undefined && tokenSubject !== opts.subject) {
-    return { ok: false, reason: "subject-mismatch" };
+    return err("subject-mismatch");
   }
 
   const ring = normalizeRing(keyOrRing);
   const key = ring.keys[_kid];
-  if (!key) return { ok: false, reason: "unknown-key" };
+  if (!key) return err("unknown-key");
 
   const valid = await hmacVerify(key, payloadStr, sigBytes);
-  if (!valid) return { ok: false, reason: "invalid-signature" };
+  if (!valid) return err("invalid-signature");
 
-  return { ok: true };
+  return ok();
 }
 
 /**
@@ -168,7 +169,11 @@ export type { CsrfSecretResolver };
  * the same `env` binding lives for the isolate's lifetime, so the key is imported exactly
  * once. In tests each `app.request(..., env)` call with a different `env` object re-invokes
  * the resolver, ensuring per-environment isolation. Falls back to no-cache when `env` is
- * absent. @public
+ * absent.
+ *
+ * `subject` is **required**: pass a resolver that derives the session/subject the token is
+ * bound to (returning `undefined` mints/verifies a path-only token for that request), or the
+ * literal `false` to opt out of subject binding entirely (greppable, path-only tokens). @public
  */
 export function csrfProtection(options: {
   // biome-ignore lint/suspicious/noExplicitAny: context shape varies
@@ -176,7 +181,7 @@ export function csrfProtection(options: {
   tokenField?: string;
   headerName?: string;
   // biome-ignore lint/suspicious/noExplicitAny: context shape varies
-  subject?: (context: RequestContext<any, any>) => string | undefined;
+  subject: ((context: RequestContext<any, any>) => string | undefined) | false;
 }): Middleware {
   const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
 
@@ -202,7 +207,7 @@ export function csrfProtection(options: {
     if (!activeKey) {
       throw new Error(`CSRF key ring has no key for active key id "${ring.activeKeyId}"`);
     }
-    const subject = options.subject?.(context);
+    const subject = options.subject === false ? undefined : options.subject(context);
     const tokenOptions: CsrfTokenOptions = { kid: ring.activeKeyId, ...(subject !== undefined ? { subject } : {}) };
 
     csrfMinterCtx.set(context, (path: string) => createCsrfToken(activeKey, path, tokenOptions));

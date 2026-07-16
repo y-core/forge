@@ -105,6 +105,24 @@ describe("renderToString — HTML elements", () => {
     expect(out).not.toContain("style=");
   });
 
+  it("skips attributes with unsafe names (injection guard)", async () => {
+    const node = el("div", { "x onmouseover=alert(1)": "y", id: "box" });
+    node.props.children = "";
+    expect(String(await renderToString(node))).toBe('<div id="box"></div>');
+  });
+
+  it('emits enumerated draggable={true} as draggable="true"', async () => {
+    const node = el("div", { draggable: true });
+    node.props.children = "";
+    expect(String(await renderToString(node))).toBe('<div draggable="true"></div>');
+  });
+
+  it('emits enumerated draggable={false} as draggable="false"', async () => {
+    const node = el("div", { draggable: false });
+    node.props.children = "";
+    expect(String(await renderToString(node))).toBe('<div draggable="false"></div>');
+  });
+
   it("renders nonce attribute", async () => {
     const node = el("script", { nonce: "abc123", src: "/main.js", type: "module" });
     expect(String(await renderToString(node))).toBe('<script nonce="abc123" src="/main.js" type="module"></script>');

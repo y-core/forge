@@ -54,7 +54,7 @@ describe("verifyOrigin", () => {
 
   it("rejects a disallowed Origin", () => {
     const req = new Request("https://example.com/api/contact", { method: "POST", headers: { Origin: "https://evil.com" } });
-    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "disallowed" });
+    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "disallowed" });
   });
 
   it("falls back to Referer when Origin is absent and Referer matches", () => {
@@ -64,12 +64,12 @@ describe("verifyOrigin", () => {
 
   it("rejects when Referer origin does not match", () => {
     const req = new Request("https://example.com/api/contact", { method: "POST", headers: { Referer: "https://evil.com/page" } });
-    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "disallowed" });
+    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "disallowed" });
   });
 
   it("rejects when both Origin and Referer are absent", () => {
     const req = new Request("https://example.com/api/contact", { method: "POST" });
-    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "missing" });
+    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "missing" });
   });
 
   it("Origin takes precedence over Referer", () => {
@@ -77,16 +77,16 @@ describe("verifyOrigin", () => {
       method: "POST",
       headers: { Origin: "https://evil.com", Referer: "https://example.com/page" },
     });
-    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "disallowed" });
+    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "disallowed" });
   });
 
   it("returns missing for GET requests without Origin (no safe-method bypass)", () => {
     const req = new Request("https://example.com/api/contact", { method: "GET" });
-    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "missing" });
+    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "missing" });
   });
 
   it("returns missing for HEAD requests without Origin (no safe-method bypass)", () => {
     const req = new Request("https://example.com/api/contact", { method: "HEAD" });
-    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, reason: "missing" });
+    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "missing" });
   });
 });

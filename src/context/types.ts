@@ -32,6 +32,8 @@ export interface ContextKey<T> {
 export const EnvKey = createContextKey<unknown>();
 /** Context key that provides the Workers `ExecutionContext`. @internal */
 export const ExecutionContextKey = createContextKey<ExecutionContext>();
+/** Context key that stores the resolved app config for this request. @public */
+export const ConfigKey = createContextKey<unknown>();
 
 /** Extends `RequestContext` with Workers-specific `env`, `executionCtx`, and `config` properties.
  *  Available on any context once the app router has injected per-request state. @public */

@@ -53,12 +53,12 @@ describe("checkCrossOriginProtection", () => {
 
   it("blocks POST with Sec-Fetch-Site: cross-site", () => {
     const req = new Request("https://example.com/test", { method: "POST", headers: { "Sec-Fetch-Site": "cross-site" } });
-    expect(checkCrossOriginProtection(req)).toEqual({ ok: false, reason: "cross-site" });
+    expect(checkCrossOriginProtection(req)).toEqual({ ok: false, error: "cross-site" });
   });
 
   it("blocks POST when Sec-Fetch-Site is absent (fail-closed default)", () => {
     const req = new Request("https://example.com/test", { method: "POST" });
-    expect(checkCrossOriginProtection(req)).toEqual({ ok: false, reason: "missing-fetch-metadata" });
+    expect(checkCrossOriginProtection(req)).toEqual({ ok: false, error: "missing-fetch-metadata" });
   });
 
   it("allows POST when Sec-Fetch-Site is absent and allowMissingHeader: true", () => {
@@ -143,6 +143,12 @@ describe("originProtection middleware", () => {
   it("allows GET when Sec-Fetch-Site is absent (safe method exempt)", async () => {
     const app = makeOriginApp();
     const res = await app.request("/test", { method: "GET" });
+    expect(res.status).toBe(200);
+  });
+
+  it("allows a cross-site safe GET (safe method exempted before the COP check)", async () => {
+    const app = makeOriginApp();
+    const res = await app.request("/test", { method: "GET", headers: { "Sec-Fetch-Site": "cross-site", Origin: "https://evil.example.com" } });
     expect(res.status).toBe(200);
   });
 

@@ -1,4 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
+import { validateBindings } from "../context/env-validation";
 import { requestLogger } from "../logging/request-logger";
 import type { RequestLoggerOptions } from "../logging/types";
 import { originProtection } from "../security/cop";
@@ -7,7 +8,6 @@ import { rateLimit } from "../security/rate-limit";
 import { requestId } from "../security/request-id";
 import type { OriginProtectionOptions, RateLimitOptions, SecurityHeadersOptions } from "../security/types";
 import type { v } from "../validation/mod";
-import { validateBindings } from "./env";
 import type { Forge } from "./forge-app";
 
 /** One per-path guard group in `MiddlewareChainOptions.guards`. @public */
@@ -26,6 +26,10 @@ export interface MiddlewareGuardGroup<Bindings = Record<string, unknown>> {
 export interface MiddlewareChainOptions<Bindings = Record<string, unknown>> {
   /** Adds `requestId()` first in the chain. @defaultValue true */
   requestId?: boolean;
+  /** Trust Cloudflare-injected request headers (`CF-Ray`, `CF-Connecting-IP`). Threaded to
+   *  `requestId()` and every rate-limit guard. Only enable when the Worker is known to run behind
+   *  Cloudflare — these headers are client-forgeable off Cloudflare. @defaultValue false */
+  trustCfHeaders?: boolean;
   /** Per-request structured logging; omitted = no request logger. */
   logging?: RequestLoggerOptions<Bindings>;
   /** Security-header policy — required; the chain exists to make the safe order the easy order. */
@@ -71,7 +75,8 @@ export function applyMiddlewareChain<Bindings extends object = Record<string, un
   app: Forge<Bindings>,
   options: MiddlewareChainOptions<Bindings>,
 ): void {
-  if (options.requestId !== false) app.use("*", requestId());
+  const trustCfHeaders = options.trustCfHeaders === true;
+  if (options.requestId !== false) app.use("*", requestId({ trustCfHeaders }));
   if (options.logging) app.use("*", requestLogger<Bindings>(options.logging));
   app.use("*", createSecurityHeaders(options.securityHeaders));
   if (options.bindings) app.use("*", validateBindings(options.bindings));
@@ -80,7 +85,7 @@ export function applyMiddlewareChain<Bindings extends object = Record<string, un
   for (const group of options.guards ?? []) {
     for (const path of group.paths) {
       if (group.origin) app.use(path, originProtection<Bindings>(group.origin));
-      if (group.rateLimit) app.use(path, rateLimit<Bindings>(group.rateLimit));
+      if (group.rateLimit) app.use(path, rateLimit<Bindings>({ trustCfHeaders, ...group.rateLimit }));
       if (group.middleware) app.use(path, ...group.middleware);
     }
   }

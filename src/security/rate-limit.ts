@@ -11,7 +11,7 @@ function defaultKey(c: AppContext<object>): string {
   if (!ip) {
     throw new Error(
       "rateLimit: CF-Connecting-IP header is absent and no custom key function was provided. " +
-        "Pass a `key` option for non-Cloudflare deployments.",
+        "Set `trustCfHeaders: true` when running behind Cloudflare, or pass a `key` option for non-Cloudflare deployments.",
     );
   }
   return ip;
@@ -26,14 +26,24 @@ function defaultOnLimit(): Response {
  * unless `required: false`.
  *
  * @remarks
- * The default key is the `CF-Connecting-IP` header, which is only trustworthy when the Worker runs
- * behind Cloudflare — on other platforms (or a directly-reachable origin) a client can forge it to
- * evade or poison the limit. For non-Cloudflare deployments always supply a custom `key`. @public
+ * Default-distrust: the `CF-Connecting-IP` header default key is only used when `trustCfHeaders` is
+ * `true` (the Worker is known to run behind Cloudflare). Off Cloudflare a client can forge that
+ * header to evade or poison the limit, so without `trustCfHeaders` and without a custom `key` the
+ * default keying throws — supply a custom `key` for non-Cloudflare deployments. A custom `key`
+ * always overrides regardless of `trustCfHeaders`. @public
  */
 export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimitOptions<Bindings>): Middleware {
   const logger = createLogger("rate-limit");
   const limiter = options.limiter;
-  const key: (c: AppContext<Bindings>) => string = options.key ?? (defaultKey as (c: AppContext<Bindings>) => string);
+  const defaultKeyResolver: (c: AppContext<Bindings>) => string = options.trustCfHeaders
+    ? (defaultKey as (c: AppContext<Bindings>) => string)
+    : () => {
+        throw new Error(
+          "rateLimit: refusing to key by CF-Connecting-IP without `trustCfHeaders: true`. " +
+            "Set `trustCfHeaders: true` when running behind Cloudflare, or pass a `key` option for non-Cloudflare deployments.",
+        );
+      };
+  const key: (c: AppContext<Bindings>) => string = options.key ?? defaultKeyResolver;
   const onLimit: (c: AppContext<Bindings>) => Response | Promise<Response> = options.onLimit ?? defaultOnLimit;
   const required = options.required !== false;
 

@@ -182,7 +182,7 @@ return redirect("/dashboard", 303, {
 ```ts
 function renderSuccess(message: string, options?: FragmentOptions): SafeHtml;
 function renderError(message: string, options?: FragmentOptions): SafeHtml;
-function renderValidationErrors(errors: string[], options?: FragmentOptions): SafeHtml;
+function renderValidationErrors(errors: readonly string[], options?: FragmentOptions): SafeHtml;
 ```
 
 Each renders a pre-styled banner as `SafeHtml`, with every dynamic value HTML-escaped. They return

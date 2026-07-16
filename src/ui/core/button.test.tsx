@@ -93,6 +93,10 @@ describe("Button", () => {
     expect(out).toContain("inline-flex");
   });
 
+  it("throws when asChild is given a non-element child", async () => {
+    await expect(render(<Button asChild>just text</Button>)).rejects.toThrow("Button with asChild requires exactly one JSX element child");
+  });
+
   it("forwards arbitrary data-* attributes with HTML-escaped values", async () => {
     const out = await render(
       <Button data-test-hook='cta' data-note='a&b'>

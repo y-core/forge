@@ -10,10 +10,10 @@ import { cn } from "../../ui/core/utils/cn";
 import { cva } from "../../ui/core/utils/cva";
 import type { LogRecord, LogRow } from "../types";
 
-/** Stable id of the log table tbody; shared so HTMX outerHTML swaps target the node the partial returns. @public */
+/** Stable id of the log table tbody; shared so HTMX outerHTML swaps target the node the partial returns. @internal */
 export const LOG_TBODY_ID = "log-tbody";
 
-/** Data returned by the log viewer loader. @public */
+/** Data returned by the log viewer loader. @internal */
 export interface LogViewerLoaderData {
   rows: LogRow[];
   cursor?: string;
@@ -42,7 +42,7 @@ interface LogLevelBadgeProps {
   level: string;
 }
 
-/** Colored badge for a log level. @public */
+/** Colored badge for a log level. @internal */
 export const LogLevelBadge: FC<LogLevelBadgeProps> = ({ level }) => {
   const variant = (["debug", "info", "warn", "error"].includes(level) ? level : "info") as LevelVariant;
   return <span class={levelBadgeVariants({ level: variant })}>{level}</span>;
@@ -56,7 +56,7 @@ interface LogFilterBarProps {
   icon: ForgeIcon<"chevron-down">;
 }
 
-/** Filter form for the log viewer — level selector, text search, and HTMX-powered submit. @public */
+/** Filter form for the log viewer — level selector, text search, and HTMX-powered submit. @internal */
 export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAction, icon }) => (
   <form class='flex flex-wrap sm:flex-nowrap items-end gap-3' hx-get={formAction} hx-target={`#${targetId}`} hx-swap='outerHTML' hx-push-url='true'>
     <FormField name='q' class='flex-1 min-w-xs'>
@@ -97,7 +97,7 @@ interface LogTableProps {
   tbodyId?: string;
 }
 
-/** Table of log rows with level badges and optional load-more button. @public */
+/** Table of log rows with level badges and optional load-more button. @internal */
 export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAction, tbodyId }) => (
   <div class='overflow-x-auto'>
     <table class='w-full border-collapse text-sm'>
@@ -129,7 +129,7 @@ interface LogTableBodyProps {
   id?: string;
 }
 
-/** `<tbody>` fragment — returned standalone for HTMX partial swaps. @public */
+/** `<tbody>` fragment — returned standalone for HTMX partial swaps. @internal */
 export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, cursor, complete, loadMoreAction }) => (
   <tbody {...(id !== undefined ? { id } : {})}>
     {rows.length === 0 && (
@@ -179,7 +179,7 @@ export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, cursor, complete
 /**
  * Expanded detail cell — the message `<td>` after a detail toggle, showing the full stored
  * record (including `data.stack` when present) as pretty-printed JSON. Rendered as the
- * HTMX `outerHTML` replacement of the clicked message cell. @public
+ * HTMX `outerHTML` replacement of the clicked message cell. @internal
  */
 export const LogDetailCell: FC<{ record: LogRecord | null }> = ({ record }) => (
   <td class='py-2 pr-4 text-brand-900'>
@@ -193,7 +193,7 @@ export const LogDetailCell: FC<{ record: LogRecord | null }> = ({ record }) => (
   </td>
 );
 
-/** Full log viewer content — filter bar and table. @public */
+/** Full log viewer content — filter bar and table. @internal */
 export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"chevron-down"> }> = ({ data, icon }) => (
   <main id='main-content' class='mx-auto max-w-7xl px-6 py-10 lg:px-10'>
     <h1 class='mb-6 text-2xl font-semibold text-brand-900'>Request Log</h1>

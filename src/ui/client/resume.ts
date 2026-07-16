@@ -37,8 +37,9 @@ export interface ScopeDefinition<A extends string = string> {
    * May return a disposer; if it does, the disposer is called when `resume()`'s teardown runs. */
   // biome-ignore lint/suspicious/noConfusingVoidType: void in union is intentional — allows implicit-return setups
   setup?: (ctx: Omit<ResumeContext, "el">) => void | (() => void);
-  /** Action handlers keyed by the `data-on-<event>` value. */
-  on: Record<A, (ctx: ResumeContext, event: Event) => void>;
+  /** Action handlers keyed by the `data-on-<event>` value. Optional: a `setup`-only scope may omit
+   * it, in which case `registerScope` defaults it to an empty table. */
+  on?: Record<A, (ctx: ResumeContext, event: Event) => void>;
 }
 
 const scopes = new Map<string, ScopeDefinition>();
@@ -50,7 +51,7 @@ const disposers: Array<() => void> = [];
  * @public
  **/
 export function registerScope<A extends string = string>(name: string, def: ScopeDefinition<A>): void {
-  scopes.set(name, def as ScopeDefinition);
+  scopes.set(name, { ...def, on: def.on ?? {} } as ScopeDefinition);
 }
 
 let teardown: (() => void) | null = null;
@@ -59,27 +60,42 @@ let teardown: (() => void) | null = null;
  *  and returns the same teardown. Returns a disposer that removes all listeners. @public */
 export function resume(): () => void {
   if (teardown) return teardown; // already mounted — no duplicate listeners
-  const handlers: Array<[string, EventListener]> = [];
+  const handlers: Array<[string, EventListener, boolean]> = [];
   for (const type of SCOPE_EVENTS) {
     const handler: EventListener = (event) => dispatch(type, event);
     document.addEventListener(type, handler);
-    handlers.push([type, handler]);
+    handlers.push([type, handler, false]);
   }
   // Native Invoker Commands bridge: one delegated `command` listener routes custom `--action`
   // commands into the same scope handler table the `data-on-*` events feed. Built-in commands
   // (no `--` prefix) are left to the platform. Companion to the SCOPE_EVENTS listeners above.
+  // The platform dispatches `command` with `bubbles:false`, so this listener runs in the capture
+  // phase — a bubble-phase delegated listener never sees it and every custom action goes dead.
   const commandHandler: EventListener = (event) => dispatchCommand(event);
-  document.addEventListener("command", commandHandler);
-  handlers.push(["command", commandHandler]);
+  document.addEventListener("command", commandHandler, { capture: true });
+  handlers.push(["command", commandHandler, true]);
   teardown = () => {
-    for (const [type, handler] of handlers) document.removeEventListener(type, handler);
+    for (const [type, handler, capture] of handlers) document.removeEventListener(type, handler, capture);
     for (const d of disposers.splice(0)) d();
     teardown = null;
   };
-  // Eager pass: scopes that opt out of lazy resume are hydrated immediately.
+  // Eager pass: scopes that opt out of lazy resume are hydrated immediately. An element whose
+  // `data-scope` names no registered definition is always a bug — the app forgot to
+  // side-effect-import the client module that registers it. Warn once per unknown name.
+  const warnedUnknown = new Set<string>();
   for (const el of document.querySelectorAll<HTMLElement>("[data-scope]")) {
-    const def = scopes.get(el.dataset.scope ?? "");
-    if (def?.eager) ensureResumed(el, def);
+    const name = el.dataset.scope ?? "";
+    const def = scopes.get(name);
+    if (!def) {
+      if (!warnedUnknown.has(name)) {
+        warnedUnknown.add(name);
+        console.warn(
+          `[resume] no scope registered for data-scope="${name}" — side-effect-import the client module that registers it (e.g. "ui/core/client") before calling resume().`,
+        );
+      }
+      continue;
+    }
+    if (def.eager) ensureResumed(el, def);
   }
   return teardown;
 }
@@ -112,8 +128,9 @@ function runAction(action: string, el: HTMLElement, event: Event): void {
     const def = scopes.get(scopeEl.dataset.scope ?? "");
     if (def) {
       const state = ensureResumed(scopeEl, def);
-      if (def.on[action]) {
-        def.on[action]({ root: scopeEl, el, state }, event);
+      const handler = def.on?.[action];
+      if (handler) {
+        handler({ root: scopeEl, el, state }, event);
         return;
       }
     }

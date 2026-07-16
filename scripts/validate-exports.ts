@@ -1,5 +1,5 @@
-import { resolve, dirname } from "node:path";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
 
@@ -14,6 +14,11 @@ const BROWSER_ONLY = new Set(["./ui/chrome/client", "./ui/client", "./ui/client/
 // Side-effect-only modules: intentionally export no values (they mutate globals or perform
 // one-time registration). ./register sets globalThis.React as a classic-runtime fallback.
 const SIDE_EFFECT_ONLY = new Set(["./jsx/register"]);
+
+// Sealed-internal barrels: a `src/**/mod.ts` that is intentionally NOT published (every symbol is
+// `@internal`, consumed only cross-namespace within forge). The reverse pass below exempts these
+// from the "every barrel must be exported" check. See NAMESPACE_DESIGN.md §3b.
+const SEALED_INTERNAL = new Set(["src/crypto/mod.ts"]);
 
 function parseBarrelExports(filePath: string): { values: string[]; hasExportStar: boolean; hasTypeExports: boolean } {
   const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");
@@ -125,17 +130,20 @@ function findPublicSymbols(filePath: string): string[] {
 /**
  * Recursively collects `.ts`/`.tsx` source files owned by `ownerDir`, stopping at any nested
  * directory that is itself a registered barrel (a separate namespace validated on its own).
- * Excludes test files and the barrel file itself.
+ * Excludes test files, the barrel file itself, and any file that is its own registered single-file
+ * export target (its `@public` symbols are published via that subpath — e.g. a browser-only
+ * `client.ts` value cannot live in the sibling SSR `mod.ts`).
  */
-function collectOwnedSourceFiles(ownerDir: string, barrelDirs: Set<string>, barrelFile: string): string[] {
+function collectOwnedSourceFiles(ownerDir: string, barrelDirs: Set<string>, barrelFile: string, ownTargets: Set<string>): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(ownerDir, { withFileTypes: true })) {
     const full = resolve(ownerDir, entry.name);
     if (entry.isDirectory()) {
       if (barrelDirs.has(full)) continue; // separate namespace — validated independently
-      out.push(...collectOwnedSourceFiles(full, barrelDirs, barrelFile));
+      out.push(...collectOwnedSourceFiles(full, barrelDirs, barrelFile, ownTargets));
     } else if (entry.isFile()) {
       if (full === barrelFile) continue;
+      if (ownTargets.has(full)) continue; // its own published subpath — validated via that entry
       if (!/\.tsx?$/.test(entry.name)) continue;
       if (/\.test\.tsx?$/.test(entry.name)) continue;
       out.push(full);
@@ -144,15 +152,21 @@ function collectOwnedSourceFiles(ownerDir: string, barrelDirs: Set<string>, barr
   return out;
 }
 
-const pkgExports = (pkg as any).exports as Record<string, { import?: string; types?: string } | string>;
+const pkgExports = (pkg as { exports?: Record<string, { import?: string; types?: string } | string> }).exports ?? {};
 let failed = false;
 
 // Pre-compute the directory of every `mod.ts` barrel so the source→barrel scan can stop at
 // sub-namespace boundaries (e.g. `./logging` must not pull in `./logging/show` symbols).
 const barrelDirs = new Set<string>();
+// Single-file export targets (non-`mod.ts` subpaths, e.g. `./ui/chrome/client`, `./ui/assets/glyphs`):
+// each owns its own `@public` symbols via its own subpath, so a parent barrel's source→barrel scan
+// must not demand them (see `collectOwnedSourceFiles`).
+const ownExportTargetFiles = new Set<string>();
 for (const entry of Object.values(pkgExports)) {
   const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
-  if (rawPath?.endsWith("/mod.ts")) barrelDirs.add(dirname(resolve(ROOT, rawPath)));
+  if (!rawPath) continue;
+  if (rawPath.endsWith("/mod.ts")) barrelDirs.add(dirname(resolve(ROOT, rawPath)));
+  else ownExportTargetFiles.add(resolve(ROOT, rawPath));
 }
 
 function isPublished(rawPath: string): boolean {
@@ -220,9 +234,7 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   }
 
   try {
-    const consumerSpecifier = specifier === "."
-      ? PACKAGE_NAME
-      : `${PACKAGE_NAME}${specifier.slice(1)}`;
+    const consumerSpecifier = specifier === "." ? PACKAGE_NAME : `${PACKAGE_NAME}${specifier.slice(1)}`;
     const mod = await import(consumerSpecifier);
     const missing = values.filter((name) => !(name in mod));
     if (missing.length > 0) {
@@ -250,7 +262,7 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   if (!existsSync(barrelFile)) continue; // already reported by the loop above
 
   const barrelNames = parseBarrelExportNames(barrelFile);
-  const sourceFiles = collectOwnedSourceFiles(ownerDir, barrelDirs, barrelFile);
+  const sourceFiles = collectOwnedSourceFiles(ownerDir, barrelDirs, barrelFile, ownExportTargetFiles);
 
   const missing = new Set<string>();
   for (const file of sourceFiles) {
@@ -264,6 +276,52 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
     failed = true;
   } else {
     console.log(`  ok ${specifier} (@public symbols all exported)`);
+  }
+}
+
+// Reverse pass A (src → map): every `src/**/mod.ts` barrel must be an export target or be on the
+// sealed-internal allowlist. The forward loop above only ever sees barrels already in the exports
+// map, so a namespace shipped in files[] but never wired into `exports` (e.g. an unpublished
+// `storage/r2`) would slip through — this catches that whole drift class by construction.
+console.log("\nChecking every src `mod.ts` barrel is exported (or sealed-internal)...");
+const exportedTargets = new Set<string>();
+for (const entry of Object.values(pkgExports)) {
+  const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
+  if (rawPath) exportedTargets.add(rawPath.startsWith("./") ? rawPath.slice(2) : rawPath);
+}
+
+function collectModFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...collectModFiles(full));
+    } else if (entry.isFile() && entry.name === "mod.ts") {
+      out.push(relative(ROOT, full));
+    }
+  }
+  return out;
+}
+
+for (const modFile of collectModFiles(resolve(ROOT, "src"))) {
+  if (exportedTargets.has(modFile) || SEALED_INTERNAL.has(modFile)) {
+    console.log(`  ok ${modFile}`);
+  } else {
+    console.error(`FAIL ${modFile}: barrel is not a package.json exports target and not on the sealed-internal allowlist`);
+    failed = true;
+  }
+}
+
+// Reverse pass B (files[] → disk): every non-negated `files[]` entry must exist on disk. A dangling
+// entry (e.g. a `templates/` that was removed) silently ships nothing on `npm pack`; this flags it.
+console.log("\nChecking every package.json files[] entry exists on disk...");
+for (const entry of PUBLISHED_FILES) {
+  if (entry.startsWith("!")) continue;
+  if (existsSync(resolve(ROOT, entry))) {
+    console.log(`  ok ${entry}`);
+  } else {
+    console.error(`FAIL files[]: ${entry} does not exist on disk`);
+    failed = true;
   }
 }
 

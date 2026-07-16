@@ -36,7 +36,7 @@ import {
   healthCheck,
   validateBindings,
 } from "@y-core/forge/app";
-import { renderPage } from "@y-core/forge/render";
+import { renderPage } from "@y-core/forge/jsx";
 import { route, createController } from "@y-core/forge/router";
 import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
 import { v } from "@y-core/forge/validation";
@@ -78,7 +78,7 @@ applyAssets(app, { notFoundView });   // static-asset catch-all over the ASSETS 
 export default app;
 ```
 
-> `renderPage` is imported from `@y-core/forge/render`, **not** from this namespace. Pages call it inside their `view` to turn a JSX tree into an `HtmlResponse`.
+> `renderPage` is imported from `@y-core/forge/jsx`, **not** from this namespace. Pages call it inside their `view` to turn a JSX tree into an `HtmlResponse`.
 
 ---
 
@@ -158,7 +158,7 @@ Wraps a `loader` (data) + `view` (JSX → `Response`) into a `RequestHandler`, w
 
 ```ts
 import { definePage } from "@y-core/forge/app";
-import { renderPage } from "@y-core/forge/render";
+import { renderPage } from "@y-core/forge/jsx";
 
 export const homePage = definePage<Bindings, AppConfig>({
   cache: { maxAge: 300, scope: "public" },
@@ -177,9 +177,9 @@ Wires a `parse → validate → handle` pipeline into a POST handler that return
 | Field | Type | Description |
 |---|---|---|
 | `parse` | `(formData: ReadonlyFormData) => Input` | Reads typed fields out of the parsed form body. May throw on malformed input → `400`. |
-| `validate` | `(data: Input) => ValidationResult<Input>` | Validates the parsed data. A `{ ok: false, errors }` result produces a `422` validation fragment. |
+| `validate` | `(data: Input) => ValidationResult<Input>` | Validates the parsed data. A `{ ok: false, error }` result (with `error: readonly string[]`) produces a `422` validation fragment. |
 | `handle` | `(data: Input, c, config) => Response \| Promise<Response>` | Runs after validation succeeds. Receives the validated `data`, the context, and the resolved `config`. Returns the response directly. |
-| `onValidationError` | `(errors: string[], c) => Response \| Promise<Response>` | Optional. Overrides the default `422` validation fragment. |
+| `onValidationError` | `(errors: readonly string[], c) => Response \| Promise<Response>` | Optional. Overrides the default `422` validation fragment; receives the message list from the `ValidationResult` failure (`.error`). |
 | `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Overrides the default `400`/`500` fragment when `parse` or `handle` throws. |
 
 ```ts
@@ -380,10 +380,10 @@ Global middleware (`app.use`) runs before route-level middleware (in the control
 
 ### Page rendering
 
-A `view` returns a `Response`, typically built by `renderPage` from `@y-core/forge/render`:
+A `view` returns a `Response`, typically built by `renderPage` from `@y-core/forge/jsx`:
 
 ```ts
-import { renderPage } from "@y-core/forge/render";
+import { renderPage } from "@y-core/forge/jsx";
 
 view: (_c, _cfg, state) => renderPage(<Home data={state.data} />),
 ```

@@ -1,3 +1,4 @@
+import { err, ok } from "../result/result";
 import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "./types";
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -17,11 +18,11 @@ export async function verifyTurnstile(
   remoteIp?: string,
 ): Promise<TurnstileResult> {
   if (!options.expectedHostname) {
-    return { ok: false, reason: "hostname-mismatch" };
+    return err("hostname-mismatch");
   }
   const token = formData.get(tokenField);
   if (typeof token !== "string" || token === "") {
-    return { ok: false, reason: "missing-token" };
+    return err("missing-token");
   }
 
   const body: Record<string, string> = { secret: secretKey, response: token };
@@ -42,37 +43,37 @@ export async function verifyTurnstile(
       signal: controller.signal,
     });
   } catch {
-    return { ok: false, reason: controller.signal.aborted ? "timeout" : "network-error" };
+    return err(controller.signal.aborted ? "timeout" : "network-error");
   } finally {
     clearTimeout(timeoutId);
   }
 
   if (!res.ok) {
-    return { ok: false, reason: "network-error" };
+    return err("network-error");
   }
 
   let data: { action?: string; cdata?: string; hostname?: string; success: boolean };
   try {
     data = (await res.json()) as { action?: string; cdata?: string; hostname?: string; success: boolean };
   } catch {
-    return { ok: false, reason: "parse-error" };
+    return err("parse-error");
   }
 
   if (!data.success) {
-    return { ok: false, reason: "verification-failed" };
+    return err("verification-failed");
   }
 
   if (data.hostname !== options.expectedHostname) {
-    return { ok: false, reason: "hostname-mismatch" };
+    return err("hostname-mismatch");
   }
 
   if (options.expectedAction && data.action !== options.expectedAction) {
-    return { ok: false, reason: "action-mismatch" };
+    return err("action-mismatch");
   }
 
   if (options.expectedCData && data.cdata !== options.expectedCData) {
-    return { ok: false, reason: "cdata-mismatch" };
+    return err("cdata-mismatch");
   }
 
-  return { ok: true };
+  return ok();
 }

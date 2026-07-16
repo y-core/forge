@@ -1,6 +1,6 @@
 ---
 title: Input Validation
-description: "valibot facade, v namespace, v.safeParse, abortEarly, ValidationResult, defineAction parse/validate/handle, form namespace, readFields, parseFormData byte cap 413, honeypot, Turnstile CAPTCHA expectedHostname, CSRF protection, importCsrfKey, csrfProtection, mintCsrf, csrfTokenCtx, CsrfConfigSchema, TurnstileConfigSchema, validate at boundary"
+description: "valibot facade, v namespace, v.safeParse, abortEarly, ValidationResult, defineAction parse/validate/handle, form namespace, readFields, parseFormData byte cap 413, honeypot, Turnstile CAPTCHA expectedHostname, CSRF protection, importCsrfKey, csrfProtection required subject resolver or false, subject-mismatch, token fixation cross-user replay, greppable opt-out, mintCsrf, csrfTokenCtx, CsrfConfigSchema, TurnstileConfigSchema, validate at boundary"
 weight: 25
 ---
 
@@ -66,17 +66,20 @@ return field-specific errors quickly rather than collecting all issues.
 When `abortEarly` is omitted (default `false`), all fields are validated and all
 issues are collected — useful for API responses that must enumerate every error.
 
-### 1c. ValidationResult Type — ok/errors Discriminated Union
+### 1c. ValidationResult Type — Domain Alias of the One Result Primitive
 
     import type { ValidationResult } from "@y-core/forge/validation"
-    // also re-exported from "@y-core/forge/result"
-    // { ok: true; data: T } | { ok: false; errors: string[] }
+    // defined in and also re-exported from "@y-core/forge/result"
+    // ValidationResult<T> = Result<T, readonly string[]>
+    //   ≡ { ok: true; data: T } | { ok: false; error: readonly string[] }
 
-`ValidationResult<T>` is the standard return type for the `validate` step and for service
-functions that perform their own validation. On success it carries the parsed `data`; on
-failure it carries an array of human-readable `errors` strings. Inspect `result.ok` before
-proceeding. `renderValidationErrors(errors)` accepts that `string[]` directly — see
-[ERROR_HANDLING.md](./ERROR_HANDLING.md).
+`ValidationResult<T>` is a **domain alias** of forge's one `Result` primitive
+(`Result<T, readonly string[]>`) and the standard return type for the `validate` step and
+for service functions that perform their own validation. On success it carries the parsed
+`data`; on failure the single `error` field carries the per-field message list as
+`readonly string[]` — there is no separate `errors` field. Inspect `result.ok` before
+proceeding. `renderValidationErrors(result.error)` accepts that message list directly — see
+[ERROR_HANDLING.md](./ERROR_HANDLING.md) §1c.
 
 ### 1d. defineAction — parse → validate → handle Pipeline
 
@@ -95,7 +98,7 @@ failure mode. It returns a `RequestHandler` you map to a route action in the con
         const result = v.safeParse(ContactSchema, data, { abortEarly: true })
         return result.success
           ? { ok: true, data: result.output }
-          : { ok: false, errors: result.issues.map((i) => i.message) }
+          : { ok: false, error: result.issues.map((i) => i.message) }
       },
       handle: async (data, c, config) => {
         await contactService.send(data, config)
@@ -170,13 +173,20 @@ current path (exposed via `csrfTokenCtx`/`csrfMinterCtx`), and on mutations veri
 submitted token against the HMAC key (or key ring) resolved from the configured secret.
 The token is read from the `X-CSRF-Token` header or, failing that, the `_csrf` form field
 (`CSRF_FIELD_DEFAULT`; override via `tokenField`/`headerName`). Returns `403` if the token
-is absent, malformed, expired, path-mismatched, or has an invalid signature.
+is absent, malformed, expired, path-mismatched, subject-mismatched, or has an invalid signature.
+
+**`subject` is required** — a per-request resolver, or the literal `false`. Omitting it is a
+compile error. This forces a deliberate decision about token binding at every call site instead
+of silently defaulting to a path-only token:
 
     import { csrfProtection, importCsrfKey } from "@y-core/forge/form"
+    import { sessionCtx } from "@y-core/forge/session"
     import type { Middleware } from "@y-core/forge/context"
 
+    // Session-bearing app: bind the token to the session (recommended).
     export const csrfVerifyGuard: Middleware = csrfProtection({
       secret: (c) => importCsrfKey(configStore.get(c.env).security.csrf.secret),
+      subject: (c) => sessionCtx.getOptional(c)?.id,   // mint AND verify per session
     })
 
 Attach `csrfVerifyGuard` to all mutating routes that process form submissions via the
@@ -184,22 +194,26 @@ controller action's `middleware` array. See
 [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) for route-level middleware placement
 patterns.
 
-**Session-bearing apps must bind the token to the session.** Path binding alone does not
-stop cross-user token replay against the same path. When `sessionMiddleware` is present,
-wire the per-request `subject` resolver — this is the standard pattern:
+**Why `subject` binding matters — the fixation risk it closes.** A token bound to the path
+alone is valid for that path regardless of who submits it. An attacker can obtain a valid
+path-scoped token (it is minted on the public `GET`) and plant it in a victim's request — a
+CSRF-token-fixation / cross-user replay against the same path. Binding the token to the
+session subject scopes it to one identity: a token minted under session A fails verification
+under session B with reason `subject-mismatch` → `403` (contract pinned by the subject-binding
+test in `src/form/csrf.test.ts`). Register `sessionMiddleware` before the guard so the session
+exists when the resolver runs. `form` and `session` are independent leaf namespaces, so this
+composition lives in the consuming app — forge does not auto-wire it. A resolver returning
+`undefined` for a given request mints/verifies a path-only token for that request.
 
-    import { sessionCtx } from "@y-core/forge/session"
+**Path-only opt-out — `subject: false`.** For routes with no session identity to bind to
+(e.g. a public pre-auth form), pass the literal `false`. It is the explicit, greppable opt-out
+that makes "this route accepts path-only CSRF tokens" auditable — you can grep `subject: false`
+across the codebase to review every deliberately unbound guard:
 
-    export const csrfVerifyGuard: Middleware = csrfProtection({
+    export const publicCsrfGuard: Middleware = csrfProtection({
       secret: (c) => importCsrfKey(configStore.get(c.env).security.csrf.secret),
-      subject: (c) => sessionCtx.getOptional(c)?.id,   // mint AND verify per session
+      subject: false,   // deliberate: path-only token, no session binding
     })
-
-Register `sessionMiddleware` before the guard so the session exists when the subject
-resolves. A token minted under one session fails verification under another with reason
-`subject-mismatch` → `403` (contract pinned by the subject-binding test in
-`src/form/csrf.test.ts`). `form` and `session` are independent leaf namespaces, so this
-composition lives in the consuming app — forge does not auto-wire it.
 
 ### 3b. importCsrfKey and importCsrfKeyRing — Secret Import
 
@@ -248,10 +262,11 @@ signature and a freshness window).
 
     const token = await createCsrfToken(key, "/api/contact")
     const result = await verifyCsrfToken(key, token, "/api/contact")
-    // result: { ok: true } | { ok: false; reason: "expired" | "path-mismatch" | ... }
+    // result: { ok: true } | { ok: false; error: "expired" | "path-mismatch" | ... }
 
 `verifyCsrfToken` accepts either a single `CryptoKey` or a `CsrfKeyRing` (for rotation) and
-returns a `CsrfResult` discriminated union — inspect `result.ok`. Use the lower-level API
+returns a `CsrfResult` — a `GuardResult` alias whose failure reason code lives in the single
+`error` field; inspect `result.ok` (never echo `result.error` to clients). Use the lower-level API
 only when `csrfProtection` middleware cannot be applied directly (e.g., custom JSON API
 routes with non-standard token transport). Prefer the middleware path for all standard form
 submissions.

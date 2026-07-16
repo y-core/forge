@@ -1,6 +1,6 @@
 ---
 title: UI Components
-description: "forge JSX components, renderToString, safeUrl, getNonce, Form, Field, FormField, Input, Select, Button, Switch, Slider, fieldAttr, bindField, parseControlValue, Alert, Card, Icon, createIcon, cn, cva, SSR components, ui/core, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
+description: "forge JSX components, renderToString, safeUrl, getNonce, attribute pass-through, Form, Field, FormField, Input, Select, Button, asChild, Switch, Slider, fieldAttr, bindField, parseControlValue, createBoundControl, ui/controls, Alert, Card, Icon, role img, createIcon, cn, asClass, cva, SSR components, ui/core, ui/core/client, resume scope warning, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
 weight: 30
 ---
 
@@ -22,10 +22,12 @@ weight: 30
 
 ## 0. Quick Reference
 
-- §1 ui/core namespace: Form, Field (layout), FormField, Input, Button, Switch, Slider, Alert, Card, Icon, cn, cva
-- §1j generic field binding: fieldAttr (ui/server) + bindField/bindGroup/parseControlValue/applyControlValue (ui/client); bindControls pre-binds wrappers; bind vs field distinction; bindGroup/data-value for segmented controls
+- §1 ui/core namespace: universal DOM attribute pass-through; Form, Field (layout), FormField, Input, Button (asChild throw), Switch, Slider, Alert, Card, Icon (role="img"), cn, asClass, cva
+- §1j generic field binding: fieldAttr (ui/server) + bindField/bindGroup/parseControlValue/applyControlValue (ui/client); bind vs field distinction; bindGroup/data-value for segmented controls
+- §1k ui/controls bound variants: Input/Textarea/Select/Slider/Switch/ToggleGroup shadow ui/core names; built via internal createBoundControl; import each name from one barrel only
+- §1l scoped components: side-effect-import ui/core/client before resume(); resume() warns on unregistered data-scope
 - §2 SSR component patterns: composing Field+FieldLabel+FieldError+Input
-- §3 cn and cva: class name utilities for conditional and variant styling
+- §3 cn, asClass, cva: public class-name utilities for conditional and variant styling
 - §4 ui/client namespace: mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, signals
 - §5 HTMX sideEffect import: ui/client/htmx for htmx bundle
 - §6 SSR-vs-client split rule: when to use ui/core vs ui/client
@@ -39,6 +41,13 @@ weight: 30
 > URL-valued attributes (`href`, `src`, `action`, `formaction`, `poster`, `cite`,
 > `background`) are scheme-sanitized automatically by the renderer via `safeUrl`, so a
 > `javascript:`-style value collapses to `"#"` in the emitted HTML.
+>
+> **DOM attribute pass-through is universal.** Every ui/core component extends the intrinsic
+> element props for its root tag (`JSX.IntrinsicElements[tag]`) and spreads unrecognized props
+> (`{...rest}`) onto that element. There are no class-only components: any standard HTML attribute,
+> `data-*`, `aria-*`, or HTMX attribute passes straight through to the rendered element. The
+> renderer HTML-escapes forwarded values (and scheme-sanitizes URL attributes); `style` is dropped
+> because forge's CSP has no `style-src 'unsafe-inline'`.
 
 ### 1a. Form Component
 
@@ -106,6 +115,17 @@ All accept standard HTML attributes. `Input` renders `<input>`, `Textarea` rende
 Renders a styled `<button>`. Accepts `type`, HTMX attributes, and all standard button
 attributes. Does not add JavaScript event listeners — HTMX handles interactivity.
 
+**`asChild` — render as a different element.** Pass `asChild` to merge the button's classes and
+forwarded props onto a single JSX element child (e.g. an `<a>`) via `cloneElement` instead of
+emitting a `<button>`:
+
+    <Button asChild variant="ghost"><a href="/docs">Docs</a></Button>
+
+`asChild` requires **exactly one JSX element child**. A string, number, fragment, array, or empty
+child is a programming error — `Button` **throws** rather than degrading. The throw is a ratified
+invariant (a caller bug, not an expected runtime failure), consistent with the "throw for
+programming errors" rule in [PRODUCTION_TS_RULES.md](./PRODUCTION_TS_RULES.md) §2c.
+
 ### 1e. Alert Component
 
     import { Alert, AlertTitle, AlertDescription, type AlertVariant } from "@y-core/forge/ui"
@@ -146,7 +166,10 @@ HTMX response fragments (see §2b). `AlertTitle` renders as a `<p>` with strong 
 
     <Icon name="arrow-right" size={20} />
 
-`Icon` renders an `<svg><use href="sprite#symbol">` from a sprite sheet. `createIcon(sprite, meta)`
+`Icon` renders an `<svg><use href="sprite#symbol">` from a sprite sheet. By default the `<svg>` is
+decorative (`aria-hidden="true"`, no accessible name). Passing `aria-label` flips it to a labelled
+graphic: the icon emits `role="img"` with the given `aria-label` and drops `aria-hidden`, so
+assistive technology announces it. `createIcon(sprite, meta)`
 binds a sprite URL to a typed `ForgeIcon` whose `name` is narrowed to the sprite's `icon-*` keys
 (viewBox resolved from `meta`). `createIcon(sprite)` — **no `meta`** — yields a permissive
 `ForgeIcon<string>` for apps whose icon set is dynamic (names not known at compile time); the viewBox
@@ -204,29 +227,81 @@ the bound event, reads `data-field`, parses the control's value by the target si
 (e.g. after a programmatic reset). Domain effects (persist, render, readouts) stay app-side as
 additional effects on the same signals.
 
-**`bind` vs `field` distinction:** the `bind` prop (on `bindControls` wrappers) drives the
-`data-field` / `data-on-*` signal-binding contract; the `field?: FieldDescriptor` prop on `Input` /
-`Select` / `Switch` drives `id` / `name` / `aria-*` form-accessibility wiring. They are orthogonal
+**`bind` vs `field` distinction:** the `bind` prop (on the `ui/controls` bound wrappers, §1k) drives
+the `data-field` / `data-on-*` signal-binding contract; the `field?: FieldDescriptor` prop on `Input`
+/ `Select` / `Switch` drives `id` / `name` / `aria-*` form-accessibility wiring. They are orthogonal
 and may coexist on one control.
 
-**Bound control wrappers — `bindControls`:** call once with the app's action-name union `A`
-and a scope action name; get back `{ Switch, Slider, Select, ToggleGroup }` where each component
-pre-spreads `scopeAttrs` + `fieldAttr` from a single `bind` prop instead of requiring manual spread
-at every call site.
+To avoid the manual `scopeAttrs` + `fieldAttr` spread at every call site, import the pre-bound
+wrappers from the static `@y-core/forge/ui/controls` barrel, which stamps both from a single `bind`
+prop (§1k).
 
-    import { bindControls } from "@y-core/forge/ui"
-    const Bound = bindControls<ChromeAction>("bindField")
-    // Switch/Slider bind onChange/onInput; ToggleGroup.Item binds onClick
-    <Bound.Switch bind="gridVisible" checked={v}>Grid</Bound.Switch>
-    <Bound.Slider bind="fov" min={1} max={120} value={v} output />
-    <Bound.ToggleGroup.Item bind="projection" value="perspective" pressed={v === "perspective"}>…</Bound.ToggleGroup.Item>
-
-**`bindGroup` + `data-value` — segmented controls:** `Bound.ToggleGroup.Item` takes a required
-`value` prop stamped as `data-value` (forge's private server↔client contract). The client-side
+**`bindGroup` + `data-value` — segmented controls:** the `ui/controls` `ToggleGroup.Item` takes a
+required `value` prop stamped as `data-value` (forge's private server↔client contract). The
+client-side
 `bindGroup(signals)` action resolves `el.closest("[data-field][data-value]")` (handles inner
 `<svg>` / `<span>` click targets), then writes the raw `data-value` string into `signals[field]`,
 bypassing `parseControlValue` (button groups cannot express boolean / number). Pressed-state
 reconciliation (`.active` class, `aria-pressed`) stays app-side as an effect on the same signal.
+
+### 1k. ui/controls — Bound Variants that Shadow ui/core Names
+
+`@y-core/forge/ui/controls` re-exports `Input` / `Textarea` / `Select` / `Slider` / `Switch` /
+`ToggleGroup` under the **same names** as `@y-core/forge/ui/core`, but as **bound variants**. Each
+wraps its `ui/core` base and adds a required `bind` prop (naming the `SignalRecord` field) plus an
+optional `action` override, pre-spreading `scopeAttrs({ [event]: action })` + `fieldAttr(bind)` so the
+control participates in the resumable-scope signal contract (§1j) without a manual spread at every
+call site. The static `ui/controls` barrel is the **only** bound-control API — there is no runtime
+factory to call.
+
+    // unbound — extends IntrinsicElements, wire signal attrs by hand
+    import { Switch } from "@y-core/forge/ui/core"
+    // bound — one `bind` prop stamps data-field + data-on-change
+    import { Switch } from "@y-core/forge/ui/controls"
+    <Switch bind="gridVisible" checked={v}>Grid</Switch>
+
+The five single-element wrappers (`Input`, `Textarea`, `Select`, `Slider`, `Switch`) are built from an
+**internal** `createBoundControl(Core, { event, defaultAction })` factory (`@internal` — not exported
+from the barrel), so the shape is uniform:
+
+| Bound control | Delegated event → `data-on-*` | Default action |
+|---|---|---|
+| `Input`, `Textarea`, `Slider` | `onInput` | `bindField` |
+| `Switch`, `Select` | `onChange` | `bindField` |
+| `ToggleGroup.Item` | `onClick` | `bindGroup` |
+
+`Select.Option` / `Select.OptGroup` are re-exported unchanged, and `Select` forwards its required
+`icon` prop. `ToggleGroup` is **bespoke** — it is intentionally NOT built via `createBoundControl`
+because the binding lives on the `.Item` sub-component (not the root), stamps an extra `data-value`,
+and delegates on `onClick` with the `bindGroup` action — a shape the single-element factory cannot
+express.
+
+The name collision is **intentional and must not be renamed** (this shadowing rule is fixed by
+W2-2.2): the two variants live on separate subpaths so an app picks one per call site. **Rule: a
+module must import a given control name from exactly one of the two barrels, never both** — importing
+`Select` from both `ui/core` and `ui/controls` in one file is a name clash. See
+[NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md) §5b.
+
+### 1l. Scoped Components Require the Client Scope Import
+
+Some ui/core components render a **resumable scope** — a region stamped with `data-scope` and a
+serialized `data-state` whose interactive behavior only wakes up once the matching scope is
+registered on the client. `Toast` (and therefore the `ui/server` `FlashContainer` / `FlashOob` /
+`Flash` toasts, which wrap `Toast`) is such a component: it registers the `toast` and `alert` scopes
+that drive dismiss and timed auto-close.
+
+The scope registrations live in `@y-core/forge/ui/core/client`, a **side-effect** module. An app that
+renders any scoped component must import it once in the client entry **before** calling `resume()`:
+
+    // src/client/main.ts (esbuild entry point):
+    import "@y-core/forge/ui/core/client"   // registers the toast + alert scopes (side-effect)
+    import { resume } from "@y-core/forge/ui/client"
+
+    resume()   // installs the delegated island listener
+
+Without this import the scoped markup still renders, but no handler is registered — so `resume()`
+**`console.warn`s on any `data-scope` it encounters with no registered scope**. Treat that warning as
+a missing client-entry import (or a `data-scope` name typo), not an expected runtime condition.
 
 ---
 
@@ -297,9 +372,12 @@ which prepends `<!DOCTYPE html>`. For plain text/JSON banners that need no JSX, 
 
 ---
 
-## 3. cn and cva Class Utilities
+## 3. cn, asClass, and cva Class Utilities
 
 > Tailwind v4 utility helpers for conditional and variant class composition.
+> `cn` and `asClass` are exported from `@y-core/forge/ui/core` (barrel-forwarded through
+> `@y-core/forge/ui`); `cva` is the class-variance authority. All three are **ratified `@public`
+> utilities** — apps may compose classes with them directly, exactly as forge's own components do.
 
 ### 3a. cn — Conditional Class Names
 
@@ -307,16 +385,27 @@ which prepends `<!DOCTYPE html>`. For plain text/JSON banners that need no JSX, 
 
     <div class={cn("base-class", isActive && "active", className)} />
 
-`cn` merges class strings and filters falsy values. Uses `clsx` internally. Accepts
-strings, arrays, objects (`{ "class": condition }`), and nested combinations. Use `cn`
-whenever a component conditionally applies Tailwind classes or accepts a `className` prop
-override.
+`cn(...classes)` is variadic over `string | false | null | undefined` — it filters falsy entries and
+joins the rest with a single space. It is the canonical way to merge a component's base classes with a
+caller-supplied `class`. Use short-circuit expressions (`isActive && "active"`) for conditional
+classes; `cn` does not interpret arrays or objects.
 
-### 3b. cva — Class Variance Authority
+### 3b. asClass — Narrow a JSX `class` Prop
+
+    import { asClass } from "@y-core/forge/ui"
+
+    const cls = asClass(props.class) // string | undefined
+
+`asClass(cls)` narrows an untyped JSX `class` prop (which the runtime may hand you as a non-string) to
+`string | undefined`, returning `undefined` for any non-string. Components pair it with `cn` — e.g.
+`cn(BASE, asClass(cls))` — so a caller `class` override merges safely.
+
+### 3c. cva — Class Variance Authority
 
     import { cva } from "@y-core/forge/ui"
 
-    const buttonVariants = cva("inline-flex items-center rounded-md font-medium", {
+    const buttonVariants = cva({
+      base: "inline-flex items-center rounded-md font-medium",
       variants: {
         variant: {
           primary: "bg-primary text-white hover:bg-primary/90",
@@ -332,11 +421,13 @@ override.
       defaultVariants: { variant: "primary", size: "md" },
     })
 
-    // usage:
+    // usage — pass selected variants (and an optional `class` override):
     <button class={buttonVariants({ variant: "outline", size: "sm" })}>Click</button>
 
-`cva` returns a variant function. Call it with a variant map to produce the resolved
-class string. Combine with `cn` when additional conditional classes are needed:
+`cva(config)` takes a single `{ base?, variants?, defaultVariants? }` object and returns a resolver.
+Call the resolver with the selected variant values to produce the composed class string; pass a
+`class` field to append a call-site override. Combine with `cn` when additional conditional classes
+are needed:
 
     <button class={cn(buttonVariants({ variant }), isLoading && "opacity-50")} />
 

@@ -1,6 +1,52 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { lazy, loadScriptOnEvent, loadStylesheet } from "./lazy";
 
+// Polyfill the browser-only `CSS.escape` for the Bun test runtime (per the CSSOM spec algorithm).
+const cssGlobal = globalThis as unknown as { CSS?: { escape: (value: string) => string } };
+if (typeof cssGlobal.CSS === "undefined") {
+  cssGlobal.CSS = {
+    escape(value: string): string {
+      const string = String(value);
+      const length = string.length;
+      const firstCodeUnit = string.charCodeAt(0);
+      let result = "";
+      for (let index = 0; index < length; index++) {
+        const codeUnit = string.charCodeAt(index);
+        if (codeUnit === 0x0000) {
+          result += "�";
+          continue;
+        }
+        if (
+          (codeUnit >= 0x0001 && codeUnit <= 0x001f) ||
+          codeUnit === 0x007f ||
+          (index === 0 && codeUnit >= 0x0030 && codeUnit <= 0x0039) ||
+          (index === 1 && codeUnit >= 0x0030 && codeUnit <= 0x0039 && firstCodeUnit === 0x002d)
+        ) {
+          result += `\\${codeUnit.toString(16)} `;
+          continue;
+        }
+        if (index === 0 && length === 1 && codeUnit === 0x002d) {
+          result += `\\${string.charAt(index)}`;
+          continue;
+        }
+        if (
+          codeUnit >= 0x0080 ||
+          codeUnit === 0x002d ||
+          codeUnit === 0x005f ||
+          (codeUnit >= 0x0030 && codeUnit <= 0x0039) ||
+          (codeUnit >= 0x0041 && codeUnit <= 0x005a) ||
+          (codeUnit >= 0x0061 && codeUnit <= 0x007a)
+        ) {
+          result += string.charAt(index);
+          continue;
+        }
+        result += `\\${string.charAt(index)}`;
+      }
+      return result;
+    },
+  };
+}
+
 // ── lazy ──────────────────────────────────────────────────────────────────────
 
 interface MockObserver {
@@ -134,6 +180,16 @@ describe("lazy", () => {
     capturedCallback([makeEntry(false)], {} as IntersectionObserver);
     await Promise.resolve();
     expect(initCalled).toBe(false);
+  });
+
+  it("escapes a ref containing a quote so the selector cannot be broken out of", () => {
+    let capturedSelector = "";
+    lg.document.querySelector = (selector: string) => {
+      capturedSelector = selector;
+      return null;
+    };
+    lazy({ ref: "a'b", load: () => Promise.resolve({}), init: () => {} });
+    expect(capturedSelector).toBe("[data-ref='a\\'b']");
   });
 });
 
@@ -354,5 +410,17 @@ describe("loadStylesheet", () => {
     await promise;
     expect(appendedLinks[0]!.integrity).toBe("");
     expect(appendedLinks[0]!.crossOrigin).toBe("");
+  });
+
+  it("escapes an href containing a quote in the duplicate-check selector", async () => {
+    let capturedSelector = "";
+    cssG.document.querySelector = (selector: string) => {
+      capturedSelector = selector;
+      return null;
+    };
+    const promise = loadStylesheet('a"b', false);
+    mockLink.listeners.load!(new Event("load"));
+    await promise;
+    expect(capturedSelector).toBe('link[rel="stylesheet"][href="a\\"b"]');
   });
 });

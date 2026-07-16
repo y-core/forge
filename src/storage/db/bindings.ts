@@ -1,5 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
-import { validateBindings } from "../../app/env";
+import { validateBindings } from "../../context/env-validation";
 import type { AppContext } from "../../context/types";
 import { v } from "../../validation/mod";
 import { createD1Client } from "./client";

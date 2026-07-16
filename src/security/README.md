@@ -215,10 +215,11 @@ app.use("/webhook/*", originGuard(["https://trusted.example.com"]));
 
 ### `verifyOrigin(request, allowedOrigins)`
 
-Pure predicate behind `originGuard`. Checks the `Origin` header first, then falls back to the `Referer` origin, against `allowedOrigins`. Returns an `OriginResult`:
+Pure predicate behind `originGuard`. Checks the `Origin` header first, then falls back to the `Referer` origin, against `allowedOrigins`. Returns an `OriginResult` — a `GuardResult` alias, so the failure reason code lives in the single `error` field:
 
 ```typescript
-type OriginResult = { ok: true } | { ok: false; reason: "missing" | "disallowed" };
+type OriginResult = { ok: true } | { ok: false; error: "missing" | "disallowed" };
+// ≡ GuardResult<"missing" | "disallowed"> from @y-core/forge/result
 ```
 
 Use it for one-off in-handler checks instead of route-wide middleware.
@@ -366,7 +367,7 @@ The origin guards here are **not** a token mechanism — they are a complementar
 
 Rejects state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`/`TRACE`) flagged `cross-site` by the browser **Fetch Metadata** `Sec-Fetch-Site` header with `403`. Requests with no `Sec-Fetch-Site` header are rejected by default (fail-closed) unless `allowMissingHeader: true` is passed.
 
-`checkCrossOriginProtection` is the pure predicate form, returning `CopResult` (`{ ok: true } | { ok: false; reason: string }`) so you can branch on it instead of auto-rejecting.
+`checkCrossOriginProtection` is the pure predicate form, returning a `CrossOriginResult` (a `GuardResult` alias — `{ ok: true } | { ok: false; error: "missing-fetch-metadata" | "cross-site" }`, with the failure reason code in `.error`) so you can branch on it instead of auto-rejecting.
 
 ```typescript
 import { crossOriginProtection } from "@y-core/forge/security";

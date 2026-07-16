@@ -50,4 +50,16 @@ describe("Badge", () => {
     expect(out).toContain("my-badge");
     expect(out).toContain("inline-flex");
   });
+
+  it("forwards id and data-* attributes with HTML-escaped values", async () => {
+    const out = await render(
+      <Badge id='b1' data-testid='badge' data-note='a&b'>
+        New
+      </Badge>,
+    );
+    expect(out).toContain('id="b1"');
+    expect(out).toContain('data-testid="badge"');
+    expect(out).toContain('data-note="a&amp;b"');
+    expect(out).toContain('data-slot="badge"');
+  });
 });

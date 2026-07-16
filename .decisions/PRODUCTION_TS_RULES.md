@@ -17,7 +17,7 @@ weight: 20
 
 ## 0. Quick Reference
 - §1 Zero global state: factory/closure injection, no module-level mutable vars
-- §2 Explicit errors via Result monad: result/toError pattern, ValidationResult
+- §2 Explicit errors via Result monad: one `Result<T,E>` primitive, `ok()`/`err()` constructors, result/toError, the `GuardResult` and `ValidationResult` aliases
 - §3 Validation first: validate at system boundaries, valibot v facade, abort-early
 - §4 Testability: co-located *.test.ts, no globals to mock, fakes over mocks
 - §5 TSDoc on all exports: @param, @returns, @example, @internal for non-public
@@ -69,25 +69,46 @@ export const HONEYPOT_FIELD_DEFAULT = "__hp"
 
 ## 2. Explicit Errors via Result Monad
 
-### 2a. Result Type Pattern
-For operations that can fail with expected errors, use the Result monad from
-@y-core/forge/result rather than throwing exceptions:
+### 2a. One Result Primitive, `ok()` / `err()` Constructors
+forge has exactly **one result primitive** — `Result<T, E = Error>` from
+@y-core/forge/result, with a single failure field, `error`. For operations that can
+fail with expected errors, return a `Result` rather than throwing. Build values with
+the sanctioned `ok()` / `err()` constructors, or wrap a throwing call with `result()`:
 
 ```typescript
-import { result, type Result } from "@y-core/forge/result"
+import { ok, err, result, type Result } from "@y-core/forge/result"
 
-// result() wraps a throwing function, returning { ok: true; data } | { ok: false; error }.
+// The primitive: { ok: true; data: T } | { ok: false; error: E }.
 export function parseUrl(url: string): Result<URL, Error> {
-  return result(() => new URL(url))
+  return result(() => new URL(url)) // captures any throw as `error`
+}
+
+// Hand-built values use the constructors — never ad-hoc object literals:
+export function parsePort(raw: string): Result<number, string> {
+  const n = Number(raw)
+  return Number.isInteger(n) && n > 0 ? ok(n) : err("port must be a positive integer")
 }
 ```
 
-### 2b. ValidationResult for Validation Failures
-Use ValidationResult (from @y-core/forge/result) for validation operations:
+`ok()` / `err()` are the one documented exception to the `create*` factory-naming
+rule (§5e of [NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md)): they construct **values**,
+not configured objects, and follow the neverthrow convention.
+
+### 2b. Domain Aliases — `GuardResult` and `ValidationResult`
+The two domain shapes are plain **aliases** of the one primitive (from
+@y-core/forge/result) — they narrow only the failure type, never the field layout.
+The discriminant is always `ok`; the failure channel is always `error`:
 
 ```typescript
-import type { ValidationResult } from "@y-core/forge/result"
-// ValidationResult<T> = { ok: true; data: T } | { ok: false; errors: string[] }
+import type { GuardResult, ValidationResult } from "@y-core/forge/result"
+
+// Predicate/authorization checks (origin, CSRF, Turnstile) — reason code in `.error`:
+// GuardResult<R = string> = Result<void, R>
+//   ≡ { ok: true; data: void } | { ok: false; error: R }
+
+// Validation — per-field message list in `.error`:
+// ValidationResult<T> = Result<T, readonly string[]>
+//   ≡ { ok: true; data: T } | { ok: false; error: readonly string[] }
 // Also re-exported from @y-core/forge/validation alongside the `v` namespace.
 ```
 
@@ -95,6 +116,22 @@ import type { ValidationResult } from "@y-core/forge/result"
 - **Throw**: programming errors, missing required bindings at startup, invariants
 - **Return Result**: expected failures (parse errors, not-found, validation failures)
 - **Never**: throw from middleware that should gracefully degrade
+
+A canonical programming-error throw is `Button` with `asChild` (from
+[UI_COMPONENTS.md](./UI_COMPONENTS.md) §1d). `asChild` merges the button's props onto a single JSX
+element child; a string, number, fragment, array, or empty child cannot receive them, so the
+component throws rather than emitting malformed markup:
+
+```tsx
+import { isValidElement } from "@y-core/forge/jsx"
+
+if (asChild && !isValidElement(children)) {
+  throw new Error("Button with asChild requires exactly one JSX element child")
+}
+```
+
+This is a caller bug surfaced at render time — not an expected runtime failure — so a throw is
+correct here, whereas a parse or validation failure would return a `Result`.
 
 ## 3. Validation First Rule
 
@@ -238,7 +275,7 @@ const name = user?.profile?.displayName  // instead of: user && user.profile && 
 | Rule | Check |
 |---|---|
 | Zero global state | No module-level mutable vars; factory functions for behavior |
-| Explicit errors | Result monad for expected failures; ValidationResult for validation |
+| Explicit errors | One `Result<T,E>` primitive (single `error` field); `ok()`/`err()` constructors; `GuardResult`/`ValidationResult` aliases for guard checks and validation |
 | Validation first | v.safeParse at boundaries; abort-early for form validation |
 | Testability | Co-located *.test.ts; no globals to mock; fakes not mocks |
 | TSDoc | One-line doc on all exports; @internal on non-public; @example where needed |

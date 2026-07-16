@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, PropsWithChildren } from "../../jsx/types";
+import type { FC, JSX } from "../../jsx/types";
 import { scopeAttrs } from "../server/scope-attrs";
 import { cn } from "./utils/cn";
 
@@ -14,18 +14,15 @@ const variantClasses = {
 
 export type AlertVariant = keyof typeof variantClasses;
 
-interface AlertProps {
-  variant?: AlertVariant;
-  dismissible?: boolean;
-  class?: string;
-}
+type AlertProps = JSX.IntrinsicElements["div"] & { variant?: AlertVariant; dismissible?: boolean };
 
-const AlertRoot: FC<PropsWithChildren<AlertProps>> = ({ variant = "default", dismissible = false, class: cls, children }) => (
+const AlertRoot: FC<AlertProps> = ({ variant = "default", dismissible = false, class: cls, children, ...rest }) => (
   <div
     data-slot='alert'
     data-variant={variant}
     {...(dismissible ? { "data-scope": "alert" } : {})}
-    class={cn("relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm", variantClasses[variant], dismissible && "pr-8", cls)}>
+    class={cn("relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm", variantClasses[variant], dismissible && "pr-8", cls)}
+    {...rest}>
     {children}
     {dismissible ? (
       <button
@@ -42,14 +39,14 @@ const AlertRoot: FC<PropsWithChildren<AlertProps>> = ({ variant = "default", dis
   </div>
 );
 
-const AlertTitle: FC<PropsWithChildren<{ class?: string }>> = ({ class: cls, children }) => (
-  <div data-slot='alert-title' class={cn("font-medium leading-none tracking-tight", cls)}>
+const AlertTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, ...rest }) => (
+  <div data-slot='alert-title' class={cn("font-medium leading-none tracking-tight", cls)} {...rest}>
     {children}
   </div>
 );
 
-const AlertDescription: FC<PropsWithChildren<{ class?: string }>> = ({ class: cls, children }) => (
-  <div data-slot='alert-description' class={cn("text-sm leading-relaxed opacity-90", cls)}>
+const AlertDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, ...rest }) => (
+  <div data-slot='alert-description' class={cn("text-sm leading-relaxed opacity-90", cls)} {...rest}>
     {children}
   </div>
 );

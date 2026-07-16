@@ -37,4 +37,12 @@ describe("Skeleton", () => {
     expect(out).toContain("rounded-full");
     expect(out).toContain("animate-pulse");
   });
+
+  it("forwards id and data-* attributes and keeps aria-hidden", async () => {
+    const out = await render(<Skeleton id='sk1' data-testid='skeleton' data-note='a&b' />);
+    expect(out).toContain('id="sk1"');
+    expect(out).toContain('data-testid="skeleton"');
+    expect(out).toContain('data-note="a&amp;b"');
+    expect(out).toContain('aria-hidden="true"');
+  });
 });

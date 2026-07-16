@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import type { AppContext } from "../context/types";
+import { Forge } from "../app/forge-app";
+import { mapHandler } from "../app/route-test-helper";
 import { v } from "../validation/mod";
-import { validateBindings, validateEnv } from "./env";
-import { Forge } from "./forge-app";
-import { mapHandler } from "./route-test-helper";
+import { validateBindings, validateEnv } from "./env-validation";
+import type { AppContext } from "./types";
 
 const schema = v.object({ DATABASE_URL: v.string(), PORT: v.optional(v.pipe(v.string(), v.transform(Number))) });
 

@@ -101,6 +101,12 @@ export interface KvLogChannelOptions {
   maxLogs?: number;
   highWater?: number;
   purgeProbability?: number;
+  /**
+   * When `false` (the default), any `stack` property is recursively stripped from `record.data`
+   * before the record is persisted to KV, keeping error stacks out of the 7-day retention window.
+   * They remain visible in `consoleChannel` for local debugging. Set `true` to persist stacks.
+   */
+  persistStack?: boolean;
 }
 
 /** Metadata stored alongside each KV log entry for zero-cost viewer listing. @public */

@@ -1,20 +1,31 @@
 # `@y-core/forge/result`
 
-A tiny, dependency-free utility for explicit, type-safe error handling. It replaces
-ad-hoc `try/catch` and `null | T` return shapes with a discriminated-union `Result`
-type, plus a `result()` wrapper that captures any throw as data and a `toError()`
-helper for coercing unknown thrown values.
+A tiny, dependency-free utility for explicit, type-safe error handling. It is forge's
+**single result primitive**: one discriminated-union `Result` type with one failure
+field (`error`), the `ok()` / `err()` value-constructors, a `result()` wrapper that
+captures any throw as data, a `toError()` helper for coercing unknown thrown values,
+and two domain aliases (`GuardResult`, `ValidationResult`).
 
 ```ts
-import { result, toError, type Result, type ValidationResult } from "@y-core/forge/result";
+import {
+  ok,
+  err,
+  result,
+  toError,
+  type Result,
+  type GuardResult,
+  type ValidationResult,
+} from "@y-core/forge/result";
 ```
 
 ## Features
 
-- **Discriminated-union `Result<T, E>`** — success carries `data`, failure carries `error`. A single `if (!r.ok)` guard narrows the type with no casts.
+- **One `Result<T, E>` primitive** — success carries `data`, failure carries `error`. There is exactly one failure field; a single `if (!r.ok)` guard narrows the type with no casts.
+- **`ok()` / `err()` constructors** — the sanctioned value-constructors: `ok()` for a passing `void` result, `ok(data)` for a success, `err(error)` for a failure. Prefer them to hand-written object literals so the discriminant and field names stay uniform.
 - **`result()` wrapper** — runs a sync function, an async function, or a bare promise and turns any throw or rejection into `{ ok: false, error }`. No `try/catch` at the call site.
 - **`toError()` coercion** — converts any thrown value (string, number, object, `undefined`, `null`) into a real `Error` instance, safe for `catch (err: unknown)` blocks.
-- **`ValidationResult<T>`** — a specialization whose failure branch carries an array of messages (`errors: string[]`) instead of a single `error`. Produced by `@y-core/forge/validation` functions and `defineAction`'s `validate` hook.
+- **`GuardResult<R>` alias** — `Result<void, R>` for predicate/authorization checks (origin, CSRF, Turnstile); the machine-readable reason code lives in `.error`.
+- **`ValidationResult<T>` alias** — `Result<T, readonly string[]>`; the failure branch carries the per-field message list as `error: readonly string[]`. Produced by `@y-core/forge/validation` functions and `defineAction`'s `validate` hook.
 - **Synchronous error preservation** — `result()` returns the failure variant synchronously for sync throws and a `Promise` for async work; existing `Error` instances pass through unwrapped.
 
 ## Usage
@@ -101,25 +112,69 @@ with `new Error(String(thrown))`:
 | `undefined` | `"undefined"` |
 | `null` | `"null"` |
 
-### Working with `ValidationResult`
+### Building results with `ok()` and `err()`
 
-Validation functions return `ValidationResult<T>`, whose failure branch holds a
-flat list of human-readable messages. Surface all of them at once:
+When you construct a result by hand (rather than wrapping a throw with `result()`),
+use the `ok()` / `err()` constructors. `ok()` with no argument produces a passing
+`Result<void>`; `ok(data)` carries a value; `err(error)` carries the failure:
 
 ```ts
-import type { ValidationResult } from "@y-core/forge/result";
+import { ok, err, type Result } from "@y-core/forge/result";
+
+function parsePort(raw: string): Result<number, string> {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? ok(n) : err("port must be a positive integer");
+}
+```
+
+`ok` / `err` are the only sanctioned value-constructors — a documented exception to
+forge's `create*` factory-naming rule, because they construct **values**, not
+configured objects (the naming follows the neverthrow convention).
+
+### Guard checks with `GuardResult`
+
+`GuardResult<R>` is `Result<void, R>` — the shape for predicate/authorization checks
+that produce no success value. The success arm is `void`; the reason code lives in
+`.error`. Build a passing check with `ok()` and a failing one with `err(reason)`:
+
+```ts
+import { ok, err, type GuardResult } from "@y-core/forge/result";
+
+type OriginReason = "missing" | "disallowed";
+
+function verifyOrigin(origin: string | null, allowed: string[]): GuardResult<OriginReason> {
+  if (!origin) return err("missing");
+  if (!allowed.includes(origin)) return err("disallowed");
+  return ok();
+}
+
+const r = verifyOrigin(request.headers.get("Origin"), allowed);
+if (!r.ok) {
+  // r.error: OriginReason — server-log only; never echo the reason to clients
+  return new Response("Forbidden", { status: 403 });
+}
+```
+
+### Working with `ValidationResult`
+
+Validation functions return `ValidationResult<T>` (`Result<T, readonly string[]>`),
+whose failure branch carries the per-field message list as `error: readonly string[]`.
+Surface all of them at once:
+
+```ts
+import { ok, err, type ValidationResult } from "@y-core/forge/result";
 
 function validateContact(input: unknown): ValidationResult<Contact> {
-  const errors: string[] = [];
+  const messages: string[] = [];
   // ...collect per-field messages...
-  if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, data: input as Contact };
+  if (messages.length > 0) return err(messages);
+  return ok(input as Contact);
 }
 
 const r = validateContact(form);
 if (!r.ok) {
-  // r.errors: string[] — e.g. ["Email is required", "Name is too long"]
-  return renderErrors(r.errors);
+  // r.error: readonly string[] — e.g. ["Email is required", "Name is too long"]
+  return renderErrors(r.error);
 }
 const contact = r.data;
 ```
@@ -144,20 +199,57 @@ the return type for any function that can fail in a predictable way — never re
 | `E` | `Error` | Type of the failure payload, available as `error` when `ok` is `false`. |
 
 Always check `r.ok` before accessing `r.data` or `r.error`; the union narrows
-automatically inside the guard.
+automatically inside the guard. There is exactly **one** failure field — `error`;
+the domain aliases below reuse it rather than introducing new fields.
+
+### `ok(data?)` and `err(error)`
+
+```ts
+function ok(): Result<void, never>;
+function ok<T>(data: T): Result<T, never>;
+function err<E>(error: E): Result<never, E>;
+```
+
+The sanctioned value-constructors. `ok()` with no argument builds a passing
+`Result<void>` (e.g. a passing `GuardResult`); `ok(data)` builds a success carrying
+`data`; `err(error)` builds a failure carrying `error`. Use them instead of writing
+`{ ok: true, data }` / `{ ok: false, error }` object literals so the discriminant and
+field names stay uniform across the codebase.
+
+| Function | Parameter | Returns |
+|---|---|---|
+| `ok` | — | `{ ok: true, data: undefined }` typed `Result<void, never>`. |
+| `ok` | `data: T` | `{ ok: true, data }` typed `Result<T, never>`. |
+| `err` | `error: E` | `{ ok: false, error }` typed `Result<never, E>`. |
+
+### `GuardResult<R>`
+
+```ts
+type GuardResult<R = string> = Result<void, R>;
+//  ≡ { ok: true; data: void } | { ok: false; error: R };
+```
+
+A domain alias of `Result` for predicate/authorization checks (origin, CSRF,
+Turnstile) that produce no success value. The success arm is `void`; the failure
+channel carries a machine-readable reason code in `.error` — typically a
+string-literal union (e.g. `"missing" | "disallowed"`). The reason is for server
+diagnostics only; never surface it to clients.
+
+| Type parameter | Default | Description |
+|---|---|---|
+| `R` | `string` | The reason-code type carried in `error` on failure. |
 
 ### `ValidationResult<T>`
 
 ```ts
-type ValidationResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; errors: string[] };
+type ValidationResult<T> = Result<T, readonly string[]>;
+//  ≡ { ok: true; data: T } | { ok: false; error: readonly string[] };
 ```
 
-A specialization of `Result` for validation. The failure branch carries an array
-of already-formatted, human-readable field messages instead of a single `error`,
-so a UI can surface every failing field at once. Produced by
-`@y-core/forge/validation` functions and `defineAction`'s `validate` hook.
+A domain alias of `Result` for validation. The failure branch carries the per-field
+message list as `error: readonly string[]` — a list of already-formatted,
+human-readable field messages, so a UI can surface every failing field at once.
+Produced by `@y-core/forge/validation` functions and `defineAction`'s `validate` hook.
 
 | Type parameter | Description |
 |---|---|

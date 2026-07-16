@@ -90,4 +90,27 @@ describe("Alert", () => {
     const out = await render(<Alert>Message</Alert>);
     expect(out).not.toContain("data-scope=");
   });
+
+  it("forwards id and data-* attributes on the root with HTML-escaped values", async () => {
+    const out = await render(
+      <Alert id='a1' data-testid='alert' data-note='a&b'>
+        Message
+      </Alert>,
+    );
+    expect(out).toContain('id="a1"');
+    expect(out).toContain('data-testid="alert"');
+    expect(out).toContain('data-note="a&amp;b"');
+    expect(out).toContain('data-slot="alert"');
+  });
+
+  it("forwards id and role attributes on the title and description", async () => {
+    const out = await render(
+      <Alert>
+        <Alert.Title id='t1'>Status</Alert.Title>
+        <Alert.Description role='note'>Detail</Alert.Description>
+      </Alert>,
+    );
+    expect(out).toContain('id="t1"');
+    expect(out).toContain('role="note"');
+  });
 });

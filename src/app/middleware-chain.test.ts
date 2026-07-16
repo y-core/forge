@@ -123,9 +123,13 @@ describe("applyMiddlewareChain — canonical order", () => {
     expect(await allowed.text()).toBe("saved");
   });
 
-  it("wires rate limiting onto guarded paths (over limit → 429)", async () => {
+  it("wires rate limiting onto guarded paths (over limit → 429) when trustCfHeaders is set", async () => {
     const app = new Forge<{ LIMITER: { limit(o: { key: string }): Promise<{ success: boolean }> } }>();
-    applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: ["/api/save"], rateLimit: { limiter: (c) => c.env.LIMITER } }] });
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      trustCfHeaders: true,
+      guards: [{ paths: ["/api/save"], rateLimit: { limiter: (c) => c.env.LIMITER } }],
+    });
     mapHandler(app, "POST", "/api/save", () => new Response("saved"));
 
     const res = await app.request(
@@ -135,5 +139,52 @@ describe("applyMiddlewareChain — canonical order", () => {
     );
     expect(res.status).toBe(429);
     expect(await res.text()).toBe("Too many requests. Please try again later.");
+  });
+
+  it("threads default-distrust to rate-limit guards (CF-Connecting-IP ignored → 503)", async () => {
+    const app = new Forge<{ LIMITER: { limit(o: { key: string }): Promise<{ success: boolean }> } }>();
+    applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: ["/api/save"], rateLimit: { limiter: (c) => c.env.LIMITER } }] });
+    mapHandler(app, "POST", "/api/save", () => new Response("saved"));
+
+    const res = await app.request(
+      "/api/save",
+      { method: "POST", headers: { "CF-Connecting-IP": "203.0.113.7" } },
+      { LIMITER: { limit: async () => ({ success: true }) } },
+    );
+    expect(res.status).toBe(503);
+  });
+
+  it("threads trustCfHeaders to requestId (adopts CF-Ray)", async () => {
+    let capturedId: string | undefined;
+    const app = new Forge();
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      trustCfHeaders: true,
+      session: async (context, next) => {
+        capturedId = requestIdCtx.getOptional(context);
+        return next();
+      },
+    });
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    await app.request("/", { headers: { "CF-Ray": "ray-abc-IAD" } });
+    expect(capturedId).toBe("ray-abc-IAD");
+  });
+
+  it("ignores a spoofed CF-Ray by default in requestId", async () => {
+    let capturedId: string | undefined;
+    const app = new Forge();
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      session: async (context, next) => {
+        capturedId = requestIdCtx.getOptional(context);
+        return next();
+      },
+    });
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    await app.request("/", { headers: { "CF-Ray": "ray-abc-IAD" } });
+    expect(capturedId).not.toBe("ray-abc-IAD");
+    expect(capturedId).not.toBe(undefined);
   });
 });

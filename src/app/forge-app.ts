@@ -6,11 +6,11 @@ import type { Config } from "../config/config";
 import { resolveConfig } from "../config/config";
 import { applyPendingHeaders } from "../context/pending-headers";
 import type { AppContext } from "../context/types";
-import { EnvKey, ExecutionContextKey, getAppContext } from "../context/types";
+import { ConfigKey, EnvKey, ExecutionContextKey, getAppContext } from "../context/types";
 import { escapeHtml } from "../http/escape";
 import { createLogger } from "../logging/logger";
 import type { Logger } from "../logging/types";
-import { ConfigKey } from "./config-middleware";
+import { toError } from "../result/result";
 import type { GlobalMiddlewareEntry, RequestState } from "./types";
 
 /** Mock ExecutionContext for use in tests and non-Workers environments. */
@@ -28,10 +28,6 @@ function compileGuardMatcher(path: string): Matcher<string> | null {
   if (path.endsWith("/*")) source = `${path.slice(0, -2)}(/*)`;
   else if (path.endsWith("*")) source = `${path.slice(0, -1)}(/*)`;
   return createMatcher(source);
-}
-
-function toError(err: unknown): Error {
-  return err instanceof Error ? err : new Error(String(err));
 }
 
 function makeErrorContext<Bindings>(request: Request, env: Bindings, executionCtx: ExecutionContext): AppContext<Bindings> {

@@ -1,6 +1,5 @@
-import { ConfigKey } from "../app/config-middleware";
 import type { AppContext } from "../context/types";
-import { EnvKey, ExecutionContextKey, RequestContext } from "../context/types";
+import { ConfigKey, EnvKey, ExecutionContextKey, RequestContext } from "../context/types";
 import { requestLog } from "../logging/request-logger";
 import type { Logger } from "../logging/types";
 

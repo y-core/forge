@@ -8,11 +8,11 @@ Two facts up front, because they are the most common source of import mistakes:
 
 1. **The JSX transform is wired through `tsconfig`, not a manual import.** You set
    `"jsxImportSource": "@y-core/forge/jsx"` and the TypeScript compiler auto-imports
-   `@y-core/forge/jsx/jsx-runtime` for every `.tsx` file. You almost never import from the `jsx`
-   namespace directly.
-2. **The renderer lives at `@y-core/forge/render`, not `@y-core/forge/jsx`.** `renderPage` and
-   `renderToString` are imported from `@y-core/forge/render`. There is no top-level
-   `@y-core/forge/jsx` export — only the sub-paths listed below.
+   `@y-core/forge/jsx/jsx-runtime` for every `.tsx` file. Outside the renderer entry points
+   (below), you rarely import from the `jsx` namespace directly.
+2. **The renderer lives at `@y-core/forge/jsx`.** `renderPage` and `renderToString` are imported
+   from the `@y-core/forge/jsx` barrel. The former `@y-core/forge/render` subpath has been
+   removed — these symbols are now public only via `@y-core/forge/jsx`.
 
 ---
 
@@ -65,7 +65,7 @@ Use `renderPage` inside a page view function to produce a complete HTML `Respons
 `<!DOCTYPE html>`):
 
 ```tsx
-import { renderPage } from "@y-core/forge/render";
+import { renderPage } from "@y-core/forge/jsx";
 
 async function HomePage() {
   return (
@@ -91,7 +91,7 @@ When you need the HTML string rather than a full-page `Response` (partial respon
 htmx swaps), use `renderToString`:
 
 ```tsx
-import { renderToString } from "@y-core/forge/render";
+import { renderToString } from "@y-core/forge/jsx";
 
 const safe = await renderToString(<Greeting name="forge" />);
 // safe is a SafeHtml value: <p class="greeting">Hello, forge!</p>
@@ -121,7 +121,7 @@ the classic fallback path.
 | `@y-core/forge/jsx/jsx-runtime` | `jsx-runtime.ts` | Automatic JSX transform runtime — auto-imported by the compiler. |
 | `@y-core/forge/jsx/jsx-dev-runtime` | `jsx-dev-runtime.ts` | Dev-mode JSX runtime (`jsxDEV`). |
 | `@y-core/forge/jsx/register` | `register.ts` | Classic-mode shim for esbuild's zero-config fallback. |
-| `@y-core/forge/render` | `render-to-string.ts` | `renderPage` / `renderToString` — the public renderer. |
+| `@y-core/forge/jsx` | `mod.ts` | `renderPage` / `renderToString` — the public renderer (namespace barrel). |
 
 You import directly from `jsx-runtime`, `jsx-dev-runtime`, or `register` only in build configuration
 or app entry setup — never to call a function in component code.
@@ -129,7 +129,7 @@ or app entry setup — never to call a function in component code.
 ### `renderPage(node, init?)`
 
 Renders a JSX tree to a full-page HTML `Response`, prepending the HTML5 doctype. Import from
-`@y-core/forge/render`. Use it in `definePage` view functions, 404 handlers, and any handler that
+`@y-core/forge/jsx`. Use it in `definePage` view functions, 404 handlers, and any handler that
 returns a complete HTML document.
 
 ```ts
@@ -148,7 +148,7 @@ function renderPage(
 Returns a `Promise<Response>` whose body is `<!DOCTYPE html>` followed by the rendered HTML.
 
 ```tsx
-import { renderPage } from "@y-core/forge/render";
+import { renderPage } from "@y-core/forge/jsx";
 
 export async function notFound(): Promise<Response> {
   return renderPage(<NotFoundPage />, { status: 404 });
@@ -158,7 +158,7 @@ export async function notFound(): Promise<Response> {
 ### `renderToString(node)`
 
 Renders a JSX tree to a `SafeHtml` value (no doctype, no `Response` wrapper). Import from
-`@y-core/forge/render`.
+`@y-core/forge/jsx`.
 
 ```ts
 function renderToString(node: unknown): Promise<SafeHtml>;
@@ -198,7 +198,7 @@ Functional component type: receives props (plus an optional `children`) and retu
 `null`.
 
 ```tsx
-import type { FC } from "@y-core/forge/render";
+import type { FC } from "@y-core/forge/jsx";
 
 const Badge: FC<{ label: string }> = ({ label }) => <span class="badge">{label}</span>;
 ```

@@ -88,10 +88,31 @@ export function base64urlDecode(str: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-/** Constant-time byte array comparison via Cloudflare Workers crypto. @internal */
+/**
+ * Constant-time JS fallback for runtimes without `crypto.subtle.timingSafeEqual`.
+ * XOR-accumulates a difference over all bytes; for unequal lengths it still runs a fixed-length
+ * loop and returns false, never short-circuiting on the first differing byte. @internal
+ */
+function timingSafeEqualBytesFallback(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) {
+    // Fixed-time compare so the result timing does not depend on array contents. Seed a non-zero
+    // accumulator to guarantee a false result regardless of the bytes.
+    let acc = 1;
+    for (let i = 0; i < a.byteLength; i++) acc |= a[i]! ^ a[i]!;
+    return acc === 0;
+  }
+  let diff = 0;
+  for (let i = 0; i < a.byteLength; i++) diff |= a[i]! ^ b[i]!;
+  return diff === 0;
+}
+
+/**
+ * Constant-time byte array comparison. Uses Cloudflare Workers' native
+ * `crypto.subtle.timingSafeEqual` when available, otherwise a constant-time JS fallback. @internal
+ */
 export function timingSafeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (typeof subtle.timingSafeEqual !== "function") {
-    throw new Error("crypto.subtle.timingSafeEqual is not available in this runtime");
+    return timingSafeEqualBytesFallback(a, b);
   }
 
   if (a.byteLength !== b.byteLength) {

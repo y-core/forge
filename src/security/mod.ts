@@ -11,6 +11,7 @@ export type {
   BaseUrlConfig,
   CorsOptions,
   CrossOriginProtectionOptions,
+  CrossOriginResult,
   CspSourceValue,
   DeriveAllowedOriginsOptions,
   OriginProtectionOptions,

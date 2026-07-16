@@ -37,7 +37,9 @@ export const Button: FC<ButtonProps> = ({ variant, size, asChild = false, type =
 
   if (asChild) {
     if (!isValidElement(children)) {
-      throw new Error("Button with asChild expects a single valid JSX element child.");
+      throw new Error(
+        "Button with asChild requires exactly one JSX element child (e.g. <a> or <button>); received a string, number, fragment, array, or empty child instead.",
+      );
     }
 
     const childClass = asClass(children.props.class as string | undefined);

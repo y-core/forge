@@ -21,7 +21,7 @@ export { createRedirectResponse, createRedirectResponse as redirect } from "@rem
  * @public
  */
 export function htmlResponse(body: string | SafeHtml, status = 200, headers?: Record<string, string>): Response {
-  return createHtmlResponse(body, { status, ...(headers ? { headers: { ...headers, "content-type": "text/html; charset=utf-8" } } : {}) });
+  return createHtmlResponse(body, { status, headers: { ...headers, "content-type": "text/html; charset=utf-8" } });
 }
 
 /**

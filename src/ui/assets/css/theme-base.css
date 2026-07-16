@@ -170,6 +170,8 @@ from the base stop-mapping below.
   position: fixed;
   margin: 0;
   inset: auto;
+  /* Anchored placement - flip rather than run off-screen. */
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
 }
 
 [data-slot="popover-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }

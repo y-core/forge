@@ -37,6 +37,15 @@ const BOOLEAN_ATTRS = new Set([
 /** Attributes whose values are URLs — scheme-sanitized to block `javascript:`-style injection. */
 const URL_ATTRS = new Set(["href", "src", "action", "formaction", "poster", "cite", "background", "xlink:href", "xml:base"]);
 
+/**
+ * Enumerated attributes: a boolean value renders as the string `="true"`/`="false"` rather than a
+ * bare attribute name (unlike {@link BOOLEAN_ATTRS}), matching HTML's enumerated-attribute semantics.
+ */
+const ENUMERATED_ATTRS = new Set(["draggable", "spellcheck", "contenteditable"]);
+
+/** Valid HTML attribute name: starts with a letter/`_`/`:`, then letters, digits, `_`, `.`, `:`, `-`. */
+const VALID_ATTR_NAME = /^[A-Za-z_:][\w.:-]*$/;
+
 /** Renders element attributes to a string of `key="value"` pairs. */
 function renderAttributes(props: Record<string, unknown>, tag: string): string {
   let attrs = "";
@@ -46,14 +55,33 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
       continue;
     }
 
-    if (value === null || value === undefined || value === false) continue;
+    if (value === null || value === undefined) continue;
 
     const attrName = key;
+
+    // Reject unsafe attribute names: values are escaped, but the name is emitted verbatim, so a
+    // derived/untrusted spread key (e.g. ` onmouseover=…`) could otherwise inject attributes.
+    if (!VALID_ATTR_NAME.test(attrName)) continue;
 
     // Inline styles are dropped: the shipped CSP uses `style-src 'self'` (no `'unsafe-inline'`),
     // so any `style="…"` attribute would be blocked by the browser. Keep it out of the HTML
     // entirely rather than ship a silently-blocked attribute. See security/headers.ts (F15).
     if (attrName === "style") continue;
+
+    // Enumerated attributes: a boolean value renders as ="true"/"false" (string values fall through
+    // to the regular attribute path below).
+    if (ENUMERATED_ATTRS.has(attrName.toLowerCase())) {
+      if (value === true) {
+        attrs += ` ${attrName}="true"`;
+        continue;
+      }
+      if (value === false) {
+        attrs += ` ${attrName}="false"`;
+        continue;
+      }
+    }
+
+    if (value === false) continue;
 
     // Boolean attributes: emit only the attribute name when truthy
     if (BOOLEAN_ATTRS.has(attrName.toLowerCase())) {

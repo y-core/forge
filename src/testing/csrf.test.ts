@@ -16,14 +16,14 @@ describe("mintTestCsrfToken", () => {
     const token = await mintTestCsrfToken(SECRET, "/api/contact");
     const key = await importCsrfKey(SECRET);
     const result = await verifyCsrfToken(key, token, "/api/other");
-    expect(result).toEqual({ ok: false, reason: "path-mismatch" });
+    expect(result).toEqual({ ok: false, error: "path-mismatch" });
   });
 
   it("supports subject binding — wrong subject fails with subject-mismatch", async () => {
     const token = await mintTestCsrfToken(SECRET, "/api/save", { subject: "session-a" });
     const key = await importCsrfKey(SECRET);
     expect(await verifyCsrfToken(key, token, "/api/save", { subject: "session-a" })).toEqual({ ok: true });
-    expect(await verifyCsrfToken(key, token, "/api/save", { subject: "session-b" })).toEqual({ ok: false, reason: "subject-mismatch" });
+    expect(await verifyCsrfToken(key, token, "/api/save", { subject: "session-b" })).toEqual({ ok: false, error: "subject-mismatch" });
   });
 
   it("rejects an invalid hex secret", async () => {

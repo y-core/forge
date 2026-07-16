@@ -27,3 +27,19 @@ export function withMinLevel(channel: LogChannel, min: LogLevel): LogChannel {
     ...(channel.readEntry ? { readEntry: channel.readEntry.bind(channel) } : {}),
   };
 }
+
+/**
+ * Wraps a channel so each record is passed through `redact` before being written; reads pass
+ * through unchanged. Composable transform for stripping or masking sensitive fields (PII,
+ * secrets) on a per-channel basis — e.g. redact before persisting to KV while leaving the
+ * console stream intact. @public
+ */
+export function withRedaction(channel: LogChannel, redact: (record: LogRecord) => LogRecord): LogChannel {
+  return {
+    write(record: LogRecord): void | Promise<void> {
+      return channel.write(redact(record));
+    },
+    ...(channel.read ? { read: channel.read.bind(channel) } : {}),
+    ...(channel.readEntry ? { readEntry: channel.readEntry.bind(channel) } : {}),
+  };
+}

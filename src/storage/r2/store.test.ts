@@ -204,6 +204,51 @@ describe("createObjectStore — key normalization (traversal prevention)", () =>
   });
 });
 
+// ── serveObject HTTP boundary ──────────────────────────────────────────────────
+
+describe("createObjectStore — serveObject", () => {
+  it("returns 400 for a key with a leading slash (before touching the backend)", async () => {
+    let backendCalled = false;
+    const backend = {
+      ...makeMemoryBackend(),
+      get: async () => {
+        backendCalled = true;
+        return null;
+      },
+    } as unknown as ReturnType<typeof makeMemoryBackend>;
+    const store = createObjectStore(backend);
+    const res = await store.serveObject(new Request("https://example.com/file"), "/etc/passwd");
+    expect(res.status).toBe(400);
+    expect(backendCalled).toBe(false);
+  });
+
+  it("returns 400 for a key with a '..' path segment", async () => {
+    const store = createObjectStore(makeMemoryBackend());
+    const res = await store.serveObject(new Request("https://example.com/file"), "../secret");
+    expect(res.status).toBe(400);
+  });
+
+  it("resolves to a 500 Response when the backend rejects (no unhandled rejection)", async () => {
+    const backend = {
+      ...makeMemoryBackend(),
+      get: async (): Promise<ObjectBody | null> => {
+        throw new Error("backend exploded");
+      },
+    } as unknown as ReturnType<typeof makeMemoryBackend>;
+    const store = createObjectStore(backend);
+    const res = await store.serveObject(new Request("https://example.com/file"), "doc.txt");
+    expect(res.status).toBe(500);
+  });
+
+  it("serves a stored object with status 200 on the happy path", async () => {
+    const backend = makeMemoryBackend();
+    const store = createObjectStore(backend);
+    await store.put("doc.txt", "hello");
+    const res = await store.serveObject(new Request("https://example.com/file"), "doc.txt");
+    expect(res.status).toBe(200);
+  });
+});
+
 // ── Content-type auto-inference ────────────────────────────────────────────────
 
 describe("createObjectStore — content-type inference on put", () => {

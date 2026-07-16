@@ -3,7 +3,7 @@
 import { describe, expect, it } from "bun:test";
 import { render } from "../../jsx/render-test-helper";
 import { createIcon } from "../core/icon";
-import { Select, Slider, Switch, ToggleGroup } from "./mod";
+import { Input, Select, Slider, Switch, Textarea, ToggleGroup } from "./mod";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
@@ -69,6 +69,48 @@ describe("controls/Slider", () => {
 
   it("honours a custom action name via the action prop", async () => {
     const out = await render(<Slider bind='y' min={0} max={1} value={0} action='myAction' />);
+    expect(out).toContain('data-on-input="myAction"');
+  });
+});
+
+describe("controls/Input", () => {
+  it("emits data-on-input and data-field on the input", async () => {
+    const out = await render(<Input bind='name' value='ada' />);
+    expect(out).toContain('data-on-input="bindField"');
+    expect(out).toContain('data-field="name"');
+  });
+
+  it("passes value and data-ref through to the underlying input", async () => {
+    const out = await render(<Input bind='name' value='ada' data-ref='name-input' />);
+    expect(out).toContain('value="ada"');
+    expect(out).toContain('data-ref="name-input"');
+  });
+
+  it("honours a custom action name via the action prop", async () => {
+    const out = await render(<Input bind='name' action='myAction' />);
+    expect(out).toContain('data-on-input="myAction"');
+  });
+});
+
+describe("controls/Textarea", () => {
+  it("emits data-on-input and data-field on the textarea", async () => {
+    const out = await render(<Textarea bind='bio' />);
+    expect(out).toContain('data-on-input="bindField"');
+    expect(out).toContain('data-field="bio"');
+  });
+
+  it("passes data-ref through and renders children", async () => {
+    const out = await render(
+      <Textarea bind='bio' data-ref='bio-textarea'>
+        Hello
+      </Textarea>,
+    );
+    expect(out).toContain('data-ref="bio-textarea"');
+    expect(out).toContain("Hello");
+  });
+
+  it("honours a custom action name via the action prop", async () => {
+    const out = await render(<Textarea bind='bio' action='myAction' />);
     expect(out).toContain('data-on-input="myAction"');
   });
 });
@@ -191,6 +233,16 @@ describe("controls — arbitrary attribute pass-through", () => {
   it("Slider forwards an arbitrary data-* attribute", async () => {
     const out = await render(<Slider bind='b' data-test-hook='sl' />);
     expect(out).toContain('data-test-hook="sl"');
+  });
+
+  it("Input forwards an arbitrary data-* attribute", async () => {
+    const out = await render(<Input bind='b' data-test-hook='in' />);
+    expect(out).toContain('data-test-hook="in"');
+  });
+
+  it("Textarea forwards an arbitrary data-* attribute", async () => {
+    const out = await render(<Textarea bind='b' data-test-hook='ta' />);
+    expect(out).toContain('data-test-hook="ta"');
   });
 
   it("Select forwards an arbitrary data-* attribute", async () => {

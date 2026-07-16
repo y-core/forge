@@ -48,7 +48,7 @@ describe("createErrorPage — page structure", () => {
     const page = createErrorPage();
     const res = page(new Error("x"), createTestContext(new Request("http://test/")));
     expect(res.status).toBe(500);
-    expect(res.headers.get("content-type")).toBe("text/html; charset=UTF-8");
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
     const body = await res.text();
     expect(body.startsWith("<!DOCTYPE html>")).toBe(true);
     expect(body).toContain("<title>Something went wrong</title>");

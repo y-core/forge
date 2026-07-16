@@ -7,9 +7,9 @@ describe("htmlResponse", () => {
     expect(res.status).toBe(200);
   });
 
-  it("sets content-type to text/html; charset=UTF-8", () => {
+  it("sets content-type to text/html; charset=utf-8 (normalized, even without a headers arg)", () => {
     const res = htmlResponse("<p>hello</p>");
-    expect(res.headers.get("content-type")).toBe("text/html; charset=UTF-8");
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
   });
 
   it("accepts a custom status code", () => {

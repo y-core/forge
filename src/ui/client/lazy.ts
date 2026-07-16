@@ -17,7 +17,7 @@ export interface LazyLoadOptions {
 
 /** Defers loading a module until its anchor element enters the viewport via IntersectionObserver. @public */
 export function lazy<T>(options: LazyImportOptions<T>): () => void {
-  const el = document.querySelector(`[data-ref='${options.ref}']`);
+  const el = document.querySelector(`[data-ref='${CSS.escape(options.ref)}']`);
   if (!el) return () => {};
 
   const init: IntersectionObserverInit = {};
@@ -43,7 +43,7 @@ export function loadScriptOnEvent(options: LazyLoadOptions): void {
   element.addEventListener(
     options.event,
     () => {
-      if (document.querySelector(`script[src="${options.scriptSrc}"]`)) return;
+      if (document.querySelector(`script[src="${CSS.escape(options.scriptSrc)}"]`)) return;
 
       const script = document.createElement("script") as HTMLScriptElement;
       script.src = options.scriptSrc;
@@ -70,7 +70,7 @@ export function loadScriptOnEvent(options: LazyLoadOptions): void {
  * to skip subresource-integrity attributes (e.g. same-origin assets).
  */
 export function loadStylesheet(href: string, integrity: string | false): Promise<void> {
-  if (document.querySelector(`link[rel="stylesheet"][href="${href}"]`)) {
+  if (document.querySelector(`link[rel="stylesheet"][href="${CSS.escape(href)}"]`)) {
     return Promise.resolve();
   }
 

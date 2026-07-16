@@ -329,7 +329,7 @@ describe("kvLogChannel — read", () => {
 describe("kvLogChannel — readEntry", () => {
   it("returns the full stored record for a listed key, including data.stack", async () => {
     const stub = makeKvStub();
-    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0, persistStack: true });
     await channel.write(makeRecord({ level: "error", message: "client crash", data: { stack: "Error: boom\n  at main.ts:1" } }));
 
     const key = [...stub._store.keys()][0]!;
@@ -418,6 +418,72 @@ describe("kvLogChannel — purge error isolation", () => {
 
     // Must resolve — purge error must be swallowed, not propagated to caller
     await expect(channel.write(makeRecord())).resolves.toBeUndefined();
+  });
+});
+
+describe("kvLogChannel — stack stripping", () => {
+  it("strips a nested data.error.stack from the stored JSON by default", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+
+    await channel.write(makeRecord({ level: "error", data: { error: { name: "Error", message: "boom", stack: "Error: boom\n  at main.ts:1" } } }));
+
+    const entry = [...stub._store.values()][0]!;
+    const stored = JSON.parse(entry.value) as { data?: { error?: Record<string, unknown> } };
+    expect(stored.data?.error).toStrictEqual({ name: "Error", message: "boom" });
+    expect(entry.value).not.toContain("stack");
+  });
+
+  it("strips a top-level data.stack from the stored JSON by default", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+
+    await channel.write(makeRecord({ data: { stack: "Error: boom", requestId: "req-1" } }));
+
+    const entry = [...stub._store.values()][0]!;
+    const stored = JSON.parse(entry.value) as { data?: Record<string, unknown> };
+    expect(stored.data).toStrictEqual({ requestId: "req-1" });
+  });
+
+  it("strips stack keys nested inside arrays by default", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+
+    await channel.write(
+      makeRecord({
+        data: {
+          errors: [
+            { message: "a", stack: "s1" },
+            { message: "b", stack: "s2" },
+          ],
+        },
+      }),
+    );
+
+    const entry = [...stub._store.values()][0]!;
+    const stored = JSON.parse(entry.value) as { data?: { errors?: Array<Record<string, unknown>> } };
+    expect(stored.data?.errors).toStrictEqual([{ message: "a" }, { message: "b" }]);
+  });
+
+  it("retains data.stack in the stored JSON when persistStack is true", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0, persistStack: true });
+
+    await channel.write(makeRecord({ data: { error: { message: "boom", stack: "Error: boom\n  at main.ts:1" } } }));
+
+    const entry = [...stub._store.values()][0]!;
+    const stored = JSON.parse(entry.value) as { data?: { error?: Record<string, unknown> } };
+    expect(stored.data?.error?.stack).toBe("Error: boom\n  at main.ts:1");
+  });
+
+  it("does not mutate the caller's record when stripping stacks", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+    const record = makeRecord({ data: { error: { message: "boom", stack: "trace" } } });
+
+    await channel.write(record);
+
+    expect((record.data?.error as Record<string, unknown>).stack).toBe("trace");
   });
 });
 

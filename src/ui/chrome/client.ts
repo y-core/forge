@@ -12,13 +12,20 @@ import { computed, createSignal, effect } from "../client/signal";
 import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 // ---------------------------------------------------------------------------
-// isDark — exported live signal; reassigned inside theme setup (same module).
+// isDark — stable exported accessor delegating to a module-local current signal.
+// can safely destructure/capture `isDark` before resume() runs.
 // ---------------------------------------------------------------------------
 
-/** Whether the active resolved theme is dark. `false` until the theme scope resumes. @public */
-export let isDark: ReadonlySignal<boolean> = {
+let current: ReadonlySignal<boolean> = {
   get value() {
     return false;
+  },
+};
+
+/** Whether the active resolved theme is dark. `false` until the theme scope resumes. @public */
+export const isDark: ReadonlySignal<boolean> = {
+  get value() {
+    return current.value;
   },
 };
 
@@ -43,7 +50,7 @@ registerScope<"cycleTheme">("theme", {
     mql.addEventListener("change", onMediaChange);
 
     const dark = computed(() => (pref?.value as string) === "dark" || ((pref?.value as string) === DEFAULT_PREF && mqlDark.value));
-    isDark = dark;
+    current = dark;
 
     const disposeAttr = effect(() => {
       document.documentElement.setAttribute(THEME_ATTR, (pref?.value as string) ?? DEFAULT_PREF);
@@ -98,5 +105,4 @@ registerScope("navbar", {
       document.removeEventListener("navbar:filters", onFiltersEvent);
     };
   },
-  on: {},
 });

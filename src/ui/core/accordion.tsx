@@ -4,8 +4,7 @@ import type { FC, JSX, JSXNode } from "../../jsx/types";
 import type { ForgeIcon } from "./icon";
 import { asClass, cn } from "./utils/cn";
 
-interface AccordionRootProps {
-  class?: string;
+interface AccordionRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   children?: JSXNode;
 }
 
@@ -13,21 +12,19 @@ interface AccordionItemProps extends Omit<JSX.IntrinsicElements["details"], "chi
   children?: JSXNode;
 }
 
-interface AccordionTriggerProps {
+interface AccordionTriggerProps extends Omit<JSX.IntrinsicElements["summary"], "children"> {
   icon: ForgeIcon;
   iconName?: string;
-  class?: string;
   children?: JSXNode;
 }
 
-interface AccordionContentProps {
+interface AccordionContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   hint?: string;
-  class?: string;
   children?: JSXNode;
 }
 
-const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children }) => (
-  <div data-slot='accordion' class={cn("flex flex-col", asClass(cls))}>
+const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children, ...rest }) => (
+  <div data-slot='accordion' class={cn("flex flex-col", asClass(cls))} {...rest}>
     {children}
   </div>
 );
@@ -38,13 +35,14 @@ const AccordionItem: FC<AccordionItemProps> = ({ class: cls, children, ...props 
   </details>
 );
 
-const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, class: cls, children }) => (
+const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, class: cls, children, ...rest }) => (
   <summary
     data-slot='accordion-trigger'
     class={cn(
       "flex items-center gap-2 cursor-pointer list-none select-none py-2 px-1 rounded text-sm font-medium outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
       asClass(cls),
-    )}>
+    )}
+    {...rest}>
     {iconName ? <Icon name={iconName} viewBox='0 0 24 24' class='size-4 shrink-0 text-muted-foreground' /> : null}
     <span class='flex-1 pl-1'>{children}</span>
     <Icon
@@ -55,8 +53,8 @@ const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, cla
   </summary>
 );
 
-const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, children }) => (
-  <div data-slot='accordion-content' class={cn("px-1 pb-3 pt-1", asClass(cls))}>
+const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, children, ...rest }) => (
+  <div data-slot='accordion-content' class={cn("px-1 pb-3 pt-1", asClass(cls))} {...rest}>
     {hint ? <p class='mb-2 text-[11px] text-muted-foreground'>{hint}</p> : null}
     {children}
   </div>

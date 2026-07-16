@@ -1,9 +1,11 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
-import { getAppContext } from "../context/types";
+import { ConfigKey, getAppContext } from "../context/types";
 import { CacheControl } from "../http/headers";
+import { createLogger } from "../logging/logger";
 import { toError } from "../result/result";
-import { ConfigKey } from "./config-middleware";
 import type { CacheDirective, PageDefinition } from "./types";
+
+const logger = createLogger("page");
 
 function buildCacheHeader(cache: "no-store" | CacheDirective | undefined): string | undefined {
   if (cache === "no-store") return new CacheControl({ noStore: true }).toString();
@@ -66,7 +68,9 @@ export function definePage<Bindings = Record<string, unknown>, ConfigData = unkn
       const viewRes = await def.view(c, config, state);
       return applyResponseHeaders(viewRes, def);
     } catch (err) {
-      if (def.onError) return def.onError(toError(err), c);
+      const error = toError(err);
+      logger.error("Page handler threw", { error: error.message });
+      if (def.onError) return def.onError(error, c);
       throw err;
     }
   };

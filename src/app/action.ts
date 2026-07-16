@@ -1,12 +1,11 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
-import { getAppContext } from "../context/types";
+import { ConfigKey, getAppContext } from "../context/types";
 import { parseFormData } from "../form/parse-form-data";
 import type { ReadonlyFormData } from "../form/types";
 import { renderError, renderValidationErrors } from "../http/fragment";
 import { fragmentResponse } from "../http/response";
 import { createLogger } from "../logging/logger";
 import { toError } from "../result/result";
-import { ConfigKey } from "./config-middleware";
 import type { ActionDefinition } from "./types";
 
 const logger = createLogger("action");
@@ -58,8 +57,8 @@ export function defineAction<Input, Bindings = Record<string, unknown>, ConfigDa
 
     const validation = def.validate(parsed);
     if (!validation.ok) {
-      if (def.onValidationError) return def.onValidationError(validation.errors, c);
-      return fragmentResponse(renderValidationErrors(validation.errors));
+      if (def.onValidationError) return def.onValidationError(validation.error, c);
+      return fragmentResponse(renderValidationErrors(validation.error));
     }
 
     try {

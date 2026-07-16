@@ -35,4 +35,12 @@ describe("Separator", () => {
     expect(out).toContain("my-sep");
     expect(out).toContain("border-0");
   });
+
+  it("forwards id and data-* attributes and keeps aria-orientation", async () => {
+    const out = await render(<Separator id='sep1' data-testid='sep' data-note='a&b' />);
+    expect(out).toContain('id="sep1"');
+    expect(out).toContain('data-testid="sep"');
+    expect(out).toContain('data-note="a&amp;b"');
+    expect(out).toContain('aria-orientation="horizontal"');
+  });
 });

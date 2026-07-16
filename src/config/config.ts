@@ -1,4 +1,4 @@
-import { formatValidationIssues } from "../validation/format-issues";
+import { parseEnv } from "../validation/parse-env";
 import { v } from "../validation/validation";
 
 export type InferConfig<E> = E extends { Config: infer C } ? C : undefined;
@@ -24,11 +24,7 @@ export interface ConfigDescriptor<ConfigData, Keys extends string = string> {
 function resolve<ConfigData>(env: object, descriptor: ConfigDescriptor<ConfigData>): ConfigData {
   const record = env as Record<string, unknown>;
   const mapped = applyMapping(record, descriptor.map);
-  const result = v.safeParse(descriptor.schema, mapped);
-  if (!result.success) {
-    throw new Error(`Invalid environment: ${formatValidationIssues(result.issues)}`);
-  }
-  let config = result.output;
+  let config = parseEnv(descriptor.schema, mapped);
   if (descriptor.overrides?.detect(record)) {
     config = descriptor.overrides.patch(config);
   }

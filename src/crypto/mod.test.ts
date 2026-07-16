@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
   base64urlDecode,
   base64urlEncode,
@@ -121,6 +121,37 @@ describe("timingSafeEqualBytes", () => {
     const a = new Uint8Array([]);
     const b = new Uint8Array([]);
     expect(timingSafeEqualBytes(a, b)).toBe(true);
+  });
+});
+
+describe("timingSafeEqualBytes — JS fallback (no native crypto.subtle.timingSafeEqual)", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: swap the native method out to exercise the fallback path
+  const subtleAny = crypto.subtle as any;
+  let saved: unknown;
+
+  beforeAll(() => {
+    saved = subtleAny.timingSafeEqual;
+    subtleAny.timingSafeEqual = undefined;
+  });
+
+  afterAll(() => {
+    subtleAny.timingSafeEqual = saved;
+  });
+
+  it("returns true for identical byte arrays", () => {
+    expect(timingSafeEqualBytes(new Uint8Array([1, 2, 3, 4]), new Uint8Array([1, 2, 3, 4]))).toBe(true);
+  });
+
+  it("returns false for same-length different byte arrays", () => {
+    expect(timingSafeEqualBytes(new Uint8Array([1, 2, 3, 4]), new Uint8Array([1, 2, 3, 5]))).toBe(false);
+  });
+
+  it("returns false for different-length byte arrays", () => {
+    expect(timingSafeEqualBytes(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3, 4]))).toBe(false);
+  });
+
+  it("returns true for both empty byte arrays", () => {
+    expect(timingSafeEqualBytes(new Uint8Array([]), new Uint8Array([]))).toBe(true);
   });
 });
 

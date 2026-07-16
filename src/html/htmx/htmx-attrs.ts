@@ -30,6 +30,20 @@ function encodeMap(m: Record<string, string>): string | undefined {
   return JSON.stringify(m);
 }
 
+/**
+ * Converts a typed `HxAttrsProps` object into a flat `hx-*` attribute map for spreading onto JSX
+ * elements. Undefined and empty-string values are omitted.
+ *
+ * @remarks
+ * Selector- and JSON-valued props — `target`, `select`, `selectOob`, `include`, `trigger`,
+ * `values` (→ `hx-vals`) and `headers` (→ `hx-headers`) — are emitted **verbatim**. They must be
+ * TRUSTED, developer-supplied values, never raw user input: htmx interprets them client-side as
+ * CSS selectors, trigger expressions, and JSON, so an attacker-controlled value can retarget
+ * swaps, exfiltrate form fields via `hx-include`, or inject request headers. Escaping does not
+ * help — these are behavioral directives, not display text.
+ *
+ * @public
+ */
 export function hxAttrs(p: HxAttrsProps): HxAttrs {
   const out: HxAttrs = {};
   const add = (key: string, val: string | undefined) => {

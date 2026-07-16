@@ -23,7 +23,7 @@ function fakeSessionKV() {
 
 type Env = { SESSION_SECRET: string; SESSIONS: SessionKVBinding };
 
-function makeApp(kv: SessionKVBinding, options?: { secure?: boolean }) {
+function makeApp(options?: { secure?: boolean }) {
   const app = new Forge<Env>();
   app.use(
     "*",
@@ -49,7 +49,7 @@ function makeApp(kv: SessionKVBinding, options?: { secure?: boolean }) {
 describe("createAnonymousSession — KV mode", () => {
   it("sets an id-only cookie on write; session data never appears in the cookie", async () => {
     const { kv, data } = fakeSessionKV();
-    const app = makeApp(kv);
+    const app = makeApp();
 
     const res = await app.request("/save", { method: "POST" }, { SESSION_SECRET: SECRET, SESSIONS: kv });
     expect(await res.text()).toBe("saved");
@@ -66,7 +66,7 @@ describe("createAnonymousSession — KV mode", () => {
 
   it("round-trips the session across requests via the cookie", async () => {
     const { kv } = fakeSessionKV();
-    const app = makeApp(kv);
+    const app = makeApp();
     const env = { SESSION_SECRET: SECRET, SESSIONS: kv };
 
     const write = await app.request("/save", { method: "POST" }, env);

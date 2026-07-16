@@ -15,7 +15,11 @@ function normalizeKey(key: string): string {
   return key;
 }
 
-/** Creates an ObjectStore wrapping any ObjectStorageBackend with Result-wrapped ops and optional key prefix. @public */
+/**
+ * Creates an ObjectStore wrapping any ObjectStorageBackend, with an optional key prefix. The data
+ * operations (`get`/`put`/`delete`/`head`/`list`) return `Result`; `serveObject` is an HTTP-boundary
+ * method that returns a `Response` directly (not a `Result`), per ERROR_HANDLING.md §2/§5b. @public
+ */
 export function createObjectStore(backend: ObjectStorageBackend, options?: ObjectStoreOptions): ObjectStore {
   const prefix = options?.prefix;
   const _logger = options?.logger ?? createLogger("storage/r2");
@@ -75,11 +79,20 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
       });
     },
 
-    serveObject(request, key, opts?) {
+    async serveObject(request, key, opts?) {
+      let fullKey: string;
       try {
-        return serveObject(backend, request, prefixKey(normalizeKey(key)), opts);
+        // The only synchronous throw: an invalid/traversal key. Reject before touching the backend.
+        fullKey = prefixKey(normalizeKey(key));
       } catch {
-        return Promise.resolve(new Response(null, { status: 400 }));
+        return new Response(null, { status: 400 });
+      }
+      try {
+        return await serveObject(backend, request, fullKey, opts);
+      } catch {
+        // Unexpected backend failure. This method serves HTTP directly (Response, not Result),
+        // so an async rejection must resolve to a status rather than leak as an unhandled rejection.
+        return new Response(null, { status: 500 });
       }
     },
   };

@@ -94,7 +94,6 @@ interface HtmxAttributes {
 export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   id?: string;
   class?: string;
-  style?: string | Record<string, string | number>;
   title?: string;
   lang?: string;
   dir?: "ltr" | "rtl" | "auto";
@@ -441,7 +440,6 @@ interface BaseAttributes extends HTMLAttributes {
 interface SVGAttributes extends HtmxAttributes {
   id?: string;
   class?: string;
-  style?: string | Record<string, string | number>;
   children?: JSXNode;
   key?: unknown;
   // `| undefined` on these lets SVG primitives (e.g. Icon) render attributes inline as

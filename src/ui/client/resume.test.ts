@@ -16,13 +16,13 @@ interface ListenerRegistry {
 }
 
 interface DocStub {
-  addCalls: Array<[string, EventListener]>;
+  addCalls: Array<[string, EventListener, boolean]>;
   removeCalls: Array<[string, EventListener]>;
   listeners: ListenerRegistry;
   /** Elements returned from `querySelectorAll("[data-scope]")` — drives the eager-resume pass. */
   scopeElements: HTMLElement[];
-  addEventListener: (type: string, handler: EventListener) => void;
-  removeEventListener: (type: string, handler: EventListener) => void;
+  addEventListener: (type: string, handler: EventListener, options?: boolean | AddEventListenerOptions) => void;
+  removeEventListener: (type: string, handler: EventListener, options?: boolean | EventListenerOptions) => void;
   querySelectorAll: (sel: string) => HTMLElement[];
 }
 
@@ -34,7 +34,7 @@ const g = globalThis as unknown as GlobalMock;
 
 function makeDocStub(): DocStub {
   const listeners: ListenerRegistry = {};
-  const addCalls: Array<[string, EventListener]> = [];
+  const addCalls: Array<[string, EventListener, boolean]> = [];
   const removeCalls: Array<[string, EventListener]> = [];
   const scopeElements: HTMLElement[] = [];
 
@@ -43,8 +43,9 @@ function makeDocStub(): DocStub {
     removeCalls,
     listeners,
     scopeElements,
-    addEventListener(type, handler) {
-      addCalls.push([type, handler]);
+    addEventListener(type, handler, options) {
+      const capture = typeof options === "boolean" ? options : (options?.capture ?? false);
+      addCalls.push([type, handler, capture]);
       listeners[type] = [...(listeners[type] ?? []), handler];
     },
     removeEventListener(type, handler) {
@@ -403,6 +404,16 @@ describe("resume", () => {
     expect(called).toBe(1);
   });
 
+  it("registers the command bridge in the capture phase (native command events do not bubble)", () => {
+    currentDisposer = resume();
+
+    const commandAdd = doc.addCalls.find(([type]) => type === "command");
+    expect(commandAdd?.[2]).toBe(true);
+    // The scope events stay in the bubble phase — only the command bridge captures.
+    const scopeAdds = doc.addCalls.filter(([type]) => type !== "command");
+    expect(scopeAdds.every(([, , capture]) => capture === false)).toBe(true);
+  });
+
   it("ignores built-in commands with no -- prefix", () => {
     let called = 0;
     const scopeName = `test-builtin-${Math.random().toString(36).slice(2)}`;
@@ -470,6 +481,95 @@ describe("resume", () => {
 
     expect(called).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // Part C: a setup-only scope declared with NO `on` field dispatches gracefully
+  // -------------------------------------------------------------------------
+  it("dispatches an unknown action to a setup-only scope (no `on`) without throwing", () => {
+    let setupRuns = 0;
+    const scopeName = `test-no-on-dispatch-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      setup: () => {
+        setupRuns++;
+      },
+    });
+
+    currentDisposer = resume();
+
+    const root = {
+      dataset: { scope: scopeName, state: undefined as string | undefined },
+      closest: (sel: string) => (sel === "[data-scope]" ? root : null),
+      parentElement: { closest: (_s: string) => null },
+    };
+    const el = {
+      closest: (sel: string) => {
+        if (sel === "[data-on-click]") return el;
+        if (sel === "[data-scope]") return root;
+        return null;
+      },
+      getAttribute: (k: string) => (k === "data-on-click" ? "whatever" : null),
+      dataset: {},
+    };
+    const target = { closest: (sel: string) => (sel === "[data-on-click]" ? el : null) };
+
+    expect(() => doc.listeners.click![0]!(makeSyntheticEvent("click", target))).not.toThrow();
+    // setup still ran (scope resumed on the way even though no handler matched).
+    expect(setupRuns).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Part E: resume() warns for an unregistered data-scope element
+// ---------------------------------------------------------------------------
+
+describe("resume — unregistered scope warning", () => {
+  let doc: DocStub;
+  let currentDisposer: (() => void) | null = null;
+  let warnCalls: string[];
+  const originalWarn = console.warn;
+
+  beforeEach(() => {
+    doc = makeDocStub();
+    g.document = doc;
+    currentDisposer = null;
+    warnCalls = [];
+    console.warn = ((...args: unknown[]) => {
+      warnCalls.push(String(args[0]));
+    }) as typeof console.warn;
+  });
+
+  afterEach(() => {
+    console.warn = originalWarn;
+    if (currentDisposer) {
+      currentDisposer();
+      currentDisposer = null;
+    }
+  });
+
+  it("warns exactly once for repeated unregistered data-scope elements", () => {
+    const unknownName = `unregistered-${Math.random().toString(36).slice(2)}`;
+    doc.scopeElements.push(makeScopeRoot(unknownName), makeScopeRoot(unknownName));
+
+    currentDisposer = resume();
+
+    const matching = warnCalls.filter((m) => m.includes(unknownName));
+    expect(matching).toHaveLength(1);
+  });
+
+  it("does not warn for a registered data-scope element", () => {
+    const knownName = `registered-${Math.random().toString(36).slice(2)}`;
+    registerScope(knownName, {
+      setup: () => {
+        // registered — no warning expected
+      },
+    });
+    doc.scopeElements.push(makeScopeRoot(knownName));
+
+    currentDisposer = resume();
+
+    const matching = warnCalls.filter((m) => m.includes(knownName));
+    expect(matching).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -522,5 +622,24 @@ describe("resumeScope", () => {
   it("returns undefined when the element names no registered scope", () => {
     const root = makeScopeRoot(`unregistered-${Math.random().toString(36).slice(2)}`);
     expect(resumeScope(root)).toBeUndefined();
+  });
+
+  it("registers and resumes a setup-only scope declared with no `on` field", () => {
+    let setupRuns = 0;
+    const scopeName = `test-no-on-${Math.random().toString(36).slice(2)}`;
+    registerScope(scopeName, {
+      setup: () => {
+        setupRuns++;
+      },
+    });
+
+    const root = makeScopeRoot(scopeName, { q: "x" });
+    let state: ReturnType<typeof resumeScope>;
+    expect(() => {
+      state = resumeScope(root);
+    }).not.toThrow();
+
+    expect(setupRuns).toBe(1);
+    expect(state?.q?.value).toBe("x");
   });
 });

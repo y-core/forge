@@ -10,6 +10,23 @@ const PURGE_BATCH = 20;
 const DEFAULT_LIMIT = 50;
 
 /**
+ * Deep-clones `value`, dropping any property named `stack` from plain objects along the way, so
+ * error stacks never reach KV persistence. Recurses through arrays and plain objects; leaves
+ * primitives untouched and never mutates the input. @internal
+ */
+function stripStacks(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripStacks);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => key !== "stack")
+        .map(([key, val]) => [key, stripStacks(val)]),
+    );
+  }
+  return value;
+}
+
+/**
  * Async log channel that writes records to Cloudflare KV with time-ordered keys and reads
  * them back via the same key convention. Keys are `{prefix}||{isoTimestamp}||{rand}`,
  * enabling lexicographic oldest-first listing. Metadata is stored alongside each entry so
@@ -22,6 +39,7 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
   const maxLogs = options?.maxLogs ?? DEFAULT_MAX_LOGS;
   const highWater = options?.highWater ?? Math.floor(maxLogs * 1.2);
   const purgeProbability = options?.purgeProbability ?? DEFAULT_PURGE_PROBABILITY;
+  const persistStack = options?.persistStack ?? false;
   const listPrefix = `${prefix}||`;
 
   return {
@@ -43,7 +61,12 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
         ...(safeRequestId ? { requestId: safeRequestId } : {}),
       };
 
-      const putPromise = kv.put(key, JSON.stringify(record), { expirationTtl: defaultTtl, metadata });
+      // Strip error stacks from a cloned record before persistence unless explicitly opted in —
+      // the caller's record is never mutated (consoleChannel keeps the stack for local debugging).
+      const persisted =
+        persistStack || record.data === undefined ? record : { ...record, data: stripStacks(record.data) as Record<string, unknown> };
+
+      const putPromise = kv.put(key, JSON.stringify(persisted), { expirationTtl: defaultTtl, metadata });
 
       if (Math.random() >= purgeProbability) {
         return putPromise;

@@ -31,7 +31,7 @@ export function renderError(message: string, options?: FragmentOptions): SafeHtm
 }
 
 /** Renders an HTML validation error list with each error HTML-escaped; supports custom container and list classes. @public */
-export function renderValidationErrors(errors: string[], options?: FragmentOptions): SafeHtml {
+export function renderValidationErrors(errors: readonly string[], options?: FragmentOptions): SafeHtml {
   const cls = escapeHtml(options?.class ?? ERROR_CLASSES);
   const ulCls = escapeHtml(options?.ulClass ?? "mt-2 list-disc pl-5");
   const items = errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("");

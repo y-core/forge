@@ -371,10 +371,11 @@ app.use("*", validateR2Binding("ASSETS_BUCKET"))
 
 Each middleware caches the validated env reference, so the shape check runs once
 per env, not on every request. For checking arbitrary (non-storage) env fields,
-`validateBindings(schema)` from `@y-core/forge/app` returns a `Middleware` from
-any valibot schema — the storage helpers are thin wrappers over it. Register these
-before `app.map(routes, controller)` so the checks sit ahead of route handlers in
-the middleware chain.
+`validateBindings(schema)` returns a `Middleware` from any valibot schema — the storage
+helpers are thin wrappers over it. Its canonical home is now `@y-core/forge/context`
+(alongside `validateEnv` and `ConfigKey`); `@y-core/forge/app` still re-exports it for
+back-compat, so either import path works. Register these before `app.map(routes, controller)`
+so the checks sit ahead of route handlers in the middleware chain.
 
 ---
 

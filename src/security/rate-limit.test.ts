@@ -15,7 +15,7 @@ function makeApp(opts?: Partial<Parameters<typeof rateLimit>[0]>) {
 
 describe("rateLimit middleware", () => {
   it("returns 429 when rate limit is exceeded", async () => {
-    const app = makeApp();
+    const app = makeApp({ trustCfHeaders: true });
     const res = await app.request(
       "/test",
       { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },
@@ -26,7 +26,7 @@ describe("rateLimit middleware", () => {
   });
 
   it("passes through when rate limit allows", async () => {
-    const app = makeApp();
+    const app = makeApp({ trustCfHeaders: true });
     const res = await app.request(
       "/test",
       { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },
@@ -36,8 +36,8 @@ describe("rateLimit middleware", () => {
     expect(await res.text()).toBe("ok");
   });
 
-  it("keys by CF-Connecting-IP", async () => {
-    const app = makeApp();
+  it("keys by CF-Connecting-IP when trustCfHeaders is true", async () => {
+    const app = makeApp({ trustCfHeaders: true });
     let capturedKey: string | undefined;
     await app.request(
       "/test",
@@ -54,8 +54,18 @@ describe("rateLimit middleware", () => {
     expect(capturedKey).toBe("5.6.7.8");
   });
 
-  it("returns 503 when CF-Connecting-IP is absent and no custom key is provided (fail-closed)", async () => {
+  it("returns 503 by default (no trustCfHeaders, no key) even when CF-Connecting-IP is present", async () => {
     const app = makeApp();
+    const res = await app.request(
+      "/test",
+      { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },
+      { LIMITER: { limit: async () => ({ success: true }) } },
+    );
+    expect(res.status).toBe(503);
+  });
+
+  it("returns 503 when CF-Connecting-IP is absent under trustCfHeaders (fail-closed)", async () => {
+    const app = makeApp({ trustCfHeaders: true });
     const res = await app.request("/test", { method: "POST" }, { LIMITER: { limit: async () => ({ success: true }) } });
     expect(res.status).toBe(503);
   });
@@ -73,7 +83,7 @@ describe("rateLimit middleware", () => {
     expect(await res.text()).toBe("ok");
   });
 
-  it("uses custom key function", async () => {
+  it("uses custom key function regardless of trustCfHeaders", async () => {
     const app = makeApp({ key: () => "custom" });
     let capturedKey: string | undefined;
     await app.request(
@@ -92,7 +102,7 @@ describe("rateLimit middleware", () => {
   });
 
   it("uses custom onLimit response", async () => {
-    const app = makeApp({ onLimit: () => Response.json({ error: "rate limited" }, { status: 429 }) });
+    const app = makeApp({ trustCfHeaders: true, onLimit: () => Response.json({ error: "rate limited" }, { status: 429 }) });
     const res = await app.request(
       "/test",
       { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },

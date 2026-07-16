@@ -122,10 +122,6 @@
       "types": "./src/pkg/mod.ts",
       "import": "./src/pkg/mod.ts"
     },
-    "./render": {
-      "types": "./src/jsx/render-to-string.ts",
-      "import": "./src/jsx/render-to-string.ts"
-    },
     "./result": {
       "types": "./src/result/mod.ts",
       "import": "./src/result/mod.ts"
@@ -238,7 +234,6 @@
     "src/testing/",
     "src/ui/",
     "src/validation/",
-    "templates/",
     "!**/*-test-helper.ts",
     "!**/*.test.ts",
     "!**/*.test.tsx"

@@ -19,7 +19,7 @@ weight: 12
 ## 0. Quick Reference
 
 - §1 Core principles: facade, runtime-only, demand composition, Web-APIs-only
-- §2 Namespace dependency tiers: leaf vs integration, what each means
+- §2 Namespace dependency tiers: leaf vs integration, internal, and foundational primitives (`result`, `crypto`) importable by any namespace
 - §3 Runtime-only constraint: no build step, why raw TS ships
 - §4 Facade pattern: wrapping fetch-router, valibot, @remix-run behind forge exports
 - §5 Demand composition: single-purpose namespaces, consumers assemble what they need
@@ -39,8 +39,10 @@ Wrapped dependencies:
 
 - `@remix-run/fetch-router` → `@y-core/forge/router` (`route`, `createController`, `Middleware`,
   `RequestContext`) and `@y-core/forge/app` (the `createApp` factory / `Forge` app object)
-- forge's own SSR JSX runtime → `@y-core/forge/jsx` (`createRemixElement`, `Fragment`),
-  `@y-core/forge/jsx-runtime` (transform target), and `@y-core/forge/render` (`renderToString`)
+- forge's own SSR JSX runtime → `@y-core/forge/jsx` (`createElement`, `Fragment`,
+  `renderToString`, `renderPage`) and `@y-core/forge/jsx/jsx-runtime` (automatic-runtime
+  transform target). `jsx` is an in-house runtime, not a third-party facade, and it composes
+  `http` for HTML escaping / `SafeHtml`, so it is an integration namespace (§2b)
 - `valibot` → `@y-core/forge/validation` (`v` namespace + `ValidationResult`)
 - `@remix-run/headers` + `@remix-run/html-template` → `@y-core/forge/http` (`CacheControl`,
   `ContentType`, `SetCookie`, `html`, `rawHtml`, etc.)
@@ -88,9 +90,16 @@ and Web APIs. They can be imported by anyone without pulling in other forge name
 Current leaf namespaces:
 
 ```
-assets/build, assets/manifest, cli, config, form, http, jsx, logging,
-result, router, session, ui/client, validation
+assets/build, assets/manifest, cli, config, context, form, http, logging,
+result, router, session, storage/db, storage/kv, storage/r2, ui/assets, ui/client, validation
 ```
+
+`jsx` is not on this list — it imports `http` and is therefore integration (§2b).
+
+`result` is leaf **and** a foundational primitive (§2d): it imports nothing from any
+other forge namespace, yet any namespace may import it. `security`, `form`, and
+`storage/*` importing `result` is expected — explicit error handling is cross-cutting,
+so that import never counts as a cross-namespace layering violation.
 
 ### 2b. Integration Namespaces — Compose Across Namespaces
 
@@ -99,12 +108,14 @@ composition points.
 
 | Namespace | Imports from |
 |---|---|
-| `app` | `form`, `http`, `logging`, `result`, `router`, `security`, `validation` |
+| `app` | `form`, `http`, `logging`, `result`, `router`, `security`, `validation` (re-exports `validateBindings` / `validateEnv` / `ConfigKey` from `context`) |
 | `assets` | `validation` (schema and type definitions in `config.ts` / `types.ts`) |
+| `jsx` | `http` (`escapeHtml` / `safeUrl`, `SafeHtml` / `isSafeHtml` / `rawHtml`, `htmlResponse`) |
 | `security` | `logging` (createLogger for rate-limit internals) |
-| `ui` (ui/core) | `form` (CSRF/honeypot field name constants) |
-| `logging/http` | `logging`, `http`, `ui` (for LogTable, LogFilterBar JSX) |
+| `ui` (ui/core) | `form` (CSRF/honeypot field name constants), `jsx` runtime |
+| `logging/show` | `logging`, `http`, `ui` (for LogTable, LogFilterBar JSX) |
 | `pkg` | `cli` |
+| `validation/cli` | `cli` (the `forge-cfgen` command framework) |
 
 ### 2c. Internal Namespaces — No Public Export Path
 
@@ -119,6 +130,19 @@ Never import `crypto` from outside forge. It has no stability guarantee.
 (`src/context/` is now the public `@y-core/forge/context` subpath — consumers need its
 `Middleware`/`AppContext` types and the `contextVar` accessor over fetch-router's
 `RequestContext`. See §2a of NAMESPACE_DESIGN.md.)
+
+### 2d. Foundational Primitive Namespaces — `result` and `crypto`
+
+Two namespaces are **foundational primitives**: they sit below the leaf/integration
+split and any namespace may import them without incurring a cross-namespace
+dependency debt. `result` (public — `@y-core/forge/result`; the single `Result`
+primitive with `ok`/`err`/`result`/`toError` and the `GuardResult`/`ValidationResult`
+aliases) is the error-handling primitive; `crypto` (sealed-internal — §2c) is the
+HMAC/timing-safe/base64url primitive. Both are themselves dependency-free of other
+forge namespaces, so they can never introduce a cycle. `security` / `form` /
+`storage` importing `result` is the intended pattern, not a violation — see
+[NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md) §4c and
+[ERROR_HANDLING.md](./ERROR_HANDLING.md) §1.
 
 ---
 

@@ -69,4 +69,27 @@ describe("Card", () => {
     expect(out).toContain("extra");
     expect(out).toContain("rounded-2xl");
   });
+
+  it("forwards id and data-* attributes on the root with HTML-escaped values", async () => {
+    const out = await render(
+      <Card id='c1' data-testid='card' data-note='a&b'>
+        content
+      </Card>,
+    );
+    expect(out).toContain('id="c1"');
+    expect(out).toContain('data-testid="card"');
+    expect(out).toContain('data-note="a&amp;b"');
+    expect(out).toContain('data-slot="card"');
+  });
+
+  it("forwards id and aria-* attributes on sub-parts", async () => {
+    const out = await render(
+      <Card.Header id='h1' aria-label='header region'>
+        head
+      </Card.Header>,
+    );
+    expect(out).toContain('id="h1"');
+    expect(out).toContain('aria-label="header region"');
+    expect(out).toContain('data-slot="card-header"');
+  });
 });

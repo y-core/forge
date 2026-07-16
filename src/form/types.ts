@@ -1,4 +1,5 @@
 import type { RequestContext } from "@remix-run/fetch-router";
+import type { GuardResult } from "../result/result";
 
 export interface CsrfConfig {
   secret: string;
@@ -37,20 +38,10 @@ export interface ReadonlyFormData {
   [Symbol.iterator](): IterableIterator<[string, FormDataEntryValue]>;
 }
 
-export type TurnstileResult =
-  | { ok: true }
-  | {
-      ok: false;
-      reason:
-        | "action-mismatch"
-        | "cdata-mismatch"
-        | "hostname-mismatch"
-        | "missing-token"
-        | "network-error"
-        | "parse-error"
-        | "timeout"
-        | "verification-failed";
-    };
+/** Result of a Cloudflare Turnstile verification. @public */
+export type TurnstileResult = GuardResult<
+  "action-mismatch" | "cdata-mismatch" | "hostname-mismatch" | "missing-token" | "network-error" | "parse-error" | "timeout" | "verification-failed"
+>;
 
 export interface TurnstileVerifyOptions {
   expectedAction?: string;
@@ -61,20 +52,10 @@ export interface TurnstileVerifyOptions {
 
 export type FormFieldReader = (formData: ReadonlyFormData, field: string) => string;
 
-export type CsrfResult =
-  | { ok: true }
-  | {
-      ok: false;
-      reason:
-        | "expired"
-        | "future-timestamp"
-        | "invalid-format"
-        | "invalid-signature"
-        | "missing-token"
-        | "path-mismatch"
-        | "subject-mismatch"
-        | "unknown-key";
-    };
+/** Result of a CSRF token verification. @public */
+export type CsrfResult = GuardResult<
+  "expired" | "future-timestamp" | "invalid-format" | "invalid-signature" | "missing-token" | "path-mismatch" | "subject-mismatch" | "unknown-key"
+>;
 
 /** A key ring for CSRF secret rotation — one active signing key plus all keys valid for verification. @public */
 export interface CsrfKeyRing {

@@ -11,7 +11,7 @@ import { registerScope, resume, resumeScope } from "../client/resume";
 import { createSignal } from "../client/signal";
 // Side-effect import: registers the "theme" and "navbar" scopes at module load time
 // (top-level `registerScope` calls; no DOM access at import time).
-import "./client";
+import { isDark } from "./client";
 
 // ---------------------------------------------------------------------------
 // Minimal stubs
@@ -266,6 +266,18 @@ describe("navbar scope — logic", () => {
     td();
 
     expect(freshDoc.removeCalls.some(([t]) => t === "navbar:filters")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: isDark — stable exported accessor
+// ---------------------------------------------------------------------------
+
+describe("isDark — stable accessor", () => {
+  it("reads false until the theme scope resumes (no theme scope resumed here)", () => {
+    // The exported binding is a stable object; reading `.value` delegates to the
+    // module-local current signal, which is the `false` stub until theme setup runs.
+    expect(isDark.value).toBe(false);
   });
 });
 

@@ -178,7 +178,7 @@ describe("error path carries security headers (F9)", () => {
     const key = await importCsrfKey("a".repeat(64));
     const app = new Forge();
     app.use("*", createSecurityHeaders());
-    app.use("*", csrfProtection({ secret: () => key }));
+    app.use("*", csrfProtection({ secret: () => key, subject: false }));
     mapHandler(app, "POST", "/submit", () => new Response("should not reach"));
 
     const res = await app.request("/submit", {
@@ -197,7 +197,7 @@ describe("error path carries security headers (F9)", () => {
     type Env = { LIMITER: { limit(o: { key: string }): Promise<{ success: boolean }> } };
     const app = new Forge<Env>();
     app.use("*", createSecurityHeaders());
-    app.use("*", rateLimit<Env>({ limiter: (c) => c.env.LIMITER }));
+    app.use("*", rateLimit<Env>({ limiter: (c) => c.env.LIMITER, trustCfHeaders: true }));
     mapHandler(app, "POST", "/submit", () => new Response("should not reach"));
 
     const res = await app.request(

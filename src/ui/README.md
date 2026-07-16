@@ -118,7 +118,7 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `FormField` | `<fieldset>` | Accessible form field with `name` / `invalid` / `disabled`. Compounds: `FormField.Label`, `FormField.Description`, `FormField.Error`. |
 | `Field` | layout row | Lightweight label + control row — no form semantics. |
 | `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` prop (a `ForgeIcon`). |
-| `Button` | `<button>` | `variant`: `"primary" | "secondary" | "ghost"`; `size`: `"sm" | "md" | "lg"`. |
+| `Button` | `<button>` | `variant`: `"primary" | "secondary" | "ghost"`; `size`: `"sm" | "md" | "lg" | "icon" | "icon-sm"`. `asChild` renders onto a single element child instead of a `<button>`. |
 | `Alert` | `<div role="alert">` | `variant`: `AlertVariant`. Compounds: `Alert.Title`, `Alert.Description`. |
 | `Card` | bordered container | Compounds: `Card.Header`, `Card.Title`, `Card.Description`, `Card.Content`, `Card.Footer`. |
 | `Toast` | notification | `variant`: `ToastVariant`; `position`: `ToastPosition`. Compounds: `Toast.Title`, `Toast.Description`, `Toast.Container`. |
@@ -128,7 +128,7 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `ToggleGroup`, `ToggleGroup.Item` | button group | Segmented control; `Item` takes `pressed` for initial state. |
 | `Progress`, `Separator`, `Skeleton`, `Spinner`, `Popover`, `Label` | misc primitives | `Spinner` requires an `icon` prop. |
 | `Icon`, `createIcon` | `<svg><use>` | Sprite-backed icon and its factory. |
-| `cn`, `cva` | class utilities | Class merging and class-variance authority. |
+| `cn`, `asClass`, `cva` | class utilities | Class merging, `class`-prop narrowing, and class-variance authority (all `@public`). |
 
 #### `FormField` — accessible form fields
 
@@ -168,6 +168,21 @@ import { Field, Slider, Select } from "@y-core/forge/ui/core";
 
 `orientation` is `"vertical"` (default), `"horizontal"`, or `"responsive"`.
 
+#### `Button` — `asChild`
+
+Pass `asChild` to merge the button's classes and forwarded props onto a single JSX element child (an
+`<a>`, for example) via `cloneElement`, instead of rendering a `<button>`:
+
+```tsx
+import { Button } from "@y-core/forge/ui/core";
+
+<Button asChild variant="ghost"><a href="/docs">Docs</a></Button>
+```
+
+`asChild` requires **exactly one JSX element child**. A string, number, fragment, array, or empty
+child is a programming error and `Button` **throws** — it does not silently degrade. Keep the child a
+single element (wrap dynamic content yourself before passing it).
+
 #### Icons — `createIcon`
 
 Several components (`Select`, `Spinner`, and the server-only `ThemeToggle`) render an icon and accept an
@@ -194,15 +209,26 @@ set is dynamic; a `ForgeIcon<string>` is assignable to any narrower `ForgeIcon<N
 contravariance, so the same `AppIcon` can satisfy `ThemeToggle`'s `ForgeIcon<"sun"|"moon"|"monitor">`
 or `Select`'s `ForgeIcon<"chevron-down">`.
 
-#### `cn` and `cva` — class utilities
-
-#### `cn` and `cva` — class utilities
-
-`cn` merges class strings and drops falsy values (backed by `clsx`). `cva` is the class-variance
-authority — build a variant function once, call it with a variant map to resolve a class string:
+By default an icon is decorative (`aria-hidden="true"`, no accessible name). Pass `aria-label` to turn
+it into a labelled graphic — the `<svg>` then emits `role="img"` with that label and drops
+`aria-hidden`, so screen readers announce it:
 
 ```tsx
-import { cn, cva } from "@y-core/forge/ui/core";
+<AppIcon name="download" aria-label="Download report" />
+// → <svg role="img" aria-label="Download report">…</svg>
+```
+
+#### `cn`, `asClass`, and `cva` — class utilities
+
+`cn`, `asClass`, and `cva` are ratified `@public` utilities. `cn(...classes)` is variadic over
+`string | false | null | undefined` — it drops falsy entries and joins the rest with a space (use
+short-circuit expressions for conditionals; it does not interpret arrays or objects). `asClass(cls)`
+narrows an untyped JSX `class` prop to `string | undefined`. `cva(config)` is the class-variance
+authority — build a variant function once from a `{ base?, variants?, defaultVariants? }` object, then
+call it with a variant map (plus an optional `class` override) to resolve a class string:
+
+```tsx
+import { cn, asClass, cva } from "@y-core/forge/ui/core";
 
 const button = cva({
   base: "inline-flex items-center rounded-md font-medium",
@@ -213,16 +239,16 @@ const button = cva({
   defaultVariants: { variant: "primary", size: "md" },
 });
 
-<button class={cn(button({ variant: "outline" }), isLoading && "opacity-50")}>Click</button>
+<button class={cn(button({ variant: "outline" }), asClass(className), isLoading && "opacity-50")}>Click</button>
 ```
 
 ### Integration Guide
 
-Render component trees inside a route handler with `renderToString` (`@y-core/forge/render`) and return
+Render component trees inside a route handler with `renderToString` (`@y-core/forge/jsx`) and return
 them through `fragmentResponse` or `htmlResponse` (`@y-core/forge/http`):
 
 ```tsx
-import { renderToString } from "@y-core/forge/render";
+import { renderToString } from "@y-core/forge/jsx";
 import { fragmentResponse } from "@y-core/forge/http";
 import { Alert } from "@y-core/forge/ui/core";
 
@@ -251,11 +277,15 @@ so a `javascript:`-style value collapses to `"#"` in the emitted HTML.
 
 ### Features
 
-Pre-bound wrappers over the `ui/core` primitives — the "bound decoration" layer. Each control mirrors
-its `ui/core` sibling in name and prop shape, adding only a required `bind` prop (`data-field`) and an
-optional `action` prop (`data-on-<event>` value). The JS module system acts as the "factory": import
-`Switch` from `@y-core/forge/ui/controls` and it's already decorated; import from `@y-core/forge/ui/core`
-for the undecorated primitive. Alias to disambiguate if both are in scope:
+Pre-bound wrappers over the `ui/core` primitives — the "bound decoration" layer. The barrel exports
+`Input`, `Textarea`, `Select`, `Slider`, `Switch`, and `ToggleGroup`. Each control mirrors its
+`ui/core` sibling in name and prop shape, adding only a required `bind` prop (`data-field`) and an
+optional `action` prop (`data-on-<event>` value). This static barrel is the **only** bound-control
+API — there is no runtime factory to call. The five single-element wrappers are built from an
+**internal** `createBoundControl(Core, { event, defaultAction })` helper (`@internal`, not exported);
+`ToggleGroup` is bespoke because its binding lives on the `.Item` sub-component. Import `Switch` from
+`@y-core/forge/ui/controls` and it's already decorated; import from `@y-core/forge/ui/core` for the
+undecorated primitive. Alias to disambiguate if both are in scope:
 
 ```tsx
 import { Switch } from "@y-core/forge/ui/controls";
@@ -295,10 +325,12 @@ registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(
 
 | Export | Wraps | Binding |
 |---|---|---|
+| `Input` | `core/Input` | `bind` → `data-field`; `onInput` → `action` (default `"bindField"`) |
+| `Textarea` | `core/Textarea` | `bind` → `data-field`; `onInput` → `action` (default `"bindField"`) |
 | `Switch` | `core/Switch` | `bind` → `data-field`; `onChange` → `action` (default `"bindField"`) |
 | `Slider` | `core/Slider` | `bind` → `data-field`; `onInput` → `action` (default `"bindField"`) |
 | `Select` | `core/Select` | `bind` → `data-field`; `onChange` → `action` (default `"bindField"`); forwards required `icon`; re-exports `.Option`, `.OptGroup` |
-| `ToggleGroup` | `core/ToggleGroup` | Pass-through root; `.Item` adds `bind` → `data-field`, `value` → `data-value`, `onClick` → `action` (default `"bindGroup"`) |
+| `ToggleGroup` | `core/ToggleGroup` | Bespoke (not `createBoundControl`-built): pass-through root; `.Item` adds `bind` → `data-field`, `value` → `data-value`, `onClick` → `action` (default `"bindGroup"`) |
 
 **`bind` vs `field`:** the `bind` prop is orthogonal to the existing `field?: FieldDescriptor`. `field`
 wires `id` / `name` / `aria-*` for form accessibility; `bind` wires `data-field` + `data-on-<event>`
@@ -307,7 +339,8 @@ for signal binding. Both may coexist on one control.
 **`ToggleGroup.Item` + `bindGroup`:** the `.Item` takes a required `value` prop stamped as `data-value`.
 Pair it with the client-side `bindGroup(signals)` action, which reads `data-field` + `data-value` on
 click and writes the raw string into the matching signal, bypassing `parseControlValue` (button groups
-can't express boolean/number values). The `bindField` action handles `Switch` / `Slider` / `Select`.
+can't express boolean/number values). The `bindField` action handles `Input` / `Textarea` / `Switch`
+/ `Slider` / `Select`.
 
 ---
 
@@ -577,6 +610,13 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 <FlashOob messages={messages} />
 ```
 
+> **Flash toasts are scoped components.** `Flash` / `FlashContainer` / `FlashOob` render `Toast`,
+> which drives dismiss and timed auto-close through the `toast` resumable scope. Registering that
+> scope is a **side-effect import** — the app's client entry must
+> `import "@y-core/forge/ui/core/client"` **before** calling `resume()`, or the toasts render but
+> never dismiss and `resume()` `console.warn`s about the unregistered `data-scope`. See
+> [`UI_COMPONENTS.md`](../../.decisions/UI_COMPONENTS.md) §1l.
+
 ### Core Components & APIs
 
 | Export | Kind | Description |
@@ -660,7 +700,7 @@ it, and never import htmx from a CDN — this entry pins the version through for
 
 ```tsx
 import { loadShowcase, ShowcaseContent } from "@y-core/forge/ui/show";
-import { renderPage } from "@y-core/forge/render";
+import { renderPage } from "@y-core/forge/jsx";
 
 export function showcasePage(c, icon) {
   const data = loadShowcase(c, { basePath: "/showcase" });
@@ -729,6 +769,6 @@ region with serialized `data-state`, and this script resumes it on first interac
 
 - [`UI_COMPONENTS.md`](../../.decisions/UI_COMPONENTS.md) — authoritative design doc for the SSR-vs-client
   split, the resumability island pattern, and field binding.
-- [`@y-core/forge/render`](../../README.md) — `renderToString` / `renderPage` to serialize component trees.
+- [`@y-core/forge/jsx`](../../README.md) — `renderToString` / `renderPage` to serialize component trees.
 - [`@y-core/forge/http`](../../README.md) — `fragmentResponse` / `htmlResponse` / `rawHtml` to return rendered HTML.
 - [`@y-core/forge/security`](../../README.md) — CSP `script-src` for the `FOUC_SCRIPT` hash and inline-script nonces.

@@ -38,7 +38,7 @@ describe("createHandlerFactory — defineAction", () => {
     const app = new Forge<TestEnv>();
     const action = defineAction({
       parse: (formData) => ({ name: String(formData.get("name") ?? "") }),
-      validate: (data) => (data.name.length > 0 ? { ok: true, data } : { ok: false, errors: ["name is required"] }),
+      validate: (data) => (data.name.length > 0 ? { ok: true, data } : { ok: false, error: ["name is required"] }),
       handle: async (data, c) => new Response(`${data.name}@${c.env.SITE_NAME}`),
     });
     mapHandler(app, "POST", "/submit", action);
@@ -55,7 +55,7 @@ describe("createHandlerFactory — defineAction", () => {
     const app = new Forge<TestEnv>();
     const action = defineAction({
       parse: (formData) => ({ name: String(formData.get("name") ?? "") }),
-      validate: (data) => (data.name.length > 0 ? { ok: true, data } : { ok: false, errors: ["name is required"] }),
+      validate: (data) => (data.name.length > 0 ? { ok: true, data } : { ok: false, error: ["name is required"] }),
       handle: async (data) => new Response(data.name),
     });
     mapHandler(app, "POST", "/submit", action);

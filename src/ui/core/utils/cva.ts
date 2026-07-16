@@ -12,6 +12,11 @@ export type CVAProps<V extends VariantConfig> = {
   [K in keyof V]?: keyof V[K];
 } & { class?: string };
 
+/**
+ * Class-variance-authority: builds a class-name resolver from a `base` string plus named
+ * variant maps and their defaults. The returned function takes selected variant values (and
+ * an optional `class` override) and returns the composed class string. @public
+ */
 export function cva<V extends VariantConfig>(config: CVADefinition<V>) {
   const base = config.base ?? "";
   const variants = config.variants;

@@ -1,6 +1,6 @@
 ---
 title: HTMX Integration
-description: "isHxRequest detection, HX-Request UX guard not security boundary, readHxRequest, isPartial, isBoosted, hxTrigger, hxTarget, hxHeaders HxResponseProps HxResponseHeaders, hxAttrs HxAttrsProps, SWAP constants, formSubmit, liveSearch, inlineValidation, infiniteScroll, asyncDialogTrigger, paginatedTableLink, dependentSelect, oobSwap, oobAppend, html/htmx namespace"
+description: "isHxRequest detection, HX-Request UX guard not security boundary, readHxRequest, isPartial, isBoosted, hxTrigger, hxTarget, hxHeaders HxResponseProps HxResponseHeaders, hxAttrs HxAttrsProps, SWAP constants, formSubmit, liveSearch, inlineValidation, infiniteScroll, asyncDialogTrigger, paginatedTableLink, dependentSelect, oobSwap, oobAppend, trusted selectors hx-target hx-include hx-vals hx-headers developer-supplied not user input, selector JSON trust posture, html/htmx namespace"
 weight: 31
 ---
 
@@ -22,6 +22,7 @@ weight: 31
 - §4 `hxHeaders` — response header builder
 - §5 `hxAttrs` — attribute builder
 - §6 Patterns: `formSubmit`, `liveSearch`, `inlineValidation`, `infiniteScroll`, OOB helpers
+- §7 Trust posture: selector/JSON attribute values must be developer-supplied, never raw user input
 
 ---
 
@@ -151,6 +152,8 @@ All `hx-*` attributes are supported via camelCase property names:
 `indicator`, `disabledElt`, `sync`, `confirm`, `encoding`, `pushUrl`, `replaceUrl`,
 `params`, `values` (→ `hx-vals` JSON), `headers` (→ `hx-headers` JSON), `boost`.
 
+Selector- and JSON-valued props are emitted verbatim and must be **trusted** — see §7.
+
 ---
 
 ## 6. Patterns
@@ -200,5 +203,36 @@ For toast OOB fragments, use `toastOob` from `@y-core/forge/ui/server` (it rende
       renderSuccess(message),
       toastOob({ toast: { title: "Saved", variant: "success" } })
     )
+
+---
+
+## 7. Trust Posture — Selectors and JSON Values Must Be Developer-Supplied
+
+htmx attribute values are **client-side behavioral directives**, not display text. The renderer
+does not (and cannot) neutralize them by escaping — a CSS selector or a JSON blob is meaningful
+to the htmx client exactly as written. Every selector- and JSON-valued attribute produced by
+`hxAttrs` and the pattern helpers must therefore be **trusted, developer-supplied** — never
+interpolated from raw user input:
+
+- `hx-target`, `hx-select`, `hx-select-oob`, `hx-include` — CSS selectors. A user-controlled
+  value can retarget a swap to overwrite arbitrary DOM, or exfiltrate other form fields via
+  `hx-include`.
+- `hx-trigger`, `hx-sync` — trigger/sync expressions with their own mini-syntax.
+- `hx-vals` (`values`), `hx-headers` (`headers`) — JSON injected into every request; a
+  user-controlled value can forge request parameters or headers.
+- `hx-swap-oob` selectors from `oobSwap`/`oobAppend` — pick the swap target client-side.
+
+This applies to the pattern helpers too (`liveSearch`, `inlineValidation`, `formSubmit`,
+`infiniteScroll`, `paginatedTableLink`, `asyncDialogTrigger`, `dependentSelect`), which forward
+their `get`/`post`/`target`/`select`/`trigger` arguments verbatim into `hxAttrs`. Build these
+values from route definitions and static configuration, not from request data. This is a distinct
+concern from URL sanitization: `href`/`src`/`action` values are auto-sanitized by the JSX renderer
+(see [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) §8a), but htmx selector/JSON attributes are
+not — the trust obligation is on the caller.
+
+The `isHxRequest` detection hint carries the complementary caveat: it is a client-supplied header,
+a UX routing hint and not a security boundary (§2). Neither the attribute values nor the request
+hint substitute for `originProtection`/`crossOriginProtection` and `csrfProtection` on mutation
+routes.
 
 ---

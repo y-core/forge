@@ -1,13 +1,13 @@
 ---
 title: Structured Logging
-description: "createLogger, consoleChannel, kvLogChannel, requestLogger, requestLog, LogLevel, LogChannel object write/read, log channels, KV log storage, logging/http loadLogViewer, renderLogFragment, LogTable, LogFilterBar, no PII in logs, level by status code, symmetric read/write channel"
+description: "createLogger, consoleChannel, kvLogChannel, withMinLevel, withRedaction composable channel wrapper, persistStack stack redaction default, requestLogger, requestLog, LogLevel, LogChannel object write/read, log channels, KV log storage, logging/show loadLogViewer Response contract, LogViewerAccess required icon, auth by construction, no PII in logs, level by status code, symmetric read/write channel"
 weight: 23
 ---
 
 # Structured Logging
 
 > Authoritative source for forge's logging namespace: channels, request logger, KV
-> log storage, and the logging/http log viewer UI component.
+> log storage, and the logging/show log viewer.
 >
 > Complements [ROUTING_AND_MIDDLEWARE.md](./ROUTING_AND_MIDDLEWARE.md) (middleware usage),
 > [ERROR_HANDLING.md](./ERROR_HANDLING.md) (fail-closed log behavior).
@@ -16,11 +16,11 @@ weight: 23
 
 ## 0. Quick Reference
 
-- §1 logging namespace exports: createLogger, consoleChannel, kvLogChannel, requestLogger
-- §2 Channel pattern: `LogChannel` is `{ write, read? }` — consoleChannel for dev, kvLogChannel for prod
+- §1 logging namespace exports: createLogger, consoleChannel, kvLogChannel, withMinLevel, withRedaction, requestLogger
+- §2 Channel pattern: `LogChannel` is `{ write, read?, readEntry? }`; §2e withRedaction + persistStack stack-redaction posture
 - §3 requestLogger middleware: config, bindings (requestId), channel selection
 - §4 Log levels: INFO/WARN/ERROR mapping to HTTP status codes
-- §5 logging/http: loadLogViewer, renderLogFragment, LogTable, LogFilterBar, LogLevelBadge
+- §5 logging/show: loadLogViewer auth-gated Response contract, required icon, single-call mount
 - §6 No-PII rule and structured fields
 
 ---
@@ -29,23 +29,27 @@ weight: 23
 
 From `@y-core/forge/logging` (`src/logging/mod.ts`):
 
-- `createLogger(options)` — creates a Logger instance with channels
+- `createLogger(prefix, options?)` — creates a Logger instance with channels
 - `consoleChannel()` — log channel that writes to console; no `read`
 - `kvLogChannel(kv, options?)` — log channel that writes to and reads from Workers KV
+- `withMinLevel(channel, min)` — composable wrapper: drops records below `min` per channel
+- `withRedaction(channel, redact)` — composable wrapper: transforms each record before write (§2e)
 - `requestLogger(options)` — middleware that creates a per-request child logger
 - `requestLog` — context accessor for the per-request logger
+- `serializeError(err)` — JSON-safe `{ name, message, stack? }` for structured `data`
 - Types: `LogChannel`, `Logger`, `LoggerOptions`, `LogLevel`, `LogRecord`, `LoggerContext`,
-  `KvLogChannelOptions`, `KvLogMetadata`, `RequestLoggerOptions`,
+  `KvLogChannelOptions` (incl. `persistStack`), `KvLogMetadata`, `RequestLoggerOptions`,
   `LogQuery`, `LogReadResult`, `LogRow`
 
-From `@y-core/forge/logging/http` (`src/logging/http/mod.ts`):
+From `@y-core/forge/logging/show` (`src/logging/show/mod.ts`):
 
-- `loadLogViewer(c, options)` — loader that reads via `options.channel.read?(query)`
-- `renderLogFragment(data)` — renders the `<tbody>` HTMX partial
-- `LogFilterBar` — JSX: filter controls component
-- `LogLevelBadge` — JSX: colored badge for log level
-- `LogTable`, `LogTableBody` — JSX: table components for log display
-- Types: `LogQuery`, `LogReadResult`, `LogRow`, `LogViewerLoaderData`, `LogViewerOptions`
+- `loadLogViewer(c, options)` — auth-gated loader that returns a rendered `Response` for every
+  path (see §5)
+- Types: `LogViewerAccess`, `LogViewerOptions`
+
+The record-rendering components (`LogViewerContent`, `LogTableBody`, `LogDetailCell`, …) and the
+fragment renderers (`renderLogFragment`, `renderLogDetailFragment`) are `@internal`: records can
+only be rendered by going through `loadLogViewer`, which enforces `access` first.
 
 ---
 
@@ -98,6 +102,30 @@ channel selection to the request context so the channel list is resolved per-req
     channels: (c) => c.env.LOGS_KV
       ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)]
       : [consoleChannel()]
+
+### 2e. withRedaction and Stack-Redaction Posture
+
+`withRedaction(channel, redact)` wraps a channel so each record passes through `redact` before
+`write`; `read`/`readEntry` pass through unchanged. It mirrors `withMinLevel` — a composable,
+per-channel transform for stripping or masking sensitive fields (PII, secrets). Redact before a
+persisting channel while leaving the console stream intact:
+
+    import { consoleChannel, kvLogChannel, withRedaction } from "@y-core/forge/logging"
+
+    const channels = [
+      consoleChannel(),
+      withRedaction(kvLogChannel(env.LOGS_KV), (r) => ({
+        ...r,
+        data: r.data ? { ...r.data, email: undefined } : r.data,
+      })),
+    ]
+
+Independently, `kvLogChannel` applies a built-in **stack-redaction default**:
+`KvLogChannelOptions.persistStack` is `false`, so any `stack` property is recursively stripped
+from a **cloned** `record.data` before persistence — error stacks never enter the 7-day KV
+retention window. The caller's record is never mutated, so `consoleChannel` keeps the full stack
+for local debugging. Set `persistStack: true` only when stacks must survive in KV (e.g. a
+short-retention debug namespace).
 
 ---
 
@@ -165,42 +193,46 @@ This convention keeps alert noise low: 404s and 422s stay at `warn` and do not p
 
 ---
 
-## 5. Log Viewer (logging/http)
+## 5. Log Viewer (logging/show)
 
-### 5a. loadLogViewer — Symmetric Read via Channel
+### 5a. loadLogViewer — Auth-Gated Response for Every Path
 
-`loadLogViewer` first evaluates the **required** `access` option — `false` returns a
-`403 Forbidden` `Response` before the channel is touched; the literal
-`"allow-unauthenticated"` is the explicit, greppable opt-out for deliberately public
-(dev-only) mounts. On allow, it reads log entries by calling `channel.read?(query)` on
-the channel supplied through `options.channel`. The channel owns its prefix and storage
-mechanics, so the viewer is agnostic to KV key format. If the channel has no `read`
-method, `loadLogViewer` returns `{ rows: [], complete: true }` — an empty table with no
-error.
+`loadLogViewer(c, options)` returns `Promise<Response>` for **every** path — it renders inside
+the loader rather than returning data for a view to render. In order:
 
-    import { loadLogViewer, renderLogFragment } from "@y-core/forge/logging/http"
+1. Evaluates the **required** `access` option first. A denial (`false`) returns `403 Forbidden`
+   before the channel is touched; the literal `"allow-unauthenticated"` is the explicit,
+   greppable opt-out for deliberately public (dev-only) mounts. A throwing `access` predicate
+   propagates to the error boundary (fail closed).
+2. For `?detail=<key>`, reads the full stored record via `channel.readEntry?.(key)` and returns
+   the expanded detail `<td>` fragment `Response`.
+3. For an `HX-Request` (via `isHxRequest`), returns the `<tbody>` HTMX partial, filtered and
+   paginated via `?level=`, `?q=`, and `?cursor=`.
+4. Otherwise returns the full HTML-document viewer page.
+
+**Auth by construction:** the record-rendering components are `@internal`, so records can never
+be rendered without first passing `access`. If the channel has no `read` method,
+`loadLogViewer` renders an empty table rather than erroring.
+
+    import { loadLogViewer } from "@y-core/forge/logging/show"
     import { kvLogChannel } from "@y-core/forge/logging"
-    import type { AppEnv } from "./app/context"
+    import { definePage } from "@y-core/forge/app"
 
-    definePage<AppEnv, AppConfig, LogViewerLoaderData>({
+    export const logsPage = definePage<AppEnv, AppConfig>({
       loader: (c) => loadLogViewer(c, {
         channel: (cc) => kvLogChannel(cc.env.LOGS_KV!),
-        access: (cc) => isAdmin(cc),          // required — 403 when false
+        access: (cc) => isAdmin(cc),        // required — 403 when false
+        icon: chevronDownIcon,              // required — app-bound ForgeIcon<"chevron-down">
         basePath: "/admin/logs",
       }),
-      view: async (c, config, state) => {
-        if (c.request.headers.get("HX-Request") === "true") {
-          return renderLogFragment(state.data)
-        }
-        // … full page render
-      },
+      // Unreachable: the loader always returns a Response, which short-circuits rendering.
+      view: () => new Response(null, { status: 404 }),
     })
 
-`loadLogViewer` reads optional `?level=`, `?q=`, and `?cursor=` query parameters for
-filtering and cursor-based pagination. It returns `LogViewerLoaderData`, or a `403`
-`Response` on denial (which `definePage` loaders short-circuit on).
+The single call is the entire mount. Because a loader that returns a `Response` short-circuits
+rendering, `view` never executes — there is no HX-branch or fragment call in app code.
 
-### 5b. LogViewerOptions
+### 5b. LogViewerOptions and LogViewerAccess
 
     type LogViewerAccess<Bindings = Record<string, unknown>> =
       | ((c: AppContext<Bindings>) => boolean | Promise<boolean>)
@@ -211,31 +243,20 @@ filtering and cursor-based pagination. It returns `LogViewerLoaderData`, or a `4
       channel: (c: AppContext<Bindings>) => LogChannel;
       /** Required access decision; runs before the channel is touched. */
       access: LogViewerAccess<Bindings>;
-      /** URL path prefix where the viewer is mounted (used for HTMX targets). */
+      /** App-bound icon (must provide `chevron-down`) for the filter bar's level select. */
+      icon: ForgeIcon<"chevron-down">;
+      /** URL path prefix where the viewer is mounted (used for HTMX targets). Defaults to `/admin/logs`. */
       basePath?: string;
     };
 
-The `channel` factory is called once per request. For `kvLogChannel`, the channel
-captures the KV namespace and prefix at construction time and uses both for write
-and read — the viewer always reads from the same key space the logger writes to.
-`access` is required because logs expose request paths, ids, and error messages —
-forgetting a guard is a compile error, and public mounts must opt out explicitly.
-
-### 5c. Log Viewer UI Components
-
-All components are JSX and accept typed props. Import from `@y-core/forge/logging/http`.
-
-- `LogTable` — renders a full `<table>` of log rows including header
-- `LogTableBody` — renders only the `<tbody>` rows; use for HTMX partial updates
-- `LogFilterBar` — renders level/text filter `<form>` controls; posts via HTMX
-- `LogLevelBadge` — inline colored `<span>` badge for debug / info / warn / error display
-
-    ## Example: HTMX partial refresh of log table body
-    <LogFilterBar targetId="log-tbody" formAction="/admin/logs" icon={icon} />
-    <LogTable rows={data.rows} complete={data.complete} loadMoreAction="/admin/logs">
-      <LogTableBody id="log-tbody" rows={data.rows} complete={data.complete}
-                   loadMoreAction="/admin/logs" />
-    </LogTable>
+The `channel` factory is called once per request. For `kvLogChannel`, the channel captures the
+KV namespace and prefix at construction time and uses both for write and read — the viewer
+always reads from the same key space the logger writes to. `access` is required because logs
+expose request paths, ids, and error messages — forgetting a guard is a compile error, and
+public mounts must opt out explicitly. `icon` is required: the app injects its own bound
+`ForgeIcon<"chevron-down">` (from `@y-core/forge/ui`) so `logging/show` renders the filter-bar
+chevron without owning an icon set. This makes `logging/show` a cross-namespace edge onto
+`ui/core` — see [NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md).
 
 ---
 
@@ -255,6 +276,10 @@ Fields that must never appear in a log record:
 
 If a handler needs to reference a user for debugging, use an opaque internal ID
 (e.g., a UUID primary key) that cannot be reverse-mapped without database access.
+
+For error diagnostics, `kvLogChannel` strips `stack` from persisted `data` by default
+(`persistStack: false`, §2e) — stacks stay in `consoleChannel` only. Use `withRedaction` (§2e)
+to strip additional app-specific sensitive fields before a persisting channel.
 
 ### 6b. Structured Fields Over String Interpolation
 

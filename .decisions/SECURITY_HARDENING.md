@@ -1,6 +1,6 @@
 ---
 title: Security Hardening
-description: "createSecurityHeaders, CSP nonce, getNonce, NONCE constant, mergeSecurityHeaders, CORS response rebuild, originGuard, verifyOrigin, crossOriginProtection Sec-Fetch-Site, rateLimit, requestId, requireFormContentType, safeUrl JSX URL sanitization, parseFormData 413 byte cap, fragment escaping, R2 RFC 5987, storage shape checks, fallback 500 headers, transport-layer only, CSRF in form namespace, auth boundary"
+description: "createSecurityHeaders, CSP nonce, getNonce, NONCE constant, mergeSecurityHeaders, CORS response rebuild, originProtection combined origin guard tiering, originGuard, verifyOrigin, crossOriginProtection Sec-Fetch-Site, rateLimit, requestId, trustCfHeaders default-distrust CF-Ray CF-Connecting-IP, applyMiddlewareChain, requireFormContentType, safeUrl JSX URL sanitization, parseFormData 413 byte cap, fragment escaping, R2 RFC 5987, storage shape checks, fallback 500 headers, transport-layer only, CSRF in form namespace, auth boundary"
 weight: 22
 ---
 
@@ -19,9 +19,9 @@ weight: 22
 
 - §1 Security namespace exports: complete list of what security/ ships
 - §2 createSecurityHeaders and CSP nonce: factory, NONCE constant, mergeSecurityHeaders; §2e OWASP default-header audit (COOP/CORP defaults, COEP opt-in)
-- §3 CORS and origin protection: cors(), originGuard, verifyOrigin, crossOriginProtection
-- §4 Rate limiting: rateLimit() with Workers binding
-- §5 Request identity: requestId(), requestIdCtx contextVar
+- §3 CORS and origin protection: cors(), originProtection, crossOriginProtection, originGuard, verifyOrigin; §3e origin-guard tiering (which guard when)
+- §4 Rate limiting: rateLimit() with Workers binding; §4d trustCfHeaders default-distrust keying
+- §5 Request identity: requestId(), requestIdCtx contextVar; §5c Cloudflare header trust boundary (trustCfHeaders on requestId/rateLimit/applyMiddlewareChain)
 - §6 Content guards: requireFormContentType (HTMX detection moved to `html/htmx` — see §6b)
 - §7 Transport-layer boundary: what is NOT in security
 - §8 Defense-in-depth across namespaces: JSX safeUrl, parseFormData byte cap, fragment escaping, R2 hardening, storage shape checks, fallback 500 headers
@@ -40,16 +40,18 @@ From `@y-core/forge/security` (`src/security/mod.ts`):
 - `requireFormContentType` — middleware: enforces application/x-www-form-urlencoded
 - `cors(options)` — CORS middleware factory
 - `matchOrigin(url, allowed)` — utility: checks if URL matches allowed origins
-- `crossOriginProtection(options)`, `checkCrossOriginProtection` — CSRF-via-origin guards
-- `originGuard(allowed)`, `verifyOrigin(req, allowed)` — origin allowlist enforcement
+- `originProtection(options)` — recommended combined origin guard (Sec-Fetch-Site + Origin/Referer fallback)
+- `crossOriginProtection(options)`, `checkCrossOriginProtection` — Sec-Fetch-Site-only guards
+- `originGuard(allowed)`, `verifyOrigin(req, allowed)` — Origin/Referer allowlist enforcement
 - `rateLimit(options)` — Workers rate limiting middleware
 - `BaseUrlConfigSchema`, `deriveAllowedOrigins`, `parseUrl` — URL/origin config helpers
 - `applySecurityHeaders(response, options?)` — applies the headers directly to a
   Response (for out-of-band responses that never pass through the middleware chain);
   `options` is `ApplySecurityHeadersOptions` (`SecurityHeadersOptions` + optional explicit `nonce`)
 - `getNonce(c)` — returns the per-request CSP nonce (or `""` when none is set)
-- Type exports: `CorsOptions`, `CrossOriginProtectionOptions`, `RateLimitBinding/Options`,
-  `RequestIdContext`, `BaseUrlConfig`, `OriginResult`, `ParsedUrl`, `SecurityHeadersOptions`, etc.
+- Type exports: `CorsOptions`, `CrossOriginProtectionOptions`, `OriginProtectionOptions`,
+  `RateLimitBinding/Options`, `RequestIdContext`, `BaseUrlConfig`, `OriginResult`, `ParsedUrl`,
+  `SecurityHeadersOptions`, etc.
 
 NOT in security (common mistake to avoid):
 
@@ -219,12 +221,40 @@ unless `allowMissingHeader: true` is passed:
     app.use("/form/*", crossOriginProtection())
 
 `checkCrossOriginProtection(request, options)` performs the same check as a plain
-function, returning `{ ok: true } | { ok: false; reason: string }` without wrapping in
+function, returning a `CrossOriginResult` — a `GuardResult` alias, `{ ok: true } | { ok: false; error: "missing-fetch-metadata" | "cross-site" }`, with the failure reason code in the single `error` field — without wrapping in
 middleware. Use when you need the check result to drive conditional logic rather than an
 automatic rejection. Both accept `CrossOriginProtectionOptions` (`{ allowMissingHeader? }`).
 
-> Note: `crossOriginProtection` checks Origin/Referer headers — it is not a CSRF token
-> mechanism. CSRF token minting and verification live in `@y-core/forge/form`. See §7.
+> Note: the origin guards inspect browser-sent request headers (`Sec-Fetch-Site`,
+> `Origin`/`Referer`) — they are not a CSRF token mechanism. CSRF token minting and
+> verification live in `@y-core/forge/form`. See §7.
+
+### 3e. Origin-Guard Tiering — Which Guard When
+
+Three middleware exist for cross-origin mutation defense. They form a deliberate tiering; pick
+one per route rather than stacking them. **`originProtection` is the authoritative recommended
+default** — the other two are the single-signal tiers it is built from.
+
+| Guard | Signal | Behavior when signal absent | Use when |
+|---|---|---|---|
+| `originProtection(options)` | `Sec-Fetch-Site` **with `Origin`/`Referer` fallback** | Falls back to the `Origin`/`Referer` allowlist | **Default.** Broadest coverage — modern Fetch-Metadata browsers plus older UAs via the fallback. |
+| `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless `allowMissingHeader: true` | Stricter, no fallback — endpoints where a missing Fetch-Metadata header should be rejected outright. |
+| `originGuard(allowed)` | `Origin`/`Referer` only | Allowed through (no header ⇒ same-origin/curl) | The Origin/Referer-only tier — webhook/privileged endpoints keyed purely on an origin allowlist. |
+
+All three exempt safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) first, so only state-changing
+requests are gated. `originProtection` treats a present `Sec-Fetch-Site` as authoritative (the
+Fetch-Metadata check via `crossOriginProtection` with `allowMissingHeader: true`); only when the
+header is absent does it consult the `Origin`/`Referer` allowlist:
+
+    import { originProtection } from "@y-core/forge/security"
+
+    app.use("/form/*", originProtection({
+      allowedOrigins: (c) => config.get(c.env).site.url.allowedOrigins,
+    }))
+
+`allowedOrigins` (in `OriginProtectionOptions`) is a static `string[]` or a per-request resolver
+over the app context. `applyMiddlewareChain` wires `originProtection` for each guard group's
+`origin` option (§5c), so apps using the canonical chain get the recommended tier by default.
 
 ---
 
@@ -250,13 +280,14 @@ globally, to target high-risk endpoints (form submissions, API mutations):
       },
     })
 
-**Key trust boundary.** The default key is the `CF-Connecting-IP` header, which is only
+**Key trust boundary (default-distrust).** The `CF-Connecting-IP` default key is only
 trustworthy when the Worker actually runs behind Cloudflare's edge — a directly-reachable
-origin or another platform lets clients forge it to evade or poison the limit. Off
-Cloudflare, always supply a custom `key`. A missing header (or a throwing `key` function)
-fails closed with `503`. For key-selection strategies (per-IP vs per-session vs
-route-scoped composite keys), see the "Choosing a rate-limit key" section in
-`src/security/README.md`.
+origin or another platform lets clients forge it to evade or poison the limit. So the default
+keying is gated behind `trustCfHeaders` (§4d): without `trustCfHeaders: true` and without a
+custom `key`, the default key resolver **throws → `503`** rather than silently keying on a
+forgeable header. A throwing `key` function likewise fails closed with `503`. For key-selection
+strategies (per-IP vs per-session vs route-scoped composite keys), see the "Choosing a
+rate-limit key" section in `src/security/README.md`.
 
 ### 4b. required: false for Dev Graceful Degradation
 
@@ -287,14 +318,29 @@ Add the binding type to `AppEnv`:
 
 `RateLimitBinding` is exported from `@y-core/forge/security`.
 
+### 4d. trustCfHeaders — Default-Distrust Keying
+
+`RateLimitOptions.trustCfHeaders` (default `false`) controls whether the default key may read
+`CF-Connecting-IP`:
+
+- `trustCfHeaders: true` — the Worker is known to run behind Cloudflare; the default key is the
+  `CF-Connecting-IP` header (a missing header fails closed with `503`).
+- default (`false`) with no custom `key` — the default key resolver throws → `503`, refusing to
+  key on a forgeable header.
+- a custom `key` — **always overrides**, regardless of `trustCfHeaders`. Supply one for
+  non-Cloudflare deployments.
+
+This is the same trust boundary `requestId` applies to `CF-Ray`; see §5c for the unified
+rationale and how `applyMiddlewareChain` threads a single `trustCfHeaders` flag to both.
+
 ---
 
 ## 5. Request Identity
 
 ### 5a. requestId Middleware
 
-`requestId()` generates a unique ID (UUID v4 via `crypto.randomUUID`) per request, sets
-the `X-Request-Id` response header, and stores the value in `requestIdCtx`:
+`requestId(options?)` generates a unique ID per request, sets the `X-Request-Id` response
+header, and stores the value in `requestIdCtx`:
 
     import { requestId, requestIdCtx } from "@y-core/forge/security"
 
@@ -305,6 +351,12 @@ the `X-Request-Id` response header, and stores the value in `requestIdCtx`:
 
 Register at the top of the middleware stack so all subsequent middleware and handlers
 can read the ID.
+
+By default (`trustCfHeaders` unset or `false`) the inbound `CF-Ray` header is **ignored** and a
+fresh `crypto.randomUUID()` is always minted — `CF-Ray` is client-supplied and forgeable off
+Cloudflare. Pass `requestId({ trustCfHeaders: true })` only when the Worker is known to run
+behind Cloudflare to adopt `CF-Ray` as the id (falling back to a UUID when it is absent). See
+§5c.
 
 ### 5b. Logging Integration
 
@@ -319,6 +371,36 @@ the lifetime of a request:
     }))
 
 Because `requestId()` runs first, the logger always finds the ID already set.
+
+### 5c. Cloudflare Header Trust Boundary — trustCfHeaders
+
+`CF-Ray` and `CF-Connecting-IP` are injected by Cloudflare's edge and are trustworthy **only**
+when the request actually transited that edge. A Worker reachable directly (a custom origin,
+another platform, or a misrouted deployment) receives whatever a client chose to send — so
+adopting those headers unconditionally lets a client forge its own request id or rate-limit key.
+Forge therefore defaults to **distrust**: the CF headers are used only when the caller opts in
+with `trustCfHeaders: true`.
+
+The flag surfaces in three places, all defaulting to `false`:
+
+| Surface | Effect of `trustCfHeaders: true` | Default (`false`) |
+|---|---|---|
+| `requestId({ trustCfHeaders })` | Adopt `CF-Ray` as the id (UUID fallback) | Always mint a UUID; ignore `CF-Ray` |
+| `RateLimitOptions.trustCfHeaders` (§4d) | Default key reads `CF-Connecting-IP` | Default keying throws → `503` unless a custom `key` is given |
+| `MiddlewareChainOptions.trustCfHeaders` | Threaded to `requestId()` and every guard group's rate-limit guard | Both distrust the CF headers |
+
+`applyMiddlewareChain` (in `@y-core/forge/app`) takes a single `trustCfHeaders` and threads it to
+both `requestId` and the rate-limit guards, so an app declares the trust posture once:
+
+    applyMiddlewareChain(app, {
+      trustCfHeaders: true,   // Worker runs behind Cloudflare — safe to trust CF-Ray / CF-Connecting-IP
+      securityHeaders: { scriptSrc: ["'self'", NONCE] },
+      guards: [{ paths: ["/api/*"], rateLimit: { limiter: (c) => c.env.RATE_LIMITER } }],
+    })
+
+**Breaking-change note.** CF-deployed apps must set `trustCfHeaders: true` (or pass a custom
+rate-limit `key`) — otherwise the default rate-limit keying fails closed with `503`, and request
+ids no longer reuse `CF-Ray`.
 
 ---
 

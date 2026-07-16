@@ -2,11 +2,13 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import type { AppContext } from "../../context/types";
+import { isHxRequest } from "../../html/htmx/hx-request";
 import { fragmentResponse } from "../../http/response";
-import { renderToString } from "../../jsx/render-to-string";
+import { renderPage, renderToString } from "../../jsx/render-to-string";
+import type { ForgeIcon } from "../../ui/core/icon";
 import type { LogChannel, LogLevel, LogQuery, LogReadResult, LogRecord } from "../types";
 import type { LogViewerLoaderData } from "./components";
-import { LOG_TBODY_ID, LogDetailCell, LogTableBody } from "./components";
+import { LOG_TBODY_ID, LogDetailCell, LogTableBody, LogViewerContent } from "./components";
 
 /**
  * Access decision for the log viewer. Either a per-request predicate (return `false` to deny
@@ -27,22 +29,26 @@ export type LogViewerOptions<Bindings = Record<string, unknown>> = {
   channel: (c: AppContext<Bindings>) => LogChannel;
   /** Required access decision; runs before the channel is touched. */
   access: LogViewerAccess<Bindings>;
+  /** App-bound icon (must provide `chevron-down`) rendered in the filter bar's level select. */
+  icon: ForgeIcon<"chevron-down">;
   /** URL path prefix where the viewer is mounted (used for HTMX targets). */
   basePath?: string;
 };
 
 /**
  * Log viewer loader. Evaluates `access` first — a denial returns a `403 Forbidden` `Response`
- * (which `definePage` loaders short-circuit on) without touching the channel. On allow, reads
- * the requested log page via the channel and returns `LogViewerLoaderData`. Use inside
- * `definePage`'s `loader`; pass the data to `renderLogFragment` (HTMX) or `LogViewerContent`
- * (full page) in the `view`. A throwing `access` predicate propagates to the error boundary
- * (fail closed). @public
+ * without touching the channel. On allow, reads the requested log page via the channel and
+ * returns a rendered `Response` for every path: the detail `<td>` fragment for `?detail=<key>`,
+ * the `<tbody>` HTMX partial for `HX-Request` requests, or the full viewer page otherwise.
+ * Rendering happens only here — the record-rendering components are internal, so records can
+ * never be rendered without passing `access`. Use inside `definePage`'s `loader`; a loader
+ * returning a `Response` short-circuits rendering. A throwing `access` predicate propagates to
+ * the error boundary (fail closed). @public
  */
 export async function loadLogViewer<Bindings = Record<string, unknown>>(
   c: AppContext<Bindings>,
   options: LogViewerOptions<Bindings>,
-): Promise<LogViewerLoaderData | Response> {
+): Promise<Response> {
   if (options.access !== "allow-unauthenticated" && !(await options.access(c))) {
     return new Response("Forbidden", { status: 403 });
   }
@@ -70,14 +76,37 @@ export async function loadLogViewer<Bindings = Record<string, unknown>>(
   if (result.cursor !== undefined) data.cursor = result.cursor;
   if (level) data.level = level;
   if (q) data.q = q;
-  return data;
+
+  if (isHxRequest(c)) {
+    return renderLogFragment(data);
+  }
+  return renderLogViewerPage(data, options.icon);
 }
 
 /**
- * Renders the `<tbody>` HTMX partial from loader data.
- * Return this directly from `definePage`'s `view` when `HX-Request === "true"`. @public
+ * Renders the full viewer page — `LogViewerContent` wrapped in a minimal HTML document.
+ * @internal
  */
-export async function renderLogFragment(data: LogViewerLoaderData): Promise<Response> {
+async function renderLogViewerPage(data: LogViewerLoaderData, icon: ForgeIcon<"chevron-down">): Promise<Response> {
+  return renderPage(
+    <html lang='en'>
+      <head>
+        <meta charset='utf-8' />
+        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <title>Request Log</title>
+      </head>
+      <body>
+        <LogViewerContent data={data} icon={icon} />
+      </body>
+    </html>,
+  );
+}
+
+/**
+ * Renders the `<tbody>` HTMX partial from loader data. `loadLogViewer` returns this when the
+ * request carries `HX-Request`. @internal
+ */
+async function renderLogFragment(data: LogViewerLoaderData): Promise<Response> {
   const body = await renderToString(
     <LogTableBody
       id={LOG_TBODY_ID}
@@ -92,10 +121,10 @@ export async function renderLogFragment(data: LogViewerLoaderData): Promise<Resp
 
 /**
  * Renders the expanded detail `<td>` HTMX partial for one stored record — the `outerHTML`
- * replacement of a clicked message cell. `loadLogViewer` returns this automatically when a
- * `?detail=<key>` query parameter is present. @public
+ * replacement of a clicked message cell. `loadLogViewer` returns this when a `?detail=<key>`
+ * query parameter is present. @internal
  */
-export async function renderLogDetailFragment(record: LogRecord | null): Promise<Response> {
+async function renderLogDetailFragment(record: LogRecord | null): Promise<Response> {
   const body = await renderToString(<LogDetailCell record={record} />);
   return fragmentResponse(body);
 }

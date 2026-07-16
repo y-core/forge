@@ -56,4 +56,12 @@ describe("Spinner", () => {
     expect(out).toContain("my-spinner");
     expect(out).toContain("inline-flex");
   });
+
+  it("forwards id and data-* attributes on the wrapper and keeps role=status", async () => {
+    const out = await render(<Spinner icon={icon} id='sp1' data-testid='spinner' data-note='a&b' />);
+    expect(out).toContain('id="sp1"');
+    expect(out).toContain('data-testid="spinner"');
+    expect(out).toContain('data-note="a&amp;b"');
+    expect(out).toContain('role="status"');
+  });
 });

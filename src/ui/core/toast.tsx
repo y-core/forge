@@ -1,32 +1,15 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, PropsWithChildren } from "../../jsx/types";
+import type { FC, JSX } from "../../jsx/types";
 import { scopeAttrs } from "../server/scope-attrs";
 import { cn } from "./utils/cn";
 
 export type ToastVariant = "default" | "success" | "info" | "warning" | "destructive";
 export type ToastPosition = "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
 
-interface ToastContainerProps {
-  id?: string;
-  position?: ToastPosition;
-  class?: string;
-}
+type ToastContainerProps = JSX.IntrinsicElements["section"] & { position?: ToastPosition };
 
-interface ToastProps {
-  variant?: ToastVariant;
-  dismissible?: boolean;
-  duration?: number;
-  class?: string;
-}
-
-interface ToastTitleProps {
-  class?: string;
-}
-
-interface ToastDescriptionProps {
-  class?: string;
-}
+type ToastProps = JSX.IntrinsicElements["div"] & { variant?: ToastVariant; dismissible?: boolean; duration?: number };
 
 const toastVariantClasses: Record<ToastVariant, string> = {
   default: "border-border bg-background text-foreground",
@@ -45,20 +28,20 @@ const positionClasses: Record<ToastPosition, string> = {
   "bottom-right": "bottom-4 right-4 items-end",
 };
 
-const ToastContainer: FC<PropsWithChildren<ToastContainerProps>> = ({ id, position = "bottom-right", class: cls, children }) => (
+const ToastContainer: FC<ToastContainerProps> = ({ position = "bottom-right", class: cls, children, ...rest }) => (
   <section
     data-slot='toast-container'
     data-position={position}
-    {...(id !== undefined ? { id } : {})}
     aria-label='Notifications'
     aria-live='polite'
     aria-atomic='false'
-    class={cn("fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4", positionClasses[position], cls)}>
+    class={cn("fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4", positionClasses[position], cls)}
+    {...rest}>
     {children}
   </section>
 );
 
-const ToastRoot: FC<PropsWithChildren<ToastProps>> = ({ variant = "default", dismissible = false, duration, class: cls, children }) => {
+const ToastRoot: FC<ToastProps> = ({ variant = "default", dismissible = false, duration, class: cls, children, ...rest }) => {
   const interactive = dismissible || (duration !== undefined && duration > 0);
   return (
     <div
@@ -72,7 +55,8 @@ const ToastRoot: FC<PropsWithChildren<ToastProps>> = ({ variant = "default", dis
         toastVariantClasses[variant],
         dismissible && "pr-10",
         cls,
-      )}>
+      )}
+      {...rest}>
       <div data-slot='toast-body' class='flex-1 space-y-1'>
         {children}
       </div>
@@ -92,14 +76,14 @@ const ToastRoot: FC<PropsWithChildren<ToastProps>> = ({ variant = "default", dis
   );
 };
 
-const ToastTitle: FC<PropsWithChildren<ToastTitleProps>> = ({ class: cls, children }) => (
-  <div data-slot='toast-title' class={cn("text-sm font-semibold leading-none", cls)}>
+const ToastTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, ...rest }) => (
+  <div data-slot='toast-title' class={cn("text-sm font-semibold leading-none", cls)} {...rest}>
     {children}
   </div>
 );
 
-const ToastDescription: FC<PropsWithChildren<ToastDescriptionProps>> = ({ class: cls, children }) => (
-  <div data-slot='toast-description' class={cn("text-sm opacity-90", cls)}>
+const ToastDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, ...rest }) => (
+  <div data-slot='toast-description' class={cn("text-sm opacity-90", cls)} {...rest}>
     {children}
   </div>
 );

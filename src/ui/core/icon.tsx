@@ -51,6 +51,7 @@ export const Icon: FC<IconProps> = ({
     class={cn(cls)}
     aria-hidden={ariaLabel ? undefined : String(ariaHidden)}
     aria-label={ariaLabel}
+    {...(ariaLabel ? { role: "img" } : {})}
     stroke={stroke}
     stroke-width={strokeWidth}
     stroke-linecap={strokeLinecap}

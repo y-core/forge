@@ -16,12 +16,11 @@ interface PopoverTriggerProps extends Omit<JSX.IntrinsicElements["button"], "chi
   children?: JSXNode;
 }
 
-interface PopoverContentProps {
+interface PopoverContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   /** Element id — the `commandfor` target named by the matching `Popover.Trigger`. */
   id: string;
   align?: PopoverAlign;
   side?: PopoverSide;
-  class?: string;
   children?: JSXNode;
 }
 
@@ -49,14 +48,15 @@ const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, ...
  * popovers — no JavaScript. Placement (`align`/`side`) is applied by static CSS anchored to the
  * invoker (the popover's implicit anchor); the data attributes select the rule.
  */
-const PopoverContent: FC<PopoverContentProps> = ({ id, align = "start", side = "bottom", class: cls, children }) => (
+const PopoverContent: FC<PopoverContentProps> = ({ id, align = "start", side = "bottom", class: cls, children, ...rest }) => (
   <div
     id={id}
     data-slot='popover-content'
     popover='auto'
     data-align={align}
     data-side={side}
-    class={cn("z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}>
+    class={cn("z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}
+    {...rest}>
     {children}
   </div>
 );

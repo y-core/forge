@@ -1,6 +1,6 @@
 ---
 title: Error Handling
-description: "Result type, result function, toError, ValidationResult, renderError, renderSuccess, renderValidationErrors, fragmentResponse, htmlResponse, fragment rendering, error boundary middleware, baseline-hardened 500, defineAction 413, fail-closed, error taxonomy, HTMX fragment error pattern"
+description: "Result type, result function, ok constructor, err constructor, toError, GuardResult, ValidationResult, unified error field, renderError, renderSuccess, renderValidationErrors, fragmentResponse, htmlResponse, serveObject HTTP boundary, fragment rendering, error boundary middleware, baseline-hardened 500, defineAction 413, definePage bubble, fail-closed, error taxonomy, HTMX fragment error pattern"
 weight: 24
 ---
 
@@ -16,29 +16,36 @@ weight: 24
 
 ## 0. Quick Reference
 
-- §1 result namespace: `result()`, `toError()`, `Result<T,E>`, `ValidationResult`
-- §2 Fragment renderers: `renderError`, `renderSuccess`, `renderValidationErrors`, `fragmentResponse`
+- §1 result namespace: the one `Result<T,E>` primitive, `ok()`/`err()` constructors, `result()`, `toError()`, and the `GuardResult` / `ValidationResult` domain aliases
+- §2 Fragment renderers: `renderError`, `renderSuccess`, `renderValidationErrors`, `fragmentResponse` (return `SafeHtml`, not `Response`); `serveObject` is the ratified `Response`-returning boundary exception
 - §3 `htmlResponse`: wraps JSX in full HTML response; `html` tag; `escapeHtml`
 - §4 Fail-closed posture: 503 when critical context missing, not silent fallback
-- §5 Error taxonomy: expected vs unexpected vs infrastructure errors; the error boundary; §5e startup invariants — env validation and binding resolvers throw, store operations return Result
+- §5 Error taxonomy: expected vs unexpected vs infrastructure errors; the error boundary; §5d intentional `definePage`-bubbles / `defineAction`-fragment divergence; §5e startup invariants — env validation and binding resolvers throw, store operations return Result, `serveObject` returns a `Response`
 - §6 Review checklist: error handling items
 
 ---
 
 ## 1. Result Monad
 
-### 1a. `result` and `toError` Functions
+### 1a. The Unified `Result` Primitive, `ok`/`err`, `result` and `toError`
 
-The `result` function and `toError` helper live in `@y-core/forge/result` and
-form a lightweight discriminated-union monad that keeps error paths explicit at
-the type level without requiring exceptions.
+forge has exactly **one result primitive**. `Result<T, E>`, its `ok()`/`err()`
+value-constructors, the `result()` wrapper, and the `toError()` helper all live in
+`@y-core/forge/result` and form a lightweight discriminated-union monad that keeps
+error paths explicit at the type level without requiring exceptions.
 
 ```typescript
-import { result, toError, type Result } from "@y-core/forge/result"
+import { ok, err, result, toError, type Result } from "@y-core/forge/result"
 
+// The single primitive — ONE failure field, always `error`:
 type Result<T, E = Error> =
     | { ok: true;  data: T }
     | { ok: false; error: E }
+
+// `ok()` / `err()` are the sanctioned value-constructors:
+function ok(): Result<void, never>          // a passing void result (e.g. a GuardResult)
+function ok<T>(data: T): Result<T, never>   // a success carrying `data`
+function err<E>(error: E): Result<never, E> // a failure carrying `error`
 
 // `result` wraps a sync/async function or a promise, capturing any throw as `error`:
 function result<T, E = Error>(fn: () => T): Result<T, E>
@@ -51,7 +58,22 @@ function toError(thrown: unknown): Error
 
 Use `Result` as the return type for any function that can fail in a predictable
 way. Never return `null | T` or throw for expected failures. The success variant
-carries `data`; the failure variant carries `error`.
+carries `data`; the failure variant carries `error` — **there is no second failure
+field** (no `errors`, no `reason`); every domain shape reuses this one channel.
+
+`ok` and `err` are the only sanctioned value-constructors — a deliberate,
+documented exception to the `create*` factory-naming rule (they construct values,
+not configured objects; the naming follows the neverthrow convention). Prefer them
+to hand-written object literals so the discriminant and field names stay uniform:
+
+```typescript
+import { ok, err } from "@y-core/forge/result"
+
+function parsePort(raw: string): Result<number, string> {
+    const n = Number(raw)
+    return Number.isInteger(n) && n > 0 ? ok(n) : err("port must be a positive integer")
+}
+```
 
 ### 1b. Usage Pattern
 
@@ -75,28 +97,48 @@ const payload = r.data
 Chain multiple operations by returning early on each failure rather than
 nesting. This keeps the happy path at the left margin.
 
-### 1c. `ValidationResult` Type
+### 1c. `ValidationResult` and `GuardResult` Domain Aliases
 
-`ValidationResult<T>` is a specialised variant used by the validation pipeline.
-It replaces the generic `error: E` slot with an array of error messages:
+Both domain shapes are now plain **aliases of the one primitive** (§1a) — they
+narrow only the failure type `E`, never the field layout. The discriminant stays
+`ok`, and the failure channel stays `error`.
+
+`ValidationResult<T>` is the validation-pipeline alias. Its failure channel carries
+the per-field message list as `error: readonly string[]` — not a separate `errors`
+field:
 
 ```typescript
 import type { ValidationResult } from "@y-core/forge/result"
 // (also re-exported from "@y-core/forge/validation")
 
-type ValidationResult<T> =
-    | { ok: true;  data: T }
-    | { ok: false; errors: string[] }
+type ValidationResult<T> = Result<T, readonly string[]>
+//  ≡ { ok: true; data: T } | { ok: false; error: readonly string[] }
 ```
 
-`errors` is a flat list of human-readable, already-formatted field messages
-(e.g. `"Email is required"`). This structure feeds directly into
-`renderValidationErrors` (§2c).
+The failure channel carries the per-field message list as `error: readonly string[]`
+— a flat list of human-readable, already-formatted field messages (e.g.
+`"Email is required"`). Validation operations backed by `v` (the valibot namespace
+from `@y-core/forge/validation`) return `ValidationResult<T>`. Do not collapse the
+issues into a single `Error` — the failure channel carries the per-field message
+list so the UI can surface every failing field at once. That list feeds directly
+into `renderValidationErrors` (§2c).
 
-Validation operations backed by `v` (the valibot namespace from
-`@y-core/forge/validation`) return `ValidationResult<T>`. Do not collapse the
-issues into a single `Error` — preserve the per-field message list so the UI can
-surface every failing field at once.
+`GuardResult<R>` is the alias for predicate/authorization checks (origin, CSRF,
+Turnstile) that produce no success value. Its success arm is `void`; the
+machine-readable reason code lives in `.error`:
+
+```typescript
+import type { GuardResult } from "@y-core/forge/result"
+
+type GuardResult<R = string> = Result<void, R>
+//  ≡ { ok: true; data: void } | { ok: false; error: R }
+```
+
+`R` is typically a string-literal union of reason codes (e.g.
+`"missing" | "disallowed"`). Construct a passing check with `ok()` and a failing one
+with `err(reason)`. The reason code is for **server diagnostics only** — never echo
+it to clients (see the CSRF/Turnstile/origin guidance in the `form` and `security`
+namespace READMEs, and [SECURITY_HARDENING.md](./SECURITY_HARDENING.md)).
 
 ---
 
@@ -107,6 +149,11 @@ suitable for `hx-swap` targets. They do NOT render a full `<html>` document.
 Each renderer returns a `SafeHtml` value (the rendered markup), not a
 `Response`; wrap it with `fragmentResponse(body, status?)` to set the HTTP
 status. Import everything from `@y-core/forge/http`.
+
+The one ratified exception to "return `SafeHtml`/`Result`, not `Response`" is
+`serveObject` (`@y-core/forge/storage/r2`): as an HTTP-boundary method it returns a
+`Response` directly (200/206/304/404/416; 400 on an invalid key; 500 on backend
+failure), exactly like these renderers own their markup. See §5e.
 
 ### 2a. `renderError` — Error Fragment
 
@@ -142,13 +189,13 @@ import { fragmentResponse, renderValidationErrors } from "@y-core/forge/http"
 
 const r = validateContact(formData)   // returns ValidationResult<T>
 if (!r.ok) {
-    return fragmentResponse(renderValidationErrors(r.errors), 422)
+    return fragmentResponse(renderValidationErrors(r.error), 422)
 }
 ```
 
 `renderValidationErrors(errors, options?)` renders the flat list of field error
 messages as a `<ul>` inside an HTMX fragment, so every failing field surfaces at
-once rather than one at a time. Pass the `errors` array from a
+once rather than one at a time. Pass the per-field message list (`error`) from a
 `ValidationResult<T>` (§1c) directly.
 
 ### 2d. Fragment Options
@@ -366,7 +413,7 @@ handling so individual handlers stay thin:
 - An oversized request body surfaces a **413** fragment
   (`fragmentResponse(renderError(...), 413)`); an otherwise unparseable body
   yields **400**.
-- Validation failures return `renderValidationErrors(validation.errors)` unless
+- Validation failures return `renderValidationErrors(validation.error)` unless
   an `onValidationError` hook is provided.
 - A throw from the `handle` step is logged via `createLogger("action")` and
   converted to a generic **500** fragment, unless an `onError` hook overrides it.
@@ -375,6 +422,15 @@ handling so individual handlers stay thin:
 `view` throws and no hook is set, the error re-throws so the router error
 boundary (§5b) handles it. Use these hooks for per-route recovery instead of
 wrapping handlers in ad-hoc `try/catch`.
+
+The divergence between the two builders is **intentional, not an oversight**. A
+full-page `definePage` GET is part of a navigable document, so an unhandled failure
+must bubble to the app's full-page error boundary (§5b) — hence the re-throw when no
+`onError` is set. A `defineAction` HTMX call swaps a fragment into an existing page,
+so it stays self-contained and returns a **500** fragment rather than replacing the
+whole document. **Both builders log the failure on the way out** (`createLogger("app")`
+via the boundary for `definePage`; `createLogger("action")` for `defineAction`) — the
+difference is only in what the client receives, never in whether the error is recorded.
 
 ### 5e. Startup Invariants — Env Validation and Binding Resolvers Throw
 
@@ -400,6 +456,14 @@ closed — §4a); **operating** on a resolved store returns `Result<T,E>` (expec
 runtime failures — §5a). See
 [STORAGE_BINDINGS.md](./STORAGE_BINDINGS.md) §4a for the resolver pattern.
 
+One store operation is a ratified exception to the "operating returns `Result`"
+rule: **`serveObject`** (`storage/r2`) sits directly on the HTTP boundary and
+returns a `Response`, not a `Result` — the same posture as the fragment renderers
+(§2). It emits `200`/`206` (range) / `304` (conditional) / `404` (missing) / `416`
+(unsatisfiable range) for the normal cases, `400` for an invalid key, and `500`
+when the backend fails. Because it owns the full response, callers hand its return
+value straight back from the handler rather than unwrapping an `ok`/`error` union.
+
 ---
 
 ## 6. Error Handling Review Checklist
@@ -407,7 +471,7 @@ runtime failures — §5a). See
 Before merging any handler or service change, verify:
 
 - [ ] Expected failures use the `Result` type or fragment renderers — not thrown exceptions
-- [ ] Validation errors use `renderValidationErrors` with the `ValidationResult.errors` list
+- [ ] Validation errors use `renderValidationErrors` with the `ValidationResult` failure list (`.error: readonly string[]`)
 - [ ] Fragments are returned via `fragmentResponse(render*(...), status)` (status on the response, not the renderer)
 - [ ] Stack traces and raw `err.message` strings never reach the client (the error boundary gates this)
 - [ ] Unexpected throws propagate to the router error boundary or a `definePage`/`defineAction` `onError` hook — no ad-hoc per-route `try/catch`

@@ -327,13 +327,13 @@ const result = await verifyTurnstile(formData, env.TURNSTILE_SECRET_KEY, {
 }, "cf-turnstile-response", context.request.headers.get("CF-Connecting-IP") ?? undefined);
 
 if (!result.ok) {
-  // result.reason is one of: hostname-mismatch | action-mismatch | cdata-mismatch |
+  // result.error is one of: hostname-mismatch | action-mismatch | cdata-mismatch |
   //   missing-token | verification-failed | timeout | network-error | parse-error
   return new Response("Verification failed", { status: 403 });
 }
 ```
 
-`verifyTurnstile` returns `{ ok: false, reason: "hostname-mismatch" }` immediately when
+`verifyTurnstile` returns `{ ok: false, error: "hostname-mismatch" }` immediately when
 `expectedHostname` is omitted — the network call is never made.
 
 ### Constants & config
@@ -358,10 +358,10 @@ if (!result.ok) {
 | `CsrfSecretResolver` | `(context) => CryptoKey \| CsrfKeyRing \| Promise<…>`. |
 | `CsrfTokenOptions` | `{ kid?, subject? }` for `createCsrfToken`. |
 | `CsrfVerifyOptions` | `{ maxAgeMs?, subject? }` for `verifyCsrfToken`. |
-| `CsrfResult` | `{ ok: true } \| { ok: false, reason }` — see Security below. |
+| `CsrfResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. See Security below. |
 | `TurnstileConfig` | `{ secretKey, siteKey }`. |
 | `TurnstileVerifyOptions` | `{ expectedHostname, expectedAction?, expectedCData?, timeoutMs? }`. |
-| `TurnstileResult` | `{ ok: true } \| { ok: false, reason }`. |
+| `TurnstileResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. |
 
 ---
 
@@ -371,14 +371,16 @@ This namespace is security-critical. The notes below are load-bearing, not advis
 
 ### CSRF failure reasons are server-log-only
 
-On failure, `verifyCsrfToken` returns a discriminated `reason`
+On failure, `verifyCsrfToken` returns a discriminated reason code in `.error`
 (`missing-token`, `invalid-format`, `expired`, `future-timestamp`, `path-mismatch`,
-`subject-mismatch`, `unknown-key`, `invalid-signature`). This is for **server diagnostics only**.
-`csrfProtection` deliberately collapses **every** failure to a bare `403` with no body detail.
+`subject-mismatch`, `unknown-key`, `invalid-signature`). `CsrfResult` is a
+`GuardResult` alias, so this reason lives in the single `error` field. It is for
+**server diagnostics only** — `csrfProtection` deliberately collapses **every** failure
+to a bare `403` with no body detail.
 
-**Never surface `CsrfResult.reason` to clients.** Echoing it back turns the endpoint into a
+**Never surface `CsrfResult.error` to clients.** Echoing it back turns the endpoint into a
 token-introspection oracle on unauthenticated input — an attacker can distinguish "wrong signature"
-from "expired" from "wrong path" and probe accordingly. The same applies to `TurnstileResult.reason`.
+from "expired" from "wrong path" and probe accordingly. The same applies to `TurnstileResult.error`.
 
 ### Tokens are stateless and path-bound
 

@@ -20,7 +20,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
         handle: () => new Response("success"),
       }),
     );
@@ -38,7 +38,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (_data) => ({ ok: false, errors: ["Name required."] }),
+        validate: (_data) => ({ ok: false, error: ["Name required."] }),
         handle: () => new Response("success"),
       }),
     );
@@ -54,7 +54,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
         handle: () => new Response("success"),
       }),
     );
@@ -71,7 +71,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (_data) => ({ ok: false, errors: ["Bad"] }),
+        validate: (_data) => ({ ok: false, error: ["Bad"] }),
         handle: () => new Response("success"),
         onValidationError: () => new Response("custom error", { status: 422 }),
       }),
@@ -86,7 +86,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
         handle: () => {
           throw new Error("downstream failure");
         },
@@ -105,7 +105,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["required"] }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["required"] }),
         handle: () => {
           throw new Error("oops");
         },
@@ -133,7 +133,7 @@ describe("defineAction", () => {
       ],
       handler: defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["required"] }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["required"] }),
         handle: () => {
           order.push("handle");
           return new Response("ok");
@@ -149,7 +149,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
         handle: () => new Response("success"),
       }),
     );
@@ -168,7 +168,7 @@ describe("defineAction", () => {
     const app = makeApp(
       defineAction<TestData>({
         parse: (fd) => ({ name: fd.get("name") as string }),
-        validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
         handle: () => new Response("success"),
       }),
     );
@@ -202,7 +202,7 @@ describe("defineAction", () => {
       const app = makeApp(
         defineAction<TestData>({
           parse: (fd) => ({ name: fd.get("name") as string }),
-          validate: (data) => (data.name ? { ok: true, data } : { ok: false, errors: ["Name required"] }),
+          validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
           handle: () => {
             throw new Error("boom downstream");
           },

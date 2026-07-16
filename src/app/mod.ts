@@ -1,8 +1,8 @@
+export { validateBindings, validateEnv } from "../context/env-validation";
+export { ConfigKey } from "../context/types";
 export { defineAction } from "./action";
 export { createApp } from "./app";
 export { applyAssets, serveAssets } from "./assets";
-export { ConfigKey } from "./config-middleware";
-export { validateBindings, validateEnv } from "./env";
 export type { ErrorPageOptions } from "./error-page";
 export { createErrorPage } from "./error-page";
 export { Forge } from "./forge-app";

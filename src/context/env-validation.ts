@@ -1,15 +1,11 @@
 import type { Middleware } from "@remix-run/fetch-router";
-import { getAppContext } from "../context/types";
-import { formatValidationIssues } from "../validation/format-issues";
 import { v } from "../validation/mod";
+import { parseEnv } from "../validation/parse-env";
+import { getAppContext } from "./types";
 
 /** Validates an env object against a valibot schema; throws a descriptive error on failure. @public */
 export function validateEnv<T>(env: unknown, schema: v.BaseSchema<unknown, T, v.BaseIssue<unknown>>): T {
-  const result = v.safeParse(schema, env);
-  if (!result.success) {
-    throw new Error(`Invalid environment: ${formatValidationIssues(result.issues)}`);
-  }
-  return result.output;
+  return parseEnv(schema, env);
 }
 
 /**

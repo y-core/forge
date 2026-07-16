@@ -71,7 +71,7 @@ export interface ActionDefinition<Input, Bindings = Record<string, unknown>, Con
   parse: (formData: ReadonlyFormData) => Input;
   validate: (data: Input) => ValidationResult<Input>;
   handle: (data: Input, c: AppContext<Bindings>, config: ConfigData) => Response | Promise<Response>;
-  onValidationError?: (errors: string[], c: AppContext<Bindings>) => Response | Promise<Response>;
+  onValidationError?: (errors: readonly string[], c: AppContext<Bindings>) => Response | Promise<Response>;
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
 }
 

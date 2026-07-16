@@ -100,6 +100,18 @@ describe("Toast", () => {
     expect(out).toContain("my-toast");
     expect(out).toContain("rounded-xl");
   });
+
+  it("forwards id and data-* attributes on the root with HTML-escaped values", async () => {
+    const out = await render(
+      <Toast id='t1' data-testid='toast' data-note='a&b'>
+        Hello
+      </Toast>,
+    );
+    expect(out).toContain('id="t1"');
+    expect(out).toContain('data-testid="toast"');
+    expect(out).toContain('data-note="a&amp;b"');
+    expect(out).toContain('data-slot="toast"');
+  });
 });
 
 describe("Toast.Container", () => {
@@ -153,6 +165,13 @@ describe("Toast.Container", () => {
     expect(out).toContain('data-slot="toast"');
     expect(out).toContain("Hello");
   });
+
+  it("forwards a custom id and data-* attributes via spread", async () => {
+    const out = await render(<Toast.Container id='toasts' data-testid='container' />);
+    expect(out).toContain('id="toasts"');
+    expect(out).toContain('data-testid="container"');
+    expect(out).toContain('data-slot="toast-container"');
+  });
 });
 
 describe("Toast.Title and Toast.Description", () => {
@@ -168,5 +187,16 @@ describe("Toast.Title and Toast.Description", () => {
     expect(out).toContain('data-slot="toast-description"');
     expect(out).toContain("Your changes were saved.");
     expect(out).toContain("opacity-90");
+  });
+
+  it("forwards id and data-* attributes on the title and description", async () => {
+    const out = await render(
+      <>
+        <Toast.Title id='tt'>Saved</Toast.Title>
+        <Toast.Description data-note='a&b'>Detail</Toast.Description>
+      </>,
+    );
+    expect(out).toContain('id="tt"');
+    expect(out).toContain('data-note="a&amp;b"');
   });
 });

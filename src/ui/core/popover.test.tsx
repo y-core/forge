@@ -108,6 +108,18 @@ describe("Popover.Content", () => {
     expect(out).toContain("w-64");
     expect(out).toContain("bg-popover");
   });
+
+  it("forwards role and data-* attributes with HTML-escaped values", async () => {
+    const out = await render(
+      <Popover.Content id='menu-1' role='menu' data-note='a&b'>
+        Items
+      </Popover.Content>,
+    );
+    expect(out).toContain('id="menu-1"');
+    expect(out).toContain('role="menu"');
+    expect(out).toContain('data-note="a&amp;b"');
+    expect(out).toContain('data-slot="popover-content"');
+  });
 });
 
 describe("Popover composition", () => {

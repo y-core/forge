@@ -9,14 +9,16 @@ describe("Icon component", () => {
     expect(out).toContain('href="/assets/svg/sprite.svg#icon-phone"');
   });
 
-  it("sets aria-hidden=true by default", async () => {
+  it("sets aria-hidden=true and no role by default (decorative)", async () => {
     const out = await render(<Icon symbol='icon-phone' sprite='/assets/svg/sprite.svg' />);
     expect(out).toContain('aria-hidden="true"');
+    expect(out).not.toContain('role="img"');
   });
 
-  it("omits aria-hidden and sets aria-label when aria-label is provided", async () => {
+  it("omits aria-hidden and sets aria-label + role=img when aria-label is provided", async () => {
     const out = await render(<Icon symbol='icon-phone' sprite='/assets/svg/sprite.svg' aria-label='Phone number' />);
     expect(out).toContain('aria-label="Phone number"');
+    expect(out).toContain('role="img"');
     expect(out).not.toContain("aria-hidden");
   });
 

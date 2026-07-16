@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { consoleChannel, withMinLevel } from "./channels";
+import { consoleChannel, withMinLevel, withRedaction } from "./channels";
 import type { LogChannel, LogRecord } from "./types";
 import { levelAtLeast, parseLogLevel } from "./types";
 
@@ -152,6 +152,72 @@ describe("withMinLevel", () => {
     const filtered = withMinLevel({ write: () => {} }, "warn");
     expect(filtered.read).toBeUndefined();
     expect(filtered.readEntry).toBeUndefined();
+  });
+});
+
+describe("withRedaction", () => {
+  function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
+    const records: LogRecord[] = [];
+    return {
+      records,
+      channel: {
+        write: (r) => {
+          records.push(r);
+        },
+      },
+    };
+  }
+
+  it("applies the redact transform to the written record", () => {
+    const { records, channel } = makeCapture();
+    const redacted = withRedaction(channel, (r) => ({ ...r, message: "[redacted]" }));
+
+    redacted.write(makeRecord({ message: "secret payload" }));
+
+    expect(records).toHaveLength(1);
+    expect(records[0]!.message).toBe("[redacted]");
+  });
+
+  it("passes the transformed record's data through", () => {
+    const { records, channel } = makeCapture();
+    const redacted = withRedaction(channel, (r) => ({ ...r, data: { safe: true } }));
+
+    redacted.write(makeRecord({ data: { token: "abc" } }));
+
+    expect(records[0]!.data).toStrictEqual({ safe: true });
+  });
+
+  it("returns the inner channel's write promise", () => {
+    const asyncChannel: LogChannel = { write: () => Promise.resolve() };
+    const redacted = withRedaction(asyncChannel, (r) => r);
+    expect(redacted.write(makeRecord())).toBeInstanceOf(Promise);
+  });
+
+  it("passes read through to the inner channel", async () => {
+    const inner: LogChannel = {
+      write: () => {},
+      read: () => Promise.resolve({ rows: [{ key: "k", level: "info", prefix: "p", message: "m", timestamp: "t" }], complete: true }),
+    };
+    const redacted = withRedaction(inner, (r) => r);
+
+    const result = await redacted.read!();
+
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it("passes readEntry through to the inner channel", async () => {
+    const inner: LogChannel = { write: () => {}, readEntry: (key) => Promise.resolve(makeRecord({ message: `entry:${key}` })) };
+    const redacted = withRedaction(inner, (r) => r);
+
+    const record = await redacted.readEntry!("abc");
+
+    expect(record?.message).toBe("entry:abc");
+  });
+
+  it("has no read/readEntry when the inner channel is write-only", () => {
+    const redacted = withRedaction({ write: () => {} }, (r) => r);
+    expect(redacted.read).toBeUndefined();
+    expect(redacted.readEntry).toBeUndefined();
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import type { Result } from "./result";
-import { result, toError } from "./result";
+import type { GuardResult, Result, ValidationResult } from "./result";
+import { err, ok, result, toError } from "./result";
 
 describe("result — sync success", () => {
   it("returns { ok: true, data } for a primitive", () => {
@@ -163,6 +163,88 @@ describe("result — type narrowing", () => {
       const _: string = r.data;
       expect(_).toBe("hello");
     }
+  });
+});
+
+describe("ok constructor", () => {
+  it("returns { ok: true, data: undefined } when called with no argument", () => {
+    expect(ok()).toEqual({ ok: true, data: undefined });
+  });
+
+  it("exposes an explicit undefined data property for the void overload", () => {
+    const r = ok();
+    expect(r.ok).toBe(true);
+    expect("data" in r).toBe(true);
+    if (r.ok) expect(r.data).toBeUndefined();
+  });
+
+  it("returns { ok: true, data } for a primitive", () => {
+    expect(ok(42)).toEqual({ ok: true, data: 42 });
+  });
+
+  it("returns { ok: true, data } for an object", () => {
+    const value = { a: 1 };
+    const r = ok(value);
+    expect(r).toEqual({ ok: true, data: { a: 1 } });
+    if (r.ok) expect(r.data).toBe(value);
+  });
+
+  it("preserves falsy data values", () => {
+    expect(ok(0)).toEqual({ ok: true, data: 0 });
+    expect(ok("")).toEqual({ ok: true, data: "" });
+    expect(ok(false)).toEqual({ ok: true, data: false });
+    expect(ok(null)).toEqual({ ok: true, data: null });
+  });
+});
+
+describe("err constructor", () => {
+  it("returns { ok: false, error } for a reason-code string", () => {
+    expect(err("cross-site")).toEqual({ ok: false, error: "cross-site" });
+  });
+
+  it("returns { ok: false, error } for a message list", () => {
+    expect(err(["name is required"])).toEqual({ ok: false, error: ["name is required"] });
+  });
+
+  it("returns { ok: false, error } for an Error instance", () => {
+    const boom = new Error("boom");
+    const r = err(boom);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe(boom);
+  });
+});
+
+describe("GuardResult / ValidationResult narrowing", () => {
+  it("narrows a GuardResult failure to its reason code via .ok", () => {
+    const g: GuardResult<"missing" | "cross-site"> = err("missing");
+    expect(g.ok).toBe(false);
+    if (!g.ok) {
+      const reason: "missing" | "cross-site" = g.error;
+      expect(reason).toBe("missing");
+    }
+  });
+
+  it("narrows a passing GuardResult to its void success branch via .ok", () => {
+    const g: GuardResult = ok();
+    expect(g.ok).toBe(true);
+    if (g.ok) {
+      expect(g.data).toBeUndefined();
+    }
+  });
+
+  it("exposes .error as a readonly string[] on a ValidationResult failure", () => {
+    const v: ValidationResult<{ name: string }> = err(["name is required", "name too short"]);
+    expect(v.ok).toBe(false);
+    if (!v.ok) {
+      const messages: readonly string[] = v.error;
+      expect(messages).toEqual(["name is required", "name too short"]);
+    }
+  });
+
+  it("narrows a ValidationResult success to its data via .ok", () => {
+    const v: ValidationResult<{ name: string }> = ok({ name: "Jane" });
+    expect(v.ok).toBe(true);
+    if (v.ok) expect(v.data.name).toBe("Jane");
   });
 });
 

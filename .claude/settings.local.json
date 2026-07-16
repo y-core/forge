@@ -9,6 +9,7 @@
       "Bash(bun x *)",
       "Bash(bunx biome *)",
       "Bash(cargo test *)",
+      "Bash(echo \"EXIT: $?\")",
       "Bash(echo \"exit: $?\")",
       "Bash(echo \"exit=$?\")",
       "Bash(python3 -)",

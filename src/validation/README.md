@@ -12,7 +12,7 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 ## Features
 
 - **Single valibot entry point** — `v` is the complete valibot namespace re-exported as one import, so every app uses the same pinned valibot version and never deep-imports the upstream package.
-- **`ValidationResult<T>`** — a discriminated union (`{ ok: true; data: T } | { ok: false; errors: string[] }`) that is the canonical return type for the `validate` hook of `defineAction` and for any service that validates its own input.
+- **`ValidationResult<T>`** — a domain alias of forge's one `Result` primitive, `Result<T, readonly string[]>` (`{ ok: true; data: T } | { ok: false; error: readonly string[] }`), that is the canonical return type for the `validate` hook of `defineAction` and for any service that validates its own input.
 - **`forge-cfgen` env-schema generator** — reads `wrangler.jsonc` bindings and `.dev.vars` keys and emits a committed, schema-first valibot `EnvSchema` (plus an inferred `type Env`), replacing the env half of `wrangler types`.
 
 ---
@@ -37,7 +37,7 @@ type ContactInput = v.InferOutput<typeof ContactSchema>;
 function validateContact(fields: unknown): ValidationResult<ContactInput> {
   const result = v.safeParse(ContactSchema, fields, { abortEarly: true });
   if (!result.success) {
-    return { ok: false, errors: result.issues.map((issue) => issue.message) };
+    return { ok: false, error: result.issues.map((issue) => issue.message) };
   }
   return { ok: true, data: result.output };
 }
@@ -48,7 +48,7 @@ Inspect `result.ok` before reading `data`:
 ```typescript
 const outcome = validateContact(rawFields);
 if (!outcome.ok) {
-  // outcome.errors: string[] — human-readable messages
+  // outcome.error: readonly string[] — human-readable messages
   return;
 }
 // outcome.data: ContactInput — typed, validated
@@ -74,20 +74,19 @@ const result = v.safeParse(schema, { count: 3 }); // { success, output | issues 
 
 #### `ValidationResult<T>`
 
-A discriminated union describing the outcome of a validation pass:
+A domain alias of forge's one `Result` primitive describing the outcome of a validation pass — its failure channel carries the per-field message list in the single `error` field:
 
 ```typescript
-type ValidationResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; errors: string[] };
+type ValidationResult<T> = Result<T, readonly string[]>;
+//  ≡ { ok: true; data: T } | { ok: false; error: readonly string[] };
 ```
 
 | Variant | Fields | Meaning |
 |---|---|---|
 | Success | `ok: true`, `data: T` | Input parsed; `data` is the typed value. |
-| Failure | `ok: false`, `errors: string[]` | Validation failed; `errors` are human-readable messages. |
+| Failure | `ok: false`, `error: readonly string[]` | Validation failed; `error` holds the human-readable messages. |
 
-This type is also re-exported from `@y-core/forge/result`. Convert a valibot result into it by mapping `result.issues` to `issue.message` on failure (see the usage example above).
+This type is defined in and re-exported from `@y-core/forge/result` (the single result primitive). Convert a valibot result into it by mapping `result.issues` to `issue.message` on failure (see the usage example above).
 
 ---
 

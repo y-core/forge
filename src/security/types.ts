@@ -1,4 +1,5 @@
 import type { AppContext } from "../context/types";
+import type { GuardResult } from "../result/result";
 import type { NONCE } from "./nonce";
 
 /** A single CSP source value — a string literal or the `NONCE` placeholder. @public */
@@ -53,14 +54,16 @@ export interface ApplySecurityHeadersOptions extends SecurityHeadersOptions {
   nonce?: string;
 }
 
-export type OriginResult = { ok: true } | { ok: false; reason: "missing" | "disallowed" };
+/** Result of an Origin/Referer allowlist check. @public */
+export type OriginResult = GuardResult<"missing" | "disallowed">;
 
 export interface DeriveAllowedOriginsOptions {
   /** When true, adds the `www.` variant for non-www hostnames. Defaults to false. */
   includeWww?: boolean;
 }
 
-export type CopResult = { ok: true } | { ok: false; reason: string };
+/** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`). @public */
+export type CrossOriginResult = GuardResult<"missing-fetch-metadata" | "cross-site">;
 
 export interface CrossOriginProtectionOptions {
   /** When true, allows requests with no Sec-Fetch-Site header. Defaults to false (fail-closed). */
@@ -84,6 +87,10 @@ export interface RateLimitOptions<Bindings = Record<string, unknown>> {
   onLimit?: (c: AppContext<Bindings>) => Response | Promise<Response>;
   /** When true (default), returns 503 if the binding is absent. */
   required?: boolean;
+  /** When true, the default key reads the `CF-Connecting-IP` header (only trustworthy behind
+   *  Cloudflare). Defaults to false (default-distrust): without a custom `key` the default keying
+   *  throws. A custom `key` always overrides regardless of this flag. */
+  trustCfHeaders?: boolean;
 }
 
 export interface CorsOptions {
