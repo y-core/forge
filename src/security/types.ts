@@ -7,6 +7,7 @@ export type CspSourceValue = string | typeof NONCE;
 
 type CspValue = CspSourceValue[];
 
+/** Parsed URL parts (origin, hostname, protocol) derived from a base URL. @public */
 export interface ParsedUrl {
   origin: string;
   hostname: string;
@@ -26,6 +27,7 @@ export interface PermissionsPolicyOptions {
   payment?: string[];
 }
 
+/** CSP source lists, HSTS, Permissions-Policy, and cross-origin policy options for security headers. @public */
 export interface SecurityHeadersOptions {
   scriptSrc?: CspValue;
   connectSrc?: CspValue;
@@ -57,6 +59,7 @@ export interface ApplySecurityHeadersOptions extends SecurityHeadersOptions {
 /** Result of an Origin/Referer allowlist check. @public */
 export type OriginResult = GuardResult<"missing" | "disallowed">;
 
+/** Options controlling how allowed origins are derived from a base URL. @public */
 export interface DeriveAllowedOriginsOptions {
   /** When true, adds the `www.` variant for non-www hostnames. Defaults to false. */
   includeWww?: boolean;
@@ -65,11 +68,13 @@ export interface DeriveAllowedOriginsOptions {
 /** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`). @public */
 export type CrossOriginResult = GuardResult<"missing-fetch-metadata" | "cross-site">;
 
+/** Options for the Fetch-Metadata cross-origin protection guard. @public */
 export interface CrossOriginProtectionOptions {
   /** When true, allows requests with no Sec-Fetch-Site header. Defaults to false (fail-closed). */
   allowMissingHeader?: boolean;
 }
 
+/** Options for the Origin/Referer allowlist middleware, with per-request origin resolution. @public */
 export interface OriginProtectionOptions<Bindings = Record<string, unknown>> {
   /** Allowed origins for the Origin/Referer fallback (applied only when Sec-Fetch-Site is
    *  absent). A static list, or a per-request resolver over the app context (e.g. parsed
@@ -77,10 +82,12 @@ export interface OriginProtectionOptions<Bindings = Record<string, unknown>> {
   allowedOrigins: string[] | ((c: AppContext<Bindings>) => string[]);
 }
 
+/** Cloudflare rate-limit binding shape exposing a keyed `limit()` call. @public */
 export interface RateLimitBinding {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
+/** Options for the rate-limit middleware: binding resolver, keying, and over-limit handling. @public */
 export interface RateLimitOptions<Bindings = Record<string, unknown>> {
   limiter: (c: AppContext<Bindings>) => RateLimitBinding | undefined;
   key?: (c: AppContext<Bindings>) => string;
@@ -93,6 +100,7 @@ export interface RateLimitOptions<Bindings = Record<string, unknown>> {
   trustCfHeaders?: boolean;
 }
 
+/** CORS middleware options: allowed origins, methods, headers, credentials, and preflight cache. @public */
 export interface CorsOptions {
   /** Exact allowed origins or subdomain patterns ("https://*.example.com"). */
   origins: string[];

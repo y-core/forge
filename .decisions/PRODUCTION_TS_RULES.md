@@ -16,7 +16,7 @@ weight: 20
 ---
 
 ## 0. Quick Reference
-- §1 Zero global state: factory/closure injection, no module-level mutable vars
+- §1 Zero global state: factory/closure injection, no module-level mutable vars; `define*` for declarative handler configs, `create*` for other factories, no public bare constructors
 - §2 Explicit errors via Result monad: one `Result<T,E>` primitive, `ok()`/`err()` constructors, result/toError, the `GuardResult` and `ValidationResult` aliases
 - §3 Validation first: validate at system boundaries, valibot v facade, abort-early
 - §4 Testability: co-located *.test.ts, no globals to mock, fakes over mocks
@@ -64,7 +64,30 @@ export function createSecurityHeaders(options: SecurityHeadersOptions): Middlewa
 Module-level constants (non-mutable) are fine:
 ```typescript
 export const CSRF_FIELD_DEFAULT = "__csrf"
-export const HONEYPOT_FIELD_DEFAULT = "__hp"
+export const HONEYPOT_FIELD_DEFAULT = "__surname"
+```
+
+### 1d. Factory Naming Convention — `create*` vs `define*`, No Public Bare Constructors
+Two verbs, one rule each — and constructors are never part of the public surface:
+
+- **`define*`** names a **declarative handler config**: the pipeline builders `definePage`
+  and `defineAction` that describe a route's parse → validate → handle shape. Reserve `define*`
+  for this declarative-config role.
+- **`create*`** names **every other factory** that instantiates stateful behavior from captured
+  config — `createSecurityHeaders`, `createD1Client`, `createKVStore`, `createObjectStore`,
+  `createConfig`.
+- **No public bare constructors.** A class with instance state exposes a `create*` factory (and,
+  where a class is unavoidable, a private `constructor` + `static create`); `new Foo(...)` is never
+  the public entry point. Example: the `Config` holder's constructor is `private`; consumers call
+  the exported `createConfig(map, schema, overrides?)` factory — `new Config(...)` is not available.
+
+```typescript
+import { createConfig, env } from "@y-core/forge/config"
+// Declarative config for a lazy, per-env-cached holder — via the factory, never `new Config`:
+export const AppConfig = createConfig(
+  { baseUrl: env("BASE_URL") },
+  v.object({ baseUrl: v.string() }),
+)
 ```
 
 ## 2. Explicit Errors via Result Monad
@@ -275,6 +298,7 @@ const name = user?.profile?.displayName  // instead of: user && user.profile && 
 | Rule | Check |
 |---|---|
 | Zero global state | No module-level mutable vars; factory functions for behavior |
+| Factory naming | `define*` for declarative handler configs, `create*` for all other factories; no public bare constructors (`createConfig`, not `new Config`) |
 | Explicit errors | One `Result<T,E>` primitive (single `error` field); `ok()`/`err()` constructors; `GuardResult`/`ValidationResult` aliases for guard checks and validation |
 | Validation first | v.safeParse at boundaries; abort-early for form validation |
 | Testability | Co-located *.test.ts; no globals to mock; fakes not mocks |

@@ -4,50 +4,50 @@ import { Textarea } from "./textarea";
 
 describe("Textarea", () => {
   it("renders a <textarea> element", async () => {
-    const out = await render(<Textarea />);
-    expect(out).toContain("<textarea");
-    expect(out).toContain('data-slot="textarea"');
+    expect(await render(<Textarea />)).toBe(
+      '<textarea data-slot="textarea" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y"></textarea>',
+    );
   });
 
   it("includes default styling classes including resize-y", async () => {
-    const out = await render(<Textarea />);
-    expect(out).toContain("w-full");
-    expect(out).toContain("rounded-lg");
-    expect(out).toContain("resize-y");
+    expect(await render(<Textarea />)).toBe(
+      '<textarea data-slot="textarea" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y"></textarea>',
+    );
   });
 
   it("renders children as textarea content", async () => {
-    const out = await render(<Textarea>Initial text</Textarea>);
-    expect(out).toContain("Initial text");
+    expect(await render(<Textarea>Initial text</Textarea>)).toBe(
+      '<textarea data-slot="textarea" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y">Initial text</textarea>',
+    );
   });
 
   it("passes through id, name, and rows", async () => {
-    const out = await render(<Textarea id='msg' name='message' rows={5} />);
-    expect(out).toContain('id="msg"');
-    expect(out).toContain('name="message"');
-    expect(out).toContain('rows="5"');
+    expect(await render(<Textarea id='msg' name='message' rows={5} />)).toBe(
+      '<textarea data-slot="textarea" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y" id="msg" name="message" rows="5"></textarea>',
+    );
   });
 
   it("passes through the placeholder attribute", async () => {
-    const out = await render(<Textarea placeholder='Your message' />);
-    expect(out).toContain('placeholder="Your message"');
+    expect(await render(<Textarea placeholder='Your message' />)).toBe(
+      '<textarea data-slot="textarea" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y" placeholder="Your message"></textarea>',
+    );
   });
 
   it("passes through required and disabled", async () => {
-    const withBoth = await render(<Textarea required disabled />);
-    expect(withBoth).toContain("required");
-    expect(withBoth).toMatch(/\bdisabled(?!:)/);
+    expect(await render(<Textarea required disabled />)).toBe(
+      '<textarea data-slot="textarea" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y" required disabled></textarea>',
+    );
   });
 
   it("passes through aria-describedby and aria-invalid", async () => {
-    const out = await render(<Textarea aria-describedby='desc' aria-invalid='true' />);
-    expect(out).toContain('aria-describedby="desc"');
-    expect(out).toContain('aria-invalid="true"');
+    expect(await render(<Textarea aria-describedby='desc' aria-invalid='true' />)).toBe(
+      '<textarea data-slot="textarea" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y" aria-describedby="desc" aria-invalid="true"></textarea>',
+    );
   });
 
   it("merges a custom class with the default classes", async () => {
-    const out = await render(<Textarea class='extra'>text</Textarea>);
-    expect(out).toContain("extra");
-    expect(out).toContain("resize-y");
+    expect(await render(<Textarea class='extra'>text</Textarea>)).toBe(
+      '<textarea data-slot="textarea" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y extra">text</textarea>',
+    );
   });
 });

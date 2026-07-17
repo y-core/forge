@@ -168,8 +168,9 @@ extraction occurs; `defineAction` translates that into a `413` fragment response
 
 ### 3a. csrfProtection Middleware — Guard Mutating Routes
 
-`csrfProtection` is a `Middleware` that, on `GET`/`HEAD`, mints a token bound to the
-current path (exposed via `csrfTokenCtx`/`csrfMinterCtx`), and on mutations verifies the
+`csrfProtection(options: CsrfProtectionOptions)` is a `Middleware` that, on `GET`/`HEAD`, mints
+a token bound to the current path (exposed via `csrfTokenCtx`/`csrfMinterCtx`), and on mutations
+verifies the
 submitted token against the HMAC key (or key ring) resolved from the configured secret.
 The token is read from the `X-CSRF-Token` header or, failing that, the `_csrf` form field
 (`CSRF_FIELD_DEFAULT`; override via `tokenField`/`headerName`). Returns `403` if the token
@@ -255,13 +256,14 @@ token per form render; do not cache tokens across requests.
 
 For programmatic CSRF management outside the standard middleware flow. Both functions are
 path-scoped: `createCsrfToken(key, path, options?)` embeds the path, and
-`verifyCsrfToken(keyOrRing, token, path, maxAgeMsOrOptions?)` checks it (along with the
-signature and a freshness window).
+`verifyCsrfToken(keyOrRing, token, path, options?)` checks it (along with the signature and a
+freshness window). The fourth argument is a `CsrfVerifyOptions` object — `{ maxAgeMs?, subject? }`
+(there is no bare `number` overload; pass `{ maxAgeMs }` to set the freshness window).
 
     import { createCsrfToken, verifyCsrfToken } from "@y-core/forge/form"
 
     const token = await createCsrfToken(key, "/api/contact")
-    const result = await verifyCsrfToken(key, token, "/api/contact")
+    const result = await verifyCsrfToken(key, token, "/api/contact", { maxAgeMs: 3_600_000 })
     // result: { ok: true } | { ok: false; error: "expired" | "path-mismatch" | ... }
 
 `verifyCsrfToken` accepts either a single `CryptoKey` or a `CsrfKeyRing` (for rotation) and
@@ -278,7 +280,7 @@ submissions.
 ### 4a. isHoneypotFilled — Hidden Field Bot Detection
 
 Honeypot detection checks whether a hidden field that legitimate users never fill
-has been populated by a bot. `HONEYPOT_FIELD_DEFAULT` is `"surname"`; pass a second
+has been populated by a bot. `HONEYPOT_FIELD_DEFAULT` is `"__surname"`; pass a second
 argument to `isHoneypotFilled(formData, field)` to override it.
 
     import { isHoneypotFilled, HONEYPOT_FIELD_DEFAULT } from "@y-core/forge/form"
@@ -298,31 +300,33 @@ rejected cheaply without consuming further work.
 ### 4b. verifyTurnstile — Cloudflare Turnstile CAPTCHA
 
 `verifyTurnstile` calls the Turnstile siteverify API and returns a `TurnstileResult`
-discriminated union. Its arguments are positional: the form data (it reads the
-`cf-turnstile-response` field itself), the secret key, an optional token-field override,
-an optional remote IP, and an options object. Pass the connecting IP from the
-`CF-Connecting-IP` header when running on Cloudflare Workers, and **always** pass
-`options.expectedHostname` in production — without it the token's origin hostname is not
-checked, allowing a token minted on an attacker-controlled site to be replayed against this
-one (a runtime warning is logged when it is omitted).
+discriminated union. Its signature is `verifyTurnstile(formData, secretKey, options)`: the
+form data (it reads the token field itself), the secret key, and a `TurnstileVerifyOptions`
+object. The token field and the connecting IP live **inside** the options object —
+`options.tokenField` (defaults to `"cf-turnstile-response"`) and `options.remoteIp`. Pass the
+connecting IP from the `CF-Connecting-IP` header when running on Cloudflare Workers, and
+**always** pass `options.expectedHostname` in production — without it the token's origin
+hostname is not checked, allowing a token minted on an attacker-controlled site to be replayed
+against this one (a runtime warning is logged when it is omitted).
 
     import { verifyTurnstile } from "@y-core/forge/form"
 
     const result = await verifyTurnstile(
       formData,
       config.services.turnstile.secretKey,
-      "cf-turnstile-response",
-      c.request.headers.get("CF-Connecting-IP") ?? undefined,
-      { expectedHostname: new URL(c.url).hostname },
+      {
+        expectedHostname: new URL(c.url).hostname,
+        remoteIp: c.request.headers.get("CF-Connecting-IP") ?? undefined,
+      },
     )
     if (!result.ok) {
       return fragmentResponse(renderError("CAPTCHA verification failed"), 400)
     }
 
-The options object also accepts `expectedAction`, `expectedCData`, and `timeoutMs`
-(default 5000 ms). Add the Turnstile widget to forms that require bot protection beyond the
-honeypot. The `siteKey` is used client-side; `secretKey` is server-side only and must never
-appear in client bundles. See §5b for the config schema.
+The options object also accepts `tokenField`, `expectedAction`, `expectedCData`, and
+`timeoutMs` (default 5000 ms). Add the Turnstile widget to forms that require bot protection
+beyond the honeypot. The `siteKey` is used client-side; `secretKey` is server-side only and
+must never appear in client bundles. See §5b for the config schema.
 
 ---
 

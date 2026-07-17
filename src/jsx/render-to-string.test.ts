@@ -100,9 +100,7 @@ describe("renderToString — HTML elements", () => {
   it("drops the style attribute (CSP forbids inline styles)", async () => {
     const node = el("div", { style: { backgroundColor: "red", fontSize: 14 } });
     node.props.children = "";
-    const out = String(await renderToString(node));
-    expect(out).toBe("<div></div>");
-    expect(out).not.toContain("style=");
+    expect(String(await renderToString(node))).toBe("<div></div>");
   });
 
   it("skips attributes with unsafe names (injection guard)", async () => {
@@ -131,23 +129,18 @@ describe("renderToString — HTML elements", () => {
   it("renders data-* attributes", async () => {
     const node = el("div", { "data-ref": "my-el", "data-state": "open" });
     node.props.children = "";
-    const out = String(await renderToString(node));
-    expect(out).toContain('data-ref="my-el"');
-    expect(out).toContain('data-state="open"');
+    expect(String(await renderToString(node))).toBe('<div data-ref="my-el" data-state="open"></div>');
   });
 
   it("skips the children prop as an attribute", async () => {
     const node = el("div", { children: "hello" });
     expect(String(await renderToString(node))).toBe("<div>hello</div>");
-    expect(String(await renderToString(node))).not.toContain('children="');
   });
 
   it("skips the key prop as an attribute", async () => {
     const node = el("li", { key: "item-1" });
     node.props.children = "item";
-    const out = String(await renderToString(node));
-    expect(out).not.toContain("key=");
-    expect(out).toBe("<li>item</li>");
+    expect(String(await renderToString(node))).toBe("<li>item</li>");
   });
 });
 

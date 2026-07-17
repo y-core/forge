@@ -4,74 +4,65 @@ import { Slider } from "./slider";
 
 describe("Slider", () => {
   it("renders a bare range input by default", async () => {
-    const out = await render(<Slider min={0} max={10} step={1} value={4} />);
-    expect(out).toContain('data-slot="slider"');
-    expect(out).toContain('type="range"');
-    expect(out).toContain('min="0"');
-    expect(out).toContain('max="10"');
-    expect(out).toContain('step="1"');
-    expect(out).toContain('value="4"');
-    expect(out).not.toContain('data-slot="slider-wrapper"');
+    expect(await render(<Slider min={0} max={10} step={1} value={4} />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" min="0" max="10" step="1" value="4">',
+    );
   });
 
   it("wraps the input with a seeded output when output is set", async () => {
-    const out = await render(<Slider min={0} max={10} value={4} output />);
-    expect(out).toContain('data-slot="slider-wrapper"');
-    expect(out).toContain('data-slot="slider"');
-    expect(out).toContain('data-slot="slider-output"');
-    expect(out).toContain("<output");
-    expect(out).toContain(">4</output>");
+    expect(await render(<Slider min={0} max={10} value={4} output />)).toBe(
+      '<div data-slot="slider-wrapper" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" min="0" max="10" value="4"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">4</output></div>',
+    );
   });
 
   it("spreads delegation attributes onto the input", async () => {
-    const out = await render(<Slider data-on-input='setOpacity' data-setting='opacity' data-ref='opacity-slider' />);
-    expect(out).toContain('data-on-input="setOpacity"');
-    expect(out).toContain('data-setting="opacity"');
-    expect(out).toContain('data-ref="opacity-slider"');
+    expect(await render(<Slider data-on-input='setOpacity' data-setting='opacity' data-ref='opacity-slider' />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" data-on-input="setOpacity" data-setting="opacity" data-ref="opacity-slider">',
+    );
   });
 
   it("passes the disabled attribute through", async () => {
-    const withDisabled = await render(<Slider disabled />);
-    const withoutDisabled = await render(<Slider />);
-    expect(withDisabled).toMatch(/\bdisabled(?!:)/);
-    expect(withoutDisabled).not.toMatch(/\bdisabled(?!:)/);
+    expect(await render(<Slider disabled />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" disabled>',
+    );
+    expect(await render(<Slider />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50">',
+    );
   });
 
   it("merges a custom class with the base classes", async () => {
-    const out = await render(<Slider class='extra-class' />);
-    expect(out).toContain("extra-class");
-    expect(out).toContain("appearance-none");
+    expect(await render(<Slider class='extra-class' />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50 extra-class">',
+    );
   });
 
   it("wires field id and name from the descriptor", async () => {
-    const out = await render(<Slider field={{ name: "opacity" }} />);
-    expect(out).toContain('id="field-opacity"');
-    expect(out).toContain('name="opacity"');
+    expect(await render(<Slider field={{ name: "opacity" }} />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" id="field-opacity" name="opacity" aria-describedby="field-opacity-description">',
+    );
   });
 
   it("adds aria-invalid and aria-describedby when the field is invalid", async () => {
-    const out = await render(<Slider field={{ name: "opacity", invalid: true }} />);
-    expect(out).toContain('aria-invalid="true"');
-    expect(out).toContain('aria-describedby="field-opacity-description field-opacity-error"');
+    expect(await render(<Slider field={{ name: "opacity", invalid: true }} />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" id="field-opacity" name="opacity" aria-describedby="field-opacity-description field-opacity-error" aria-invalid="true">',
+    );
   });
 
   it("horizontal orientation (default) uses the standard horizontal base classes", async () => {
-    const out = await render(<Slider min={0} max={10} value={5} />);
-    expect(out).toContain("w-full");
-    expect(out).toContain("h-2");
-    expect(out).not.toContain("writing-mode");
+    expect(await render(<Slider min={0} max={10} value={5} />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" min="0" max="10" value="5">',
+    );
   });
 
   it("vertical orientation adds writing-mode and direction classes to the slider", async () => {
-    const out = await render(<Slider min={0} max={10} value={5} orientation='vertical' />);
-    expect(out).toContain("[writing-mode:vertical-lr]");
-    expect(out).toContain("[direction:rtl]");
+    expect(await render(<Slider min={0} max={10} value={5} orientation='vertical' />)).toBe(
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50 [writing-mode:vertical-lr] [direction:rtl] h-22 w-5" min="0" max="10" value="5">',
+    );
   });
 
   it("vertical orientation with output wraps in a flex-col container", async () => {
-    const out = await render(<Slider min={0} max={10} value={5} orientation='vertical' output />);
-    expect(out).toContain('data-slot="slider-wrapper"');
-    expect(out).toContain("flex-col");
-    expect(out).toContain("items-center");
+    expect(await render(<Slider min={0} max={10} value={5} orientation='vertical' output />)).toBe(
+      '<div data-slot="slider-wrapper" class="flex gap-2 flex-col items-center"><input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50 [writing-mode:vertical-lr] [direction:rtl] h-22 w-5" min="0" max="10" value="5"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">5</output></div>',
+    );
   });
 });

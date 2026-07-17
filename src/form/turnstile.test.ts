@@ -77,9 +77,25 @@ describe("verifyTurnstile", () => {
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
-    await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME }, "cf-turnstile-response", "1.2.3.4");
+    await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, remoteIp: "1.2.3.4" });
 
     expect(JSON.parse(capturedBody!)).toEqual({ remoteip: "1.2.3.4", response: "tok", secret: SECRET });
+  });
+
+  it("reads the token from a custom options.tokenField", async () => {
+    let capturedBody: string | undefined;
+
+    withCapturedRequest(({ body }) => {
+      capturedBody = body;
+      return new Response(JSON.stringify({ success: true, hostname: HOSTNAME }));
+    });
+
+    const fd = new FormData();
+    fd.append("my-token-field", "custom-tok");
+    const result = await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, tokenField: "my-token-field" });
+
+    expect(result).toEqual({ ok: true });
+    expect(JSON.parse(capturedBody!)).toEqual({ response: "custom-tok", secret: SECRET });
   });
 
   it("passes an AbortSignal to fetch", async () => {
@@ -113,10 +129,7 @@ describe("verifyTurnstile", () => {
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
-    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, timeoutMs: 1 }, "cf-turnstile-response", undefined)).toEqual({
-      ok: false,
-      error: "timeout",
-    });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, timeoutMs: 1 })).toEqual({ ok: false, error: "timeout" });
   });
 
   it("returns network-error on fetch failures", async () => {
@@ -143,10 +156,7 @@ describe("verifyTurnstile", () => {
     mockFetch({ hostname: "other.example.com", success: true });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME }, "cf-turnstile-response", undefined)).toEqual({
-      ok: false,
-      error: "hostname-mismatch",
-    });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME })).toEqual({ ok: false, error: "hostname-mismatch" });
   });
 
   it("returns hostname-mismatch without calling fetch when expectedHostname is empty (fail-closed runtime guard)", async () => {
@@ -166,17 +176,19 @@ describe("verifyTurnstile", () => {
     mockFetch({ action: "other", success: true, hostname: HOSTNAME });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(
-      await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, expectedAction: "contact" }, "cf-turnstile-response", undefined),
-    ).toEqual({ ok: false, error: "action-mismatch" });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, expectedAction: "contact" })).toEqual({
+      ok: false,
+      error: "action-mismatch",
+    });
   });
 
   it("returns cdata-mismatch when cdata does not match", async () => {
     mockFetch({ cdata: "other", success: true, hostname: HOSTNAME });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "valid-token");
-    expect(
-      await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, expectedCData: "contact-form" }, "cf-turnstile-response", undefined),
-    ).toEqual({ ok: false, error: "cdata-mismatch" });
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, expectedCData: "contact-form" })).toEqual({
+      ok: false,
+      error: "cdata-mismatch",
+    });
   });
 });

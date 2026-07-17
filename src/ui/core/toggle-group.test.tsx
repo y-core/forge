@@ -4,106 +4,101 @@ import { ToggleGroup } from "./toggle-group";
 
 describe("ToggleGroup", () => {
   it("root emits data-slot=toggle-group on a fieldset", async () => {
-    const out = await render(<ToggleGroup aria-label='Projection' data-ref='projection-group' />);
-    expect(out).toContain('data-slot="toggle-group"');
-    expect(out).toContain("<fieldset");
-    expect(out).toContain('aria-label="Projection"');
-    expect(out).toContain('data-ref="projection-group"');
+    expect(await render(<ToggleGroup aria-label='Projection' data-ref='projection-group' />)).toBe(
+      '<fieldset role="toolbar" data-slot="toggle-group" data-orientation="horizontal" aria-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0" aria-label="Projection" data-ref="projection-group"></fieldset>',
+    );
   });
 
   it("root includes base layout classes", async () => {
-    const out = await render(<ToggleGroup />);
-    expect(out).toContain("flex");
-    expect(out).toContain("justify-center");
+    expect(await render(<ToggleGroup />)).toBe(
+      '<fieldset role="toolbar" data-slot="toggle-group" data-orientation="horizontal" aria-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0"></fieldset>',
+    );
   });
 
   it("root merges a custom class with the base classes", async () => {
-    const out = await render(<ToggleGroup class='extra-root' />);
-    expect(out).toContain("extra-root");
-    expect(out).toContain("flex");
+    expect(await render(<ToggleGroup class='extra-root' />)).toBe(
+      '<fieldset role="toolbar" data-slot="toggle-group" data-orientation="horizontal" aria-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0 extra-root"></fieldset>',
+    );
   });
 
   it("item emits data-slot=toggle-group-item, type=button, and aria-pressed=false by default", async () => {
-    const out = await render(<ToggleGroup.Item>Label</ToggleGroup.Item>);
-    expect(out).toContain('data-slot="toggle-group-item"');
-    expect(out).toContain('type="button"');
-    expect(out).toContain('aria-pressed="false"');
+    expect(await render(<ToggleGroup.Item>Label</ToggleGroup.Item>)).toBe(
+      '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px]">Label</button>',
+    );
   });
 
   it("item with pressed=true emits aria-pressed=true and active bg class", async () => {
-    const out = await render(<ToggleGroup.Item pressed>Active</ToggleGroup.Item>);
-    expect(out).toContain('aria-pressed="true"');
-    expect(out).toContain("bg-primary");
+    expect(await render(<ToggleGroup.Item pressed>Active</ToggleGroup.Item>)).toBe(
+      '<button type="button" data-slot="toggle-group-item" aria-pressed="true" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px] bg-primary text-primary-foreground hover:bg-primary">Active</button>',
+    );
   });
 
   it("item without pressed emits aria-pressed=false and no active bg class", async () => {
-    const out = await render(<ToggleGroup.Item>Inactive</ToggleGroup.Item>);
-    expect(out).toContain('aria-pressed="false"');
-    expect(out).not.toContain("bg-primary");
+    expect(await render(<ToggleGroup.Item>Inactive</ToggleGroup.Item>)).toBe(
+      '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px]">Inactive</button>',
+    );
   });
 
   it("item spreads data-on-click, data-mode, data-ref, and title", async () => {
-    const out = await render(
-      <ToggleGroup.Item data-on-click='cameraMode' data-mode='perspective' data-ref='cam-perspective' title='Perspective'>
-        P
-      </ToggleGroup.Item>,
+    expect(
+      await render(
+        <ToggleGroup.Item data-on-click='cameraMode' data-mode='perspective' data-ref='cam-perspective' title='Perspective'>
+          P
+        </ToggleGroup.Item>,
+      ),
+    ).toBe(
+      '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px]" data-on-click="cameraMode" data-mode="perspective" data-ref="cam-perspective" title="Perspective">P</button>',
     );
-    expect(out).toContain('data-on-click="cameraMode"');
-    expect(out).toContain('data-mode="perspective"');
-    expect(out).toContain('data-ref="cam-perspective"');
-    expect(out).toContain('title="Perspective"');
   });
 
   it("item renders text children", async () => {
-    const out = await render(<ToggleGroup.Item>perspective</ToggleGroup.Item>);
-    expect(out).toContain("perspective");
+    expect(await render(<ToggleGroup.Item>perspective</ToggleGroup.Item>)).toBe(
+      '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px]">perspective</button>',
+    );
   });
 
   it("item merges a custom class with the base classes", async () => {
-    const out = await render(<ToggleGroup.Item class='extra-cls'>X</ToggleGroup.Item>);
-    expect(out).toContain("extra-cls");
-    expect(out).toContain("inline-flex");
+    expect(await render(<ToggleGroup.Item class='extra-cls'>X</ToggleGroup.Item>)).toBe(
+      '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px] extra-cls">X</button>',
+    );
   });
 
   it("item renders label children inside a full group", async () => {
-    const out = await render(
-      <ToggleGroup aria-label='Views'>
-        <ToggleGroup.Item pressed data-ref='perspective-btn'>
-          Perspective
-        </ToggleGroup.Item>
-        <ToggleGroup.Item data-ref='parallel-btn'>Parallel</ToggleGroup.Item>
-      </ToggleGroup>,
+    expect(
+      await render(
+        <ToggleGroup aria-label='Views'>
+          <ToggleGroup.Item pressed data-ref='perspective-btn'>
+            Perspective
+          </ToggleGroup.Item>
+          <ToggleGroup.Item data-ref='parallel-btn'>Parallel</ToggleGroup.Item>
+        </ToggleGroup>,
+      ),
+    ).toBe(
+      '<fieldset role="toolbar" data-slot="toggle-group" data-orientation="horizontal" aria-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0" aria-label="Views"><button type="button" data-slot="toggle-group-item" aria-pressed="true" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px] bg-primary text-primary-foreground hover:bg-primary" data-ref="perspective-btn">Perspective</button><button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px]" data-ref="parallel-btn">Parallel</button></fieldset>',
     );
-    expect(out).toContain('data-slot="toggle-group"');
-    expect(out).toContain('data-slot="toggle-group-item"');
-    expect(out).toContain("Perspective");
-    expect(out).toContain("Parallel");
   });
 
   it("defaults to horizontal orientation with no data-orientation attribute override", async () => {
-    const out = await render(<ToggleGroup />);
-    expect(out).toContain('data-orientation="horizontal"');
-    expect(out).toContain('aria-orientation="horizontal"');
-    expect(out).not.toContain("flex-col");
+    expect(await render(<ToggleGroup />)).toBe(
+      '<fieldset role="toolbar" data-slot="toggle-group" data-orientation="horizontal" aria-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0"></fieldset>',
+    );
   });
 
   it("vertical orientation stamps data-orientation and adds flex-col to the group", async () => {
-    const out = await render(<ToggleGroup orientation='vertical' />);
-    expect(out).toContain('data-orientation="vertical"');
-    expect(out).toContain('aria-orientation="vertical"');
-    expect(out).toContain("flex-col");
+    expect(await render(<ToggleGroup orientation='vertical' />)).toBe(
+      '<fieldset role="toolbar" data-slot="toggle-group" data-orientation="vertical" aria-orientation="vertical" class="flex justify-center min-w-0 border-0 m-0 p-0 flex-col"></fieldset>',
+    );
   });
 
   it("item includes the arbitrary vertical ancestor variant class for border override", async () => {
-    const out = await render(<ToggleGroup.Item>X</ToggleGroup.Item>);
-    expect(out).toContain("[data-slot=toggle-group][data-orientation=vertical]");
+    expect(await render(<ToggleGroup.Item>X</ToggleGroup.Item>)).toBe(
+      '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px]">X</button>',
+    );
   });
 
   it("item carries vertical rounded-t-md and rounded-b-md but not rounded-l-none or rounded-r-none overrides", async () => {
-    const out = await render(<ToggleGroup.Item>X</ToggleGroup.Item>);
-    expect(out).toContain("]:first:rounded-t-md");
-    expect(out).toContain("]:last:rounded-b-md");
-    expect(out).not.toContain("]:first:rounded-l-none");
-    expect(out).not.toContain("]:last:rounded-r-none");
+    expect(await render(<ToggleGroup.Item>X</ToggleGroup.Item>)).toBe(
+      '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px]">X</button>',
+    );
   });
 });

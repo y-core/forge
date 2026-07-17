@@ -147,8 +147,11 @@ namespace READMEs, and [SECURITY_HARDENING.md](./SECURITY_HARDENING.md)).
 All three renderers produce HTMX-compatible HTML fragments — partial HTML
 suitable for `hx-swap` targets. They do NOT render a full `<html>` document.
 Each renderer returns a `SafeHtml` value (the rendered markup), not a
-`Response`; wrap it with `fragmentResponse(body, status?)` to set the HTTP
-status. Import everything from `@y-core/forge/http`.
+`Response`; wrap it with `fragmentResponse(body, status?, headers?)` to set the
+HTTP status. Import everything from `@y-core/forge/http`. `fragmentResponse` fixes
+`content-type` to `text/html; charset=utf-8`; passing a `content-type` key in the
+optional `headers` map (case-insensitive) **throws** — the type is not overridable
+(it no longer silently ignores it).
 
 The one ratified exception to "return `SafeHtml`/`Result`, not `Response`" is
 `serveObject` (`@y-core/forge/storage/r2`): as an HTTP-boundary method it returns a
@@ -227,7 +230,9 @@ pass user input to it.) For the status code, pass it to `fragmentResponse`:
 It guarantees a leading `<!DOCTYPE html>` and sets
 `content-type: text/html; charset=utf-8`. Its signature is
 `htmlResponse(body, status?, headers?)` where `body` is a string or a `SafeHtml`
-value (e.g. the output of `renderToString`).
+value (e.g. the output of `renderToString`). The optional `headers` map is merged,
+but `content-type` is fixed: passing a `content-type` key (case-insensitive)
+**throws** rather than being silently ignored.
 
 ```typescript
 import { htmlResponse } from "@y-core/forge/http"

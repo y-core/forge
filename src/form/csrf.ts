@@ -15,7 +15,7 @@ import {
 import { err, ok } from "../result/result";
 import { CSRF_FIELD_DEFAULT } from "./constants";
 import { parseFormData } from "./parse-form-data";
-import type { CsrfKeyRing, CsrfResult, CsrfSecretResolver, CsrfTokenOptions, CsrfVerifyOptions } from "./types";
+import type { CsrfKeyRing, CsrfProtectionOptions, CsrfResult, CsrfSecretResolver, CsrfTokenOptions, CsrfVerifyOptions } from "./types";
 
 const CLOCK_SKEW_MS = 30_000;
 const DEFAULT_KEY_ID = "0";
@@ -92,10 +92,9 @@ export async function verifyCsrfToken(
   keyOrRing: CryptoKey | CsrfKeyRing,
   token: string,
   path: string,
-  maxAgeMsOrOptions: number | CsrfVerifyOptions = 3_600_000,
+  options: CsrfVerifyOptions = {},
 ): Promise<CsrfResult> {
-  const opts: CsrfVerifyOptions = typeof maxAgeMsOrOptions === "number" ? { maxAgeMs: maxAgeMsOrOptions } : maxAgeMsOrOptions;
-  const maxAgeMs = opts.maxAgeMs ?? 3_600_000;
+  const maxAgeMs = options.maxAgeMs ?? 3_600_000;
 
   if (!token) return err("missing-token");
 
@@ -130,7 +129,7 @@ export async function verifyCsrfToken(
 
   if (tokenPath !== path) return err("path-mismatch");
 
-  if (opts.subject !== undefined && tokenSubject !== opts.subject) {
+  if (options.subject !== undefined && tokenSubject !== options.subject) {
     return err("subject-mismatch");
   }
 
@@ -175,14 +174,7 @@ export type { CsrfSecretResolver };
  * bound to (returning `undefined` mints/verifies a path-only token for that request), or the
  * literal `false` to opt out of subject binding entirely (greppable, path-only tokens). @public
  */
-export function csrfProtection(options: {
-  // biome-ignore lint/suspicious/noExplicitAny: context shape varies
-  secret: (context: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
-  tokenField?: string;
-  headerName?: string;
-  // biome-ignore lint/suspicious/noExplicitAny: context shape varies
-  subject: ((context: RequestContext<any, any>) => string | undefined) | false;
-}): Middleware {
+export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
 
   const ringCache = new WeakMap<object, CsrfKeyRing>();

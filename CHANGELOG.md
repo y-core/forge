@@ -10,9 +10,88 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [0.0.67] — 2026-07-17
+
+Project Improvement: testing/DX helpers, API-ergonomics normalization, and dead-code/housekeeping.
+Additive test infrastructure, plus a handful of **breaking changes** for apps on `0.0.66` —
+see the migration guide below.
+
+### ⚠️ Breaking Changes — migration from 0.0.66
+
+1. **Form verification APIs take an options object only.** The trailing positionals and the
+   `number | options` union are gone.
+
+   ```ts
+   // before (0.0.66)
+   verifyTurnstile(formData, secret, { expectedHostname }, "cf-turnstile-response", remoteIp)
+   verifyCsrfToken(keyOrRing, token, path, 3_600_000)
+   // after (0.0.67)
+   verifyTurnstile(formData, secret, { expectedHostname, tokenField: "cf-turnstile-response", remoteIp })
+   verifyCsrfToken(keyOrRing, token, path, { maxAgeMs: 3_600_000 })
+   ```
+   `csrfProtection` now takes the named, exported `CsrfProtectionOptions` type (same shape).
+
+2. **`Config` is constructed via `createConfig()` — the public constructor is gone.**
+
+   ```ts
+   // before
+   import { Config } from "@y-core/forge/config"
+   const cfg = new Config(map, schema, overrides)
+   // after
+   import { createConfig } from "@y-core/forge/config"
+   const cfg = createConfig(map, schema, overrides)
+   ```
+
+3. **`htmlResponse` / `fragmentResponse` now throw if you pass a `content-type` header.**
+   Previously it was silently discarded (these helpers always emit `text/html`). Remove any
+   `content-type` key from the `headers` argument — passing one is now a thrown `Error`.
+
+4. **`Config.get(env)` caches per-`env` instead of first-env-wins.** Different `env` objects now
+   resolve independently — no `reset()` needed between them. Only affects tests that relied on the
+   old single-slot cache; production (one stable `env`) is unchanged.
+
+5. **Removed exports (all unused/leaked — no runtime behavior lost):**
+   - `@y-core/forge/config`: `applyMapping` (now internal).
+   - `@y-core/forge/form`: the `CsrfConfig` / `TurnstileConfig` types (orphaned; the runtime path
+     uses the `*Schema` valibot schemas).
+   - `@y-core/forge/validation/cli`: the codegen internals `REGISTRY`, `emit`, `stripJsonc`,
+     `collectBindings`, `collectVars`, `HEADER`, `DEFAULT_OPTIONS` (now `@internal`; `createGenEnv`/
+     `loadOptions`/`readWranglerConfig`/`GenOptions` remain public).
+   - `createObjectStore` (R2) no longer accepts a `logger` option — it never emitted logs.
+
+### Added
+
+- **Test doubles & helpers in `@y-core/forge/testing`:** `fakeD1` (programmable in-memory D1
+  stub — records `calls`, returns configured rows), `fakeR2` (functional in-memory R2 bucket),
+  `render` (SSR render-to-string), `mapHandler` (single-route registrar), and `buildRequest(path, opts?)`
+  (kills `new Request("http://test/…", {…})` boilerplate). `fakeKV.list` now supports **cursor
+  pagination** (`list_complete:false` + `cursor`).
+- **`CsrfProtectionOptions`** (`@y-core/forge/form`) and **`SignedCookieOptions`**
+  (`@y-core/forge/session`) are now exported named types.
+- TSDoc + `@public` tags added to ~20 previously-undocumented exports (heaviest in `security` and
+  `config`).
+
+### Changed
+
+- `Forge.map` is now fully typed — the internal `any` cast and `void`-return erasure are gone; the
+  router's real signature flows through.
+- Logging: `flush()`'s best-effort contract is documented (writes evicted by the pending-cap are
+  fire-and-forget); the KV purge window is a named `PURGE_LIST_LIMIT`.
+
+### Internal
+
+- The full test suite's HTML assertions were migrated from substring `toContain` to exact-match
+  (catches extra/injected attributes); new coverage for the assets build pipeline (`css`/`fonts`/
+  `icons`/`copy`/`state`), `context/pending-headers`, the app error-boundary/HEAD paths, the theme
+  FOUC script, and a `http/headers` facade-contract test.
+- `validation/cli/cf-env-gen.ts` split into a data module (`cf-env-registry.ts`) + codegen module;
+  assets-CLI config plumbing deduped.
+
+---
+
 ## [0.0.66] — 2026-07-17
 
-Wave 2 of the forge improvement programme: catalog integrity, namespace layering, a unified
+Project Improvement: catalog integrity, namespace layering, a unified
 error model, security hardening, and UI component API consistency. This release contains
 **breaking changes** for apps on `0.0.65` — see the migration guide below.
 
@@ -165,4 +244,5 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
-[0.0.66]: #
+[0.0.67]: https://github.com/y-core/forge/compare/v0.0.66...HEAD
+[0.0.66]: https://github.com/y-core/forge/compare/v0.0.65...v0.0.66

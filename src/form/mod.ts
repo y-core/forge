@@ -6,8 +6,8 @@ export { parseFormData } from "./parse-form-data";
 export { readFields, readTextField } from "./read";
 export { verifyTurnstile } from "./turnstile";
 export type {
-  CsrfConfig,
   CsrfKeyRing,
+  CsrfProtectionOptions,
   CsrfResult,
   CsrfSecretResolver,
   CsrfTokenOptions,
@@ -15,7 +15,6 @@ export type {
   FormFieldReader,
   ParseFormDataOptions,
   ReadonlyFormData,
-  TurnstileConfig,
   TurnstileResult,
   TurnstileVerifyOptions,
 } from "./types";

@@ -73,9 +73,8 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   }
 
   /** Declarative, map-based route registration — the canonical way to add routes. @public */
-  map(...args: Parameters<typeof this._setup.map>): void {
-    // biome-ignore lint/suspicious/noExplicitAny: generic route map API
-    (this._setup.map as (...a: any[]) => void)(...args);
+  map(...args: Parameters<typeof this._setup.map>): ReturnType<typeof this._setup.map> {
+    return this._setup.map(...args);
   }
 
   /** Builds the dispatching router once, with a static middleware stack. */

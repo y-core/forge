@@ -28,6 +28,8 @@ function makeLogger(
       if (result instanceof Promise) {
         if (pending.length >= PENDING_CAP) {
           // Drop the oldest entry to prevent unbounded memory growth in long-lived loggers.
+          // The dropped write is fire-and-forget by design: it is no longer tracked, so `flush()`
+          // will not await it (see the best-effort contract on `flush`).
           pending.splice(0, 1);
         }
         pending.push(result);
@@ -40,6 +42,15 @@ function makeLogger(
     info: (message, data) => dispatch("info", message, data),
     warn: (message, data) => dispatch("warn", message, data),
     error: (message, data) => dispatch("error", message, data),
+    /**
+     * Awaits all writes currently tracked as pending and returns once they settle.
+     *
+     * @remarks
+     * Best-effort contract: `flush` only awaits writes still in the pending buffer. Writes evicted
+     * by `PENDING_CAP` (dropped to bound memory in long-lived loggers) are fire-and-forget and may
+     * not have completed when `flush` resolves. A guaranteed-drain contract would require backpressure
+     * that makes the synchronous log API async — out of scope.
+     */
     async flush(): Promise<void> {
       const toAwait = pending.splice(0);
       await Promise.all(toAwait);

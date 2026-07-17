@@ -21,7 +21,8 @@ import { pathToFileURL } from "node:url";
 import { createCommand } from "../../cli/command";
 import { scopeLogger } from "../../cli/log";
 import type { CommandBase } from "../../cli/types";
-import { collectBindings, collectVars, DEFAULT_OPTIONS, emit, type GenOptions, stripJsonc } from "./cf-env-gen";
+import { collectBindings, collectVars, emit, stripJsonc } from "./cf-env-gen";
+import { DEFAULT_OPTIONS, type GenOptions } from "./cf-env-registry";
 
 /** Parse a `wrangler.jsonc` file at `path` into a config object. @public */
 export function readWranglerConfig(path: string): Record<string, unknown> {

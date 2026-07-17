@@ -4,62 +4,56 @@ import { Badge } from "./badge";
 
 describe("Badge", () => {
   it("renders a <span> with data-slot=badge", async () => {
-    const out = await render(<Badge>New</Badge>);
-    expect(out).toContain("<span");
-    expect(out).toContain('data-slot="badge"');
-    expect(out).toContain("New");
+    expect(await render(<Badge>New</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-primary text-primary-foreground border-transparent">New</span>',
+    );
   });
 
   it("defaults to the default variant", async () => {
-    const out = await render(<Badge>Label</Badge>);
-    expect(out).toContain('data-variant="default"');
-    expect(out).toContain("bg-primary");
-    expect(out).toContain("text-primary-foreground");
+    expect(await render(<Badge>Label</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-primary text-primary-foreground border-transparent">Label</span>',
+    );
   });
 
   it("renders secondary variant classes", async () => {
-    const out = await render(<Badge variant='secondary'>Secondary</Badge>);
-    expect(out).toContain('data-variant="secondary"');
-    expect(out).toContain("bg-secondary");
-    expect(out).toContain("text-secondary-foreground");
+    expect(await render(<Badge variant='secondary'>Secondary</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="secondary" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-secondary text-secondary-foreground border-transparent">Secondary</span>',
+    );
   });
 
   it("renders destructive variant classes", async () => {
-    const out = await render(<Badge variant='destructive'>Error</Badge>);
-    expect(out).toContain('data-variant="destructive"');
-    expect(out).toContain("bg-red-100");
-    expect(out).toContain("text-red-800");
+    expect(await render(<Badge variant='destructive'>Error</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="destructive" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-red-100 text-red-800 border-red-200">Error</span>',
+    );
   });
 
   it("renders outline variant classes", async () => {
-    const out = await render(<Badge variant='outline'>Outline</Badge>);
-    expect(out).toContain('data-variant="outline"');
-    expect(out).toContain("border-border");
-    expect(out).toContain("text-foreground");
+    expect(await render(<Badge variant='outline'>Outline</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="outline" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors border-border text-foreground">Outline</span>',
+    );
   });
 
   it("includes base inline-flex and rounded-full classes", async () => {
-    const out = await render(<Badge>Base</Badge>);
-    expect(out).toContain("inline-flex");
-    expect(out).toContain("rounded-full");
-    expect(out).toContain("text-xs");
+    expect(await render(<Badge>Base</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-primary text-primary-foreground border-transparent">Base</span>',
+    );
   });
 
   it("merges a custom class with the base classes", async () => {
-    const out = await render(<Badge class='my-badge'>Custom</Badge>);
-    expect(out).toContain("my-badge");
-    expect(out).toContain("inline-flex");
+    expect(await render(<Badge class='my-badge'>Custom</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-primary text-primary-foreground border-transparent my-badge">Custom</span>',
+    );
   });
 
   it("forwards id and data-* attributes with HTML-escaped values", async () => {
-    const out = await render(
-      <Badge id='b1' data-testid='badge' data-note='a&b'>
-        New
-      </Badge>,
+    expect(
+      await render(
+        <Badge id='b1' data-testid='badge' data-note='a&b'>
+          New
+        </Badge>,
+      ),
+    ).toBe(
+      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-primary text-primary-foreground border-transparent" id="b1" data-testid="badge" data-note="a&amp;b">New</span>',
     );
-    expect(out).toContain('id="b1"');
-    expect(out).toContain('data-testid="badge"');
-    expect(out).toContain('data-note="a&amp;b"');
-    expect(out).toContain('data-slot="badge"');
   });
 });

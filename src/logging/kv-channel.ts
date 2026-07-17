@@ -7,6 +7,9 @@ const DEFAULT_TTL = 60 * 60 * 24 * 7; // 7 days
 const DEFAULT_MAX_LOGS = 500;
 const DEFAULT_PURGE_PROBABILITY = 0.02;
 const PURGE_BATCH = 20;
+// A single purge pass only sees the first PURGE_LIST_LIMIT keys under the prefix; the TTL is the
+// hard backstop for anything beyond that window.
+const PURGE_LIST_LIMIT = 1000;
 const DEFAULT_LIMIT = 50;
 
 /**
@@ -124,7 +127,7 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
 
 async function purge(kv: KVNamespaceLike, listPrefix: string, maxLogs: number, highWater: number): Promise<void> {
   // Purge is probabilistic and best-effort; the TTL is the hard backstop against unbounded growth.
-  const result = await kv.list({ prefix: listPrefix, limit: 1000 });
+  const result = await kv.list({ prefix: listPrefix, limit: PURGE_LIST_LIMIT });
   if (result.keys.length <= highWater) return;
 
   const deleteCount = result.keys.length - maxLogs;

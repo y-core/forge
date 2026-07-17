@@ -148,20 +148,25 @@ const { name, email } = readFields(formData, ["name", "email"]); // Record<"name
 ### CSRF middleware — `csrfProtection`
 
 ```ts
-function csrfProtection(options: {
+function csrfProtection(options: CsrfProtectionOptions): Middleware;
+
+interface CsrfProtectionOptions {
   secret: (context: RequestContext) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
   tokenField?: string;
   headerName?: string;
-  subject?: (context: RequestContext) => string | undefined;
-}): Middleware;
+  subject: ((context: RequestContext) => string | undefined) | false;
+}
 ```
+
+`CsrfProtectionOptions` is a named, exported type — import it to type a guard defined outside the
+`csrfProtection(...)` call.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `secret` | resolver | — | Returns the signing key or key ring. Invoked once per distinct `context.env` object and cached against it (`WeakMap`), so the key imports once per isolate. |
 | `tokenField` | `string` | `CSRF_FIELD_DEFAULT` (`"_csrf"`) | Hidden-input field name the token is read from on mutations. |
 | `headerName` | `string` | `"X-CSRF-Token"` | Request header checked for the token before the form body. |
-| `subject` | resolver | — | Binds the token to a session/user identifier so a token minted for one subject cannot be used by another. |
+| `subject` | resolver \| `false` | — | **Required.** A resolver binding the token to a session/user identifier so a token minted for one subject cannot be used by another, or the literal `false` to opt into a deliberate path-only token. |
 
 Behaviour by method:
 
@@ -233,14 +238,14 @@ function verifyCsrfToken(
   keyOrRing: CryptoKey | CsrfKeyRing,
   token: string,
   path: string,
-  maxAgeMsOrOptions?: number | CsrfVerifyOptions,
+  options?: CsrfVerifyOptions,
 ): Promise<CsrfResult>;
 ```
 
 ```ts
 const key = await importCsrfKey(env.CSRF_SECRET);          // hex secret → HMAC-SHA256 key
 const token = await createCsrfToken(key, "/api/contact");  // path-bound token
-const verdict = await verifyCsrfToken(key, token, "/api/contact");
+const verdict = await verifyCsrfToken(key, token, "/api/contact", { maxAgeMs: 3_600_000 });
 if (verdict.ok) {
   // accept
 }
@@ -261,7 +266,8 @@ default 1 hour — and future timestamps beyond a 30s clock-skew window), `path`
 | `maxAgeMs` | `number` | Max token age in ms before it is treated as `expired` (default `3_600_000`). |
 | `subject` | `string` | When set, the token's subject must match exactly, else `subject-mismatch`. |
 
-A bare `number` may be passed as the fourth argument as a shorthand for `{ maxAgeMs }`.
+The fourth argument is always the `CsrfVerifyOptions` object — pass `{ maxAgeMs }` to set the
+freshness window. There is no bare-`number` shorthand.
 
 ### Key rotation — `importCsrfKeyRing`
 
@@ -287,7 +293,7 @@ is hidden from human users. Returns `false` when the field is absent or empty.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `formData` | `ReadonlyFormData` | — | Parsed form data. |
-| `field` | `string` | `HONEYPOT_FIELD_DEFAULT` (`"surname"`) | The decoy field name to inspect. |
+| `field` | `string` | `HONEYPOT_FIELD_DEFAULT` (`"__surname"`) | The decoy field name to inspect. |
 
 Combine with an early return so bot submissions never reach business logic:
 
@@ -302,12 +308,12 @@ function verifyTurnstile(
   formData: ReadonlyFormData,
   secretKey: string,
   options: TurnstileVerifyOptions,
-  tokenField?: string,
-  remoteIp?: string,
 ): Promise<TurnstileResult>;
 ```
 
 Verifies a Cloudflare Turnstile token against the siteverify API and returns a discriminated result.
+The token field and the client IP live **inside** `options` (`tokenField` / `remoteIp`) — there are no
+trailing positional arguments.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -316,15 +322,16 @@ Verifies a Cloudflare Turnstile token against the siteverify API and returns a d
 | `options.expectedHostname` | `string` | — | **Required.** The siteverify hostname must match exactly, else `hostname-mismatch`. Prevents cross-site token replay. |
 | `options.expectedAction` | `string` | — | When set, the verified action must match, else `action-mismatch`. |
 | `options.expectedCData` | `string` | — | When set, the verified cdata must match, else `cdata-mismatch`. |
+| `options.tokenField` | `string` | `"cf-turnstile-response"` | Form field holding the Turnstile response token. |
+| `options.remoteIp` | `string` | — | Client IP forwarded to siteverify (e.g. the `CF-Connecting-IP` header). |
 | `options.timeoutMs` | `number` | `5000` | Request timeout; clamped to a 1 ms minimum. A timed-out request returns `timeout`. |
-| `tokenField` | `string` | `"cf-turnstile-response"` | Form field holding the Turnstile response token. |
-| `remoteIp` | `string` | — | Client IP forwarded to siteverify (e.g. the `CF-Connecting-IP` header). |
 
 ```ts
 const result = await verifyTurnstile(formData, env.TURNSTILE_SECRET_KEY, {
   expectedHostname: "example.com",
   expectedAction: "contact",
-}, "cf-turnstile-response", context.request.headers.get("CF-Connecting-IP") ?? undefined);
+  remoteIp: context.request.headers.get("CF-Connecting-IP") ?? undefined,
+});
 
 if (!result.ok) {
   // result.error is one of: hostname-mismatch | action-mismatch | cdata-mismatch |
@@ -341,7 +348,7 @@ if (!result.ok) {
 | Export | Value | Description |
 |---|---|---|
 | `CSRF_FIELD_DEFAULT` | `"_csrf"` | Default CSRF hidden-input field name. |
-| `HONEYPOT_FIELD_DEFAULT` | `"surname"` | Default honeypot field name. |
+| `HONEYPOT_FIELD_DEFAULT` | `"__surname"` | Default honeypot field name. |
 | `FORM_MAX_BYTES_DEFAULT` | `102400` | Default max form body size (100 KB). |
 | `CsrfConfigSchema` | valibot schema | Validates `{ secret }` as ≥32 hex characters. |
 | `TurnstileConfigSchema` | valibot schema | Validates `{ secretKey, siteKey }`. |
@@ -353,14 +360,13 @@ if (!result.ok) {
 | `ReadonlyFormData` | Read-only `FormData` view (`get`/`getAll`/`has`/iteration); the shape every reader accepts. |
 | `ParseFormDataOptions` | `{ maxBytes? }` for `parseFormData`. |
 | `FormFieldReader` | `(formData, field) => string` — the shape of `readTextField`. |
-| `CsrfConfig` | `{ secret: string }`. |
 | `CsrfKeyRing` | `{ activeKeyId, keys }` — active signing key plus all keys valid for verification. |
 | `CsrfSecretResolver` | `(context) => CryptoKey \| CsrfKeyRing \| Promise<…>`. |
+| `CsrfProtectionOptions` | `{ secret, tokenField?, headerName?, subject }` — the `csrfProtection` middleware options (`subject` is required: resolver or `false`). |
 | `CsrfTokenOptions` | `{ kid?, subject? }` for `createCsrfToken`. |
 | `CsrfVerifyOptions` | `{ maxAgeMs?, subject? }` for `verifyCsrfToken`. |
 | `CsrfResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. See Security below. |
-| `TurnstileConfig` | `{ secretKey, siteKey }`. |
-| `TurnstileVerifyOptions` | `{ expectedHostname, expectedAction?, expectedCData?, timeoutMs? }`. |
+| `TurnstileVerifyOptions` | `{ expectedHostname, expectedAction?, expectedCData?, tokenField?, remoteIp?, timeoutMs? }`. |
 | `TurnstileResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. |
 
 ---

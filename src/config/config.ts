@@ -1,20 +1,25 @@
 import { parseEnv } from "../validation/parse-env";
 import { v } from "../validation/validation";
 
+/** Extracts the resolved `Config` data type from an app env, or `undefined` when absent. @public */
 export type InferConfig<E> = E extends { Config: infer C } ? C : undefined;
 
 /** Bare variable record set by the route config injector. Intersect into `AppEnv.Variables`. @public */
 export type ConfigContext<C> = { config: C };
 
+/** Reference to a named env var, produced by {@link env} and resolved during mapping. @public */
 export type EnvRef<K extends string = string> = { readonly __env: K };
 
+/** A config mapping node: a literal string, an {@link EnvRef}, or a nested record of mappings. @public */
 export type EnvMapping<K extends string = string> = string | EnvRef<K> | { [key: string]: EnvMapping<K> };
 
+/** Environment-conditional config override: `detect` selects, `patch` mutates the parsed config. @public */
 export interface ConfigOverrides<ConfigData> {
   detect: (env: Record<string, unknown>) => boolean;
   patch: (config: ConfigData) => ConfigData;
 }
 
+/** Describes how to build a config: env mapping, validation schema, and optional overrides. @public */
 export interface ConfigDescriptor<ConfigData, Keys extends string = string> {
   map: EnvMapping<Keys>;
   schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>;
@@ -31,10 +36,12 @@ function resolve<ConfigData>(env: object, descriptor: ConfigDescriptor<ConfigDat
   return config;
 }
 
+/** Builds an {@link EnvRef} referencing the named env var for use in a config mapping. @public */
 export function env<K extends string>(name: K): EnvRef<K> {
   return { __env: name };
 }
 
+/** Recursively projects an env record through an {@link EnvMapping}. @internal */
 export function applyMapping(env: Record<string, unknown>, map: EnvMapping): unknown {
   if (typeof map === "string") return map;
   if ("__env" in map) return env[(map as EnvRef).__env];
@@ -45,6 +52,7 @@ export function applyMapping(env: Record<string, unknown>, map: EnvMapping): unk
   return result;
 }
 
+/** Builds a schema for an optional config group that resolves to `null` when required keys are absent. @public */
 export function optionalGroup<T extends Record<string, v.GenericSchema>>(
   entries: T,
   options: { required: (keyof T & string)[] | "all"; defaults?: Partial<Record<keyof T & string, unknown>> },
@@ -75,35 +83,56 @@ export function resolveConfig<T>(store: Config<T> | undefined, env: object): T {
   return (store ? store.get(env) : {}) as T;
 }
 
-/** Lazy singleton config holder. Resolves once on first get(); seed()/reset() for test control. @public */
+/** Lazy config holder. Resolves and caches parsed config per distinct `env`; seed()/reset() for test control. @public */
 export class Config<ConfigData> {
-  #value: ConfigData | undefined;
+  #cache = new WeakMap<object, ConfigData>();
+  #seed: ConfigData | undefined;
+  #hasSeed = false;
   readonly #resolve: (env: object) => ConfigData;
 
-  constructor(map: EnvMapping, schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>, overrides?: ConfigOverrides<ConfigData>) {
+  private constructor(map: EnvMapping, schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>, overrides?: ConfigOverrides<ConfigData>) {
     const descriptor: ConfigDescriptor<ConfigData> = { map, schema, ...(overrides ? { overrides } : {}) };
     this.#resolve = (env: object) => resolve(env, descriptor);
   }
 
-  /**
-   * Resolves config on first call and caches it for the lifetime of the holder.
-   *
-   * @remarks
-   * The cache lives as long as the V8 isolate, not a single request. The `env` passed on the
-   * *first* call wins; later calls ignore their `env` and return the cached value. This is correct
-   * on Workers (bindings are stable per isolate) but means tests that vary `env` must `reset()`
-   * (or `seed()`) between cases to avoid leaking the first resolution.
-   */
+  /** Instantiates a holder. Use the {@link createConfig} factory; the constructor is private. @internal */
+  static create<ConfigData>(
+    map: EnvMapping,
+    schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>,
+    overrides?: ConfigOverrides<ConfigData>,
+  ): Config<ConfigData> {
+    return new Config(map, schema, overrides);
+  }
+
+  /** Resolves config for `env`, caching the parsed result per distinct `env` object. */
   get(env: object): ConfigData {
-    this.#value ??= this.#resolve(env);
-    return this.#value;
+    if (this.#hasSeed) return this.#seed as ConfigData;
+    const hit = this.#cache.get(env);
+    if (hit) return hit;
+    const resolved = this.#resolve(env);
+    this.#cache.set(env, resolved);
+    return resolved;
   }
 
+  /** Seeds a fixed config returned by every get(), bypassing resolution (whole-holder override). */
   seed(config: ConfigData): void {
-    this.#value = config;
+    this.#seed = config;
+    this.#hasSeed = true;
   }
 
+  /** Clears the seed and the per-env cache, forcing re-resolution on the next get(). */
   reset(): void {
-    this.#value = undefined;
+    this.#seed = undefined;
+    this.#hasSeed = false;
+    this.#cache = new WeakMap<object, ConfigData>();
   }
+}
+
+/** Creates a lazy config holder that resolves and caches parsed config per distinct `env` object. @public */
+export function createConfig<ConfigData>(
+  map: EnvMapping,
+  schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>,
+  overrides?: ConfigOverrides<ConfigData>,
+): Config<ConfigData> {
+  return Config.create(map, schema, overrides);
 }

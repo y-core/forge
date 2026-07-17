@@ -190,6 +190,12 @@ const store = createObjectStore(r2Backend(c.env.ASSETS_BUCKET))
 // store: ObjectStore — typed wrapper around an ObjectStorageBackend
 ```
 
+The optional second argument is an `ObjectStoreOptions` — currently just `{ prefix? }`
+(see §3d). There is **no** `logger` option: the R2 store performs no per-operation
+logging (the removed `logger` option never emitted anything). To observe object access,
+log at the call site or via the structured-logging channels (§5a KV logging), not through
+the store.
+
 ### 3b. serveObject — Direct Response from a Backend
 
 `serveObject(backend, request, key, options?)` retrieves an object from an

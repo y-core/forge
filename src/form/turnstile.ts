@@ -10,23 +10,17 @@ const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
  * `options.expectedHostname`: required. Tokens minted on a different hostname cannot be replayed here.
  * @public
  */
-export async function verifyTurnstile(
-  formData: ReadonlyFormData,
-  secretKey: string,
-  options: TurnstileVerifyOptions,
-  tokenField = "cf-turnstile-response",
-  remoteIp?: string,
-): Promise<TurnstileResult> {
+export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: string, options: TurnstileVerifyOptions): Promise<TurnstileResult> {
   if (!options.expectedHostname) {
     return err("hostname-mismatch");
   }
-  const token = formData.get(tokenField);
+  const token = formData.get(options.tokenField ?? "cf-turnstile-response");
   if (typeof token !== "string" || token === "") {
     return err("missing-token");
   }
 
   const body: Record<string, string> = { secret: secretKey, response: token };
-  if (remoteIp) body.remoteip = remoteIp;
+  if (options.remoteIp) body.remoteip = options.remoteIp;
 
   const controller = new AbortController();
   // Clamp to ≥1ms so a caller passing 0 or a negative value cannot abort the request before the

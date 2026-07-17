@@ -6,139 +6,137 @@ import { Popover } from "./popover";
 
 describe("Popover", () => {
   it("renders a <div> wrapper with data-slot=popover", async () => {
-    const out = await render(<Popover />);
-    expect(out).toContain("<div");
-    expect(out).toContain('data-slot="popover"');
+    expect(await render(<Popover />)).toBe('<div data-slot="popover" class="relative inline-block"></div>');
   });
 
   it("renders relative inline-block positioning classes", async () => {
-    const out = await render(<Popover />);
-    expect(out).toContain("relative");
-    expect(out).toContain("inline-block");
+    expect(await render(<Popover />)).toBe('<div data-slot="popover" class="relative inline-block"></div>');
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Popover class='my-popover' />);
-    expect(out).toContain("my-popover");
-    expect(out).toContain("relative");
+    expect(await render(<Popover class='my-popover' />)).toBe('<div data-slot="popover" class="relative inline-block my-popover"></div>');
   });
 });
 
 describe("Popover.Trigger", () => {
   it("renders a <button> invoker with command=toggle-popover targeting the content id", async () => {
-    const out = await render(<Popover.Trigger id='menu-1'>Open</Popover.Trigger>);
-    expect(out).toContain("<button");
-    expect(out).toContain('type="button"');
-    expect(out).toContain('data-slot="popover-trigger"');
-    expect(out).toContain('command="toggle-popover"');
-    expect(out).toContain('commandfor="menu-1"');
-    expect(out).toContain("Open");
+    expect(await render(<Popover.Trigger id='menu-1'>Open</Popover.Trigger>)).toBe(
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" class="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">Open</button>',
+    );
   });
 
   it("uses the id only as commandfor, never as the button's own id", async () => {
-    const out = await render(<Popover.Trigger id='menu-1'>Open</Popover.Trigger>);
-    expect(out).not.toContain('id="menu-1"');
+    expect(await render(<Popover.Trigger id='menu-1'>Open</Popover.Trigger>)).toBe(
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" class="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">Open</button>',
+    );
   });
 
   it("merges a custom class", async () => {
-    const out = await render(
-      <Popover.Trigger id='menu-1' class='my-trigger'>
-        Click
-      </Popover.Trigger>,
+    expect(
+      await render(
+        <Popover.Trigger id='menu-1' class='my-trigger'>
+          Click
+        </Popover.Trigger>,
+      ),
+    ).toBe(
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" class="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring my-trigger">Click</button>',
     );
-    expect(out).toContain("my-trigger");
   });
 });
 
 describe("Popover.Content", () => {
   it("renders a native popover <div> with the linking id and data-slot=popover-content", async () => {
-    const out = await render(<Popover.Content id='menu-1'>Items</Popover.Content>);
-    expect(out).toContain("<div");
-    expect(out).toContain('data-slot="popover-content"');
-    expect(out).toContain('id="menu-1"');
-    expect(out).toContain('popover="auto"');
-    expect(out).toContain("Items");
+    expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
+      '<div id="menu-1" data-slot="popover-content" popover="auto" data-align="start" data-side="bottom" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+    );
   });
 
   it("defaults to start align and bottom side", async () => {
-    const out = await render(<Popover.Content id='menu-1'>Items</Popover.Content>);
-    expect(out).toContain('data-align="start"');
-    expect(out).toContain('data-side="bottom"');
+    expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
+      '<div id="menu-1" data-slot="popover-content" popover="auto" data-align="start" data-side="bottom" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+    );
   });
 
   it("renders end align", async () => {
-    const out = await render(
-      <Popover.Content id='menu-1' align='end'>
-        Items
-      </Popover.Content>,
+    expect(
+      await render(
+        <Popover.Content id='menu-1' align='end'>
+          Items
+        </Popover.Content>,
+      ),
+    ).toBe(
+      '<div id="menu-1" data-slot="popover-content" popover="auto" data-align="end" data-side="bottom" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
-    expect(out).toContain('data-align="end"');
   });
 
   it("renders center align", async () => {
-    const out = await render(
-      <Popover.Content id='menu-1' align='center'>
-        Items
-      </Popover.Content>,
+    expect(
+      await render(
+        <Popover.Content id='menu-1' align='center'>
+          Items
+        </Popover.Content>,
+      ),
+    ).toBe(
+      '<div id="menu-1" data-slot="popover-content" popover="auto" data-align="center" data-side="bottom" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
-    expect(out).toContain('data-align="center"');
   });
 
   it("renders top side", async () => {
-    const out = await render(
-      <Popover.Content id='menu-1' side='top'>
-        Items
-      </Popover.Content>,
+    expect(
+      await render(
+        <Popover.Content id='menu-1' side='top'>
+          Items
+        </Popover.Content>,
+      ),
+    ).toBe(
+      '<div id="menu-1" data-slot="popover-content" popover="auto" data-align="start" data-side="top" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
-    expect(out).toContain('data-side="top"');
   });
 
   it("renders the popover panel chrome classes", async () => {
-    const out = await render(<Popover.Content id='menu-1'>Items</Popover.Content>);
-    expect(out).toContain("z-50");
-    expect(out).toContain("bg-popover");
+    expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
+      '<div id="menu-1" data-slot="popover-content" popover="auto" data-align="start" data-side="bottom" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+    );
   });
 
   it("merges a custom class", async () => {
-    const out = await render(
-      <Popover.Content id='menu-1' class='w-64'>
-        Items
-      </Popover.Content>,
+    expect(
+      await render(
+        <Popover.Content id='menu-1' class='w-64'>
+          Items
+        </Popover.Content>,
+      ),
+    ).toBe(
+      '<div id="menu-1" data-slot="popover-content" popover="auto" data-align="start" data-side="bottom" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md w-64">Items</div>',
     );
-    expect(out).toContain("w-64");
-    expect(out).toContain("bg-popover");
   });
 
   it("forwards role and data-* attributes with HTML-escaped values", async () => {
-    const out = await render(
-      <Popover.Content id='menu-1' role='menu' data-note='a&b'>
-        Items
-      </Popover.Content>,
+    expect(
+      await render(
+        <Popover.Content id='menu-1' role='menu' data-note='a&b'>
+          Items
+        </Popover.Content>,
+      ),
+    ).toBe(
+      '<div id="menu-1" data-slot="popover-content" popover="auto" data-align="start" data-side="bottom" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md" role="menu" data-note="a&amp;b">Items</div>',
     );
-    expect(out).toContain('id="menu-1"');
-    expect(out).toContain('role="menu"');
-    expect(out).toContain('data-note="a&amp;b"');
-    expect(out).toContain('data-slot="popover-content"');
   });
 });
 
 describe("Popover composition", () => {
   it("renders the full popover structure with a shared id", async () => {
-    const out = await render(
-      <Popover>
-        <Popover.Trigger id='menu-file'>Open menu</Popover.Trigger>
-        <Popover.Content id='menu-file'>
-          <div>Item 1</div>
-        </Popover.Content>
-      </Popover>,
+    expect(
+      await render(
+        <Popover>
+          <Popover.Trigger id='menu-file'>Open menu</Popover.Trigger>
+          <Popover.Content id='menu-file'>
+            <div>Item 1</div>
+          </Popover.Content>
+        </Popover>,
+      ),
+    ).toBe(
+      '<div data-slot="popover" class="relative inline-block"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-file" class="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">Open menu</button><div id="menu-file" data-slot="popover-content" popover="auto" data-align="start" data-side="bottom" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md"><div>Item 1</div></div></div>',
     );
-    expect(out).toContain('data-slot="popover"');
-    expect(out).toContain('data-slot="popover-trigger"');
-    expect(out).toContain('data-slot="popover-content"');
-    expect(out).toContain('commandfor="menu-file"');
-    expect(out).toContain('id="menu-file"');
-    expect(out).toContain('popover="auto"');
-    expect(out).toContain("Open menu");
-    expect(out).toContain("Item 1");
   });
 });

@@ -4,113 +4,112 @@ import { Alert } from "./alert";
 
 describe("Alert", () => {
   it("renders the default variant classes", async () => {
-    const out = await render(<Alert>Message</Alert>);
-    expect(out).toContain('data-slot="alert"');
-    expect(out).toContain("border-border");
-    expect(out).toContain("bg-muted");
-    expect(out).toContain("text-foreground");
+    expect(await render(<Alert>Message</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="default" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground">Message</div>',
+    );
   });
 
   it("renders the destructive variant classes", async () => {
-    const out = await render(<Alert variant='destructive'>Error</Alert>);
-    expect(out).toContain("border-red-200");
-    expect(out).toContain("bg-red-50");
-    expect(out).toContain("text-red-900");
+    expect(await render(<Alert variant='destructive'>Error</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="destructive" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-red-200 bg-red-50 text-red-900">Error</div>',
+    );
   });
 
   it("renders the success variant classes", async () => {
-    const out = await render(<Alert variant='success'>Done</Alert>);
-    expect(out).toContain("border-emerald-200");
-    expect(out).toContain("bg-emerald-50");
-    expect(out).toContain("text-emerald-900");
+    expect(await render(<Alert variant='success'>Done</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="success" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-emerald-200 bg-emerald-50 text-emerald-900">Done</div>',
+    );
   });
 
   it("renders children inside the alert div", async () => {
-    const out = await render(<Alert>Hello world</Alert>);
-    expect(out).toContain("Hello world");
+    expect(await render(<Alert>Hello world</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="default" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground">Hello world</div>',
+    );
   });
 
   it("merges a custom class with the base classes", async () => {
-    const out = await render(<Alert class='my-custom'>Note</Alert>);
-    expect(out).toContain("my-custom");
-    expect(out).toContain("rounded-2xl");
+    expect(await render(<Alert class='my-custom'>Note</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="default" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground my-custom">Note</div>',
+    );
   });
 
   it("renders explicit title and description slots", async () => {
-    const out = await render(
-      <Alert>
-        <Alert.Title>Status</Alert.Title>
-        <Alert.Description>Everything is in sync.</Alert.Description>
-      </Alert>,
+    expect(
+      await render(
+        <Alert>
+          <Alert.Title>Status</Alert.Title>
+          <Alert.Description>Everything is in sync.</Alert.Description>
+        </Alert>,
+      ),
+    ).toBe(
+      '<div data-slot="alert" data-variant="default" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground"><div data-slot="alert-title" class="font-medium leading-none tracking-tight">Status</div><div data-slot="alert-description" class="text-sm leading-relaxed opacity-90">Everything is in sync.</div></div>',
     );
-    expect(out).toContain('data-slot="alert-title"');
-    expect(out).toContain('data-slot="alert-description"');
-    expect(out).toContain("Everything is in sync.");
   });
 
   it("renders the warning variant classes", async () => {
-    const out = await render(<Alert variant='warning'>Warning</Alert>);
-    expect(out).toContain('data-variant="warning"');
-    expect(out).toContain("bg-yellow-50");
-    expect(out).toContain("text-yellow-900");
-    expect(out).toContain("border-yellow-200");
+    expect(await render(<Alert variant='warning'>Warning</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="warning" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-yellow-200 bg-yellow-50 text-yellow-900">Warning</div>',
+    );
   });
 
   it("renders the info variant classes", async () => {
-    const out = await render(<Alert variant='info'>Info</Alert>);
-    expect(out).toContain('data-variant="info"');
-    expect(out).toContain("bg-blue-50");
-    expect(out).toContain("text-blue-900");
-    expect(out).toContain("border-blue-200");
+    expect(await render(<Alert variant='info'>Info</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="info" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-blue-200 bg-blue-50 text-blue-900">Info</div>',
+    );
   });
 
   it("renders dismiss button when dismissible=true", async () => {
-    const out = await render(<Alert dismissible>Message</Alert>);
-    expect(out).toContain('data-slot="alert-dismiss"');
-    expect(out).toContain('aria-label="Dismiss"');
-    expect(out).toContain("pr-8");
+    expect(await render(<Alert dismissible>Message</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
+    );
   });
 
   it("does not render dismiss button by default", async () => {
-    const out = await render(<Alert>Message</Alert>);
-    expect(out).not.toContain('data-slot="alert-dismiss"');
+    expect(await render(<Alert>Message</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="default" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground">Message</div>',
+    );
   });
 
   it("stamps data-scope=alert on root when dismissible", async () => {
-    const out = await render(<Alert dismissible>Message</Alert>);
-    expect(out).toContain('data-scope="alert"');
+    expect(await render(<Alert dismissible>Message</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
+    );
   });
 
   it("stamps data-on-click=dismiss on the dismiss button when dismissible", async () => {
-    const out = await render(<Alert dismissible>Message</Alert>);
-    expect(out).toContain('data-on-click="dismiss"');
+    expect(await render(<Alert dismissible>Message</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
+    );
   });
 
   it("does not stamp data-scope when not dismissible", async () => {
-    const out = await render(<Alert>Message</Alert>);
-    expect(out).not.toContain("data-scope=");
+    expect(await render(<Alert>Message</Alert>)).toBe(
+      '<div data-slot="alert" data-variant="default" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground">Message</div>',
+    );
   });
 
   it("forwards id and data-* attributes on the root with HTML-escaped values", async () => {
-    const out = await render(
-      <Alert id='a1' data-testid='alert' data-note='a&b'>
-        Message
-      </Alert>,
+    expect(
+      await render(
+        <Alert id='a1' data-testid='alert' data-note='a&b'>
+          Message
+        </Alert>,
+      ),
+    ).toBe(
+      '<div data-slot="alert" data-variant="default" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground" id="a1" data-testid="alert" data-note="a&amp;b">Message</div>',
     );
-    expect(out).toContain('id="a1"');
-    expect(out).toContain('data-testid="alert"');
-    expect(out).toContain('data-note="a&amp;b"');
-    expect(out).toContain('data-slot="alert"');
   });
 
   it("forwards id and role attributes on the title and description", async () => {
-    const out = await render(
-      <Alert>
-        <Alert.Title id='t1'>Status</Alert.Title>
-        <Alert.Description role='note'>Detail</Alert.Description>
-      </Alert>,
+    expect(
+      await render(
+        <Alert>
+          <Alert.Title id='t1'>Status</Alert.Title>
+          <Alert.Description role='note'>Detail</Alert.Description>
+        </Alert>,
+      ),
+    ).toBe(
+      '<div data-slot="alert" data-variant="default" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground"><div data-slot="alert-title" class="font-medium leading-none tracking-tight" id="t1">Status</div><div data-slot="alert-description" class="text-sm leading-relaxed opacity-90" role="note">Detail</div></div>',
     );
-    expect(out).toContain('id="t1"');
-    expect(out).toContain('role="note"');
   });
 });

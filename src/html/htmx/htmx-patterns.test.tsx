@@ -27,11 +27,12 @@ describe("SWAP", () => {
 describe("liveSearch", () => {
   it("defaults: swap=innerHTML, trigger includes 300ms delay", () => {
     const attrs = liveSearch({ get: "/search", target: "#results" });
-    expect(attrs["hx-get"]).toBe("/search");
-    expect(attrs["hx-target"]).toBe("#results");
-    expect(attrs["hx-swap"]).toBe("innerHTML");
-    expect(attrs["hx-trigger"]).toContain("300ms");
-    expect(attrs["hx-trigger"]).toContain("search");
+    expect(attrs).toEqual({
+      "hx-get": "/search",
+      "hx-target": "#results",
+      "hx-swap": "innerHTML",
+      "hx-trigger": "input changed delay:300ms, search",
+    });
   });
 
   it("overrides swap and trigger", () => {
@@ -77,16 +78,12 @@ describe("paginatedTableLink", () => {
 
   it("preserves existing query params on the path", () => {
     const attrs = paginatedTableLink({ get: "/items?sort=asc", target: "#t", page: 2 });
-    expect(attrs["hx-get"]).toContain("sort=asc");
-    expect(attrs["hx-get"]).toContain("page=2");
+    expect(attrs).toEqual({ "hx-get": "/items?sort=asc&page=2", "hx-target": "#t", "hx-swap": "outerHTML" });
   });
 
   it("merges extra query map and page param overrides last (appears once)", () => {
     const attrs = paginatedTableLink({ get: "/items", target: "#t", page: 2, query: { filter: "active", page: "99" } });
-    const url = attrs["hx-get"]!;
-    expect(url).toContain("filter=active");
-    expect(url).toContain("page=2");
-    expect((url.match(/page=/g) ?? []).length).toBe(1);
+    expect(attrs).toEqual({ "hx-get": "/items?filter=active&page=2", "hx-target": "#t", "hx-swap": "outerHTML" });
   });
 
   it("uses custom pageParam", () => {
@@ -97,7 +94,7 @@ describe("paginatedTableLink", () => {
   it("handles absolute URL base path correctly", () => {
     // Absolute URLs still resolve — path+search portion is preserved
     const attrs = paginatedTableLink({ get: "https://api.example.com/items", target: "#t", page: 2 });
-    expect(attrs["hx-get"]).toContain("page=2");
+    expect(attrs).toEqual({ "hx-get": "/items?page=2", "hx-target": "#t", "hx-swap": "outerHTML" });
   });
 });
 

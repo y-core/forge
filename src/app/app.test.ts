@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { Config } from "../config/config";
+import { createController } from "@remix-run/fetch-router";
+import { createRoutes, Route } from "@remix-run/fetch-router/routes";
+import { createConfig } from "../config/config";
 import { csrfProtection, importCsrfKey } from "../form/csrf";
 import { createSecurityHeaders } from "../security/headers";
 import { rateLimit } from "../security/rate-limit";
@@ -145,7 +147,7 @@ describe("createApp", () => {
   it("injects config into route handlers when a Config instance is provided", async () => {
     type AppBindings = { DB_URL: string };
 
-    const app = createApp<AppBindings>({ config: new Config({ dbUrl: { __env: "DB_URL" } }, v.object({ dbUrl: v.string() })) });
+    const app = createApp<AppBindings>({ config: createConfig({ dbUrl: { __env: "DB_URL" } }, v.object({ dbUrl: v.string() })) });
 
     mapHandler(app, "GET", "/config-test", (context) => {
       // biome-ignore lint/suspicious/noExplicitAny: config accessed via context property
@@ -209,6 +211,87 @@ describe("error path carries security headers (F9)", () => {
     expect(await res.text()).toBe("Too many requests. Please try again later.");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
+  });
+});
+
+describe("baseline hardening on the error path (no consumer middleware)", () => {
+  it("a throwing handler yields 500 with baseline hardening headers", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("kaboom");
+    });
+
+    const res = await app.request("/boom");
+    expect(res.status).toBe(500);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+});
+
+describe("onError override fallback", () => {
+  it("uses the consumer onError override when it returns a response", async () => {
+    const app = createApp({ onError: () => new Response("handled", { status: 418 }) });
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("original");
+    });
+
+    const res = await app.request("/boom");
+    expect(res.status).toBe(418);
+    expect(await res.text()).toBe("handled");
+  });
+
+  it("falls back to the default error page when the onError override itself throws", async () => {
+    const app = createApp({
+      onError: () => {
+        throw new Error("override boom");
+      },
+    });
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("original");
+    });
+
+    const res = await app.request("/boom");
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(text).toContain("An unexpected error occurred.");
+    expect(text).not.toContain("override boom");
+    expect(text).not.toContain("original");
+  });
+});
+
+describe("HEAD requests", () => {
+  it("returns an empty body with the same status and headers as the GET", async () => {
+    const app = createApp();
+    mapHandler(
+      app,
+      "GET",
+      "/page",
+      () => new Response("hello world", { status: 201, headers: { "x-custom": "kept", "content-type": "text/plain;charset=utf-8" } }),
+    );
+
+    const getRes = await app.request("/page");
+    expect(getRes.status).toBe(201);
+    expect(await getRes.text()).toBe("hello world");
+
+    const headRes = await app.request("/page", { method: "HEAD" });
+    expect(headRes.status).toBe(201);
+    expect(await headRes.text()).toBe("");
+    expect(headRes.headers.get("x-custom")).toBe("kept");
+    expect(headRes.headers.get("content-type")).toBe(getRes.headers.get("content-type"));
+  });
+
+  it("returns a null body with 500 and baseline hardening headers for a throwing route", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("boom");
+    });
+
+    const headRes = await app.request("/boom", { method: "HEAD" });
+    expect(headRes.status).toBe(500);
+    expect(await headRes.text()).toBe("");
+    expect(headRes.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(headRes.headers.get("content-security-policy")).toBe("default-src 'none'");
   });
 });
 
@@ -311,5 +394,19 @@ describe("createApp — ordered wiring", () => {
     mapHandler(app, "GET", "/", () => new Response("plain"));
     const res = await app.request("/");
     expect(await res.text()).toBe("plain");
+  });
+});
+
+describe("Forge.map — declarative route registration", () => {
+  it("registers a route via the underlying router and returns the router's value (void)", async () => {
+    const app = new Forge();
+    const routes = createRoutes({ home: new Route("GET", "/mapped") });
+    const result = app.map(routes, createController(routes, { actions: { home: () => new Response("mapped ok") } }));
+
+    expect(result).toBeUndefined();
+
+    const res = await app.request("/mapped");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("mapped ok");
   });
 });

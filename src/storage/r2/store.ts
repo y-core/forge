@@ -1,4 +1,3 @@
-import { createLogger } from "../../logging/logger";
 import { result } from "../../result/result";
 import { inferContentType } from "./content-type";
 import { serveObject } from "./serve";
@@ -22,7 +21,6 @@ function normalizeKey(key: string): string {
  */
 export function createObjectStore(backend: ObjectStorageBackend, options?: ObjectStoreOptions): ObjectStore {
   const prefix = options?.prefix;
-  const _logger = options?.logger ?? createLogger("storage/r2");
 
   function prefixKey(key: string): string {
     return prefix ? `${prefix}${PREFIX_SEP}${key}` : key;

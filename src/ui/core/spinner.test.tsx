@@ -7,61 +7,62 @@ const icon = createIcon("/sprite.svg", { "icon-spinner": "0 0 24 24" });
 
 describe("Spinner", () => {
   it("renders with role=status and data-slot=spinner", async () => {
-    const out = await render(<Spinner icon={icon} />);
-    expect(out).toContain('role="status"');
-    expect(out).toContain('data-slot="spinner"');
+    expect(await render(<Spinner icon={icon} />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 
   it("renders an aria-hidden SVG with animate-spin", async () => {
-    const out = await render(<Spinner icon={icon} />);
-    expect(out).toContain("<svg");
-    expect(out).toContain('aria-hidden="true"');
-    expect(out).toContain("animate-spin");
+    expect(await render(<Spinner icon={icon} />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 
   it("renders the spinner via a sprite <use> reference", async () => {
-    const out = await render(<Spinner icon={icon} />);
-    expect(out).toContain("<use");
-    expect(out).toContain('href="/sprite.svg#icon-spinner"');
+    expect(await render(<Spinner icon={icon} />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 
   it("renders a sr-only default label", async () => {
-    const out = await render(<Spinner icon={icon} />);
-    expect(out).toContain('class="sr-only"');
-    expect(out).toContain("Loading");
+    expect(await render(<Spinner icon={icon} />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 
   it("renders a custom label in sr-only span", async () => {
-    const out = await render(<Spinner icon={icon} label='Processing…' />);
-    expect(out).toContain("Processing");
+    expect(await render(<Spinner icon={icon} label='Processing…' />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Processing…</span></span>',
+    );
   });
 
   it("defaults to md size", async () => {
-    const out = await render(<Spinner icon={icon} />);
-    expect(out).toContain("size-6");
+    expect(await render(<Spinner icon={icon} />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 
   it("renders sm size class", async () => {
-    const out = await render(<Spinner icon={icon} size='sm' />);
-    expect(out).toContain("size-4");
+    expect(await render(<Spinner icon={icon} size='sm' />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-4" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 
   it("renders lg size class", async () => {
-    const out = await render(<Spinner icon={icon} size='lg' />);
-    expect(out).toContain("size-8");
+    expect(await render(<Spinner icon={icon} size='lg' />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-8" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 
   it("merges a custom class on the wrapper", async () => {
-    const out = await render(<Spinner icon={icon} class='my-spinner' />);
-    expect(out).toContain("my-spinner");
-    expect(out).toContain("inline-flex");
+    expect(await render(<Spinner icon={icon} class='my-spinner' />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center my-spinner"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 
   it("forwards id and data-* attributes on the wrapper and keeps role=status", async () => {
-    const out = await render(<Spinner icon={icon} id='sp1' data-testid='spinner' data-note='a&b' />);
-    expect(out).toContain('id="sp1"');
-    expect(out).toContain('data-testid="spinner"');
-    expect(out).toContain('data-note="a&amp;b"');
-    expect(out).toContain('role="status"');
+    expect(await render(<Spinner icon={icon} id='sp1' data-testid='spinner' data-note='a&b' />)).toBe(
+      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center" id="sp1" data-testid="spinner" data-note="a&amp;b"><svg data-slot="icon" viewBox="0 0 24 24" class="animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only">Loading…</span></span>',
+    );
   });
 });

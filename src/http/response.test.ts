@@ -58,18 +58,31 @@ describe("redirect", () => {
   });
 });
 
-describe("fragmentResponse — content-type cannot be overridden by lowercase key", () => {
-  it("ignores a caller-supplied lowercase content-type: application/json and returns text/html", () => {
-    const res = fragmentResponse("<div>ok</div>", 200, { "content-type": "application/json" });
-    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+describe("fragmentResponse — content-type is fixed", () => {
+  it("throws when a caller supplies a lowercase content-type key", () => {
+    expect(() => fragmentResponse("<div>ok</div>", 200, { "content-type": "application/json" })).toThrow(
+      "fragmentResponse: content-type is fixed for HTML responses — remove it from headers",
+    );
+  });
+
+  it("throws when a caller supplies a mixed-case Content-Type key", () => {
+    expect(() => fragmentResponse("<div>ok</div>", 200, { "Content-Type": "application/json" })).toThrow(
+      "fragmentResponse: content-type is fixed for HTML responses — remove it from headers",
+    );
   });
 });
 
-describe("htmlResponse — content-type cannot be overridden", () => {
-  it("ignores a caller-supplied application/json content-type and returns text/html", () => {
-    const res = htmlResponse("<p>ok</p>", 200, { "content-type": "application/json" });
-    // The createHtmlResponse helper forces content-type: text/html
-    expect(res.headers.get("content-type")).toMatch(/text\/html/);
+describe("htmlResponse — content-type is fixed", () => {
+  it("throws when a caller supplies a lowercase content-type key", () => {
+    expect(() => htmlResponse("<p>ok</p>", 200, { "content-type": "application/json" })).toThrow(
+      "htmlResponse: content-type is fixed for HTML responses — remove it from headers",
+    );
+  });
+
+  it("throws when a caller supplies a mixed-case Content-Type key", () => {
+    expect(() => htmlResponse("<p>ok</p>", 200, { "Content-Type": "application/json" })).toThrow(
+      "htmlResponse: content-type is fixed for HTML responses — remove it from headers",
+    );
   });
 });
 

@@ -11,4 +11,5 @@ export { createAnonymousSession } from "./anonymous";
 export type { KVSessionStorageOptions, SessionKVBinding } from "./kv-storage";
 export { createKVSessionStorage } from "./kv-storage";
 export { sessionCtx, sessionMiddleware } from "./session";
+export type { SignedCookieOptions } from "./signed";
 export { createSignedCookie } from "./signed";

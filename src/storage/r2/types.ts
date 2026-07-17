@@ -1,5 +1,4 @@
 import type { AppContext } from "../../context/types";
-import type { Logger } from "../../logging/types";
 import type { Result } from "../../result/result";
 
 /** Options for serveObject. @public */
@@ -222,7 +221,6 @@ export interface R2BucketLike {
 /** @public */
 export interface ObjectStoreOptions {
   prefix?: string;
-  logger?: Logger;
 }
 
 /** @public */

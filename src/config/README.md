@@ -1,11 +1,11 @@
 # `@y-core/forge/config`
 
 Typed, lazy environment configuration for Cloudflare Workers. Map raw Worker bindings to a structured,
-validated config object that resolves **once** on first access and is cached for the lifetime of the
-Worker instance.
+validated config object that resolves on first access and is cached **per distinct `env` object** for
+the lifetime of the Worker instance.
 
 ```typescript
-import { Config, env, optionalGroup, resolveConfig, registerConfig, retrieveConfig } from "@y-core/forge/config";
+import { createConfig, env, optionalGroup, resolveConfig, registerConfig, retrieveConfig } from "@y-core/forge/config";
 ```
 
 ---
@@ -17,8 +17,9 @@ import { Config, env, optionalGroup, resolveConfig, registerConfig, retrieveConf
 - **Runtime validation** — every config is parsed through a [valibot](https://valibot.dev) schema, so a
   malformed environment fails loudly with a path-qualified error instead of surfacing `undefined` deep
   in a handler.
-- **Lazy, cached resolution** — `config.get(env)` resolves on first call and caches the result for the
-  V8 isolate's lifetime (keyed by `env` identity). Subsequent calls are free.
+- **Lazy, cached resolution** — `config.get(env)` resolves on first call and caches the result per
+  distinct `env` object (a `WeakMap` keyed by `env` identity). Each distinct `env` resolves once;
+  repeat calls with the same `env` are free.
 - **Optional integration groups** — `optionalGroup` collapses an entire block of related vars to `null`
   when its required keys are absent, so optional integrations (analytics, email, etc.) stay off until
   fully configured.
@@ -27,7 +28,7 @@ import { Config, env, optionalGroup, resolveConfig, registerConfig, retrieveConf
 - **Decoupled sharing** — `registerConfig` / `retrieveConfig` associate a `Config` store with any host
   object through a `WeakMap`, letting modules read config by reference without a shared import.
 - **Test ergonomics** — `seed()` injects a fixed value bypassing env resolution; `reset()` restores
-  lazy resolution between cases.
+  lazy resolution and clears the per-`env` cache.
 
 ---
 
@@ -64,13 +65,15 @@ Layer 2 — the `Config` stores documented below — then consumes the validated
 
 ## Usage
 
-Define a `Config` once at module scope by mapping env variables to a shape and validating that shape:
+Define a `Config` once at module scope by mapping env variables to a shape and validating that shape.
+Build it with the `createConfig` factory — the `Config` constructor is private, so `new Config(...)`
+is not available:
 
 ```typescript
-import { Config, env } from "@y-core/forge/config";
+import { createConfig, env } from "@y-core/forge/config";
 import { v } from "@y-core/forge/validation";
 
-const emailConfig = new Config(
+const emailConfig = createConfig(
   { apiKey: env("RESEND_API_KEY"), fromAddress: env("EMAIL_FROM") },
   v.object({ apiKey: v.string(), fromAddress: v.pipe(v.string(), v.email()) }),
 );
@@ -84,12 +87,12 @@ return the cached value:
 const { apiKey, fromAddress } = emailConfig.get(c.env);
 ```
 
-The first argument to `new Config(...)` is an **env mapping**: a record whose values are `env(name)`
+The first argument to `createConfig(...)` is an **env mapping**: a record whose values are `env(name)`
 references (read from the raw environment) or string literals (used verbatim). Mappings nest, so you can
 group related variables:
 
 ```typescript
-const siteConfig = new Config(
+const siteConfig = createConfig(
   {
     site: { name: env("SITE_NAME"), debug: env("DEBUG") },
     email: { from: env("EMAIL_FROM") },
@@ -107,12 +110,14 @@ const { site, email } = siteConfig.get(c.env);
 
 ## Core Components & APIs
 
-### `class Config<ConfigData>`
+### `createConfig(map, schema, overrides?)`
 
-A lazy singleton holder that resolves an env mapping through a schema and caches the result.
+Creates a lazy `Config` holder that resolves an env mapping through a schema and caches the result per
+distinct `env` object. This is the public factory — the `Config` constructor is private, so build every
+holder through `createConfig`.
 
 ```typescript
-new Config(map, schema, overrides?)
+createConfig<ConfigData>(map, schema, overrides?): Config<ConfigData>
 ```
 
 | Parameter | Type | Description |
@@ -121,15 +126,18 @@ new Config(map, schema, overrides?)
 | `schema` | `v.BaseSchema<unknown, ConfigData, …>` | A valibot schema that validates and types the mapped result. Resolution throws if it fails. |
 | `overrides` | `ConfigOverrides<ConfigData>` _(optional)_ | A `{ detect, patch }` pair applied after validation when `detect(rawEnv)` returns `true`. |
 
+The returned `Config<ConfigData>` exposes:
+
 | Method | Signature | Description |
 |---|---|---|
-| `get` | `(env: object) => ConfigData` | Resolves on the first call and caches the result for the isolate's lifetime. The `env` passed on the **first** call wins; later calls ignore their `env` and return the cached value. |
-| `seed` | `(config: ConfigData) => void` | Test helper. Sets the cached value directly, bypassing env resolution. |
-| `reset` | `() => void` | Test helper. Clears the cached value, restoring lazy resolution on the next `get()`. |
+| `get` | `(env: object) => ConfigData` | Resolves config for `env`, caching the parsed result **per distinct `env` object** (a `WeakMap`). Each distinct `env` resolves once; a different `env` resolves independently — there is no first-env-wins caching. |
+| `seed` | `(config: ConfigData) => void` | Test helper. Sets a fixed value returned by every `get()`, bypassing env resolution. |
+| `reset` | `() => void` | Test helper. Clears the seed and the per-`env` cache, restoring lazy resolution on the next `get()`. |
 
 > The cache lives as long as the V8 isolate, **not** a single request — which is correct on Workers
-> because bindings are stable per isolate. In tests that vary `env` across cases, call `reset()` (or
-> `seed()`) between cases so the first resolution does not leak.
+> because bindings are stable per isolate. Because resolution is keyed per distinct `env` object,
+> tests that vary `env` across cases no longer need a `reset()` between them; each `env` resolves on
+> its own. Use `seed()`/`reset()` only to inject or clear a fixed whole-holder override.
 
 ### `env(name)`
 
@@ -190,27 +198,6 @@ resolveConfig<T>(store: Config<T> | undefined, env: object): T
 const cfg = resolveConfig(retrieveConfig<EmailCfg>(host), c.env);
 ```
 
-### `applyMapping(env, mapping)`
-
-Resolves an env mapping directly against a raw environment record, **without** a `Config` store or schema
-validation. Returns the structurally-mapped value: string literals pass through, `EnvRef`s read from
-`env`, and nested records map recursively. Useful for one-off resolution or building a mapped object to
-validate yourself.
-
-```typescript
-applyMapping(env: Record<string, unknown>, map: EnvMapping): unknown
-```
-
-```typescript
-import { applyMapping, env } from "@y-core/forge/config";
-
-const mapped = applyMapping(
-  { RESEND_API_KEY: "sk_live_…", REGION: "eu" },
-  { apiKey: env("RESEND_API_KEY"), region: env("REGION"), product: "mailer" },
-);
-// → { apiKey: "sk_live_…", region: "eu", product: "mailer" }
-```
-
 ### `registerConfig(target, store)` / `retrieveConfig(target)`
 
 Associate a `Config` store with any host object through a module-private `WeakMap`. This lets modules
@@ -246,7 +233,7 @@ Pass an `overrides` object to patch the resolved config when a detector matches 
 never bypass schema validation.
 
 ```typescript
-const config = new Config(
+const config = createConfig(
   { apiUrl: env("API_URL"), debug: env("DEBUG") },
   v.object({ apiUrl: v.string(), debug: v.pipe(v.string(), v.transform((s) => s === "true")) }),
   {
@@ -258,9 +245,11 @@ const config = new Config(
 
 ### Testing with `seed` and `reset`
 
-`seed` injects a fixed config and skips env resolution entirely; `reset` clears the cache so the next
-`get()` resolves lazily again. Reset (or re-seed) between cases that vary `env`, since the first
-resolution is cached for the isolate's lifetime.
+`seed` injects a fixed config and skips env resolution entirely; `reset` clears the seed and the
+per-`env` cache so the next `get()` resolves lazily again. Because resolution is cached per distinct
+`env` object, cases that pass **different** `env` objects each resolve independently and need no
+`reset()` between them; call `reset()` only to clear a `seed()` or to force re-resolution for the
+same `env`.
 
 ```typescript
 import { describe, expect, it, beforeEach } from "bun:test";
@@ -291,10 +280,10 @@ type AppConfig = InferConfig<{ Config: { site: { name: string } } }>;
 
 | Export | Kind | Description |
 |---|---|---|
-| `Config` | class | Lazy, cached config holder built from an env mapping + valibot schema. |
+| `createConfig` | function | Creates a lazy `Config` holder from an env mapping + valibot schema; the public factory (constructor is private). |
+| `Config` | class | Lazy config holder (resolved per distinct `env`); construct via `createConfig`, not `new`. |
 | `env` | function | Creates an `EnvRef` that reads `rawEnv[name]` at resolution time. |
 | `optionalGroup` | function | Valibot schema for an optional group that collapses to `null` when required keys are absent. |
-| `applyMapping` | function | Resolves an env mapping directly, without a `Config` store or validation. |
 | `resolveConfig` | function | Resolves a `Config` store for an `env`, returning `{}` when the store is `undefined`. |
 | `registerConfig` | function | Associates a `Config` store with a host object via a `WeakMap`. |
 | `retrieveConfig` | function | Retrieves the `Config` store previously associated with a host object. |

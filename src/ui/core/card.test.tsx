@@ -4,92 +4,92 @@ import { Card } from "./card";
 
 describe("Card", () => {
   it("renders root card classes", async () => {
-    const out = await render(<Card>content</Card>);
-    expect(out).toContain('data-slot="card"');
-    expect(out).toContain("rounded-2xl");
-    expect(out).toContain("border-border");
-    expect(out).toContain("bg-card");
+    expect(await render(<Card>content</Card>)).toBe(
+      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm">content</div>',
+    );
   });
 
   it("renders Card.Header with title, description, and action slots", async () => {
-    const out = await render(
-      <Card>
-        <Card.Header>
-          <Card.Title>Title</Card.Title>
-          <Card.Description>Description</Card.Description>
-          <Card.Action>Action</Card.Action>
-        </Card.Header>
-      </Card>,
+    expect(
+      await render(
+        <Card>
+          <Card.Header>
+            <Card.Title>Title</Card.Title>
+            <Card.Description>Description</Card.Description>
+            <Card.Action>Action</Card.Action>
+          </Card.Header>
+        </Card>,
+      ),
+    ).toBe(
+      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5"><div data-slot="card-title" class="font-semibold leading-none text-card-foreground">Title</div><div data-slot="card-description" class="text-sm text-muted-foreground">Description</div><div data-slot="card-action" class="col-start-2 row-span-2 row-start-1 self-start justify-self-end">Action</div></div></div>',
     );
-    expect(out).toContain("Title");
-    expect(out).toContain('data-slot="card-header"');
-    expect(out).toContain('data-slot="card-title"');
-    expect(out).toContain('data-slot="card-description"');
-    expect(out).toContain('data-slot="card-action"');
   });
 
   it("renders Card.Content with padding", async () => {
-    const out = await render(
-      <Card>
-        <Card.Content>Body</Card.Content>
-      </Card>,
+    expect(
+      await render(
+        <Card>
+          <Card.Content>Body</Card.Content>
+        </Card>,
+      ),
+    ).toBe(
+      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-content" class="px-6 py-5">Body</div></div>',
     );
-    expect(out).toContain("Body");
-    expect(out).toContain('data-slot="card-content"');
-    expect(out).toContain("px-6");
-    expect(out).toContain("py-5");
   });
 
   it("renders Card.Footer with border-t and padding", async () => {
-    const out = await render(
-      <Card>
-        <Card.Footer>Footer</Card.Footer>
-      </Card>,
+    expect(
+      await render(
+        <Card>
+          <Card.Footer>Footer</Card.Footer>
+        </Card>,
+      ),
+    ).toBe(
+      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-footer" class="flex items-center gap-2 border-t border-border px-6 py-4">Footer</div></div>',
     );
-    expect(out).toContain("Footer");
-    expect(out).toContain('data-slot="card-footer"');
-    expect(out).toContain("border-t");
-    expect(out).toContain("px-6");
   });
 
   it("renders all sub-components in document order", async () => {
-    const out = await render(
-      <Card>
-        <Card.Header>Head</Card.Header>
-        <Card.Content>Body</Card.Content>
-        <Card.Footer>Foot</Card.Footer>
-      </Card>,
+    expect(
+      await render(
+        <Card>
+          <Card.Header>Head</Card.Header>
+          <Card.Content>Body</Card.Content>
+          <Card.Footer>Foot</Card.Footer>
+        </Card>,
+      ),
+    ).toBe(
+      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5">Head</div><div data-slot="card-content" class="px-6 py-5">Body</div><div data-slot="card-footer" class="flex items-center gap-2 border-t border-border px-6 py-4">Foot</div></div>',
     );
-    expect(out.indexOf("Head")).toBeLessThan(out.indexOf("Body"));
-    expect(out.indexOf("Body")).toBeLessThan(out.indexOf("Foot"));
   });
 
   it("merges a custom class on the root element", async () => {
-    const out = await render(<Card class='extra'>content</Card>);
-    expect(out).toContain("extra");
-    expect(out).toContain("rounded-2xl");
+    expect(await render(<Card class='extra'>content</Card>)).toBe(
+      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm extra">content</div>',
+    );
   });
 
   it("forwards id and data-* attributes on the root with HTML-escaped values", async () => {
-    const out = await render(
-      <Card id='c1' data-testid='card' data-note='a&b'>
-        content
-      </Card>,
+    expect(
+      await render(
+        <Card id='c1' data-testid='card' data-note='a&b'>
+          content
+        </Card>,
+      ),
+    ).toBe(
+      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm" id="c1" data-testid="card" data-note="a&amp;b">content</div>',
     );
-    expect(out).toContain('id="c1"');
-    expect(out).toContain('data-testid="card"');
-    expect(out).toContain('data-note="a&amp;b"');
-    expect(out).toContain('data-slot="card"');
   });
 
   it("forwards id and aria-* attributes on sub-parts", async () => {
-    const out = await render(
-      <Card.Header id='h1' aria-label='header region'>
-        head
-      </Card.Header>,
+    expect(
+      await render(
+        <Card.Header id='h1' aria-label='header region'>
+          head
+        </Card.Header>,
+      ),
+    ).toBe(
+      '<div data-slot="card-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5" id="h1" aria-label="header region">head</div>',
     );
-    expect(out).toContain('id="h1"');
-    expect(out).toContain('aria-label="header region"');
-    expect(out).toContain('data-slot="card-header"');
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { v } from "../validation/mod";
-import { applyMapping, Config, env, optionalGroup, resolveConfig } from "./config";
+import { applyMapping, createConfig, env, optionalGroup, resolveConfig } from "./config";
 
 // --- applyMapping ---
 
@@ -154,13 +154,19 @@ describe("optionalGroup — returns group when required fields present", () => {
 const testDescriptor = { map: { dbUrl: env("DB_URL"), mode: env("MODE") }, schema: v.object({ dbUrl: v.string(), mode: v.optional(v.string()) }) };
 
 describe("Config", () => {
+  it("createConfig() produces a working config holder", () => {
+    const cfg = createConfig(testDescriptor.map, testDescriptor.schema);
+    const result = cfg.get({ DB_URL: "postgres://factory" });
+    expect(result.dbUrl).toBe("postgres://factory");
+  });
+
   it("get() resolves and returns typed config", () => {
-    const cfg = new Config(testDescriptor.map, testDescriptor.schema);
+    const cfg = createConfig(testDescriptor.map, testDescriptor.schema);
     const result = cfg.get({ DB_URL: "postgres://singleton" });
     expect(result.dbUrl).toBe("postgres://singleton");
   });
 
-  it("get() returns cached result on second call", () => {
+  it("get() returns cached result on second call with the same env object", () => {
     let parseCount = 0;
     const countingSchema = v.object({
       dbUrl: v.pipe(
@@ -171,21 +177,32 @@ describe("Config", () => {
         }),
       ),
     });
-    const cfg = new Config({ dbUrl: env("DB_URL") }, countingSchema);
+    const cfg = createConfig({ dbUrl: env("DB_URL") }, countingSchema);
+    const boundEnv = { DB_URL: "postgres://cached" };
 
-    cfg.get({ DB_URL: "postgres://cached" });
-    cfg.get({ DB_URL: "postgres://cached" });
+    cfg.get(boundEnv);
+    cfg.get(boundEnv);
 
     expect(parseCount).toBe(1);
   });
 
+  it("get() resolves independently for two different env objects without reset()", () => {
+    const cfg = createConfig(testDescriptor.map, testDescriptor.schema);
+
+    const first = cfg.get({ DB_URL: "postgres://first-env" });
+    const second = cfg.get({ DB_URL: "postgres://second-env" });
+
+    expect(first.dbUrl).toBe("postgres://first-env");
+    expect(second.dbUrl).toBe("postgres://second-env");
+  });
+
   it("get() throws the exact normalized message on invalid env", () => {
-    const cfg = new Config(testDescriptor.map, testDescriptor.schema);
+    const cfg = createConfig(testDescriptor.map, testDescriptor.schema);
     expect(() => cfg.get({})).toThrow(new Error("Invalid environment: dbUrl: Invalid type: Expected string but received undefined"));
   });
 
   it("seed() overrides resolution without calling get()", () => {
-    const cfg = new Config(testDescriptor.map, testDescriptor.schema);
+    const cfg = createConfig(testDescriptor.map, testDescriptor.schema);
     cfg.seed({ dbUrl: "seeded://db", mode: undefined });
     expect(cfg.get({ DB_URL: "postgres://other" })).toEqual({ dbUrl: "seeded://db", mode: undefined });
   });
@@ -201,17 +218,18 @@ describe("Config", () => {
         }),
       ),
     });
-    const cfg = new Config({ dbUrl: env("DB_URL") }, countingSchema);
+    const cfg = createConfig({ dbUrl: env("DB_URL") }, countingSchema);
+    const boundEnv = { DB_URL: "postgres://same" };
 
-    cfg.get({ DB_URL: "postgres://first" });
+    cfg.get(boundEnv);
     cfg.reset();
-    cfg.get({ DB_URL: "postgres://second" });
+    cfg.get(boundEnv);
 
     expect(parseCount).toBe(2);
   });
 
   it("applies overrides patch when detect returns true", () => {
-    const cfg = new Config(testDescriptor.map, testDescriptor.schema, {
+    const cfg = createConfig(testDescriptor.map, testDescriptor.schema, {
       detect: (env) => env.MODE === "dev",
       patch: (config) => ({ ...config, dbUrl: "dev://override" }),
     });
@@ -223,7 +241,7 @@ describe("Config", () => {
 
 describe("resolveConfig", () => {
   it("returns the store's resolved config when a store is given", () => {
-    const cfg = new Config(testDescriptor.map, testDescriptor.schema);
+    const cfg = createConfig(testDescriptor.map, testDescriptor.schema);
     const resolved = resolveConfig(cfg, { DB_URL: "postgres://resolved" });
     expect(resolved).toEqual({ dbUrl: "postgres://resolved", mode: undefined });
   });

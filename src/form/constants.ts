@@ -2,4 +2,4 @@
 export const CSRF_FIELD_DEFAULT = "_csrf";
 
 /** Default honeypot field name used by the Form component to detect bots. */
-export const HONEYPOT_FIELD_DEFAULT = "surname";
+export const HONEYPOT_FIELD_DEFAULT = "__surname";

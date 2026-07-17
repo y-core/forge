@@ -169,43 +169,22 @@ await execute(createGenEnv());
 | `readWranglerConfig` | `(path: string) => Record<string, unknown>` | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped). |
 | `loadOptions` | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given. |
 
-#### Generator core (`cf-env-gen`)
+#### Generator internals (`cf-env-registry` + `cf-env-gen`)
 
-Pure, IO-free functions. Use these directly to assemble a schema without the CLI shell.
+The generator core is split across two files, and **all of it is `@internal`** — none of these
+symbols are barrel-exported. Drive generation through the command API above (`createGenEnv`); there is
+no supported way to assemble a schema from the internal pieces.
 
-| Export | Signature | Description |
-|---|---|---|
-| `collectBindings` | `(cfg: Record<string, unknown>, opts: GenOptions) => Entry[]` | Walks `REGISTRY` over a parsed wrangler config and extracts binding entries (KV, R2, D1, Durable Objects, services, …) in wrangler's emission order. |
-| `collectVars` | `(devVarsText: string, wranglerVars: Record<string, unknown>, opts: GenOptions) => Entry[]` | Extracts plain-text env vars: typed `wrangler.jsonc` `vars` first, then `.dev.vars` secrets (`v.string()`); `.dev.vars` wins on name collisions. |
-| `emit` | `(entries: Entry[]) => string` | Renders the full `EnvSchema` + `type Env` module text (prefixed with `HEADER`) for the collected entries. |
-| `stripJsonc` | `(text: string) => string` | Strips `//` and block comments from JSONC, string-aware so `//` inside a string survives. |
-| `REGISTRY` | `readonly BindingDef[]` | The binding-kind table — `(configKey → nameField → TS type)` rows in wrangler's collection order. |
-| `DEFAULT_OPTIONS` | `GenOptions` | Default policy: nothing optional, no refinements, presence/shape binding floor. |
-| `HEADER` | `string` | The doc-comment header baked into every generated module. |
-
-Composing the core directly:
-
-```typescript
-import {
-  collectBindings,
-  collectVars,
-  DEFAULT_OPTIONS,
-  emit,
-  readWranglerConfig,
-} from "@y-core/forge/validation/cli";
-
-const cfg = readWranglerConfig("wrangler.jsonc");
-const entries = [
-  ...collectBindings(cfg, DEFAULT_OPTIONS),
-  ...collectVars(devVarsText, (cfg.vars as Record<string, unknown>) ?? {}, DEFAULT_OPTIONS),
-];
-const moduleSource = emit(entries);
-```
+- **`cf-env-registry.ts`** holds the **data**: the `REGISTRY` binding-kind table (`configKey → nameField
+  → TS type` rows in wrangler's collection order), the `DEFAULT_OPTIONS` policy default, the baked
+  `HEADER` comment, and the `BindingDef` / `Entry` shapes. All `@internal`.
+- **`cf-env-gen.ts`** holds the **codegen**: the pure `collectBindings`, `collectVars`, `emit`, and
+  `stripJsonc` functions that walk the registry and render the module text. All `@internal`.
 
 #### Types
 
+Only `GenOptions` is public — the host-policy shape you pass via a `--config` module.
+
 | Type | Shape | Description |
 |---|---|---|
-| `BindingDef` | `{ configKey; nameField: "binding" \| "name"; tsType; shape: "list" \| "object"; label; message }` | One binding flavour: where it lives in config, how its name is read, its Cloudflare TS type, and its validation message. |
-| `Entry` | `{ name: string; expr: string }` | One emitted schema entry — a binding/var key and its valibot expression. |
-| `GenOptions` | `{ optional: Set<string>; refinements: Record<string, { minLength?: number }>; bindingCheck: string }` | Host policy layered over the generated schema: optional bindings, per-var refinements, and the shared `v.custom` presence check. |
+| `GenOptions` | `{ optional: Set<string>; refinements: Record<string, { minLength?: number }>; bindingCheck: string }` | Host policy layered over the generated schema: optional bindings, per-var refinements, and the shared `v.custom` presence check. Merged over the internal `DEFAULT_OPTIONS`. |

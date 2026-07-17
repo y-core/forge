@@ -1,15 +1,6 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 import type { GuardResult } from "../result/result";
 
-export interface CsrfConfig {
-  secret: string;
-}
-
-export interface TurnstileConfig {
-  secretKey: string;
-  siteKey: string;
-}
-
 export interface CsrfTokenOptions {
   kid?: string;
   /** Session or user identifier to bind to the token. */
@@ -47,6 +38,10 @@ export interface TurnstileVerifyOptions {
   expectedAction?: string;
   expectedCData?: string;
   expectedHostname: string /** cross-site token replay prevention */;
+  /** Form field holding the Turnstile token. Defaults to `"cf-turnstile-response"`. */
+  tokenField?: string;
+  /** Client IP forwarded to the siteverify API as `remoteip`. */
+  remoteIp?: string;
   timeoutMs?: number;
 }
 
@@ -68,3 +63,13 @@ export interface CsrfKeyRing {
 /** A function that resolves a CSRF secret key (or key ring) from the request context. @public */
 // biome-ignore lint/suspicious/noExplicitAny: context shape varies per consumer
 export type CsrfSecretResolver = (c: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
+
+/** Options for the `csrfProtection` middleware. @public */
+export interface CsrfProtectionOptions {
+  // biome-ignore lint/suspicious/noExplicitAny: context shape varies
+  secret: (context: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
+  tokenField?: string;
+  headerName?: string;
+  // biome-ignore lint/suspicious/noExplicitAny: context shape varies
+  subject: ((context: RequestContext<any, any>) => string | undefined) | false;
+}

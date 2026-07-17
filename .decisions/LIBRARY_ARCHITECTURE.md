@@ -190,6 +190,20 @@ type — never the raw `valibot` surface. Not:
 
     export * from "valibot"   // WRONG — exposes entire valibot surface
 
+Two facade namespaces are deliberately **thin pass-throughs** of `@remix-run/*` — near-total
+re-exports whose forge-authored surface is minimal:
+
+- **`router`** re-exports the `@remix-run/fetch-router`, `@remix-run/route-pattern` engine and
+  route-authoring helpers verbatim. Its only forge-authored surface is the route-table
+  introspection pair `routePaths` / `RouteFilter` (`src/router/filter.ts`); everything else in
+  `src/router/mod.ts` is a named re-export.
+- **`http/headers`** is a **pure re-export** of `@remix-run/headers` — the typed header classes
+  (`Accept`, `CacheControl`, `ContentType`, `SetCookie`, …) and their `*Init` types, with no
+  forge-authored logic. Its round-trip is now pinned by `src/http/headers.test.ts`.
+
+These pass-throughs still obey the facade rules above: consumers import from
+`@y-core/forge/{router,http}`, never from `@remix-run/*` directly.
+
 ### 4b. Breaking the Facade
 
 If consumers need a third-party feature not yet exposed by the forge facade:

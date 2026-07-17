@@ -125,12 +125,13 @@ function htmlResponse(
 Constructs a full-page HTML `Response`, guaranteeing a leading `<!DOCTYPE html>` and a
 `content-type: text/html; charset=utf-8` header. Accepts a `SafeHtml` value (e.g. from a renderer) or
 a plain string. For HTMX partials that must **not** carry a DOCTYPE, use `fragmentResponse` instead.
+The `content-type` is fixed: passing a `content-type` key in `headers` (case-insensitive) **throws**.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `body` | `string \| SafeHtml` | — | The page markup. A leading DOCTYPE is ensured. |
 | `status` | `number` | `200` | HTTP status code. |
-| `headers` | `Record<string, string>` | — | Extra headers, merged into the response. `content-type` always wins over any caller-supplied value. |
+| `headers` | `Record<string, string>` | — | Extra headers, merged into the response. `content-type` is fixed — passing it (case-insensitive) throws. |
 
 ### Fragment responses — `fragmentResponse`
 
@@ -144,13 +145,14 @@ function fragmentResponse(
 
 Constructs an HTML **fragment** `Response` (an HTMX partial) with `content-type: text/html;
 charset=utf-8`. No DOCTYPE is added — fragments are swapped into an existing document by HTMX. Accepts
-a `SafeHtml` value or a string. Use `htmlResponse` for full documents.
+a `SafeHtml` value or a string. Use `htmlResponse` for full documents. As with `htmlResponse`, the
+`content-type` is fixed: passing a `content-type` key in `headers` (case-insensitive) **throws**.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `body` | `string \| SafeHtml` | — | The fragment markup (no DOCTYPE). |
 | `status` | `number` | `200` | HTTP status code. |
-| `headers` | `Record<string, string>` | — | Extra headers, merged into the response. |
+| `headers` | `Record<string, string>` | — | Extra headers, merged into the response. `content-type` is fixed — passing it (case-insensitive) throws. |
 
 ### Redirects — `redirect`, `createRedirectResponse`
 
@@ -294,12 +296,22 @@ raw string). Instantiate with `new`, passing the corresponding `*Init` object, t
 | `ContentRange` | `ContentRangeInit` | `Content-Range` | `start`, `end`, `size` |
 | `Range` | `RangeInit` | `Range` | byte ranges |
 
+`fragmentResponse` and `htmlResponse` fix `content-type` themselves (passing that key throws), so
+use the builders for the **other** headers you merge in, and reach for a raw `Response` when you must
+set `content-type` explicitly:
+
 ```ts
 import { fragmentResponse, ContentType, CacheControl } from "@y-core/forge/http";
 
+// content-type is fixed by fragmentResponse — set only other headers via the builders:
 return fragmentResponse(body, 200, {
-  "content-type": new ContentType({ mediaType: "text/html", charset: "utf-8" }).toString(),
   "cache-control": new CacheControl({ maxAge: 3600, public: true }).toString(),
+});
+
+// When you need an explicit content-type, build a raw Response:
+return new Response(body, {
+  status: 200,
+  headers: { "content-type": new ContentType({ mediaType: "text/html", charset: "utf-8" }).toString() },
 });
 ```
 

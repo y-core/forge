@@ -4,59 +4,65 @@ import { Input } from "./input";
 
 describe("Input", () => {
   it("renders an <input> element", async () => {
-    const out = await render(<Input />);
-    expect(out).toContain("<input");
-    expect(out).toContain('data-slot="input"');
+    expect(await render(<Input />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50">',
+    );
   });
 
   it("includes default styling classes", async () => {
-    const out = await render(<Input />);
-    expect(out).toContain("w-full");
-    expect(out).toContain("rounded-lg");
-    expect(out).toContain("border-input");
+    expect(await render(<Input />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50">',
+    );
   });
 
   it("passes through id and name", async () => {
-    const out = await render(<Input id='email' name='email' />);
-    expect(out).toContain('id="email"');
-    expect(out).toContain('name="email"');
+    expect(await render(<Input id='email' name='email' />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" id="email" name="email">',
+    );
   });
 
   it("passes through the type attribute", async () => {
-    const out = await render(<Input type='email' />);
-    expect(out).toContain('type="email"');
+    expect(await render(<Input type='email' />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email">',
+    );
   });
 
   it("passes through the placeholder attribute", async () => {
-    const out = await render(<Input placeholder='Enter email' />);
-    expect(out).toContain('placeholder="Enter email"');
+    expect(await render(<Input placeholder='Enter email' />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" placeholder="Enter email">',
+    );
   });
 
   it("passes through the required attribute", async () => {
-    const out = await render(<Input required />);
-    expect(out).toContain("required");
+    expect(await render(<Input required />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" required>',
+    );
   });
 
   it("passes through the disabled attribute", async () => {
-    const withDisabled = await render(<Input disabled />);
-    const withoutDisabled = await render(<Input />);
-    expect(withDisabled).toMatch(/\bdisabled(?!:)/);
-    expect(withoutDisabled).not.toMatch(/\bdisabled(?!:)/);
+    expect(await render(<Input disabled />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" disabled>',
+    );
+    expect(await render(<Input />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50">',
+    );
   });
 
   it("passes through aria-describedby", async () => {
-    const out = await render(<Input aria-describedby='help-text' />);
-    expect(out).toContain('aria-describedby="help-text"');
+    expect(await render(<Input aria-describedby='help-text' />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" aria-describedby="help-text">',
+    );
   });
 
   it("passes through aria-invalid", async () => {
-    const out = await render(<Input aria-invalid='true' />);
-    expect(out).toContain('aria-invalid="true"');
+    expect(await render(<Input aria-invalid='true' />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" aria-invalid="true">',
+    );
   });
 
   it("merges a custom class with the default classes", async () => {
-    const out = await render(<Input class='my-input' />);
-    expect(out).toContain("my-input");
-    expect(out).toContain("w-full");
+    expect(await render(<Input class='my-input' />)).toBe(
+      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 my-input">',
+    );
   });
 });

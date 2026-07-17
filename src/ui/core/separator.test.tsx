@@ -4,43 +4,38 @@ import { Separator } from "./separator";
 
 describe("Separator", () => {
   it("renders an <hr> element", async () => {
-    const out = await render(<Separator />);
-    expect(out).toContain("<hr");
+    expect(await render(<Separator />)).toBe('<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border">');
   });
 
   it("defaults to horizontal with h-px and w-full classes", async () => {
-    const out = await render(<Separator />);
-    expect(out).toContain("h-px");
-    expect(out).toContain("w-full");
+    expect(await render(<Separator />)).toBe('<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border">');
   });
 
   it("renders vertical classes when orientation=vertical", async () => {
-    const out = await render(<Separator orientation='vertical' />);
-    expect(out).toContain("h-full");
-    expect(out).toContain("w-px");
+    expect(await render(<Separator orientation='vertical' />)).toBe(
+      '<hr data-slot="separator" aria-orientation="vertical" class="h-full w-px border-0 bg-border">',
+    );
   });
 
   it("sets aria-orientation=horizontal by default", async () => {
-    const out = await render(<Separator />);
-    expect(out).toContain('aria-orientation="horizontal"');
+    expect(await render(<Separator />)).toBe('<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border">');
   });
 
   it("sets aria-orientation=vertical when specified", async () => {
-    const out = await render(<Separator orientation='vertical' />);
-    expect(out).toContain('aria-orientation="vertical"');
+    expect(await render(<Separator orientation='vertical' />)).toBe(
+      '<hr data-slot="separator" aria-orientation="vertical" class="h-full w-px border-0 bg-border">',
+    );
   });
 
   it("merges a custom class with the base classes", async () => {
-    const out = await render(<Separator class='my-sep' />);
-    expect(out).toContain("my-sep");
-    expect(out).toContain("border-0");
+    expect(await render(<Separator class='my-sep' />)).toBe(
+      '<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border my-sep">',
+    );
   });
 
   it("forwards id and data-* attributes and keeps aria-orientation", async () => {
-    const out = await render(<Separator id='sep1' data-testid='sep' data-note='a&b' />);
-    expect(out).toContain('id="sep1"');
-    expect(out).toContain('data-testid="sep"');
-    expect(out).toContain('data-note="a&amp;b"');
-    expect(out).toContain('aria-orientation="horizontal"');
+    expect(await render(<Separator id='sep1' data-testid='sep' data-note='a&b' />)).toBe(
+      '<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border" id="sep1" data-testid="sep" data-note="a&amp;b">',
+    );
   });
 });

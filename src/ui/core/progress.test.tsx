@@ -4,58 +4,56 @@ import { Progress } from "./progress";
 
 describe("Progress", () => {
   it("renders a <progress> element with data-slot=progress", async () => {
-    const out = await render(<Progress />);
-    expect(out).toContain("<progress");
-    expect(out).toContain('data-slot="progress"');
+    expect(await render(<Progress />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full rounded-full"></progress>',
+    );
   });
 
   it("renders value and max attributes", async () => {
-    const out = await render(<Progress value={50} max={100} />);
-    expect(out).toContain('value="50"');
-    expect(out).toContain('max="100"');
+    expect(await render(<Progress value={50} max={100} />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full rounded-full" value="50" max="100"></progress>',
+    );
   });
 
   it("renders aria-label from the label convenience prop", async () => {
-    const out = await render(<Progress label='Upload progress' />);
-    expect(out).toContain('aria-label="Upload progress"');
+    expect(await render(<Progress label='Upload progress' />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" aria-label="Upload progress" class="h-2 w-full rounded-full"></progress>',
+    );
   });
 
   it("renders aria-label directly when provided", async () => {
-    const out = await render(<Progress aria-label='Direct label' />);
-    expect(out).toContain('aria-label="Direct label"');
+    expect(await render(<Progress aria-label='Direct label' />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" aria-label="Direct label" class="h-2 w-full rounded-full"></progress>',
+    );
   });
 
   it("prefers explicit aria-label over label prop", async () => {
-    const out = await render(<Progress aria-label='Explicit' label='Ignored' />);
-    expect(out).toContain('aria-label="Explicit"');
-    expect(out).not.toContain("Ignored");
+    expect(await render(<Progress aria-label='Explicit' label='Ignored' />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" aria-label="Explicit" class="h-2 w-full rounded-full"></progress>',
+    );
   });
 
   it("includes base styling classes", async () => {
-    const out = await render(<Progress />);
-    expect(out).toContain("h-2");
-    expect(out).toContain("w-full");
-    expect(out).toContain("rounded-full");
+    expect(await render(<Progress />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full rounded-full"></progress>',
+    );
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Progress class='my-progress' />);
-    expect(out).toContain("my-progress");
-    expect(out).toContain("rounded-full");
+    expect(await render(<Progress class='my-progress' />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full rounded-full my-progress"></progress>',
+    );
   });
 
   it("defaults to horizontal orientation with data-orientation and h-2 w-full", async () => {
-    const out = await render(<Progress />);
-    expect(out).toContain('data-orientation="horizontal"');
-    expect(out).toContain("h-2");
-    expect(out).toContain("w-full");
+    expect(await render(<Progress />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full rounded-full"></progress>',
+    );
   });
 
   it("vertical orientation stamps data-orientation and flips to w-2 h-full", async () => {
-    const out = await render(<Progress orientation='vertical' />);
-    expect(out).toContain('data-orientation="vertical"');
-    expect(out).toContain("h-full");
-    expect(out).toContain("w-2");
-    expect(out).not.toContain("h-2 w-full");
+    expect(await render(<Progress orientation='vertical' />)).toBe(
+      '<progress data-slot="progress" data-orientation="vertical" class="w-2 h-full rounded-full"></progress>',
+    );
   });
 });

@@ -4,40 +4,38 @@ import { Label } from "./label";
 
 describe("Label", () => {
   it("renders a <label> with data-slot=label", async () => {
-    const out = await render(<Label>Name</Label>);
-    expect(out).toContain("<label");
-    expect(out).toContain('data-slot="label"');
-    expect(out).toContain("Name");
+    expect(await render(<Label>Name</Label>)).toBe(
+      '<label data-slot="label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50">Name</label>',
+    );
   });
 
   it("applies shared label classes", async () => {
-    const out = await render(<Label>Field</Label>);
-    expect(out).toContain("text-sm");
-    expect(out).toContain("font-medium");
-    expect(out).toContain("text-foreground");
+    expect(await render(<Label>Field</Label>)).toBe(
+      '<label data-slot="label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50">Field</label>',
+    );
   });
 
   it("renders required marker when required=true", async () => {
-    const out = await render(<Label required>Email</Label>);
-    expect(out).toContain('data-slot="label-required"');
-    expect(out).toContain('aria-hidden="true"');
-    expect(out).toContain("*");
-    expect(out).toContain("text-red-500");
+    expect(await render(<Label required>Email</Label>)).toBe(
+      '<label data-slot="label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50">Email<span data-slot="label-required" aria-hidden="true" class="ml-0.5 text-red-500">*</span></label>',
+    );
   });
 
   it("does not render required marker by default", async () => {
-    const out = await render(<Label>Optional</Label>);
-    expect(out).not.toContain('data-slot="label-required"');
+    expect(await render(<Label>Optional</Label>)).toBe(
+      '<label data-slot="label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50">Optional</label>',
+    );
   });
 
   it("passes the for attribute through", async () => {
-    const out = await render(<Label for='email-field'>Email</Label>);
-    expect(out).toContain('for="email-field"');
+    expect(await render(<Label for='email-field'>Email</Label>)).toBe(
+      '<label data-slot="label" for="email-field" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50">Email</label>',
+    );
   });
 
   it("merges a custom class", async () => {
-    const out = await render(<Label class='my-label'>Text</Label>);
-    expect(out).toContain("my-label");
-    expect(out).toContain("text-sm");
+    expect(await render(<Label class='my-label'>Text</Label>)).toBe(
+      '<label data-slot="label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50 my-label">Text</label>',
+    );
   });
 });

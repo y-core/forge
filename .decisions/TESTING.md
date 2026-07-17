@@ -1,6 +1,6 @@
 ---
 title: Testing Discipline
-description: "bun test, co-located tests, *.test.ts, *.test.tsx, fakes over mocks, HTML entity exact-match assertions, bun:test primitives, describe it expect, validate-exports gate, bun run check, security test requirements pass and fail cases, declarative route registration, app.request helper, MINIMUM_ENV, mapHandler, no substring matching"
+description: "bun test, co-located tests, *.test.ts, *.test.tsx, fakes over mocks, HTML entity exact-match assertions, bun:test primitives, describe it expect, validate-exports gate, bun run check, security test requirements pass and fail cases, declarative route registration, app.request helper, MINIMUM_ENV, mapHandler, no substring matching, testing namespace, fakeKV, fakeD1, fakeR2, cursor pagination, render render-to-string, buildRequest, TestAction, in-memory fakes"
 weight: 35
 ---
 
@@ -22,6 +22,7 @@ weight: 35
 - §4 Fakes over mocks: interface implementation pattern
 - §5 Security test requirements: both pass AND fail cases required; §5d matrix row-to-test coverage map
 - §6 `bun run check` gate: typecheck + lint + test + validate-exports
+- §7 `@y-core/forge/testing` utilities: `fakeKV`/`fakeD1`/`fakeR2` storage fakes, `render`, `buildRequest`, `mapHandler`/`TestAction`
 
 ---
 
@@ -162,6 +163,25 @@ When a test fails unexpectedly on entity encoding, print the raw rendered string
 
 Read the raw output first, then write the assertion to match it exactly. Do not
 adjust the source code to match a wrong assertion.
+
+### 3d. Render Once, Assert Once — the Enforced Convention
+
+The exact-match rule is now enforced across the whole suite via a single render helper.
+Render the component once through `render()` from the `@y-core/forge/testing` barrel
+(see §7c) and assert the full markup with one `toBe`:
+
+    import { render } from "@y-core/forge/testing"
+
+    it("renders the exact button markup", async () => {
+      expect(await render(<Button label="Save & Exit" />)).toBe(
+        '<button type="button">Save &amp; Exit</button>',
+      )
+    })
+
+Do not call the private `jsx` render path, do not render twice to assert two fragments,
+and do not fall back to `toContain`/`toMatch`. A single entity-aware `toBe` on the full
+output is the only accepted shape (§3b). `render()` awaits the async SSR pipeline and
+coerces the result to a plain string, so `expect(await render(<C/>)).toBe(...)` is exact.
 
 ---
 
@@ -349,3 +369,123 @@ partial pass (e.g., "types pass, lint has one warning") is a failure.
   does not resolve to a `mod.ts` — add the missing barrel or remove the export path
 
 Disabling or skipping any of the four steps in CI is not permitted.
+
+---
+
+## 7. Testing Namespace Utilities (`@y-core/forge/testing`)
+
+The `testing` namespace ships the shared fixtures every consumer test suite would
+otherwise hand-roll: in-memory storage fakes, an SSR render helper, a `Request`
+builder, and a single-route registrar. Import all of them from the barrel — never
+from a concrete file — since consumer test code sits outside the source tree:
+
+    import { fakeKV, fakeD1, fakeR2, render, buildRequest, mapHandler } from "@y-core/forge/testing"
+
+### 7a. Declared Integration Edge — testing Imports app and jsx
+
+`testing` is an **integration namespace** (`NAMESPACE_DESIGN.md` §4). It intentionally
+composes types and helpers from other forge namespaces — `app` (`Forge`, `AssetsFetcher`),
+`jsx` (the private `render-to-string` runtime), `storage/db`, `storage/kv`, `storage/r2`,
+`context`, and `form`. A test-only namespace reaching into `app` and `jsx` is the
+**declared, acceptable** integration edge: these utilities exist precisely to drive the
+app and render pipelines from tests. This is the one place forge source may depend on the
+private `jsx` render helper by re-exporting it as `render()` (§7c). See
+[NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md) §4 for the leaf-vs-integration classification.
+
+### 7b. In-Memory Storage Fakes — fakeKV, fakeD1, fakeR2
+
+Three `Map`-backed fakes implement the real `storage/*` structural contracts, so interface
+drift breaks tests at compile time (§4a). Never mock these bindings.
+
+| Fake | Contract | Constructor | Seed |
+|---|---|---|---|
+| `fakeKV(seed?)` | `KVNamespace` | `fakeKV()` | `Record<string, string>` → keyed values |
+| `fakeD1(query?)` | `D1DatabaseLike & { calls }` | `fakeD1()` | programmable responder |
+| `fakeR2(seed?)` | `R2BucketLike` | `fakeR2()` | `Record<string, string>` → keyed bodies |
+
+**`fakeKV(seed?)`** — full KV contract (`get`/`getWithMetadata` in `text` and
+`arrayBuffer` modes, `put`, `delete`, `list`). `list` filters by `prefix` and now paginates
+by **offset-encoded cursor**: when `limit` truncates the page, it returns
+`list_complete: false` plus a numeric string `cursor` to resume; an explicit `expiration`
+passed to `put` is tracked and surfaced on each returned key. TTLs are accepted but not
+enforced — tests must not depend on wall-clock expiry.
+
+    const kv = fakeKV({ "settings||user-1": JSON.stringify({ theme: "dark" }) })
+    const first = await kv.list({ limit: 1 })
+    if (!first.list_complete) {
+      const next = await kv.list({ limit: 1, cursor: first.cursor })
+    }
+
+**`fakeD1(query?)`** — programmable `D1DatabaseLike` stub for `createD1Client`-backed code.
+The optional `query: (sql, params) => unknown[]` responder is invoked with the executed SQL
+and bound params; its return becomes the `results` of `all` (and the first row for `first`),
+defaulting to `[]`. Every `prepare(...).bind(...)` records `{ sql, params }` into the
+returned `calls` array, so a test can assert **both** the queries issued and control the rows
+returned. `run` reports zero writes with default `meta`; `batch` maps the responder over each
+statement.
+
+    const db = fakeD1((sql) => (sql.includes("users") ? [{ id: 1, name: "Ada" }] : []))
+    const client = createD1Client(db)
+    const rows = await client.query(sql`SELECT * FROM users`)
+    expect(db.calls).toHaveLength(1)
+    expect(db.calls[0].sql).toContain("users")
+
+**`fakeR2(seed?)`** — functional in-memory `R2BucketLike` mirroring `fakeKV`. `put` stores
+body bytes plus optional http/custom metadata and returns an `R2ObjectLike`; `get` returns an
+`R2ObjectBodyLike` with working `arrayBuffer()`/`text()`/`blob()` and a `body` stream; `head`
+returns metadata without a body; `delete` accepts one key or an array; `list` honors
+`prefix`/`limit`/`cursor` with offset-encoded cursors (`truncated` + `cursor`). Etags are a
+deterministic content hash.
+
+    const bucket = fakeR2({ "logo.svg": "<svg/>" })
+    const backend = r2Backend(bucket)
+    const obj = await backend.get("logo.svg")
+    expect(await obj?.text()).toBe("<svg/>")
+
+### 7c. render() — SSR Render-to-String
+
+`render(element): Promise<string>` renders a JSX element to its exact HTML string for
+assertions. It wraps the private `jsx` `renderToString` runtime (previously the
+`jsx/render-test-helper`) and coerces the result to a plain string, so the enforced
+render-once/assert-once convention (§3d) is a single call:
+
+    expect(await render(<Button label="Save" />)).toBe('<button type="button">Save</button>')
+
+### 7d. buildRequest() — Request Builder
+
+`buildRequest(path, opts?)` builds a `Request`, replacing hand-rolled
+`new Request("http://test/…", {…})` boilerplate. A relative `path` resolves against
+`baseUrl` (default `http://test`).
+
+| Option | Type | Effect |
+|---|---|---|
+| `method` | `string` | HTTP method; defaults to `POST` when a body is present, else `GET` |
+| `headers` | `HeadersInit` | Request headers |
+| `formData` | `Record<string, string>` \| `FormData` | record → url-encoded body (+ `content-type` if unset); or a raw `FormData` |
+| `json` | `unknown` | JSON-stringified body (+ `application/json` if unset) |
+| `body` | `BodyInit` | raw body passed through untouched |
+| `baseUrl` | `string` | base for relative `path` (default `http://test`) |
+
+Supply exactly one body helper (`formData`, `json`, or `body`).
+
+    const req = buildRequest("/settings", { method: "POST", formData: { theme: "dark" } })
+    const get = buildRequest("/settings")          // GET, no body
+    const posted = buildRequest("/api", { json: { name: "Jane" } })  // POST + JSON
+
+### 7e. mapHandler() and TestAction — Single-Route Registrar
+
+`mapHandler(app, method, pattern, action)` registers a single route on a `Forge` app in
+tests, mirroring the declarative `app.map(routes, controller)` surface without writing a
+full route map. It replaces the removed imperative `app.get`/`app.post`/`app.all` in test
+suites (see §5a). `action` is a `TestAction` — either a bare `RequestHandler` or a
+`{ middleware, handler }` object. The `method` accepts any `RequestMethod` plus `"ANY"`.
+
+    import { Forge } from "@y-core/forge/app"
+    import { mapHandler, render } from "@y-core/forge/testing"
+
+    const app = new Forge<typeof MINIMUM_ENV>()
+    mapHandler(app, "GET", "/settings", async (c) => htmlResponse(await render(<Settings />)))
+    const res = await app.request("/settings", {}, MINIMUM_ENV)
+
+Use `mapHandler` for a namespace's own unit tests; use a full `route()`/`createController`
+map (§5a) when the test must exercise the production registration path itself.

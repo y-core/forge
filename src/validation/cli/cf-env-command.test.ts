@@ -12,7 +12,8 @@ mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawn
 
 const { createGenEnv, loadOptions, readWranglerConfig } = await import("./cf-env-command");
 const { execute } = await import("../../cli/execute");
-const { collectBindings, collectVars, DEFAULT_OPTIONS, emit } = await import("./cf-env-gen");
+const { collectBindings, collectVars, emit } = await import("./cf-env-gen");
+const { DEFAULT_OPTIONS } = await import("./cf-env-registry");
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "cfgen-"));

@@ -87,7 +87,7 @@ doc via the **Guide Index** — never duplicate that detail here.
 - [`STORAGE_BINDINGS.md`](.decisions/STORAGE_BINDINGS.md): D1 client, KV store, R2 object storage, binding resolve/validate pattern
 - [`UI_COMPONENTS.md`](.decisions/UI_COMPONENTS.md): ui/core SSR components, ui/client browser controllers, HTMX sideEffect
 - [`ASSET_AND_BUILD_TOOLING.md`](.decisions/ASSET_AND_BUILD_TOOLING.md): assets build pipeline, manifest, CLI framework, pkg release tooling
-- [`TESTING.md`](.decisions/TESTING.md): bun test, co-located tests, HTML entity exact-match assertions, fakes, security tests
+- [`TESTING.md`](.decisions/TESTING.md): bun test, co-located tests, HTML entity exact-match assertions, fakes, security tests, `@y-core/forge/testing` utilities (fakeKV/fakeD1/fakeR2, render, buildRequest, mapHandler)
 - [`CODE_REVIEW.md`](.decisions/CODE_REVIEW.md): facade compliance, namespace boundaries, severity calibration, valid patterns
 
 ---
