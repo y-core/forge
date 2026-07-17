@@ -11,5 +11,4 @@ export type { ReadonlySignal, Signal } from "./signal";
 export { computed, createSignal, effect } from "./signal";
 export type { SignalRecord } from "./signal-record";
 export { signalRecord, writeSignal } from "./signal-record";
-export type { TurnstileOptions } from "./turnstile";
 export { mountTurnstile } from "./turnstile";

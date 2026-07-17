@@ -10,6 +10,66 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [0.0.68] — 2026-07-17
+
+Turnstile refactor: a server-rendered `<Turnstile>` mount point plus a rewritten, resilient
+`mountTurnstile()` controller, and a honeypot-default alignment fix. Contains **breaking changes**
+for apps that mount Turnstile or rely on the built-in honeypot — see the migration guide below.
+
+### ⚠️ Breaking Changes
+
+1. **`mountTurnstile()` is now arg-less.** The `isDark` argument, the `options` argument, and the
+   `TurnstileOptions` type (with its `widgetSelector` / `submitSelector` / `formSelector` /
+   `resultSelector` / `onSuccess` options) are removed, as is the submit-button gating. The controller
+   now finds the widget and its enclosing `<form>` on its own (`widget.closest("form")`) — nothing to
+   configure — reads the theme from `.dark` on `<html>` at render time, and no longer disables the
+   submit button (the server `verifyTurnstile` is the single fail-closed enforcement point).
+
+   ```ts
+   // before
+   mountTurnstile(isDark, { onSuccess: "remove" })
+   // after
+   mountTurnstile()
+   ```
+
+   Migration: call `mountTurnstile()` with no arguments, and render the new `<Turnstile siteKey=… />`
+   component inside the form in place of any hand-authored `.cf-turnstile` markup (the controller owns
+   rendering, so the auto-render class is intentionally omitted).
+
+2. **`<Form>`'s default honeypot field is now `__surname`** (was `surname`), aligning it with
+   `HONEYPOT_FIELD_DEFAULT` and `isHoneypotFilled`'s default — previously the component rendered
+   `surname` while the verifier checked `__surname`, so the built-in honeypot never fired. Both sides
+   now default to `__surname` and remain overridable: `<Form honeypotField="…">` on the markup and
+   `isHoneypotFilled(formData, "…")` on the check. Migration: if you relied on the honeypot, ensure
+   both sides use the same field name (the new default requires no action; a custom name must be passed
+   to both).
+
+### Added
+
+- **`Turnstile` SSR component** (`@y-core/forge/ui/core`) — a server-rendered `[data-ref='turnstile']`
+  mount point carrying `data-sitekey` / `data-size` and a hidden fallback message. Props:
+  `{ siteKey: string; size?: "compact" | "flexible" | "normal"; children?: JSXNode }` (`children`
+  overrides the default fallback text). Place it inside the `<form>`.
+- **Resilient `mountTurnstile()` behavior** — engagement-gated script load (loads once on the first
+  `focusin` within the form, never on page load or scroll), token reset after every completed
+  submission (success or error, via `htmx:afterRequest`) and on expiry/timeout (fixes spent-token
+  `403`-on-retry), a visible fallback message on load/render failure, and no submit-button gating.
+
+### Fixed
+
+- **The built-in honeypot never fired.** `<Form>` rendered its honeypot input as `surname` while
+  `isHoneypotFilled` checked `__surname`, so submissions were never rejected. Both sides now default
+  to `__surname` (see Breaking Changes) — the honeypot works out of the box.
+
+### Internal
+
+- `mountTurnstile` is now unit-tested against a hand-rolled DOM mock (engagement-gated load, render,
+  token reset on `htmx:afterRequest`/expiry, fallback-on-failure, idempotent mount, teardown), and the
+  `Turnstile` component has exact-match SSR render tests. Internal `ui/turnstile-contract.ts` holds the
+  data-ref/script constants shared by the component and controller (not part of the public surface).
+
+---
+
 ## [0.0.67] — 2026-07-17
 
 Project Improvement: testing/DX helpers, API-ergonomics normalization, and dead-code/housekeeping.
@@ -244,5 +304,6 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
-[0.0.67]: https://github.com/y-core/forge/compare/v0.0.66...HEAD
+[0.0.68]: https://github.com/y-core/forge/compare/v0.0.67...HEAD
+[0.0.67]: https://github.com/y-core/forge/compare/v0.0.66...v0.0.67
 [0.0.66]: https://github.com/y-core/forge/compare/v0.0.65...v0.0.66

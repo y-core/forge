@@ -66,6 +66,8 @@ runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
 - An accessible field system: controls inside a `FormField` inherit `id`, `name`, `aria-invalid`, and
   `aria-describedby`.
 - Sprite-backed icons via `createIcon`; icon-consuming components accept an `icon` prop directly.
+- A `Turnstile` CAPTCHA mount point that pairs with the arg-less `mountTurnstile()` controller
+  (`@y-core/forge/ui/client`) for a resilient, engagement-gated challenge lifecycle.
 
 ### Attribute pass-through contract
 
@@ -242,6 +244,30 @@ const button = cva({
 <button class={cn(button({ variant: "outline" }), asClass(className), isLoading && "opacity-50")}>Click</button>
 ```
 
+#### `Turnstile` — server-rendered CAPTCHA mount point
+
+`Turnstile` renders a `[data-ref='turnstile']` container (with `data-sitekey` / `data-size`) holding a
+hidden `[data-ref='turnstile-fallback']` alert. Place it **inside** the `<form>` so the token input
+Cloudflare injects is submitted with it, then pair it with the arg-less `mountTurnstile()` controller
+from `@y-core/forge/ui/client`, which owns rendering and the widget lifecycle. It deliberately omits
+Cloudflare's `cf-turnstile` auto-render class so the lifecycle stays deterministic.
+
+```tsx
+import { Form, Turnstile, Button } from "@y-core/forge/ui/core";
+
+<Form hx-post="/api/contact" hx-target="#result">
+  {/* form fields */}
+  <Turnstile siteKey={turnstileSiteKey} size="normal" />
+  <Button type="submit">Send</Button>
+</Form>
+```
+
+| Prop | Type | Default | Notes |
+|---|---|---|---|
+| `siteKey` | `string` | — | Required; injected server-side from the Worker env, never hardcoded. |
+| `size` | `"compact" \| "flexible" \| "normal"` | `"normal"` | Widget size hint (`data-size`). |
+| `children` | `JSXNode` | generic prompt | Optional; overrides the default hidden fallback message. |
+
 ### Integration Guide
 
 Render component trees inside a route handler with `renderToString` (`@y-core/forge/jsx`) and return
@@ -267,7 +293,7 @@ so a `javascript:`-style value collapses to `"#"` in the emitted HTML.
 ### Types
 
 `AlertVariant`, `BadgeVariant`, `ToastVariant`, `ToastPosition`, `FieldDescriptor`, `ForgeIcon`,
-`IconProps`.
+`IconProps`, `TurnstileProps`.
 
 ---
 
@@ -395,7 +421,8 @@ export default defineAssets({
 - The resumability-lite island runtime (`registerScope`, `resume`, `resumeScope`) — server-stamped
   state hydrated on first interaction, zero work at page load.
 - DOM controllers (`mountNav`, `mountTheme`, `mountTurnstile`) — each idempotent and returning a cleanup
-  function.
+  function. `mountTurnstile()` is arg-less and drives the `<Turnstile>` ui/core mount point with a
+  resilient, engagement-gated lifecycle.
 - Theme management with a FOUC-prevention inline script (`FOUC_SCRIPT`).
 - Generic control↔signal field binding (`bindField`, `bindGroup`, `parseControlValue`, `applyControlValue`).
 - Lazy resource loading (`lazy`, `loadScriptOnEvent`, `loadStylesheet`).
@@ -403,11 +430,11 @@ export default defineAssets({
 ### Usage
 
 ```typescript
-import { mountNav, mountTheme, mountTurnstile, isDark, resume } from "@y-core/forge/ui/client";
+import { mountNav, mountTheme, mountTurnstile, resume } from "@y-core/forge/ui/client";
 
 mountNav();
 mountTheme();
-mountTurnstile(isDark);   // theme-aware Cloudflare Turnstile
+mountTurnstile();         // resilient Cloudflare Turnstile (renders the <Turnstile> mount point)
 resume();                 // install the single delegated island listener
 ```
 
@@ -507,8 +534,9 @@ import { mountTheme, isDark, FOUC_SCRIPT } from "@y-core/forge/ui/client";
 `mountTheme(options?)` cycles `light → dark → system` on clicks of the `[data-ref='theme-toggle']`
 button (override via `options.toggleSelector`), persists the preference to `localStorage`, and toggles
 the `dark` class and `data-theme-preference` attribute on `<html>`. It is idempotent and returns a
-cleanup function. `isDark` is a `ReadonlySignal<boolean>` reflecting the resolved theme — feed it to
-`mountTurnstile` for theme-aware widgets.
+cleanup function. `isDark` is a `ReadonlySignal<boolean>` reflecting the resolved theme, for any
+client state that needs to react to theme changes. (`mountTurnstile` no longer takes it — it reads the
+resolved theme, `.dark` on `<html>`, directly at widget render time.)
 
 `FOUC_SCRIPT` is an inline script **string** to stamp into `<head>` so the theme is applied before first
 paint (preventing a flash of unstyled content):
@@ -527,10 +555,20 @@ Its companion constants are also exported: `THEME_STORAGE_KEY` (`"themePreferenc
 #### Nav and Turnstile controllers
 
 `mountNav(options?)` wires the navigation toggle: open/close, outside-click and Escape to close, and
-auto-close on link click. `mountTurnstile(isDark, options?)` mounts a theme-aware Cloudflare Turnstile
-widget on a `[data-ref='turnstile']` element, disables the submit button until verified, and resets or
-removes the widget after a successful HTMX swap. The site key is read from the widget's `data-sitekey`
-attribute (injected server-side, never hardcoded).
+auto-close on link click.
+
+`mountTurnstile()` is **arg-less** and returns a cleanup function. It drives the `<Turnstile>` ui/core
+component (rendered inside a `<form>`), finding the `[data-ref='turnstile']` widget and its enclosing
+form via `widget.closest("form")` — no selectors or options to configure. It is **engagement-gated**
+(loads Cloudflare's script once on the first `focusin` within the form, then explicitly renders the
+widget — no auto-render, no global callbacks), **self-healing** (resets the single-use token after
+every completed submission via `htmx:afterRequest` and on expiry/timeout, clearing the form only on
+success), and **fails visible** (reveals the widget's hidden fallback message on load/render failure).
+The submit button is intentionally **not** gated — the server `verifyTurnstile` is the single
+fail-closed enforcement point. The site key and size are read from the widget's `data-sitekey` /
+`data-size` attributes (injected server-side, never hardcoded); the theme follows the app's resolved
+theme (`.dark` on `<html>`) at render time. Pair it with the `<Turnstile siteKey=… />` component from
+`@y-core/forge/ui/core`.
 
 #### Lazy loading
 
@@ -566,7 +604,7 @@ import throws at runtime.
 ### Types
 
 `Signal`, `ReadonlySignal`, `SignalRecord`, `ResumeContext`, `ScopeDefinition`, `LazyImportOptions`,
-`LazyLoadOptions`, `NavControllerOptions`, `ThemeControllerOptions`, `TurnstileOptions`.
+`LazyLoadOptions`, `NavControllerOptions`, `ThemeControllerOptions`.
 
 ---
 

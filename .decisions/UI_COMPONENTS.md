@@ -1,6 +1,6 @@
 ---
 title: UI Components
-description: "forge JSX components, renderToString, safeUrl, getNonce, attribute pass-through, Form, Field, FormField, Input, Select, Button, asChild, Switch, Slider, fieldAttr, bindField, parseControlValue, createBoundControl, ui/controls, Alert, Card, Icon, role img, createIcon, cn, asClass, cva, SSR components, ui/core, ui/core/client, resume scope warning, ui/client, mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
+description: "forge JSX components, renderToString, safeUrl, getNonce, attribute pass-through, Form, Field, FormField, Input, Select, Button, asChild, Switch, Slider, fieldAttr, bindField, parseControlValue, createBoundControl, ui/controls, Alert, Card, Icon, role img, createIcon, cn, asClass, cva, Turnstile SSR captcha, SSR components, ui/core, ui/core/client, resume scope warning, ui/client, mountNav, mountTheme, mountTurnstile, engagement-gated captcha, FOUC_SCRIPT, createSignal, computed, effect, htmx sideEffect, Tailwind v4"
 weight: 30
 ---
 
@@ -23,12 +23,13 @@ weight: 30
 ## 0. Quick Reference
 
 - §1 ui/core namespace: universal DOM attribute pass-through; Form, Field (layout), FormField, Input, Button (asChild throw), Switch, Slider, Alert, Card, Icon (role="img"), cn, asClass, cva
+- §1m Turnstile SSR component: server-rendered `[data-ref='turnstile']` mount point with hidden fallback; pairs with `mountTurnstile()` (ui/client); place inside the form
 - §1j generic field binding: fieldAttr (ui/server) + bindField/bindGroup/parseControlValue/applyControlValue (ui/client); bind vs field distinction; bindGroup/data-value for segmented controls
 - §1k ui/controls bound variants: Input/Textarea/Select/Slider/Switch/ToggleGroup shadow ui/core names; built via internal createBoundControl; import each name from one barrel only
 - §1l scoped components: side-effect-import ui/core/client before resume(); resume() warns on unregistered data-scope
 - §2 SSR component patterns: composing Field+FieldLabel+FieldError+Input
 - §3 cn, asClass, cva: public class-name utilities for conditional and variant styling
-- §4 ui/client namespace: mountNav, mountTheme, mountTurnstile, FOUC_SCRIPT, signals
+- §4 ui/client namespace: mountNav, mountTheme, mountTurnstile (arg-less, engagement-gated, reset-on-retry), FOUC_SCRIPT, signals
 - §5 HTMX sideEffect import: ui/client/htmx for htmx bundle
 - §6 SSR-vs-client split rule: when to use ui/core vs ui/client
 
@@ -303,6 +304,28 @@ Without this import the scoped markup still renders, but no handler is registere
 **`console.warn`s on any `data-scope` it encounters with no registered scope**. Treat that warning as
 a missing client-entry import (or a `data-scope` name typo), not an expected runtime condition.
 
+### 1m. Turnstile Component — Server-Rendered CAPTCHA Mount Point
+
+    import { Turnstile } from "@y-core/forge/ui/core"
+
+    <Form hx-post="/api/contact" hx-target="#result">
+      {/* form fields */}
+      <Turnstile siteKey={turnstileSiteKey} size="normal" />
+      <Button type="submit">Send</Button>
+    </Form>
+
+`Turnstile` renders a `[data-ref='turnstile']` container carrying `data-sitekey` and `data-size`,
+holding a hidden `[data-ref='turnstile-fallback']` alert message. Props: `siteKey` (required, injected
+server-side from the Worker env — never hardcoded), `size` (`"compact" | "flexible" | "normal"`,
+default `"normal"`), and optional `children` that override the default fallback text. It deliberately
+**omits** Cloudflare's `cf-turnstile` auto-render class — the client controller owns rendering, so the
+widget lifecycle is deterministic rather than implicit.
+
+Place the component **inside** the `<form>` so the hidden `cf-turnstile-response` token input that
+Cloudflare injects is submitted with the form. The markup is inert on its own: pair it with
+`mountTurnstile()` from `@y-core/forge/ui/client` (see §4c), which renders the widget and manages its
+lifecycle. This is the canonical SSR-markup + `mountX()`-behavior split described in §6c.
+
 ---
 
 ## 2. SSR Component Patterns
@@ -471,11 +494,32 @@ Wires the mobile hamburger menu toggle and applies active-link highlighting base
 
     import { mountTurnstile } from "@y-core/forge/ui/client"
 
-    <script>mountTurnstile({ siteKey: turnstileSiteKey })</script>
+    mountTurnstile()   // arg-less — returns a cleanup function
 
-Initialises Cloudflare Turnstile on forms that include a `[data-turnstile]` element.
-`siteKey` is injected server-side from the Worker env (never hardcoded). The controller
-appends the hidden `cf-turnstile-response` token to form submissions.
+`mountTurnstile()` is **arg-less** (there is no `TurnstileOptions`, `isDark` argument, or
+submit-button gating). It finds the `[data-ref='turnstile']` widget rendered by the `<Turnstile>`
+ui/core component (§1m) and its enclosing `<form>` via `widget.closest("form")` — there is no form,
+widget, submit, or result selector to configure. It no-ops (returns a no-op cleanup) when the widget
+or its form is absent, and is idempotent per widget. The `siteKey` is read from the widget's
+`data-sitekey` attribute (injected server-side, never hardcoded).
+
+Controller behaviour:
+
+- **Engagement-gated:** loads Cloudflare's script once on the first `focusin` within the form — real
+  intent to submit, not merely page load or scrolling — then explicitly renders the widget with
+  function-ref callbacks (no global callback names, no implicit auto-render). It renders directly on
+  the async script's `load` event and never calls `turnstile.ready()`, which throws when the script
+  loads async.
+- **Self-healing token:** resets the single-use token after **every** completed submission (success
+  OR error, via `htmx:afterRequest`) and on expiry/timeout, so a retry always carries a fresh token —
+  fixing spent-token `403`-on-retry. It clears the form only when the submission actually succeeded.
+- **Fails visible:** on load/render failure it reveals the widget's hidden `[data-ref='turnstile-fallback']`
+  message. The submit button is intentionally **not** gated on Turnstile — the server
+  `verifyTurnstile` (see [INPUT_VALIDATION.md](./INPUT_VALIDATION.md)) is the single fail-closed
+  enforcement point, so a slow or blocked challenge can never brick the form's submit affordance.
+
+The widget theme follows the app's resolved theme (`.dark` on `<html>`) at render time. This is the
+SSR-markup + `mountX()`-behavior split described in §6c.
 
 ### 4d. Signals — Reactive State
 

@@ -2,19 +2,19 @@ import { describe, expect, it } from "bun:test";
 import { isHoneypotFilled } from "./honeypot";
 
 describe("isHoneypotFilled", () => {
-  it("returns true when the default surname field has a value", () => {
+  it("returns true when the default __surname field has a value", () => {
     const fd = new FormData();
-    fd.append("surname", "Bot");
+    fd.append("__surname", "Bot");
     expect(isHoneypotFilled(fd)).toBe(true);
   });
 
-  it("returns false when the default surname field is empty", () => {
+  it("returns false when the default __surname field is empty", () => {
     const fd = new FormData();
-    fd.append("surname", "");
+    fd.append("__surname", "");
     expect(isHoneypotFilled(fd)).toBe(false);
   });
 
-  it("returns false when the default surname field is absent", () => {
+  it("returns false when the default __surname field is absent", () => {
     const fd = new FormData();
     expect(isHoneypotFilled(fd)).toBe(false);
   });
@@ -33,13 +33,13 @@ describe("isHoneypotFilled", () => {
 
   it("returns true when the field contains a non-empty File", () => {
     const fd = new FormData();
-    fd.append("surname", new File(["content"], "bot.txt"));
+    fd.append("__surname", new File(["content"], "bot.txt"));
     expect(isHoneypotFilled(fd)).toBe(true);
   });
 
   it("returns false when the field contains an empty File (zero bytes)", () => {
     const fd = new FormData();
-    fd.append("surname", new File([], "empty.txt"));
+    fd.append("__surname", new File([], "empty.txt"));
     expect(isHoneypotFilled(fd)).toBe(false);
   });
 });

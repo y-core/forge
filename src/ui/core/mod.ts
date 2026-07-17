@@ -30,5 +30,6 @@ export { Switch } from "./switch";
 export { Textarea } from "./textarea";
 export { Toast, type ToastPosition, type ToastVariant } from "./toast";
 export { ToggleGroup, type ToggleGroupItemSize } from "./toggle-group";
+export { Turnstile, type TurnstileProps } from "./turnstile";
 export { asClass, cn } from "./utils/cn";
 export { cva } from "./utils/cva";

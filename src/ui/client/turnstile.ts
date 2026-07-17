@@ -1,5 +1,10 @@
-import type { ReadonlySignal } from "./signal";
-import { createSignal, effect } from "./signal";
+import { TURNSTILE, TURNSTILE_SCRIPT_SRC, TURNSTILE_SCRIPT_TIMEOUT_MS } from "../turnstile-contract";
+
+interface TurnstileAPI {
+  render(el: HTMLElement, params: Record<string, unknown>): string;
+  reset(widgetId?: string): void;
+  remove(widgetId: string): void;
+}
 
 declare global {
   interface Window {
@@ -7,148 +12,134 @@ declare global {
   }
 }
 
-export interface TurnstileOptions {
-  widgetSelector?: string;
-  submitSelector?: string;
-  formSelector?: string;
-  resultSelector?: string;
-  /** "reset" (default) starts a new challenge immediately. "remove" tears down the widget. */
-  onSuccess?: "reset" | "remove";
-}
+const mounted = new WeakMap<HTMLElement, () => void>();
 
-interface TurnstileAPI {
-  render(container: string | HTMLElement, params?: Record<string, unknown>): string;
-  reset(el: string | HTMLElement): void;
-  remove(widgetIdOrContainer: string | HTMLElement): void;
-  getResponse(el?: string | HTMLElement): string | undefined;
-}
+const ref = (name: string) => document.querySelector<HTMLElement>(`[data-ref='${CSS.escape(name)}']`);
 
-const mountedTurnstiles = new WeakMap<HTMLElement, () => void>();
-let callbackCount = 0;
+/**
+ * Mounts a resilient Cloudflare Turnstile controller for the `<Turnstile>` widget (`ui/core`) and
+ * returns a cleanup function. Idempotent: a second call for the same widget returns the existing
+ * cleanup. No-ops (returns a no-op cleanup) when no `[data-ref='turnstile']` widget, or its
+ * enclosing `<form>`, is present.
+ *
+ * Behaviour:
+ * - **Engagement-gated:** loads Cloudflare's script once on the first `focusin` within the form —
+ *   real intent to submit, not merely scrolling past — then explicitly renders the widget with
+ *   function-ref callbacks (no global callback names, no implicit auto-render). The API is ready
+ *   once the async script's `load` event fires, so it renders directly; it never calls
+ *   `turnstile.ready()`, which throws when the script was loaded async/defer.
+ * - **Self-healing token:** resets the single-use token after EVERY completed submission (success
+ *   OR error, via `htmx:afterRequest`) and on expiry/timeout, so a retry always carries a fresh
+ *   token. Clears the form only when the submission succeeded.
+ * - **Fails visible:** on load/render failure it reveals the widget's hidden fallback message
+ *   instead of leaving a dead widget. The submit button is intentionally NOT gated on Turnstile —
+ *   the server (`verifyTurnstile`) is the single fail-closed enforcement point, so a slow or
+ *   blocked challenge can never brick the form's submit affordance.
+ *
+ * The widget theme follows the app's resolved theme (`.dark` on `<html>`) at render time.
+ * @public
+ */
+export function mountTurnstile(): () => void {
+  const container = ref(TURNSTILE.widget);
+  if (!container) return () => {};
+  const form = container.closest("form");
+  if (!form) return () => {};
 
-/** Mounts a Turnstile widget controller and returns a cleanup function. Safe to call more than once per widget. @public */
-export function mountTurnstile(isDark: ReadonlySignal<boolean>, options?: TurnstileOptions): () => void {
-  const {
-    formSelector = "[data-ref='contact-form']",
-    onSuccess = "reset",
-    resultSelector = "[data-ref='contact-result']",
-    submitSelector = "[data-ref='contact-submit']",
-    widgetSelector = "[data-ref='turnstile']",
-  } = options ?? {};
+  const existing = mounted.get(container);
+  if (existing) return existing;
 
-  const widget = document.querySelector<HTMLElement>(widgetSelector);
-  if (!widget) {
-    return () => {};
-  }
+  const sitekey = container.getAttribute("data-sitekey") ?? "";
+  const size = container.getAttribute("data-size") ?? "normal";
+  let widgetId: string | undefined;
+  let loadStarted = false;
 
-  const existing = mountedTurnstiles.get(widget);
-  if (existing) {
-    return existing;
-  }
-
-  const submitButton = document.querySelector<HTMLButtonElement>(submitSelector);
-  const form = document.querySelector<HTMLFormElement>(formSelector);
-  const verified = createSignal(false);
-  const callbackBase = `__forgeTurnstile_${++callbackCount}`;
-  const verifiedName = `${callbackBase}_verified`;
-  const expiredName = `${callbackBase}_expired`;
-  const globals = globalThis as Record<string, unknown>;
-  let removed = false;
-
-  const sitekey = widget.getAttribute("data-sitekey") ?? "";
-
-  const resetWidget = () => {
-    if (typeof window.turnstile?.reset === "function") {
-      window.turnstile.reset(widget);
-    }
+  const showFallback = () => {
+    const fallback = ref(TURNSTILE.fallback);
+    if (fallback) fallback.hidden = false;
   };
 
-  const removeWidget = () => {
-    if (typeof window.turnstile?.remove === "function") {
-      window.turnstile.remove(widget);
-    }
-    removed = true;
+  const resetWidget = () => {
+    if (widgetId !== undefined) window.turnstile?.reset(widgetId);
   };
 
   const renderWidget = () => {
     if (typeof window.turnstile?.render !== "function") {
+      showFallback();
       return;
     }
-    window.turnstile.render(widget, {
-      sitekey,
-      callback: verifiedName,
-      "expired-callback": expiredName,
-      theme: isDark.value ? "dark" : "light",
-      size: widget.getAttribute("data-size") ?? "normal",
+    // Respect the app's resolved theme (manual toggle sets `.dark` on <html>) at render time.
+    const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+    try {
+      widgetId = window.turnstile.render(container, {
+        sitekey,
+        size,
+        theme,
+        // Token is auto-written to the hidden `cf-turnstile-response` input inside the container.
+        "expired-callback": resetWidget,
+        "timeout-callback": resetWidget,
+        "error-callback": showFallback,
+      });
+    } catch {
+      showFallback();
+    }
+  };
+
+  const loadScript = () => {
+    if (loadStarted) return;
+    loadStarted = true;
+
+    if (window.turnstile) {
+      renderWidget();
+      return;
+    }
+
+    if (document.querySelector(`script[src="${CSS.escape(TURNSTILE_SCRIPT_SRC)}"]`)) {
+      // Script already in flight from elsewhere — wait for the API, then render.
+      const poll = window.setInterval(() => {
+        if (window.turnstile) {
+          window.clearInterval(poll);
+          renderWidget();
+        }
+      }, 100);
+      window.setTimeout(() => window.clearInterval(poll), TURNSTILE_SCRIPT_TIMEOUT_MS);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = TURNSTILE_SCRIPT_SRC;
+    script.async = true;
+    const timeout = window.setTimeout(showFallback, TURNSTILE_SCRIPT_TIMEOUT_MS);
+    script.addEventListener("load", () => {
+      window.clearTimeout(timeout);
+      // The async script's load event means the API is already initialised — render directly.
+      renderWidget();
     });
-    removed = false;
+    script.addEventListener("error", () => {
+      window.clearTimeout(timeout);
+      showFallback();
+    });
+    document.head.appendChild(script);
   };
 
-  const disposeTheme = effect(() => {
-    widget.setAttribute("data-theme", isDark.value ? "dark" : "light");
-    if (!removed) {
-      resetWidget();
-    }
-  });
+  // Gate the third-party cost on genuine engagement: load Turnstile the first time any field in the
+  // form is focused. `focusin` (not `focus`) bubbles, so one delegated listener covers every field.
+  form.addEventListener("focusin", loadScript, { once: true });
 
-  const disposeSubmit = submitButton
-    ? effect(() => {
-        submitButton.disabled = !verified.value;
-      })
-    : () => {};
-
-  globals[verifiedName] = () => {
-    verified.value = true;
+  // Reset the single-use token after every completed submission so the next attempt is fresh;
+  // clear the fields only when the submission actually succeeded.
+  const onAfterRequest = (event: Event) => {
+    const detail = (event as CustomEvent<{ successful?: boolean }>).detail;
+    resetWidget();
+    if (detail?.successful) form.reset();
   };
-  globals[expiredName] = () => {
-    verified.value = false;
-  };
-
-  widget.setAttribute("data-callback", verifiedName);
-  widget.setAttribute("data-expired-callback", expiredName);
-
-  const onAfterSwap = (event: Event) => {
-    const customEvent = event as CustomEvent<{ target?: Element }>;
-    const target = customEvent.detail?.target;
-    if (!target?.matches(resultSelector) || !target.querySelector("[data-success]")) {
-      return;
-    }
-
-    form?.reset();
-    verified.value = false;
-
-    if (onSuccess === "remove") {
-      removeWidget();
-    } else {
-      resetWidget();
-    }
-  };
-
-  const onFormFocusin = () => {
-    if (!removed) {
-      return;
-    }
-    renderWidget();
-  };
-
-  document.addEventListener("htmx:afterSwap", onAfterSwap);
-
-  if (onSuccess === "remove" && form) {
-    form.addEventListener("focusin", onFormFocusin);
-  }
+  form.addEventListener("htmx:afterRequest", onAfterRequest);
 
   const cleanup = () => {
-    disposeTheme();
-    disposeSubmit();
-    document.removeEventListener("htmx:afterSwap", onAfterSwap);
-    if (onSuccess === "remove" && form) {
-      form.removeEventListener("focusin", onFormFocusin);
-    }
-    delete globals[verifiedName];
-    delete globals[expiredName];
-    mountedTurnstiles.delete(widget);
+    form.removeEventListener("focusin", loadScript);
+    form.removeEventListener("htmx:afterRequest", onAfterRequest);
+    if (widgetId !== undefined) window.turnstile?.remove(widgetId);
+    mounted.delete(container);
   };
-
-  mountedTurnstiles.set(widget, cleanup);
+  mounted.set(container, cleanup);
   return cleanup;
 }

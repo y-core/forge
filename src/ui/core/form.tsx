@@ -56,7 +56,7 @@ function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfToken?: string
 export const Form: FC<PropsWithChildren<FormProps>> = ({
   csrfToken,
   csrfField = "_csrf",
-  honeypotField = "surname",
+  honeypotField = "__surname",
   method = "post",
   children,
   "hx-headers": hxHeadersProp,

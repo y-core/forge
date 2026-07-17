@@ -11,7 +11,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 
@@ -23,7 +23,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" id="contact-form"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" id="contact-form"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 
@@ -35,7 +35,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-post="/api/contact" hx-target="#result"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-post="/api/contact" hx-target="#result"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 
@@ -47,7 +47,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 
@@ -59,7 +59,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-headers="{&quot;X-Custom&quot;:&quot;val&quot;,&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-headers="{&quot;X-Custom&quot;:&quot;val&quot;,&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 
@@ -71,7 +71,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-headers="js:window.headers"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-headers="js:window.headers"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 
@@ -83,7 +83,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 
@@ -95,7 +95,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 
@@ -119,7 +119,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="message" id="msg"></form>',
+      '<form data-slot="form" method="post"><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="message" id="msg"></form>',
     );
   });
 
@@ -131,7 +131,7 @@ describe("Form component", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-disabled-elt="find [data-ref=&#39;submit&#39;]" novalidate><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-disabled-elt="find [data-ref=&#39;submit&#39;]" novalidate><div aria-hidden="true" data-slot="form-honeypot" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 });
