@@ -100,16 +100,24 @@ export interface ToolbarProps<A extends string = string> extends Omit<JSX.Intrin
   placement?: ToolbarPlacement;
   /** `commandfor` sink (element id, bare or `#id`) for actions with `dispatch:"command"`. */
   commandTarget?: string;
+  /** Optional DOM id for the rail. Also namespaces the generated flyout ids; supply a distinct
+   * value when two rails share the same `placement`, otherwise `placement` disambiguates them. */
+  id?: string;
   /** Extra classes merged onto the root element. */
   class?: string;
 }
 
 /** Threaded through the item renderers: bound icon, placement, a per-render popover-id counter,
- * and the optional `commandfor` sink for command-dispatch actions. */
+ * the id namespace that keeps flyout ids unique across multiple rails on one page, and the
+ * optional `commandfor` sink for command-dispatch actions. */
 interface RenderCtx {
   placement: ToolbarPlacement;
   icon: ForgeIcon<string>;
   commandTarget: string | undefined;
+  /** Namespace prefix for generated flyout ids — the rail's `id` when given, else its placement.
+   * Two rails on a page must not both mint `toolbar-flyout-0`, or their `commandfor` links would
+   * collide and a trigger would toggle the wrong (first-in-document) flyout. */
+  idBase: string;
   seq: { n: number };
 }
 
@@ -171,7 +179,7 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
 
   // popover — a native top-layer flyout toggled by its trigger button
   const { icon, label, ref, content, compact, titleAction } = item;
-  const id = `toolbar-flyout-${ctx.seq.n++}`;
+  const id = `toolbar-flyout-${ctx.idBase}-${ctx.seq.n++}`;
   return (
     <div data-slot='toolbar-popover' class='relative flex flex-col items-center w-full'>
       <button
@@ -229,8 +237,8 @@ function renderGroup<A extends string>(group: ToolbarGroup<A>, ctx: RenderCtx): 
  *
  * @public
  */
-export const Toolbar: FC<ToolbarProps> = ({ config, icon: Icon, placement = "left", commandTarget, class: cls, ...rest }) => {
-  const ctx: RenderCtx = { placement, icon: Icon, commandTarget, seq: { n: 0 } };
+export const Toolbar: FC<ToolbarProps> = ({ config, icon: Icon, placement = "left", commandTarget, class: cls, id, ...rest }) => {
+  const ctx: RenderCtx = { placement, icon: Icon, commandTarget, idBase: id ?? placement, seq: { n: 0 } };
   const children: JSXNode[] = [];
   for (const [i, group] of config.groups.entries()) {
     if (i > 0) children.push(separatorNode(placement));
@@ -238,7 +246,7 @@ export const Toolbar: FC<ToolbarProps> = ({ config, icon: Icon, placement = "lef
   }
 
   return (
-    <nav data-slot='toolbar' class={cn(railVariants({ placement }), asClass(cls))} {...rest}>
+    <nav {...(id === undefined ? {} : { id })} data-slot='toolbar' class={cn(railVariants({ placement }), asClass(cls))} {...rest}>
       {children}
     </nav>
   );

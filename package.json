@@ -33,7 +33,6 @@
     "@remix-run/response": "^0.3.7",
     "@remix-run/route-pattern": "^0.23.0",
     "@remix-run/session": "^0.4.2",
-    "@ycore/forge": ".",
     "htmx.org": "^2.0.10",
     "valibot": "^1.4.2"
   },
