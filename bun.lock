@@ -1,15 +1,16 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "@ycore/forge",
       "dependencies": {
         "@remix-run/cookie": "^0.5.4",
-        "@remix-run/fetch-router": "^0.20.0",
+        "@remix-run/fetch-router": "^0.20.1",
         "@remix-run/headers": "^0.21.1",
         "@remix-run/html-template": "^0.3.1",
         "@remix-run/response": "^0.3.6",
-        "@remix-run/route-pattern": "^0.22.1",
+        "@remix-run/route-pattern": "^0.23.0",
         "@remix-run/session": "^0.4.2",
         "htmx.org": "^2.0.10",
         "valibot": "^1.4.1",
@@ -102,7 +103,7 @@
 
     "@remix-run/cookie": ["@remix-run/cookie@0.5.4", "", { "dependencies": { "@remix-run/headers": "^0.21.1" } }, "sha512-QxV2yo0umBXxwMub8kZFC+nOFnGMVpGo3jQ1Gvs4p1n2N7/0LAKhPgKsWbsk5ab6EqVhpr0S+v9gSQON1nuyoA=="],
 
-    "@remix-run/fetch-router": ["@remix-run/fetch-router@0.20.0", "", { "dependencies": { "@remix-run/route-pattern": "^0.22.1" } }, "sha512-iNjDAesu37Yf8nApAkKgKjmZBavC+AuzWK9EUmiwo+OnH7nn8ag5whyVFR4kb0LJN5CeXciFEIjX+oHG5cNeyw=="],
+    "@remix-run/fetch-router": ["@remix-run/fetch-router@0.20.1", "", { "dependencies": { "@remix-run/route-pattern": "^0.23.0" } }, "sha512-vxlIu4LHY5KyqOdlXFjJeUefUJxgc7499/cSsBl2bzhQnU5DayPHN/dklBOiG+U7GIYQMmObAinmubkwzaXyuw=="],
 
     "@remix-run/headers": ["@remix-run/headers@0.21.1", "", {}, "sha512-DRhRveigepAQDUIi0MrOFhpcl3/KTv/fkpIhulv7Asv1pUwM8RpY2ENjdI8lfii6Z3MEsWtYhGt6If8bi6bYpQ=="],
 
@@ -112,7 +113,7 @@
 
     "@remix-run/response": ["@remix-run/response@0.3.6", "", { "dependencies": { "@remix-run/headers": "^0.21.1", "@remix-run/html-template": "^0.3.1", "@remix-run/mime": "^0.4.1" } }, "sha512-WgbAXEGesrfVz449Lv1AUruT2r2t79XxkcG/cdzDZWXB/2UKcKFsVSM/tFvfmIuAtwdvhQrrnaFpnC04OfYSNA=="],
 
-    "@remix-run/route-pattern": ["@remix-run/route-pattern@0.22.1", "", {}, "sha512-czdGJWh09Lapvcqt7Vb09KlrU2PhRJ8xQaI+AItTuD9aDJ5MAgxnS38lnys6Ll+6RJEqPiaUqTwIQhVLwFvv+w=="],
+    "@remix-run/route-pattern": ["@remix-run/route-pattern@0.23.0", "", {}, "sha512-8eZfG9owfdvC1OqWemjyIqbFTjWbKTW8RrcbppXrnv1GHMIpFOQx9Ly6F1OXNM03aK1c923JypacoRjamyfVEw=="],
 
     "@remix-run/session": ["@remix-run/session@0.4.2", "", {}, "sha512-NGzu6/gC5xD/tq40W0WqzTt4JhCdSCIwDHM1aa13JBqb4Ml/Mb0kmXqjfOe/gBYfu6AA11nRQ/BJyr+VduTodA=="],
 
