@@ -30,16 +30,17 @@
     "@remix-run/fetch-router": "^0.20.1",
     "@remix-run/headers": "^0.21.1",
     "@remix-run/html-template": "^0.3.1",
-    "@remix-run/response": "^0.3.6",
+    "@remix-run/response": "^0.3.7",
     "@remix-run/route-pattern": "^0.23.0",
     "@remix-run/session": "^0.4.2",
+    "@ycore/forge": ".",
     "htmx.org": "^2.0.10",
-    "valibot": "^1.4.1"
+    "valibot": "^1.4.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
-    "@typescript/native-preview": "^7.0.0-dev.20260605.1",
-    "esbuild": "^0.28.0"
+    "@biomejs/biome": "^2.5.4",
+    "@typescript/native-preview": "^7.0.0-dev.20260707.2",
+    "esbuild": "^0.28.1"
   },
   "peerDependencies": {
     "esbuild": ">=0.20.0",
