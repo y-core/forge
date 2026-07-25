@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import * as v from "valibot";
+import { v } from "../validation/mod";
 import { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";
 
 describe("parseUrl", () => {

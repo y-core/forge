@@ -16,6 +16,7 @@
 - ALWAYS co-locate tests (`*.test.ts` / `*.test.tsx`) with the source they test
 - ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
 - ALWAYS run local verification after changes — **delegate every gate run to `cc-tester`** (see _Verification Delegation_)
+- ALWAYS report a command's exit status with the one canonical suffix — never a variant (see _Shell Exit Checks_)
 - Use `rg` for content search and `find` for file search
 
 ---
@@ -38,6 +39,28 @@ bun run lint:fix   # auto-fix lint and format issues
 philosophy and failure triage: [`TESTING.md`](.decisions/TESTING.md) §6.
 
 **Avoid:** `tsc` (use `tsgo`), `bun-types` (use the custom stub), `eslint`/`prettier` (use `biome`).
+
+### Shell Exit Checks
+
+When a command's exit status must be stated explicitly, append **exactly** this suffix — same
+spelling, same casing, same quoting, every time:
+
+```bash
+<command>; echo "EXIT:$?"
+```
+
+- Use `;`, never `&&` — with `&&` the echo is skipped precisely when the command fails, which is
+  the only case worth checking.
+- Never pipe within the same statement: `bun run check | tail -20; echo "EXIT:$?"` reports `tail`'s
+  status, not the gate's. Redirect first, then inspect the file:
+  `bun run check > /tmp/check.log 2>&1; echo "EXIT:$?"`.
+- Never invent a variant — `exit=$?`, `RC=$?`, `---EXIT CODE $?---`, or a re-quoted spelling all
+  miss the allowlist and cost a fresh permission prompt each time.
+- Omit the suffix when the exit code is not actually in question; a bare failing command already
+  surfaces its status. The suffix exists for the cases where that signal would otherwise be lost.
+
+The matching allow rule is an **exact-string** entry (no `:*` prefix wildcard) in
+`.claude/settings.local.json` — deviating by one character is what turns a silent run into a prompt.
 
 ### Verification Delegation
 
@@ -129,6 +152,7 @@ cite them rather than restating them:
 | CSRF and honeypot field names | `src/form/constants.ts` |
 | Per-namespace export lists | `src/{ns}/mod.ts` |
 | `lib` and `types` configuration | `tsconfig.json` |
+| Bash allowlist patterns (incl. the exit-check literal) | `.claude/settings.local.json` `permissions.allow` |
 | Barrel rules as *enforced* | `scripts/validate-exports.ts` |
 | Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
 

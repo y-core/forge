@@ -214,7 +214,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `export const X = "…"` at module scope | A constant is not mutable state — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1c |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §4a |
 | `sideEffects` entries in `package.json` | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §4 |
-| A non-null assertion in a test file | Permitted by the biome test-file overrides |
+| A non-null assertion in a test file | Permitted by the `**/*.test.ts` biome override, which sets `noNonNullAssertion: off`; the rule is `error` in production source |
 | `ok` / `err` not following `create*` | The one documented naming exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1a |
 | `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5e |
 | `Input` exported from both `ui/core` and `ui/controls` | Deliberate shadowing — [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5b |

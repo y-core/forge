@@ -151,7 +151,7 @@ function dispatch(type: string, event: Event): void {
  * to the platform. The invoker (`event.source`) stands in for the `data-on-*` element. */
 function dispatchCommand(event: Event): void {
   const command = (event as CommandEvent).command;
-  if (!command || command.slice(0, 2) !== "--") return;
+  if (command?.slice(0, 2) !== "--") return;
   // `source` is the invoker button (an HTMLElement) — stands in for the `data-on-*` element.
   const source = (event as CommandEvent).source as HTMLElement | null;
   if (!source) return;

@@ -221,7 +221,7 @@ describe("mountTurnstile", () => {
 
   it("resets the token when the expired-callback fires", () => {
     const cleanup = mountAndRender();
-    (renderParams[0]?.["expired-callback"] as () => void)();
+    (renderParams[0]!["expired-callback"] as () => void)();
     expect(resetCalls).toBe(1);
     cleanup();
   });
@@ -245,7 +245,7 @@ describe("mountTurnstile", () => {
 
   it("reveals the fallback when Turnstile's error-callback fires", () => {
     const cleanup = mountAndRender();
-    (renderParams[0]?.["error-callback"] as () => void)();
+    (renderParams[0]!["error-callback"] as () => void)();
     expect(fallbackEl.hidden).toBe(false);
     cleanup();
   });

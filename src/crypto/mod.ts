@@ -98,10 +98,12 @@ function timingSafeEqualBytesFallback(a: Uint8Array, b: Uint8Array): boolean {
     // Fixed-time compare so the result timing does not depend on array contents. Seed a non-zero
     // accumulator to guarantee a false result regardless of the bytes.
     let acc = 1;
+    // biome-ignore lint/style/noNonNullAssertion: optional chaining would branch in constant-time code; bounds guaranteed by the loop condition.
     for (let i = 0; i < a.byteLength; i++) acc |= a[i]! ^ a[i]!;
     return acc === 0;
   }
   let diff = 0;
+  // biome-ignore lint/style/noNonNullAssertion: optional chaining would branch in constant-time code; bounds guaranteed by the loop condition.
   for (let i = 0; i < a.byteLength; i++) diff |= a[i]! ^ b[i]!;
   return diff === 0;
 }

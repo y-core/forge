@@ -1,7 +1,7 @@
 /**
  * Server-side JSX components for `@y-core/forge/ui/server`. @public
  *
- * Exports flash messages, `ThemeToggle`, and `Resumable`.
+ * Exports flash messages and `Resumable`.
  * HTMX helpers (headers, attrs, patterns) moved to `@y-core/forge/html/htmx`.
  * Import only in SSR/Workers contexts — never in browser bundles.
  */

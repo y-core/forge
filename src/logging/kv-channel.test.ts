@@ -483,7 +483,7 @@ describe("kvLogChannel — stack stripping", () => {
 
     await channel.write(record);
 
-    expect((record.data?.error as Record<string, unknown>).stack).toBe("trace");
+    expect((record.data!.error as Record<string, unknown>).stack).toBe("trace");
   });
 });
 

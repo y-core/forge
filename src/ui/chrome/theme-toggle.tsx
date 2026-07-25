@@ -7,7 +7,8 @@ import { Resumable } from "../server/resumable";
 import { scopeAttrs } from "../server/scope-attrs";
 import { DEFAULT_PREF } from "./theme";
 
-interface ThemeToggleProps {
+/** Props for {@link ThemeToggle}. @public */
+export interface ThemeToggleProps {
   /** Bound icon supplying the `sun`, `moon`, and `monitor` glyphs. */
   icon: ForgeIcon<"sun" | "moon" | "monitor">;
   /** Pixel size of each icon. Defaults to 20. */

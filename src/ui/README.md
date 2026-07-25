@@ -1,10 +1,13 @@
 # `@y-core/forge/ui`
 
-Source-distributed UI primitives for forge apps, split across nine import sub-paths. The family covers
-server-rendered JSX primitives (`@y-core/forge/ui/core`), pre-bound signal-binding wrappers
-(`@y-core/forge/ui/controls`), forge's self-owned icon asset manifest (`@y-core/forge/ui/assets`),
-browser-side controllers and a framework-free reactive runtime (`@y-core/forge/ui/client`), SSR-only
-stateful components (`@y-core/forge/ui/server`), the pinned HTMX bundle
+Source-distributed UI primitives for forge apps, split across twelve import sub-paths. The family
+covers server-rendered JSX primitives (`@y-core/forge/ui/core`) with their client scopes
+(`@y-core/forge/ui/core/client`), pre-bound signal-binding wrappers (`@y-core/forge/ui/controls`),
+forge's self-owned icon asset manifest (`@y-core/forge/ui/assets`) and its browser-safe glyph parser
+(`@y-core/forge/ui/assets/glyphs`), browser-side controllers and a framework-free reactive runtime
+(`@y-core/forge/ui/client`), SSR-only stateful components (`@y-core/forge/ui/server`),
+configuration-driven app chrome — navbar, toolbar, theme toggle — (`@y-core/forge/ui/chrome`) with
+its client island (`@y-core/forge/ui/chrome/client`), the pinned HTMX bundle
 (`@y-core/forge/ui/client/htmx`), and a ready-made component showcase (`@y-core/forge/ui/show`,
 `@y-core/forge/ui/show/client`).
 
@@ -21,10 +24,14 @@ configuration.
 ## Table of Contents
 
 - [`@y-core/forge/ui/core`](#y-coreforgeuicore) — server-side JSX component library
+- [`@y-core/forge/ui/core/client`](#y-coreforgeuicoreclient) — toast + alert scopes island (side-effect import)
 - [`@y-core/forge/ui/controls`](#y-coreforgeuicontrols) — pre-bound signal-binding wrapper layer
 - [`@y-core/forge/ui/assets`](#y-coreforgeuiassets) — forge's self-owned icon asset manifest
+- [`@y-core/forge/ui/assets/glyphs`](#y-coreforgeuiassetsglyphs) — browser-safe sprite glyph parser
 - [`@y-core/forge/ui/client`](#y-coreforgeuiclient) — browser controllers + signals runtime
-- [`@y-core/forge/ui/server`](#y-coreforgeuiserver) — SSR-only Flash, Resumable, ThemeToggle
+- [`@y-core/forge/ui/server`](#y-coreforgeuiserver) — SSR-only Flash and Resumable
+- [`@y-core/forge/ui/chrome`](#y-coreforgeuichrome) — SSR Navbar, Toolbar, ThemeToggle + theme constants
+- [`@y-core/forge/ui/chrome/client`](#y-coreforgeuichromeclient) — chrome scopes island (side-effect import)
 - [`@y-core/forge/ui/client/htmx`](#y-coreforgeuiclienthtmx) — HTMX bundle (side-effect import)
 - [`@y-core/forge/ui/show`](#y-coreforgeuishow) — component showcase route helpers
 - [`@y-core/forge/ui/show/client`](#y-coreforgeuishowclient) — showcase filter island script
@@ -188,9 +195,9 @@ single element (wrap dynamic content yourself before passing it).
 
 #### Icons — `createIcon`
 
-Several components (`Select`, `Spinner`, and the server-only `ThemeToggle`) render an icon and accept an
-`icon` prop typed as `ForgeIcon<Name>`. Bind your app's sprite once with `createIcon` and pass it at
-each call site:
+Several components (`Select`, `Spinner`, and the chrome `ThemeToggle`, `Navbar`, and `Toolbar`) render
+an icon and accept an `icon` prop typed as `ForgeIcon<Name>`. Bind your app's sprite once with
+`createIcon` and pass it at each call site:
 
 ```tsx
 import { createIcon, Select, Spinner } from "@y-core/forge/ui/core";
@@ -295,6 +302,41 @@ so a `javascript:`-style value collapses to `"#"` in the emitted HTML.
 
 `AlertVariant`, `BadgeVariant`, `ToastVariant`, `ToastPosition`, `FieldDescriptor`, `ForgeIcon`,
 `IconProps`, `TurnstileProps`.
+
+---
+
+## `@y-core/forge/ui/core/client`
+
+> Import path: `@y-core/forge/ui/core/client` → `src/ui/core/client.ts`
+> **Browser-only, side-effect import.** esbuild entry points only. No exports.
+
+### Features
+
+- Registers the `toast` and `alert` resumable scopes — the client halves of the `Toast` and `Alert`
+  primitives, and of every flash message rendered through `Flash` / `FlashContainer` / `FlashOob`.
+
+### Usage
+
+```typescript
+// src/client/main.ts (esbuild entry point):
+import "@y-core/forge/ui/core/client";  // side-effect: registers the scopes
+import { resume } from "@y-core/forge/ui/client";
+
+resume();
+```
+
+**This import is not optional if the app renders toasts or dismissible alerts.** Without it the
+components render correctly but never dismiss, and `resume()` `console.warn`s about the unregistered
+`data-scope` — the failure is silent in the markup and loud only in the console.
+
+### Core Components & APIs
+
+| Scope | Contract |
+|---|---|
+| `toast` | `eager: true` — hydrates at `resume()` so a server-rendered toast can auto-close without waiting for a click. State key `duration` (milliseconds, serialized into `data-state` by `Toast`); a positive value schedules removal. One action, `dismiss`, which removes the toast root. |
+| `alert` | Lazy. No state. One action, `dismiss`, which removes the alert root. |
+
+Both scopes remove their own root element, so there is nothing to tear down and no handle to hold.
 
 ---
 
@@ -407,6 +449,52 @@ export default defineAssets({
 | `forgeUiSpriteSources()` | function | Returns `SpriteSource[]` for all forge UI glyphs. Spread into `spriteSources` in your assets config. |
 | `FORGE_UI_ICON_NAMES` | `const` tuple | The 7 glyph names as a `readonly` tuple — use for type narrowing or validation. |
 | `ForgeUiIconName` | type | `"spinner" | "chevron-down" | "hamburger" | "close" | "sun" | "moon" | "monitor"`. |
+| `parseSpriteGlyphs`, `loadSpriteGlyphs` | functions | Re-exported from `ui/assets/glyphs` — see below for when to import them from the direct subpath instead. |
+
+---
+
+## `@y-core/forge/ui/assets/glyphs`
+
+> Import path: `@y-core/forge/ui/assets/glyphs` → `src/ui/assets/glyphs.ts`
+> **Runtime-neutral.** No DOM and no Node built-ins — safe in a browser bundle, a Worker, or a build
+> script. `loadSpriteGlyphs` needs a `fetch` implementation.
+
+### Features
+
+- Parses a build-generated SVG sprite into a name-keyed glyph map, so an app can read a glyph's
+  `viewBox` and inner markup at runtime — for a CSS custom cursor, an inline `<svg>`, or a canvas
+  draw, none of which can use the `<use href="#icon-…">` indirection a `ForgeIcon` renders.
+
+### Usage
+
+```typescript
+import { loadSpriteGlyphs } from "@y-core/forge/ui/assets/glyphs";
+
+const glyphs = await loadSpriteGlyphs("/assets/icons.svg");   // {} on any failure
+const move = glyphs.move;                                      // { viewBox, markup } | undefined
+```
+
+**Why this subpath exists.** These two functions are also re-exported from
+[`@y-core/forge/ui/assets`](#y-coreforgeuiassets) — but that barrel also exports
+`forgeUiSpriteSources()`, whose module imports `node:path` and `node:url`. Importing the parser from
+the barrel therefore drags Node built-ins into a browser bundle. Import from
+`@y-core/forge/ui/assets/glyphs` in client code and from `@y-core/forge/ui/assets` in build config.
+
+### Core Components & APIs
+
+| Export | Signature | Description |
+|---|---|---|
+| `parseSpriteGlyphs(svgText, prefix?)` | `GlyphSource` | Parses sprite text into `{ [name]: { viewBox, markup } }`. Only `<symbol>` ids starting with `prefix` (default `"icon-"`) are included, and the key is the bare name (`"move"` for `id="icon-move"`). |
+| `loadSpriteGlyphs(url, prefix?)` | `Promise<GlyphSource>` | Fetches `url` and parses it. |
+
+**Both degrade to `{}` and never throw** — on empty input, unparseable markup, a non-`ok` response,
+or a network error. That is deliberate: a missing glyph map must leave the app on its stylesheet
+default (e.g. the default cursor), not break boot. Callers must handle an absent key rather than
+relying on a rejection.
+
+### Types
+
+`GlyphEntry` (`{ viewBox, markup }`), `GlyphSource` (`Record<string, GlyphEntry>`).
 
 ---
 
@@ -421,23 +509,24 @@ export default defineAssets({
 - A framework-free reactive signals runtime (`createSignal`, `computed`, `effect`).
 - The resumability-lite island runtime (`registerScope`, `resume`, `resumeScope`) — server-stamped
   state hydrated on first interaction, zero work at page load.
-- DOM controllers (`mountNav`, `mountTheme`, `mountTurnstile`) — each idempotent and returning a cleanup
+- DOM controllers (`mountNav`, `mountTurnstile`) — each idempotent and returning a cleanup
   function. `mountTurnstile()` is arg-less and drives the `<Turnstile>` ui/core mount point with a
   resilient, engagement-gated lifecycle.
-- Theme management with a FOUC-prevention inline script (`FOUC_SCRIPT`).
 - Generic control↔signal field binding (`bindField`, `bindGroup`, `parseControlValue`, `applyControlValue`).
 - Lazy resource loading (`lazy`, `loadScriptOnEvent`, `loadStylesheet`).
 
 ### Usage
 
 ```typescript
-import { mountNav, mountTheme, mountTurnstile, resume } from "@y-core/forge/ui/client";
+import { mountNav, mountTurnstile, resume } from "@y-core/forge/ui/client";
 
 mountNav();
-mountTheme();
 mountTurnstile();         // resilient Cloudflare Turnstile (renders the <Turnstile> mount point)
 resume();                 // install the single delegated island listener
 ```
+
+Theme is **not** a controller here — it is a resumable scope registered by
+[`@y-core/forge/ui/chrome/client`](#y-coreforgeuichromeclient).
 
 ### Core Components & APIs
 
@@ -526,33 +615,6 @@ const sig = signalRecord({ gridVisible: true, fov: 50, projection: "perspective"
 registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
 ```
 
-#### Theme controller
-
-```typescript
-import { mountTheme, isDark, FOUC_SCRIPT } from "@y-core/forge/ui/client";
-```
-
-`mountTheme(options?)` cycles `light → dark → system` on clicks of the `[data-ref='theme-toggle']`
-button (override via `options.toggleSelector`), persists the preference to `localStorage`, and toggles
-the `dark` class and `data-theme-preference` attribute on `<html>`. It is idempotent and returns a
-cleanup function. `isDark` is a `ReadonlySignal<boolean>` reflecting the resolved theme, for any
-client state that needs to react to theme changes. (`mountTurnstile` no longer takes it — it reads the
-resolved theme, `.dark` on `<html>`, directly at widget render time.)
-
-`FOUC_SCRIPT` is an inline script **string** to stamp into `<head>` so the theme is applied before first
-paint (preventing a flash of unstyled content):
-
-```tsx
-import { FOUC_SCRIPT } from "@y-core/forge/ui/client";
-import { rawHtml } from "@y-core/forge/http";
-
-<script>{rawHtml(FOUC_SCRIPT)}</script>
-```
-
-Its companion constants are also exported: `THEME_STORAGE_KEY` (`"themePreference"`), `THEME_ATTR`
-(`"data-theme-preference"`), `DARK_CLASS` (`"dark"`), `DEFAULT_PREF` (`"system"`). Include the
-`FOUC_SCRIPT` hash in the CSP `script-src`.
-
 #### Nav and Turnstile controllers
 
 `mountNav(options?)` wires the navigation toggle: open/close, outside-click and Escape to close, and
@@ -605,7 +667,7 @@ import throws at runtime.
 ### Types
 
 `Signal`, `ReadonlySignal`, `SignalRecord`, `ResumeContext`, `ScopeDefinition`, `LazyImportOptions`,
-`LazyLoadOptions`, `NavControllerOptions`, `ThemeControllerOptions`.
+`LazyLoadOptions`, `NavControllerOptions`.
 
 ---
 
@@ -619,7 +681,6 @@ import throws at runtime.
 - Flash messages — cookie-backed, one-shot, rendered as toasts (`createFlash`, `Flash`,
   `FlashContainer`, `FlashOob`).
 - The server half of the resumability island pattern (`Resumable`, `scopeAttrs`, `fieldAttr`).
-- An icon-bound `ThemeToggle` button.
 
 ### Usage — flash messages
 
@@ -654,6 +715,7 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 > scope is a **side-effect import** — the app's client entry must
 > `import "@y-core/forge/ui/core/client"` **before** calling `resume()`, or the toasts render but
 > never dismiss and `resume()` `console.warn`s about the unregistered `data-scope`. See
+> [`@y-core/forge/ui/core/client`](#y-coreforgeuicoreclient) and
 > [`UI_SSR_COMPONENTS.md`](../../.decisions/UI_SSR_COMPONENTS.md) §2d.
 
 ### Core Components & APIs
@@ -667,7 +729,6 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 | `Resumable` | component | Wraps children in a `data-scope` + serialized `data-state` island. |
 | `scopeAttrs(props)` | helper | Builds typed `data-on-<event>` delegation attributes for a scope. |
 | `fieldAttr(name)` | helper | Stamps `data-field` so the client `bindField` action knows which signal to write. |
-| `ThemeToggle` | component | Theme-cycle button; requires an `icon` prop (`ForgeIcon`). |
 
 `createFlash(options)` takes `FlashCookieOptions` (`secrets`, optional `name` / `path` / `maxAge` /
 `sameSite`); defaults are `name: "flash"`, `path: "/"`, `maxAge: 60`, `sameSite: "Lax"`. `flash.get`
@@ -693,6 +754,186 @@ hydration — the scope resumes on the first interaction with any descendant car
 ### Types
 
 `FlashMessage`, `FlashType`, `FlashCookieOptions`, `Flasher`, `ResumableProps`, `ScopeAttrsProps`.
+
+---
+
+## `@y-core/forge/ui/chrome`
+
+> Import path: `@y-core/forge/ui/chrome` → `src/ui/chrome/mod.ts`
+> **SSR-only.** These are JSX components and plain constants rendered in Workers/SSR contexts. Their
+> interactive halves are resumable scopes registered by `@y-core/forge/ui/chrome/client`.
+
+### Features
+
+- `Navbar` — a configuration-driven responsive navbar/menubar built from a nested `NavDefinition`.
+  Desktop renders a horizontal bar of native `Popover` dropdowns (top-layer, light-dismiss, zero JS);
+  mobile collapses to a hamburger-toggled `<details>`. Items may carry auth `filters`.
+- `Toolbar` — a configuration-driven icon rail with placement-aware flyouts, built from a
+  `ToolbarDefinition` and generic over the app's action-name union.
+- `ThemeToggle` — a three-icon theme-cycle button wrapped in the `theme` resumable scope.
+- Theme constants shared by the SSR view and the client scope, including the FOUC-prevention inline
+  script `FOUC_SCRIPT`. This module performs no DOM access, so it is safe to import server-side.
+
+### Usage
+
+```tsx
+import { Navbar, ThemeToggle, Toolbar, type NavDefinition, type ToolbarDefinition } from "@y-core/forge/ui/chrome";
+import { createIcon } from "@y-core/forge/ui/core";
+
+const AppIcon = createIcon("/assets/icons.svg");
+
+const nav: NavDefinition = {
+  sections: [
+    { items: [{ label: "Home", href: "home" }, { label: "Docs", items: [{ label: "Guides", href: "guides" }] }] },
+    { items: [{ slot: "user_name" }, { label: "Sign out", href: "signout", filters: ["user"] }] },
+  ],
+};
+
+const tools: ToolbarDefinition<"selectTool" | "addLayer"> = {
+  groups: [
+    { items: [{ kind: "action", icon: "cursor", label: "Select", action: "selectTool", active: true }] },
+    { items: [{ kind: "popover", icon: "layers", label: "Layers", content: <LayerList />,
+               titleAction: { icon: "plus", label: "Add layer", action: "addLayer" } }] },
+  ],
+};
+
+<Navbar config={nav} resolveHref={routes.url} slots={{ user_name: <span>{user.name}</span> }}
+        activeFilters={user ? ["user"] : []} icon={AppIcon} />
+<Toolbar config={tools} icon={AppIcon} placement="left" />
+<ThemeToggle icon={AppIcon} />
+```
+
+### Core Components & APIs
+
+| Export | Kind | Description |
+|---|---|---|
+| `Navbar` | component | Renders `NavbarProps.config`. Required: `config`, `resolveHref`, `icon` (`ForgeIcon<"chevron-down" \| "hamburger" \| "close">`). Optional: `slots`, `activeFilters`, `placement` (default `"top"`), `class`, plus `<nav>` pass-through. |
+| `Toolbar` | component | Renders `ToolbarProps.config`. Required: `config`, `icon` (`ForgeIcon<string>`). Optional: `placement` (default `"left"`), `commandTarget`, `id`, `class`, plus `<nav>` pass-through. |
+| `ThemeToggle` | component | Theme-cycle button. Required: `icon` (`ForgeIcon<"sun" \| "moon" \| "monitor">`). Optional: `size` (default `20`), `class`. |
+| `FOUC_SCRIPT` | `const` string | Inline script that applies the stored preference before first paint. |
+| `THEME_ATTR` | `const` string | `"data-theme-preference"` — the `<html>` attribute recording the active preference. |
+| `THEME_STORAGE_KEY` | `const` string | `"themePreference"` — the `localStorage` key. |
+| `DARK_CLASS` | `const` string | `"dark"` — the class toggled on `<html>`. |
+| `DEFAULT_PREF` | `const` string | `"system"` — the server default, resolved against the OS preference client-side. |
+
+**`Navbar` config shape.** A `NavDefinition` is `{ sections: NavSection[] }`; a `NavSection` is
+`{ items: NavItem[] }`; a `NavItem` is a `NavLink` (`label`, `href`, `filters?`), a `NavMenu`
+(`label`, `items`, `filters?` — recurses for nested submenus), or a `NavSlot` (`slot`, `label?`,
+`filters?`). Sibling sections spread across the bar via `justify-between`. `NavPlacement` is
+`"top" | "bottom" | "left" | "right"`.
+
+Two rules the type does not express: **`href` is a route-map key, never a URL** — it is always passed
+through the required `resolveHref`, so links cannot be hardcoded; and a `NavSlot.slot` that is a
+`string` is looked up in the `slots` map, while a `JSXNode` is rendered inline.
+
+**Auth filters.** An item with `filters` shows only when one of its tokens is in the active set.
+`activeFilters` seeds that set server-side for a flash-free first paint; at runtime the app pushes a
+new set by dispatching `new CustomEvent("navbar:filters", { detail: tokens })` on `document`, which
+the `navbar` scope applies to every `[data-filter]` descendant.
+
+**`Toolbar` config shape.** A `ToolbarDefinition<A>` is `{ groups: ToolbarGroup<A>[] }` (a separator
+is auto-emitted between sibling groups); a `ToolbarGroup<A>` is `{ items: ToolbarItem<A>[] }`; a
+`ToolbarItem<A>` is a `ToolbarAction<A>` (`kind: "action"` — `icon`, `label`, `action`, optional
+`dispatch`, `ref`, `data`, `active`, `size`), a `ToolbarPopover<A>` (`kind: "popover"` — `icon`,
+`label`, `content`, optional `ref`, `compact`, `titleAction`), a `ToolbarSeparator`
+(`kind: "separator"`), or a `ToolbarSlot` (`kind: "slot"`, `slot`). A `ToolbarTitleAction<A>`
+(`icon`, `label`, `action`, `ref?`) is the button stamped inline on a flyout's title row.
+`ToolbarPlacement` is `"left" | "right" | "top" | "bottom"`.
+
+The generic `A` is the app's action-name union, shared with `registerScope<A>` — a typo in an action
+name is a compile error on both sides. An action item dispatches through the scope (`data-on-click`,
+the default) or through the native Invoker `CommandEvent` bridge with `dispatch: "command"`, which
+emits `command="--action"` against the `commandTarget` element id; both land in the same `on` table.
+Give a rail an explicit `id` when two rails share a `placement` — flyout ids are namespaced by
+`id ?? placement`, and two rails minting the same id would cross-link their `commandfor` triggers.
+
+### Integration Guide
+
+Chrome is SSR markup plus a client island. Three wiring steps, all required:
+
+1. **Register the scopes.** The app's client entry must side-effect-import
+   `@y-core/forge/ui/chrome/client` **before** calling `resume()`, or `Navbar` renders without runtime
+   auth filtering, `ThemeToggle` does nothing on click, and `resume()` `console.warn`s about the
+   unregistered `data-scope`.
+2. **Stamp `FOUC_SCRIPT` into `<head>`** so the theme is applied before first paint, and add its hash
+   to the CSP `script-src` — it is an inline script and carries no nonce:
+
+   ```tsx
+   import { FOUC_SCRIPT } from "@y-core/forge/ui/chrome";
+   import { rawHtml } from "@y-core/forge/http";
+
+   <script>{rawHtml(FOUC_SCRIPT)}</script>
+   ```
+
+3. **Ship the theme CSS.** `ThemeToggle` renders its three icons inside `theme-light-icon`,
+   `theme-dark-icon`, and `theme-system-icon` spans; which one is visible is decided entirely by CSS
+   keyed off `html[data-theme-preference]` in `src/ui/assets/css/forge-ui.css`. Those class names are
+   a contract — rename one and the toggle renders all three glyphs at once.
+
+The glyphs every chrome component needs (`chevron-down`, `hamburger`, `close`, `sun`, `moon`,
+`monitor`) all ship in `forgeUiSpriteSources()` — see [`@y-core/forge/ui/assets`](#y-coreforgeuiassets).
+
+### Types
+
+`NavbarProps`, `NavDefinition`, `NavSection`, `NavItem`, `NavLink`, `NavMenu`, `NavSlot`,
+`NavPlacement`, `ToolbarProps`, `ToolbarDefinition`, `ToolbarGroup`, `ToolbarItem`, `ToolbarAction`,
+`ToolbarPopover`, `ToolbarSeparator`, `ToolbarSlot`, `ToolbarTitleAction`, `ToolbarPlacement`,
+`ThemeToggleProps`.
+
+---
+
+## `@y-core/forge/ui/chrome/client`
+
+> Import path: `@y-core/forge/ui/chrome/client` → `src/ui/chrome/client.ts`
+> **Browser-only, side-effect import.** esbuild entry points only.
+
+### Features
+
+- Registers the `theme` and `navbar` resumable scopes — the client halves of `ThemeToggle` and
+  `Navbar`. Registration happens at module load; no DOM is touched until a scope resumes.
+- Exports `isDark`, a `ReadonlySignal<boolean>` tracking the resolved theme.
+
+### Usage
+
+```typescript
+// src/client/main.ts (esbuild entry point):
+import "@y-core/forge/ui/chrome/client";  // side-effect: registers the scopes
+import { resume } from "@y-core/forge/ui/client";
+
+resume();  // hydrates the eager `theme` scope now; `navbar` resumes on first interaction
+```
+
+To react to the resolved theme, import the signal by name:
+
+```typescript
+import { isDark } from "@y-core/forge/ui/chrome/client";
+import { effect } from "@y-core/forge/ui/client";
+
+effect(() => renderer.setBackground(isDark.value ? "#111" : "#fff"));
+```
+
+`isDark` is a **stable binding** — a fixed object whose `.value` getter delegates to whichever signal
+the theme scope currently owns — so it is safe to destructure or capture before `resume()` runs. It
+reads `false` until the theme scope resumes.
+
+### Core Components & APIs
+
+| Scope | Contract |
+|---|---|
+| `theme` | `eager: true` — hydrates at `resume()`, not on first interaction, so the preference reconciles without waiting for a click. State key `pref`. One action, `cycleTheme`, advancing `light → dark → system → light`. `setup` reconciles `pref` against `localStorage` (the FOUC script already applied it), then keeps `THEME_ATTR`, `localStorage`, and the `DARK_CLASS` on `<html>` in sync, tracking `(prefers-color-scheme: dark)` for the `system` case. |
+| `navbar` | Lazy. State key `filters`. No actions — `setup` alone syncs `hidden` on every `[data-filter]` descendant and listens for the `navbar:filters` document event. |
+
+| Export | Type | Description |
+|---|---|---|
+| `isDark` | `ReadonlySignal<boolean>` | Whether the resolved theme is dark (`pref === "dark"`, or `pref === "system"` with a matching media query). |
+
+### Integration Guide
+
+Both scopes return a disposer from `setup`, and **`resume()` owns teardown** — the disposers it
+collects run when the teardown function `resume()` returned is called. There is nothing for the caller
+to unmount, and no controller handle to hold: importing this module and calling `resume()` is the
+whole lifecycle. The import must come **before** `resume()`, since the eager `theme` pass only
+hydrates scopes registered by then.
 
 ---
 

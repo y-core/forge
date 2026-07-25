@@ -8,10 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { registerScope, resume, resumeScope } from "../client/resume";
-import { createSignal } from "../client/signal";
 // Side-effect import: registers the "theme" and "navbar" scopes at module load time
 // (top-level `registerScope` calls; no DOM access at import time).
 import { isDark } from "./client";
+import { DARK_CLASS, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 // ---------------------------------------------------------------------------
 // Minimal stubs
@@ -85,7 +85,7 @@ interface MqlStub {
   fire(matches: boolean): void;
 }
 
-function _makeMqlStub(initialMatches: boolean): MqlStub {
+function makeMqlStub(initialMatches: boolean): MqlStub {
   const listeners: EventListener[] = [];
   const stub: MqlStub = {
     matches: initialMatches,
@@ -112,7 +112,7 @@ interface StorageStub {
   setItem(key: string, val: string): void;
 }
 
-function _makeStorageStub(): StorageStub {
+function makeStorageStub(): StorageStub {
   const store: Record<string, string> = {};
   return {
     store,
@@ -286,23 +286,65 @@ describe("isDark — stable accessor", () => {
 // ---------------------------------------------------------------------------
 
 describe("theme scope — cycleTheme action", () => {
-  it("advances dark → system → light → dark", () => {
-    const cycle: Record<string, string> = { dark: "system", light: "dark", system: "light" };
-    const pref = createSignal("dark");
-    const state = { pref };
+  let doc: DocStub;
+  let storage: StorageStub;
+  let teardown: (() => void) | null = null;
 
-    // Simulate what cycleTheme does.
-    function cycleTheme() {
-      pref.value = cycle[pref.value as string] ?? "system";
-    }
+  /** A `[data-on-click='cycleTheme']` button inside `root` — `closest` resolves the two
+   * selectors the dispatcher walks, so a click reaches the real registered handler. */
+  function makeToggleButton(root: HTMLElement): HTMLElement {
+    const button = {
+      getAttribute: (attr: string) => (attr === "data-on-click" ? "cycleTheme" : null),
+      closest(sel: string) {
+        if (sel === "[data-on-click]") return button;
+        if (sel === "[data-scope]") return root;
+        return null;
+      },
+    };
+    return button as unknown as HTMLElement;
+  }
 
-    expect(pref.value).toBe("dark");
-    cycleTheme();
-    expect(pref.value).toBe("system");
-    cycleTheme();
-    expect(pref.value).toBe("light");
-    cycleTheme();
-    expect(pref.value).toBe("dark");
-    expect(state.pref.value).toBe("dark");
+  beforeEach(() => {
+    doc = makeDocStub();
+    storage = makeStorageStub();
+    g.document = doc;
+    g.localStorage = storage;
+    g.window = { matchMedia: () => makeMqlStub(false) };
+    teardown = null;
+  });
+
+  afterEach(() => {
+    teardown?.();
+    teardown = null;
+  });
+
+  it("advances light → dark → system → light through the delegated click dispatch", () => {
+    const root = makeScopeRoot("theme", { pref: "light" });
+    const button = makeToggleButton(root);
+
+    teardown = resume();
+    const clickHandlers = doc.listeners.click ?? [];
+    expect(clickHandlers.length).toBeGreaterThan(0);
+
+    const click = () => {
+      for (const h of clickHandlers) h({ target: button } as unknown as Event);
+    };
+    const pref = () => doc.documentElement.getAttribute(THEME_ATTR);
+
+    // First click resumes the scope (setup runs) and then fires the action.
+    click();
+    expect(pref()).toBe("dark");
+    expect(doc.documentElement.classList.classes.has(DARK_CLASS)).toBe(true);
+
+    click();
+    expect(pref()).toBe("system");
+    // `system` with a non-matching prefers-color-scheme query resolves to light.
+    expect(doc.documentElement.classList.classes.has(DARK_CLASS)).toBe(false);
+
+    click();
+    expect(pref()).toBe("light");
+
+    // The preference is persisted on every step, not just at teardown.
+    expect(storage.getItem(THEME_STORAGE_KEY)).toBe("light");
   });
 });

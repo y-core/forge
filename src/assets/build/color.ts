@@ -109,9 +109,10 @@ function parseRgb(value: string): [number, number, number, number] | null {
   const parts = match[1].split(/[\s,/]+/).filter((p) => p.length > 0);
   if (parts.length < 3) return null;
   const channels = parts.slice(0, 3).map((p) => Number.parseFloat(p) / 255);
+  const [c0 = Number.NaN, c1 = Number.NaN, c2 = Number.NaN] = channels;
   const alpha = parts[3] !== undefined ? parseNumber(parts[3]) : 1;
-  if (channels.some((n) => Number.isNaN(n)) || Number.isNaN(alpha)) return null;
-  return [channels[0]!, channels[1]!, channels[2]!, alpha];
+  if (Number.isNaN(c0) || Number.isNaN(c1) || Number.isNaN(c2) || Number.isNaN(alpha)) return null;
+  return [c0, c1, c2, alpha];
 }
 
 function parseOklchArgs(value: string): { l: number; c: number; h: number; alpha: number } | null {
@@ -120,9 +121,10 @@ function parseOklchArgs(value: string): { l: number; c: number; h: number; alpha
   const [body = "", alphaToken] = match[1].split("/").map((s) => s.trim());
   const parts = body.split(/[\s,]+/).filter((p) => p.length > 0);
   if (parts.length < 3) return null;
-  const l = parseNumber(parts[0]!);
-  const c = Number.parseFloat(parts[1]!);
-  const h = Number.parseFloat(parts[2]!);
+  const [p0 = "", p1 = "", p2 = ""] = parts;
+  const l = parseNumber(p0);
+  const c = Number.parseFloat(p1);
+  const h = Number.parseFloat(p2);
   const alpha = alphaToken !== undefined && alphaToken.length > 0 ? parseNumber(alphaToken) : 1;
   if (Number.isNaN(l) || Number.isNaN(c) || Number.isNaN(h) || Number.isNaN(alpha)) return null;
   return { l, c, h, alpha };

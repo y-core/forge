@@ -1,5 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
-import { v } from "../validation/mod";
+import type { v } from "../validation/mod";
 import { parseEnv } from "../validation/parse-env";
 import { getAppContext } from "./types";
 

@@ -32,8 +32,7 @@
       "Bash(curl *)",
       "Bash(cut *)",
       "Bash(date *)",
-      "Bash(echo \"---EXIT CODE $?---\")",
-      "Bash(echo \"exit=$?\")",
+      "Bash(echo \"EXIT:$?\")",
       "Bash(find *)",
       "Bash(git *)",
       "Bash(grep *)",
@@ -52,7 +51,9 @@
       "Bash(wc *)",
       "Bash(wrangler *)",
       "Bash(xargs *)",
+      "Edit(//tmp/**)",
       "Read(//src/**)",
+      "Read(//tmp/**)",
       "Read(/src/**)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
@@ -65,6 +66,9 @@
     "ask": [
       "Bash(git stash *)"
     ],
+    "additionalDirectories": [
+      "/tmp"
+    ],
     "defaultMode": "plan"
   },
   "model": "opusplan",
@@ -74,7 +78,12 @@
   "extraKnownMarketplaces": {},
   "sandbox": {
     "enabled": true,
-    "autoAllowBashIfSandboxed": true
+    "autoAllowBashIfSandboxed": true,
+    "filesystem": {
+      "allowWrite": [
+        "/tmp"
+      ]
+    }
   },
   "spinnerTipsEnabled": false,
   "promptSuggestionEnabled": false,

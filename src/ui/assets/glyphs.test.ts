@@ -5,7 +5,7 @@ describe("parseSpriteGlyphs()", () => {
   it("extracts key, viewBox, and markup with default icon- prefix", () => {
     const svg = `<svg><symbol id="icon-sun" viewBox="0 0 24 24"><circle r="10"/></symbol></svg>`;
     const result = parseSpriteGlyphs(svg);
-    expect(result["sun"]).toEqual({ viewBox: "0 0 24 24", markup: '<circle r="10"/>' });
+    expect(result.sun).toEqual({ viewBox: "0 0 24 24", markup: '<circle r="10"/>' });
   });
 
   it("extracts multiple symbols", () => {
@@ -14,15 +14,15 @@ describe("parseSpriteGlyphs()", () => {
   <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M20 12"/></symbol>
 </svg>`;
     const result = parseSpriteGlyphs(svg);
-    expect(result["sun"]).toBeDefined();
-    expect(result["moon"]).toBeDefined();
+    expect(result.sun).toBeDefined();
+    expect(result.moon).toBeDefined();
   });
 
   it("uses custom prefix to strip from id", () => {
     const svg = `<svg><symbol id="cursor-orbit" viewBox="0 0 32 32"><path d="M0 0"/></symbol></svg>`;
     const result = parseSpriteGlyphs(svg, "cursor-");
-    expect(result["orbit"]).toBeDefined();
-    expect(result["orbit"]?.viewBox).toBe("0 0 32 32");
+    expect(result.orbit).toBeDefined();
+    expect(result.orbit?.viewBox).toBe("0 0 32 32");
   });
 
   it("does not match symbols whose prefix differs from requested prefix", () => {
@@ -47,9 +47,9 @@ describe("parseSpriteGlyphs()", () => {
   </symbol>
 </svg>`;
     const result = parseSpriteGlyphs(svg);
-    expect(result["complex"]).toBeDefined();
-    expect(result["complex"]?.markup).toContain("<path");
-    expect(result["complex"]?.markup).toContain("<circle");
+    expect(result.complex).toBeDefined();
+    expect(result.complex?.markup).toContain("<path");
+    expect(result.complex?.markup).toContain("<circle");
   });
 });
 
@@ -59,7 +59,7 @@ describe("loadSpriteGlyphs()", () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(svg, { status: 200 }));
     try {
       const result = await loadSpriteGlyphs("https://example.com/sprite.svg");
-      expect(result["sun"]).toBeDefined();
+      expect(result.sun).toBeDefined();
     } finally {
       fetchSpy.mockRestore();
     }
@@ -70,7 +70,7 @@ describe("loadSpriteGlyphs()", () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(svg, { status: 200 }));
     try {
       const result = await loadSpriteGlyphs("https://example.com/cursors.svg", "cursor-");
-      expect(result["orbit"]).toBeDefined();
+      expect(result.orbit).toBeDefined();
     } finally {
       fetchSpy.mockRestore();
     }

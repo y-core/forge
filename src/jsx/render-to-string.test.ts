@@ -70,15 +70,15 @@ describe("renderToString — HTML elements", () => {
   });
 
   it("omits null attribute values", async () => {
-    const node = el("div", { class: null, id: "box" });
+    const node = el("div", { class: null, id: "components" });
     node.props.children = "x";
-    expect(String(await renderToString(node))).toBe('<div id="box">x</div>');
+    expect(String(await renderToString(node))).toBe('<div id="components">x</div>');
   });
 
   it("omits undefined attribute values", async () => {
-    const node = el("div", { class: undefined, id: "box" });
+    const node = el("div", { class: undefined, id: "components" });
     node.props.children = "x";
-    expect(String(await renderToString(node))).toBe('<div id="box">x</div>');
+    expect(String(await renderToString(node))).toBe('<div id="components">x</div>');
   });
 
   it("omits false attribute values", async () => {
@@ -104,9 +104,9 @@ describe("renderToString — HTML elements", () => {
   });
 
   it("skips attributes with unsafe names (injection guard)", async () => {
-    const node = el("div", { "x onmouseover=alert(1)": "y", id: "box" });
+    const node = el("div", { "x onmouseover=alert(1)": "y", id: "components" });
     node.props.children = "";
-    expect(String(await renderToString(node))).toBe('<div id="box"></div>');
+    expect(String(await renderToString(node))).toBe('<div id="components"></div>');
   });
 
   it('emits enumerated draggable={true} as draggable="true"', async () => {

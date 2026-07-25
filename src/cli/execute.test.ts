@@ -4,8 +4,10 @@ import { execute } from "./execute";
 import type { CliIO, CommandBase } from "./types";
 
 class ExitSignal extends Error {
-  constructor(public readonly code: number) {
+  readonly code: number;
+  constructor(code: number) {
     super(`exit(${code})`);
+    this.code = code;
   }
 }
 
