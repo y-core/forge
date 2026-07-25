@@ -13,7 +13,8 @@ pass-through, and explicit composition. Field state and icon sprites are owned t
 configuration.
 
 > **Architecture reference:** the authoritative design rationale (SSR-vs-client split, the resumability
-> island pattern, field binding) lives in [`UI_COMPONENTS.md`](../../.decisions/UI_COMPONENTS.md).
+> island pattern, field binding) lives in [`UI_SSR_COMPONENTS.md`](../../.decisions/UI_SSR_COMPONENTS.md)
+> and [`UI_CLIENT_RUNTIME.md`](../../.decisions/UI_CLIENT_RUNTIME.md).
 
 ---
 
@@ -653,7 +654,7 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 > scope is a **side-effect import** — the app's client entry must
 > `import "@y-core/forge/ui/core/client"` **before** calling `resume()`, or the toasts render but
 > never dismiss and `resume()` `console.warn`s about the unregistered `data-scope`. See
-> [`UI_COMPONENTS.md`](../../.decisions/UI_COMPONENTS.md) §1l.
+> [`UI_SSR_COMPONENTS.md`](../../.decisions/UI_SSR_COMPONENTS.md) §2d.
 
 ### Core Components & APIs
 
@@ -805,7 +806,7 @@ region with serialized `data-state`, and this script resumes it on first interac
 
 ## Cross-references
 
-- [`UI_COMPONENTS.md`](../../.decisions/UI_COMPONENTS.md) — authoritative design doc for the SSR-vs-client
+- [`UI_CLIENT_RUNTIME.md`](../../.decisions/UI_CLIENT_RUNTIME.md) — authoritative design doc for the SSR-vs-client
   split, the resumability island pattern, and field binding.
 - [`@y-core/forge/jsx`](../../README.md) — `renderToString` / `renderPage` to serialize component trees.
 - [`@y-core/forge/http`](../../README.md) — `fragmentResponse` / `htmlResponse` / `rawHtml` to return rendered HTML.

@@ -1,27 +1,41 @@
 ---
 title: Structured Logging
-description: "createLogger, consoleChannel, kvLogChannel, withMinLevel, withRedaction composable channel wrapper, persistStack stack redaction default, requestLogger, requestLog, LogLevel, LogChannel object write/read, log channels, KV log storage, logging/show loadLogViewer Response contract, LogViewerAccess required icon, auth by construction, no PII in logs, level by status code, symmetric read/write channel"
-weight: 23
+description: "The logging namespace: channels and their composable wrappers, the request logger, KV persistence, the log viewer, and the no-PII rule."
 ---
 
 # Structured Logging
 
-> Authoritative source for forge's logging namespace: channels, request logger, KV
-> log storage, and the logging/show log viewer.
+> Owns the logging namespace: the channel contract, the request logger, KV log storage, the
+> `logging/show` viewer, and the no-PII rule. Owns the canonical channel-selection pattern (§2d).
 >
-> Complements [ROUTING_AND_MIDDLEWARE.md](./ROUTING_AND_MIDDLEWARE.md) (middleware usage),
-> [ERROR_HANDLING.md](./ERROR_HANDLING.md) (fail-closed log behavior).
+> Defers to: [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §3a for middleware
+> ordering; [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §5b for request-id correlation;
+> [`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §5 for absent-binding policy.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 logging namespace exports: createLogger, consoleChannel, kvLogChannel, withMinLevel, withRedaction, requestLogger
-- §2 Channel pattern: `LogChannel` is `{ write, read?, readEntry? }`; §2e withRedaction + persistStack stack-redaction posture
-- §3 requestLogger middleware: config, bindings (requestId), channel selection
-- §4 Log levels: INFO/WARN/ERROR mapping to HTTP status codes
-- §5 logging/show: loadLogViewer auth-gated Response contract, required icon, single-call mount
-- §6 No-PII rule and structured fields
+- §1 Logging Namespace Exports: what `logging` and `logging/show` ship
+- §2 Channel Pattern: the `LogChannel` object and its wrappers
+- §2a LogChannel Object Interface: `write` required, `read` optional
+- §2b consoleChannel for Development: write-only structured JSON
+- §2c kvLogChannel for Production Persistence: symmetric read/write over KV
+- §2d Channel Selection by Environment: the canonical fallback pattern
+- §2e withRedaction and Stack-Redaction Posture: per-channel transforms and `persistStack`
+- §3 requestLogger Middleware: the per-request child logger
+- §3a requestLogger Configuration: per-request channels and bindings
+- §3b What requestLogger Records: the emitted fields
+- §3c Ordering — requestId Before requestLogger: why the order is load-bearing
+- §4 Log Levels by HTTP Status: the alert-noise convention
+- §4a Level Mapping Convention: status range to level
+- §4b LogLevel Type: the four levels and when `debug` applies
+- §5 Log Viewer (logging/show): the auth-gated mount
+- §5a loadLogViewer — Auth-Gated Response for Every Path: the ordered contract
+- §5b LogViewerOptions and LogViewerAccess: required `access` and `icon`
+- §6 No-PII Rule and Structured Fields: what must never be logged
+- §6a Never Log PII: the forbidden field list
+- §6b Structured Fields Over String Interpolation: greppable messages, filterable data
 
 ---
 
@@ -87,21 +101,20 @@ Always use in development.
 
 ### 2c. kvLogChannel for Production Persistence
 
-`kvLogChannel` writes structured JSON log records to a Workers KV namespace and
-exposes a `read` method for the log viewer. Requires a `LOGS_KV` binding. Pair
-with `consoleChannel` for dual output.
-
-    import { kvLogChannel } from "@y-core/forge/logging"
-    const channels = [consoleChannel(), kvLogChannel(c.env.LOGS_KV)]
+`kvLogChannel` writes structured JSON log records to a Workers KV namespace and exposes a `read`
+method for the log viewer. It requires a `LOGS_KV` binding. **Pair it with `consoleChannel` for
+dual output** — see §2d for the selection pattern.
 
 ### 2d. Channel Selection by Environment
 
-When `LOGS_KV` is absent (local dev without wrangler), fall back to console-only. Bind
-channel selection to the request context so the channel list is resolved per-request.
+**When `LOGS_KV` is absent (local dev without wrangler bindings), fall back to console-only.
+Bind channel selection to the request context** so the list resolves per-request:
 
     channels: (c) => c.env.LOGS_KV
       ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)]
       : [consoleChannel()]
+
+This is the canonical form — every other document links here rather than restating it.
 
 ### 2e. withRedaction and Stack-Redaction Posture
 
@@ -133,16 +146,14 @@ short-retention debug namespace).
 
 ### 3a. requestLogger Configuration
 
-`requestLogger` is middleware. Register it with `app.use("*", ...)` near the top of the
-middleware chain. The `channels` function is called per-request to allow env-dependent
-channel selection. `bindings` adds extra fields to every log record.
+`requestLogger` is middleware. **Register it with `app.use("*", …)` near the top of the
+middleware chain.** The `channels` function is called per-request for env-dependent selection
+(§2d); `bindings` adds extra fields to every record.
 
     import { requestLogger } from "@y-core/forge/logging"
 
     app.use("*", requestLogger<AppEnv>({
-      channels: (c) => c.env.LOGS_KV
-        ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)]
-        : [consoleChannel()],
+      channels: selectChannels,   // the §2d pattern
       bindings: (c) => ({ requestId: requestIdCtx.getOptional(c) }),
     }))
 
@@ -251,12 +262,15 @@ rendering, `view` never executes — there is no HX-branch or fragment call in a
 
 The `channel` factory is called once per request. For `kvLogChannel`, the channel captures the
 KV namespace and prefix at construction time and uses both for write and read — the viewer
-always reads from the same key space the logger writes to. `access` is required because logs
-expose request paths, ids, and error messages — forgetting a guard is a compile error, and
-public mounts must opt out explicitly. `icon` is required: the app injects its own bound
-`ForgeIcon<"chevron-down">` (from `@y-core/forge/ui`) so `logging/show` renders the filter-bar
-chevron without owning an icon set. This makes `logging/show` a cross-namespace edge onto
-`ui/core` — see [NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md).
+always reads from the same key space the logger writes to.
+
+**`access` is required because logs expose request paths, ids, and error messages** — forgetting
+a guard is a compile error, and public mounts must opt out explicitly.
+
+**`icon` is required**: the app injects its own bound `ForgeIcon<"chevron-down">` (from
+`@y-core/forge/ui/core`) so `logging/show` renders the filter-bar chevron without owning an icon
+set. This is what makes `logging/show` a declared cross-namespace edge onto `ui/core` — see
+[`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §4b.
 
 ---
 

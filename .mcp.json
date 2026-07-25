@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "tsmcp": {
-      "type": "http",
-      "url": "http://host.docker.internal:8087/mcp"
-    }
-  }
-}

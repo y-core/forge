@@ -1,7 +1,7 @@
 # CLAUDE.md — Architectural Constitution
 
 > Namespace-based shared library for Cloudflare Workers.
-> Ships raw TypeScript. No build step. Consumed via `@y-core/forge/{namespace}` export map.
+> Ships raw TypeScript. No build step. Consumed via the `@y-core/forge/{namespace}` export map.
 
 ---
 
@@ -9,15 +9,14 @@
 
 - ONLY do what has been asked — recommend and get approval before any additions
 - NEVER add runtime dependencies without approval
-- NEVER use Bun-specific APIs in source files (only standard Web APIs)
+- NEVER use Bun-specific or Node.js APIs in runtime source files (standard Web APIs only)
 - NEVER hardcode API keys, secrets, or credentials in source files
-- ALWAYS add exports to the namespace's `mod.ts`
+- NEVER provide deprecation shims or backward-compatible paths before v1.0.0
+- ALWAYS add new public symbols to the namespace's `mod.ts` as a named export
 - ALWAYS co-locate tests (`*.test.ts` / `*.test.tsx`) with the source they test
-- ALWAYS run local verification after changes (`bun run check`) — **delegate these runs to the verification agent (`cc-test`)**, never stream full gate output through a cc-plan or cc-dev agent. See _Verification Delegation_ under Toolchain.
-- ALWAYS account for HTML-encoded entities in test assertions for HTML output
-- ALWAYS enforce exact-match test assertions — never substring matching
-- Use native `rg` (ripgrep) for content search and `find` for file search
-- NEVER provide deprecation shims or backward-compatible patterns before v1.0.0
+- ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
+- ALWAYS run local verification after changes — **delegate every gate run to `cc-tester`** (see _Verification Delegation_)
+- Use `rg` for content search and `find` for file search
 
 ---
 
@@ -26,69 +25,77 @@
 | Tool | Role |
 |---|---|
 | `bun` | Package manager and test runner |
-| `tsgo` (`@typescript/native-preview`) | Type checker |
-| `biome` | Linter and formatter |
-
-**Key commands:**
+| `tsgo` (`@typescript/native-preview`) | Type checker (use instead of `tsc`) |
+| `biome` | Linter and formatter (use instead of `eslint`/`prettier`) |
 
 ```bash
-bun run check      # typecheck + lint + tests (full pipeline)
+bun run check      # the gate — every step must pass
 bun test           # run all tests
-bun run lint:fix   # auto-fix lint/format issues
+bun run lint:fix   # auto-fix lint and format issues
 ```
 
-**Avoid:** `tsc` (use `tsgo`), `bun-types` (use custom stub), `eslint`/`prettier` (use `biome`).
+`package.json` `scripts.check` is the single source of truth for the gate's steps. Gate
+philosophy and failure triage: [`TESTING.md`](.decisions/TESTING.md) §6.
+
+**Avoid:** `tsc` (use `tsgo`), `bun-types` (use the custom stub), `eslint`/`prettier` (use `biome`).
 
 ### Verification Delegation
 
-Local verification gates — `bun run check`, `bun test`, and standalone lint/type/`validate-exports`
-runs — are **always delegated to the `cc-test` agent**, never run inline by `cc-plan` / `cc-dev`.
-Gate output (type errors, failing-test dumps, lint noise) is high-volume; keeping it on cc-test
-reserves cc-plan/cc-dev context for design and implementation. cc-test returns a terse verdict —
-`✓ green`, or `✗` with the failing steps and the minimal error excerpt — **never the full
-stream**; on failure cc-dev fixes and re-delegates rather than re-running the gate itself.
-Enforced by convention today (a `PreToolUse` hook could make it deterministic).
+**`cc-tester` is the sole runner** of `bun run check` and any cross-cutting suite. It returns a
+terse verdict — `✓ green`, or `✗` with the failing step and a minimal excerpt — **never the full
+stream**. `cc-plan`, `cc-dev`, and `cc-doc` delegate every gate run to it; `cc-test` may smoke-run
+only the single test file it just wrote.
+
+On failure the **owning** agent fixes and re-delegates — the gate never re-runs inside the agent
+that owns the fix, and `cc-tester` never edits the code it judges.
+
+`cc-tester` declares a `tools:` allowlist without `Write`/`Edit`, but **enforcement is not
+guaranteed**. Treat the whole split as convention: every agent obeys its stated boundaries because
+it is told to, not because a mechanism stops it. No hook enforces the routing either — a decision,
+not an omission.
 
 ---
 
 ## Architecture
 
-Forge acts as a **facade** for its external dependencies (`valibot` via `validation`, `@remix-run/*` via `router` and `app`). The `jsx` namespace is an **in-house SSR runtime** — not a facade for any third-party JSX library. Consumers import from `@y-core/forge/{namespace}`, not from third-party packages directly.
+Forge is a **facade** over its external dependencies (`valibot` via `validation`, `@remix-run/*`
+via `router`, `app`, `http`, and `session`). The `jsx` namespace is an **in-house SSR runtime**,
+not a facade for any third-party library. Consumers import from `@y-core/forge/{namespace}`, never
+from a wrapped package directly.
 
-**Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests (`*.test.ts`/`*.test.tsx`).
+**Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests.
 
-**Leaf vs integration:** every namespace is either a **leaf** (zero cross-namespace forge imports —
-own directory + external npm packages only) or an **integration** namespace (explicitly composes
-across other forge namespaces). Classify before adding code; never introduce an undeclared
-cross-namespace dependency. The authoritative catalog — all public export paths, internal
-namespaces (e.g. `crypto`), and per-namespace classification — lives in
-[`.decisions/NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md) (§3 catalog, §4 classification,
-§6 new-namespace criteria).
+**Leaf vs integration:** every namespace is either a **leaf** (zero cross-namespace forge imports)
+or an **integration** namespace (declared composition across namespaces). Classify before adding
+code; never introduce an undeclared cross-namespace dependency.
 
-For namespace placement, barrel rules, and growth recipes, consult the governing `.decisions/`
+For the namespace catalog, barrel rules, and growth recipes, consult the governing `.decisions/`
 doc via the **Guide Index** — never duplicate that detail here.
 
 ---
 
 ## Guide Index
 
-> Before writing code, consult the relevant governing document:
+> Before writing code, consult the relevant governing document. Each begins with a
+> `## 0. Quick Reference` listing every section, so you can pick a section without reading the
+> whole file.
 
-- [`AGENT_GUIDE.md`](.decisions/AGENT_GUIDE.md): document structure rules for tsmcp MCP efficiency
-- [`LIBRARY_ARCHITECTURE.md`](.decisions/LIBRARY_ARCHITECTURE.md): facade pattern, runtime-only, Web-APIs-only, leaf vs integration dependency tiers
-- [`NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md): mod.ts barrel rules, export * ban, no-sibling-barrel guard, authoritative 29-subpath catalog
-- [`PRODUCTION_TS_RULES.md`](.decisions/PRODUCTION_TS_RULES.md): six rules — zero globals, Result monad, validation first, testability, TSDoc, declarative
-- [`ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md): router namespace, middleware composition, context namespace
-- [`HTMX.md`](.decisions/HTMX.md): isHxRequest, HX-* header readers/setters, hxAttrs, SWAP, formSubmit, liveSearch, OOB patterns
-- [`SECURITY_HARDENING.md`](.decisions/SECURITY_HARDENING.md): createSecurityHeaders, CSP nonce, CORS, rate limit, origin guards, transport-layer boundary
-- [`STRUCTURED_LOGGING.md`](.decisions/STRUCTURED_LOGGING.md): channels, requestLogger, KV log persistence, log viewer UI
-- [`ERROR_HANDLING.md`](.decisions/ERROR_HANDLING.md): Result monad, fragment renderers, fail-closed posture, error taxonomy
-- [`INPUT_VALIDATION.md`](.decisions/INPUT_VALIDATION.md): valibot v facade, form parsing, CSRF, honeypot, Turnstile
-- [`STORAGE_BINDINGS.md`](.decisions/STORAGE_BINDINGS.md): D1 client, KV store, R2 object storage, binding resolve/validate pattern
-- [`UI_COMPONENTS.md`](.decisions/UI_COMPONENTS.md): ui/core SSR components, ui/client browser controllers, HTMX sideEffect
-- [`ASSET_AND_BUILD_TOOLING.md`](.decisions/ASSET_AND_BUILD_TOOLING.md): assets build pipeline, manifest, CLI framework, pkg release tooling
-- [`TESTING.md`](.decisions/TESTING.md): bun test, co-located tests, HTML entity exact-match assertions, fakes, security tests, `@y-core/forge/testing` utilities (fakeKV/fakeD1/fakeR2, render, buildRequest, mapHandler)
-- [`CODE_REVIEW.md`](.decisions/CODE_REVIEW.md): facade compliance, namespace boundaries, severity calibration, valid patterns
+- [`AGENT_GUIDE.md`](.decisions/AGENT_GUIDE.md): how `.decisions/` docs are structured, numbered, sized, and cross-referenced; the single-home rule and source-of-truth register
+- [`LIBRARY_ARCHITECTURE.md`](.decisions/LIBRARY_ARCHITECTURE.md): the dependency facade, the runtime-only no-build-step constraint, demand composition, Web-APIs-only
+- [`NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md): barrel rules and the `export *` ban, the no-sibling-barrel guard, the authoritative subpath catalog, leaf/integration classification, naming conventions
+- [`PRODUCTION_TS_RULES.md`](.decisions/PRODUCTION_TS_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, TSDoc, declarative style
+- [`ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md): declarative route maps and controllers, `definePage`/`defineAction`, middleware ordering, the `context` namespace
+- [`HTMX.md`](.decisions/HTMX.md): request detection, `HX-*` header readers and setters, `hxAttrs`, the pattern helpers, and the selector trust posture
+- [`SECURITY_HARDENING.md`](.decisions/SECURITY_HARDENING.md): CSP nonce headers, CORS, origin-guard tiering, rate limiting, the `trustCfHeaders` trust boundary, the transport-layer boundary
+- [`STRUCTURED_LOGGING.md`](.decisions/STRUCTURED_LOGGING.md): log channels and wrappers, `requestLogger`, KV persistence, the auth-gated log viewer, the no-PII rule
+- [`ERROR_HANDLING.md`](.decisions/ERROR_HANDLING.md): the one `Result` primitive, fragment renderers, the router error boundary, the fail-closed posture
+- [`INPUT_VALIDATION.md`](.decisions/INPUT_VALIDATION.md): the valibot `v` facade, form parsing and its byte cap, CSRF, honeypot, Turnstile, validate-at-boundary
+- [`STORAGE_BINDINGS.md`](.decisions/STORAGE_BINDINGS.md): D1, KV, and R2 clients, the resolve/validate binding pattern, dev degradation
+- [`UI_SSR_COMPONENTS.md`](.decisions/UI_SSR_COMPONENTS.md): the `ui/core` component contract, `ui/controls` bound variants, the signal-binding seam, `cn`/`asClass`/`cva`
+- [`UI_CLIENT_RUNTIME.md`](.decisions/UI_CLIENT_RUNTIME.md): browser-only mount controllers, signals, lazy loading, the htmx side-effect import, and the hard SSR boundary
+- [`ASSET_AND_BUILD_TOOLING.md`](.decisions/ASSET_AND_BUILD_TOOLING.md): the asset pipeline, the content-hash manifest, the CLI framework, release tooling
+- [`TESTING.md`](.decisions/TESTING.md): test placement, HTML-entity exact-match assertions, fakes over mocks, security-test requirements, the gate
+- [`CODE_REVIEW.md`](.decisions/CODE_REVIEW.md): blocking invariants, a detection command per rule, severity calibration, known false positives
 
 ---
 
@@ -100,36 +107,38 @@ never duplicate a capability that already exists.
 | Adding… | Goes to | Recipe |
 |---|---|---|
 | Authentication (JWT, OAuth, session login), permissions/RBAC, API-key lifecycle | NEW `auth` namespace — identity is application-layer, never `security` | `NAMESPACE_DESIGN.md` §5a |
-| CORS middleware, webhook signature verification | `security` (transport-layer request/response hardening only — no users, identities, or business logic) | `NAMESPACE_DESIGN.md` §5a, `SECURITY_HARDENING.md` |
-| SSR component | `ui/core` (markup only); client-side behavior goes in `ui/client`; consumers always import from `@y-core/forge/ui` | `NAMESPACE_DESIGN.md` §5b, `UI_COMPONENTS.md` |
+| CORS middleware, webhook signature verification | `security` — transport-layer request/response hardening only | `NAMESPACE_DESIGN.md` §5a, `SECURITY_HARDENING.md` §7 |
+| SSR component | `ui/core` (markup only); client behaviour goes in `ui/client` | `NAMESPACE_DESIGN.md` §5b, `UI_SSR_COMPONENTS.md` |
+| Browser controller, signal, or lazy-loaded resource | `ui/client` — never imported from a Worker-executed file | `UI_CLIENT_RUNTIME.md` §5 |
 | Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | `NAMESPACE_DESIGN.md` §5c |
-| HTTP output concern (response builders, header value classes, HTML escaping, `jsonResponse()`, streaming, content negotiation) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | `NAMESPACE_DESIGN.md` §5d |
+| HTTP output concern (response builders, header classes, HTML escaping, streaming) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | `NAMESPACE_DESIGN.md` §5d |
 
 ---
 
-## tsmcp
+## Source-of-Truth Register
 
-Registered in `.mcp.json`. Available in all agents.
+**A rule lives in exactly one file. Everywhere else is a link.** Never put in prose what drifts —
+signatures, constant values, step counts, file inventories. These files own the following facts;
+cite them rather than restating them:
 
-**Governance docs — in order:**
-1. `mcp__tsmcp__decisions_list` — list all docs with section index (start here)
-2. `mcp__tsmcp__decisions_search` — locate relevant sections by keyword
-3. `mcp__tsmcp__decisions_read` — read a specific section: `section: "5a"` (not the full doc)
-
-**TypeScript symbol navigation — in order:**
-1. `mcp__tsmcp__lsp_workspace_symbols` — find types, functions, interfaces by name
-2. `mcp__tsmcp__lsp_definition` — jump to the definition of a known symbol
-3. `mcp__tsmcp__lsp_find_references` — find all callers / implementors
-4. `mcp__tsmcp__lsp_document_symbols` — list all symbols in a specific file
-
-**Behavioral rule:** NEVER use Bash `grep` or `Read` on `.decisions/` files when tsmcp is available. NEVER load a full `.decisions/` file via `Read` — always use the section-aware tools.
+| Owns | File |
+|---|---|
+| Export subpath names | `package.json` `exports` |
+| Verification gate steps | `package.json` `scripts.check` |
+| Side-effectful modules | `package.json` `sideEffects` |
+| CSRF and honeypot field names | `src/form/constants.ts` |
+| Per-namespace export lists | `src/{ns}/mod.ts` |
+| `lib` and `types` configuration | `tsconfig.json` |
+| Barrel rules as *enforced* | `scripts/validate-exports.ts` |
+| Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
 
 ---
 
 ## Type System
 
 - `"types": []` — prevents auto-inclusion of any `@types/*` packages
-- `types/bun-test/index.d.ts` — minimal `bun:test` module stub (declares only `describe`, `it`, `expect`, `beforeAll`, `afterAll`, `beforeEach`, `afterEach`, `mock`)
-- **Source files see:** ES2025 + DOM + DOM.Iterable (standard Web APIs only)
-- **Test files see:** above + `bun:test` module (via custom stub)
-- Do NOT install or use `bun-types` — it overrides DOM's `fetch` type with Bun-specific properties, causing type errors in test mocks
+- `.types/bun-test.d.ts` — the minimal `bun:test` module stub
+- **Source files see:** `ESNext` + `DOM` + `DOM.Iterable` (standard Web APIs only)
+- **Test files see:** the above plus `bun:test` via the stub
+- Do NOT install or use `bun-types` — it overrides DOM's `fetch` type with Bun-specific
+  properties, causing type errors in test fakes

@@ -1,412 +1,331 @@
 ---
 title: Input Validation
-description: "valibot facade, v namespace, v.safeParse, abortEarly, ValidationResult, defineAction parse/validate/handle, form namespace, readFields, parseFormData byte cap 413, honeypot, Turnstile CAPTCHA expectedHostname, CSRF protection, importCsrfKey, csrfProtection required subject resolver or false, subject-mismatch, token fixation cross-user replay, greppable opt-out, mintCsrf, csrfTokenCtx, CsrfConfigSchema, TurnstileConfigSchema, validate at boundary"
-weight: 25
+description: "The valibot facade, form parsing and its byte cap, CSRF protection, honeypot and Turnstile bot defence, and the validate-at-boundary rule."
 ---
 
 # Input Validation
 
-> Authoritative source for forge's validation and form parsing patterns: the valibot
-> facade, the `defineAction` parse → validate → handle pipeline, form field reading,
-> CSRF protection, honeypot, and Turnstile.
+> Owns the validation and form-parsing pipeline: the valibot facade, `defineAction`'s
+> parse → validate → handle steps, field reading, CSRF, honeypot, and Turnstile.
 >
-> Complements [ERROR_HANDLING.md](./ERROR_HANDLING.md) (renderValidationErrors),
-> [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) (CSRF is in form, not security).
+> Defers to: [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1c for `ValidationResult` and §2c for
+> rendering its message list; [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) for the
+> transport-layer guards that sit in front of these; [`TESTING.md`](./TESTING.md) §3a for the
+> HTML-entity assertion rule.
 >
-> Forge runs on `@remix-run/fetch-router`. The request context is `AppContext<Bindings>`
-> (`c.request`, `c.env`, `c.url`); read the request via `c.request` and parse bodies via
-> `parseFormData(c)`.
+> The request context is `AppContext<Bindings>` (`c.request`, `c.env`, `c.url`); parse bodies
+> with `parseFormData(c)`.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 validation namespace: v facade, ValidationResult, v.safeParse pattern, defineAction pipeline
-- §2 form namespace: readFields, parseFormData (byte cap + 413), readTextField
-- §3 CSRF protection: csrfProtection middleware, importCsrfKey, mintCsrf, createCsrfToken
-- §4 Bot protection: isHoneypotFilled, verifyTurnstile
-- §5 Config schemas: CsrfConfigSchema, TurnstileConfigSchema
-- §6 Validate-at-boundary rule
+- §1 Validation Namespace: the valibot facade and the action pipeline
+- §1a v Namespace — Complete valibot Re-Export: the facade rule
+- §1b v.safeParse with abortEarly: form-validation default
+- §1c ValidationResult Type: the domain alias, owned elsewhere
+- §1d defineAction — parse → validate → handle Pipeline: the wiring and its failure modes
+- §2 Form Namespace — Field Reading and Parsing: FormData in, typed records out
+- §2a readFields — Type-Safe FormData Extraction: literal keys narrow the record
+- §2b readTextField — Single Field Extraction: the one-field form
+- §2c parseFormData — Body Read with Size Limit: the two-way byte cap and 413
+- §3 CSRF Protection: middleware, keys, token minting
+- §3a csrfProtection Middleware: guarding mutating routes and the required `subject`
+- §3b importCsrfKey and importCsrfKeyRing: secret import and rotation
+- §3c mintCsrf — Token Minting for Form Injection: path scoping
+- §3d createCsrfToken and verifyCsrfToken: the lower-level API
+- §4 Bot Protection: honeypot and Turnstile
+- §4a isHoneypotFilled — Hidden Field Bot Detection: the field name and placement
+- §4b verifyTurnstile — Cloudflare Turnstile CAPTCHA: options and `expectedHostname`
+- §5 Config Schemas: startup validation of credentials
+- §5a CsrfConfigSchema: hex secret validation
+- §5b TurnstileConfigSchema: site and secret key validation
+- §6 Validate-at-Boundary Rule: untrusted input never reaches a service raw
+- §6a The Boundary Rule: services receive typed domain objects
+- §6b Validation Flow — Ordered Steps: the canonical sequence
 
 ---
 
 ## 1. Validation Namespace (valibot facade)
 
-### 1a. v Namespace — Complete valibot Re-Export
+### 1a. `v` Namespace — Complete valibot Re-Export
 
-`v` is the complete valibot namespace, re-exported as a single import. Never import
-valibot directly — always use `v` from `@y-core/forge/validation`.
+`v` is the complete valibot namespace, re-exported as one import.
 
-    import { v } from "@y-core/forge/validation"
+**Never import `valibot` directly — always use `v` from `@y-core/forge/validation`.** The
+facade is what keeps the valibot version single-sourced and lets forge bound its surface.
 
-    const ContactSchema = v.object({
-      name: v.pipe(v.string(), v.minLength(2)),
-      email: v.pipe(v.string(), v.email()),
-      message: v.pipe(v.string(), v.minLength(10)),
-    })
+```typescript
+import { v } from "@y-core/forge/validation"
 
-    type ContactInput = v.InferOutput<typeof ContactSchema>
+const ContactSchema = v.object({
+  name:    v.pipe(v.string(), v.minLength(2)),
+  email:   v.pipe(v.string(), v.email()),
+  message: v.pipe(v.string(), v.minLength(10)),
+})
+
+type ContactInput = v.InferOutput<typeof ContactSchema>
+```
 
 All valibot primitives, pipes, and combinators are available under the `v` prefix.
-Using `v` ensures the forge version of valibot is always used and avoids version
-conflicts between direct valibot imports and the forge re-export.
 
-### 1b. v.safeParse with abortEarly
+### 1b. `v.safeParse` with `abortEarly`
 
-`abortEarly: true` stops validation at the first error. Use for form validation to
-return field-specific errors quickly rather than collecting all issues.
+**`abortEarly: true` stops at the first error — use it for form validation.**
 
-    const result = v.safeParse(ContactSchema, fields, { abortEarly: true })
-    if (!result.success) {
-      // renderValidationErrors takes a string[]; map valibot issues to messages
-      return fragmentResponse(renderValidationErrors(result.issues.map((i) => i.message)))
-    }
-    const contact = result.output // typed as ContactInput
+```typescript
+const result = v.safeParse(ContactSchema, fields, { abortEarly: true })
+if (!result.success) {
+  return fragmentResponse(renderValidationErrors(result.issues.map((i) => i.message)))
+}
+const contact = result.output   // typed as ContactInput
+```
 
-When `abortEarly` is omitted (default `false`), all fields are validated and all
-issues are collected — useful for API responses that must enumerate every error.
+**Omit it (default `false`) when the response must enumerate every failing field** — an API
+response rather than a progressive form.
 
-### 1c. ValidationResult Type — Domain Alias of the One Result Primitive
+### 1c. `ValidationResult` Type
 
-    import type { ValidationResult } from "@y-core/forge/validation"
-    // defined in and also re-exported from "@y-core/forge/result"
-    // ValidationResult<T> = Result<T, readonly string[]>
-    //   ≡ { ok: true; data: T } | { ok: false; error: readonly string[] }
+`ValidationResult<T>` is the standard return type for the `validate` step and for service
+functions that validate their own input. It is a domain alias of the one `Result` primitive —
+success carries `data`, failure carries the per-field message list in the single `error` field.
 
-`ValidationResult<T>` is a **domain alias** of forge's one `Result` primitive
-(`Result<T, readonly string[]>`) and the standard return type for the `validate` step and
-for service functions that perform their own validation. On success it carries the parsed
-`data`; on failure the single `error` field carries the per-field message list as
-`readonly string[]` — there is no separate `errors` field. Inspect `result.ok` before
-proceeding. `renderValidationErrors(result.error)` accepts that message list directly — see
-[ERROR_HANDLING.md](./ERROR_HANDLING.md) §1c.
+[`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1c owns the type. It is exported from
+`@y-core/forge/result` and re-exported from `@y-core/forge/validation`.
 
-### 1d. defineAction — parse → validate → handle Pipeline
+### 1d. `defineAction` — parse → validate → handle Pipeline
 
-`defineAction` (from `@y-core/forge/app`) wires a POST handler that parses the body,
-validates it, and delegates to `handle`, returning structured fragment responses for each
-failure mode. It returns a `RequestHandler` you map to a route action in the controller.
+`defineAction` (from `@y-core/forge/app`) wires a POST handler that parses the body, validates
+it, and delegates to `handle`, returning a structured fragment for each failure mode.
 
-    import { defineAction } from "@y-core/forge/app"
-    import { readFields } from "@y-core/forge/form"
-    import { v } from "@y-core/forge/validation"
-    import type { ValidationResult } from "@y-core/forge/validation"
+```typescript
+export const handleContact = defineAction<ContactInput, AppEnv, AppConfig>({
+  parse: (formData) => readFields(formData, ["name", "email", "message"]),
+  validate: (data): ValidationResult<ContactInput> => {
+    const result = v.safeParse(ContactSchema, data, { abortEarly: true })
+    return result.success
+      ? { ok: true, data: result.output }
+      : { ok: false, error: result.issues.map((i) => i.message) }
+  },
+  handle: async (data, c, config) => {
+    await contactService.send(data, config)
+    return fragmentResponse(renderSuccess("Thanks — we'll be in touch."))
+  },
+})
+```
 
-    export const handleContact = defineAction<ContactInput, AppEnv, AppConfig>({
-      parse: (formData) => readFields(formData, ["name", "email", "message"]),
-      validate: (data): ValidationResult<ContactInput> => {
-        const result = v.safeParse(ContactSchema, data, { abortEarly: true })
-        return result.success
-          ? { ok: true, data: result.output }
-          : { ok: false, error: result.issues.map((i) => i.message) }
-      },
-      handle: async (data, c, config) => {
-        await contactService.send(data, config)
-        return fragmentResponse(renderSuccess("Thanks — we'll be in touch."))
-      },
-    })
+**`defineAction` calls `parseFormData(c)` internally**, so it enforces the body cap and surfaces
+`413` on oversized bodies (§2c). A failing `validate` emits `renderValidationErrors` unless
+`onValidationError` is supplied; a throwing `handle` returns a 500 fragment unless `onError` is.
 
-`defineAction` calls `parseFormData(c)` internally (so it enforces the body size cap and
-surfaces `413` on oversized bodies — see §2c), runs `parse`, then `validate`. A failing
-`validate` emits `renderValidationErrors(errors)` unless `onValidationError` is supplied;
-a thrown `handle` is logged via `createLogger("action")` and returns a 500 fragment unless
-`onError` is supplied. Middleware (CSRF, origin guards) is attached on the controller
-action object `{ middleware, handler }`, not inside `defineAction`.
+**Middleware (CSRF, origin guards) attaches to the controller action object
+`{ middleware, handler }` — never inside `defineAction`.**
 
 ---
 
 ## 2. Form Namespace — Field Reading and Parsing
 
-### 2a. readFields — Type-Safe FormData Extraction
+### 2a. `readFields` — Type-Safe FormData Extraction
 
-`readFields` extracts named fields from a `ReadonlyFormData` object with type-safe keys
-inferred from the field-name literals. Each value is read via `readTextField`, so values
-are normalized (`\r\n` → `\n`) and trimmed; missing fields return an empty string.
+`readFields` extracts named fields from a `ReadonlyFormData` with keys inferred from the
+field-name literals. Values are normalized (`\r\n` → `\n`) and trimmed; a missing field yields
+an empty string.
 
-    import { parseFormData, readFields } from "@y-core/forge/form"
+```typescript
+const fields = readFields(formData, ["name", "email", "message"])
+// Record<"name" | "email" | "message", string>
+```
 
-    const formData = await parseFormData(c)
-    const fields = readFields(formData, ["name", "email", "message"])
-    // fields: Record<"name" | "email" | "message", string>
+**Pass the field names as literals (optionally `as const`)** so the key type narrows to the
+union rather than widening to `string`.
 
-Pass the field names as literals (optionally `as const`) so the key type narrows to the
-union of names rather than `string`, preserving the key-safety guarantee on the returned
-record.
+### 2b. `readTextField` — Single Field Extraction
 
-### 2b. readTextField — Single Field Extraction
+Returns the trimmed, newline-normalized value, or `""` when the field is absent or is not a
+text value. **Use `readFields` when all expected fields are known upfront.**
 
-For extracting a single field without the full `readFields` list:
+### 2c. `parseFormData` — Body Read with Size Limit
 
-    import { readTextField } from "@y-core/forge/form"
+`parseFormData(c, options?)` reads the request body as `ReadonlyFormData` with a byte cap. It
+takes the request **context**, not a raw `Request`, and **memoizes the parse per request** so
+CSRF verification and the action handler share one body read without re-consuming the stream.
 
-    const name = readTextField(formData, "name") // string (trimmed, "" if absent)
+**The cap is enforced two ways, and both matter:**
 
-Returns the trimmed, newline-normalized string value, or `""` when the field is absent
-or is not a text value. Use `readFields` when all expected fields are known upfront.
+1. a `Content-Length` fast path that rejects an over-declared body before reading it, and
+2. a **streaming byte counter** that aborts mid-parse once the running total exceeds the limit.
 
-### 2c. parseFormData — Body Read with Size Limit
+The streaming counter is what closes the header-only bypass — a request with an absent or lying
+`Content-Length` (chunked transfer) is still capped. **Either path rejects with a `413`-carrying
+error before any field extraction occurs**, which `defineAction` translates into a `413`
+fragment.
 
-`parseFormData` reads the request body as `ReadonlyFormData` with a byte cap. It takes the
-request context (`c`), not a raw `Request`, and memoizes the parse per request so CSRF
-verification and the action handler share a single body read without re-consuming the
-stream.
-
-    import { parseFormData } from "@y-core/forge/form"
-
-    const formData = await parseFormData(c, { maxBytes: 1024 * 10 })
-
-`FORM_MAX_BYTES_DEFAULT` (100 KB) is the built-in default applied when `maxBytes` is
-omitted. The cap is enforced two ways: a `Content-Length` fast-path rejects an
-over-declared body immediately, and a streaming byte counter aborts mid-parse once the
-running total exceeds the limit — closing the bypass where `Content-Length` is absent or
-lies (chunked transfer). Either path rejects with a `413`-carrying error before any field
-extraction occurs; `defineAction` translates that into a `413` fragment response.
+`FORM_MAX_BYTES_DEFAULT` (100 KB) applies when `maxBytes` is omitted.
 
 ---
 
 ## 3. CSRF Protection — Middleware, Keys, Token Minting
 
-### 3a. csrfProtection Middleware — Guard Mutating Routes
+### 3a. `csrfProtection` Middleware — Guard Mutating Routes
 
-`csrfProtection(options: CsrfProtectionOptions)` is a `Middleware` that, on `GET`/`HEAD`, mints
-a token bound to the current path (exposed via `csrfTokenCtx`/`csrfMinterCtx`), and on mutations
-verifies the
-submitted token against the HMAC key (or key ring) resolved from the configured secret.
-The token is read from the `X-CSRF-Token` header or, failing that, the `_csrf` form field
-(`CSRF_FIELD_DEFAULT`; override via `tokenField`/`headerName`). Returns `403` if the token
-is absent, malformed, expired, path-mismatched, subject-mismatched, or has an invalid signature.
+`csrfProtection(options)` is a `Middleware` that mints a path-bound token on `GET`/`HEAD`
+(exposed via `csrfTokenCtx` / `csrfMinterCtx`) and verifies the submitted token on mutations
+against the HMAC key or key ring resolved from the configured secret.
 
-**`subject` is required** — a per-request resolver, or the literal `false`. Omitting it is a
-compile error. This forces a deliberate decision about token binding at every call site instead
-of silently defaulting to a path-only token:
+The token is read from the `X-CSRF-Token` header, falling back to the `_csrf` form field
+(`CSRF_FIELD_DEFAULT`; override with `tokenField` / `headerName`). **It returns `403` when the
+token is absent, malformed, expired, path-mismatched, subject-mismatched, or badly signed.**
 
-    import { csrfProtection, importCsrfKey } from "@y-core/forge/form"
-    import { sessionCtx } from "@y-core/forge/session"
-    import type { Middleware } from "@y-core/forge/context"
+**`subject` is required — a per-request resolver, or the literal `false`. Omitting it is a
+compile error.** This forces a deliberate decision about token binding at every call site
+instead of silently defaulting to a path-only token.
 
-    // Session-bearing app: bind the token to the session (recommended).
-    export const csrfVerifyGuard: Middleware = csrfProtection({
-      secret: (c) => importCsrfKey(configStore.get(c.env).security.csrf.secret),
-      subject: (c) => sessionCtx.getOptional(c)?.id,   // mint AND verify per session
-    })
+```typescript
+export const csrfVerifyGuard: Middleware = csrfProtection({
+  secret: (c) => importCsrfKey(configStore.get(c.env).security.csrf.secret),
+  subject: (c) => sessionCtx.getOptional(c)?.id,   // mint AND verify per session
+})
+```
 
-Attach `csrfVerifyGuard` to all mutating routes that process form submissions via the
-controller action's `middleware` array. See
-[SECURITY_HARDENING.md](./SECURITY_HARDENING.md) for route-level middleware placement
-patterns.
+**Why `subject` binding matters — the fixation risk it closes.** A token bound to the path alone
+is valid for that path regardless of who submits it. An attacker can obtain a valid path-scoped
+token — it is minted on the public `GET` — and plant it in a victim's request, a CSRF-token
+fixation / cross-user replay against the same path. Binding to the session subject scopes the
+token to one identity: a token minted under session A fails under session B with reason
+`subject-mismatch` → `403`.
 
-**Why `subject` binding matters — the fixation risk it closes.** A token bound to the path
-alone is valid for that path regardless of who submits it. An attacker can obtain a valid
-path-scoped token (it is minted on the public `GET`) and plant it in a victim's request — a
-CSRF-token-fixation / cross-user replay against the same path. Binding the token to the
-session subject scopes it to one identity: a token minted under session A fails verification
-under session B with reason `subject-mismatch` → `403` (contract pinned by the subject-binding
-test in `src/form/csrf.test.ts`). Register `sessionMiddleware` before the guard so the session
-exists when the resolver runs. `form` and `session` are independent leaf namespaces, so this
-composition lives in the consuming app — forge does not auto-wire it. A resolver returning
-`undefined` for a given request mints/verifies a path-only token for that request.
+**Register `sessionMiddleware` before the guard** so the session exists when the resolver runs.
+`form` and `session` are independent leaf namespaces, so this composition lives in the consuming
+app — forge does not auto-wire it. A resolver returning `undefined` mints and verifies a
+path-only token for that request.
 
-**Path-only opt-out — `subject: false`.** For routes with no session identity to bind to
-(e.g. a public pre-auth form), pass the literal `false`. It is the explicit, greppable opt-out
-that makes "this route accepts path-only CSRF tokens" auditable — you can grep `subject: false`
-across the codebase to review every deliberately unbound guard:
+**Path-only opt-out — `subject: false`.** For routes with no session identity to bind to, pass
+the literal `false`. It is the explicit, greppable opt-out that makes "this route accepts
+path-only CSRF tokens" auditable — grep `subject: false` to review every deliberately unbound
+guard.
 
-    export const publicCsrfGuard: Middleware = csrfProtection({
-      secret: (c) => importCsrfKey(configStore.get(c.env).security.csrf.secret),
-      subject: false,   // deliberate: path-only token, no session binding
-    })
+**Attach the guard through the controller action's `middleware` array**, not inline in the
+handler.
 
-### 3b. importCsrfKey and importCsrfKeyRing — Secret Import
+### 3b. `importCsrfKey` and `importCsrfKeyRing` — Secret Import
 
-CSRF secrets are hex-encoded strings (minimum 32 hex characters = 16 bytes). Import
-them into `CryptoKey` objects before passing to middleware or token functions.
+CSRF secrets are hex-encoded strings, minimum 32 hex characters (16 bytes). **Import them into
+`CryptoKey` objects before passing to middleware or token functions.**
 
-    import { importCsrfKey, importCsrfKeyRing } from "@y-core/forge/form"
+`importCsrfKeyRing` accepts an ordered array: the first entry signs, the rest are accepted for
+verification during a rotation window. **Rotate by prepending the new secret and removing the
+oldest once the window closes.**
 
-    // Single active key
-    const key = await importCsrfKey(hexSecret)
+### 3c. `mintCsrf` — Token Minting for Form Injection
 
-    // Key ring for rotation: current key + previous key(s)
-    const keyRing = await importCsrfKeyRing([hexSecret1, hexSecret2])
+`mintCsrf(c, path)` creates a signed token using the minter installed by `csrfProtection`.
 
-`importCsrfKeyRing` accepts an ordered array; the first entry is the signing key,
-subsequent entries are accepted for verification during rotation windows. Rotate by
-prepending the new secret and removing the oldest after the rotation window closes.
+**`path` is required and scopes the token to one action URL** — verification fails with
+`path-mismatch` if it does not match the request pathname, preventing reuse across endpoints.
+It **throws** when `path` is missing or empty, or when no minter is on the context (i.e.
+`csrfProtection` is not mounted on the route).
 
-### 3c. mintCsrf — Token Minting for Form Injection
+When the form POSTs back to the path it was rendered on, read the pre-minted
+`csrfTokenCtx.get(c)` instead. **Mint one token per form render; never cache across requests.**
 
-`mintCsrf` creates a signed CSRF token using the minter installed by `csrfProtection` on
-the request context. The `path` argument is **required** and scopes the token to a specific
-action URL — verification fails with `path-mismatch` if the token's path does not match the
-request pathname, preventing token reuse across endpoints. `mintCsrf` throws when `path` is
-missing or empty, or when no minter is on the context (i.e. `csrfProtection` is not mounted
-on the route).
+### 3d. `createCsrfToken` and `verifyCsrfToken` — Lower-Level API
 
-    import { mintCsrf } from "@y-core/forge/form"
+Both are path-scoped: `createCsrfToken(key, path, options?)` embeds the path, and
+`verifyCsrfToken(keyOrRing, token, path, options?)` checks it along with the signature and a
+freshness window. The fourth argument is a `CsrfVerifyOptions` object — `{ maxAgeMs?, subject? }`;
+**there is no bare `number` overload.**
 
-    const csrfToken = await mintCsrf(c, "/api/contact")
-    // Inject into the form view:
-    // <input type="hidden" name="_csrf" value={csrfToken} />
+`verifyCsrfToken` accepts a single `CryptoKey` or a `CsrfKeyRing` and returns a `CsrfResult` — a
+`GuardResult` alias with the reason code in `error`. **Inspect `result.ok`; never echo
+`result.error` to a client.**
 
-When the form POSTs back to the same path it was rendered on, you can instead read the
-pre-minted `csrfTokenCtx.get(c)` token (bound to the current request pathname). Mint one
-token per form render; do not cache tokens across requests.
-
-### 3d. createCsrfToken and verifyCsrfToken — Lower-Level API
-
-For programmatic CSRF management outside the standard middleware flow. Both functions are
-path-scoped: `createCsrfToken(key, path, options?)` embeds the path, and
-`verifyCsrfToken(keyOrRing, token, path, options?)` checks it (along with the signature and a
-freshness window). The fourth argument is a `CsrfVerifyOptions` object — `{ maxAgeMs?, subject? }`
-(there is no bare `number` overload; pass `{ maxAgeMs }` to set the freshness window).
-
-    import { createCsrfToken, verifyCsrfToken } from "@y-core/forge/form"
-
-    const token = await createCsrfToken(key, "/api/contact")
-    const result = await verifyCsrfToken(key, token, "/api/contact", { maxAgeMs: 3_600_000 })
-    // result: { ok: true } | { ok: false; error: "expired" | "path-mismatch" | ... }
-
-`verifyCsrfToken` accepts either a single `CryptoKey` or a `CsrfKeyRing` (for rotation) and
-returns a `CsrfResult` — a `GuardResult` alias whose failure reason code lives in the single
-`error` field; inspect `result.ok` (never echo `result.error` to clients). Use the lower-level API
-only when `csrfProtection` middleware cannot be applied directly (e.g., custom JSON API
-routes with non-standard token transport). Prefer the middleware path for all standard form
-submissions.
+**Use this API only when `csrfProtection` cannot be applied directly** — a custom JSON API with
+non-standard token transport. Prefer the middleware for all standard form submissions.
 
 ---
 
 ## 4. Bot Protection — Honeypot and Turnstile
 
-### 4a. isHoneypotFilled — Hidden Field Bot Detection
+### 4a. `isHoneypotFilled` — Hidden Field Bot Detection
 
-Honeypot detection checks whether a hidden field that legitimate users never fill
-has been populated by a bot. `HONEYPOT_FIELD_DEFAULT` is `"__surname"`; pass a second
-argument to `isHoneypotFilled(formData, field)` to override it.
+Checks whether a hidden field that legitimate users never fill has been populated by a bot.
+`HONEYPOT_FIELD_DEFAULT` is `"__surname"`; pass a second argument to override it.
 
-    import { isHoneypotFilled, HONEYPOT_FIELD_DEFAULT } from "@y-core/forge/form"
+```typescript
+if (isHoneypotFilled(formData)) {
+  return fragmentResponse(renderError("Invalid submission"), 400)
+}
+```
 
-    if (isHoneypotFilled(formData)) {
-      return fragmentResponse(renderError("Invalid submission"), 400)
-    }
+**Add the honeypot to every form view as a visually hidden input, using the same field name the
+checker reads:**
 
-Add the honeypot field to every form view as a visually hidden input:
+```html
+<input type="text" name="__surname" tabIndex={-1} autoComplete="off"
+       style="position:absolute;left:-9999px" />
+```
 
-    <input type="text" name="surname" tabIndex={-1} autoComplete="off"
-           style="position:absolute;left:-9999px" />
+**Check `isHoneypotFilled` before schema validation** — bots that fill hidden fields are
+rejected cheaply, without consuming further work.
 
-Check `isHoneypotFilled` early — before schema validation. Bots that fill hidden fields are
-rejected cheaply without consuming further work.
+### 4b. `verifyTurnstile` — Cloudflare Turnstile CAPTCHA
 
-### 4b. verifyTurnstile — Cloudflare Turnstile CAPTCHA
+`verifyTurnstile(formData, secretKey, options)` calls the siteverify API and returns a
+`TurnstileResult`. It reads the token field itself; **the token field and connecting IP live
+inside the options object** — `options.tokenField` (default `"cf-turnstile-response"`) and
+`options.remoteIp`.
 
-`verifyTurnstile` calls the Turnstile siteverify API and returns a `TurnstileResult`
-discriminated union. Its signature is `verifyTurnstile(formData, secretKey, options)`: the
-form data (it reads the token field itself), the secret key, and a `TurnstileVerifyOptions`
-object. The token field and the connecting IP live **inside** the options object —
-`options.tokenField` (defaults to `"cf-turnstile-response"`) and `options.remoteIp`. Pass the
-connecting IP from the `CF-Connecting-IP` header when running on Cloudflare Workers, and
-**always** pass `options.expectedHostname` in production — without it the token's origin
-hostname is not checked, allowing a token minted on an attacker-controlled site to be replayed
-against this one (a runtime warning is logged when it is omitted).
+**Always pass `options.expectedHostname` in production.** Without it the token's origin hostname
+is not checked, so a token minted on an attacker-controlled site can be replayed against this
+one. A runtime warning is logged when it is omitted.
 
-    import { verifyTurnstile } from "@y-core/forge/form"
+```typescript
+const result = await verifyTurnstile(formData, config.services.turnstile.secretKey, {
+  expectedHostname: new URL(c.url).hostname,
+  remoteIp: c.request.headers.get("CF-Connecting-IP") ?? undefined,
+})
+```
 
-    const result = await verifyTurnstile(
-      formData,
-      config.services.turnstile.secretKey,
-      {
-        expectedHostname: new URL(c.url).hostname,
-        remoteIp: c.request.headers.get("CF-Connecting-IP") ?? undefined,
-      },
-    )
-    if (!result.ok) {
-      return fragmentResponse(renderError("CAPTCHA verification failed"), 400)
-    }
-
-The options object also accepts `tokenField`, `expectedAction`, `expectedCData`, and
-`timeoutMs` (default 5000 ms). Add the Turnstile widget to forms that require bot protection
-beyond the honeypot. The `siteKey` is used client-side; `secretKey` is server-side only and
-must never appear in client bundles. See §5b for the config schema.
+The options object also accepts `expectedAction`, `expectedCData`, and `timeoutMs` (default
+5000). **`secretKey` is server-side only and must never appear in a client bundle**; `siteKey`
+is the client-side half.
 
 ---
 
-## 5. Config Schemas — CsrfConfigSchema, TurnstileConfigSchema
+## 5. Config Schemas
 
-### 5a. CsrfConfigSchema — CSRF Secret Validation
+### 5a. `CsrfConfigSchema` — CSRF Secret Validation
 
-    import { CsrfConfigSchema } from "@y-core/forge/form"
-    // v.object({ secret: v.pipe(v.string(), v.regex(/^[0-9a-fA-F]{32,}$/, ...)) })
-    // Expects a hex-encoded secret string (min 32 hex chars)
+Expects a hex-encoded secret string of at least 32 hex characters. **Parse environment-sourced
+CSRF config through it at startup via the config store — never pass a raw `c.env` string to
+`importCsrfKey`.**
 
-Parse environment-sourced CSRF config through `CsrfConfigSchema` at startup via the
-config store. Do not pass raw `c.env` strings directly to `importCsrfKey` without
-prior schema validation.
+### 5b. `TurnstileConfigSchema` — Turnstile Credentials Validation
 
-### 5b. TurnstileConfigSchema — Turnstile Credentials Validation
-
-    import { TurnstileConfigSchema } from "@y-core/forge/form"
-    // v.object({ secretKey: v.string(), siteKey: v.string() })
-
-Both `secretKey` and `siteKey` must be present. `siteKey` is exposed to the browser
-via the Turnstile widget; `secretKey` is used only by `verifyTurnstile` server-side.
-Validate through the config store at startup so missing credentials fail fast on
-deploy rather than at first form submission.
+Both `secretKey` and `siteKey` must be present. **Validate through the config store at startup**
+so missing credentials fail on deploy rather than at first form submission.
 
 ---
 
 ## 6. Validate-at-Boundary Rule
 
-### 6a. The Boundary Rule — Untrusted Input Never Crosses into Services Raw
+### 6a. The Boundary Rule
 
-All untrusted input is validated at the system boundary — the handler — before it
-enters services, domain logic, or storage. Raw `FormData` and unvalidated strings
-must not be passed into service functions. Services receive typed domain objects.
-
-    // Handler (boundary)
-    const formData = await parseFormData(c)
-    const fields = readFields(formData, ["name", "email"])
-    const result = v.safeParse(ContactSchema, fields, { abortEarly: true })
-    if (!result.success) {
-      return fragmentResponse(renderValidationErrors(result.issues.map((i) => i.message)))
-    }
-
-    // Service receives typed domain object, not raw strings
-    await contactService.send(result.output)
+**All untrusted input is validated at the boundary — the handler — before it reaches services,
+domain logic, or storage.** Raw `FormData` and unvalidated strings must not be passed into a
+service function. **Services receive typed domain objects.**
 
 ### 6b. Validation Flow — Ordered Steps
 
-The canonical validation sequence for a mutating form handler:
+The canonical sequence for a mutating form handler:
 
-1. `parseFormData` — read body with size limit
+1. `parseFormData` — read the body with the size limit
 2. `isHoneypotFilled` — reject bots cheaply
-3. `csrfProtection` middleware (already applied at route level) — rejects before handler
+3. `csrfProtection` middleware — already applied at route level; rejects before the handler
 4. `verifyTurnstile` — CAPTCHA check when configured
-5. `readFields` — extract expected field names
-6. `v.safeParse` with schema — produce typed output or issues
-7. Pass typed output to service
+5. `readFields` — extract the expected field names
+6. `v.safeParse` — produce typed output or issues
+7. pass the typed output to the service
 
-Steps 1-4 reject invalid requests before schema validation runs. Steps 5-7 produce
-the typed domain object that services consume.
-
-### 6c. HTML Entity Encoding in Test Assertions
-
-When testing validation error output rendered as HTML, entities must be encoded
-correctly in assertions. Forge's JSX renderer (`renderToString`) and `escapeHtml`
-encode these characters automatically:
-
-| Character | Encoded form |
-|-----------|--------------|
-| `'`       | `&#39;`      |
-| `&`       | `&amp;`      |
-| `<`       | `&lt;`       |
-| `>`       | `&gt;`       |
-
-Always use exact-match assertions (`toBe`/`toEqual`) over partial matching
-(`toContain`) when the output is deterministic. Substring matching hides encoding
-bugs and produces false positives when error text changes.
-
-    // Correct: exact match with encoded entity
-    expect(html).toBe('<span class="error">Name can&#39;t be empty</span>')
-
-    // Wrong: toContain masks encoding differences
-    expect(html).toContain("Name can't be empty")
+**Steps 1–4 reject invalid requests before schema validation runs**; steps 5–7 produce the typed
+domain object services consume.

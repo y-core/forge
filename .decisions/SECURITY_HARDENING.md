@@ -1,64 +1,81 @@
 ---
 title: Security Hardening
-description: "createSecurityHeaders, CSP nonce, getNonce, NONCE constant, mergeSecurityHeaders, CORS response rebuild, originProtection combined origin guard tiering, originGuard, verifyOrigin, crossOriginProtection Sec-Fetch-Site, rateLimit, requestId, trustCfHeaders default-distrust CF-Ray CF-Connecting-IP, applyMiddlewareChain, requireFormContentType, safeUrl JSX URL sanitization, parseFormData 413 byte cap, fragment escaping, R2 RFC 5987, storage shape checks, fallback 500 headers, transport-layer only, CSRF in form namespace, auth boundary"
-weight: 22
+description: "The security namespace: CSP nonce headers, CORS, origin guards, rate limiting, request identity, and the transport-layer boundary."
 ---
 
 # Security Hardening
 
-> Authoritative source for the security namespace: transport-layer request/response
-> hardening only. CSP, CORS, origin verification, rate limiting, request identity.
-> Auth/session/RBAC are out of scope — they belong in future auth namespace.
+> Owns the `security` namespace — transport-layer request/response hardening only — and the
+> `trustCfHeaders` trust boundary. CSP, CORS, origin verification, rate limiting, request
+> identity. Authentication, sessions, and RBAC are out of scope (§7).
 >
-> Complements [ROUTING_AND_MIDDLEWARE.md](./ROUTING_AND_MIDDLEWARE.md) (middleware usage),
-> [INPUT_VALIDATION.md](./INPUT_VALIDATION.md) (CSRF lives in form namespace).
+> Defers to: [`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) for CSRF, honeypot, Turnstile, and
+> the form body cap; [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) for middleware
+> placement; [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §2d and §5b for fragment-option escaping
+> and the baseline-hardened 500; [`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §3b, §3c, §4a
+> for R2 serving, signed URLs, and binding shape checks.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 Security namespace exports: complete list of what security/ ships
-- §2 createSecurityHeaders and CSP nonce: factory, NONCE constant, mergeSecurityHeaders; §2e OWASP default-header audit (COOP/CORP defaults, COEP opt-in)
-- §3 CORS and origin protection: cors(), originProtection, crossOriginProtection, originGuard, verifyOrigin; §3e origin-guard tiering (which guard when)
-- §4 Rate limiting: rateLimit() with Workers binding; §4d trustCfHeaders default-distrust keying
-- §5 Request identity: requestId(), requestIdCtx contextVar; §5c Cloudflare header trust boundary (trustCfHeaders on requestId/rateLimit/applyMiddlewareChain)
-- §6 Content guards: requireFormContentType (HTMX detection moved to `html/htmx` — see §6b)
-- §7 Transport-layer boundary: what is NOT in security
-- §8 Defense-in-depth across namespaces: JSX safeUrl, parseFormData byte cap, fragment escaping, R2 hardening, storage shape checks, fallback 500 headers
+- §1 Security Namespace Exports: what `security` ships, and what it deliberately does not
+- §2 createSecurityHeaders and CSP Nonce: the header factory and its nonce contract
+- §2a createSecurityHeaders Factory Pattern: per-request nonce, queued headers
+- §2b NONCE Constant: the CSP placeholder
+- §2c mergeSecurityHeaders for Dev/Prod Split: layering the live-reload hash
+- §2d getNonce and Automatic URL Sanitization: reading the nonce; `safeUrl` at render time
+- §2e Default Header Set: the emitted baseline and its opt-ins
+- §3 CORS and Origin Protection: the cross-origin guards
+- §3a cors Middleware for API Routes: scoped application and response rebuild
+- §3b originGuard — Strict Origin Allowlist: the Origin/Referer tier
+- §3c verifyOrigin — Inline Origin Check: the in-handler form
+- §3d crossOriginProtection — Fetch Metadata: the `Sec-Fetch-Site` tier
+- §3e Origin-Guard Tiering — Which Guard When: pick one, never stack
+- §4 Rate Limiting with Workers Binding: the limiter middleware
+- §4a rateLimit Middleware Factory: per-route application
+- §4b required false for Dev Graceful Degradation: the availability trade
+- §4c Workers Rate Limiter Binding Configuration: wrangler and env typing
+- §4d Rate-Limit Key Selection: the default key and its trust precondition
+- §5 Request Identity: request-id generation and the CF trust boundary
+- §5a requestId Middleware: generation and placement
+- §5b Logging Integration: correlation through `requestIdCtx`
+- §5c Cloudflare Header Trust Boundary — trustCfHeaders: the single owner of the flag
+- §6 Content Type Guards: incoming-body enforcement
+- §6a requireFormContentType: the 415 guard
+- §6b HTMX Detection Is Not a Security Boundary: where `isHxRequest` lives and why
+- §7 Transport-Layer Boundary: what belongs here and what does not
+- §7a What Belongs in security: the six transport concerns
+- §7b What Does NOT Belong in security: the redirect table
 
 ---
 
 ## 1. Security Namespace Exports
 
-From `@y-core/forge/security` (`src/security/mod.ts`):
+From `@y-core/forge/security` (`src/security/mod.ts` is authoritative):
 
 - `createSecurityHeaders(options)` — middleware factory for security headers
-- `mergeSecurityHeaders(base, override)` — merge two SecurityHeadersOptions
-- `NONCE` — constant string `"'nonce-{nonce}'"` for CSP scriptSrc
-- `requestId()` — middleware: injects X-Request-Id, sets requestIdCtx
-- `requestIdCtx` — contextVar accessor for the request ID string
-- `requireFormContentType` — middleware: enforces application/x-www-form-urlencoded
-- `cors(options)` — CORS middleware factory
-- `matchOrigin(url, allowed)` — utility: checks if URL matches allowed origins
-- `originProtection(options)` — recommended combined origin guard (Sec-Fetch-Site + Origin/Referer fallback)
-- `crossOriginProtection(options)`, `checkCrossOriginProtection` — Sec-Fetch-Site-only guards
-- `originGuard(allowed)`, `verifyOrigin(req, allowed)` — Origin/Referer allowlist enforcement
-- `rateLimit(options)` — Workers rate limiting middleware
+- `mergeSecurityHeaders(base, override)` — merges two `SecurityHeadersOptions`
+- `applySecurityHeaders(response, options?)` — applies headers directly to a `Response`, for
+  out-of-band responses that never pass through the middleware chain
+- `getNonce(c)` — the per-request CSP nonce, or `""` when none is set
+- `NONCE` — the `scriptSrc` placeholder constant
+- `requestId()`, `requestIdCtx` — request-identity middleware and its context accessor
+- `requireFormContentType` — form content-type enforcement
+- `cors(options)`, `matchOrigin(url, allowed)` — CORS policy
+- `originProtection`, `crossOriginProtection`, `checkCrossOriginProtection`, `originGuard`,
+  `verifyOrigin` — the origin guards (§3e)
+- `rateLimit(options)` — Workers rate limiting
 - `BaseUrlConfigSchema`, `deriveAllowedOrigins`, `parseUrl` — URL/origin config helpers
-- `applySecurityHeaders(response, options?)` — applies the headers directly to a
-  Response (for out-of-band responses that never pass through the middleware chain);
-  `options` is `ApplySecurityHeadersOptions` (`SecurityHeadersOptions` + optional explicit `nonce`)
-- `getNonce(c)` — returns the per-request CSP nonce (or `""` when none is set)
-- Type exports: `CorsOptions`, `CrossOriginProtectionOptions`, `OriginProtectionOptions`,
-  `RateLimitBinding/Options`, `RequestIdContext`, `BaseUrlConfig`, `OriginResult`, `ParsedUrl`,
-  `SecurityHeadersOptions`, etc.
 
-NOT in security (common mistake to avoid):
+**Not in security** — a common mistake:
 
-- `timingSafeEqual`/`timingSafeEqualBytes` — in internal `src/crypto/` (`@internal`)
-- `csrfProtection`, `importCsrfKey`, `mintCsrf` — in `@y-core/forge/form`
-- `sessionMiddleware` — in `@y-core/forge/session`
-- `isHxRequest` — moved to `@y-core/forge/html/htmx` (it is a UX routing hint, not a security boundary)
+| Looked for here | Actually in |
+|---|---|
+| `timingSafeEqual` / `timingSafeEqualBytes` | internal `src/crypto/` (`@internal`) |
+| `csrfProtection`, `importCsrfKey`, `mintCsrf` | `@y-core/forge/form` |
+| `sessionMiddleware` | `@y-core/forge/session` |
+| `isHxRequest` | `@y-core/forge/html/htmx` — a UX hint, not a boundary (§6b) |
 
 ---
 
@@ -66,101 +83,74 @@ NOT in security (common mistake to avoid):
 
 ### 2a. createSecurityHeaders Factory Pattern
 
-`createSecurityHeaders` generates a unique nonce per request (16 random bytes,
-base64url-encoded), injects it into the CSP `script-src` directive, and stores it on the request context in an
-internal context variable that `getNonce(c)` reads back. Every request gets a fresh nonce
-— static nonces defeat the purpose of CSP nonce enforcement. The computed headers are
-queued on the per-request pending-header channel and flushed once by the app's outermost
-`applyHeaders` pass, rather than each middleware rebuilding its own Response.
+`createSecurityHeaders` generates a fresh nonce per request (16 random bytes, base64url),
+injects it into the CSP `script-src`, and stores it on the request context for `getNonce(c)`.
 
-    import { createSecurityHeaders, NONCE, type SecurityHeadersOptions } from "@y-core/forge/security"
+**Every request gets a fresh nonce** — a static nonce defeats nonce enforcement entirely.
 
-    const securityHeaders: SecurityHeadersOptions = {
-      scriptSrc: ["'self'", NONCE, "https://challenges.cloudflare.com"],
-      connectSrc: ["'self'", "https://challenges.cloudflare.com"],
-      frameSrc:   ["'self'", "https://challenges.cloudflare.com"],
-    }
+**Computed headers are queued on the per-request pending-header channel** and flushed once by
+the app's outermost `applyHeaders` pass, rather than each middleware rebuilding its own
+`Response`.
 
-    app.use("*", createSecurityHeaders(securityHeaders))
+```typescript
+const securityHeaders: SecurityHeadersOptions = {
+  scriptSrc: ["'self'", NONCE, "https://challenges.cloudflare.com"],
+  connectSrc: ["'self'", "https://challenges.cloudflare.com"],
+}
 
-Register once at the app level via `app.use("*", ...)` so all routes inherit the headers.
+app.use("*", createSecurityHeaders(securityHeaders))
+```
+
+**Register once at app level via `app.use("*", …)`** so every route inherits the headers.
 
 ### 2b. NONCE Constant
 
-`NONCE` is the string literal `"'nonce-{nonce}'"` — a placeholder in `scriptSrc` that
-`createSecurityHeaders` replaces with the actual per-request nonce value at runtime.
-Using the constant (rather than a hand-written string) makes the placeholder
-recognizable and avoids typos.
-
-The generated nonce is stored in context and retrieved via `getNonce(c)` for use in
-inline `<script>` tags:
-
-    import { getNonce } from "@y-core/forge/security"
-
-    // Inside a JSX view component
-    const nonce = getNonce(c)
-    // <script nonce={nonce}>...</script>
+`NONCE` is the literal `"'nonce-{nonce}'"` — a `scriptSrc` placeholder that
+`createSecurityHeaders` replaces with the real per-request value. **Use the constant rather
+than hand-writing the placeholder** so it stays recognizable and typo-free.
 
 ### 2c. mergeSecurityHeaders for Dev/Prod Split
 
-`mergeSecurityHeaders(base, override)` deep-merges two `SecurityHeadersOptions` objects,
-concatenating directive arrays. Use exclusively in the dev entry point to layer the
-Wrangler live-reload inline-script hash onto the production CSP:
+`mergeSecurityHeaders(base, override)` deep-merges two `SecurityHeadersOptions`, concatenating
+directive arrays.
 
-    import { mergeSecurityHeaders } from "@y-core/forge/security"
+**Use it exclusively in the dev entry point** to layer the Wrangler live-reload inline-script
+hash onto the production CSP. **The live-reload hash must never appear in the production CSP** —
+keeping it in the dev entry only means it cannot leak by construction.
 
-    const WRANGLER_LIVE_RELOAD_HASH = "'sha256-g5a3SrOYIecCloZ8S7M4xdT1pbYi6e7mjHrmwphRxfE='"
+### 2d. getNonce and Automatic URL Sanitization
 
-    export default createWorker(
-      mergeSecurityHeaders(securityHeaders, {
-        scriptSrc: [WRANGLER_LIVE_RELOAD_HASH],
-      })
-    )
+`getNonce(c)` reads the per-request nonce for inline `<script nonce={…}>` attributes.
 
-The live-reload hash must never appear in the production CSP — keeping it in the dev
-entry only means it cannot leak by construction. See `src/worker.dev.ts`.
+**It never throws: when the middleware has not run it returns `""`**, which renders an empty
+`nonce` the CSP will not honour. **Register `createSecurityHeaders` before any nonce consumer**
+(see [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §3d).
 
-### 2d. getNonce — Retrieve Request Nonce in Views
+**URL attributes in JSX are sanitized automatically at render time.** The renderer routes
+`href`, `src`, `action`, and the other URL-bearing attribute values through `safeUrl`
+(`@y-core/forge/http`), which neutralizes dangerous schemes — `javascript:`, `vbscript:`,
+`data:`, including whitespace- and entity-obfuscated variants — to `"#"`. **Consumers never
+call it.** This is the render-layer complement to the nonce: a user-controlled URL cannot become
+script execution even if it reaches an attribute.
 
-Retrieve the per-request nonce inside view components to attach it to inline scripts:
+htmx selector and JSON attributes are **not** covered by this — see [`HTMX.md`](./HTMX.md) §7.
 
-    import { getNonce } from "@y-core/forge/security"
-    import type { AppContext } from "@y-core/forge/context"
+### 2e. Default Header Set
 
-    export function MyPage(c: AppContext) {
-      const nonce = getNonce(c)
-      return <script nonce={nonce} src="/assets/js/main.js" />
-    }
+The emitted defaults, and the reasoning where a choice was available:
 
-`getNonce(c)` reads the per-request nonce stored in context by `createSecurityHeaders`.
-It never throws: when the middleware has not run it returns `""`, which renders an empty
-`nonce` attribute that the CSP will not honor — register `createSecurityHeaders` before
-any nonce consumer so the value is always present (see ROUTING_AND_MIDDLEWARE.md §3d).
-
-> URL attributes in JSX (`href`, `src`, `action`, …) are sanitized automatically at
-> render time: the renderer routes those attribute values through `safeUrl`
-> (`@y-core/forge/http`), which neutralizes dangerous schemes (`javascript:`,
-> `vbscript:`, `data:`, including obfuscated variants) to `"#"`. This complements the
-> nonce-based CSP — even a missed nonce cannot turn a user-controlled URL into script
-> execution.
-
-### 2e. Default Header Set — OWASP Baseline Audit
-
-Audit of the emitted default header set against the OWASP secure-headers baseline
-(2026-07-02), with the decision taken for each candidate:
-
-| Header | Default | Decision |
-|---|---|---|
-| `Content-Security-Policy` | strict, per-request nonce | present since v0 |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | present since v0 |
-| `X-Content-Type-Options` | `nosniff` | present since v0 |
-| `X-Frame-Options` | `DENY` | present since v0 (redundant with `frame-ancestors 'none'`, kept for legacy UAs) |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | present since v0 |
-| `Permissions-Policy` | `camera/microphone/geolocation/payment` all `()` | present since v0 |
-| `Cross-Origin-Opener-Policy` | `same-origin` | **added as default** — overridable via `crossOriginOpenerPolicy` (`same-origin-allow-popups` for OAuth/payment popups) |
-| `Cross-Origin-Resource-Policy` | `same-origin` | **added as default** — overridable via `crossOriginResourcePolicy` (`cross-origin` for embeddable resources) |
-| `Cross-Origin-Embedder-Policy` | not emitted | **opt-in only** via `crossOriginEmbedderPolicy` — `require-corp` breaks any subresource lacking CORP/CORS opt-in |
-| `Cache-Control` on sensitive responses | per-route | route concern (`definePage({ cache })`, `healthCheck` sets `no-store`) — not a blanket default |
+| Header | Default |
+|---|---|
+| `Content-Security-Policy` | strict, per-request nonce |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` — redundant with `frame-ancestors 'none'`, kept for legacy UAs |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera` / `microphone` / `geolocation` / `payment` all `()` |
+| `Cross-Origin-Opener-Policy` | `same-origin` — override with `crossOriginOpenerPolicy` (`same-origin-allow-popups` for OAuth/payment popups) |
+| `Cross-Origin-Resource-Policy` | `same-origin` — override with `crossOriginResourcePolicy` (`cross-origin` for embeddable resources) |
+| `Cross-Origin-Embedder-Policy` | **not emitted.** Opt in with `crossOriginEmbedderPolicy`; `require-corp` breaks any subresource lacking CORP/CORS opt-in |
+| `Cache-Control` | **not a blanket default** — a route concern (`definePage({ cache })`; `healthCheck` sets `no-store`) |
 
 ---
 
@@ -168,93 +158,66 @@ Audit of the emitted default header set against the OWASP secure-headers baselin
 
 ### 3a. cors Middleware for API Routes
 
-Apply CORS headers only on routes that need them. Derive `allowedOrigins` from the
-`BaseUrlConfig` so the allowed list matches the deployed environment automatically:
+**Apply CORS only on routes consumed cross-origin — never globally.** Derive `allowedOrigins`
+from `BaseUrlConfig` so the list matches the deployed environment automatically.
 
-    import { cors } from "@y-core/forge/security"
+```typescript
+app.use("/api/*", cors({ origins: config.site.url.allowedOrigins }))
+```
 
-    app.use("/api/*", cors({ origins: config.site.url.allowedOrigins }))
+**`cors()` rebuilds the downstream `Response` rather than mutating it in place.** A downstream
+response may carry immutable headers, where in-place mutation would throw or silently no-op;
+rebuilding with a fresh `Headers` clone is correct by construction.
 
-Do not apply `cors()` globally — it is only needed on endpoints consumed cross-origin.
+### 3b. originGuard — Strict Origin Allowlist
 
-`cors()` does not mutate the downstream response in place. After `next()` returns it
-**rebuilds** the `Response` with a fresh `Headers` clone (`new Response(res.body, …)`)
-before setting `Access-Control-Allow-Origin`/`Vary`. A downstream response may carry
-immutable headers (e.g. a cached or constructed `Response`), where in-place mutation
-would throw or silently no-op; rebuilding is correct by construction.
+Middleware that rejects any request whose `Origin` is not in the allowlist. Use on webhook or
+privileged endpoints.
 
-### 3b. originGuard — Strict Origin Allowlist Middleware
-
-`originGuard` is a middleware that rejects any request whose `Origin` header is not in
-the provided allowlist. Use on webhook or privileged endpoints where a strict allowlist
-is required:
-
-    import { originGuard } from "@y-core/forge/security"
-
-    app.use("/webhook/*", originGuard(["https://trusted.example.com"]))
-
-Requests with no `Origin` header (same-origin browser requests, curl) are allowed
-through — `originGuard` only blocks cross-origin requests from non-listed origins.
+**Requests with no `Origin` header are allowed through** (same-origin browser requests, curl) —
+`originGuard` only blocks cross-origin requests from non-listed origins.
 
 ### 3c. verifyOrigin — Inline Origin Check
 
-For one-off checks inside a handler (rather than middleware), use `verifyOrigin`:
+For a one-off check inside a handler rather than as middleware. Takes the standard `Request`,
+inspects `Origin`, and returns an `OriginResult` (`{ ok: boolean }`).
 
-    import { verifyOrigin } from "@y-core/forge/security"
+### 3d. crossOriginProtection — Fetch Metadata
 
-    const { ok } = verifyOrigin(c.request, allowedOrigins)
-    if (!ok) return new Response("Forbidden", { status: 403 })
+`crossOriginProtection()` enforces same-origin for state-changing requests (anything other than
+`GET`/`HEAD`/`OPTIONS`) using the browser `Sec-Fetch-Site` header.
 
-`verifyOrigin` takes the standard `Request` (`c.request`), inspects the `Origin`
-header, and returns an `OriginResult` (`{ ok: boolean }`).
+**Requests labelled `cross-site` are rejected with `403`, and a missing header is rejected by
+default (fail-closed)** unless `allowMissingHeader: true`.
 
-### 3d. crossOriginProtection and checkCrossOriginProtection
+`checkCrossOriginProtection(request, options)` performs the same check as a plain function,
+returning a `GuardResult` alias with the reason code in `error`. Use it when the result must
+drive conditional logic rather than an automatic rejection.
 
-`crossOriginProtection()` is a middleware that enforces same-origin for state-changing
-requests (anything other than `GET`/`HEAD`/`OPTIONS`) using the browser **Fetch
-Metadata** `Sec-Fetch-Site` header. Requests labelled `cross-site` are rejected with
-`403`; requests with no `Sec-Fetch-Site` header are rejected by default (fail-closed)
-unless `allowMissingHeader: true` is passed:
-
-    import { crossOriginProtection } from "@y-core/forge/security"
-
-    app.use("/form/*", crossOriginProtection())
-
-`checkCrossOriginProtection(request, options)` performs the same check as a plain
-function, returning a `CrossOriginResult` — a `GuardResult` alias, `{ ok: true } | { ok: false; error: "missing-fetch-metadata" | "cross-site" }`, with the failure reason code in the single `error` field — without wrapping in
-middleware. Use when you need the check result to drive conditional logic rather than an
-automatic rejection. Both accept `CrossOriginProtectionOptions` (`{ allowMissingHeader? }`).
-
-> Note: the origin guards inspect browser-sent request headers (`Sec-Fetch-Site`,
-> `Origin`/`Referer`) — they are not a CSRF token mechanism. CSRF token minting and
-> verification live in `@y-core/forge/form`. See §7.
+**The origin guards inspect browser-sent headers — they are not a CSRF token mechanism.** CSRF
+minting and verification live in `@y-core/forge/form`.
 
 ### 3e. Origin-Guard Tiering — Which Guard When
 
-Three middleware exist for cross-origin mutation defense. They form a deliberate tiering; pick
-one per route rather than stacking them. **`originProtection` is the authoritative recommended
-default** — the other two are the single-signal tiers it is built from.
+Three middleware defend against cross-origin mutation. They form a deliberate tiering:
+**pick one per route rather than stacking them.**
 
-| Guard | Signal | Behavior when signal absent | Use when |
+| Guard | Signal | When the signal is absent | Use when |
 |---|---|---|---|
-| `originProtection(options)` | `Sec-Fetch-Site` **with `Origin`/`Referer` fallback** | Falls back to the `Origin`/`Referer` allowlist | **Default.** Broadest coverage — modern Fetch-Metadata browsers plus older UAs via the fallback. |
-| `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless `allowMissingHeader: true` | Stricter, no fallback — endpoints where a missing Fetch-Metadata header should be rejected outright. |
-| `originGuard(allowed)` | `Origin`/`Referer` only | Allowed through (no header ⇒ same-origin/curl) | The Origin/Referer-only tier — webhook/privileged endpoints keyed purely on an origin allowlist. |
+| `originProtection(options)` | `Sec-Fetch-Site` **with `Origin`/`Referer` fallback** | Falls back to the allowlist | **The default.** Broadest coverage — modern browsers plus older UAs |
+| `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless `allowMissingHeader` | Stricter, no fallback |
+| `originGuard(allowed)` | `Origin`/`Referer` only | Allowed through | Webhook/privileged endpoints keyed purely on an origin allowlist |
+
+**`originProtection` is the authoritative recommended default** — the other two are the
+single-signal tiers it is built from.
 
 All three exempt safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) first, so only state-changing
-requests are gated. `originProtection` treats a present `Sec-Fetch-Site` as authoritative (the
-Fetch-Metadata check via `crossOriginProtection` with `allowMissingHeader: true`); only when the
-header is absent does it consult the `Origin`/`Referer` allowlist:
+requests are gated. `originProtection` treats a present `Sec-Fetch-Site` as authoritative and
+consults the `Origin`/`Referer` allowlist only when the header is absent. Its `allowedOrigins`
+is a static `string[]` or a per-request resolver.
 
-    import { originProtection } from "@y-core/forge/security"
-
-    app.use("/form/*", originProtection({
-      allowedOrigins: (c) => config.get(c.env).site.url.allowedOrigins,
-    }))
-
-`allowedOrigins` (in `OriginProtectionOptions`) is a static `string[]` or a per-request resolver
-over the app context. `applyMiddlewareChain` wires `originProtection` for each guard group's
-`origin` option (§5c), so apps using the canonical chain get the recommended tier by default.
+`applyMiddlewareChain` wires `originProtection` for each guard group's `origin` option, so apps
+using the canonical chain get the recommended tier by default.
 
 ---
 
@@ -262,76 +225,50 @@ over the app context. `applyMiddlewareChain` wires `originProtection` for each g
 
 ### 4a. rateLimit Middleware Factory
 
-`rateLimit` wraps the Cloudflare Workers Rate Limiting binding. Apply per-route, not
-globally, to target high-risk endpoints (form submissions, API mutations):
+`rateLimit` wraps the Cloudflare Workers Rate Limiting binding. **Apply per-route, not
+globally**, to target high-risk endpoints such as form submissions and API mutations.
 
-    import { rateLimit } from "@y-core/forge/security"
-    import { createController } from "@y-core/forge/router"
+```typescript
+const rateLimitGuard = rateLimit<AppEnv>({
+  limiter: (c) => c.env.RATE_LIMITER,
+  required: false,
+})
 
-    const rateLimitGuard = rateLimit<AppEnv>({
-      limiter: (c) => c.env.RATE_LIMITER,
-      required: false, // graceful: skip if binding absent (dev)
-    })
+export const controller = createController(routes, {
+  actions: { contact: { middleware: [rateLimitGuard, csrfVerifyGuard], handler: contactHandler } },
+})
+```
 
-    // Routes are declared as a map; route-level middleware lives in the controller action.
-    export const controller = createController(routes, {
-      actions: {
-        contact: { middleware: [rateLimitGuard, csrfVerifyGuard], handler: contactHandler },
-      },
-    })
+### 4b. `required: false` for Dev Graceful Degradation
 
-**Key trust boundary (default-distrust).** The `CF-Connecting-IP` default key is only
-trustworthy when the Worker actually runs behind Cloudflare's edge — a directly-reachable
-origin or another platform lets clients forge it to evade or poison the limit. So the default
-keying is gated behind `trustCfHeaders` (§4d): without `trustCfHeaders: true` and without a
-custom `key`, the default key resolver **throws → `503`** rather than silently keying on a
-forgeable header. A throwing `key` function likewise fails closed with `503`. For key-selection
-strategies (per-IP vs per-session vs route-scoped composite keys), see the "Choosing a
-rate-limit key" section in `src/security/README.md`.
+`required: false` makes the middleware a no-op when the binding is absent (local dev without
+wrangler bindings).
 
-### 4b. required: false for Dev Graceful Degradation
-
-Setting `required: false` means the middleware no-ops when the `RATE_LIMITER` binding is
-absent (local dev without wrangler bindings). In production the binding is always present.
-Leaving `required: true` (default) makes the middleware return `503 Service Unavailable`
-per request when the binding is missing — use this on production-only routes where rate
-limiting is non-negotiable, so a misconfigured binding fails closed rather than silently
-disabling the limit.
+**The default `required: true` returns `503` per request when the binding is missing** — use it
+on production routes where rate limiting is non-negotiable, so a misconfigured binding fails
+closed rather than silently disabling the limit.
 
 ### 4c. Workers Rate Limiter Binding Configuration
 
-Declare the binding in `wrangler.jsonc`:
+Declare the binding in `wrangler.jsonc` under `ratelimits` with a `name`, `namespace_id`, and a
+`simple` `{ limit, period }`; then add that name to `AppEnv` typed as `RateLimitBinding`
+(exported from `@y-core/forge/security`).
 
-    "ratelimits": [
-      {
-        "name": "RATE_LIMITER",
-        "namespace_id": "1001",
-        "simple": { "limit": 5, "period": 60 }
-      }
-    ]
-
-Add the binding type to `AppEnv`:
-
-    interface AppEnv {
-      RATE_LIMITER: RateLimitBinding
-    }
-
-`RateLimitBinding` is exported from `@y-core/forge/security`.
-
-### 4d. trustCfHeaders — Default-Distrust Keying
+### 4d. Rate-Limit Key Selection
 
 `RateLimitOptions.trustCfHeaders` (default `false`) controls whether the default key may read
 `CF-Connecting-IP`:
 
-- `trustCfHeaders: true` — the Worker is known to run behind Cloudflare; the default key is the
-  `CF-Connecting-IP` header (a missing header fails closed with `503`).
-- default (`false`) with no custom `key` — the default key resolver throws → `503`, refusing to
-  key on a forgeable header.
-- a custom `key` — **always overrides**, regardless of `trustCfHeaders`. Supply one for
-  non-Cloudflare deployments.
+- **`trustCfHeaders: true`** — the default key is `CF-Connecting-IP`; a missing header fails
+  closed with `503`.
+- **Default (`false`) with no custom `key`** — the default key resolver **throws → `503`**,
+  refusing to key on a forgeable header.
+- **A custom `key` always overrides**, regardless of `trustCfHeaders`. Supply one for
+  non-Cloudflare deployments. A throwing `key` function likewise fails closed with `503`.
 
-This is the same trust boundary `requestId` applies to `CF-Ray`; see §5c for the unified
-rationale and how `applyMiddlewareChain` threads a single `trustCfHeaders` flag to both.
+**§5c owns the trust rationale** and how `applyMiddlewareChain` threads one flag to every
+surface. For key-selection strategy (per-IP vs per-session vs route-scoped composite), see
+`src/security/README.md`.
 
 ---
 
@@ -340,67 +277,50 @@ rationale and how `applyMiddlewareChain` threads a single `trustCfHeaders` flag 
 ### 5a. requestId Middleware
 
 `requestId(options?)` generates a unique ID per request, sets the `X-Request-Id` response
-header, and stores the value in `requestIdCtx`:
+header, and stores the value in `requestIdCtx`.
 
-    import { requestId, requestIdCtx } from "@y-core/forge/security"
+**Register at the top of the middleware stack** so all downstream middleware and handlers can
+read it. Read it with `requestIdCtx.getOptional(c)`.
 
-    app.use("*", requestId())
-
-    // Inside a handler or middleware:
-    const id = requestIdCtx.getOptional(c)  // string | undefined
-
-Register at the top of the middleware stack so all subsequent middleware and handlers
-can read the ID.
-
-By default (`trustCfHeaders` unset or `false`) the inbound `CF-Ray` header is **ignored** and a
-fresh `crypto.randomUUID()` is always minted — `CF-Ray` is client-supplied and forgeable off
-Cloudflare. Pass `requestId({ trustCfHeaders: true })` only when the Worker is known to run
-behind Cloudflare to adopt `CF-Ray` as the id (falling back to a UUID when it is absent). See
-§5c.
+The inbound `CF-Ray` header is ignored unless `trustCfHeaders` is set — see §5c.
 
 ### 5b. Logging Integration
 
-`requestLogger` uses `requestIdCtx` to correlate log entries with request IDs across
-the lifetime of a request:
+`requestLogger` reads `requestIdCtx` to correlate log entries across a request's lifetime.
+**Because `requestId()` runs first, the logger always finds the ID already set** — see
+[`STRUCTURED_LOGGING.md`](./STRUCTURED_LOGGING.md) §3c for the ordering rule.
 
-    import { requestLogger } from "@y-core/forge/logging"
-    import { requestIdCtx } from "@y-core/forge/security"
+### 5c. Cloudflare Header Trust Boundary — `trustCfHeaders`
 
-    app.use("*", requestLogger({
-      bindings: (c) => ({ requestId: requestIdCtx.getOptional(c) }),
-    }))
-
-Because `requestId()` runs first, the logger always finds the ID already set.
-
-### 5c. Cloudflare Header Trust Boundary — trustCfHeaders
-
-`CF-Ray` and `CF-Connecting-IP` are injected by Cloudflare's edge and are trustworthy **only**
-when the request actually transited that edge. A Worker reachable directly (a custom origin,
-another platform, or a misrouted deployment) receives whatever a client chose to send — so
+`CF-Ray` and `CF-Connecting-IP` are injected by Cloudflare's edge and are trustworthy **only
+when the request actually transited that edge**. A Worker reachable directly — a custom origin,
+another platform, a misrouted deployment — receives whatever a client chose to send, so
 adopting those headers unconditionally lets a client forge its own request id or rate-limit key.
-Forge therefore defaults to **distrust**: the CF headers are used only when the caller opts in
-with `trustCfHeaders: true`.
+
+**Forge therefore defaults to distrust: the CF headers are used only when the caller opts in
+with `trustCfHeaders: true`.**
 
 The flag surfaces in three places, all defaulting to `false`:
 
-| Surface | Effect of `trustCfHeaders: true` | Default (`false`) |
+| Surface | With `trustCfHeaders: true` | Default |
 |---|---|---|
 | `requestId({ trustCfHeaders })` | Adopt `CF-Ray` as the id (UUID fallback) | Always mint a UUID; ignore `CF-Ray` |
 | `RateLimitOptions.trustCfHeaders` (§4d) | Default key reads `CF-Connecting-IP` | Default keying throws → `503` unless a custom `key` is given |
 | `MiddlewareChainOptions.trustCfHeaders` | Threaded to `requestId()` and every guard group's rate-limit guard | Both distrust the CF headers |
 
-`applyMiddlewareChain` (in `@y-core/forge/app`) takes a single `trustCfHeaders` and threads it to
-both `requestId` and the rate-limit guards, so an app declares the trust posture once:
+**`applyMiddlewareChain` takes a single `trustCfHeaders` and threads it to both**, so an app
+declares its trust posture once:
 
-    applyMiddlewareChain(app, {
-      trustCfHeaders: true,   // Worker runs behind Cloudflare — safe to trust CF-Ray / CF-Connecting-IP
-      securityHeaders: { scriptSrc: ["'self'", NONCE] },
-      guards: [{ paths: ["/api/*"], rateLimit: { limiter: (c) => c.env.RATE_LIMITER } }],
-    })
+```typescript
+applyMiddlewareChain(app, {
+  trustCfHeaders: true,   // this Worker runs behind Cloudflare
+  securityHeaders: { scriptSrc: ["'self'", NONCE] },
+  guards: [{ paths: ["/api/*"], rateLimit: { limiter: (c) => c.env.RATE_LIMITER } }],
+})
+```
 
-**Breaking-change note.** CF-deployed apps must set `trustCfHeaders: true` (or pass a custom
-rate-limit `key`) — otherwise the default rate-limit keying fails closed with `503`, and request
-ids no longer reuse `CF-Ray`.
+**A Cloudflare-deployed app must set `trustCfHeaders: true` or pass a custom rate-limit `key`**
+— otherwise the default keying fails closed with `503`.
 
 ---
 
@@ -408,33 +328,22 @@ ids no longer reuse `CF-Ray`.
 
 ### 6a. requireFormContentType
 
-Middleware factory that enforces a form content type — either
-`application/x-www-form-urlencoded` or `multipart/form-data`. The comparison is
-case-insensitive (media types are case-insensitive per RFC 9110 §8.3.1) and ignores any
-`; charset=…` parameter. Rejects requests with a wrong or missing content type with
-`415 Unsupported Media Type`. Apply on form routes to prevent JSON-based CSRF attacks
-that bypass browser same-site cookie protections:
+Middleware factory enforcing a form content type — `application/x-www-form-urlencoded` or
+`multipart/form-data`. The comparison is case-insensitive and ignores any `; charset=…`
+parameter. A wrong or missing content type is rejected with `415`.
 
-    import { requireFormContentType } from "@y-core/forge/security"
-    import { createController } from "@y-core/forge/router"
+**Apply on HTML form submission endpoints to prevent JSON-based CSRF that bypasses same-site
+cookie protections. Do not use on API routes that accept JSON.**
 
-    export const controller = createController(routes, {
-      actions: {
-        contact: { middleware: [requireFormContentType(), csrfVerifyGuard], handler: contactHandler },
-      },
-    })
+**It is a factory — call it**: `requireFormContentType()`.
 
-`requireFormContentType` is a factory — call it (`requireFormContentType()`) to get the
-middleware. Do not use on API routes that accept JSON — apply only on HTML form
-submission endpoints.
+### 6b. HTMX Detection Is Not a Security Boundary
 
-### 6b. HTMX Detection (moved)
+`isHxRequest` lives in `@y-core/forge/html/htmx`, not here. **It is a UX routing hint, not a
+security boundary** — `HX-Request` is client-supplied and forgeable.
 
-`isHxRequest` was previously exported from `security`. It now lives in
-`@y-core/forge/html/htmx` — see [HTMX.md](./HTMX.md) §1 for usage.
-
-It remains a UX routing hint, not a security boundary. Always pair with `originGuard`
-or `crossOriginProtection` for actual enforcement.
+**Always pair it with `originProtection`/`crossOriginProtection` and `csrfProtection` for
+actual enforcement.** [`HTMX.md`](./HTMX.md) §2 owns this rule.
 
 ---
 
@@ -442,98 +351,23 @@ or `crossOriginProtection` for actual enforcement.
 
 ### 7a. What Belongs in security
 
-The security namespace covers transport-layer concerns only:
+Transport-layer concerns only, all operating on the raw HTTP request/response before any
+application logic runs:
 
-- HTTP security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, etc.)
-- CORS policy enforcement
-- Origin verification (request origin matches allowlist)
-- Request rate limiting (via Workers Rate Limiting binding)
-- Request identity (request ID generation and propagation)
-- Content type enforcement on incoming requests
-
-All of these operate on the raw HTTP request/response layer, before any application
-logic runs.
+HTTP security headers · CORS policy · origin verification · request rate limiting · request
+identity · content-type enforcement on incoming requests.
 
 ### 7b. What Does NOT Belong in security
 
 | Feature | Correct namespace |
 |---|---|
 | CSRF token minting/verification | `@y-core/forge/form` |
-| Session management | `@y-core/forge/session` — standard pattern: `createAnonymousSession` with KV-backed storage (opaque id-only cookie, server-side data + revocation); see `src/session/README.md` |
-| Authentication (JWT, OAuth, magic links) | Future: `@y-core/forge/auth` |
-| Permissions/RBAC | Future: `@y-core/forge/auth` |
-| `timingSafeEqual` / `timingSafeEqualBytes` | Internal `src/crypto/` (`@internal`) |
+| Session management | `@y-core/forge/session` — see `src/session/README.md` |
+| Authentication (JWT, OAuth, magic links) | a future `auth` namespace |
+| Permissions / RBAC | a future `auth` namespace |
+| `timingSafeEqual` / `timingSafeEqualBytes` | internal `src/crypto/` (`@internal`) |
 | Input sanitization and schema validation | `@y-core/forge/form` / `@y-core/forge/validation` |
 
-The security namespace does not know about users, sessions, or application state. Any
+**The security namespace does not know about users, sessions, or application state.** Any
 feature that requires reading session data or user identity belongs in a higher-level
-namespace. This boundary keeps the security primitives composable and testable in
-isolation.
-
----
-
-## 8. Defense-in-Depth Across Namespaces
-
-The security namespace is transport-layer only (§7), but several adjacent namespaces
-carry hardening that backstops it. These belong to their own namespaces — they are
-documented here so the full posture is visible in one place.
-
-### 8a. JSX URL-Attribute Sanitization (`safeUrl`)
-
-The JSX renderer routes every URL-bearing attribute value (`href`, `src`, `action`, and
-the other URL attributes) through `safeUrl` (`@y-core/forge/http`) at render time.
-`safeUrl` neutralizes dangerous schemes — `javascript:`, `vbscript:`, `data:`, including
-whitespace/entity-obfuscated variants — to `"#"`. This is automatic; consumers do not
-call it. It is a render-layer complement to the CSP nonce: a user-controlled URL cannot
-become script execution even if it reaches an attribute.
-
-### 8b. parseFormData Streaming Byte Cap (413)
-
-`parseFormData(c)` (`@y-core/forge/form`) enforces a body-size budget two ways:
-
-1. a `Content-Length` fast-path that rejects before reading the body, and
-2. a **streaming byte cap** — the body is piped through a counting transform that errors
-   once the running total exceeds `maxBytes`.
-
-The streaming cap closes the header-only bypass: a request with an absent or lying
-`Content-Length` (chunked transfer) is still capped. Oversized bodies surface as a `413`.
-The default budget is `FORM_MAX_BYTES_DEFAULT` (100 KB), overridable via
-`{ maxBytes }`.
-
-### 8c. Fragment Option Escaping
-
-`renderSuccess`/`renderError`/`renderValidationErrors` (`@y-core/forge/http`) escape not
-only the message but also caller-supplied option values — the `class` override and the
-`ulClass` override are run through `escapeHtml` before interpolation. A caller cannot
-inject attributes or markup through a styling option.
-
-### 8d. R2 Object Serving Hardening
-
-`serveObject` (`@y-core/forge/storage/r2`) builds the `Content-Disposition` header with a
-sanitized ASCII `filename="…"` fallback (C0 controls, `"`, and `\` stripped) **plus** an
-RFC 5987 `filename*=UTF-8''…` parameter for non-ASCII names, so a crafted object key
-cannot break out of the quoted string.
-
-Signed object URLs (`createSignedObjectUrl`/`verifySignedObjectUrl`) HMAC a
-**length-prefixed** payload — `${key.length}:${key}|${exp}` — so the `key`/`exp`
-boundary is unambiguous even when the key itself contains the `|` delimiter. Verification
-checks expiry first, then compares signatures in constant time
-(`timingSafeEqualBytes`).
-
-### 8e. Storage Binding Shape Checks
-
-`validateKVBinding` / `validateR2Binding` / `validateD1Binding`
-(`@y-core/forge/storage/{kv,r2,db}`) do a **functional-shape** check, not a mere presence
-check: a KV binding must expose `get`/`put` as functions, an R2 binding its object
-methods, a D1 binding `prepare` as a function. A string or number mistakenly bound to the
-name is rejected at the boundary rather than failing deep inside a handler.
-
-### 8f. Fallback 500 Carries Baseline Security Headers
-
-When an error is thrown **outside** the middleware chain (router internals, before the
-consumer's `createSecurityHeaders` can run), the app's last-resort 500 still ships a
-baseline-hardened response: `Content-Type: text/html; charset=utf-8`,
-`X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`, and
-`Referrer-Policy: no-referrer`. Errors thrown **inside** the chain flow back through the
-error boundary so the consumer's full security headers still apply (they
-set-overwrite the baseline). No error path ships an unprotected response.
+namespace. This boundary keeps the primitives composable and testable in isolation.

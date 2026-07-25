@@ -1,182 +1,143 @@
 ---
 title: Production TypeScript Rules
-description: zero global state, factory functions, Result monad, explicit errors, validation first, co-located tests, TSDoc, declarative patterns, Web-APIs-only, testability, no side effects in module scope
-weight: 20
+description: "Six non-negotiable coding rules: zero global state, explicit errors, validation first, testability, TSDoc, and declarative style."
 ---
 
 # Production TypeScript Rules
 
-> Six non-negotiable rules for all TypeScript in forge. These rules ensure the library
-> is testable, predictable, and safe in the Cloudflare Workers runtime.
+> Six non-negotiable rules for all TypeScript in forge, ensuring the library stays testable,
+> predictable, and safe in the Cloudflare Workers runtime.
 >
-> Complements [LIBRARY_ARCHITECTURE.md](./LIBRARY_ARCHITECTURE.md) (structural constraints),
-> [NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md) (barrel discipline),
-> [TESTING.md](./TESTING.md) (test co-location rules).
+> Defers to: [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1 for the `Result` primitive;
+> [`TESTING.md`](./TESTING.md) for test placement and fake patterns;
+> [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5e for the naming convention;
+> [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) for the structural constraints these
+> rules serve.
 
 ---
 
 ## 0. Quick Reference
-- §1 Zero global state: factory/closure injection, no module-level mutable vars; `define*` for declarative handler configs, `create*` for other factories, no public bare constructors
-- §2 Explicit errors via Result monad: one `Result<T,E>` primitive, `ok()`/`err()` constructors, result/toError, the `GuardResult` and `ValidationResult` aliases
-- §3 Validation first: validate at system boundaries, valibot v facade, abort-early
-- §4 Testability: co-located *.test.ts, no globals to mock, fakes over mocks
-- §5 TSDoc on all exports: @param, @returns, @example, @internal for non-public
-- §6 Declarative over imperative: avoid loops when array methods/conditionals suffice
-- §7 Rule summary: quick checklists for each rule
+
+- §1 Zero Global State Rule: request state never lives at module scope
+- §1a No Module-Level Mutable Variables: why isolates make this unsafe
+- §1b Factory Function Pattern: capture config, not request state
+- §1c Constants Are Acceptable: the permitted module-level form
+- §1d Factory Naming and Bare Constructors: `create*` / `define*`, and the `Forge` carve-out
+- §2 Explicit Errors via Result Monad: return failures, do not throw them
+- §2a When to Throw vs Return Result: the three-way split
+- §3 Validation First Rule: untrusted input stops at the boundary
+- §3a Validate at System Boundaries: the handler and the config loader
+- §3b Valibot v Facade: never import valibot directly
+- §3c Abort-Early Validation: form-validation default
+- §4 Testability Rule: design so tests need no mocks
+- §4a No Globals to Mock: what factory functions buy
+- §5 TSDoc on All Exports Rule: the documentation floor
+- §5a TSDoc for Public Exports: one line minimum
+- §5b @internal for Non-Public Symbols: the visibility marker
+- §5c @example for Complex APIs: when usage is non-obvious
+- §6 Declarative Over Imperative Rule: expression over statement
+
+---
 
 ## 1. Zero Global State Rule
 
 ### 1a. No Module-Level Mutable Variables
-Never store request-scoped data in module-level variables. Each Cloudflare Workers
-isolate handles one request at a time, but isolates can be recycled, and module-level
-mutations bleed between requests sharing the same module instance.
 
-BAD:
+**Never store request-scoped data in a module-level variable.** Each Workers isolate handles one
+request at a time, but isolates are recycled — module-level mutations bleed between requests
+sharing a module instance.
+
 ```typescript
-let currentUser: User | null = null // module-level mutable — never do this
+let currentUser: User | null = null   // never do this
 ```
 
-GOOD:
-```typescript
-// Inject state as factory parameters or read it from the request context
-import type { AppContext } from "@y-core/forge/context"
-export function createService(config: ServiceConfig) {
-  return { handle: (c: AppContext) => { /* use c.env, not module vars */ } }
-}
-```
+**Inject state as factory parameters, or read it from the request context** (`c.env`, a
+`contextVar` accessor).
 
 ### 1b. Factory Function Pattern
-Use factory functions to create stateful behavior. The factory captures config
-(immutable after creation), not request state.
+
+**Use a factory to create stateful behaviour.** The factory captures configuration — immutable
+after creation — never request state.
 
 ```typescript
-import type { Middleware } from "@y-core/forge/router"
 export function createSecurityHeaders(options: SecurityHeadersOptions): Middleware {
-  // options captured at middleware creation time — immutable
-  return async (c, next) => {
-    // request-scoped work uses c (the RequestContext); return the downstream Response
-    return next()
-  }
+  // `options` captured once at creation time
+  return async (c, next) => next()   // request-scoped work uses `c`
 }
 ```
 
 ### 1c. Constants Are Acceptable
-Module-level constants (non-mutable) are fine:
+
+Module-level **immutable** constants are fine:
+
 ```typescript
-export const CSRF_FIELD_DEFAULT = "__csrf"
+export const CSRF_FIELD_DEFAULT = "_csrf"
 export const HONEYPOT_FIELD_DEFAULT = "__surname"
 ```
 
-### 1d. Factory Naming Convention — `create*` vs `define*`, No Public Bare Constructors
-Two verbs, one rule each — and constructors are never part of the public surface:
+`src/form/constants.ts` owns these two values — never restate them elsewhere.
 
-- **`define*`** names a **declarative handler config**: the pipeline builders `definePage`
-  and `defineAction` that describe a route's parse → validate → handle shape. Reserve `define*`
-  for this declarative-config role.
-- **`create*`** names **every other factory** that instantiates stateful behavior from captured
-  config — `createSecurityHeaders`, `createD1Client`, `createKVStore`, `createObjectStore`,
-  `createConfig`.
-- **No public bare constructors.** A class with instance state exposes a `create*` factory (and,
-  where a class is unavoidable, a private `constructor` + `static create`); `new Foo(...)` is never
-  the public entry point. Example: the `Config` holder's constructor is `private`; consumers call
-  the exported `createConfig(map, schema, overrides?)` factory — `new Config(...)` is not available.
+### 1d. Factory Naming and Bare Constructors
 
-```typescript
-import { createConfig, env } from "@y-core/forge/config"
-// Declarative config for a lazy, per-env-cached holder — via the factory, never `new Config`:
-export const AppConfig = createConfig(
-  { baseUrl: env("BASE_URL") },
-  v.object({ baseUrl: v.string() }),
-)
-```
+**Two verbs, one rule each** ([`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5e owns the full
+convention):
+
+- **`define*`** names a **declarative handler config** — `definePage`, `defineAction`.
+- **`create*`** names **every other factory** that instantiates behaviour from captured config.
+
+**A class holding configuration exposes a `create*` factory rather than a public constructor.**
+Where a class is unavoidable, pair a private `constructor` with a `static create`. The `Config`
+holder is the canonical case: its constructor is `private`, and consumers call `createConfig`.
+
+**Carve-out: `Forge` is a public constructor and `new Forge<Env>()` is correct.** It is exported
+from `src/app/mod.ts`, and tests instantiate it directly ([`TESTING.md`](./TESTING.md) §5a).
+The rule targets *configuration holders* that would otherwise expose partially-initialised
+state — not the app object itself, whose constructor takes only an optional logger.
+
+---
 
 ## 2. Explicit Errors via Result Monad
 
-### 2a. One Result Primitive, `ok()` / `err()` Constructors
-forge has exactly **one result primitive** — `Result<T, E = Error>` from
-@y-core/forge/result, with a single failure field, `error`. For operations that can
-fail with expected errors, return a `Result` rather than throwing. Build values with
-the sanctioned `ok()` / `err()` constructors, or wrap a throwing call with `result()`:
+**forge has exactly one result primitive, with a single `error` failure field.** Return a
+`Result` for expected failures rather than throwing; build values with `ok()` / `err()`; wrap a
+throwing call with `result()`.
 
-```typescript
-import { ok, err, result, type Result } from "@y-core/forge/result"
+[`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1 owns the primitive, its constructors, and the
+`GuardResult` / `ValidationResult` domain aliases.
 
-// The primitive: { ok: true; data: T } | { ok: false; error: E }.
-export function parseUrl(url: string): Result<URL, Error> {
-  return result(() => new URL(url)) // captures any throw as `error`
-}
+### 2a. When to Throw vs Return Result
 
-// Hand-built values use the constructors — never ad-hoc object literals:
-export function parsePort(raw: string): Result<number, string> {
-  const n = Number(raw)
-  return Number.isInteger(n) && n > 0 ? ok(n) : err("port must be a positive integer")
-}
-```
+- **Throw** — programming errors, missing required bindings at startup, violated invariants.
+- **Return `Result`** — expected failures: parse errors, not-found, validation failures.
+- **Never** — throw from middleware that is meant to degrade gracefully.
 
-`ok()` / `err()` are the one documented exception to the `create*` factory-naming
-rule (§5e of [NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md)): they construct **values**,
-not configured objects, and follow the neverthrow convention.
-
-### 2b. Domain Aliases — `GuardResult` and `ValidationResult`
-The two domain shapes are plain **aliases** of the one primitive (from
-@y-core/forge/result) — they narrow only the failure type, never the field layout.
-The discriminant is always `ok`; the failure channel is always `error`:
-
-```typescript
-import type { GuardResult, ValidationResult } from "@y-core/forge/result"
-
-// Predicate/authorization checks (origin, CSRF, Turnstile) — reason code in `.error`:
-// GuardResult<R = string> = Result<void, R>
-//   ≡ { ok: true; data: void } | { ok: false; error: R }
-
-// Validation — per-field message list in `.error`:
-// ValidationResult<T> = Result<T, readonly string[]>
-//   ≡ { ok: true; data: T } | { ok: false; error: readonly string[] }
-// Also re-exported from @y-core/forge/validation alongside the `v` namespace.
-```
-
-### 2c. When to Throw vs Return Result
-- **Throw**: programming errors, missing required bindings at startup, invariants
-- **Return Result**: expected failures (parse errors, not-found, validation failures)
-- **Never**: throw from middleware that should gracefully degrade
-
-A canonical programming-error throw is `Button` with `asChild` (from
-[UI_COMPONENTS.md](./UI_COMPONENTS.md) §1d). `asChild` merges the button's props onto a single JSX
-element child; a string, number, fragment, array, or empty child cannot receive them, so the
-component throws rather than emitting malformed markup:
+A canonical programming-error throw is `Button` with `asChild`: it merges props onto a single
+JSX element child, so a string, fragment, array, or empty child cannot receive them and the
+component throws rather than emitting malformed markup.
 
 ```tsx
-import { isValidElement } from "@y-core/forge/jsx"
-
 if (asChild && !isValidElement(children)) {
   throw new Error("Button with asChild requires exactly one JSX element child")
 }
 ```
 
-This is a caller bug surfaced at render time — not an expected runtime failure — so a throw is
-correct here, whereas a parse or validation failure would return a `Result`.
+That is a caller bug surfaced at render time — not an expected runtime failure — so a throw is
+correct, where a parse or validation failure would return a `Result`.
+
+---
 
 ## 3. Validation First Rule
 
 ### 3a. Validate at System Boundaries
-Validate all untrusted input (form data, request params, env vars) before it enters
-business logic. The boundary is the handler or the config loader.
 
-```typescript
-import { v } from "@y-core/forge/validation"
-import { fragmentResponse } from "@y-core/forge/http"
-import { renderValidationErrors } from "@y-core/forge/http"
-
-const result = v.safeParse(MySchema, rawInput, { abortEarly: true })
-if (!result.success) {
-  const messages = result.issues.map((i) => i.message)
-  return fragmentResponse(renderValidationErrors(messages))
-}
-```
+**Validate all untrusted input — form data, request params, env vars — before it enters
+business logic.** The boundary is the handler or the config loader.
+[`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §6 owns the ordered pipeline.
 
 ### 3b. Valibot v Facade
-All validation uses the v namespace from @y-core/forge/validation (valibot facade).
-Never import valibot directly in app code or forge namespaces — always use v.
+
+**All validation uses the `v` namespace from `@y-core/forge/validation`. Never import `valibot`
+directly** — not in app code, not in a forge namespace.
 
 ```typescript
 import { v } from "@y-core/forge/validation"
@@ -184,52 +145,30 @@ const Schema = v.object({ name: v.string(), email: v.pipe(v.string(), v.email())
 ```
 
 ### 3c. Abort-Early Validation
-Use { abortEarly: true } in v.safeParse for form validation to stop at first error
-and return field-specific errors via renderValidationErrors.
+
+**Use `{ abortEarly: true }` in `v.safeParse` for form validation** so the first failing field
+is reported immediately. Omit it when a response must enumerate every error.
+
+---
 
 ## 4. Testability Rule
 
-### 4a. Co-Located Test Files
-Every source file has a co-located test file:
-- src/security/headers.ts → src/security/headers.test.ts
-- src/form/csrf.ts → src/form/csrf.test.ts
+**Every source file has a co-located test file, and dependencies are faked rather than mocked.**
+[`TESTING.md`](./TESTING.md) §2 and §4 own both rules.
 
-Tests are excluded from npm publish via package.json "files" (`!**/*.test.ts`).
+### 4a. No Globals to Mock
 
-### 4b. No Globals to Mock
-Because forge uses factory functions and Web-standard APIs, tests can call functions
-directly without mocking global state:
+Because forge uses factory functions and Web-standard APIs, **tests call functions directly
+without mocking global state**. A function that cannot be tested without a mock is a design
+signal: make its dependency an argument.
 
-```typescript
-import { describe, expect, it } from "bun:test"
-import { parseUrl } from "./url"
-
-describe("parseUrl", () => {
-  it("returns error for invalid URL", () => {
-    const r = parseUrl("not-a-url")
-    expect(r.ok).toBe(false)
-  })
-})
-```
-
-### 4c. Fakes Over Mocks
-For dependencies, implement the required interface with a fake struct rather than
-using mock libraries:
-
-```typescript
-const fakeKV: KVNamespace = {
-  get: async (key) => null,
-  put: async () => {},
-  delete: async () => {},
-  list: async () => ({ keys: [], list_complete: true, cursor: "" }),
-  getWithMetadata: async () => ({ value: null, metadata: null }),
-}
-```
+---
 
 ## 5. TSDoc on All Exports Rule
 
 ### 5a. TSDoc for Public Exports
-Every exported function, type, and constant needs at minimum a one-line TSDoc:
+
+**Every exported function, type, and constant carries at minimum a one-line TSDoc.**
 
 ```typescript
 /** Creates a Forge app with a structured error boundary and config validation. */
@@ -238,69 +177,25 @@ export function createApp<Bindings extends object = Record<string, unknown>>(
 ): Forge<Bindings>
 ```
 
-### 5b. @internal for Non-Public Symbols
-Internal utilities that are not part of the public API must be marked @internal:
+### 5b. `@internal` for Non-Public Symbols
 
-```typescript
-/** @internal */
-export function timingSafeEqual(a: string, b: string): boolean
-```
+**Internal utilities that are not part of the public API must be marked `@internal`.** The tag
+is what keeps a symbol out of the barrel without keeping it out of cross-namespace use.
 
-### 5c. @example for Complex APIs
-Add @example when the usage pattern is non-obvious:
+### 5c. `@example` for Complex APIs
 
-```typescript
-/**
- * Registers the static-asset catch-all handler onto a Forge app.
- * @example
- * ```typescript
- * applyAssets(app, { notFoundView })
- * ```
- */
-export function applyAssets<Bindings extends HasAssets = HasAssets>(
-  app: Forge<Bindings>,
-  options: AssetOptions<Bindings>,
-): void
-```
+**Add `@example` when the usage pattern is non-obvious** — a builder, a multi-step lifecycle, or
+an argument whose shape is not evident from its type.
+
+---
 
 ## 6. Declarative Over Imperative Rule
 
-### 6a. Prefer Array Methods Over Loops
-```typescript
-// GOOD: declarative
-const allowed = origins.filter(o => o.startsWith("https://"))
+- **Prefer array methods over loops** — `origins.filter(o => o.startsWith("https://"))`, not an
+  accumulator loop.
+- **Prefer object spread over mutation** — `{ ...defaults, ...overrides }`, not assign-then-patch.
+- **Prefer nullish coalescing and optional chaining** — `input ?? fallback`,
+  `user?.profile?.displayName`.
 
-// BAD: imperative loop
-const allowed: string[] = []
-for (const o of origins) {
-  if (o.startsWith("https://")) allowed.push(o)
-}
-```
-
-### 6b. Prefer Object Spread Over Mutation
-```typescript
-// GOOD
-const merged = { ...defaults, ...overrides }
-
-// BAD
-const config = { ...defaults }
-config.prop = overrides.prop  // mutation
-```
-
-### 6c. Prefer Nullish Coalescing and Optional Chaining
-```typescript
-const value = input ?? defaultValue       // instead of: input !== null && input !== undefined ? input : defaultValue
-const name = user?.profile?.displayName  // instead of: user && user.profile && user.profile.displayName
-```
-
-## 7. Rule Summary and Review Checklist
-
-| Rule | Check |
-|---|---|
-| Zero global state | No module-level mutable vars; factory functions for behavior |
-| Factory naming | `define*` for declarative handler configs, `create*` for all other factories; no public bare constructors (`createConfig`, not `new Config`) |
-| Explicit errors | One `Result<T,E>` primitive (single `error` field); `ok()`/`err()` constructors; `GuardResult`/`ValidationResult` aliases for guard checks and validation |
-| Validation first | v.safeParse at boundaries; abort-early for form validation |
-| Testability | Co-located *.test.ts; no globals to mock; fakes not mocks |
-| TSDoc | One-line doc on all exports; @internal on non-public; @example where needed |
-| Declarative | Array methods, spread, nullish coalescing over imperative loops |
+The rule is about expressing intent, not about avoiding loops on principle: reach for a loop
+when the operation genuinely is sequential or early-exiting.

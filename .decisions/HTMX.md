@@ -1,28 +1,35 @@
 ---
 title: HTMX Integration
-description: "isHxRequest detection, HX-Request UX guard not security boundary, readHxRequest, isPartial, isBoosted, hxTrigger, hxTarget, hxHeaders HxResponseProps HxResponseHeaders, hxAttrs HxAttrsProps, SWAP constants, formSubmit, liveSearch, inlineValidation, infiniteScroll, asyncDialogTrigger, paginatedTableLink, dependentSelect, oobSwap, oobAppend, trusted selectors hx-target hx-include hx-vals hx-headers developer-supplied not user input, selector JSON trust posture, html/htmx namespace"
-weight: 31
+description: "Server-side HTMX concerns: request detection, response header helpers, attribute builders, UI patterns, and the selector trust posture."
 ---
 
 # HTMX Integration
 
-> Single namespace for all server-side HTMX concerns: request detection, response header
-> helpers, attribute builders, and UI patterns. Import from `@y-core/forge/html/htmx`.
+> Owns every server-side HTMX concern — request detection, response header helpers, attribute
+> builders, and the pattern helpers. Import from `@y-core/forge/html/htmx`. Also owns the ruling
+> that `isHxRequest` is **not** a security boundary (§2).
 >
-> Complements [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) (pair origin/CSRF guards
-> with `isHxRequest`) and [UI_COMPONENTS.md](./UI_COMPONENTS.md) (SSR components).
+> Defers to: [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §3e and §2d for the guards that
+> must accompany it and for automatic URL sanitization;
+> [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) for the components these attributes land on.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 `html/htmx` namespace exports: full export list
-- §2 `isHxRequest` — detection predicate and UX-guard caveat
-- §3 Request readers: `readHxRequest`, `isPartial`, `isBoosted`, header accessors
-- §4 `hxHeaders` — response header builder
-- §5 `hxAttrs` — attribute builder
-- §6 Patterns: `formSubmit`, `liveSearch`, `inlineValidation`, `infiniteScroll`, OOB helpers
-- §7 Trust posture: selector/JSON attribute values must be developer-supplied, never raw user input
+- §1 html/htmx Namespace Exports: the full export list by group
+- §2 isHxRequest — Detection and UX-Guard Caveat: the not-a-boundary ruling
+- §3 Request Readers: `readHxRequest`, `isPartial`, `isBoosted`, header accessors
+- §4 hxHeaders — Response Header Builder: props to `HX-*` response headers
+- §5 hxAttrs — Attribute Builder: typed props to `hx-*` attributes
+- §6 Patterns: prebuilt `HxAttrs` bundles for common interactions
+- §6a formSubmit: form post with disable-on-submit
+- §6b liveSearch: debounced search-as-you-type
+- §6c inlineValidation: per-field validation on change and blur
+- §6d infiniteScroll: reveal-triggered append
+- §6e paginatedTableLink: page-parameter URL building
+- §6f OOB Helpers: out-of-band swap attributes
+- §7 Trust Posture: selector and JSON values must be developer-supplied
 
 ---
 
@@ -161,37 +168,37 @@ Selector- and JSON-valued props are emitted verbatim and must be **trusted** —
 The pattern helpers build `HxAttrs` objects for common HTMX UI patterns. Spread them onto
 the element that triggers the request:
 
-### formSubmit
+### 6a. formSubmit
 
     <form {...formSubmit({ post: routes.contact.href(), target: "#contact-result" })}>
 
 Defaults: `swap=outerHTML`, `disabledElt=this`.
 
-### liveSearch
+### 6b. liveSearch
 
     <input {...liveSearch({ get: routes.search.href(), target: "#results" })} />
 
 Defaults: `swap=innerHTML`, `trigger="input changed delay:300ms, search"`.
 
-### inlineValidation
+### 6c. inlineValidation
 
     <input {...inlineValidation({ get: "/validate/email", target: "#email-field" })} />
 
 Defaults: `swap=outerHTML`, `trigger="change delay:200ms, blur"`, `sync="closest form:abort"`.
 
-### infiniteScroll
+### 6d. infiniteScroll
 
     <div {...infiniteScroll({ get: "/items?page=2", target: "#item-list" })} />
 
 Always sets `trigger=revealed`. Append-based: default `swap=beforeend`.
 
-### paginatedTableLink
+### 6e. paginatedTableLink
 
     <a {...paginatedTableLink({ get: "/items", target: "#table", page: nextPage })} />
 
 Builds the `?page=N` URL automatically. Preserves existing query params.
 
-### OOB helpers
+### 6f. OOB Helpers
 
 `oobSwap` and `oobAppend` produce `hx-swap-oob` attributes for out-of-band updates.
 For toast OOB fragments, use `toastOob` from `@y-core/forge/ui/server` (it renders a
@@ -227,7 +234,7 @@ This applies to the pattern helpers too (`liveSearch`, `inlineValidation`, `form
 their `get`/`post`/`target`/`select`/`trigger` arguments verbatim into `hxAttrs`. Build these
 values from route definitions and static configuration, not from request data. This is a distinct
 concern from URL sanitization: `href`/`src`/`action` values are auto-sanitized by the JSX renderer
-(see [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) §8a), but htmx selector/JSON attributes are
+(see [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §2d), but htmx selector/JSON attributes are
 not — the trust obligation is on the caller.
 
 The `isHxRequest` detection hint carries the complementary caveat: it is a client-supplied header,

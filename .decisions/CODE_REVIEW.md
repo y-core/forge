@@ -1,29 +1,32 @@
 ---
 title: Code Review Standards
-description: "code review workflow, namespace boundary compliance, barrel discipline, Web-APIs-only check, export star ban, no-sibling-barrel, security review, facade compliance, severity calibration, valid patterns, verification protocol, HTMX guard review, bun run check gate"
-weight: 42
+description: "How to review forge code: the blocking invariants, a detection command per rule, severity calibration, and the known false positives."
 ---
 
 # Code Review Standards
 
-> Authoritative source for reviewing forge code: facade compliance, namespace boundary
-> discipline, security, severity calibration, and verification protocol.
+> Owns the review process: what blocks a merge, how to *detect* each violation rather than
+> hand-inspect for it, how to calibrate severity, and which suspicious-looking patterns are
+> correct.
 >
-> Complements [NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md) (barrel rules),
-> [LIBRARY_ARCHITECTURE.md](./LIBRARY_ARCHITECTURE.md) (dependency tiers),
-> [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) (security checklist).
+> **This document restates no rule.** Every item below is either a `detect:` command or a link
+> to the document that owns the rule. If you want to know *why* a rule exists, follow the link.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 Review workflow: pre-review, during, output format
-- §2 Facade and namespace checklist: export rules, sibling imports, Web-APIs-only
-- §3 Security review checklist: no hardcoded secrets, CSP, CSRF location, origin checks
-- §4 Testing checklist: co-location, entity encoding, security pass+fail
-- §5 Severity calibration: critical, major, minor, informational
-- §6 Verification protocol: rules before reporting
-- §7 Valid patterns: do not flag these
+- §1 Review Workflow: what to do before and while reviewing
+- §1a Pre-Review Preparation: establish a green baseline first
+- §1b Review Output Format: the finding shape
+- §2 Blocking Invariants: the violations that always block a merge
+- §3 Detection by Tier: how each rule is actually checked
+- §3a Tier 1 — Gated: rules a gate step already proves
+- §3b Tier 2 — Ripgrep with Triage: commands and their false-positive classes
+- §3c Tier 3 — Judgement: what to read when no command can decide
+- §4 Severity Calibration: critical, major, minor, informational
+- §5 Verification Protocol: prove a finding before reporting it
+- §6 Valid Patterns — Do Not Flag: correct code that looks wrong
 
 ---
 
@@ -31,243 +34,187 @@ weight: 42
 
 ### 1a. Pre-Review Preparation
 
-1. Run `bun run check` — verify baseline passes before reviewing changes
-2. Check which namespaces are affected
-3. Read affected `mod.ts` files to understand public surface changes
-4. For security namespace changes: read [SECURITY_HARDENING.md](./SECURITY_HARDENING.md) §7 (boundary)
+1. **Establish a green baseline** — run the gate before reviewing, so pre-existing failures are
+   not attributed to the change ([`TESTING.md`](./TESTING.md) §6).
+2. Identify the affected namespaces and read their `mod.ts` files — the public surface is where
+   a change does lasting damage.
+3. Work §2, then §3a → §3b → §3c. **Verify per §5 before reporting; classify per §4.**
 
-### 1b. During Review Process
-
-- Work through each checklist category (§2–§4) in order
-- For each finding, verify per §6 before reporting
-- Classify every finding by severity (§5)
-
-### 1c. Review Output Format
+### 1b. Review Output Format
 
     [FILE:LINE] ISSUE_TITLE
     Severity: Critical | Major | Minor | Informational
-    Description and why it matters.
+    What is wrong, and the consequence.
 
-Group by file, then severity (critical first).
-
----
-
-## 2. Facade and Namespace Compliance Checklist
-
-### 2a. Barrel Discipline Review
-
-- [ ] No `export * from './foo'` in any `mod.ts`
-- [ ] Every new exported symbol added to `mod.ts`
-- [ ] `bun run validate-exports` passes
-- [ ] No `@y-core/forge/context` or `@y-core/forge/crypto` imports from outside forge (internal only)
-
-    ## EXAMPLE — incorrect barrel
-    // mod.ts
-    export * from './helpers'   // BANNED: collapses public surface, no named enumeration
-
-    ## EXAMPLE — correct barrel
-    // mod.ts
-    export { createSecurityHeaders, mergeSecurityHeaders } from './headers'
-    export { getNonce } from './nonce'
-
-### 2b. No-Sibling-Barrel Import Rule
-
-- [ ] No `../sibling/mod` imports in source files (biome catches this)
-- [ ] Exemptions: `validation/mod` and `crypto/mod` are explicitly allowed
-- [ ] `biome lint` passes (catches `noRestrictedImports` violations)
-
-    ## EXAMPLE — forbidden
-    // src/router/routes.ts
-    import { something } from '../security/mod'   // BANNED: sibling barrel import
-
-    ## EXAMPLE — allowed exemption
-    // src/form/csrf.ts
-    import { timingSafeEqual } from '../crypto/mod'   // OK: crypto is an exempt internal
-
-### 2c. Web-APIs-Only Check
-
-- [ ] No `process.env`, `require()`, `Bun.file()`, `fs.*`, `path.*` in source files
-- [ ] Only Web API globals: `fetch`, `crypto`, `TextEncoder`, `URL`, `Request`, `Response`
-- [ ] No Node.js built-in imports (`node:fs`, `node:path`, `node:crypto`)
-
-    ## EXAMPLE — violation
-    import { readFileSync } from 'node:fs'   // BANNED: Node.js built-in
-    const secret = process.env.SECRET        // BANNED: process.env
-
-    ## EXAMPLE — correct
-    const secret = c.env.SECRET              // OK: Cloudflare Workers env binding
-
-### 2d. Namespace Classification Check
-
-- [ ] New namespace correctly classified as leaf or integration
-- [ ] Leaf namespaces import only from own directory + npm deps (not other forge namespaces)
-- [ ] Integration namespaces explicitly documented in [LIBRARY_ARCHITECTURE.md](./LIBRARY_ARCHITECTURE.md) §2b
-
-### 2e. Facade Boundary Check
-
-- [ ] Consumers import from `@y-core/forge/{namespace}`, not from `valibot`/`@remix-run/*` directly
-- [ ] New exports added to correct namespace (not placed in wrong namespace)
-- [ ] `timingSafeEqual`/crypto utilities remain `@internal` in `src/crypto/`
-
-    ## EXAMPLE — violation
-    // src/handlers/contact.ts
-    import * as v from 'valibot'   // BANNED: bypass facade, import via forge/validation
-
-    ## EXAMPLE — correct
-    import { v } from '@y-core/forge/validation'
+Group by file, then severity, critical first.
 
 ---
 
-## 3. Security Review Checklist
+## 2. Blocking Invariants
 
-### 3a. No Hardcoded Secrets
+These are forge's own invariants. **Any one of them blocks a merge regardless of severity
+argument.**
 
-- [ ] No API keys, tokens, hex secrets hardcoded in source
-- [ ] Secrets come from `c.env` bindings or `Config`
-
-    ## EXAMPLE — violation
-    const CSRF_SECRET = 'abc123deadbeef'   // BANNED: hardcoded secret
-
-    ## EXAMPLE — correct
-    const key = await importCsrfKey(c.env.CSRF_SECRET)
-
-### 3b. CSP and Security Headers
-
-- [ ] `NONCE` used in `scriptSrc` for inline scripts (not `'unsafe-inline'`)
-- [ ] `mergeSecurityHeaders` used for dev/prod split (not hardcoded hashes in prod)
-- [ ] `getNonce(c)` used in templates, not a hardcoded nonce value
-
-    ## EXAMPLE — violation
-    scriptSrc: ["'unsafe-inline'"]   // BANNED: disables XSS protection
-
-    ## EXAMPLE — correct
-    scriptSrc: ['self', NONCE]
-
-### 3c. CSRF and Form Security (`form` namespace)
-
-- [ ] CSRF verification is in `@y-core/forge/form` (not `security` namespace)
-- [ ] `csrfProtection` (or a guard built on `verifyCsrfToken`) is in the route's `middleware` array for state-changing routes (`POST`/`PUT`/`DELETE`)
-- [ ] `importCsrfKey`/`importCsrfKeyRing` called with env-provided secret, not hardcoded
-
-### 3d. Origin and Transport Guards
-
-- [ ] `originGuard`/`verifyOrigin` (or `crossOriginProtection`) used for webhooks/trusted-caller routes
-- [ ] `isHxRequest` check on HTMX-only endpoints
-- [ ] `requireFormContentType` on form `POST` routes
-- [ ] Guards live in the controller action's `middleware` array — not inline inside the handler
-
-    ## EXAMPLE — HTMX endpoint missing guard
-    // controller action with no origin/HX guard
-    fragment: handleFragment,   // MISSING: contactGuard / isHxRequest guard
-
-    ## EXAMPLE — correct
-    // route declared in routes map:
-    //   fragment: { method: 'POST', pattern: '/fragment' }
-    // controller action attaches guards:
-    fragment: { middleware: [contactGuard, csrfVerifyGuard], handler: handleFragment }
-    // ...where the guard is a `Middleware`:
-    const contactGuard: Middleware = (c, next) =>
-      isHxRequest(c) ? next() : new Response('Not Found', { status: 404 })
-
----
-
-## 4. Testing Checklist
-
-### 4a. Co-Location and Coverage
-
-- [ ] New source file has co-located `*.test.ts` in same directory
-- [ ] Every exported function has at least one test case
-- [ ] Error paths tested (not just happy path)
-
-### 4b. HTML Entity Encoding in Assertions
-
-- [ ] Test assertions use encoded entities: `&#39;` not `'`, `&amp;` not `&`
-- [ ] Exact-match assertions (`toBe`/`toEqual`) used for deterministic output
-- [ ] No substring matching (`toContain`) when exact match is possible
-
-    ## EXAMPLE — violation
-    expect(html).toContain("user's data")   // WRONG: unencoded entity, substring match
-
-    ## EXAMPLE — correct
-    expect(html).toBe('<p>user&#39;s data</p>')
-
-### 4c. Security Test Completeness
-
-- [ ] Security guards tested for both pass AND fail cases
-- [ ] CSRF tests: valid token passes, missing/invalid → 403
-- [ ] Rate limit tests: under limit passes, over limit → 429
-
-    ## EXAMPLE — incomplete test
-    it('accepts valid CSRF token', async () => { /* ... */ })
-    // MISSING: test for invalid/missing token returning 403
-
----
-
-## 5. Severity Calibration
-
-### 5a. Critical — Block Merge
-
-- Hardcoded secrets or credentials in source
-- `security` namespace exports `timingSafeEqual` (breaks `@internal` contract)
-- `export * from` in `mod.ts` (breaks barrel discipline)
-- `../sibling/mod` import (circular dependency risk)
-- Node.js API used in source file (breaks runtime-only constraint)
-- Missing CSRF/auth guard on state-changing endpoint
-- Unchecked error in security-critical code path
-
-### 5b. Major — Should Fix Before Merge
-
-- New export missing from `mod.ts`
-- Security test missing fail case
-- New namespace not classified in [LIBRARY_ARCHITECTURE.md](./LIBRARY_ARCHITECTURE.md)
-- HTML entity encoding wrong in test assertions
-- Route not declared via the routes map + `createController` + `app.map` (no out-of-band route registration)
-- Route guard placed inline inside a handler instead of the controller action's `middleware` array
-- `bun run check` fails (any step)
-
-### 5c. Minor — Consider Fixing
-
-- Missing TSDoc on exported symbol
-- Imperative loop where array method suffices
-- Module-level constant not exported (if needed by tests)
-- Non-keyword-dense section titles in new `.decisions/` docs
-
-### 5d. Informational — Note Only
-
-- Suggestions for future namespace splits
-- Alternative API designs
-- Performance optimizations without security impact
-
----
-
-## 6. Verification Protocol
-
-### 6a. Verify Before Reporting
-
-1. Read the full file, not just the diff — surrounding code may contain guards
-2. Check `biome.json` and `tsconfig.json` for project-specific rules before flagging style
-3. Check `package.json` exports before claiming a symbol is "unexported"
-4. Verify Web API availability in Workers before flagging as "unavailable"
-
-### 6b. Common False-Positive Patterns
-
-These appear suspicious but are intentional — verify context before filing a finding:
-
-- `contextVar` used in forge source (it is internal and intentional)
-- `crypto` utilities being `@internal` (they are intentionally not public)
-- `validate-exports` script reading `package.json` (build tooling is exempt from Web-API-only)
-- `sideEffects` entry in `package.json` for HTMX bundle (intentional bundler hint)
-
----
-
-## 7. Valid Patterns (Do Not Flag)
-
-| Pattern | Why it is valid |
+| Invariant | Owner |
 |---|---|
-| `import { v } from "@y-core/forge/validation"` in source | `validation/mod` is an exempt sibling |
-| `import ... from "../crypto/..."` in forge source | `crypto` is an exempt internal module |
-| `export const X = "..."` at module level | constants are not mutable state |
-| `sideEffects: ["./src/ui/client/htmx.ts"]` in `package.json` | intentional htmx bundle |
-| `!**/*.test.ts` in `package.json` files | intentional test exclusion from publish |
-| `bun:test` imports in `*.test.ts` files | test-only context, stub provides types |
-| Non-null assertion in test files | biome overrides allow it in test files |
+| No deprecation shim or backward-compatible path before v1.0.0 | `CLAUDE.md` |
+| No hardcoded secret, key, or credential in source | §3c |
+| `mod.ts` uses named exports only — no `export *` | [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §1b |
+| No sibling-barrel import outside the two exemptions | [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §2 |
+| Runtime namespaces use only Web APIs | [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §1d |
+| `valibot` is never imported outside the facade | [`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §1a |
+| Security-critical paths fail closed | [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §4 |
+| A state-changing route carries a CSRF guard | [`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §3a |
+| A security guard has both a pass and a fail test | [`TESTING.md`](./TESTING.md) §5a |
+
+**The pre-1.0 shim ban is the one most often argued away.** A published shim is unrecoverable:
+once a consumer depends on it, removing it is a breaking change, which is precisely what a
+pre-1.0 version number exists to avoid.
+
+---
+
+## 3. Detection by Tier
+
+### 3a. Tier 1 — Gated
+
+**A rule with a gate step is not a review item.** Do not hand-review these; run the gate and
+read its output.
+
+| Rule | detect |
+|---|---|
+| Barrel discipline, `export *` ban, export-map drift, `@public` symbols reaching their barrel | `bun run validate-exports` |
+| JSX pragma present and correct in every `.tsx` | `bun run validate-jsx` |
+| No-sibling-barrel rule (biome `noRestrictedImports`) | `bun run lint` |
+| Governing-doc import paths, numbering, references | `bun run validate-docs` |
+| Behaviour of the changed unit | `bun test <path>` |
+
+**If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix
+the check, not the review.**
+
+### 3b. Tier 2 — Ripgrep with Triage
+
+**Every command here has a known false-positive class, stated with it.** A command without its
+triage note is worse than no command.
+
+**Valibot facade breach**
+
+```bash
+rg -n 'from "valibot"|from \x27valibot\x27' src/ --glob '!src/validation/**'
+```
+
+*Triage:* any hit is a breach, including in a `*.test.ts`. A test that imports valibot directly
+bypasses the facade exactly as production code would, and will not follow a version bump.
+
+**Sibling-barrel import**
+
+```bash
+rg -nP 'from "\.\./(?!validation/mod|crypto/mod)[a-z-]+/mod"' src/
+```
+
+*Triage:* the negative lookahead already excludes the two sanctioned exemptions
+([`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §2c), so this should return nothing. **PCRE2
+(`-P`) is required** — the default engine has no lookahead and will silently match everything.
+
+**Web-APIs-only breach in a runtime namespace**
+
+```bash
+rg -n '\bBun\.|from "node:' src/ \
+  --glob '!src/pkg/**' --glob '!src/cli/**' --glob '!src/assets/**' \
+  --glob '!src/ui/assets/**' --glob '!src/**/cli/**'
+```
+
+*Triage:* the excluded paths are build-time tooling that runs on a developer's machine, never in
+a Worker, and are exempt by design ([`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §1d).
+**Without those globs the command returns dozens of legitimate hits and will be ignored.** A hit
+in any other namespace is a genuine runtime-portability break.
+
+**Substring assertion on rendered HTML**
+
+```bash
+rg -n 'toContain\(|toMatch\(' src/ --glob '*.test.ts*'
+```
+
+*Triage:* legitimate on non-HTML strings — an error message, a log line, a SQL fragment. **A hit
+asserting on rendered markup is a defect** ([`TESTING.md`](./TESTING.md) §3b).
+
+### 3c. Tier 3 — Judgement
+
+No command decides these. Read the named files and answer the named question.
+
+**Hardcoded secrets.** Read every added constant and test fixture. *Does any string look like a
+key, token, or hex secret that is not obviously a test value?* A 64-char hex literal is fine in a
+test and fatal in `src/*/config.ts`.
+
+**Fail-closed posture.** Read every new `if` around a security dependency. *When the binding,
+key, or header is absent, does the code return an error — or continue?* Silent continuation is
+the defect ([`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §4a).
+
+**Facade intent.** Read the changed `mod.ts`. *Does a new export widen the surface beyond what a
+consumer needs, or leak a third-party type into forge's signature?*
+([`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §4a.)
+
+**Namespace classification.** Read the new imports in the changed namespace. *Does this
+introduce a cross-namespace edge that the classification does not declare?*
+([`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §4b.)
+
+**Guard placement.** Read the controller, not the handler. *Is the guard in the action's
+`middleware` array, or inline inside the handler?* Inline guards are invisible to a reader
+auditing the route map ([`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §1b).
+
+---
+
+## 4. Severity Calibration
+
+- **Critical — blocks merge.** Any §2 invariant; a hardcoded secret; a missing guard on a
+  state-changing endpoint; an unchecked error on a security-critical path.
+- **Major — fix before merge.** A new export missing from its barrel; a security test missing
+  its fail case; an undeclared cross-namespace edge; wrong entity encoding in an assertion; a
+  route registered outside the map + controller pattern; any gate step failing.
+- **Minor — consider fixing.** Missing TSDoc on an export; an imperative loop where an array
+  method reads better; a name that breaks the [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5e
+  suffix convention.
+- **Informational — note only.** Future namespace splits, alternative API designs, performance
+  observations with no security impact.
+
+**Calibrate by consequence, not by effort.** A one-character fix to a fail-closed check is
+Critical; a large refactor that improves readability is Minor.
+
+---
+
+## 5. Verification Protocol
+
+Before reporting any finding:
+
+1. **Read the whole file, not the diff** — the guard you think is missing is often three lines
+   above the hunk.
+2. **Check `biome.json` and `tsconfig.json`** before flagging style or a type pattern; forge
+   overrides several defaults, including in test files.
+3. **Check `package.json` `exports`** before claiming a symbol is unexported or a subpath does
+   not exist.
+4. **Check the Workers runtime** before flagging an API as unavailable — `crypto.subtle`,
+   streams, and `URL` are all present.
+
+**A finding you could not verify is a question, not a finding.** Report it as one.
+
+---
+
+## 6. Valid Patterns — Do Not Flag
+
+These look wrong and are correct. Each has been mistaken for a defect before.
+
+| Pattern | Why it is correct |
+|---|---|
+| `new Forge<Env>()` in a test | `Forge` is exported from `src/app/mod.ts` with a public constructor. The no-bare-constructor rule targets *config holders* — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1d |
+| `@y-core/forge/context` imported by a consumer | `context` **is** a public subpath. Any claim that it is internal is stale |
+| A reference to `@y-core/forge/crypto` being absent | That subpath **never existed**. `crypto` is sealed-internal — [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §3b |
+| `import { v } from "../validation/mod"` in forge source | One of the two sanctioned barrel exemptions — [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §2c |
+| `import … from "../crypto/mod"` in forge source | The other sanctioned exemption |
+| `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`](./TESTING.md) §2a |
+| `node:fs` / `node:path` in `pkg`, `cli`, `assets`, `ui/assets` | Build-time tooling, exempt from Web-APIs-only — §3b |
+| `export const X = "…"` at module scope | A constant is not mutable state — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1c |
+| `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §4a |
+| `sideEffects` entries in `package.json` | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §4 |
+| A non-null assertion in a test file | Permitted by the biome test-file overrides |
+| `ok` / `err` not following `create*` | The one documented naming exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1a |
+| `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5e |
+| `Input` exported from both `ui/core` and `ui/controls` | Deliberate shadowing — [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5b |

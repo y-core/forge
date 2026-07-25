@@ -12,9 +12,10 @@
     "lint": "biome check src/",
     "lint:fix": "biome check --write src/",
     "test": "bun test",
-    "check": "bun run typecheck && bun run lint && bun test && bun run validate-exports && bun run validate-jsx",
+    "check": "bun run typecheck && bun run lint && bun test && bun run validate-exports && bun run validate-jsx && bun run validate-docs",
     "validate-exports": "bun run scripts/validate-exports.ts",
     "validate-jsx": "bun run scripts/validate-jsx.ts",
+    "validate-docs": "bun run scripts/validate-docs.ts",
     "prepublishOnly": "bun run check",
     "release": "bun run scripts/release.ts"
   },

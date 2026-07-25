@@ -1,222 +1,162 @@
 ---
-title: Agent and MCP Document Guide
-description: "document structure rules, section numbering convention, frontmatter requirements, keyword-dense titles, cross-referencing format, tsmcp MCP server compatibility, decisions_read section access, decisions_search optimization, document size guidelines, quick reference convention"
-weight: 5
+title: Governing Document Guide
+description: "How .decisions/ documents are structured, numbered, sized, cross-referenced, and kept free of duplicated or drifting content."
 ---
 
-# Agent and MCP Document Guide
+# Governing Document Guide
 
-> This guide is the authoritative source for how `.decisions/` documents should be
-> written and structured so that the `tsmcp` MCP server can expose them with maximum
-> precision and search efficiency.
+> This guide is the authoritative source for how `.decisions/` documents are written and
+> structured. It governs form — numbering, frontmatter, size, cross-references, and where a
+> rule is allowed to live. It does not govern any domain; every domain rule belongs to the
+> document that owns it.
 >
 > All new and updated governing documents must follow these rules.
+> Mechanically checkable subsets of §2, §4, §5, §6a, and §9 are enforced by
+> `scripts/validate-docs.ts`.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 MCP Server Access Model: three tools — `decisions_list`, `decisions_search`, `decisions_read` — and when to use each
-- §2 Section Numbering Convention: `## N.` and `### Na.` format, forbidden dot-notation patterns
-- §3 Section Title Guidelines: keyword-dense titles score 10× in search — domain noun + mechanism/pattern required
-- §4 Frontmatter Requirements: `title`, `description` (comma-separated keywords), `weight` (int) — all mandatory
-- §5 Cross-Reference Format: inter-doc markdown links, intra-doc `§N` shorthand, CLAUDE.md registration
-- §6 Document Size Guidelines: 200–600 lines target, split when concerns are independently searchable
-- §7 Quick Reference Section Convention: `## 0.` placement, 5–10 bullets, keep current
+- §1 Document Access Path: Guide Index → `## 0.` → target section, using plain `Read`
+- §2 Section Numbering Convention: why numbers exist and what the parser accepts
+- §2a Level-2 and Level-3 Numbering: `## N.` and `### Na.` mechanics
+- §2b Forbidden Heading Patterns: dot-notation, unnumbered headings, column-1 samples
+- §2c Renumbering Is Atomic: renumber only in a commit that fixes every referrer
+- §3 Section Title Guidelines: domain noun plus mechanism, 3–8 words
+- §4 Frontmatter Requirements: the two mandatory fields
+- §4a Title Field: 2–5 words, title-cased
+- §4b Description Field: one prose sentence, ≤200 characters
+- §5 Cross-Reference Format: how documents point at each other
+- §5a Inter-Document Links: relative markdown links
+- §5b Intra-Document Section References: the `§N` shorthand
+- §5c Guide Index Registration: every document is reachable from `CLAUDE.md`
+- §6 Document Size and Scope: what belongs in a governing document at all
+- §6a Size Targets and the Split-or-Cut Threshold: 200–600 target, 800 hard fail
+- §6b Subsection Citability Test: a `###` exists to be cited, not to be long
+- §6c Decisions Versus Usage — the README Boundary: examples live in `src/{ns}/README.md`
+- §7 Quick Reference Convention: one line per `##` and `###`
+- §8 Single Home Rule and Source-of-Truth Register: where each fact is allowed to live
+- §9 No Dated or Ticketed Content: no dates, task IDs, or changelog notes
 
 ---
 
-## 1. MCP Server Document Access Model
+## 1. Document Access Path
 
-The `tsmcp` MCP server provides three tools for accessing `.decisions/` documents.
-Understanding how each works guides structural decisions.
+Governing documents are plain markdown, read with `Read` and searched with `Grep`. There is
+no section-server and no special access tool.
 
-### 1a. decisions_list — Document and Section Discovery
+The intended path to a rule is three steps:
 
-Returns all documents with their title, description, weight, and a hierarchical section
-index (numbers and titles for all `##` and `###` sections). Agents use this first to
-find which document to read and which section to target.
+1. **Guide Index in `CLAUDE.md`** — one line per document; picks the document.
+2. **`## 0. Quick Reference`** — one line per section; picks the section.
+3. **The target section** — read it, and follow its links rather than re-deriving its rules.
 
-**Token cost:** ~80 lines for 12 documents. Always the entry point.
+This path is why §7 mandates a complete Quick Reference: with no external index, that block
+*is* the index. A document whose `## 0.` omits sections is unnavigable, not merely untidy.
 
-### 1b. decisions_search — Keyword-Ranked Section Retrieval
-
-Tokenises the query into terms and scores every section across all documents:
-
-```
-+10 points  per query term found in the section title
- +1 point   per query term found in the section body
-```
-
-Returns the top N sections (default 10) with a 3-line content preview.
-
-**Implications for authoring:**
-- A title containing the right keyword is worth 10× the same word in the body
-- Generic titles (`### Rules`, `### Setup`) score zero for most domain queries
-- Keyword-rich titles surface the right section without the agent having to read full docs
-
-**Token cost:** ~50 lines for 10 results. The primary search tool.
-
-### 1c. decisions_read — Section-Precise Retrieval
-
-Retrieves a document or a specific section by number or title substring:
-
-```
-mcp__tsmcp__decisions_read({"doc": "NAMESPACE_DESIGN.md", "section": "5c"})   # precise, preferred
-mcp__tsmcp__decisions_read({"doc": "NAMESPACE_DESIGN.md", "section": "Barrel Export Rules"})  # title match, fragile
-```
-
-If `section` is omitted, the full document is returned (expensive; use only as last resort).
-For `##`-level sections, all nested `###` subsections are included automatically.
-
-**Implications for authoring:**
-- Numbered sections are directly addressable; unnumbered sections require title substring matching
-- A misspelled or ambiguous title makes the section unreachable by number — numbering is mandatory
-
-**Token cost per section read:** typically 30–150 lines.
+Reading a full document is legitimate when the whole document is the subject — a review pass,
+a rewrite, or a first encounter with an unfamiliar domain. Prefer the path above when hunting
+one rule.
 
 ---
 
 ## 2. Section Numbering Convention
 
-The MCP parser extracts section numbers from headers by splitting on the first `.`:
+Numbers are the stable citation anchor. Roughly two hundred cross-references across
+`.decisions/`, `CLAUDE.md`, and `.claude/agents/` cite sections by number, so a number is a
+public identifier, not a formatting choice. Titles may be reworded freely; numbers may not.
 
-- `## 5. Title` → `number="5"`, `title="Title"`
-- `### 5a. Title` → `number="5a"`, `title="Title"`
-- `## 10b. Long Title` → `number="10b"`, `title="Long Title"`
+`scripts/validate-docs.ts` extracts the number by splitting the heading on its first `.`:
 
-**Valid number format:** starts with a digit (`0–9`), followed by zero or more alphanumeric
-characters (`0–9`, `a–z`, `A–Z`). Examples: `1`, `2a`, `5c`, `10b`, `0`.
+- `## 5. Title` → `5`
+- `### 5a. Title` → `5a`
 
-When documenting heading syntax in a `.decisions/` file, indent sample headings or
-prefix them with list markers. Literal column-1 `##` / `###` examples are parsed as
-real sections by `tsmcp`.
+**Valid number format:** a digit, followed by zero or more alphanumeric characters. Examples:
+`1`, `2a`, `5c`, `10b`, `0`.
 
-### 2a. Level-2 Section Numbering (`##`)
+### 2a. Level-2 and Level-3 Numbering
 
-Use sequential integers starting from 1. Reserve `0` for the Quick Reference section:
+`##` sections use sequential integers from 1, with `0` reserved for the Quick Reference.
+`###` subsections prefix the parent number and add a lowercase letter:
 
     ## 0. Quick Reference
     ## 1. First Major Topic
     ## 2. Second Major Topic
-    ## 2a. Sub-topic of 2 (when a topic requires subordinate grouping)
+    ### 2a. First Subsection of 2
+    ### 2b. Second Subsection of 2
     ## 3. Third Major Topic
 
-The `Na.` pattern for `##` sections (e.g., `## 2a.`) is appropriate only when a topic
-needs a related but distinct grouping that does not warrant its own document.
+Letters continue alphabetically (`3a` … `3z`, then `3aa` if ever needed). A `## 2a.`-style
+level-2 heading is legal but reserved for a related-but-distinct grouping that does not
+warrant its own document.
 
-### 2b. Level-3 Subsection Numbering (`###`)
+### 2b. Forbidden Heading Patterns
 
-Use the parent section number as a prefix, followed by a lowercase letter:
+These are rejected by `validate-docs.ts`:
 
-    ## 3. Route Handler Patterns
-    ### 3a. Route Controller Action and Context Typing
-    ### 3b. Middleware Composition and Execution Order
-    ### 3c. Error Boundary and Response Shape
-    ### 3d. Cloudflare Workers Bindings Access Pattern
+    ### 1.1 Title      ← ambiguous: the number reads as "1", colliding with parent ## 1
+    ### 2.3 Title      ← same collision
+    ### Title          ← unnumbered, so nothing can cite it
+    ## Title           ← unnumbered, same problem
 
-Letters continue alphabetically: `3a`, `3b`, `3c`, ... `3z`. For sections with more than
-26 subsections, continue with `3aa`, `3ab`, etc. (rare in practice).
+When a document needs to *show* heading syntax, indent the sample by four spaces, as above.
+A literal column-1 `##` inside a code fence is still parsed as a real section.
 
-### 2c. Forbidden Patterns
+### 2c. Renumbering Is Atomic
 
-These formats are silently broken by the parser:
+**Renumbering a section is legal only in a commit that also updates every referrer** across
+`.decisions/`, `CLAUDE.md`, and `.claude/agents/`. A renumber that lands without its
+referrers silently routes readers to the wrong rule, which is worse than a gap.
 
-    ### 1.1 Title      ← parser extracts "1", not "1.1" — collides with parent ## 1
-    ### 2.3 Title      ← same problem
-    ### Title          ← no number at all — only reachable by fragile title substring match
-    ## Title           ← no number — same problem
+When a pass deletes sections, **leave the gap**. Closing gaps is a separate, deliberate,
+self-contained commit — never a side effect of an edit that was about something else.
 
 ---
 
 ## 3. Section Title Guidelines
 
-Section titles are the highest-leverage place to improve search quality. The
-`decisions_search` scoring function weights title matches at 10×.
-
-### 3a. Include the Domain Noun
-
-Every title should name the specific concept, pattern, or mechanism it covers.
-Avoid titles that are meaningful only in context:
+A title names the concept, pattern, or mechanism the section governs — not its role in the
+surrounding narrative. Target 3–8 words.
 
 | Avoid | Prefer |
 |---|---|
 | `### Rules` | `### 3f. Barrel Export Rules and Constraints` |
 | `### Setup` | `### 1a. createApp Factory Setup and Configuration` |
-| `### Implementation` | `### 3b. Cloudflare Workers KV Implementation with Bindings` |
-| `### Basic usage` | `### 4a. HTMX Partial Render Basic Usage and Swap Targets` |
-| `### Structure` | `### 3a. Route Handler Struct and Dependency Structure` |
-
-### 3b. Include the Mechanism or Pattern Name
-
-When a subsection describes a known pattern, name the pattern in the title:
-
-| Avoid | Prefer |
-|---|---|
-| `### The mod.ts Pattern` | `### 1a. mod.ts Barrel Export and Namespace Catalog Pattern` |
-| `### Routes` | `### 5a. createController Action Map and app.map Registration` |
+| `### The mod.ts Pattern` | `### 1a. mod.ts Barrel Export and Namespace Catalog` |
 | `### Domain Errors` | `### 1b. Domain Error Sentinels and HTTP Status Mapping` |
-| `### Interface at the consumer` | `### 4a. Service Interface Defined at Consumer Layer` |
-| `### Security headers` | `### 6b. createSecurityHeaders CSP Nonce Injection Pattern` |
+| `### Security headers` | `### 6b. createSecurityHeaders CSP Nonce Injection` |
 
-### 3c. Use Parallel Title Structure Within a Section
-
-Subsections within the same parent should follow a consistent grammatical pattern.
-A parent covering rules might use `### Na. X Rule — Constraint/Consequence`. A parent
-covering patterns might use `### Na. Pattern Name and Use Cases`. Consistency makes
-`decisions_list` output easier to scan.
-
-### 3d. Target Length
-
-Titles should be 3–8 words. Short enough to scan in `decisions_list`; long enough to
-contain keywords. Avoid titles exceeding 10 words.
+Subsections under one parent should share a grammatical shape — all rules, or all patterns,
+not a mix. Consistency is what makes a `## 0.` block scannable.
 
 ---
 
 ## 4. Frontmatter Requirements
 
-Every `.decisions/` document must have YAML frontmatter at the top:
+Every `.decisions/` document opens with YAML frontmatter carrying exactly two fields:
 
     ---
     title: Short Human-Readable Title
-    description: "keyword one, keyword two, keyword three, ..."
-    weight: 15
+    description: "One sentence describing what this document governs."
     ---
 
 ### 4a. Title Field
 
-Used in `decisions_list` output and as the document's display name. Should be short
-(2–5 words), title-cased, and match the file's primary concern.
+Short (2–5 words), title-cased, matching the document's primary concern.
 
 ### 4b. Description Field
 
-Scanned by `decisions_search` at the document level. Write as a comma-separated list
-of searchable terms — not a prose sentence. Include:
-- Key concepts covered in the document
-- Names of patterns, tools, or mechanisms (e.g., `mod.ts`, `barrel exports`, `validate-exports`)
-- Alternative phrasings agents might search for
+**One prose sentence, at most 200 characters**, describing what the document governs. It is
+read by a human deciding whether to open the file.
 
-Good example:
+Good:
 
-    description: "barrel exports, mod.ts pattern, namespace catalog, validate-exports, app.map route registration, Cloudflare Workers bindings, CSP nonce, security headers, HTMX partial render, Tailwind v4 theme tokens"
+    description: "Barrel export rules, the namespace catalog, and leaf-versus-integration classification for every forge namespace."
 
-Avoid:
+Avoid — a keyword dump reads as noise and dates badly:
 
-    description: "Governing patterns for TypeScript module exports — barrel files, namespace design, route registration, and the mod.ts catalog pattern."
-
-### 4c. Weight Field
-
-Controls ordering in `decisions_list` output and is used as a tiebreaker in
-`decisions_search` (lower weight = higher priority). Assign weights by importance/access
-frequency:
-
-| Range | Purpose |
-|---|---|
-| 1–10 | Meta-documents (this guide, project-level rules) |
-| 11–20 | Architectural foundations (project structure, core rules) |
-| 21–30 | Implementation patterns (middleware, logging, validation) |
-| 31–40 | Specialised guides (concurrency, UI, data storage) |
-| 41+ | Reference-only documents (review checklists, sources) |
+    description: "barrel exports, mod.ts pattern, namespace catalog, validate-exports, app.map, bindings, CSP nonce, HTMX partial render, Tailwind tokens"
 
 ---
 
@@ -224,83 +164,119 @@ frequency:
 
 ### 5a. Inter-Document Links
 
-Use standard markdown links to reference other `.decisions/` documents:
+Reference another governing document by relative markdown link, with the section number when
+one applies:
 
 ```markdown
-See [Section 5](./ERROR_HANDLING.md) for the domain error sentinel pattern.
-Complements [NAMESPACE_DESIGN.md](./NAMESPACE_DESIGN.md) §3.
+See [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §2 for the Result primitive.
 ```
 
-The MCP server's `decisions_read` response automatically detects markdown links to other
-`.md` files and appends them as a "Related:" footer, making them visible to agents without
-reading the full section.
+`validate-docs.ts` resolves both the path and the cited section, so a link to a deleted or
+renumbered section fails the gate.
 
 ### 5b. Intra-Document Section References
 
-When referencing sections within the same document, use the `§N` shorthand inline:
+Within one document, use the `§N` shorthand inline:
 
 ```markdown
-See §5a for the cross-reference format before reading this section.
-The export validation rule (§3f) interacts with barrel catalog requirements (§3a).
+The export validation rule (§3f) interacts with the barrel catalog (§3a).
 ```
 
-### 5c. CLAUDE.md Registration
+### 5c. Guide Index Registration
 
-Every new `.decisions/` document must be added to the Guide Index in `CLAUDE.md` with
-a one-line description of its topic.
-
----
-
-## 6. Document Size Guidelines
-
-### 6a. Target Size and Warning Threshold
-
-- **Target:** 200–600 lines per document
-- **Warning:** `decisions_read` warns when a document exceeds 500 lines without a `section` parameter — agents will be discouraged from reading the full document
-- **Hard limit signal:** Documents exceeding 800 lines typically cover multiple independent concerns and should be split
-
-### 6b. When to Split a Document
-
-Split a document when it covers concerns that an agent would search for independently.
-The test: if two different queries would lead to the same document for unrelated reasons,
-the document covers too many concerns.
-
-Indicators of a split:
-- Two `##` sections have no cross-references to each other
-- The document's frontmatter description covers 3+ unrelated topics
-- The document exceeds 600 lines
-
-### 6c. Subsection Size Target
-
-Each `###` subsection should be 20–100 lines. Subsections shorter than 15 lines may
-belong as a paragraph in the parent `##` section. Subsections longer than 150 lines
-should be reviewed for further subdivision.
+Every `.decisions/` document must appear in the Guide Index in `CLAUDE.md` with a one-line
+description. The index and the directory must agree in both directions — a document missing
+from the index, or an index row naming a file that does not exist, fails the gate.
 
 ---
 
-## 7. Quick Reference Section Convention
+## 6. Document Size and Scope
 
-### 7a. Placement and Format
+### 6a. Size Targets and the Split-or-Cut Threshold
 
-Every document must begin with a `## 0. Quick Reference` section immediately after the
-introductory blockquote. It should contain 5–10 bullet points covering the document's
-key topics and their section numbers:
+- **Target:** 200–600 lines.
+- **Warn:** over 600 lines — review for a split or a cut.
+- **Fail:** over 800 lines — split or cut it; this is enforced, not advisory.
+
+Split along a boundary the codebase already uses — a runtime tier, a namespace, a lifecycle
+stage. Splitting a long document down the middle produces two documents nobody can predict
+the contents of.
+
+Prefer cutting to splitting. Most oversized documents are oversized because they restate
+things that live elsewhere (§8), not because they govern too much.
+
+### 6b. Subsection Citability Test
+
+**A `###` anchor exists to be cited, not to be long.** Length is not the test — being cited
+is. A three-line subsection that four other documents link to is correctly sized; a
+forty-line subsection nothing references is a candidate for deletion.
+
+Fold a subsection into its parent only when it is a true continuation of the parent's
+argument. A short subsection that merely mirrors source code or another document is
+**deleted**, not merged — merging preserves the duplication and hides it.
+
+### 6c. Decisions Versus Usage — the README Boundary
+
+`.decisions/` owns **decisions and constraints**: what was chosen, what is forbidden, and
+why. `src/{ns}/README.md` owns **usage and examples**: how to call the thing, in what order,
+with what arguments.
+
+**A usage sample in `.decisions/` is a defect unless it disambiguates a rule.** The carve-out
+is real and load-bearing — an exact field name, an exact encoded output, or a flag whose
+default inverts the rule is clearer shown than described. A sample that would read equally
+well as "see the README" is not disambiguating anything.
+
+---
+
+## 7. Quick Reference Convention
+
+Every document begins with a `## 0. Quick Reference` immediately after the opening
+blockquote, containing **one line per `##` and per `###` section**, in document order:
 
     ## 0. Quick Reference
 
-    - §1 Topic one: brief description of what agents find here
-    - §2 Topic two: key pattern or rule name
-    - §3a Specific subsection: when this is the primary entry point
-    - §4 Topic four: include named tools or patterns
+    - §1 Topic One: what this section decides
+    - §1a First Subsection: the specific rule it carries
+    - §2 Topic Two: what this section decides
 
-### 7b. Purpose
+Each line orients; none restates. If a reader can act on the `## 0.` line without opening the
+section, the line has absorbed the section's content and the duplication will drift. Add
+sections here as they are written — a stale map is worse than none, because it is trusted.
 
-The Quick Reference serves as a map that lets an agent decide which section to request
-without reading the full document. An agent reading `## 0. Quick Reference` (~30 lines)
-gets enough context to call `mcp__tsmcp__decisions_read({"doc": "AGENT_GUIDE.md", "section": "3a"})` directly,
-avoiding a full document load.
+---
 
-### 7c. Keep It Current
+## 8. Single Home Rule and Source-of-Truth Register
 
-When adding new sections to a document, update `## 0. Quick Reference` to include them.
-Stale Quick Reference sections that omit important sections reduce navigation efficiency.
+**A rule lives in exactly one file. Everywhere else is a link.** When the content you are
+about to write already exists in another document, in `CLAUDE.md`, or in a source file named
+below, cite it and stop. Prefer deleting a duplicate over syncing it.
+
+**Never put in prose what drifts** — function signatures, constant values, step counts, file
+inventories. Name the file that owns them.
+
+Facts owned by source, never restated in `.decisions/`:
+
+| Owns | File |
+|---|---|
+| Export subpath names | `package.json` `exports` |
+| Verification gate steps | `package.json` `scripts.check` |
+| Side-effectful modules | `package.json` `sideEffects` |
+| CSRF and honeypot field names | `src/form/constants.ts` |
+| Per-namespace export lists | `src/{ns}/mod.ts` |
+| `lib` and `types` configuration | `tsconfig.json` |
+| Barrel rules as *enforced* | `scripts/validate-exports.ts` |
+
+Every `@y-core/forge/<subpath>` written anywhere in the documentation set is checked against
+`package.json` `exports`; an unresolvable subpath fails the gate.
+
+---
+
+## 9. No Dated or Ticketed Content
+
+Governing documents describe the current state of the system. They carry no history.
+
+Forbidden, and checked: calendar dates in `YYYY-MM-DD` form, "as of" qualifiers, task or ticket
+identifiers, and changelog notes ("renamed from…", "fixed by…", "previously…").
+
+A rule that needs a date to make sense is not a rule yet. `CHANGELOG.md` and git history own
+the past; a governing document owns only the present.

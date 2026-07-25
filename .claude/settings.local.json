@@ -1,22 +1,86 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",
+    "CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+    "DISABLE_AUTOUPDATER": "0",
+    "DISABLE_BUG_COMMAND": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
+    "DISABLE_TELEMETRY": "1",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-5"
+  },
   "permissions": {
     "allow": [
-      "mcp__tsmcp__decisions_read",
-      "mcp__tsmcp__lsp_find_references",
+      "Bash(awk *)",
       "Bash(bun *)",
       "Bash(bun run *)",
-      "Bash(bun test *)",
-      "Bash(bun x *)",
+      "Bash(bun test*)",
+      "Bash(bun x wrangler *)",
       "Bash(bunx biome *)",
+      "Bash(bunx playwright *)",
+      "Bash(cargo *)",
+      "Bash(cargo build *)",
       "Bash(cargo test *)",
-      "Bash(echo \"EXIT: $?\")",
-      "Bash(echo \"exit: $?\")",
+      "Bash(cat:*)",
+      "Bash(cd:*)",
+      "Bash(curl *)",
+      "Bash(cut *)",
+      "Bash(date *)",
+      "Bash(echo \"---EXIT CODE $?---\")",
       "Bash(echo \"exit=$?\")",
-      "Bash(python3 -)",
-      "Bash(rg *)"
-    ]
+      "Bash(find *)",
+      "Bash(git *)",
+      "Bash(grep *)",
+      "Bash(head *)",
+      "Bash(jq *)",
+      "Bash(ls *)",
+      "Bash(playwright *)",
+      "Bash(python3 *)",
+      "Bash(rg *)",
+      "Bash(rustup *)",
+      "Bash(sed *)",
+      "Bash(sort *)",
+      "Bash(tail *)",
+      "Bash(tr *)",
+      "Bash(uniq *)",
+      "Bash(wc *)",
+      "Bash(wrangler *)",
+      "Bash(xargs *)",
+      "Read(//src/**)",
+      "Read(/src/**)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch"
+    ],
+    "deny": [
+      "Bash(git commit *)",
+      "Bash(git checkout *)"
+    ],
+    "ask": [
+      "Bash(git stash *)"
+    ],
+    "defaultMode": "plan"
   },
-  "enabledMcpjsonServers": [
-    "tsmcp"
-  ]
+  "model": "opusplan",
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {},
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "spinnerTipsEnabled": false,
+  "promptSuggestionEnabled": false,
+  "showClearContextOnPlanAccept": true,
+  "autoMemoryEnabled": false,
+  "autoMemoryDirectory": ".claude/memories",
+  "disableAutoMode": "disable",
+  "useAutoModeDuringPlan": false
 }

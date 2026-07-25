@@ -1,25 +1,41 @@
 ---
 title: Asset and Build Tooling
-description: "assets namespace, defineAssetsConfig, AssetsConfig, assets/build pipeline, buildCSS, buildJS, buildSprites, copyAssets, assets/manifest, createManifest, createSpriteRegistry, cli namespace, createCommand, pkg namespace, release, semver, bumpSemVer"
-weight: 32
+description: "The asset pipeline, the content-hash manifest system, the CLI framework, and the release tooling."
 ---
 
 # Asset and Build Tooling
 
-> Authoritative source for forge's asset pipeline (`assets/build`), manifest system
-> (`assets/manifest`), CLI framework (`cli`), and release tooling (`pkg`).
+> Owns forge's build-time surface: the asset pipeline (`assets/build`), the manifest system
+> (`assets/manifest`), the CLI framework (`cli`), and release tooling (`pkg`). These run on a
+> developer's machine, never in a Worker, so they are exempt from the Web-APIs-only rule.
 >
-> Complements [LIBRARY_ARCHITECTURE.md](./LIBRARY_ARCHITECTURE.md) §3 (runtime-only constraint).
+> Defers to: [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §1d for that exemption, and
+> [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §3c for the optional build peer
+> dependencies.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 assets namespace: `defineAssetsConfig`, `AssetsConfig`, `loadConfig`
-- §2 assets/build pipeline: `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets`
-- §3 assets/manifest: `createManifest`, `createSpriteRegistry`
-- §4 cli namespace: `createCommand`, `addCommand`, `execute`
-- §5 pkg namespace: release tooling, `parseSemVer`, `bumpSemVer`, `createReleaseCommand`
+- §1 Assets Namespace: declaring and discovering the pipeline config
+- §1a defineAssetsConfig — Schema and Validation: the canonical entry point
+- §1b AssetsConfig Type Shape: the config fields
+- §1c loadConfig — Config Discovery: walking up for `assets.config.ts`
+- §2 assets/build Pipeline: the build functions and change detection
+- §2a Build Functions — Orchestration: `buildAll` and the individual steps
+- §2b Hash and Change Detection: content hashing and the state file
+- §2c Watch Mode Integration: single-step rebuilds
+- §3 assets/manifest: resolving logical names to hashed paths
+- §3a createManifest — Content-Hashed Paths: the logical-to-hashed map
+- §3b createSpriteRegistry — SVG Symbol Lookup: symbol id to viewBox and content
+- §4 cli Namespace: the dependency-free command framework
+- §4a createCommand and addCommand: registering subcommands
+- §4b CLI Flags — Typed Options: the three flag types
+- §4c Error Handling in CLI: `CliError` and exit codes
+- §5 pkg Namespace — Release Tooling: the blessed release path
+- §5a createReleaseCommand — Automated Release Workflow: what the command does
+- §5b SemVer Utilities: parse, bump, format, compare
+- §5c Git Release Utilities: tag and working-tree helpers
 
 ---
 
