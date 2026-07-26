@@ -41,7 +41,9 @@ function extractSelectorBlocks(cssText: string, selector: string): string[] {
 }
 
 function parseDeclarations(block: string, into: Map<string, string>): void {
-  const declRegex = /--([a-zA-Z0-9-]+)\s*:\s*([^;}{]+?)\s*;/g;
+  // The terminating `;` is optional on the final declaration of a block, and minifiers always
+  // omit it — so `$` (end of the block interior) is an accepted terminator.
+  const declRegex = /--([a-zA-Z0-9-]+)\s*:\s*([^;}{]+?)\s*(?:;|$)/g;
   let match = declRegex.exec(block);
   while (match !== null) {
     if (match[1] && match[2] !== undefined) {

@@ -252,4 +252,31 @@ describe("buildCursors()", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("bakes from minified CSS where the signal chain ends on a last-in-block token", () => {
+    const { dir, config } = setup();
+    try {
+      // A minifier drops the `;` after the last declaration of every block. Here the light
+      // chain is --foreground → --palette-950 → --color-gray-950, and both indirections sit
+      // last in their block — the shape that used to throw "missing CSS token".
+      const minified = [
+        ":root,:host{--color-gray-50:oklch(98.5% .002 247.839);--color-gray-950:oklch(13% .028 261.692)}",
+        ":root{--background:#f3f4f6;--foreground:var(--palette-950)}",
+        ":root{--palette-50:var(--color-gray-50);--palette-950:var(--color-gray-950)}",
+        ".dark{--background:#1e2939;--foreground:var(--palette-50)}",
+      ].join("");
+
+      const result = buildCursors(config, minified);
+      const light = decodeURIComponent(result.select!.light!);
+      const dark = decodeURIComponent(result.select!.dark!);
+
+      expect(light).toContain('stroke="#030712"');
+      expect(dark).toContain('stroke="#f9fafb"');
+      // The halo reads --background directly, so a wrong theme map would show up here too.
+      expect(light).toContain('stroke="#f3f4f6"');
+      expect(dark).toContain('stroke="#1e2939"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
