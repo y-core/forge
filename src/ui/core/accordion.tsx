@@ -1,6 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { stateAttrs } from "../contracts/state-attrs";
+import { ACCORDION_SCOPE } from "../contracts/toggle-contract";
 import type { ForgeIcon } from "./icon";
 import { asClass, cn } from "./utils/cn";
 
@@ -29,8 +31,17 @@ const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children, ...rest }
   </div>
 );
 
-const AccordionItem: FC<AccordionItemProps> = ({ class: cls, children, ...props }) => (
-  <details data-slot='accordion-item' class={cn("group/accordion-item border-b border-border last:border-b-0", asClass(cls))} {...props}>
+/** One disclosure. `data-open` / `data-closed` start at the server's value and are then reconciled
+ * from the `<details>` element's own `open` by the eager `accordion` scope — without that client
+ * half a stylesheet keyed on the pair would match the initial state forever. */
+const AccordionItem: FC<AccordionItemProps> = ({ open, class: cls, children, ...props }) => (
+  <details
+    data-slot='accordion-item'
+    data-scope={ACCORDION_SCOPE}
+    {...(open ? { open } : {})}
+    {...stateAttrs({ open: open === true })}
+    class={cn("group/accordion-item border-b border-border last:border-b-0", asClass(cls))}
+    {...props}>
     {children}
   </details>
 );

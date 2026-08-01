@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { POPOVER_SCOPE } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
 
@@ -48,13 +49,19 @@ const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, ...
  * layer with free light-dismiss (outside-click + Esc) and exclusive-open against sibling auto
  * popovers — no JavaScript. Placement (`align`/`side`) is applied by static CSS anchored to the
  * invoker (the popover's implicit anchor); the data attributes select the rule.
+ *
+ * `side` and `align` are stamped here because they are decided at render and never change. Open and
+ * closed are **not**: they belong to the platform, and the eager `popover` scope reconciles them
+ * from the element's own `:popover-open`. A server-stamped `data-closed` would be an assertion this
+ * component is in no position to keep true.
  */
 const PopoverContent: FC<PopoverContentProps> = ({ id, align = "start", side = "bottom", class: cls, children, ...rest }) => (
   <div
     id={id}
     data-slot='popover-content'
+    data-scope={POPOVER_SCOPE}
     popover='auto'
-    {...stateAttrs({ open: false, side, align })}
+    {...stateAttrs({ side, align })}
     class={cn("z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}
     {...rest}>
     {children}

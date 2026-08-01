@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { DIALOG_SCOPE } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
 
@@ -28,6 +29,7 @@ const DialogRoot: FC<DialogProps> = ({ id, open, class: cls, children, ...props 
   <dialog
     id={id}
     data-slot='dialog'
+    data-scope={DIALOG_SCOPE}
     {...(open ? { open } : {})}
     {...stateAttrs({ open: open === true })}
     class={cn("rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-lg", asClass(cls))}

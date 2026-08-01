@@ -1,7 +1,7 @@
 import { MENU_ITEM_SELECTOR } from "../contracts/menu-contract";
 import { mountRovingFocus } from "./composite";
 import { activeElement, asElement, contains, ownerDocument } from "./dom";
-import { mountTransitionState } from "./transition";
+import { mountPopupTriggerState, mountTransitionState } from "./transition";
 
 /**
  * Menu keyboard behaviour — the only part of a menu the platform does not already provide.
@@ -24,12 +24,14 @@ export interface MenuOptions {
 }
 
 /**
- * Mount a menu popup's keyboard behaviour and transition state, returning a disposer.
+ * Mount a menu popup's keyboard behaviour, transition state and trigger state, returning a
+ * disposer.
  * @public
  */
 export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => void {
   const disposeFocus = mountRovingFocus(popup, { items: MENU_ITEM_SELECTOR, orientation: "vertical", loop: options.loop ?? true, typeahead: true });
   const disposeTransition = mountTransitionState(popup);
+  const disposeTriggers = mountPopupTriggerState(popup);
 
   /** Where focus was when the menu opened. Captured rather than derived from `commandfor`, because a
    * menu can be opened by any invoker — a context menu has no single trigger button. */
@@ -60,6 +62,7 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
   return () => {
     popup.removeEventListener("beforetoggle", onBeforeToggle);
     popup.removeEventListener("toggle", onToggle);
+    disposeTriggers();
     disposeTransition();
     disposeFocus();
   };

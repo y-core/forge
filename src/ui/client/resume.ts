@@ -62,7 +62,11 @@ let teardown: (() => void) | null = null;
  *
  *  `within` names any node in the document to mount on; omit it for the top-level page. It exists so
  *  an app rendered inside an iframe mounts on **its own** document — a bare `document` here would
- *  install the listeners on the wrong realm and every scope would go dead without an error. @public */
+ *  install the listeners on the wrong realm and every scope would go dead without an error.
+ *
+ *  Pass a `ShadowRoot` to scan only that subtree, which is what a web component wants when it
+ *  resumes its own markup. The delegated listeners still go on the containing document either way:
+ *  the events they wait for are composed, so they cross the boundary on their own. @public */
 export function resume(within?: Node): () => void {
   if (teardown) return teardown; // already mounted — no duplicate listeners
   const doc = ownerDocument(within);
@@ -89,7 +93,7 @@ export function resume(within?: Node): () => void {
   // `data-scope` names no registered definition is always a bug — the app forgot to
   // side-effect-import the client module that registers it. Warn once per unknown name.
   const warnedUnknown = new Set<string>();
-  for (const el of doc.querySelectorAll<HTMLElement>("[data-scope]")) {
+  for (const el of findScopes(scanRoot(within, doc))) {
     const name = el.dataset.scope ?? "";
     const def = scopes.get(name);
     if (!def) {
@@ -104,6 +108,50 @@ export function resume(within?: Node): () => void {
     if (def.eager) ensureResumed(el, def);
   }
   return teardown;
+}
+
+/** The tree the eager pass scans. A `ShadowRoot` (or any document fragment) is honoured as the walk
+ * root so a web component can resume only its own markup; anything else scans the whole document,
+ * which is what `within` has always meant for the listeners. */
+function scanRoot(within: Node | undefined, doc: Document): ParentNode {
+  const nodeType = within?.nodeType;
+  return nodeType === 11 || nodeType === 9 ? (within as unknown as ParentNode) : doc;
+}
+
+/**
+ * Every `[data-scope]` at or below `root`, descending into open shadow roots.
+ *
+ * A flat `querySelectorAll` stops at a shadow boundary, so a scope rendered inside a web component
+ * was never discovered: the markup was there, its definition was registered, and nothing forge adds
+ * to it ever ran — no arrow navigation, no typeahead, no focus restoration, and no warning either,
+ * because the element was never visited. The delegated half never had this problem, because
+ * `closestAcross` climbs out through `host`.
+ *
+ * Shadow hosts are not addressable by a selector, so each tree has to be looked at element by
+ * element. A closed root reports `shadowRoot === null` and is stepped over, which is the same answer
+ * the platform gives everywhere else.
+ *
+ * Private on purpose: only discovery needs it, and a second exported traversal helper would be
+ * public surface with one caller.
+ */
+function findScopes(root: ParentNode): HTMLElement[] {
+  const found: HTMLElement[] = [];
+  // Breadth-first over a growing list rather than recursion — a shadow root nested inside a shadow
+  // root is just another tree to visit, at any depth.
+  const trees: ParentNode[] = [root];
+  for (let i = 0; i < trees.length; i += 1) {
+    const tree = trees[i];
+    if (!tree) continue;
+    // A `ShadowRoot` handed in as the walk root can itself be a host's scope element's parent, but
+    // the host's own subtree root may carry `data-scope`; `querySelectorAll` reports descendants only.
+    const self = tree as Partial<HTMLElement>;
+    if (self.dataset?.scope !== undefined) found.push(tree as HTMLElement);
+    for (const el of tree.querySelectorAll<HTMLElement>("*")) {
+      if (el.dataset.scope !== undefined) found.push(el);
+      if (el.shadowRoot) trees.push(el.shadowRoot);
+    }
+  }
+  return found;
 }
 
 /** Hydrates a scope's state into signals and runs its `setup` exactly once. Idempotent: a

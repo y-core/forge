@@ -198,6 +198,27 @@ from the base stop-mapping below.
 [data-slot="toolbar-flyout"][data-placement="top"]    { top: anchor(bottom); left: anchor(left); margin-top: 0.5rem; }
 [data-slot="toolbar-flyout"][data-placement="bottom"] { bottom: anchor(top); left: anchor(left); margin-bottom: 0.5rem; }
 
+/* ── Coordinate placement ─────────────────────────────────────────────────
+   A popup with no invoker — a context menu opened where a right-click landed — has no anchor for
+   `anchor()` to resolve against, so every rule above evaluates to nothing and the UA's `[popover]`
+   default (`inset: 0; margin: auto`) centres it. Resetting `inset` and `margin` here is therefore
+   not tidying: without it the UA centring survives and the two custom properties do nothing.
+
+   `openPopoverAt` writes `--anchor-x` / `--anchor-y` through CSSOM and clamps them to the viewport,
+   so no `position-try` fallback is wanted — the clamp already did that job, and letting CSS flip the
+   box afterwards would move it away from the point the user clicked.
+
+   Last in the block on purpose: `[popover][data-coords]` ties with the two-attribute anchored
+   selectors above on specificity, so source order is what decides it. */
+[popover][data-coords] {
+  position: fixed;
+  margin: 0;
+  inset: auto;
+  left: var(--anchor-x, 0px);
+  top: var(--anchor-y, 0px);
+  position-try-fallbacks: none;
+}
+
 /* Trigger stays highlighted while its popover is open (replaces the old <details open> group state). */
 [data-slot="popover"]:has(> [data-slot="popover-content"]:popover-open) > [data-slot="popover-trigger"] {
   background-color: var(--accent);

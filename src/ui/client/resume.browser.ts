@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
 import { SCOPE_EVENTS } from "../contracts/scope-events";
@@ -311,6 +311,89 @@ test.describe("resume — hydration", () => {
     await page.evaluate(() => window.forgeResume.resume());
 
     expect(warnings.filter((line) => line.includes("ghost"))).toHaveLength(1);
+  });
+});
+
+/**
+ * Discovery, not delegation. The delegated half was always shadow-safe — `closestAcross` climbs out
+ * through `host` — but the eager pass looked *down* with a plain `querySelectorAll`, which stops at
+ * the boundary. A scope inside a web component therefore rendered and then sat inert, with no
+ * warning, because nothing ever visited it.
+ */
+test.describe("resume — shadow-root discovery", () => {
+  /** Attach `html` inside a shadow root nested `depth` levels below `#host`. */
+  async function nest(page: Page, html: string, depth: number, mode: ShadowRootMode = "open"): Promise<void> {
+    await mount(page, `<div id="host"></div><template id="source">${html}</template>`, EXPOSE);
+    await page.evaluate(
+      ({ depth, mode }) => {
+        const template = document.querySelector<HTMLTemplateElement>("#source");
+        let host = document.querySelector<HTMLElement>("#host");
+        if (!template || !host) return;
+        for (let level = 1; level < depth; level += 1) {
+          const inner = document.createElement("div");
+          host.attachShadow({ mode }).append(inner);
+          host = inner;
+        }
+        host.attachShadow({ mode }).append(template.content.cloneNode(true));
+      },
+      { depth, mode },
+    );
+  }
+
+  test("an eager scope two shadow levels deep runs its setup", async ({ page }) => {
+    await nest(page, await scopeMarkup("demo", "act", { count: 7 }), 2);
+
+    const seen = await page.evaluate(() => {
+      let count: unknown = null;
+      window.forgeResume.registerScope("demo", {
+        eager: true,
+        setup: ({ state }) => {
+          count = state.count?.value;
+        },
+      });
+      window.forgeResume.resume();
+      return count;
+    });
+
+    expect(seen).toBe(7);
+  });
+
+  test("a closed shadow root is skipped without throwing", async ({ page }) => {
+    await nest(page, await scopeMarkup("demo", "act"), 1, "closed");
+
+    const result = await page.evaluate(() => {
+      let setups = 0;
+      window.forgeResume.registerScope("demo", {
+        eager: true,
+        setup: () => {
+          setups += 1;
+        },
+      });
+      window.forgeResume.resume();
+      return setups;
+    });
+
+    // A closed root reports `shadowRoot === null`, so it is stepped over rather than being an error:
+    // the same answer the platform gives to every other question about a closed root.
+    expect(result).toBe(0);
+  });
+
+  test("a ShadowRoot passed as `within` scans only that subtree", async ({ page }) => {
+    const outside = await render(Resumable({ name: "demo", children: "outside" }));
+    await nest(page, await scopeMarkup("demo", "act"), 1);
+    await page.evaluate((html) => document.body.insertAdjacentHTML("beforeend", html), outside);
+
+    const roots = await page.evaluate(() => {
+      const seen: string[] = [];
+      window.forgeResume.registerScope("demo", { eager: true, setup: ({ root }) => void seen.push(root.textContent ?? "") });
+      const shadow = document.querySelector("#host")?.shadowRoot;
+      if (shadow) window.forgeResume.resume(shadow);
+      return seen;
+    });
+
+    // One hit, and it is the one inside the root — a web component resuming its own markup must not
+    // reach back out and hydrate the page's scopes as a side effect.
+    expect(roots).toEqual(["go"]);
   });
 });
 

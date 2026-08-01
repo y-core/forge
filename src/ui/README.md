@@ -1,6 +1,6 @@
 # `@y-core/forge/ui`
 
-Source-distributed UI primitives for forge apps, split across thirteen import sub-paths. The family
+Source-distributed UI primitives for forge apps, split across fourteen import sub-paths. The family
 covers server-rendered JSX primitives (`@y-core/forge/ui/core`) with their client scopes
 (`@y-core/forge/ui/core/client`), pre-bound signal-binding wrappers (`@y-core/forge/ui/controls`),
 the DOM contract those two halves share (`@y-core/forge/ui/contracts`), forge's self-owned icon asset
@@ -9,8 +9,10 @@ manifest (`@y-core/forge/ui/assets`) and its browser-safe glyph parser
 (`@y-core/forge/ui/client`), SSR-only stateful components (`@y-core/forge/ui/server`),
 configuration-driven app chrome — navbar, toolbar, theme toggle — (`@y-core/forge/ui/chrome`) with
 its client island (`@y-core/forge/ui/chrome/client`), the pinned HTMX bundle
-(`@y-core/forge/ui/client/htmx`), and a ready-made component showcase (`@y-core/forge/ui/show`,
-`@y-core/forge/ui/show/client`).
+(`@y-core/forge/ui/client/htmx`), a ready-made component showcase (`@y-core/forge/ui/show`,
+`@y-core/forge/ui/show/client`), and the addressable stylesheets and theme ramps
+(`@y-core/forge/ui/assets/css/*.css`) — a subpath **pattern**, so it names a family rather than one
+file, and each real `.css` in that directory is reachable.
 
 Every component is a thin wrapper over a native element with default Tailwind styling, predictable prop
 pass-through, and explicit composition. Field state and icon sprites are owned through composition, not
@@ -30,6 +32,7 @@ configuration.
 - [`@y-core/forge/ui/contracts`](#y-coreforgeuicontracts) — the shared DOM contract as pure data
 - [`@y-core/forge/ui/assets`](#y-coreforgeuiassets) — forge's self-owned icon asset manifest
 - [`@y-core/forge/ui/assets/glyphs`](#y-coreforgeuiassetsglyphs) — browser-safe sprite glyph parser
+- [`@y-core/forge/ui/assets/css/*.css`](#the-stylesheet--one-import-one-ramp) — the entry stylesheet and the theme ramps
 - [`@y-core/forge/ui/client`](#y-coreforgeuiclient) — browser controllers + signals runtime
 - [`@y-core/forge/ui/server`](#y-coreforgeuiserver) — SSR-only Flash and Resumable
 - [`@y-core/forge/ui/chrome`](#y-coreforgeuichrome) — SSR Navbar, Toolbar, ThemeToggle + theme constants
@@ -818,6 +821,8 @@ Three modules no consumer mounts directly, and every controller above is built o
 | `closestAcross(node, sel)` / `contains(parent, child)` | `closest` and `contains` that step over shadow boundaries |
 | `mountRovingFocus(root, opts)` | the composite controller — one tab stop, arrow keys, Home/End, typeahead, RTL, disabled-item skip, focus restoration. Returns a disposer |
 | `mountTransitionState(el)` | publishes `data-starting-style` / `data-ending-style` around an open or close, reconciled with `data-open` / `data-closed`. One controller, never per-component animation code |
+| `mountPopupTriggerState(popup)` | the same observation pointed the other way — publishes `data-popup-open` on the popup's **invokers** while it is open |
+| `openPopoverAt(el, x, y, opts?)` | opens a native popover at a viewport coordinate, clamped on screen, for a popup that has no invoker to anchor to |
 
 `mountRovingFocus` takes `{ items, orientation?, loop?, typeahead?, typeaheadTimeout? }` and resolves
 its items **live from the DOM on every interaction**, so a widget whose rows are rebuilt between
@@ -847,6 +852,31 @@ and the platform does not supply — arrow navigation, typeahead, focus on the f
 focus back on the opener at close. The opener is *captured* rather than derived from `commandfor`,
 because a context menu has no single trigger button, and focus is only reclaimed when the close
 actually stranded it.
+
+#### Coordinate placement — `openPopoverAt`
+
+Every other popup in forge is positioned by CSS Anchor Positioning against its invoker: a popover's
+implicit anchor is the button its `commandfor` names, and the whole placement set in `theme-base.css`
+is keyed off `anchor()`. **A context menu has no invoker** — it opens where a right-click landed, on
+an element that is not a trigger — so every anchored rule resolves to nothing and the UA's `[popover]`
+default centres the panel in the viewport.
+
+```typescript
+import { openPopoverAt } from "@y-core/forge/ui/client";
+
+canvas.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+  openPopoverAt(menu, event.clientX, event.clientY);   // { margin } keeps a gap at each edge
+});
+```
+
+The popup opts in with `Menu.Popup`'s `coords` prop (or the `data-coords` attribute directly), which
+selects the coordinate rule; `openPopoverAt` also stamps it, so a popup that opens both ways needs no
+second markup variant. Coordinates travel as `--anchor-x` / `--anchor-y` written through **CSSOM**,
+never as a generated `style` attribute — forge's CSP carries no `style-src 'unsafe-inline'`, and the
+JSX renderer drops `style` outright. Calling it again with a new point **repositions** an open popup
+rather than closing and reopening it. The position is clamped to the viewport, so a menu opened at any
+edge is fully on screen.
 
 #### Nav and Turnstile controllers
 

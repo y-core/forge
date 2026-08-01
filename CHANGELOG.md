@@ -10,6 +10,170 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [0.0.75] — 2026-08-01
+
+The client halves the Base UI refactor was missing. Four components that stamped a styling hook and
+had nothing to update it now have controllers; `data-popup-open` gets its first producer; scope
+discovery learns to see into shadow roots; the compound button bases are unified on one exported
+`cva`; and a popover can finally be placed at a coordinate rather than against an invoker. Contains a
+**breaking change** to the toolbar's class strings — see below.
+
+### ⚠️ Breaking Changes
+
+1. **`Toolbar.Button` and `Toolbar.Link` render `core/Button`'s classes, not the toolbar's own.**
+   `core/toolbar.tsx` declared a private `ITEM_BASE`; it is gone, and both items now resolve through
+   the newly-exported `buttonVariants` at `variant="ghost"`, `size="sm"` by default. This is a real
+   visual change, not a reshuffle.
+
+   ```
+   before: inline-flex items-center justify-center gap-2 rounded-md px-2 py-1 text-sm text-foreground
+           outline-none cursor-pointer hover:bg-accent hover:text-accent-foreground
+           focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50
+
+   after:  inline-flex items-center justify-center rounded-lg font-medium transition-colors
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+           disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm
+   ```
+
+   Concretely: `rounded-md` → `rounded-lg`, `px-2 py-1` → `h-8 px-3`, `gap-2` and `cursor-pointer`
+   dropped, `font-medium` and `transition-colors` added, and hover no longer sets
+   `text-accent-foreground`. Migration: a stylesheet or test pinning the old string updates to the
+   new one; a caller that wants the old geometry passes `size` and a `class` rather than relying on
+   the default. `chrome/Toolbar`'s **rail separators** also change shape, from `w-6 h-px` /
+   `h-6 w-px` to `Toolbar.Separator`'s own `h-px w-full` / `h-5 w-px`, with only the margins left as
+   a caller class.
+
+   **No `tailwind-merge`, now or later.** It resolves conflicts between class *strings*; conflicts
+   between CSS *layers* are invisible to it. It would add a runtime dependency and a per-render cost
+   on a Workers SSR path and fix nothing.
+
+2. **`Popover.Content` no longer emits `data-closed` at render.** It emitted a hardcoded
+   `open: false` that was never updated — a lie from first render that stayed wrong for the whole
+   time the popover was open. The new eager `popover` scope reconciles `data-open` / `data-closed`
+   from the element's own `:popover-open`, so the pair is correct at every instant instead of at
+   none. Migration: nothing, if you run the `ui/core/client` side-effect import. Without it, markup
+   that used to carry a (wrong) `data-closed` now carries neither attribute — which is the honest
+   answer for a page with no client half.
+
+### Added
+
+- **`openPopoverAt(el, x, y, options?)`** in `ui/client` — opens a native popover at a viewport
+  coordinate, clamped on screen. For the one case CSS Anchor Positioning cannot serve: a **context
+  menu has no invoker**, so every anchored rule resolves to nothing and the UA's `[popover]` default
+  centres the panel. Coordinates travel as `--anchor-x` / `--anchor-y` written through **CSSOM**,
+  never a generated `style` attribute — forge's CSP carries no `style-src 'unsafe-inline'`. Opt in
+  with `Menu.Popup`'s new **`coords`** prop, or the `data-coords` attribute directly.
+- **`mountPopupTriggerState(popup)`** in `ui/client` — the first producer of `data-popup-open`, the
+  trigger's own state while its popup is open. CSS has no selector that walks from a popup to its
+  trigger, so "the button that stays lit while its flyout is up" was previously inexpressible.
+  Triggers are resolved document-wide via `commandfor` and filtered on the command *verb*, so a
+  `Menu.Item` or `Dialog.Close` naming the same target is not mistaken for one.
+- **`buttonVariants`** is exported from `ui/core`, with a new **`square`** size
+  (`w-full aspect-square p-0`). `icon` and `icon-sm` name a size in pixels; `square` names a
+  *relationship* — take the parent's width, be as tall as you are wide — which is the only form an
+  app whose icon rail is a design token can consume without overriding the class it just asked for.
+- **`Toolbar.Button` and `Toolbar.Link` take `variant`, `size`, `pressed` and `asChild`.** `pressed`
+  emits `aria-pressed`, `data-pressed` **and** `ACTIVE_COMPOSITE_ITEM` together — never one without
+  the others — so the rail's boot tab stop lands on the active tool rather than on whichever item is
+  first. `asChild` is `core/Button`'s exact contract, extracted and shared: exactly one JSX element
+  child, or it throws.
+- **`DIALOG_SCOPE`, `POPOVER_SCOPE`** (new `contracts/overlay-contract.ts`), **`ACCORDION_SCOPE`** and
+  **`ToggleAction`** (`contracts/toggle-contract.ts`), and **`POPOVER_COORDS_ATTR`** /
+  `ANCHOR_X_PROPERTY` / `ANCHOR_Y_PROPERTY`, all from `ui/contracts`.
+- `ACTIVE_COMPOSITE_ITEM` is now also exported from **`ui/contracts`**. It is unchanged in
+  `ui/client`; the declaration simply moved to where an SSR component can reach it.
+
+### Fixed
+
+- **`resume()` could not find an eager scope inside a shadow root.** Discovery used a flat
+  `querySelectorAll`, which does not cross a shadow boundary, so a scope rendered inside a web
+  component was never *visited*: its `setup` never ran, and nothing warned. That is most of what the
+  UI refactor added — `toolbar`, `menu`, `tabs`, `tooltip`, `collapsible`, `number-field`, `theme`
+  and `navbar` are all eager. A `core/Menu` inside a web component rendered, opened and
+  light-dismissed (all platform) with **no arrow navigation, no typeahead and no focus restoration**
+  (all forge). The eager pass now walks the tree and descends into every open `shadowRoot`; a closed
+  root is stepped over. `resume(within)` additionally accepts a `ShadowRoot`, so a web component can
+  resume only its own subtree.
+- **`Dialog`, `Popover` and `Accordion.Item` had no client half at all.** Each stamped state at
+  render and then never moved: `Dialog` froze at its `open` prop, `Popover.Content` was hardcoded
+  wrong, and `Accordion.Item` emitted **no** `data-open` / `data-closed` ever, so a stylesheet keyed
+  on the pair matched nothing at any point in the component's life. All three now stamp a scope and
+  mount `mountTransitionState`, which publishes from the element's own state and never decides it.
+- **`Toggle` was a button that announced its own behaviour and had none.** It stamped
+  `TOGGLE_SCOPE` but no `data-on-click`, and a lazy scope resumes only on a `data-on-*` interaction —
+  so nothing could ever resume it and the eager pass skipped it too. The component now emits the
+  action itself instead of leaving it to the caller.
+- **`chrome/Toolbar` stopped hand-rolling the primitives it sits next to.** A fourth button base
+  (`TRIGGER_CLS`), a separator with a different class set from `Toolbar.Separator`, and two
+  hand-stamped `TOOLBAR_ITEM_ATTR`s are all deleted in favour of `core/Toolbar`. The rail keeps its
+  own `<nav>` root, because the flyout's `data-placement` anchoring is CSS the generic `Popover`
+  cannot express.
+
+### Internal / Tooling
+
+- `ACTIVE_COMPOSITE_ITEM` moved from `client/composite.ts` to a new
+  `contracts/composite-contract.ts`. It had **zero producers** despite being documented, and the
+  reason was structural: an SSR component cannot import a module that names `document`.
+- `core/utils/as-child.ts` holds the one `asChild` model, called by `Button`, `Toolbar.Button` and
+  `Toolbar.Link` rather than reimplemented per compound.
+- `core/toolbar.test.tsx` is new — `core/Toolbar`'s SSR markup previously had no unit coverage at all.
+- The `data-*` conformance guard gained `data-coords` as a declared **structural** attribute: it
+  names a placement *mode*, sibling to `data-placement`, not to `data-side`.
+- Test counts: `bun test` 1931 → **1947** across 168 files; `bun run test:browser` 260 → **290**.
+
+## [0.0.74] — 2026-08-01
+
+Two structural changes to `@y-core/forge/ui`, cut early because they unblocked a consumer: the DOM
+contract becomes an addressable namespace of its own, and forge's stylesheets become importable at
+all. Contains a **breaking change** to the cascade position of every component rule — see below.
+
+### ⚠️ Breaking Changes
+
+1. **`theme-base.css`'s component rules are now inside `@layer components`.** They were unlayered,
+   and unlayered CSS outranks *all* layered CSS whatever the selector weight — so those rules beat
+   every Tailwind utility unconditionally, including the ones forge's own components set on the very
+   elements they select. A `max-w-sm` on a `<dialog>` read as an override and never was one. Layering
+   puts a component default where a caller's utility can win, which is the relationship a default is
+   supposed to have.
+
+   Migration: a rule of your own that used to beat a forge component rule by being unlayered still
+   does. A forge rule you were **relying on to beat your own utility** now loses to it — raise your
+   own specificity, or move your rule out of a layer. The `:root`, `.dark` and `@theme inline` blocks
+   deliberately stay unlayered: a custom-property declaration is not a cascade participant in this
+   sense, and `@theme` is a Tailwind at-rule that must be seen at the top level.
+
+### Added
+
+- **`@y-core/forge/ui/contracts`** — a subpath of its own for the DOM contract both tiers share:
+  `STATE_ATTRS`, `stateAttrs`, `applyStateAttrs`, `SCOPE_EVENTS`, and the scope-name and selector
+  constants each keyboard primitive shares between its SSR and its client half. A consuming app has
+  to *address* this DOM; without an export its only option was to re-type every name as a string
+  literal, becoming a third writer of the same attribute in a repository forge's gate cannot see.
+  The eight contract modules moved from `src/ui/*` into `src/ui/contracts/`.
+- **`@y-core/forge/ui/assets/css/*.css`** — the stylesheets are addressable, via a subpath
+  **pattern** so every real file in the directory is reachable rather than merely declared.
+  **`forge.css`** is the one import an app needs (tokens *and* generated rules); **`forge-show.css`**
+  covers the showcase.
+- **`@source` paths in `forge.css`, resolved relative to itself.** Tailwind v4's automatic content
+  scan **ignores `node_modules`**, so without them none of forge's classes were ever generated: the
+  markup rendered and every class on it had no rule. A consumer build produced **2** utilities from
+  forge's components before this; it produces **302** after. Relative-to-itself is the only form that
+  survives pnpm, a workspace, a git dependency and a monorepo alike.
+
+### Removed
+
+- **`data-anchor-hidden`.** It was declared in `STATE_ATTRS` and in the doc table and written by
+  **nothing** — no component, no controller. A declared hook that is never emitted is as misleading
+  as a hook that drifted: a consumer styles against it and gets a rule that can never match. Removed
+  while the table was still new, because after publication a deletion is a breaking change.
+
+### Internal / Tooling
+
+- **`validate-exports` expands subpath patterns from disk.** A literal key proves a subpath was
+  *declared*; an expanded pattern proves each real file is *reachable*. The absence of that second
+  check is what let forge ship 73 versions of unaddressable stylesheets.
+- `validate-docs` and `NAMESPACE_DESIGN.md` §3a updated for the new namespace.
+
 ## [0.0.73] — 2026-08-01
 
 The Base UI refactor of `@y-core/forge/ui`. Eleven new SSR primitives, seven new client controllers,
@@ -442,6 +606,9 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
-[0.0.68]: https://github.com/y-core/forge/compare/v0.0.67...HEAD
+[0.0.75]: https://github.com/y-core/forge/compare/v0.0.74...v0.0.75
+[0.0.74]: https://github.com/y-core/forge/compare/v0.0.73...v0.0.74
+[0.0.73]: https://github.com/y-core/forge/compare/v0.0.68...v0.0.73
+[0.0.68]: https://github.com/y-core/forge/compare/v0.0.67...v0.0.68
 [0.0.67]: https://github.com/y-core/forge/compare/v0.0.66...v0.0.67
 [0.0.66]: https://github.com/y-core/forge/compare/v0.0.65...v0.0.66

@@ -2,7 +2,8 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
-import { TOGGLE_SCOPE } from "../contracts/toggle-contract";
+import { TOGGLE_SCOPE, type ToggleAction } from "../contracts/toggle-contract";
+import { scopeAttrs } from "../server/scope-attrs";
 import { asClass, cn } from "./utils/cn";
 
 type ToggleProps = Omit<JSX.IntrinsicElements["button"], "children"> & { pressed?: boolean; children?: JSXNode };
@@ -26,6 +27,10 @@ const TOGGLE_BASE =
  *
  * The pressed state flips client-side through the scope registered by `ui/core/client`; without that
  * side-effect import the markup is a static, still-accessible button.
+ *
+ * The `data-on-click` is emitted by the component, not left to the caller. That scope is lazy, and a
+ * lazy scope resumes only on a `data-on-*` interaction — a Toggle without one carries a scope name
+ * nothing can ever act on, which is a button that looks wired and is not.
  * @public
  */
 export const Toggle: FC<ToggleProps> = ({ pressed = false, class: cls, children, ...rest }) => (
@@ -33,6 +38,7 @@ export const Toggle: FC<ToggleProps> = ({ pressed = false, class: cls, children,
     type='button'
     data-slot='toggle'
     data-scope={TOGGLE_SCOPE}
+    {...scopeAttrs<ToggleAction>({ onClick: "toggle" })}
     aria-pressed={String(pressed) as "true" | "false"}
     {...stateAttrs({ pressed })}
     class={cn(TOGGLE_BASE, asClass(cls))}

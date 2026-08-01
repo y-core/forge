@@ -60,6 +60,10 @@ const STRUCTURAL_ATTRS = new Set([
   "data-theme-preference",
   "data-compact",
   "data-placement",
+  // `data-coords` selects a *placement mode*, not a state: it says this popup is positioned at a
+  // coordinate rather than against an invoker, which is a fact about how the panel is used and not
+  // about what it is currently doing. Sibling to `data-placement`, not to `data-side`.
+  "data-coords",
 ]);
 
 const STRUCTURAL_PREFIXES = ["data-on-"];

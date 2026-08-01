@@ -2,7 +2,7 @@ export { Accordion } from "./accordion";
 export { Alert, type AlertVariant } from "./alert";
 export { Avatar } from "./avatar";
 export { Badge, type BadgeVariant } from "./badge";
-export { Button, type ButtonProps, type ButtonSize } from "./button";
+export { Button, type ButtonProps, type ButtonSize, buttonVariants } from "./button";
 export { Card } from "./card";
 export { CheckboxGroup } from "./checkbox-group";
 export { Collapsible } from "./collapsible";

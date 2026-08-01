@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { MENU_SCOPE } from "../contracts/menu-contract";
+import { POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
 import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
 
@@ -20,6 +21,15 @@ interface MenuPopupProps extends Omit<JSX.IntrinsicElements["div"], "children"> 
   id: string;
   side?: Extract<Side, "top" | "bottom">;
   align?: Align;
+  /**
+   * Place this popup at a coordinate handed to `openPopoverAt` instead of against an invoker.
+   *
+   * A context menu is the case: it has no trigger button, so `side` and `align` — which describe a
+   * position *relative to an anchor* — have nothing to describe, and the anchored rules resolve to
+   * nothing. They are still emitted, because the attributes are a styling hook a consumer may key on
+   * for its own arrow or shadow direction; they simply stop deciding placement.
+   */
+  coords?: boolean;
   children?: JSXNode;
 }
 
@@ -94,13 +104,14 @@ const MenuTrigger: FC<MenuTriggerProps> = ({ id, class: cls, children, ...rest }
  * element on every interaction, so a popup whose rows are replaced between openings — the shape a
  * context menu built from synchronous callbacks has — needs no re-mounting.
  */
-const MenuPopup: FC<MenuPopupProps> = ({ id, side = "bottom", align = "start", class: cls, children, ...rest }) => (
+const MenuPopup: FC<MenuPopupProps> = ({ id, side = "bottom", align = "start", coords = false, class: cls, children, ...rest }) => (
   <div
     id={id}
     role='menu'
     data-slot='menu-popup'
     data-scope={MENU_SCOPE}
     popover='auto'
+    {...(coords ? { [POPOVER_COORDS_ATTR]: "" } : {})}
     {...stateAttrs({ open: false, side, align })}
     class={cn(POPUP_BASE, asClass(cls))}
     {...rest}>

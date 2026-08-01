@@ -193,6 +193,21 @@ and cost nothing.
 **An item that must leave its menu open passes `for={false}`**, which omits the
 `command="hide-popover"` pair — the shape a checkbox row in a menu needs.
 
+**Every overlay stamps a scope, and every one of those scopes is eager.** `Dialog` stamps
+`DIALOG_SCOPE`, `Popover.Content` stamps `POPOVER_SCOPE` (both in
+`contracts/overlay-contract.ts`), and each `Accordion.Item` stamps `ACCORDION_SCOPE` beside
+`Collapsible`'s in `contracts/toggle-contract.ts`. Eager out of *necessity*, not taste: an overlay's
+markup carries no `data-on-*` action at all — opening, closing, Escape and light-dismiss are the
+platform's — so a lazy scope would have nothing to resume it, and every state attribute would stay
+frozen at its server-rendered value (§2d).
+
+**A server may only stamp what it can keep true.** `Popover.Content` emits `side` and `align`,
+decided at render and fixed for the element's life, and emits **no** `data-open` / `data-closed`: it
+would be asserting a fact the platform owns and the component cannot follow. The scope's controller
+reconciles the pair from the element's own `:popover-open` at mount and on every state change.
+`Dialog` and `Accordion.Item` do stamp an initial value, because `<dialog open>` and `<details open>`
+are attributes the server genuinely sets — and the same controller then keeps them honest.
+
 ### 1i. Native-Input Primitives
 
 Five primitives that are a native control plus SSR field wiring, and nothing more:
@@ -362,7 +377,7 @@ The declared hooks:
 | `data-orientation` | layout axis — `horizontal` or `vertical`. Valued |
 | `data-side` / `data-align` | which side a popup sits on relative to its anchor, and how it aligns along it. Valued |
 | `data-starting-style` / `data-ending-style` | present while animating in / out |
-| `data-popup-open` | on a **trigger**, while the popup it controls is open — the trigger's own state, distinct from `data-open`, which belongs to the popup |
+| `data-popup-open` | on a **trigger**, while the popup it controls is open — the trigger's own state, distinct from `data-open`, which belongs to the popup. Produced by `mountPopupTriggerState` ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §6d) |
 
 **Adding a styling hook means adding it to that declaration first.** A component that emits a state
 attribute outside the table fails a conformance test — smuggling a hook past it is the exact failure
@@ -373,6 +388,11 @@ here and in `STATE_ATTRS` and written by nothing — no component, no controller
 is never emitted is the *inverse* of the drift above and just as misleading: a consumer styles against
 it and gets a rule that can never match. It was deleted when the table became public, because after
 publication a deletion is a breaking change. Re-add it with its producer, not before.
+
+`data-popup-open` was in the same position and took the **other** exit: it named something a trigger
+genuinely knows, so it got a producer rather than a deletion. Which exit a producerless hook takes is
+the whole question — *is there an element whose state this describes?* `data-anchor-hidden` had no
+such element.
 
 **`data-selected` is not `data-checked`.** ARIA models tab selection as `aria-selected`, not
 `aria-checked`, so reusing `data-checked` would announce a tab as a radio; and calling it structural

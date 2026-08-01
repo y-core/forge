@@ -1,11 +1,15 @@
 import { expect, type Page, test } from "@playwright/test";
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
-import { scopeAttrs } from "../server/scope-attrs";
 import { Toggle } from "./toggle";
 
 /**
  * `Toggle` — a lone two-state button, deliberately not a form control.
+ *
+ * The markup is rendered with **no caller-supplied wiring**, and that is the point. `Toggle` stamps
+ * a lazy scope, and a lazy scope resumes only on a `data-on-*` interaction; for as long as the
+ * component emitted the scope name and left the action to the caller, a plain `<Toggle>` was a
+ * button that announced its own behaviour and had none.
  */
 
 declare global {
@@ -33,8 +37,7 @@ test.describe("Toggle", () => {
   });
 
   test("flips both halves of its pressed state on click", async ({ page }) => {
-    const html = await render(Toggle({ id: "bold", ...scopeAttrs({ onClick: "toggle" }), children: "Bold" }));
-    await mount(page, html, EXPOSE);
+    await mount(page, await render(Toggle({ id: "bold", children: "Bold" })), EXPOSE);
     await start(page);
 
     await page.click("#bold");
@@ -46,6 +49,31 @@ test.describe("Toggle", () => {
     ).toEqual({ aria: "true", data: true });
 
     await page.click("#bold");
+    expect(
+      await page.evaluate(() => {
+        const el = document.querySelector("#bold");
+        return { aria: el?.getAttribute("aria-pressed"), data: el?.hasAttribute("data-pressed") };
+      }),
+    ).toEqual({ aria: "false", data: false });
+  });
+
+  test("carries the action that resumes its own scope, with nothing asked of the caller", async ({ page }) => {
+    await mount(page, await render(Toggle({ id: "bold", children: "Bold" })), EXPOSE);
+
+    expect(
+      await page.evaluate(() => {
+        const el = document.querySelector("#bold");
+        return { scope: el?.getAttribute("data-scope"), action: el?.getAttribute("data-on-click") };
+      }),
+    ).toEqual({ scope: "toggle", action: "toggle" });
+  });
+
+  test("a server-rendered pressed toggle un-presses on the first click", async ({ page }) => {
+    await mount(page, await render(Toggle({ id: "bold", pressed: true, children: "Bold" })), EXPOSE);
+    await start(page);
+
+    await page.click("#bold");
+
     expect(
       await page.evaluate(() => {
         const el = document.querySelector("#bold");

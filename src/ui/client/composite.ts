@@ -1,3 +1,4 @@
+import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { activeElement, contains, eventTarget, ownerWindow } from "./dom";
 
 /**
@@ -25,13 +26,9 @@ const END = "End";
 /** The keys a composite claims. Anything outside this set is left to the platform. */
 const COMPOSITE_KEYS = new Set<string>([ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT, HOME, END]);
 
-/**
- * Marks which item should hold the tab stop on mount — put it on the pressed tool, the selected tab,
- * the checked radio. Read once and never written: the live tab stop is `tabindex="0"`, which is the
- * platform's own signal and needs no parallel attribute to fall out of sync with.
- * @public
- */
-export const ACTIVE_COMPOSITE_ITEM = "data-composite-item-active";
+// Declared in `contracts/`, because the components that *stamp* it render on the Worker and cannot
+// import this module. Re-exported so `ui/client` still publishes it beside the controller that reads it.
+export { ACTIVE_COMPOSITE_ITEM };
 
 /** Options for {@link mountRovingFocus}. */
 export interface RovingFocusOptions {

@@ -27,6 +27,7 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §2f mountTabs — Selection and Panel Visibility: automatic versus manual activation
 - §2g mountTooltip — Hint Popover: hover and focus intent
 - §2h mountNumberField — Stepper Buttons: why its scope is eager
+- §2i openPopoverAt — Coordinate Placement: the popup with no invoker to anchor to
 - §3 Signals and Lazy Loading: client state without a framework
 - §3a Signals — Reactive State: `createSignal`, `computed`, `effect`
 - §3b Lazy Loading Utilities: deferred imports and event-triggered resources
@@ -37,6 +38,7 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §6a Owner-Document Utilities: the four global reflexes and their failure modes
 - §6b mountRovingFocus — The Composite Controller: one function over a DOM subtree
 - §6c mountTransitionState — The Transition Protocol: one controller, never per-component
+- §6d mountPopupTriggerState — The Trigger's Own State: `data-popup-open` and its producer
 
 ---
 
@@ -162,8 +164,36 @@ Wires the increment and decrement buttons to the native input's own `stepUp` / `
 
 **Its scope is eager, and that is forced by the markup**: the steppers carry no `data-on-*` action,
 so a lazy scope would have nothing to resume it and the buttons would sit inert on the page. The
-same reasoning makes `toolbar`, `menu`, `tabs`, `tooltip` and `collapsible` eager — every one of
-them is setup-only.
+same reasoning makes `toolbar`, `menu`, `tabs`, `tooltip`, `collapsible`, `accordion`, `dialog` and
+`popover` eager — every one of them is setup-only.
+
+### 2i. `openPopoverAt` — Coordinate Placement
+
+**Every other popup in forge is placed by CSS, against its invoker.** A popover's implicit anchor is
+the button its `commandfor` names, and the whole placement set in `theme-base.css` is keyed off
+`anchor()`. This is the one case that cannot use it: a **context menu has no invoker**. It opens
+where a right-click landed, on an element that is not a trigger, so every anchored rule resolves to
+nothing and the UA's `[popover]` default (`inset: 0; margin: auto`) centres the panel — the one place
+a context menu must never be.
+
+`openPopoverAt(el, x, y, options?)` shows the popup with its top-left corner on the point, clamped so
+the whole box stays on screen. Three properties are load-bearing:
+
+- **The coordinates go through CSSOM** (`el.style.setProperty`), never a generated `style` attribute.
+  Two independent reasons, either sufficient: forge's CSP carries no `style-src 'unsafe-inline'`, so
+  an inline style would be blocked in exactly the app this exists for, and the JSX renderer drops
+  `style` outright, so there would be nothing to write server-side either.
+- **The matching CSS rule must reset `inset` and `margin` explicitly.** Without that the UA default
+  survives, the panel centres itself, and the custom properties hold perfectly correct values while
+  nothing moves. That failure looks like a bug in the TypeScript and is not.
+- **Clamping needs the box, not the point**, so the coordinates are written twice: once before the
+  popup is shown, while it still measures zero, and once after. Both in one task, so the browser
+  paints the corrected position rather than the provisional one.
+
+The popup opts in with `Menu.Popup`'s `coords` prop, which stamps `data-coords` and selects the
+coordinate rule; `openPopoverAt` stamps it too, so a popup that opens both ways needs no second
+markup variant. Calling it again **repositions** an open popup, which is what a second right-click
+elsewhere should do.
 
 ---
 
@@ -202,6 +232,16 @@ scope runs its `setup` at `resume()`.** Choose `eager` whenever the markup carri
 action of its own, because a lazy scope then has nothing that could ever resume it — that is the
 whole setup-only family (§2h), and it is a correctness requirement rather than a performance
 preference.
+
+**Scope discovery descends into open shadow roots.** The eager pass walks the tree rather than
+running one flat `querySelectorAll`, because a selector cannot cross a shadow boundary: a scope
+rendered inside a web component was previously never *visited*, so its `setup` never ran and nothing
+warned. The delegated half never had this problem — `closestAcross` climbs out through `host` (§6a) —
+which is why a *lazy* scope inside a shadow root always worked and an eager one silently did not. A
+closed root reports `shadowRoot === null` and is stepped over, the same answer the platform gives
+everywhere else. `resume(within)` accepts a `ShadowRoot` as the walk root, so a web component can
+resume only its own subtree; the delegated listeners still go on the containing document either way,
+since the four scope events are composed and cross the boundary themselves.
 
 **The delegated event vocabulary is `click`, `input`, `change`, `submit`. There is no `keydown`, by
 decision.** Composite controllers own `keydown` at their **own widget root**, which is where arrow
@@ -320,3 +360,33 @@ directions, and reconciles `data-open` / `data-closed` with the element's real s
 It attaches to what the platform already reports — a popover's `toggle` and `beforetoggle`, a
 `<details>` element's `toggle` — so it **never decides** whether something is open. The element
 owns that; this only makes the state visible to a stylesheet.
+
+That single `isOpen` check is why one controller covers three element kinds: it reads
+`:popover-open` for a popover and `.open` otherwise, and `.open` is a real property on both
+`HTMLDialogElement` and `HTMLDetailsElement`. Adding the `dialog`, `popover` and `accordion` scopes
+needed no change to it at all.
+
+### 6d. `mountPopupTriggerState` — The Trigger's Own State
+
+**The same observation, pointed the other way.** `mountTransitionState` describes the popup;
+this describes what points *at* it, publishing `data-popup-open` on the popup's invokers while it is
+open. Same element to attach to, same four events, opposite direction — which is why it lives in the
+same module.
+
+It exists because CSS has no selector that walks from a popup to its trigger. "The toolbar button
+that stays lit while its flyout is up" is a fact about the *button*, and no amount of styling the
+flyout can express it.
+
+Two decisions in the lookup, and both are the kind that is silently wrong the other way:
+
+- **Triggers are resolved document-wide**, with
+  `ownerDocument(popup).querySelectorAll('[commandfor="…"]')`. `commandfor` is a document-scoped
+  reference — a trigger is very often *outside* the popup's subtree — so a subtree query would find
+  none of them and the attribute would simply never appear.
+- **`commandfor` alone does not make an element a trigger.** `Menu.Item` emits
+  `command="hide-popover"` and `Dialog.Close` emits `command="close"`, both naming the popup they
+  live in; an unfiltered lookup would light up every row of an open menu. The filter is on the
+  command *verb* — `toggle-popover`, `show-popover`, `show-modal`.
+
+The lookup is re-run on every state change rather than cached, so a trigger added or removed while
+the popup lives is neither missed nor left stamped on a detached node.

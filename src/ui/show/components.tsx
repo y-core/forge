@@ -416,7 +416,9 @@ const AccordionSection: FC<{ icon: ShowIcon }> = ({ icon }) => {
 
 const DialogSection: FC = () => (
   <CatalogSection id='dialog' title='Dialog'>
-    <Dialog.Trigger for='show-dialog'>Open dialog</Dialog.Trigger>
+    <Dialog.Trigger for='show-dialog' class='rounded-md border border-border px-3 py-1.5 text-sm data-[popup-open]:bg-accent'>
+      Open dialog
+    </Dialog.Trigger>
     <Dialog id='show-dialog' class='max-w-sm'>
       <h3 class='text-base font-semibold text-foreground'>A native modal</h3>
       <p class='mt-2 text-sm text-muted-foreground'>
@@ -432,7 +434,11 @@ const DialogSection: FC = () => (
 const PopoverSection: FC = () => (
   <CatalogSection id='popover' title='Popover'>
     <Popover>
-      <Popover.Trigger id='show-popover' class='rounded-md border border-border px-3 py-1.5 text-sm'>
+      {/* `data-[popup-open]:` is the trigger's own state, not the panel's — it stays lit for exactly
+          as long as the surface it opened. No selector walks from the panel back to here. */}
+      <Popover.Trigger
+        id='show-popover'
+        class='rounded-md border border-border px-3 py-1.5 text-sm data-[popup-open]:bg-accent data-[popup-open]:text-accent-foreground'>
         Details
       </Popover.Trigger>
       <Popover.Content id='show-popover' class='p-3 text-sm text-muted-foreground'>
@@ -521,8 +527,12 @@ const TurnstileSection: FC = () => (
 const ToolbarSection: FC = () => (
   <CatalogSection id='toolbar' title='Toolbar'>
     <Toolbar aria-label='Formatting'>
-      <Toolbar.Button>Bold</Toolbar.Button>
-      <Toolbar.Button>Italic</Toolbar.Button>
+      {/* `pressed` is what puts the boot tab stop here rather than on the first item. */}
+      <Toolbar.Button pressed>Bold</Toolbar.Button>
+      <Toolbar.Button pressed={false}>Italic</Toolbar.Button>
+      <Toolbar.Button variant='secondary' size='icon' aria-label='Underline'>
+        U
+      </Toolbar.Button>
       <Toolbar.Separator />
       <Toolbar.Group aria-label='Search'>
         <Toolbar.Input placeholder='Find' />
@@ -555,6 +565,24 @@ const MenuSection: FC = () => (
         <Menu.RadioItem for={false}>Compact view</Menu.RadioItem>
       </Menu.Popup>
     </Menu>
+
+    {/* A context menu: no invoker at all, so anchor positioning has nothing to anchor to and the
+        coordinates come from the pointer. `coords` selects the placement rule; `openPopoverAt`,
+        wired by the eager `show-context-menu` scope in `show/client.ts`, writes the two custom
+        properties. The scope is eager because `contextmenu` is not one of the four delegated
+        `SCOPE_EVENTS` — there is no `data-on-*` here for a lazy scope to resume on. */}
+    <div
+      data-ref='context-surface'
+      data-scope='show-context-menu'
+      data-state='{"target":"show-context-menu-popup"}'
+      class='mt-2 flex h-24 w-full max-w-md items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground'>
+      Right-click anywhere in this box
+    </div>
+    <Menu.Popup id='show-context-menu-popup' coords>
+      <Menu.Item for='show-context-menu-popup'>Cut</Menu.Item>
+      <Menu.Item for='show-context-menu-popup'>Copy</Menu.Item>
+      <Menu.Item for='show-context-menu-popup'>Paste</Menu.Item>
+    </Menu.Popup>
   </CatalogSection>
 );
 

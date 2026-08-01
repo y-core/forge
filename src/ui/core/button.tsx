@@ -1,19 +1,29 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import { cloneElement, isValidElement } from "../../jsx/element";
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { stateAttrs } from "../contracts/state-attrs";
-import { asClass, cn } from "./utils/cn";
+import { cloneAsChild } from "./utils/as-child";
+import { asClass } from "./utils/cn";
 import { cva } from "./utils/cva";
 
 export interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   variant?: "primary" | "secondary" | "ghost";
-  size?: "sm" | "md" | "lg" | "icon" | "icon-sm";
+  size?: "sm" | "md" | "lg" | "icon" | "icon-sm" | "square";
   asChild?: boolean;
   children?: JSXNode;
 }
 
-const buttonVariants = cva({
+/**
+ * The one button base in forge — every compound that renders a button-shaped thing resolves its
+ * classes through this, rather than declaring a base string of its own. Exported for exactly that
+ * reason: a second `ITEM_BASE` somewhere else is how a "ghost button" comes to mean two things.
+ *
+ * **`square` is not a fourth fixed box.** `icon` and `icon-sm` both name a size in pixels; `square`
+ * names a *relationship* — take the width the parent gives you and be as tall as you are wide. An
+ * app whose icon rail is a design token (44px, say) cannot express that with any fixed size, and
+ * would otherwise have to override the class it just asked for.
+ * @public
+ */
+export const buttonVariants = cva({
   base: "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
   variants: {
     variant: {
@@ -21,7 +31,14 @@ const buttonVariants = cva({
       secondary: "border border-input text-foreground hover:bg-accent",
       ghost: "text-foreground hover:bg-accent",
     },
-    size: { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-sm", lg: "h-12 px-6 text-base", icon: "size-9 p-0", "icon-sm": "size-[34px] p-0" },
+    size: {
+      sm: "h-8 px-3 text-sm",
+      md: "h-10 px-4 text-sm",
+      lg: "h-12 px-6 text-base",
+      icon: "size-9 p-0",
+      "icon-sm": "size-[34px] p-0",
+      square: "w-full aspect-square p-0",
+    },
   },
   defaultVariants: { variant: "primary", size: "md" },
 });
@@ -37,21 +54,14 @@ export const Button: FC<ButtonProps> = ({ variant, size, asChild = false, type =
   });
 
   if (asChild) {
-    if (!isValidElement(children)) {
-      throw new Error(
+    return cloneAsChild(children, {
+      slot: "button",
+      class: className,
+      props: rest,
+      type,
+      disabled,
+      message:
         "Button with asChild requires exactly one JSX element child (e.g. <a> or <button>); received a string, number, fragment, array, or empty child instead.",
-      );
-    }
-
-    const childClass = asClass(children.props.class as string | undefined);
-    const childType = typeof children.type === "string" ? children.type : undefined;
-
-    return cloneElement(children, {
-      ...rest,
-      ...(childType === "button" ? { disabled, type } : {}),
-      ...(disabled && childType !== "button" ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}),
-      class: cn(className, childClass),
-      "data-slot": "button",
     }) as ReturnType<FC<ButtonProps>>;
   }
 

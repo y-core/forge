@@ -1,5 +1,5 @@
 import { applyStateAttrs, STATE_ATTRS } from "../contracts/state-attrs";
-import { ownerWindow } from "./dom";
+import { ownerDocument, ownerWindow } from "./dom";
 
 /**
  * Transition-state protocol for forge's native popover and dialog.
@@ -21,6 +21,11 @@ import { ownerWindow } from "./dom";
  * One controller, never per-component animation code: `core/popover.tsx` and `core/dialog.tsx` emit
  * their *initial* state attribute in SSR markup and contain no animation branch at all. A third
  * native-state component gets the whole behaviour by calling this.
+ *
+ * `mountPopupTriggerState` below is the same observation pointed the other way — same element, same
+ * four events, but it writes `data-popup-open` on the *invokers* rather than on the popup. It lives
+ * here because it is the identical protocol read from the other end, not because a trigger is a
+ * transition.
  */
 
 /** Options for {@link mountTransitionState}. */
@@ -154,5 +159,70 @@ export function mountTransitionState(el: HTMLElement, options: TransitionStateOp
     el.removeEventListener("toggle", onToggle);
     el.removeEventListener("close", onClose);
     el.removeEventListener("cancel", onClose);
+  };
+}
+
+/**
+ * The commands that *open* a popup. A popup's `commandfor` is not by itself evidence of a trigger:
+ * `Menu.Item` and `Dialog.Close` both name the popup they live in, and stamping "your popup is open"
+ * on every row of an open menu would be worse than not stamping it at all.
+ */
+const OPENING_COMMANDS = new Set(["toggle-popover", "show-popover", "show-modal"]);
+
+/** The invokers that open `popup`, resolved live. Document-scoped, exactly as `commandfor` is: a
+ * trigger is very often **outside** the popup's subtree, and a subtree query would silently find
+ * none of them. Re-read on every state change, so a trigger added or removed while the popup lives
+ * is neither missed nor left stamped on a detached node. */
+function triggersFor(popup: HTMLElement): HTMLElement[] {
+  const id = popup.id;
+  if (!id) return [];
+  const found = ownerDocument(popup).querySelectorAll<HTMLElement>(`[commandfor="${CSS.escape(id)}"]`);
+  return [...found].filter((el) => OPENING_COMMANDS.has(el.getAttribute("command") ?? ""));
+}
+
+/**
+ * Publish `data-popup-open` on the triggers of a native popup, and return a disposer.
+ *
+ * This is the *trigger's* state, which is why no amount of styling the popup can substitute for it:
+ * "the button that opens this menu, while the menu is open" is a different element from the menu,
+ * and CSS has no selector that walks from one to the other. A toolbar button that must stay lit
+ * while its flyout is up is the case, and it is the one every app hits.
+ *
+ * Pairs with {@link mountTransitionState}: same element, same four events, opposite direction — that
+ * one describes the popup, this one describes what points at it.
+ *
+ * ```ts
+ * registerScope("popover", { eager: true, setup: ({ root }) => mountPopupTriggerState(root) });
+ * ```
+ * @public
+ */
+export function mountPopupTriggerState(popup: HTMLElement): () => void {
+  const publish = (open: boolean) => {
+    for (const trigger of triggersFor(popup)) applyStateAttrs(trigger, { popupOpen: open });
+  };
+
+  const onBeforeToggle = (event: Event) => {
+    const newState = (event as Event & { newState?: string }).newState;
+    if (newState === "open" || newState === "closed") publish(newState === "open");
+  };
+
+  // Backstop for the elements that change state without a `beforetoggle`, and for `<dialog>`, whose
+  // close arrives as `close` / `cancel`. Reading the element rather than the event keeps all four
+  // paths agreeing on one answer.
+  const onStateChange = () => publish(isOpen(popup));
+
+  popup.addEventListener("beforetoggle", onBeforeToggle);
+  popup.addEventListener("toggle", onStateChange);
+  popup.addEventListener("close", onStateChange);
+  popup.addEventListener("cancel", onStateChange);
+
+  publish(isOpen(popup));
+
+  return () => {
+    publish(false);
+    popup.removeEventListener("beforetoggle", onBeforeToggle);
+    popup.removeEventListener("toggle", onStateChange);
+    popup.removeEventListener("close", onStateChange);
+    popup.removeEventListener("cancel", onStateChange);
   };
 }

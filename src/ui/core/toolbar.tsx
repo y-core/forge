@@ -1,22 +1,39 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
+import { type ButtonProps, buttonVariants } from "./button";
+import { cloneAsChild } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type ToolbarOrientation = Extract<Orientation, "horizontal" | "vertical">;
+
+/** What every toolbar item shares with `core/Button`: the same variants, the same sizes, and the
+ * two-state marking a rail needs. Declared once rather than per item shape. */
+interface ToolbarItemStyling {
+  variant?: ButtonProps["variant"];
+  size?: ButtonProps["size"];
+  /** Two-state item — a pressed tool in a tool rail. Stamps `aria-pressed` **and** `data-pressed`,
+   * never one without the other, plus the composite marker so the rail's boot tab stop lands on the
+   * active tool rather than on whichever item happens to be first. */
+  pressed?: boolean;
+  /** Render onto the caller's own element instead of forge's. Same contract as `core/Button`'s:
+   * exactly one JSX element child, or it throws. */
+  asChild?: boolean;
+}
 
 interface ToolbarRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   orientation?: ToolbarOrientation;
   children?: JSXNode;
 }
 
-interface ToolbarButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
+interface ToolbarButtonProps extends Omit<JSX.IntrinsicElements["button"], "children">, ToolbarItemStyling {
   children?: JSXNode;
 }
 
-interface ToolbarLinkProps extends Omit<JSX.IntrinsicElements["a"], "children"> {
+interface ToolbarLinkProps extends Omit<JSX.IntrinsicElements["a"], "children">, ToolbarItemStyling {
   children?: JSXNode;
 }
 
@@ -32,10 +49,17 @@ interface ToolbarSeparatorProps extends Omit<JSX.IntrinsicElements["hr"], "child
 }
 
 const ROOT_BASE = "flex items-center gap-1";
-const ITEM_BASE =
-  "inline-flex items-center justify-center gap-2 rounded-md px-2 py-1 text-sm text-foreground " +
-  "outline-none cursor-pointer hover:bg-accent hover:text-accent-foreground " +
-  "focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+
+/** The attributes that make an element a rail stop: the roving-focus marker, the pressed pair, and
+ * the boot tab stop when it is the pressed one. Shared by every item shape, because "a toolbar item"
+ * is one idea and three of them declaring it separately is how they drift. */
+function itemAttrs(pressed: boolean | undefined): Record<string, string> {
+  return {
+    [TOOLBAR_ITEM_ATTR]: "",
+    ...(pressed === undefined ? {} : { "aria-pressed": String(pressed), ...stateAttrs({ pressed }) }),
+    ...(pressed ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {}),
+  };
+}
 
 /**
  * Toolbar container. Stamps the resumable scope that mounts roving focus, so the whole toolbar is
@@ -58,19 +82,58 @@ const ToolbarRoot: FC<ToolbarRootProps> = ({ orientation = "horizontal", class: 
   </div>
 );
 
+/** Item classes, resolved through `core/Button`'s variants rather than a base string of this
+ * module's own — a toolbar button and a ghost `Button` are the same control in two places. */
+function itemClass(styling: ToolbarItemStyling, cls: unknown, extra?: string): string {
+  const own = cn(extra, asClass(cls));
+  return buttonVariants({ variant: styling.variant ?? "ghost", size: styling.size ?? "sm", ...(own ? { class: own } : {}) });
+}
+
 /** A button inside a toolbar. Carries the roving-focus marker, so it is one of the arrow-key stops. */
-const ToolbarButton: FC<ToolbarButtonProps> = ({ class: cls, children, ...rest }) => (
-  <button type='button' data-slot='toolbar-button' {...{ [TOOLBAR_ITEM_ATTR]: "" }} class={cn(ITEM_BASE, asClass(cls))} {...rest}>
-    {children}
-  </button>
-);
+const ToolbarButton: FC<ToolbarButtonProps> = ({ variant, size, pressed, asChild = false, class: cls, children, ...rest }) => {
+  const className = itemClass({ variant, size }, cls);
+  const attrs = { ...itemAttrs(pressed), ...rest };
+
+  if (asChild) {
+    return cloneAsChild(children, {
+      slot: "toolbar-button",
+      class: className,
+      props: attrs,
+      type: "button",
+      ...(typeof rest.disabled === "boolean" ? { disabled: rest.disabled } : {}),
+      message:
+        "Toolbar.Button with asChild requires exactly one JSX element child (e.g. <a> or <button>); received a string, number, fragment, array, or empty child instead.",
+    }) as ReturnType<FC<ToolbarButtonProps>>;
+  }
+
+  return (
+    <button type='button' data-slot='toolbar-button' class={className} {...attrs}>
+      {children}
+    </button>
+  );
+};
 
 /** A link inside a toolbar — a focus stop like any other item. */
-const ToolbarLink: FC<ToolbarLinkProps> = ({ class: cls, children, ...rest }) => (
-  <a data-slot='toolbar-link' {...{ [TOOLBAR_ITEM_ATTR]: "" }} class={cn(ITEM_BASE, "underline-offset-4 hover:underline", asClass(cls))} {...rest}>
-    {children}
-  </a>
-);
+const ToolbarLink: FC<ToolbarLinkProps> = ({ variant, size, pressed, asChild = false, class: cls, children, ...rest }) => {
+  const className = itemClass({ variant, size }, cls, "underline-offset-4 hover:underline");
+  const attrs = { ...itemAttrs(pressed), ...rest };
+
+  if (asChild) {
+    return cloneAsChild(children, {
+      slot: "toolbar-link",
+      class: className,
+      props: attrs,
+      message:
+        "Toolbar.Link with asChild requires exactly one JSX element child (e.g. <a> or <button>); received a string, number, fragment, array, or empty child instead.",
+    }) as ReturnType<FC<ToolbarLinkProps>>;
+  }
+
+  return (
+    <a data-slot='toolbar-link' class={className} {...attrs}>
+      {children}
+    </a>
+  );
+};
 
 /**
  * A text field inside a toolbar.
@@ -84,7 +147,7 @@ const ToolbarLink: FC<ToolbarLinkProps> = ({ class: cls, children, ...rest }) =>
 const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, ...rest }) => (
   <input
     data-slot='toolbar-input'
-    {...{ [TOOLBAR_ITEM_ATTR]: "" }}
+    {...itemAttrs(undefined)}
     class={cn(
       "rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground",
       "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring",
@@ -121,7 +184,7 @@ const ToolbarSeparator: FC<ToolbarSeparatorProps> = ({ orientation = "vertical",
  *
  * ```tsx
  * <Toolbar>
- *   <Toolbar.Button>Bold</Toolbar.Button>
+ *   <Toolbar.Button pressed>Bold</Toolbar.Button>
  *   <Toolbar.Separator />
  *   <Toolbar.Group>
  *     <Toolbar.Input placeholder='Search' />
@@ -129,6 +192,12 @@ const ToolbarSeparator: FC<ToolbarSeparatorProps> = ({ orientation = "vertical",
  *   <Toolbar.Link href='/docs'>Docs</Toolbar.Link>
  * </Toolbar>
  * ```
+ *
+ * `Toolbar.Button` and `Toolbar.Link` take `core/Button`'s own `variant` and `size` (defaulting to
+ * `ghost` / `sm`) and share its `asChild` contract, so an app can size its rail without overriding
+ * the classes forge just handed it. `pressed` stamps `aria-pressed`, `data-pressed` and the
+ * composite marker together — one prop, because an item that announces itself pressed to ARIA and
+ * not to CSS is the asymmetry the state-attribute contract exists to prevent.
  *
  * The keyboard behaviour arrives with the `ui/core/client` side-effect import, which registers the
  * scope this root stamps; without it the markup is a plain, still-accessible toolbar.

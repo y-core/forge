@@ -345,11 +345,9 @@ test.describe("widgets inside a shadow root", () => {
       if (!host || !template) return;
       const root = host.attachShadow({ mode: "open" });
       root.append(template.content.cloneNode(true));
-      const popup = root.querySelector<HTMLElement>("#shadow-menu");
-      // `resume()` finds scopes with a plain `querySelectorAll`, which cannot see into a shadow
-      // root, so a component author inside one mounts the controller directly. What is under test
-      // is that the controller itself survives the boundary.
-      if (popup) window.forgeMenu.mountMenu(popup);
+      // A plain `resume()`, with nothing said about the shadow root: its eager pass descends into
+      // open roots, so the Menu scope inside one is discovered like any other.
+      window.forgeResume.resume();
     });
 
     await page.evaluate(() => document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("[data-ref='shadow-trigger']")?.click());

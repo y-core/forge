@@ -2,9 +2,12 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
-import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
+import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { Button } from "../core/button";
 import type { ForgeIcon } from "../core/icon";
+// The rail renders its own `<nav>`, but every *part* of it is a `core/Toolbar` primitive — aliased
+// because this module publishes a `Toolbar` of its own.
+import { Toolbar as CoreToolbar } from "../core/toolbar";
 import { asClass, cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { commandAttrs } from "../server/command-attrs";
@@ -136,8 +139,6 @@ const railVariants = cva({
   defaultVariants: { placement: "left" },
 });
 
-const TRIGGER_CLS =
-  "list-none cursor-pointer outline-none rounded-lg flex items-center justify-center size-9 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring";
 const FLYOUT_CLS = "min-w-52 p-2 pb-2.5 rounded-xl border border-border bg-popover text-popover-foreground shadow-md";
 const FLYOUT_TITLE_CLS = "text-[11px] font-semibold text-muted-foreground uppercase tracking-wider pt-0.5 pb-1.5 px-0.5";
 const FLYOUT_BODY_CLS = "flex flex-col items-stretch gap-3.5 pt-1 pb-0.5 px-0.5 max-h-[60vh] overflow-y-auto";
@@ -147,22 +148,15 @@ function isVerticalPlacement(placement: ToolbarPlacement): boolean {
 }
 
 /**
- * An `<hr>` rather than a styled `<div>`, matching `core/Toolbar.Separator`: the separator role is
- * implicit on the element, so the rail announces its divisions without an explicit `role` that would
- * also make the node look interactive.
+ * `core/Toolbar.Separator` with the rail's own margins, and nothing else — the element, its
+ * `data-slot` and its `aria-orientation` are the primitive's.
  *
- * `aria-orientation` describes the **rule's own axis**, which is across the rail — a left rail is
- * divided by horizontal lines.
+ * `aria-orientation` describes the **rule's own axis**, which is across the rail: a left rail is
+ * divided by horizontal lines, so a vertical placement asks for a horizontal separator.
  */
-function separatorNode(placement: ToolbarPlacement): JSXNode {
+function separator(placement: ToolbarPlacement): JSXNode {
   const vertical = isVerticalPlacement(placement);
-  return (
-    <hr
-      data-slot='toolbar-separator'
-      aria-orientation={vertical ? "horizontal" : "vertical"}
-      class={cn("border-0 bg-border shrink-0", vertical ? "w-6 h-px my-1" : "h-6 w-px mx-1")}
-    />
-  );
+  return <CoreToolbar.Separator orientation={vertical ? "horizontal" : "vertical"} class={cn("shrink-0", vertical ? "my-1" : "mx-1")} />;
 }
 
 /** Activation attributes for an action item: native Invoker command or delegated scope event. */
@@ -172,18 +166,17 @@ function actionAttrs<A extends string>(item: ToolbarAction<A>, commandTarget: st
 
 function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSXNode {
   const { placement, icon: Icon } = ctx;
-  if (item.kind === "separator") return separatorNode(placement);
+  if (item.kind === "separator") return separator(placement);
 
   if (item.kind === "slot") return item.slot;
 
   if (item.kind === "action") {
     const { icon, label, ref, data = {}, active, size = "icon" } = item;
     return (
-      <Button
+      <CoreToolbar.Button
         data-slot='toolbar-action'
-        {...{ [TOOLBAR_ITEM_ATTR]: "" }}
-        variant='ghost'
         size={size}
+        {...(active ? { pressed: true } : {})}
         data-ref={ref}
         title={label}
         aria-label={label}
@@ -191,7 +184,7 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
         {...actionAttrs(item, ctx.commandTarget)}
         {...data}>
         <Icon name={icon} viewBox='0 0 24 24' class='w-5 h-5' />
-      </Button>
+      </CoreToolbar.Button>
     );
   }
 
@@ -200,18 +193,16 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
   const id = `toolbar-flyout-${ctx.idBase}-${ctx.seq.n++}`;
   return (
     <div data-slot='toolbar-popover' class='relative flex flex-col items-center w-full'>
-      <button
-        type='button'
+      <CoreToolbar.Button
         data-slot='toolbar-trigger'
-        {...{ [TOOLBAR_ITEM_ATTR]: "" }}
+        size='icon'
         command='toggle-popover'
         commandfor={id}
         data-ref={ref}
-        class={TRIGGER_CLS}
         title={label}
         aria-label={label}>
         <Icon name={icon} viewBox='0 0 24 24' class='w-5 h-5' />
-      </button>
+      </CoreToolbar.Button>
       <div id={id} data-slot='toolbar-flyout' popover='auto' data-placement={placement} data-compact={compact ? "" : undefined} class={FLYOUT_CLS}>
         <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
           <span>{label}</span>
@@ -257,11 +248,11 @@ function renderGroup<A extends string>(group: ToolbarGroup<A>, ctx: RenderCtx): 
  * Feed a {@link ToolbarDefinition} and an `icon` prop (the app sprite binding). The `placement`
  * drives flex direction and flyout position (the flyout is anchored to its trigger via CSS).
  *
- * The rail stamps `core/Toolbar`'s **contracts** rather than composing its parts: `role="toolbar"`,
- * the toolbar scope, and the item marker on every rail stop, so the whole rail is one Tab stop with
- * arrow-key navigation. It keeps its own markup because the flyout is anchored by CSS the generic
- * `Popover` cannot express — a left rail opens its flyout to the *right*, and `data-placement` is
- * what the theme's anchor rules match on.
+ * The rail's **root** is its own `<nav>` — it stamps `role="toolbar"`, the toolbar scope and the
+ * orientation directly, because the flyout is anchored by CSS the generic `Popover` cannot express:
+ * a left rail opens its flyout to the *right*, and `data-placement` is what the theme's anchor rules
+ * match on. Everything inside it is a `core/Toolbar` primitive, so the item marker, the pressed pair
+ * and the separator's shape are declared in one place rather than restated here.
  *
  * @public
  */
@@ -269,7 +260,7 @@ export const Toolbar: FC<ToolbarProps> = ({ config, icon: Icon, placement = "lef
   const ctx: RenderCtx = { placement, icon: Icon, commandTarget, idBase: id ?? placement, seq: { n: 0 } };
   const children: JSXNode[] = [];
   for (const [i, group] of config.groups.entries()) {
-    if (i > 0) children.push(separatorNode(placement));
+    if (i > 0) children.push(separator(placement));
     children.push(renderGroup(group, ctx));
   }
 

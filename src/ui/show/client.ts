@@ -1,5 +1,27 @@
+import { ownerDocument } from "../client/dom";
+import { openPopoverAt } from "../client/popover-anchor";
 import { registerScope } from "../client/resume";
 import { computed, effect } from "../client/signal";
+
+/**
+ * The context-menu demo. Eager, because `contextmenu` is not one of the four delegated
+ * `SCOPE_EVENTS` — there is no `data-on-*` in the markup for a lazy scope to resume on, so the
+ * listener has to be bound at `resume()` or never.
+ */
+registerScope("show-context-menu", {
+  eager: true,
+  setup: ({ root, state }) => {
+    const popup = ownerDocument(root).getElementById(String(state.target?.value ?? ""));
+    if (!popup) return;
+    const onContextMenu = (event: Event) => {
+      event.preventDefault();
+      const { clientX, clientY } = event as MouseEvent;
+      openPopoverAt(popup, clientX, clientY);
+    };
+    root.addEventListener("contextmenu", onContextMenu);
+    return () => root.removeEventListener("contextmenu", onContextMenu);
+  },
+});
 
 registerScope("show-filter", {
   setup: ({ root, state }) => {
