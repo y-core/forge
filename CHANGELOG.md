@@ -10,6 +10,10 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [0.0.76] — 2026-08-01
+
+Add a logging withLevels() feature 
+
 ## [0.0.75] — 2026-08-01
 
 The client halves the Base UI refactor was missing. Four components that stamped a styling hook and

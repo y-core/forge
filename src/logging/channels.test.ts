@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { consoleChannel, withMinLevel, withRedaction } from "./channels";
+import { consoleChannel, withLevels, withMinLevel, withRedaction } from "./channels";
 import type { LogChannel, LogRecord } from "./types";
-import { levelAtLeast, parseLogLevel } from "./types";
+import { LOG_LEVELS, levelAtLeast, parseLogLevel, parseLogLevels } from "./types";
 
 let captured: string[] = [];
 let originalLog: typeof console.log;
@@ -155,6 +155,87 @@ describe("withMinLevel", () => {
   });
 });
 
+describe("withLevels", () => {
+  function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
+    const records: LogRecord[] = [];
+    return {
+      records,
+      channel: {
+        write: (r) => {
+          records.push(r);
+        },
+      },
+    };
+  }
+
+  it("passes a listed level and drops an unlisted one", () => {
+    const { records, channel } = makeCapture();
+    const filtered = withLevels(channel, ["warn", "error"]);
+
+    filtered.write(makeRecord({ level: "info" }));
+    filtered.write(makeRecord({ level: "warn" }));
+
+    expect(records.map((r) => r.level)).toStrictEqual(["warn"]);
+  });
+
+  it("an empty allowlist drops every level — silence by configuration", () => {
+    const { records, channel } = makeCapture();
+    const filtered = withLevels(channel, []);
+
+    for (const level of LOG_LEVELS) filtered.write(makeRecord({ level }));
+
+    expect(records).toHaveLength(0);
+  });
+
+  it("expresses a non-contiguous set that withMinLevel cannot", () => {
+    const { records, channel } = makeCapture();
+    const filtered = withLevels(channel, ["debug", "error"]);
+
+    for (const level of LOG_LEVELS) filtered.write(makeRecord({ level }));
+
+    expect(records.map((r) => r.level)).toStrictEqual(["debug", "error"]);
+  });
+
+  it("returns the inner channel's write promise for passing records", () => {
+    const asyncChannel: LogChannel = { write: () => Promise.resolve() };
+    const filtered = withLevels(asyncChannel, ["error"]);
+    expect(filtered.write(makeRecord({ level: "error" }))).toBeInstanceOf(Promise);
+  });
+
+  it("filtered writes return undefined (nothing pending to flush)", () => {
+    const asyncChannel: LogChannel = { write: () => Promise.resolve() };
+    const filtered = withLevels(asyncChannel, ["error"]);
+    expect(filtered.write(makeRecord({ level: "debug" }))).toBeUndefined();
+  });
+
+  it("passes read through even when the allowlist is empty — writes off, history readable", async () => {
+    const inner: LogChannel = {
+      write: () => {},
+      read: () => Promise.resolve({ rows: [{ key: "k", level: "info", prefix: "p", message: "m", timestamp: "t" }], complete: true }),
+    };
+    const filtered = withLevels(inner, []);
+
+    const result = await filtered.read!();
+
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it("passes readEntry through even when the allowlist is empty", async () => {
+    const inner: LogChannel = { write: () => {}, readEntry: (key) => Promise.resolve(makeRecord({ message: `entry:${key}` })) };
+    const filtered = withLevels(inner, []);
+
+    const record = await filtered.readEntry!("abc");
+
+    expect(record?.message).toBe("entry:abc");
+  });
+
+  it("has no read/readEntry when the inner channel is write-only", () => {
+    const filtered = withLevels({ write: () => {} }, ["error"]);
+    expect(filtered.read).toBeUndefined();
+    expect(filtered.readEntry).toBeUndefined();
+  });
+});
+
 describe("withRedaction", () => {
   function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
     const records: LogRecord[] = [];
@@ -246,5 +327,36 @@ describe("parseLogLevel", () => {
 
   it("falls back for unknown values", () => {
     expect(parseLogLevel("verbose", "debug")).toBe("debug");
+  });
+});
+
+describe("parseLogLevels", () => {
+  it("parses a comma-separated list in the order given", () => {
+    expect(parseLogLevels("warn,error", LOG_LEVELS)).toStrictEqual(["warn", "error"]);
+  });
+
+  it("tolerates whitespace and mixed case around entries", () => {
+    expect(parseLogLevels(" WARN , Error ", LOG_LEVELS)).toStrictEqual(["warn", "error"]);
+  });
+
+  it("drops unknown entries while keeping the known ones", () => {
+    expect(parseLogLevels("warn,verbose,error", LOG_LEVELS)).toStrictEqual(["warn", "error"]);
+  });
+
+  it("parses the literal 'none' to an empty array — the spelling for silence", () => {
+    expect(parseLogLevels("none", LOG_LEVELS)).toStrictEqual([]);
+  });
+
+  it("falls back when unset", () => {
+    expect(parseLogLevels(undefined, ["info"])).toStrictEqual(["info"]);
+  });
+
+  it("falls back for an empty or whitespace-only value", () => {
+    expect(parseLogLevels("", ["info"])).toStrictEqual(["info"]);
+    expect(parseLogLevels("   ", ["info"])).toStrictEqual(["info"]);
+  });
+
+  it("falls back when no entry is a known level — a typo degrades to the default, not to silence", () => {
+    expect(parseLogLevels("verbose,trace", LOG_LEVELS)).toStrictEqual(LOG_LEVELS);
   });
 });

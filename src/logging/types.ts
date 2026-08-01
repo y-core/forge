@@ -21,6 +21,23 @@ export function parseLogLevel(value: string | undefined, fallback: LogLevel): Lo
   return (LOG_LEVELS as readonly string[]).includes(normalized ?? "") ? (normalized as LogLevel) : fallback;
 }
 
+/**
+ * Parses a comma-separated level list (e.g. a `LOG_LEVEL` env var) case-insensitively, dropping
+ * unknown entries; returns `fallback` when the value is unset or names no known level, so a typo
+ * degrades to the configured default rather than to silence. The literal `"none"` parses to an
+ * empty array — the explicit spelling for "log nothing". @public
+ */
+export function parseLogLevels(value: string | undefined, fallback: readonly LogLevel[]): readonly LogLevel[] {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized === "none") return [];
+  const known = normalized
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part): part is LogLevel => (LOG_LEVELS as readonly string[]).includes(part));
+  return known.length > 0 ? known : fallback;
+}
+
 export interface LogRecord {
   level: LogLevel;
   prefix: string;

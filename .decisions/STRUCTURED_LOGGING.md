@@ -30,6 +30,7 @@ description: "The logging namespace: channels and their composable wrappers, the
 - §4 Log Levels by HTTP Status: the alert-noise convention
 - §4a Level Mapping Convention: status range to level
 - §4b LogLevel Type: the four levels and when `debug` applies
+- §4c Silencing and Level Allowlists: `withLevels`, and why "off" is a value not a shape
 - §5 Log Viewer (logging/show): the auth-gated mount
 - §5a loadLogViewer — Auth-Gated Response for Every Path: the ordered contract
 - §5b LogViewerOptions and LogViewerAccess: required `access` and `icon`
@@ -47,7 +48,11 @@ From `@y-core/forge/logging` (`src/logging/mod.ts`):
 - `consoleChannel()` — log channel that writes to console; no `read`
 - `kvLogChannel(kv, options?)` — log channel that writes to and reads from Workers KV
 - `withMinLevel(channel, min)` — composable wrapper: drops records below `min` per channel
+- `withLevels(channel, levels)` — composable wrapper: accepts only the named level set per channel;
+  an empty set silences it (§4c)
 - `withRedaction(channel, redact)` — composable wrapper: transforms each record before write (§2e)
+- `parseLogLevels(value, fallback)` — parses a comma-separated level list (or `"none"`) for
+  `withLevels` (§4c)
 - `requestLogger(options)` — middleware that creates a per-request child logger
 - `requestLog` — context accessor for the per-request logger
 - `serializeError(err)` — JSON-safe `{ name, message, stack? }` for structured `data`
@@ -201,6 +206,34 @@ This convention keeps alert noise low: 404s and 422s stay at `warn` and do not p
 
 `debug` is available for explicit use via `createLogger` but is not emitted by
 `requestLogger`. Avoid `debug` in production channel configs.
+
+### 4c. Silencing and Level Allowlists
+
+`LogLevel` has no `"silent"` member and `minLevel` has no "off" value, so before `withLevels` the
+only way to spell "log nothing" was structural — `channels: () => []`, a different **shape** of
+config. That makes silence unreachable from a deployment variable: an env var can carry a value,
+not a channel list.
+
+`withLevels(channel, levels)` closes that gap. It names the accepted set rather than a floor, and
+**an empty set is the configured form of "off"**:
+
+    import { LOG_LEVELS, consoleChannel, parseLogLevels, withLevels } from "@y-core/forge/logging"
+
+    // LOG_LEVEL="warn,error" → failures only; "none" → silent; unset → everything.
+    channels: (c) => [withLevels(consoleChannel(), parseLogLevels(c.env.LOG_LEVEL, LOG_LEVELS))]
+
+Two properties follow from this being a **per-channel wrapper** rather than a logger-wide setting:
+
+- **One sink can go quiet while another stays complete.** A test harness can silence the console
+  stream — whose output is interleaved into a test runner's stdout — without losing the KV history
+  that a failure investigation reads back. A logger-wide `minLevel` cannot express that, because it
+  drops records before any channel sees them.
+- **The wiring is identical in every environment; only the value differs.** Nothing is added or
+  removed from the channel list per environment, so there is no config shape that exists only
+  locally and no drift for a deployment to reconcile.
+
+`read` and `readEntry` pass through even when the allowlist is empty — writes are off, history
+stays readable.
 
 ---
 

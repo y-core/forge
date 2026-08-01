@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
 import { mapHandler } from "../app/route-test-helper";
+import { withLevels } from "./channels";
 import { requestLog, requestLogger } from "./request-logger";
 import type { LogChannel, LogRecord } from "./types";
 
@@ -259,5 +260,51 @@ describe("requestLogger — minLevel", () => {
     await app.request("/test");
     // resolver returned undefined → no filtering: handler record + summary
     expect(records).toHaveLength(2);
+  });
+});
+
+describe("requestLogger — per-channel level allowlists", () => {
+  it("a channels factory wrapping in withLevels([]) suppresses every record, response and flush intact", async () => {
+    const { records, channel } = makeCapture();
+    const flushed: Promise<void>[] = [];
+    const mockCtx: ExecutionContext = {
+      waitUntil: (p: Promise<void>) => {
+        flushed.push(p);
+      },
+      passThroughOnException: () => {},
+    };
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [withLevels(channel, [])] }));
+    mapHandler(app, "GET", "/test", (c) => {
+      requestLog.get(c).info("handler ran");
+      return new Response("ok");
+    });
+
+    const res = await app.fetch(new Request("http://localhost/test"), {}, mockCtx);
+
+    expect(res.status).toBe(200);
+    expect(records).toHaveLength(0);
+    expect(flushed.length).toBeGreaterThan(0);
+    await Promise.all(flushed);
+  });
+
+  it("a withLevels(['warn','error']) channel drops a 200 summary and keeps 404 and 500 — the e2e posture", async () => {
+    const { records, channel } = makeCapture();
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [withLevels(channel, ["warn", "error"])] }));
+    mapHandler(app, "GET", "/ok", () => new Response("ok"));
+    mapHandler(app, "GET", "/missing", () => new Response("nope", { status: 404 }));
+    mapHandler(app, "GET", "/boom", () => new Response("bang", { status: 500 }));
+
+    await app.request("/ok");
+    expect(records).toHaveLength(0);
+
+    await app.request("/missing");
+    await app.request("/boom");
+
+    expect(records.map((r) => [r.level, r.data?.status])).toStrictEqual([
+      ["warn", 404],
+      ["error", 500],
+    ]);
   });
 });

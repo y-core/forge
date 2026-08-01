@@ -29,6 +29,25 @@ export function withMinLevel(channel: LogChannel, min: LogLevel): LogChannel {
 }
 
 /**
+ * Wraps a channel so only records whose level is in `levels` are written; reads pass through
+ * unchanged. Where `withMinLevel` sets a floor, this names the set outright — so it can express a
+ * non-contiguous selection, and an empty array silences the channel entirely. That empty case is
+ * how a deployment turns logging off by configuration rather than by omitting the channel.
+ * Applies per channel, so a quiet console can sit beside a complete KV history. @public
+ */
+export function withLevels(channel: LogChannel, levels: readonly LogLevel[]): LogChannel {
+  const allowed = new Set(levels);
+  return {
+    write(record: LogRecord): void | Promise<void> {
+      if (!allowed.has(record.level)) return;
+      return channel.write(record);
+    },
+    ...(channel.read ? { read: channel.read.bind(channel) } : {}),
+    ...(channel.readEntry ? { readEntry: channel.readEntry.bind(channel) } : {}),
+  };
+}
+
+/**
  * Wraps a channel so each record is passed through `redact` before being written; reads pass
  * through unchanged. Composable transform for stripping or masking sensitive fields (PII,
  * secrets) on a per-channel basis — e.g. redact before persisting to KV while leaving the

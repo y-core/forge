@@ -1,4 +1,4 @@
-export { consoleChannel, withMinLevel, withRedaction } from "./channels";
+export { consoleChannel, withLevels, withMinLevel, withRedaction } from "./channels";
 export { kvLogChannel } from "./kv-channel";
 export { createLogger } from "./logger";
 export { requestLog, requestLogger } from "./request-logger";
@@ -18,4 +18,4 @@ export type {
   LogRow,
   RequestLoggerOptions,
 } from "./types";
-export { LOG_LEVELS, levelAtLeast, parseLogLevel } from "./types";
+export { LOG_LEVELS, levelAtLeast, parseLogLevel, parseLogLevels } from "./types";

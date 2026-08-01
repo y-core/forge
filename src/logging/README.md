@@ -19,6 +19,7 @@ log.info("server started", { port: 8787 });
 - **Symmetric channels** — a channel exposes `write` and an optional `read`, so the same `kvLogChannel` that persists logs also backs the log viewer UI.
 - **Child loggers** — `child(bindings)` clones a logger with merged context fields (e.g. a per-request `requestId`) sharing the same channels and pending-flush queue.
 - **Min-level filtering** — a logger-wide `minLevel` (inherited by children) drops records before any channel sees them, and `withMinLevel(channel, min)` gates a single channel so e.g. console gets the full stream while KV keeps only `warn`+. `parseLogLevel` turns a `LOG_LEVEL` env var into a `LogLevel`.
+- **Per-channel level allowlists** — `withLevels(channel, levels)` names the accepted set outright rather than a floor, so it can express a non-contiguous selection and — with an empty array — silence one channel entirely by configuration. `parseLogLevels` turns a comma-separated env var (including the literal `"none"`) into that set.
 - **Per-channel redaction** — `withRedaction(channel, redact)` transforms each record before write, so sensitive fields can be stripped for a persisting channel while the console stream stays intact. Independently, `kvLogChannel` strips error `stack` from persisted `data` by default (`persistStack: false`), keeping stacks out of KV retention.
 - **Error serialization** — `serializeError(err)` converts any thrown value into a JSON-safe `{ name, message, stack? }` for structured `data` fields; it never throws.
 - **Async-safe flushing** — pending KV writes are tracked and awaited via `flush()`; `requestLogger` flushes them through `executionCtx.waitUntil` so the response is not blocked.
@@ -141,6 +142,33 @@ import { consoleChannel, kvLogChannel, withMinLevel } from "@y-core/forge/loggin
 const channels = [consoleChannel(), withMinLevel(kvLogChannel(env.LOGS_KV), "warn")];
 ```
 
+### `withLevels(channel, levels)`
+
+Wraps a channel so only records whose level is in `levels` are written; `read`/`readEntry` pass
+through unchanged. It is the set-shaped sibling of `withMinLevel`: where `withMinLevel` names a
+**floor** (and so always accepts everything above it), `withLevels` names the **set** outright.
+That buys two things a floor cannot express — a non-contiguous selection, and silence:
+
+```ts
+import { consoleChannel, kvLogChannel, withLevels } from "@y-core/forge/logging";
+
+// Only failures on console; the KV history stays complete.
+const channels = [withLevels(consoleChannel(), ["warn", "error"]), kvLogChannel(env.LOGS_KV)];
+
+// An empty allowlist silences the channel — logging turned off by configuration.
+const quiet = [withLevels(consoleChannel(), [])];
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `channel` | `LogChannel` | The channel to wrap. |
+| `levels` | `readonly LogLevel[]` | Levels the channel accepts. An empty array drops every record; `read`/`readEntry` still work. |
+
+Because it applies per channel, a quiet console can sit beside a complete KV history — the
+empty-allowlist case is how a deployment turns a sink off by configuration rather than by
+omitting the channel from the list, so the wiring stays identical across environments and only
+the value changes. Pair it with `parseLogLevels` to drive the set from an env var.
+
 ### `withRedaction(channel, redact)`
 
 Wraps a channel so each record passes through `redact` before `write`; `read`/`readEntry` pass
@@ -168,17 +196,23 @@ const channels = [
 Independent of `withRedaction`, `kvLogChannel` applies a built-in stack-redaction default — see
 `persistStack` under [`kvLogChannel`](#kvlogchannelkv-options).
 
-### `parseLogLevel(value, fallback)` and `levelAtLeast(level, min)`
+### `parseLogLevel(value, fallback)`, `parseLogLevels(value, fallback)` and `levelAtLeast(level, min)`
 
 `parseLogLevel` turns an untrusted string (typically a `LOG_LEVEL` env var) into a
-`LogLevel`, case-insensitively, returning `fallback` when unset or invalid. `levelAtLeast`
-compares two levels in the `debug < info < warn < error` ordering. `LOG_LEVELS` is the
-ordered tuple of all levels.
+`LogLevel`, case-insensitively, returning `fallback` when unset or invalid. `parseLogLevels`
+is its list form for `withLevels`: it parses a comma-separated value, tolerates whitespace and
+case, drops unknown entries, and parses the literal `"none"` to `[]` — the spelling for "log
+nothing". It returns `fallback` when the value is unset or names no known level, so a typo
+degrades to the configured default rather than to silence. `levelAtLeast` compares two levels in
+the `debug < info < warn < error` ordering. `LOG_LEVELS` is the ordered tuple of all levels.
 
 ```ts
-import { parseLogLevel } from "@y-core/forge/logging";
+import { LOG_LEVELS, parseLogLevel, parseLogLevels, withLevels } from "@y-core/forge/logging";
 
 const minLevel = parseLogLevel(env.LOG_LEVEL, "info");
+
+// LOG_LEVEL="warn,error" → failures only; "none" → silent; unset → everything.
+const channels = [withLevels(consoleChannel(), parseLogLevels(env.LOG_LEVEL, LOG_LEVELS))];
 ```
 
 ### `serializeError(err)`
