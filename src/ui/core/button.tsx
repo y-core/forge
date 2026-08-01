@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { cloneElement, isValidElement } from "../../jsx/element";
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { stateAttrs } from "../state-attrs";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
@@ -48,7 +49,7 @@ export const Button: FC<ButtonProps> = ({ variant, size, asChild = false, type =
     return cloneElement(children, {
       ...rest,
       ...(childType === "button" ? { disabled, type } : {}),
-      ...(disabled && childType !== "button" ? { "aria-disabled": "true", "data-disabled": "true" } : {}),
+      ...(disabled && childType !== "button" ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}),
       class: cn(className, childClass),
       "data-slot": "button",
     }) as ReturnType<FC<ButtonProps>>;

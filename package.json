@@ -12,6 +12,8 @@
     "lint": "biome check src/",
     "lint:fix": "biome check --write src/",
     "test": "bun test",
+    "test:browser": "playwright test",
+    "browser:install": "playwright install chromium",
     "check": "bun run typecheck && bun run lint && bun test && bun run validate-exports && bun run validate-jsx && bun run validate-docs",
     "validate-exports": "bun run scripts/validate-exports.ts",
     "validate-jsx": "bun run scripts/validate-jsx.ts",
@@ -39,6 +41,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4",
+    "@playwright/test": "^1.62.0",
     "@typescript/native-preview": "^7.0.0-dev.20260707.2",
     "esbuild": "^0.28.1"
   },
@@ -236,6 +239,7 @@
     "src/ui/",
     "src/validation/",
     "!**/*-test-helper.ts",
+    "!**/*.browser.ts",
     "!**/*.test.ts",
     "!**/*.test.tsx"
   ]

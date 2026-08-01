@@ -22,12 +22,21 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §2a mountNav — Navigation Controller: menu toggle and active-link marking
 - §2b Theme Controller and FOUC Prevention: where the theme surface actually lives
 - §2c mountTurnstile — CAPTCHA Controller: engagement-gated, self-healing, fails visible
+- §2d The Disposer Contract: every controller returns one, and why
+- §2e mountMenu — Menu Keyboard Behaviour: only what the platform does not supply
+- §2f mountTabs — Selection and Panel Visibility: automatic versus manual activation
+- §2g mountTooltip — Hint Popover: hover and focus intent
+- §2h mountNumberField — Stepper Buttons: why its scope is eager
 - §3 Signals and Lazy Loading: client state without a framework
 - §3a Signals — Reactive State: `createSignal`, `computed`, `effect`
 - §3b Lazy Loading Utilities: deferred imports and event-triggered resources
 - §3c Resumable Scopes: `registerScope` and `resume`
 - §4 htmx Bundle Import: the side-effect entry point
 - §5 Never Use ui/client in an SSR Context: the hard boundary and how it is kept
+- §6 Controller Primitives: the shared internals every controller is built from
+- §6a Owner-Document Utilities: the four global reflexes and their failure modes
+- §6b mountRovingFocus — The Composite Controller: one function over a DOM subtree
+- §6c mountTransitionState — The Transition Protocol: one controller, never per-component
 
 ---
 
@@ -43,8 +52,9 @@ rule and its failure mode.
 
 ## 2. Mount Controllers
 
-Every mount controller is **idempotent per element and returns a cleanup function**, so calling
-one twice is safe and a controller can be torn down.
+Every mount controller is **idempotent per element and returns a disposer**, so calling one twice is
+safe and a controller can be torn down. §2d states that contract as a rule; §6 covers the shared
+primitives the controllers below are built out of.
 
 ### 2a. `mountNav` — Navigation Controller
 
@@ -90,6 +100,71 @@ Three behaviours are deliberate:
   `verifyTurnstile` ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §4b) is the single
   fail-closed enforcement point, so a slow or blocked challenge can never brick the form.
 
+### 2d. The Disposer Contract
+
+**Every controller returns a disposer that removes everything it installed, and a scope's `setup`
+returns it.** `resume()` returns a teardown that runs every disposer collected during that resume,
+so the two halves fit without either side knowing about the other:
+
+```typescript
+registerScope("toolbar", {
+  setup: ({ root }) => mountRovingFocus(root, { items: "[data-toolbar-item]" }),
+})
+```
+
+**It is a contract, not a convenience.** A controller that cannot be disposed leaks a listener — and
+often a `MutationObserver` and a pending timer — on every re-resume, and a page that re-resumes after
+each htmx swap accumulates one set per swap. Nothing warns; the page simply gets slower and starts
+handling the same keystroke several times.
+
+Two consequences follow, and both are the rule rather than a special case:
+
+- **A `setup` that returns nothing is legal**, and is not treated as a disposer. A scope with no
+  listeners of its own has nothing to tear down.
+- **A disposer must be idempotent-safe to call after its element is gone.** Removing a listener from
+  a detached node is a no-op, which is why teardown never needs to check.
+
+### 2e. `mountMenu` — Menu Keyboard Behaviour
+
+**It opens and closes nothing.** Opening, closing, light-dismiss, Escape and top-layer stacking
+belong to the Popover API, and selecting an item closes the menu through `command="hide-popover"` in
+the markup ([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §1h). What is left is what ARIA's menu
+pattern asks for and the platform does not supply: arrow navigation over the items, typeahead, focus
+on the first item when the menu opens, and focus back on the opener when it closes.
+
+**The opener is captured, not derived from `commandfor`** — a menu can be opened by any invoker, and
+a context menu has no single trigger button.
+
+**Focus is only reclaimed when the close actually stranded it.** A click elsewhere on the page has
+already put focus where the user wants it, and yanking it back to the trigger would be worse than
+the problem restoration exists to fix.
+
+### 2f. `mountTabs` — Selection and Panel Visibility
+
+Adds the part specific to tabs on top of the composite controller: moving the selection, and the
+panel visibility that follows it. **Panels are found through the `aria-controls` the markup already
+declares**, so there is no second registry to keep in step.
+
+**Automatic activation rides `focusin`**, which the arrow keys already produce — so the selection
+follows roving focus without this controller knowing which key moved it. Manual activation listens
+for `click` instead. Which applies is read from the root's `data-activation`.
+
+### 2g. `mountTooltip` — Hint Popover
+
+Shows on hover and on focus, hides on leave, blur and Escape. **`popover="hint"` is the reason it
+composes**: a hint does not close an `auto` popover, so a tooltip on a menu item does not dismiss
+the menu underneath it.
+
+### 2h. `mountNumberField` — Stepper Buttons
+
+Wires the increment and decrement buttons to the native input's own `stepUp` / `stepDown`, so
+`min`, `max` and `step` are enforced by the platform rather than re-implemented.
+
+**Its scope is eager, and that is forced by the markup**: the steppers carry no `data-on-*` action,
+so a lazy scope would have nothing to resume it and the buttons would sit inert on the page. The
+same reasoning makes `toolbar`, `menu`, `tabs`, `tooltip` and `collapsible` eager — every one of
+them is setup-only.
+
 ---
 
 ## 3. Signals and Lazy Loading
@@ -116,6 +191,26 @@ delegated island listener that drives every registered scope.
 
 **Register every scope before calling `resume()`** — including the side-effect import that
 registers forge's own scopes ([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §2d).
+
+**A component whose markup names a scope must guarantee the scope exists.** A side-effect module
+that registers scopes for markup a *sibling* module renders imports the module those scopes live in,
+rather than leaving the app to discover the dependency from a warning. `ui/chrome/client` imports
+`ui/core/client` for exactly this reason: chrome markup names the `menu` and `toolbar` scopes.
+
+**A scope is lazy by default and resumes on the first delegated interaction inside it; an `eager`
+scope runs its `setup` at `resume()`.** Choose `eager` whenever the markup carries no `data-on-*`
+action of its own, because a lazy scope then has nothing that could ever resume it — that is the
+whole setup-only family (§2h), and it is a correctness requirement rather than a performance
+preference.
+
+**The delegated event vocabulary is `click`, `input`, `change`, `submit`. There is no `keydown`, by
+decision.** Composite controllers own `keydown` at their **own widget root**, which is where arrow
+keys and typeahead belong: they are scoped to a widget, not to a page region. A page-level keydown
+delegation would have to decide, for every keystroke, which of several live widgets it was meant
+for — a question the widget's own root answers by construction. The vocabulary is declared once and
+shared by the runtime's listener set and the server's emitted `data-on-*` attributes, so adding a
+fifth event changes every attribute the server writes; that is the cost the rule exists to make
+visible.
 
 ---
 
@@ -155,3 +250,73 @@ The boundary is kept by import path, not by a runtime check:
 and wire the behaviour from the bundled client entry.** Never inline a `ui/client` import in a
 `.tsx` file outside the client directory — that is the mistake the path convention exists to
 make visible.
+
+---
+
+## 6. Controller Primitives
+
+Three modules that no consumer mounts directly and every controller is built out of. They earn a
+section because the rules in them are the ones a new controller most often gets wrong.
+
+### 6a. Owner-Document Utilities
+
+**A browser controller never reaches for a bare global.** Four reflexes each have a failure mode
+that is invisible in the common case and total in the uncommon one:
+
+| Reflex | What breaks |
+|---|---|
+| bare `document` / `window` | they name the **top-level** realm — a controller mounted in an iframe installs its listeners on the wrong document and silently never fires |
+| `event.target` | retargeted at a shadow boundary: for an event that crossed one it reports the **host**, not the element hit |
+| `document.activeElement` | the same problem in reverse — it stops at the host and never reports the focused item inside an open shadow root |
+| `instanceof HTMLElement` | `false` for an element from another realm, because every realm has its own constructor. It compiles, it type-narrows, and it rejects a perfectly good element |
+
+The replacements resolve everything **from a node**: the document and window a node belongs to, the
+*deeply* focused element, the real target via `composedPath()`, a duck-typed element narrowing on
+`nodeType`, and shadow-crossing `closest` and `contains`.
+
+**These are the primitives a composite is built out of, which is why they come first.** "Which item
+has focus" and "which item was hit" are the two questions a roving-focus controller exists to answer,
+and both are wrong by default — a controller written against bare globals reports the shadow *host*
+the moment a widget is used inside a web component.
+
+**One limitation is worth knowing:** `resume()` discovers scopes with a document query, which does
+not descend into shadow roots. Delegated dispatch out of a shadow root works, because action routing
+climbs hosts; an **eager** scope inside one is not yet found.
+
+### 6b. `mountRovingFocus` — The Composite Controller
+
+One function over a **DOM subtree**, not a component tree: no contexts, no hooks, no ref merging, no
+list registry. It takes a root, a selector for its items, an orientation, and returns a disposer.
+
+**Items are resolved live from the DOM on every interaction.** A composite whose items are added,
+removed or reordered needs no re-registration — which is exactly what an SSR-first library wants,
+because the server already rendered the items and nothing on the client should have to re-declare
+them. A menu whose rows are rebuilt between openings works without re-mounting.
+
+Four behaviours are easy to omit and are all required:
+
+- **Arrow keys inside a text field belong to the caret, not to the widget.** The composite takes
+  over only at the very edge of the text, with no selection and no Shift — so arrowing out of a
+  filled search box feels like leaving it rather than like the toolbar stealing the keystroke.
+- **Direction is read from the element, not from a global.** A single RTL subtree inside an LTR page
+  must navigate as RTL, and only the resolved style knows that.
+- **Items that are in the DOM but not rendered are not in the ring.** A closed submenu's popup is
+  still a descendant of its parent popup, and a filtered-out row is still in the document; navigating
+  into either strands focus on something that cannot take it.
+- **A nested composite keeps the key it consumed.** `keydown` bubbles from an inner widget to the
+  outer one, so the outer controller stands down when the event was already handled — otherwise both
+  move focus and the inner move is immediately overwritten.
+
+**Both disabled forms are honoured**: `disabled` removes an element from the tab order, while
+`aria-disabled` keeps it focusable but inert — the right shape for a toolbar button that must stay
+discoverable.
+
+### 6c. `mountTransitionState` — The Transition Protocol
+
+**One reusable controller, never per-component animation code.** It publishes
+`data-starting-style` and `data-ending-style` around an open or close so CSS can animate both
+directions, and reconciles `data-open` / `data-closed` with the element's real state.
+
+It attaches to what the platform already reports — a popover's `toggle` and `beforetoggle`, a
+`<details>` element's `toggle` — so it **never decides** whether something is open. The element
+owns that; this only makes the state visible to a stylesheet.

@@ -9,6 +9,11 @@ import "./client";
 class FakeEl {
   dataset: Record<string, string>;
   removed = false;
+  /** The toast schedules its auto-close on its **own** realm's clock, resolved via `ownerWindow`.
+   *  Naming `globalThis` as the owning realm's view is what routes it back to the captured
+   *  `setTimeout` below — a fake element with no owner document would reach for a global `document`
+   *  that does not exist in `bun test`. */
+  ownerDocument = { defaultView: globalThis };
   remove() {
     this.removed = true;
   }

@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
+import { stateAttrs } from "../state-attrs";
 import { asClass, cn } from "./utils/cn";
 
 type FieldOrientation = "vertical" | "horizontal";
@@ -17,7 +18,7 @@ const FIELD_LAYOUT: Record<FieldOrientation, string> = { vertical: "flex flex-co
  * @public
  */
 export const Field: FC<PropsWithChildren<FieldProps>> = ({ label, orientation = "vertical", class: cls, children, ...props }) => (
-  <div data-slot='field' data-orientation={orientation} class={cn(FIELD_LAYOUT[orientation], asClass(cls))} {...props}>
+  <div data-slot='field' {...stateAttrs({ orientation })} class={cn(FIELD_LAYOUT[orientation], asClass(cls))} {...props}>
     <span data-slot='field-label' class='text-xs font-medium text-muted-foreground'>
       {label}
     </span>

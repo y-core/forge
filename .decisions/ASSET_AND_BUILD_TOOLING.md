@@ -219,12 +219,41 @@ surface as uncaught exceptions (exit code 2).
 
     import { createReleaseCommand } from "@y-core/forge/pkg"
 
-    const releaseCmd = createReleaseCommand(program)
+    const releaseCmd = createReleaseCommand({ cwd })
 
-`createReleaseCommand` registers a `release` subcommand that: validates the working
-tree is clean, determines the next version via `bumpSemVer`, updates `package.json`,
-commits the version bump, creates a git tag, and optionally pushes. It is the only
-blessed way to cut a forge release.
+**`createReleaseCommand(config, deps?)` takes a config object, not a program.** `cwd` is
+required; `tagPrefix` defaults to `"v"` and `stageFiles` to `["package.json"]`. The second
+parameter is the injected dependency set, present so the command is testable — production
+callers pass one argument.
+
+It builds a `release` subcommand that, in order: refuses a dirty working tree, resolves the
+next version, prints the previous version, the next one and the tag, refuses to re-tag,
+updates `package.json`, commits, and creates the tag. **It is the only blessed way to cut a
+forge release.**
+
+**It never pushes.** The last thing it prints is the push command for a human to run — so
+the irreversible step, publishing a tag to a remote, stays a deliberate act.
+
+Three refusals matter, and each is a guard rather than a convenience:
+
+- **A dirty tree aborts** — `isWorkingTreeClean` is checked before anything is resolved, so a
+  half-finished change cannot ship. `--allow-dirty` overrides it; using that flag for a real
+  release defeats the guard's only purpose. The abort prints to stderr and exits non-zero.
+- **An existing tag aborts** — `tagExists` is checked after the version is resolved, so a
+  botched release cannot be quietly re-cut over its own tag.
+- **Nothing to release aborts** — when no commits exist since the latest tag, the command
+  reports "already at" that version and stops. `package.json` disagreeing with the tag at that
+  point is an error, not a bump.
+
+**`--dry` prints the resolved version and stops before any write.** It skips the clean-tree
+check as well, so it is safe to run at any time — but note that it resolves from
+`<latest-tag>..HEAD`, so running it *before* committing reports "nothing to release" rather
+than the version that release would produce. Commit first, then dry-run.
+
+**The bump is inferred from the last commit's subject line**: a `major:` prefix bumps major, a
+`minor:` prefix bumps minor, anything else is a patch. Passing an explicit version as the
+command's single positional argument overrides the inference, and is rejected if it is not
+greater than the current tag.
 
 ### 5b. SemVer Utilities
 
@@ -244,15 +273,22 @@ blessed way to cut a forge release.
       getLatestTag,
       getCommitsSinceTag,
       createTag,
+      tagExists,
       isWorkingTreeClean,
     } from "@y-core/forge/pkg"
 
+**Every one of them takes `cwd` first.** These shell out to `git`, and a git command with no
+working directory is a command against whatever directory the process happens to be in — so
+the caller states it rather than inheriting it.
+
 | Function | Returns |
 |---|---|
-| `getLatestTag()` | Latest semver tag string, or `null` if no tags |
-| `getCommitsSinceTag(tag)` | Array of `{ hash, message }` since the tag |
-| `createTag(version, message)` | Creates an annotated git tag |
-| `isWorkingTreeClean()` | `true` if no uncommitted changes |
+| `getLatestTag(cwd, prefix)` | Highest tag matching `prefix*` by version sort, or `null` when there are none |
+| `getCommitsSinceTag(cwd, tag)` | `string[]` — one `git log --oneline` line per commit, **not** parsed objects |
+| `getLastCommitMessage(cwd)` | The last commit's subject line, which is what the bump is inferred from (§5a) |
+| `createTag(cwd, tag)` | Creates a **lightweight** tag — `git tag <tag>`, no annotation, no message |
+| `tagExists(cwd, tag)` | `true` when that tag is already present |
+| `isWorkingTreeClean(cwd)` | `true` when there are no uncommitted changes |
 
-`createReleaseCommand` calls `isWorkingTreeClean()` before proceeding and aborts
-with `CliError` if the tree is dirty. Never tag a dirty tree.
+`createReleaseCommand` calls `isWorkingTreeClean(cwd)` before anything else and exits non-zero
+if the tree is dirty (§5a). **Never tag a dirty tree.**

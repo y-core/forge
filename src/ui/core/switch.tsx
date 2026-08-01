@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+import { stateAttrs } from "../state-attrs";
 import type { FieldDescriptor } from "./field";
 import { fieldControlProps } from "./field";
 import { asClass, cn } from "./utils/cn";
@@ -17,7 +18,8 @@ export const Switch: FC<PropsWithChildren<SwitchProps>> = ({ class: cls, field, 
   return (
     <label
       data-slot='switch'
-      data-orientation={orientation}
+      {...stateAttrs({ orientation: "horizontal" })}
+      data-label-position={orientation === "label-before" ? "before" : "after"}
       class={cn("inline-flex items-center gap-2", orientation === "label-before" && "flex-row-reverse", asClass(cls))}>
       {/* biome-ignore lint/a11y/useAriaPropsForRole: a native checkbox conveys checked-state to the switch role via its `checked` property — a static aria-checked would be wrong */}
       <input data-slot='switch-input' type='checkbox' role='switch' class='peer sr-only' {...resolved} />

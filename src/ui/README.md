@@ -58,6 +58,27 @@ Without `jsxImportSource: "@y-core/forge/jsx"`, JSX in component files compiles 
 runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
 `/** @jsxImportSource @y-core/forge/jsx */` pragma, so per-file overrides are unnecessary.
 
+### Dark mode with Tailwind v4
+
+Forge's palette is a set of CSS custom properties that `.dark` on `<html>` re-maps, resolved at
+runtime through `@theme inline`. **So every forge component works in dark mode with no extra setup**
+— `bg-popover`, `text-muted-foreground` and the rest all follow the class the theme scope toggles.
+
+**Your own `dark:` utilities do not, and this is the one piece of setup that is easy to miss.**
+Tailwind v4 defaults the `dark:` variant to `prefers-color-scheme`, so a `dark:bg-slate-900` of
+your own would follow the *operating system* while every forge component follows the *user's
+choice* — and the two disagree the moment someone picks a theme that is not `system`. Point the
+variant at the class instead:
+
+```css
+/* your app's stylesheet, alongside the forge imports */
+@custom-variant dark (&:where(.dark, .dark *));
+```
+
+One line, and `dark:` now means the same thing to your utilities as it does to forge's palette.
+Nothing in `ui/assets` declares it, because a consumer's variant configuration is a consumer's to
+own — but every app using both forge components and its own `dark:` utilities needs it.
+
 ---
 
 ## `@y-core/forge/ui/core`
@@ -134,11 +155,27 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `Toast` | notification | `variant`: `ToastVariant`; `position`: `ToastPosition`. Compounds: `Toast.Title`, `Toast.Description`, `Toast.Container`. |
 | `Badge` | `<span>` | `variant`: `BadgeVariant`. |
 | `Avatar` | avatar | Compound: `Avatar.Fallback`. |
-| `Switch`, `Slider` | styled `<input>` | CSS-only toggle / native range; accept an optional `field` descriptor. |
-| `ToggleGroup`, `ToggleGroup.Item` | button group | Segmented control; `Item` takes `pressed` for initial state. |
+| `Switch`, `Slider` | styled `<input>` | CSS-only toggle / native range; accept an optional `field` descriptor. `Switch` publishes `data-label-position` (`before` / `after`). |
+| `ToggleGroup`, `ToggleGroup.Item` | `<fieldset>` of buttons | Segmented control. `type`: `"single" | "multiple"` — published as `data-multiple` and read by `bindGroup`. `Item` takes `pressed` for initial state. **No `role`** — a `<fieldset>` is already a `group`. |
+| `Toolbar` | `<div role="toolbar">` | One tab stop, arrow-key navigation. Compounds: `Toolbar.Button`, `Toolbar.Link`, `Toolbar.Input`, `Toolbar.Group`, `Toolbar.Separator`. Items are marked with `data-toolbar-item`; a foreign element opts in by carrying it. |
+| `Menu` | native popover, `role="menu"` | Trigger + popup on the Popover and Invoker Commands APIs — open, close, light-dismiss and Escape need no JavaScript. Compounds: `Menu.Trigger`, `Menu.Popup`, `Menu.Item`, `Menu.LinkItem`, `Menu.SubmenuTrigger`, `Menu.CheckboxItem`, `Menu.RadioItem`, `Menu.Group`, `Menu.GroupLabel`, `Menu.Separator`. |
+| `Tabs` | tablist + panels | `orientation`; `activation`: `"automatic" | "manual"`. Compounds: `Tabs.List`, `Tabs.Tab`, `Tabs.Panel`. An unselected panel is `hidden`, so the first render is correct with no JS. |
+| `Toggle` | `<button aria-pressed>` | A single two-state pressable button. `pressed` for initial state. |
+| `Collapsible` | native `<details>` | Compounds: `Collapsible.Trigger`, `Collapsible.Content`. `<details>` owns open and closed; the controller only publishes them. |
+| `Accordion` | stack of `<details>` | Compounds: `Accordion.Item`, `Accordion.Trigger`, `Accordion.Content`. Each item is its own disclosure and its own tab stop. |
+| `Tooltip` | `popover="hint"` | Compounds: `Tooltip.Trigger`, `Tooltip.Content`. A hint does not dismiss the `auto` popover beneath it. |
+| `CheckboxGroup`, `RadioGroup` | `<fieldset>` of native inputs | Real `<input type="checkbox">` / `<input type="radio">`. Radio grouping and its roving focus are the platform's. Compound: `.Item` on each. |
+| `Meter` | `<meter>` | A measurement in a known range — distinct from `Progress`, which is task completion. |
+| `NumberField` | numeric `<input>` + steppers | `min` / `max` / `step` enforced natively via `stepUp` / `stepDown`. Compounds: `NumberField.Input`, `NumberField.Increment`, `NumberField.Decrement`. |
+| `ScrollArea` | scroll container | Almost entirely CSS — no scroll hijacking, no synthetic thumb. Compound: `ScrollArea.Viewport`. |
+| `Dialog` | native `<dialog>` | Compounds: `Dialog.Trigger`, `Dialog.Close`. Top layer, backdrop and Escape are the platform's. |
 | `Progress`, `Separator`, `Skeleton`, `Spinner`, `Popover`, `Label` | misc primitives | `Spinner` requires an `icon` prop. |
 | `Icon`, `createIcon` | `<svg><use>` | Sprite-backed icon and its factory. |
 | `cn`, `asClass`, `cva` | class utilities | Class merging, `class`-prop narrowing, and class-variance authority (all `@public`). |
+
+Components that need a keyboard — `Toolbar`, `Menu`, `Tabs`, `Tooltip`, `Collapsible`,
+`NumberField` — render a `data-scope` and are inert until `@y-core/forge/ui/core/client` is imported.
+The markup stays valid and accessible without it; what is missing is the arrow keys.
 
 #### `FormField` — accessible form fields
 
@@ -314,6 +351,9 @@ so a `javascript:`-style value collapses to `"#"` in the emitted HTML.
 
 - Registers the `toast` and `alert` resumable scopes — the client halves of the `Toast` and `Alert`
   primitives, and of every flash message rendered through `Flash` / `FlashContainer` / `FlashOob`.
+- Registers the six **setup-only** scopes that give the keyboard-driven primitives their behaviour:
+  `toolbar`, `menu`, `tabs`, `tooltip`, `collapsible` and `number-field`, plus the `toggle` action
+  scope.
 
 ### Usage
 
@@ -335,8 +375,18 @@ components render correctly but never dismiss, and `resume()` `console.warn`s ab
 |---|---|
 | `toast` | `eager: true` — hydrates at `resume()` so a server-rendered toast can auto-close without waiting for a click. State key `duration` (milliseconds, serialized into `data-state` by `Toast`); a positive value schedules removal. One action, `dismiss`, which removes the toast root. |
 | `alert` | Lazy. No state. One action, `dismiss`, which removes the alert root. |
+| `toolbar` | `eager: true`. Mounts roving focus over `[data-toolbar-item]`. Reads the root's `data-orientation` to choose which arrows navigate, so a vertical rail needs no second declaration on the client. |
+| `menu` | `eager: true`. Mounts the menu keyboard layer and transition state on the popup. |
+| `tabs` | `eager: true`. Mounts selection, panel visibility and roving focus over the tablist. |
+| `tooltip` | `eager: true`. Hover and focus intent on a `popover="hint"` surface. |
+| `collapsible` | `eager: true`. Publishes the `<details>` element's own open state as state attributes — it never decides it. |
+| `number-field` | `eager: true`. Wires the steppers to the input's native `stepUp` / `stepDown`. |
+| `toggle` | Lazy. One action, `toggle`, which flips `aria-pressed` and `data-pressed` together. |
 
-Both scopes remove their own root element, so there is nothing to tear down and no handle to hold.
+`toast` and `alert` remove their own root element, so there is nothing to tear down and no handle to
+hold. **Every other scope here is `eager` out of necessity, not preference:** its markup carries no
+`data-on-*` action, so a lazy scope would have nothing that could ever resume it and the widget
+would sit inert on the page.
 
 ---
 
@@ -615,6 +665,50 @@ const sig = signalRecord({ gridVisible: true, fov: 50, projection: "perspective"
 registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
 ```
 
+#### Controller primitives
+
+Three modules no consumer mounts directly, and every controller above is built out of. They are
+`@public` because an app writing its own controller needs the same guarantees.
+
+| Export | What it gives you |
+|---|---|
+| `ownerDocument(node)` / `ownerWindow(node)` | the document and window **that node belongs to** — a controller inside an iframe must not install listeners on the top-level document |
+| `activeElement(node)` | the *deeply* focused element, descending through open shadow roots. `document.activeElement` stops at the host |
+| `eventTarget(event)` | the element actually hit, via `composedPath()`, before shadow retargeting rewrote `event.target` to the host |
+| `asElement(target)` | narrows without `instanceof`, so an element from another realm is accepted rather than silently discarded |
+| `closestAcross(node, sel)` / `contains(parent, child)` | `closest` and `contains` that step over shadow boundaries |
+| `mountRovingFocus(root, opts)` | the composite controller — one tab stop, arrow keys, Home/End, typeahead, RTL, disabled-item skip, focus restoration. Returns a disposer |
+| `mountTransitionState(el)` | publishes `data-starting-style` / `data-ending-style` around an open or close, reconciled with `data-open` / `data-closed`. One controller, never per-component animation code |
+
+`mountRovingFocus` takes `{ items, orientation?, loop?, typeahead?, typeaheadTimeout? }` and resolves
+its items **live from the DOM on every interaction**, so a widget whose rows are rebuilt between
+openings needs no re-mounting. Mark the item that should hold the tab stop on mount with
+`ACTIVE_COMPOSITE_ITEM` (`data-composite-item-active`) — the pressed tool, the selected tab, the
+checked radio.
+
+Three behaviours are worth knowing because they are easy to assume away: arrow keys inside a **text
+field** belong to the caret until it reaches the edge of the text; direction is read from the
+**element**, not from a global, so an RTL island inside an LTR page navigates as RTL; and an item
+that is in the DOM but not rendered — a closed submenu's row, a filtered-out link — is not in the
+ring at all.
+
+**Every controller returns a disposer, and that is a contract.** Return it from a scope's `setup`
+and `resume()`'s teardown runs it; a controller that cannot be disposed leaks a listener on every
+re-resume.
+
+#### Menu, tabs, tooltip and number-field controllers
+
+`mountMenu(popup, opts?)`, `mountTabs(root, opts?)`, `mountTooltip(root)` and
+`mountNumberField(root)` are the controllers the `ui/core/client` scopes mount. Call them directly
+only when the markup is somewhere `resume()` cannot reach — inside a shadow root, say.
+
+`mountMenu` **opens and closes nothing**: the Popover API owns that, and an item closes the menu
+through `command="hide-popover"` in the markup. What it adds is what ARIA's menu pattern asks for
+and the platform does not supply — arrow navigation, typeahead, focus on the first item at open, and
+focus back on the opener at close. The opener is *captured* rather than derived from `commandfor`,
+because a context menu has no single trigger button, and focus is only reclaimed when the close
+actually stranded it.
+
 #### Nav and Turnstile controllers
 
 `mountNav(options?)` wires the navigation toggle: open/close, outside-click and Escape to close, and
@@ -868,7 +962,33 @@ Chrome is SSR markup plus a client island. Three wiring steps, all required:
 3. **Ship the theme CSS.** `ThemeToggle` renders its three icons inside `theme-light-icon`,
    `theme-dark-icon`, and `theme-system-icon` spans; which one is visible is decided entirely by CSS
    keyed off `html[data-theme-preference]` in `src/ui/assets/css/forge-ui.css`. Those class names are
-   a contract — rename one and the toggle renders all three glyphs at once.
+   a contract — rename one and the toggle renders all three glyphs at once. The same mechanism gives
+   the button its accessible name: each span carries an `sr-only` label, and the CSS that shows one
+   span hides the other two with `display: none`, which also removes them from the accessible-name
+   computation. So the name says which theme is active, with no JavaScript and no `aria-label` that
+   could disagree with the glyph.
+
+#### The contracts chrome's markup carries
+
+| Component | What it stamps |
+|---|---|
+| `Toolbar` | `role="toolbar"`, `data-scope="toolbar"`, and `data-orientation` / `aria-orientation` — `vertical` for a `left` or `right` rail, `horizontal` for `top` or `bottom`. Every action and every popover trigger carries `data-toolbar-item`, so the whole rail is **one tab stop**. Separators are `<hr aria-orientation>`, whose axis is *across* the rail. |
+| `Navbar` | Bar-level dropdowns are `core/Menu`; rows below the bar are `Menu.SubmenuTrigger` and `Menu.LinkItem`. Each popup carries `data-scope="menu"`. |
+| `ThemeToggle` | `data-scope="theme"`, and three `sr-only` labels rather than one static `aria-label`. |
+
+**A flyout's title action is deliberately *not* a rail stop.** Roving focus queries the whole `<nav>`
+subtree and a flyout is inside it, so marking that button would splice flyout content into the rail's
+arrow-key ring.
+
+**`Navbar` is not a `role="menubar"`,** and that is a decision rather than an omission: a menubar
+owes its triggers a roving tab stop of their own, forge has no menubar controller, and claiming the
+role without the behaviour announces a keyboard interface that is not there. A bar-level link stays a
+plain link for the same reason — a link on a bar is not a menu item.
+
+**The rail carries `data-scope="toolbar"`, so an app action fired from inside it now passes through a
+scope on its way up.** That is safe by design: action routing continues to the enclosing scope when
+the inner one's table does not have the action. It is called out because it is the change most likely
+to look like it should break a consumer's tool buttons, and does not.
 
 The glyphs every chrome component needs (`chevron-down`, `hamburger`, `close`, `sun`, `moon`,
 `monitor`) all ship in `forgeUiSpriteSources()` — see [`@y-core/forge/ui/assets`](#y-coreforgeuiassets).
@@ -891,6 +1011,10 @@ The glyphs every chrome component needs (`chevron-down`, `hamburger`, `close`, `
 
 - Registers the `theme` and `navbar` resumable scopes — the client halves of `ThemeToggle` and
   `Navbar`. Registration happens at module load; no DOM is touched until a scope resumes.
+- **Side-effect-imports `@y-core/forge/ui/core/client`.** Chrome's markup names the `menu` and
+  `toolbar` scopes, and a component whose markup names a scope has to guarantee the scope exists —
+  otherwise an app importing only this module gets `resume()` warnings and a navbar and toolbar that
+  are dead to the keyboard. Importing both is harmless; registration is idempotent.
 - Exports `isDark`, a `ReadonlySignal<boolean>` tracking the resolved theme.
 
 ### Usage
@@ -900,7 +1024,7 @@ The glyphs every chrome component needs (`chevron-down`, `hamburger`, `close`, `
 import "@y-core/forge/ui/chrome/client";  // side-effect: registers the scopes
 import { resume } from "@y-core/forge/ui/client";
 
-resume();  // hydrates the eager `theme` scope now; `navbar` resumes on first interaction
+resume();  // hydrates the eager `theme` and `navbar` scopes now, plus every core scope
 ```
 
 To react to the resolved theme, import the signal by name:
@@ -921,7 +1045,7 @@ reads `false` until the theme scope resumes.
 | Scope | Contract |
 |---|---|
 | `theme` | `eager: true` — hydrates at `resume()`, not on first interaction, so the preference reconciles without waiting for a click. State key `pref`. One action, `cycleTheme`, advancing `light → dark → system → light`. `setup` reconciles `pref` against `localStorage` (the FOUC script already applied it), then keeps `THEME_ATTR`, `localStorage`, and the `DARK_CLASS` on `<html>` in sync, tracking `(prefers-color-scheme: dark)` for the `system` case. |
-| `navbar` | Lazy. State key `filters`. No actions — `setup` alone syncs `hidden` on every `[data-filter]` descendant and listens for the `navbar:filters` document event. |
+| `navbar` | `eager: true`. State key `filters`. No actions — `setup` alone syncs `hidden` on every `[data-filter]` descendant and listens for the `navbar:filters` document event. Eager out of necessity: the navbar's markup emits no `data-on-*` anywhere (native `<details>`, native popovers, plain links), so a lazy scope would have nothing to resume it and auth filtering would silently never run. |
 
 | Export | Type | Description |
 |---|---|---|

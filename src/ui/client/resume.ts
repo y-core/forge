@@ -11,6 +11,7 @@
  */
 
 import { SCOPE_EVENTS } from "../scope-events";
+import { closestAcross, eventTarget, ownerDocument } from "./dom";
 import { createSignal, effect, type Signal } from "./signal";
 
 /** Context handed to a scope's `setup` and action handlers.
@@ -57,13 +58,18 @@ export function registerScope<A extends string = string>(name: string, def: Scop
 let teardown: (() => void) | null = null;
 
 /** Installs one delegated listener per supported event. Idempotent: a second call is a no-op
- *  and returns the same teardown. Returns a disposer that removes all listeners. @public */
-export function resume(): () => void {
+ *  and returns the same teardown. Returns a disposer that removes all listeners.
+ *
+ *  `within` names any node in the document to mount on; omit it for the top-level page. It exists so
+ *  an app rendered inside an iframe mounts on **its own** document — a bare `document` here would
+ *  install the listeners on the wrong realm and every scope would go dead without an error. @public */
+export function resume(within?: Node): () => void {
   if (teardown) return teardown; // already mounted — no duplicate listeners
+  const doc = ownerDocument(within);
   const handlers: Array<[string, EventListener, boolean]> = [];
   for (const type of SCOPE_EVENTS) {
     const handler: EventListener = (event) => dispatch(type, event);
-    document.addEventListener(type, handler);
+    doc.addEventListener(type, handler);
     handlers.push([type, handler, false]);
   }
   // Native Invoker Commands bridge: one delegated `command` listener routes custom `--action`
@@ -72,10 +78,10 @@ export function resume(): () => void {
   // The platform dispatches `command` with `bubbles:false`, so this listener runs in the capture
   // phase — a bubble-phase delegated listener never sees it and every custom action goes dead.
   const commandHandler: EventListener = (event) => dispatchCommand(event);
-  document.addEventListener("command", commandHandler, { capture: true });
+  doc.addEventListener("command", commandHandler, { capture: true });
   handlers.push(["command", commandHandler, true]);
   teardown = () => {
-    for (const [type, handler, capture] of handlers) document.removeEventListener(type, handler, capture);
+    for (const [type, handler, capture] of handlers) doc.removeEventListener(type, handler, capture);
     for (const d of disposers.splice(0)) d();
     teardown = null;
   };
@@ -83,7 +89,7 @@ export function resume(): () => void {
   // `data-scope` names no registered definition is always a bug — the app forgot to
   // side-effect-import the client module that registers it. Warn once per unknown name.
   const warnedUnknown = new Set<string>();
-  for (const el of document.querySelectorAll<HTMLElement>("[data-scope]")) {
+  for (const el of doc.querySelectorAll<HTMLElement>("[data-scope]")) {
     const name = el.dataset.scope ?? "";
     const def = scopes.get(name);
     if (!def) {
@@ -123,7 +129,9 @@ export function resumeScope(root: HTMLElement): Record<string, Signal<unknown>> 
 /** Walk up from `el` through `[data-scope]` ancestors and invoke the first scope whose `on` table
  * owns `action`, resuming it on the way. Shared by the `data-on-*` and `command` dispatchers. */
 function runAction(action: string, el: HTMLElement, event: Event): void {
-  let scopeEl = el.closest<HTMLElement>("[data-scope]");
+  // `closestAcross`, not `closest`: a trigger inside a shadow root would otherwise never find the
+  // scope root that encloses its host, and the action would silently do nothing.
+  let scopeEl = closestAcross<HTMLElement>(el, "[data-scope]");
   while (scopeEl) {
     const def = scopes.get(scopeEl.dataset.scope ?? "");
     if (def) {
@@ -134,12 +142,14 @@ function runAction(action: string, el: HTMLElement, event: Event): void {
         return;
       }
     }
-    scopeEl = scopeEl.parentElement?.closest<HTMLElement>("[data-scope]") ?? null;
+    scopeEl = closestAcross<HTMLElement>(scopeEl.parentNode, "[data-scope]");
   }
 }
 
 function dispatch(type: string, event: Event): void {
-  const el = (event.target as Element | null)?.closest<HTMLElement>(`[data-on-${type}]`);
+  // `eventTarget`, not `event.target`: an event that crossed a shadow boundary reports the host,
+  // so a `data-on-*` element inside a web component would never be found.
+  const el = closestAcross<HTMLElement>(eventTarget(event) as Node | null, `[data-on-${type}]`);
   if (!el) return;
   const action = el.getAttribute(`data-on-${type}`);
   if (!action) return;

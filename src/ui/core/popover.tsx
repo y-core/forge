@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { stateAttrs } from "../state-attrs";
 import { asClass, cn } from "./utils/cn";
 
 interface PopoverProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
@@ -53,8 +54,7 @@ const PopoverContent: FC<PopoverContentProps> = ({ id, align = "start", side = "
     id={id}
     data-slot='popover-content'
     popover='auto'
-    data-align={align}
-    data-side={side}
+    {...stateAttrs({ open: false, side, align })}
     class={cn("z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}
     {...rest}>
     {children}

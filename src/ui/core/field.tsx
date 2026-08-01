@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
+import { stateAttrs } from "../state-attrs";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
@@ -34,7 +35,7 @@ interface FieldControlProps {
 }
 
 const fieldVariants = cva({
-  base: "group/field flex w-full gap-3 data-[invalid=true]:text-red-600",
+  base: "group/field flex w-full gap-3 data-[invalid]:text-red-600",
   variants: {
     orientation: {
       horizontal: "flex-row items-start [&>[data-slot=field-label]]:flex-auto [&>[data-slot=field-content]]:flex-1",
@@ -48,7 +49,7 @@ const fieldVariants = cva({
 
 /** Shared Tailwind class string for FieldLabel and FieldTitle. */
 export const FIELD_LABEL_CLASSES =
-  "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50";
+  "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50";
 
 export function fieldId(name: string): string {
   return `field-${name}`;
@@ -102,9 +103,7 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
     <fieldset
       disabled={disabled}
       data-slot='field'
-      data-disabled={disabled ? "true" : undefined}
-      data-invalid={invalid ? "true" : undefined}
-      data-orientation={orientation}
+      {...stateAttrs({ disabled, invalid, orientation })}
       class={fieldVariants({ orientation, ...(clsValue !== undefined ? { class: clsValue } : {}) })}
       {...props}>
       {children}

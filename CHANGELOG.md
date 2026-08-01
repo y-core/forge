@@ -10,6 +10,147 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [0.0.x] — unreleased
+
+<!-- Set the version and date when the tag is cut. `bun run release` infers the bump from the last
+     commit subject: a `major:` or `minor:` prefix, otherwise patch. -->
+
+The Base UI refactor of `@y-core/forge/ui`. Eleven new SSR primitives, seven new client controllers,
+and a real composite-widget layer — one tab stop per widget, arrow keys, typeahead, RTL, focus
+restoration — so a segmented control or a toolbar is a **primitive** rather than styled initial
+markup. A second test runner drives real Chromium. Contains **breaking changes** to `ToggleGroup`,
+`Switch` and `Navbar`'s in-menu markup — see below.
+
+Base UI was read as an implementation specification: its DOM contracts, accessibility behaviour and
+testing discipline. None of its React architecture came with it — no contexts, no hooks, no render
+props, no portals, and above all **no JavaScript re-creation of native `dialog`, `popover`,
+`details` or `select`**. Every overlay here is the platform's.
+
+### ⚠️ Breaking Changes
+
+1. **`ToggleGroup` no longer emits `role="toolbar"`.** It emitted that for *every* group, which
+   announced a segmented control as a toolbar and offered assistive technology the wrong interaction
+   model. It now emits **no `role`** — a `<fieldset>` already has an implicit `group` — and
+   `aria-orientation` went with it, since ARIA does not define that for `group`. A widget that really
+   is a toolbar uses the new `Toolbar`, which brings the keyboard behaviour the role promises.
+
+   ```tsx
+   // before — announced as a toolbar, with no keyboard behaviour to match
+   <ToggleGroup>…</ToggleGroup>
+   // after — a group, and it says which kind
+   <ToggleGroup type='single'>…</ToggleGroup>
+   ```
+
+   Migration: add `type="single"` (default) or `type="multiple"`. If the widget genuinely is a
+   toolbar, use `Toolbar` instead. A stylesheet matching `[data-slot='toggle-group'][role='toolbar']`
+   or `[aria-orientation]` on a group must move to `[data-orientation]`.
+
+2. **`Switch` renames `data-orientation` to `data-label-position`** (values `before` / `after`). The
+   old attribute conflated two different things: a switch's own axis, which is always horizontal, and
+   where its label sits. It now emits both honestly — `data-orientation="horizontal"` per the shared
+   state-attribute table, and `data-label-position` for the label. Migration: a stylesheet matching
+   `[data-slot='switch'][data-orientation='label-before']` becomes
+   `[data-slot='switch'][data-label-position='before']`. The `orientation` **prop** is unchanged.
+
+3. **`Navbar`'s in-menu leaves are `Menu.LinkItem`, not `data-slot="navbar-link"`.** A link *on the
+   bar* still renders `<a data-slot="navbar-link">`; a link *inside a dropdown* is now
+   `<a role="menuitem" data-slot="menu-link-item">`, because a row in a `role="menu"` has to be a
+   menu item. Nested dropdown triggers likewise become `data-slot="menu-submenu-trigger"`, and the
+   `<div data-slot="popover">` wrapper around a nested submenu is gone — a wrapping element inside a
+   `role="menu"` breaks its content model. Migration: a stylesheet or test selecting
+   `[data-slot='navbar-link']` inside a dropdown selects `[data-slot='menu-link-item']` instead.
+   `NavDefinition` and all nine exported `Navbar` types are unchanged.
+
+4. **`ThemeToggle` no longer carries `aria-label="Toggle theme"`.** A static label never told anyone
+   which theme was active. The accessible name now comes from an `sr-only` span inside each of the
+   three `theme-*-icon` spans, so it tracks the theme by the same CSS that switches the glyph — with
+   no JavaScript, and correct at first paint. Migration: a test asserting that `aria-label` asserts
+   the accessible name instead.
+
+### Added
+
+- **Eleven `ui/core` primitives.** `Toolbar`, `Menu`, `Tabs`, `Toggle`, `Collapsible`, `Tooltip`,
+  `CheckboxGroup`, `RadioGroup`, `Meter`, `NumberField`, `ScrollArea` — all exported from
+  `@y-core/forge/ui/core`, all with a `ui/show` section.
+  - `Menu` is built on the Popover and Invoker Commands APIs: opening, closing, light-dismiss and
+    Escape involve **no JavaScript at all**. Its items are identified by ARIA role, so a row built in
+    the browser is navigable the moment it is a correctly-roled menu item. `Menu.LinkItem` is a real
+    `<a>` for rows that navigate; `Menu.SubmenuTrigger` is the roled trigger a nested popup needs.
+  - `Collapsible` and `Accordion` are native `<details>`; `Tooltip` is `popover="hint"`, so it does
+    not dismiss the menu beneath it; `Meter` is a native `<meter>`, distinct from `Progress`.
+- **Seven client controllers**, all `@public`, all returning a disposer:
+  `mountRovingFocus`, `mountTransitionState`, `mountMenu`, `mountTabs`, `mountTooltip`,
+  `mountNumberField`, and the owner-document utilities (`ownerDocument`, `ownerWindow`,
+  `activeElement`, `eventTarget`, `asElement`, `closestAcross`, `contains`).
+  - `mountRovingFocus` is the composite controller: one tab stop, arrow keys, Home/End, typeahead,
+    RTL, disabled-item skip and focus restoration, as **one function over a DOM subtree**. Items are
+    resolved live on every interaction, so a widget whose rows are rebuilt between openings needs no
+    re-mounting.
+- **`ToggleGroup` gains `type`** (`"single" | "multiple"`, published as `data-multiple`), and
+  **`bindGroup` now reconciles pressed state across the whole group** — writing `aria-pressed` and
+  `data-pressed` on every item, not just the signal. That reconciliation used to be documented as
+  "stays app-side", which is why a segmented control was styled markup rather than a primitive.
+- **`data-pressed` and the shared state-attribute table.** Fourteen styling hooks — `data-open` /
+  `data-closed` / `data-pressed` / `data-checked` / `data-selected` / `data-disabled` /
+  `data-invalid` / `data-orientation` / `data-side` / `data-align` / `data-starting-style` /
+  `data-ending-style` / `data-popup-open` / `data-anchor-hidden` — declared once for both tiers, so
+  the SSR component and the browser controller cannot drift. Boolean states are emitted **by
+  presence** (`data-open=""`), never `"true"`.
+- **A browser test set behind its own verb**, `bun run test:browser` (`bun run browser:install`
+  first). A `*.browser.ts` file runs in real Chromium; `bun test` is untouched, and the two never
+  share a process. **260 cases**, including a cross-cutting corpus for the scenarios no single
+  component owns: nested overlays, a trigger removed while its popup is open, a widget in a form
+  across submit and reset, a widget inside a shadow root, focus restoration across unmount, and RTL.
+- **`ui/show` is the complete demo estate**, and it is now checked rather than asserted: a test reads
+  the published `ui/core` surface and requires a catalog section for every component. Nine sections
+  were missing and were added.
+
+### Changed
+
+- **`@y-core/forge/ui/chrome/client` now side-effect-imports `@y-core/forge/ui/core/client`.** Chrome
+  markup names the `menu` and `toolbar` scopes, and a component whose markup names a scope must
+  guarantee the scope exists. Without it, an app importing only the chrome island got `resume()`
+  warnings and a navbar and toolbar that were dead to the keyboard. Importing both remains harmless.
+- **`chrome/Toolbar` adopts the toolbar contracts.** The rail emits `role="toolbar"`,
+  `data-scope="toolbar"` and `data-orientation` / `aria-orientation` (`vertical` for a left or right
+  rail), every action and popover trigger carries `data-toolbar-item`, and separators are
+  `<hr aria-orientation>`. The whole rail is now **one tab stop** with arrow-key navigation. All
+  eleven exported types are unchanged, and the flyout markup is untouched — its CSS anchoring cannot
+  be expressed through the generic `Popover`.
+- **`chrome/Navbar` composes `core/Menu`.** Its dropdowns get arrow navigation, typeahead and focus
+  restoration, and their `data-closed` attribute stops lying — nothing previously mounted transition
+  state for them. It deliberately does **not** claim `role="menubar"`: forge has no menubar
+  controller, and the role without the behaviour announces a keyboard interface that is not there.
+- **Every controller resolves its globals from a node** rather than reaching for `document`,
+  `window`, `event.target` or `instanceof HTMLElement`. A widget inside an iframe now installs its
+  listeners on its own document, and one inside a web component reports the focused *item* rather
+  than the shadow host.
+
+### Fixed
+
+- **The `navbar` scope never ran.** It was registered lazily, and a lazy scope resumes on the first
+  `data-on-*` interaction inside it — but the navbar's markup emits none at all (native `<details>`,
+  native popovers, plain links). Runtime auth filtering therefore silently did nothing. It is now
+  eager, as is every other setup-only scope.
+- **`mountRovingFocus` was not nestable.** A parent menu's item ring included its *closed* submenu's
+  rows, so arrow navigation walked into a `display: none` subtree and focus went nowhere. Items are
+  now filtered to what is actually rendered, which also excludes a `hidden` filtered-out navbar row.
+- **Two nested composites both consumed the same key.** `keydown` bubbles from an open submenu to the
+  popup containing it, so both controllers moved focus and the inner move was immediately
+  overwritten. The outer one now stands down when the event was already handled.
+- **`localStorage` on an opaque origin.** The theme scope's storage reads are unchanged, but the test
+  harness now serves pages from a real origin, which is what surfaced the two fixes above.
+
+### Removed
+
+- **Every hand-rolled DOM mock.** The stub documents, elements, media queries and storage that stood
+  in for a browser in `resume`, `turnstile`, `nav` and `chrome/client` tests are gone, replaced by
+  browser specs. Two of the theme cases they replaced were unreachable from a stub at any price: a
+  `prefers-color-scheme` the browser actually resolves, and a live media change arriving after
+  resume — which is the only reason the scope listens for `change` at all.
+
+---
+
 ## [0.0.68] — 2026-07-17
 
 Turnstile refactor: a server-rendered `<Turnstile>` mount point plus a rewritten, resilient

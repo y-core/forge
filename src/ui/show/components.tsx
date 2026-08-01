@@ -3,46 +3,96 @@
 
 import type { FC } from "../../jsx/types";
 import { ThemeToggle } from "../chrome/theme-toggle";
+import { Accordion } from "../core/accordion";
 import { Alert } from "../core/alert";
 import { Avatar } from "../core/avatar";
 import { Badge } from "../core/badge";
 import { Button } from "../core/button";
 import { Card } from "../core/card";
+import { CheckboxGroup } from "../core/checkbox-group";
+import { Collapsible } from "../core/collapsible";
+import { Dialog } from "../core/dialog";
 import { FormField } from "../core/field-layout";
+import { Field } from "../core/field-stack";
+import { Form } from "../core/form";
 import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Label } from "../core/label";
+import { Menu } from "../core/menu";
+import { Meter } from "../core/meter";
+import { NumberField } from "../core/number-field";
+import { Popover } from "../core/popover";
 import { Progress } from "../core/progress";
+import { RadioGroup } from "../core/radio-group";
+import { ScrollArea } from "../core/scroll-area";
 import { Select } from "../core/select";
 import { Separator } from "../core/separator";
 import { Skeleton } from "../core/skeleton";
+import { Slider } from "../core/slider";
 import { Spinner } from "../core/spinner";
+import { Switch } from "../core/switch";
+import { Tabs } from "../core/tabs";
 import { Textarea } from "../core/textarea";
 import { Toast } from "../core/toast";
+import { Toggle } from "../core/toggle";
 import { ToggleGroup } from "../core/toggle-group";
+import { Toolbar } from "../core/toolbar";
+import { Tooltip } from "../core/tooltip";
+import { Turnstile } from "../core/turnstile";
 import { FlashContainer } from "../server/flash";
 import type { ShowcaseData } from "./route";
 import { DependentSection, PaginateSection, PreviewSection, SearchSection, ToastSection, ValidateSection } from "./sections";
 
+/** The showcase's bound sprite. Named once because a dozen section signatures take it. */
+type ShowIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close">;
+
 // ─── TOC ─────────────────────────────────────────────────────────────────────
 
-const SECTIONS = [
+/**
+ * The catalog, and the showcase's completeness contract.
+ *
+ * Exported because `components.test.tsx` asserts against it: **every component exported from
+ * `core/mod.ts` has a section here, keyed by its own kebab-cased name.** A primitive with no section
+ * is one nobody can look at, and — after the cross-cutting corpus — one nobody drives, so the
+ * property is checked rather than remembered.
+ */
+export const SECTIONS = [
+  { id: "accordion", label: "Accordion" },
   { id: "alert", label: "Alert" },
   { id: "avatar", label: "Avatar" },
   { id: "badge", label: "Badge" },
   { id: "button", label: "Button" },
   { id: "card", label: "Card" },
+  { id: "dialog", label: "Dialog" },
   { id: "field", label: "Field" },
+  { id: "form", label: "Form" },
+  { id: "form-field", label: "FormField" },
   { id: "icon", label: "Icon" },
   { id: "input", label: "Input" },
   { id: "label", label: "Label" },
+  { id: "popover", label: "Popover" },
   { id: "progress", label: "Progress" },
+  { id: "select", label: "Select" },
   { id: "separator", label: "Separator" },
   { id: "skeleton", label: "Skeleton" },
+  { id: "slider", label: "Slider" },
   { id: "spinner", label: "Spinner" },
+  { id: "switch", label: "Switch" },
   { id: "textarea", label: "Textarea" },
   { id: "toast", label: "Toast" },
+  { id: "toggle", label: "Toggle" },
   { id: "toggle-group", label: "ToggleGroup" },
+  { id: "toolbar", label: "Toolbar" },
+  { id: "menu", label: "Menu" },
+  { id: "tabs", label: "Tabs" },
+  { id: "collapsible", label: "Collapsible" },
+  { id: "tooltip", label: "Tooltip" },
+  { id: "checkbox-group", label: "CheckboxGroup" },
+  { id: "radio-group", label: "RadioGroup" },
+  { id: "meter", label: "Meter" },
+  { id: "number-field", label: "NumberField" },
+  { id: "scroll-area", label: "ScrollArea" },
+  { id: "turnstile", label: "Turnstile" },
   { id: "htmx-demos", label: "HTMX Demos" },
   { id: "theme", label: "Theme" },
   { id: "resumable", label: "Resumable" },
@@ -166,8 +216,8 @@ const CardSection: FC = () => (
   </CatalogSection>
 );
 
-const FieldSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => (
-  <CatalogSection id='field' title='Field'>
+const FormFieldSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
+  <CatalogSection id='form-field' title='FormField'>
     <div class='w-full max-w-xs space-y-4'>
       <FormField name='text-field'>
         <FormField.Label name='text-field'>Label</FormField.Label>
@@ -262,6 +312,298 @@ const TextareaSection: FC = () => (
   <CatalogSection id='textarea' title='Textarea'>
     <Textarea name='demo-textarea' placeholder='Write something…' rows={3} class='max-w-sm' />
     <Textarea name='disabled-textarea' placeholder='Disabled' disabled rows={3} class='max-w-sm' />
+  </CatalogSection>
+);
+
+/** Enough rows to overflow the viewport, which is the only way to see that it scrolls. */
+const SCROLL_ROWS = ["Alert", "Avatar", "Badge", "Button", "Card", "Dialog", "Field", "Form", "Icon", "Input", "Label", "Menu", "Meter"];
+
+const CheckboxGroupSection: FC = () => (
+  <CatalogSection id='checkbox-group' title='CheckboxGroup'>
+    <CheckboxGroup name='toppings' orientation='horizontal'>
+      <CheckboxGroup.Label>Toppings</CheckboxGroup.Label>
+      <CheckboxGroup.Item name='toppings' value='cheese' checked>
+        Cheese
+      </CheckboxGroup.Item>
+      <CheckboxGroup.Item name='toppings' value='basil'>
+        Basil
+      </CheckboxGroup.Item>
+      <CheckboxGroup.Item name='toppings' value='chilli' disabled>
+        Chilli
+      </CheckboxGroup.Item>
+    </CheckboxGroup>
+  </CatalogSection>
+);
+
+const RadioGroupSection: FC = () => (
+  <CatalogSection id='radio-group' title='RadioGroup'>
+    <RadioGroup name='plan' orientation='horizontal'>
+      <RadioGroup.Label>Plan</RadioGroup.Label>
+      <RadioGroup.Item name='plan' value='free' checked>
+        Free
+      </RadioGroup.Item>
+      <RadioGroup.Item name='plan' value='pro'>
+        Pro
+      </RadioGroup.Item>
+    </RadioGroup>
+  </CatalogSection>
+);
+
+const MeterSection: FC = () => (
+  <CatalogSection id='meter' title='Meter'>
+    <Meter>
+      <Meter.Label for='show-meter-disk'>Disk usage</Meter.Label>
+      <Meter.Track id='show-meter-disk' value={0.72} low={0.3} high={0.8} optimum={0.2} />
+      <Meter.Value>72% of 500 GB</Meter.Value>
+    </Meter>
+  </CatalogSection>
+);
+
+const NumberFieldSection: FC = () => (
+  <CatalogSection id='number-field' title='NumberField'>
+    <NumberField>
+      <NumberField.Decrement />
+      <NumberField.Input name='show-count' value='1' min='0' max='10' />
+      <NumberField.Increment />
+    </NumberField>
+  </CatalogSection>
+);
+
+const ScrollAreaSection: FC = () => (
+  <CatalogSection id='scroll-area' title='ScrollArea'>
+    <ScrollArea class='h-40 w-64 rounded-md border border-border'>
+      <ScrollArea.Viewport class='p-3'>
+        <div class='space-y-2 text-sm text-muted-foreground'>
+          {SCROLL_ROWS.map((row) => (
+            <p key={row}>{row}</p>
+          ))}
+        </div>
+      </ScrollArea.Viewport>
+    </ScrollArea>
+  </CatalogSection>
+);
+
+const ToggleSection: FC = () => (
+  <CatalogSection id='toggle' title='Toggle'>
+    <Toggle>Bold</Toggle>
+    <Toggle pressed>Italic</Toggle>
+    <Toggle disabled>Underline</Toggle>
+  </CatalogSection>
+);
+
+const AccordionSection: FC<{ icon: ShowIcon }> = ({ icon }) => {
+  // `Accordion.Trigger` takes `ForgeIcon<string>`, because its optional `iconName` is an arbitrary
+  // glyph. The showcase's binding names a fixed set, and a narrower name set is not assignable to a
+  // wider one — the trigger only ever draws `chevron-down` here, which this binding supplies.
+  const wide = icon as unknown as ForgeIcon<string>;
+  return (
+    <CatalogSection id='accordion' title='Accordion'>
+      <Accordion class='w-full max-w-md gap-2'>
+        <Accordion.Item open>
+          <Accordion.Trigger icon={wide}>What is a resumable scope?</Accordion.Trigger>
+          <Accordion.Content>A server-stamped region whose state is rehydrated on the first interaction inside it.</Accordion.Content>
+        </Accordion.Item>
+        <Accordion.Item>
+          <Accordion.Trigger icon={wide}>Why native disclosure?</Accordion.Trigger>
+          <Accordion.Content hint='No JavaScript required'>
+            Open and closed belong to the platform; the controller only publishes them for CSS to react to.
+          </Accordion.Content>
+        </Accordion.Item>
+      </Accordion>
+    </CatalogSection>
+  );
+};
+
+const DialogSection: FC = () => (
+  <CatalogSection id='dialog' title='Dialog'>
+    <Dialog.Trigger for='show-dialog'>Open dialog</Dialog.Trigger>
+    <Dialog id='show-dialog' class='max-w-sm'>
+      <h3 class='text-base font-semibold text-foreground'>A native modal</h3>
+      <p class='mt-2 text-sm text-muted-foreground'>
+        Opened and closed by Invoker commands — the top layer, the backdrop and Escape are the platform's.
+      </p>
+      <div class='mt-4 flex justify-end gap-2'>
+        <Dialog.Close for='show-dialog'>Close</Dialog.Close>
+      </div>
+    </Dialog>
+  </CatalogSection>
+);
+
+const PopoverSection: FC = () => (
+  <CatalogSection id='popover' title='Popover'>
+    <Popover>
+      <Popover.Trigger id='show-popover' class='rounded-md border border-border px-3 py-1.5 text-sm'>
+        Details
+      </Popover.Trigger>
+      <Popover.Content id='show-popover' class='p-3 text-sm text-muted-foreground'>
+        An anchored surface with light-dismiss, and no JavaScript to open it.
+      </Popover.Content>
+    </Popover>
+  </CatalogSection>
+);
+
+const SelectSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
+  <CatalogSection id='select' title='Select'>
+    <Select name='show-select' class='max-w-xs' icon={icon}>
+      <Select.Option value=''>Choose…</Select.Option>
+      <Select.Option value='mm'>Millimetres</Select.Option>
+      <Select.Option value='in'>Inches</Select.Option>
+    </Select>
+    <Select name='show-select-disabled' class='max-w-xs' icon={icon} disabled>
+      <Select.Option value='mm'>Disabled</Select.Option>
+    </Select>
+  </CatalogSection>
+);
+
+const SliderSection: FC = () => (
+  <CatalogSection id='slider' title='Slider'>
+    <div class='w-full max-w-xs space-y-4'>
+      <Slider name='show-slider' min={0} max={100} value={40} />
+      <Slider name='show-slider-output' min={0} max={100} value={70} output />
+      <Slider name='show-slider-disabled' min={0} max={100} value={20} disabled />
+    </div>
+    <Slider name='show-slider-vertical' min={0} max={100} value={60} orientation='vertical' />
+  </CatalogSection>
+);
+
+const SwitchSection: FC = () => (
+  <CatalogSection id='switch' title='Switch'>
+    <Switch name='show-switch'>Snap to grid</Switch>
+    <Switch name='show-switch-on' checked>
+      Show rulers
+    </Switch>
+    <Switch name='show-switch-before' orientation='label-before'>
+      Label first
+    </Switch>
+    <Switch name='show-switch-disabled' disabled>
+      Disabled
+    </Switch>
+  </CatalogSection>
+);
+
+const FormSection: FC = () => (
+  <CatalogSection id='form' title='Form'>
+    <Form action='#' method='post' csrfToken='demo-token' honeypotField='company' class='w-full max-w-xs space-y-3'>
+      <Field label='Project name'>
+        <Input type='text' name='project' placeholder='Untitled' />
+      </Field>
+      <Button type='submit'>Save</Button>
+    </Form>
+  </CatalogSection>
+);
+
+/** `Field` is the unlabelled-stack layout; `FormField` below is the descriptor-driven one. */
+const FieldStackSection: FC = () => (
+  <CatalogSection id='field' title='Field'>
+    <div class='w-full max-w-xs space-y-4'>
+      <Field label='Vertical'>
+        <Input type='text' name='stack-vertical' placeholder='Stacked above' />
+      </Field>
+      <Field label='Horizontal' orientation='horizontal'>
+        <Switch name='stack-horizontal' />
+      </Field>
+    </div>
+  </CatalogSection>
+);
+
+/**
+ * Cloudflare's documented always-passes test key. A real key would tie the showcase to one origin,
+ * and this widget is here to be looked at, not to gate anything.
+ */
+const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
+
+const TurnstileSection: FC = () => (
+  <CatalogSection id='turnstile' title='Turnstile'>
+    <Turnstile siteKey={TURNSTILE_TEST_KEY} size='normal' />
+  </CatalogSection>
+);
+
+const ToolbarSection: FC = () => (
+  <CatalogSection id='toolbar' title='Toolbar'>
+    <Toolbar aria-label='Formatting'>
+      <Toolbar.Button>Bold</Toolbar.Button>
+      <Toolbar.Button>Italic</Toolbar.Button>
+      <Toolbar.Separator />
+      <Toolbar.Group aria-label='Search'>
+        <Toolbar.Input placeholder='Find' />
+      </Toolbar.Group>
+      <Toolbar.Separator />
+      <Toolbar.Link href='#toolbar'>Help</Toolbar.Link>
+    </Toolbar>
+  </CatalogSection>
+);
+
+const MenuSection: FC = () => (
+  <CatalogSection id='menu' title='Menu'>
+    <Menu>
+      <Menu.Trigger id='show-file-menu' class='rounded-md border border-input px-3 py-1.5 text-sm'>
+        File
+      </Menu.Trigger>
+      <Menu.Popup id='show-file-menu'>
+        <Menu.Group aria-labelledby='show-menu-group-label'>
+          <Menu.GroupLabel id='show-menu-group-label'>Document</Menu.GroupLabel>
+          <Menu.Item for='show-file-menu'>New</Menu.Item>
+          <Menu.Item for='show-file-menu'>Open</Menu.Item>
+          <Menu.Item for='show-file-menu' disabled>
+            Save
+          </Menu.Item>
+        </Menu.Group>
+        <Menu.Separator />
+        <Menu.CheckboxItem for={false} checked>
+          Autosave
+        </Menu.CheckboxItem>
+        <Menu.RadioItem for={false}>Compact view</Menu.RadioItem>
+      </Menu.Popup>
+    </Menu>
+  </CatalogSection>
+);
+
+const TabsSection: FC = () => (
+  <CatalogSection id='tabs' title='Tabs'>
+    <Tabs class='w-full max-w-md'>
+      <Tabs.List aria-label='Panels'>
+        <Tabs.Tab for='show-tab-a' selected>
+          Overview
+        </Tabs.Tab>
+        <Tabs.Tab for='show-tab-b'>Details</Tabs.Tab>
+        <Tabs.Tab for='show-tab-c'>History</Tabs.Tab>
+      </Tabs.List>
+      <Tabs.Panel id='show-tab-a' selected>
+        <p class='text-sm text-muted-foreground'>Arrow keys move between tabs; selection follows focus.</p>
+      </Tabs.Panel>
+      <Tabs.Panel id='show-tab-b'>
+        <p class='text-sm text-muted-foreground'>The list is a single Tab stop.</p>
+      </Tabs.Panel>
+      <Tabs.Panel id='show-tab-c'>
+        <p class='text-sm text-muted-foreground'>Home and End reach the ends.</p>
+      </Tabs.Panel>
+    </Tabs>
+  </CatalogSection>
+);
+
+const CollapsibleSection: FC = () => (
+  <CatalogSection id='collapsible' title='Collapsible'>
+    <div class='w-full max-w-md space-y-2'>
+      <Collapsible>
+        <Collapsible.Trigger>Advanced options</Collapsible.Trigger>
+        <Collapsible.Panel>Native &lt;details&gt;: open and closed belong to the platform.</Collapsible.Panel>
+      </Collapsible>
+      <Collapsible open>
+        <Collapsible.Trigger>Already open</Collapsible.Trigger>
+        <Collapsible.Panel>Rendered open by the server, with no client work at all.</Collapsible.Panel>
+      </Collapsible>
+    </div>
+  </CatalogSection>
+);
+
+const TooltipSection: FC = () => (
+  <CatalogSection id='tooltip' title='Tooltip'>
+    <Tooltip>
+      <Tooltip.Trigger for='show-tooltip-save' class='rounded-md border border-input px-3 py-1.5 text-sm'>
+        Save
+      </Tooltip.Trigger>
+      <Tooltip.Content id='show-tooltip-save'>Writes the file to disk</Tooltip.Content>
+    </Tooltip>
   </CatalogSection>
 );
 
@@ -384,22 +726,42 @@ export const ShowcaseContent: FC<{
 
       {/* Static catalog */}
       <div class='space-y-10'>
+        <AccordionSection icon={icon} />
         <AlertSection />
         <AvatarSection />
         <BadgeSection />
         <ButtonSection />
         <CardSection />
-        <FieldSection icon={icon} />
+        <DialogSection />
+        <FieldStackSection />
+        <FormSection />
+        <FormFieldSection icon={icon} />
         <IconSection icon={icon} />
         <InputSection />
         <LabelSection />
+        <PopoverSection />
         <ProgressSection />
+        <SelectSection icon={icon} />
         <SeparatorSection />
         <SkeletonSection />
+        <SliderSection />
         <SpinnerSection icon={icon} />
+        <SwitchSection />
         <TextareaSection />
         <ToastCatalog />
+        <ToggleSection />
         <ToggleGroupSection />
+        <ToolbarSection />
+        <MenuSection />
+        <TabsSection />
+        <CollapsibleSection />
+        <TooltipSection />
+        <CheckboxGroupSection />
+        <RadioGroupSection />
+        <MeterSection />
+        <NumberFieldSection />
+        <ScrollAreaSection />
+        <TurnstileSection />
       </div>
 
       {/* HTMX demos */}

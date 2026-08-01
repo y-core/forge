@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import type { ForgeIcon } from "../core/icon";
-import { Popover } from "../core/popover";
+import { Menu } from "../core/menu";
 import { asClass, cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { Resumable } from "../server/resumable";
@@ -17,7 +17,7 @@ export interface NavLink {
   filters?: string[];
 }
 
-/** A branch: a `<details>` dropdown over child items (recurses for nested submenus). @public */
+/** A branch: a menu over child items (recurses for nested submenus). @public */
 export interface NavMenu {
   /** Dropdown trigger text. */
   label: string;
@@ -104,11 +104,17 @@ const placementVariants = cva({
   defaultVariants: { placement: "top" },
 });
 
-/** Top-level entries read as a menubar button; nested entries read as full-width menu rows. */
-const TRIGGER_TOP =
-  "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring";
-const ROW =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring";
+/**
+ * Bar-level styling. Two constants rather than one because only one of the two consumers brings a
+ * component base with it: `Menu.Trigger` already supplies the cursor, outline reset and focus ring,
+ * so a bar *menu* would otherwise carry every one of them twice. A bar *link* is a plain `<a>` with
+ * no base at all, so it states them itself.
+ *
+ * Nested rows need neither — inside a menu they are `Menu` parts, and the menu's own item styling
+ * is the styling a menu row should have.
+ */
+const BAR_ITEM = "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground";
+const BAR_LINK = `${BAR_ITEM} cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring`;
 
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). */
 function filterAttrs(item: NavItem, activeFilters: string[]): Record<string, unknown> {
@@ -119,51 +125,97 @@ function filterAttrs(item: NavItem, activeFilters: string[]): Record<string, unk
   return base;
 }
 
-/** Resolves a slot's content: a string key looks up `slots`, otherwise the node is used directly. */
-function renderSlot(item: NavSlot, ctx: NavRenderCtx): JSXNode {
+/** The chevron every menu trigger carries. Decorative, so it is hidden from assistive tech — the
+ * trigger's `aria-haspopup` is what announces that the row opens something. */
+function chevron(ctx: NavRenderCtx): JSXNode {
+  return (
+    <span aria-hidden='true' class='text-xs opacity-70'>
+      <ctx.icon
+        name='chevron-down'
+        width={16}
+        height={16}
+        stroke='currentColor'
+        stroke-width={1.5}
+        stroke-linecap='round'
+        stroke-linejoin='round'
+      />
+    </span>
+  );
+}
+
+/**
+ * Resolves a slot's content: a string key looks up `slots`, otherwise the node is used directly.
+ *
+ * Inside a menu the wrapper takes `role="none"`. A `role="menu"` may only contain menu items,
+ * groups and separators, and an unroled `<span>` between them makes the whole menu's content model
+ * illegal — `none` removes the span from the accessibility tree without removing its content.
+ */
+function renderSlot(item: NavSlot, depth: number, ctx: NavRenderCtx): JSXNode {
   const node = typeof item.slot === "string" ? ctx.slots?.[item.slot] : item.slot;
   const fattrs = filterAttrs(item, ctx.activeFilters);
   // No label and no filter marker → render the node inline with no wrapper.
   if (!item.label && !("data-filter" in fattrs)) return node ?? null;
   return (
-    <span data-slot='navbar-slot' class='inline-flex items-center gap-2' {...fattrs}>
+    <span data-slot='navbar-slot' {...(depth === 0 ? {} : { role: "none" })} class='inline-flex items-center gap-2' {...fattrs}>
       {item.label ? <span>{item.label}</span> : null}
       {node ?? null}
     </span>
   );
 }
 
-/** Renders a single item, recursing into nested menus. `depth` selects menubar-button vs menu-row styling. */
+/**
+ * Renders a single item, recursing into nested menus.
+ *
+ * `depth` is what decides which vocabulary an entry speaks. A depth-0 entry sits on the bar: its
+ * menus are `Menu` roots and its links are plain bar links, because a bar link is not a menu item
+ * and calling it one would announce a menubar this navbar deliberately does not claim to be. Below
+ * that, every entry is inside a `role="menu"`, so it is a `Menu` part — a submenu trigger or a link
+ * item — and nothing else is legal there.
+ */
 function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
   const fattrs = filterAttrs(item, ctx.activeFilters);
 
-  if ("slot" in item) return renderSlot(item, ctx);
+  if ("slot" in item) return renderSlot(item, depth, ctx);
 
   if ("items" in item) {
     const id = `navbar-menu-${ctx.seq.n++}`;
-    return (
-      <Popover class={depth === 0 ? "" : "block w-full"} {...fattrs}>
-        <Popover.Trigger id={id} class={depth === 0 ? TRIGGER_TOP : ROW}>
+    const children = item.items.map((child) => renderItem(child, depth + 1, ctx));
+
+    // A nested submenu emits its trigger and popup as siblings of the rows around them, with no
+    // wrapper: a wrapping element inside a `role="menu"` would break the same content model
+    // `role="none"` protects the slot from breaking.
+    if (depth > 0) {
+      return [
+        <Menu.SubmenuTrigger id={id} {...fattrs}>
           <span>{item.label}</span>
-          <span aria-hidden='true' class='text-xs opacity-70'>
-            <ctx.icon
-              name='chevron-down'
-              width={16}
-              height={16}
-              stroke='currentColor'
-              stroke-width={1.5}
-              stroke-linecap='round'
-              stroke-linejoin='round'
-            />
-          </span>
-        </Popover.Trigger>
-        <Popover.Content id={id}>{item.items.map((child) => renderItem(child, depth + 1, ctx))}</Popover.Content>
-      </Popover>
+          {chevron(ctx)}
+        </Menu.SubmenuTrigger>,
+        <Menu.Popup id={id}>{children}</Menu.Popup>,
+      ];
+    }
+
+    return (
+      <Menu {...fattrs}>
+        <Menu.Trigger id={id} class={BAR_ITEM}>
+          <span>{item.label}</span>
+          {chevron(ctx)}
+        </Menu.Trigger>
+        <Menu.Popup id={id}>{children}</Menu.Popup>
+      </Menu>
+    );
+  }
+
+  const href = ctx.resolveHref(item.href);
+  if (depth > 0) {
+    return (
+      <Menu.LinkItem href={href} {...fattrs}>
+        {item.label}
+      </Menu.LinkItem>
     );
   }
 
   return (
-    <a href={ctx.resolveHref(item.href)} data-slot='navbar-link' class={depth === 0 ? TRIGGER_TOP : ROW} {...fattrs}>
+    <a href={href} data-slot='navbar-link' class={BAR_LINK} {...fattrs}>
       {item.label}
     </a>
   );
@@ -179,10 +231,16 @@ function renderSection(section: NavSection, ctx: NavRenderCtx): JSXNode {
 }
 
 /**
- * A configuration-driven, responsive navbar/menubar. The app feeds a nested {@link NavDefinition}
- * (`sections → items → items …`); on desktop it renders a horizontal bar of native `Popover`
- * dropdowns with nested submenus (top-layer + light-dismiss, zero JS), and on mobile it collapses
- * to a hamburger-toggled `<details>`. A small resumable scope (`navbar`) adds runtime auth filtering.
+ * A configuration-driven, responsive navbar. The app feeds a nested {@link NavDefinition}
+ * (`sections → items → items …`); on desktop it renders a horizontal bar of `core/Menu` dropdowns
+ * with nested submenus — the native Popover API for top-layer stacking, light-dismiss and Escape,
+ * plus forge's menu keyboard layer for arrow navigation, typeahead and focus restoration — and on
+ * mobile it collapses to a hamburger-toggled `<details>`. A small resumable scope (`navbar`) adds
+ * runtime auth filtering.
+ *
+ * The bar itself is **not** a `role="menubar"`. A menubar owes its triggers a roving tab stop of
+ * their own, and forge has no menubar controller; claiming the role without the behaviour announces
+ * a keyboard interface that is not there, which is worse than announcing nothing.
  *
  * Every `href` is a route-map key resolved via the required `resolveHref`. Items may carry `filters`
  * (auth tokens): an item shows only when one of its tokens is in the active set, seeded server-side

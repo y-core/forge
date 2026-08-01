@@ -1,3 +1,5 @@
+import { applyStateAttrs } from "../state-attrs";
+import { closestAcross } from "./dom";
 import type { ResumeContext } from "./resume";
 import type { SignalRecord } from "./signal-record";
 import { writeSignal } from "./signal-record";
@@ -48,29 +50,63 @@ export function bindField<T extends Record<string, unknown>>(signals: SignalReco
   };
 }
 
+/** Write both halves of an item's pressed state: the ARIA property assistive technology reads, and
+ * the `data-pressed` hook CSS reads. `applyStateAttrs` owns the data half so the name can never
+ * drift from the one `core/toggle-group.tsx` renders in a different bundle. */
+function setPressed(item: HTMLElement, pressed: boolean): void {
+  applyStateAttrs(item, { pressed });
+  item.setAttribute("aria-pressed", String(pressed));
+}
+
+function isPressed(item: HTMLElement): boolean {
+  return item.getAttribute("aria-pressed") === "true";
+}
+
 /**
- * Build a resumable-scope action that binds a button group (segmented control) to a `SignalRecord`.
- * Unlike {@link bindField}, which reads `checked`/`value` from the control element, `bindGroup`
- * reads the `data-value` attribute stamped by the `controls/` ToggleGroup.Item and writes
- * it as a **raw string** into `signals[field]` — button elements cannot express boolean or numeric
- * values, so `parseControlValue` is bypassed.
+ * Build a resumable-scope action that binds a button group (segmented control) to a `SignalRecord`
+ * **and reconciles the pressed state across the whole group**.
  *
- * On click, it resolves the nearest ancestor with both `data-field` and `data-value` via
- * `closest("[data-field][data-value]")` — this handles clicks on inner `<svg>` or `<span>` children
- * that don't carry those attributes directly. Register alongside `bindField`:
+ * This function used to write the signal and stop, with its own doc comment sending pressed-state
+ * reconciliation back to the application as "an effect on the same signal". That single sentence is
+ * why a segmented control was styled initial markup rather than a primitive, and why an app would
+ * hand-roll its own toolbar instead of adopting this one. The reconciliation is forge's now:
+ *
+ * - **`type="single"`** (the default) — the clicked item becomes the only pressed one, every sibling
+ *   is cleared, and the signal receives the clicked item's `data-value` string.
+ * - **`type="multiple"`** — the clicked item toggles on its own, siblings are untouched, and the
+ *   signal receives the array of values currently pressed.
+ *
+ * Which of the two applies is read from the group's `data-multiple` attribute, emitted by
+ * `core/toggle-group.tsx` from its `type` prop — so the client behaviour and the announced semantics
+ * come from one declaration rather than two.
+ *
+ * The group is the nearest `[data-slot='toggle-group']` ancestor, falling back to the scope root, so
+ * two independent groups inside one scope reconcile independently. Button elements cannot express a
+ * boolean or numeric value, so `parseControlValue` is bypassed and `data-value` is used raw.
  *
  *     registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } })
- *
- * Pressed-state reconciliation (`.active` class, `aria-pressed`) stays app-side as an effect on the
- * same signal — forge writes the value only. @public
+ * @public
  */
 export function bindGroup<T extends Record<string, unknown>>(signals: SignalRecord<T>): (ctx: ResumeContext) => void {
-  return ({ el }) => {
-    const target = el.closest("[data-field][data-value]") as (HTMLElement & { dataset: DOMStringMap }) | null;
+  return ({ root, el }) => {
+    // Shadow-safe, and it also absorbs a click that landed on an inner `<svg>` or `<span>`.
+    const target = closestAcross(el, "[data-field][data-value]");
     if (target == null) return;
     const field = target.dataset.field as keyof T | undefined;
     const value = target.dataset.value;
     if (field == null || !(field in signals) || value == null) return;
+
+    const group = closestAcross(target, "[data-slot='toggle-group']") ?? root;
+    const items = [...group.querySelectorAll<HTMLElement>("[data-field][data-value]")].filter((item) => item.dataset.field === field);
+
+    if (group.hasAttribute("data-multiple")) {
+      setPressed(target, !isPressed(target));
+      const pressed = items.filter(isPressed).map((item) => item.dataset.value ?? "");
+      writeSignal(signals, field, pressed as T[typeof field]);
+      return;
+    }
+
+    for (const item of items) setPressed(item, item === target);
     writeSignal(signals, field, value as T[typeof field]);
   };
 }

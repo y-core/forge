@@ -13,5 +13,9 @@ docker/
 node_modules/
 tmp/
 
+# Playwright run artifacts — `bun run release` refuses a dirty tree, so these must never be tracked.
+playwright-report/
+test-results/
+
 *.test
 *.out

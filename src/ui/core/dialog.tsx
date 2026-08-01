@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { stateAttrs } from "../state-attrs";
 import { asClass, cn } from "./utils/cn";
 
 interface DialogProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> {
@@ -23,10 +24,12 @@ interface DialogCloseProps extends Omit<JSX.IntrinsicElements["button"], "childr
   children?: JSXNode;
 }
 
-const DialogRoot: FC<DialogProps> = ({ id, class: cls, children, ...props }) => (
+const DialogRoot: FC<DialogProps> = ({ id, open, class: cls, children, ...props }) => (
   <dialog
     id={id}
     data-slot='dialog'
+    {...(open ? { open } : {})}
+    {...stateAttrs({ open: open === true })}
     class={cn("rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-lg", asClass(cls))}
     {...props}>
     {children}

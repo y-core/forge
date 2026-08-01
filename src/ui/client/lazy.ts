@@ -1,9 +1,13 @@
+import { ownerDocument } from "./dom";
+
 export interface LazyImportOptions<T> {
   ref: string;
   load: () => Promise<T>;
   init: (mod: T, el: Element) => void;
   rootMargin?: string;
   threshold?: number | number[];
+  /** Any node in the document to search. Omit for the top-level page. */
+  within?: Node;
 }
 
 export interface LazyLoadOptions {
@@ -13,11 +17,13 @@ export interface LazyLoadOptions {
   /** SHA-256/384/512 SRI hash, e.g. `"sha384-abc..."`. Sets `crossOrigin="anonymous"` automatically. Pass `false` to explicitly opt out. */
   integrity: string | false;
   onLoad?: () => void;
+  /** Any node in the document to search and inject into. Omit for the top-level page. */
+  within?: Node;
 }
 
 /** Defers loading a module until its anchor element enters the viewport via IntersectionObserver. @public */
 export function lazy<T>(options: LazyImportOptions<T>): () => void {
-  const el = document.querySelector(`[data-ref='${CSS.escape(options.ref)}']`);
+  const el = ownerDocument(options.within).querySelector(`[data-ref='${CSS.escape(options.ref)}']`);
   if (!el) return () => {};
 
   const init: IntersectionObserverInit = {};
@@ -37,15 +43,16 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
 
 /** Injects a `<script>` tag on the first occurrence of an event, with optional SRI integrity. @public */
 export function loadScriptOnEvent(options: LazyLoadOptions): void {
-  const element = document.querySelector<HTMLElement>(options.triggerSelector);
+  const doc = ownerDocument(options.within);
+  const element = doc.querySelector<HTMLElement>(options.triggerSelector);
   if (!element) return;
 
   element.addEventListener(
     options.event,
     () => {
-      if (document.querySelector(`script[src="${CSS.escape(options.scriptSrc)}"]`)) return;
+      if (doc.querySelector(`script[src="${CSS.escape(options.scriptSrc)}"]`)) return;
 
-      const script = document.createElement("script") as HTMLScriptElement;
+      const script = doc.createElement("script") as HTMLScriptElement;
       script.src = options.scriptSrc;
       script.async = true;
       if (options.integrity !== false) {
@@ -55,7 +62,7 @@ export function loadScriptOnEvent(options: LazyLoadOptions): void {
       if (options.onLoad) {
         script.addEventListener("load", options.onLoad);
       }
-      document.head.appendChild(script);
+      doc.head.appendChild(script);
     },
     { once: true },
   );
@@ -69,13 +76,14 @@ export function loadScriptOnEvent(options: LazyLoadOptions): void {
  * exists, resolves immediately without appending a duplicate. Pass `integrity: false`
  * to skip subresource-integrity attributes (e.g. same-origin assets).
  */
-export function loadStylesheet(href: string, integrity: string | false): Promise<void> {
-  if (document.querySelector(`link[rel="stylesheet"][href="${CSS.escape(href)}"]`)) {
+export function loadStylesheet(href: string, integrity: string | false, within?: Node): Promise<void> {
+  const doc = ownerDocument(within);
+  if (doc.querySelector(`link[rel="stylesheet"][href="${CSS.escape(href)}"]`)) {
     return Promise.resolve();
   }
 
   return new Promise<void>((resolve, reject) => {
-    const link = document.createElement("link") as HTMLLinkElement;
+    const link = doc.createElement("link") as HTMLLinkElement;
     link.rel = "stylesheet";
     link.href = href;
     if (integrity !== false) {
@@ -84,6 +92,6 @@ export function loadStylesheet(href: string, integrity: string | false): Promise
     }
     link.addEventListener("load", () => resolve());
     link.addEventListener("error", () => reject(new Error(`Failed to load stylesheet: ${href}`)));
-    document.head.appendChild(link);
+    doc.head.appendChild(link);
   });
 }

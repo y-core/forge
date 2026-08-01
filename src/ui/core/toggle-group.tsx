@@ -1,9 +1,14 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+import { stateAttrs } from "../state-attrs";
 import { asClass, cn } from "./utils/cn";
 
-type ToggleGroupProps = JSX.IntrinsicElements["fieldset"] & { orientation?: "horizontal" | "vertical" };
+/** Whether one item may be pressed at a time, or several. Drives both the group's announced
+ * semantics and how `bindGroup` reconciles a click across the group. @public */
+export type ToggleGroupType = "single" | "multiple";
+
+type ToggleGroupProps = JSX.IntrinsicElements["fieldset"] & { orientation?: "horizontal" | "vertical"; type?: ToggleGroupType };
 export type ToggleGroupItemSize = "sm" | "md" | "lg";
 type ToggleGroupItemProps = JSX.IntrinsicElements["button"] & { pressed?: boolean; size?: ToggleGroupItemSize };
 
@@ -32,12 +37,31 @@ const ITEM_BASE =
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:last:rounded-b-md";
 const ITEM_ACTIVE = "bg-primary text-primary-foreground hover:bg-primary";
 
-const ToggleGroupRoot: FC<PropsWithChildren<ToggleGroupProps>> = ({ class: cls, orientation = "horizontal", children, ...rest }) => (
+/**
+ * A group of toggle buttons.
+ *
+ * **No `role` at all, where it was previously hardcoded to `toolbar` for every group.** That was
+ * wrong for the great majority of them — a screen reader announced a segmented control as a toolbar
+ * and offered the wrong interaction model — and it is also unnecessary: `<fieldset>` already has an
+ * implicit `group` role. A widget that really is a toolbar now uses `core/toolbar.tsx`, which brings
+ * the keyboard behaviour the role promises. `aria-orientation` went with it: ARIA does not define it
+ * for `group`, and `data-orientation` carries the axis for styling.
+ *
+ * `type` states what kind of group this is, published as `data-multiple` — present exactly when
+ * several items may be pressed at once. That is what `bindGroup` reads to decide whether a click
+ * replaces the pressed item or adds to it.
+ */
+const ToggleGroupRoot: FC<PropsWithChildren<ToggleGroupProps>> = ({
+  class: cls,
+  orientation = "horizontal",
+  type = "single",
+  children,
+  ...rest
+}) => (
   <fieldset
-    role='toolbar'
     data-slot='toggle-group'
-    data-orientation={orientation}
-    aria-orientation={orientation}
+    {...(type === "multiple" ? { "data-multiple": "" } : {})}
+    {...stateAttrs({ orientation })}
     class={cn(GROUP_BASE, orientation === "vertical" && "flex-col", asClass(cls))}
     {...rest}>
     {children}
@@ -48,6 +72,7 @@ const ToggleGroupItem: FC<PropsWithChildren<ToggleGroupItemProps>> = ({ class: c
   <button
     type='button'
     data-slot='toggle-group-item'
+    {...stateAttrs({ pressed: pressed ?? false })}
     aria-pressed={String(pressed ?? false)}
     class={cn(ITEM_BASE, ITEM_SIZE[size], pressed && ITEM_ACTIVE, asClass(cls))}
     {...rest}>

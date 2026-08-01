@@ -6,6 +6,12 @@
  * reconciles state immediately when `resume()` runs.
  */
 
+// The chrome components' markup names the `menu` and `toolbar` scopes, which `ui/core/client`
+// registers. A component whose markup names a scope has to guarantee the scope exists: without
+// this, an app importing only `ui/chrome/client` would get `resume()` warnings for scopes nobody
+// registered, and its navbar menus and toolbar rails would be dead to the keyboard.
+import "../core/client";
+import { ownerDocument, ownerWindow } from "../client/dom";
 import { registerScope } from "../client/resume";
 import type { ReadonlySignal } from "../client/signal";
 import { computed, createSignal, effect } from "../client/signal";
@@ -35,14 +41,18 @@ export const isDark: ReadonlySignal<boolean> = {
 
 registerScope<"cycleTheme">("theme", {
   eager: true,
-  setup({ state }) {
+  setup({ root, state }) {
     const pref = state.pref;
+    // Every global below is resolved from the scope root, so the theme a document shows is the one
+    // its own realm stored and its own realm prefers.
+    const doc = ownerDocument(root);
+    const win = ownerWindow(root);
     // Reconcile: FOUC script already applied the preference from localStorage;
     // now sync the signal to match so effects start from the real value.
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    const stored = win.localStorage.getItem(THEME_STORAGE_KEY);
     if (pref && stored) pref.value = stored;
 
-    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const mql = win.matchMedia("(prefers-color-scheme: dark)");
     const mqlDark = createSignal(mql.matches);
     const onMediaChange = () => {
       mqlDark.value = mql.matches;
@@ -53,12 +63,12 @@ registerScope<"cycleTheme">("theme", {
     current = dark;
 
     const disposeAttr = effect(() => {
-      document.documentElement.setAttribute(THEME_ATTR, (pref?.value as string) ?? DEFAULT_PREF);
-      localStorage.setItem(THEME_STORAGE_KEY, (pref?.value as string) ?? DEFAULT_PREF);
+      doc.documentElement.setAttribute(THEME_ATTR, (pref?.value as string) ?? DEFAULT_PREF);
+      win.localStorage.setItem(THEME_STORAGE_KEY, (pref?.value as string) ?? DEFAULT_PREF);
     });
 
     const disposeClass = effect(() => {
-      document.documentElement.classList.toggle(DARK_CLASS, dark.value);
+      doc.documentElement.classList.toggle(DARK_CLASS, dark.value);
     });
 
     return () => {
@@ -81,7 +91,12 @@ registerScope<"cycleTheme">("theme", {
 // navbar scope
 // ---------------------------------------------------------------------------
 
+// Eager, for the same reason the setup-only scopes in `ui/core/client` are: a lazy scope resumes on
+// the first `data-on-*` interaction inside it, and the navbar emits none — its disclosure is a
+// native `<details>`, its menus are native popovers and its leaves are plain links. Lazy, the setup
+// below would never run at all and runtime auth filtering would silently do nothing.
 registerScope("navbar", {
+  eager: true,
   setup: ({ root, state }) => {
     const filters = state.filters;
 
@@ -99,10 +114,11 @@ registerScope("navbar", {
       const detail = (event as CustomEvent).detail;
       if (filters && Array.isArray(detail)) filters.value = detail as string[];
     };
-    document.addEventListener("navbar:filters", onFiltersEvent);
+    const doc = ownerDocument(root);
+    doc.addEventListener("navbar:filters", onFiltersEvent);
 
     return () => {
-      document.removeEventListener("navbar:filters", onFiltersEvent);
+      doc.removeEventListener("navbar:filters", onFiltersEvent);
     };
   },
 });

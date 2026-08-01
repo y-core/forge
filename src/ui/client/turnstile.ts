@@ -1,4 +1,5 @@
 import { TURNSTILE, TURNSTILE_SCRIPT_SRC, TURNSTILE_SCRIPT_TIMEOUT_MS } from "../turnstile-contract";
+import { ownerDocument, ownerWindow } from "./dom";
 
 interface TurnstileAPI {
   render(el: HTMLElement, params: Record<string, unknown>): string;
@@ -14,7 +15,7 @@ declare global {
 
 const mounted = new WeakMap<HTMLElement, () => void>();
 
-const ref = (name: string) => document.querySelector<HTMLElement>(`[data-ref='${CSS.escape(name)}']`);
+const ref = (name: string, doc: Document) => doc.querySelector<HTMLElement>(`[data-ref='${CSS.escape(name)}']`);
 
 /**
  * Mounts a resilient Cloudflare Turnstile controller for the `<Turnstile>` widget (`ui/core`) and
@@ -39,8 +40,9 @@ const ref = (name: string) => document.querySelector<HTMLElement>(`[data-ref='${
  * The widget theme follows the app's resolved theme (`.dark` on `<html>`) at render time.
  * @public
  */
-export function mountTurnstile(): () => void {
-  const container = ref(TURNSTILE.widget);
+export function mountTurnstile(within?: Node): () => void {
+  const doc = ownerDocument(within);
+  const container = ref(TURNSTILE.widget, doc);
   if (!container) return () => {};
   const form = container.closest("form");
   if (!form) return () => {};
@@ -48,29 +50,34 @@ export function mountTurnstile(): () => void {
   const existing = mounted.get(container);
   if (existing) return existing;
 
+  // Timers and the third-party API belong to the widget's own realm, not the top-level page.
+  const win = ownerWindow(container);
   const sitekey = container.getAttribute("data-sitekey") ?? "";
   const size = container.getAttribute("data-size") ?? "normal";
   let widgetId: string | undefined;
   let loadStarted = false;
 
   const showFallback = () => {
-    const fallback = ref(TURNSTILE.fallback);
+    const fallback = ref(TURNSTILE.fallback, doc);
     if (fallback) fallback.hidden = false;
   };
 
   const resetWidget = () => {
-    if (widgetId !== undefined) window.turnstile?.reset(widgetId);
+    if (widgetId !== undefined) win.turnstile?.reset(widgetId);
   };
 
   const renderWidget = () => {
-    if (typeof window.turnstile?.render !== "function") {
+    // A capability check against a third-party global, NOT a realm check — Cloudflare's script may
+    // simply not have defined `render` yet. `ownerWindow` has no bearing on it; the only thing that
+    // changes is which realm's global is asked.
+    if (typeof win.turnstile?.render !== "function") {
       showFallback();
       return;
     }
     // Respect the app's resolved theme (manual toggle sets `.dark` on <html>) at render time.
-    const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+    const theme = doc.documentElement.classList.contains("dark") ? "dark" : "light";
     try {
-      widgetId = window.turnstile.render(container, {
+      widgetId = win.turnstile.render(container, {
         sitekey,
         size,
         theme,
@@ -88,37 +95,37 @@ export function mountTurnstile(): () => void {
     if (loadStarted) return;
     loadStarted = true;
 
-    if (window.turnstile) {
+    if (win.turnstile) {
       renderWidget();
       return;
     }
 
-    if (document.querySelector(`script[src="${CSS.escape(TURNSTILE_SCRIPT_SRC)}"]`)) {
+    if (doc.querySelector(`script[src="${CSS.escape(TURNSTILE_SCRIPT_SRC)}"]`)) {
       // Script already in flight from elsewhere — wait for the API, then render.
-      const poll = window.setInterval(() => {
-        if (window.turnstile) {
-          window.clearInterval(poll);
+      const poll = win.setInterval(() => {
+        if (win.turnstile) {
+          win.clearInterval(poll);
           renderWidget();
         }
       }, 100);
-      window.setTimeout(() => window.clearInterval(poll), TURNSTILE_SCRIPT_TIMEOUT_MS);
+      win.setTimeout(() => win.clearInterval(poll), TURNSTILE_SCRIPT_TIMEOUT_MS);
       return;
     }
 
-    const script = document.createElement("script");
+    const script = doc.createElement("script");
     script.src = TURNSTILE_SCRIPT_SRC;
     script.async = true;
-    const timeout = window.setTimeout(showFallback, TURNSTILE_SCRIPT_TIMEOUT_MS);
+    const timeout = win.setTimeout(showFallback, TURNSTILE_SCRIPT_TIMEOUT_MS);
     script.addEventListener("load", () => {
-      window.clearTimeout(timeout);
+      win.clearTimeout(timeout);
       // The async script's load event means the API is already initialised — render directly.
       renderWidget();
     });
     script.addEventListener("error", () => {
-      window.clearTimeout(timeout);
+      win.clearTimeout(timeout);
       showFallback();
     });
-    document.head.appendChild(script);
+    doc.head.appendChild(script);
   };
 
   // Gate the third-party cost on genuine engagement: load Turnstile the first time any field in the
@@ -137,7 +144,7 @@ export function mountTurnstile(): () => void {
   const cleanup = () => {
     form.removeEventListener("focusin", loadScript);
     form.removeEventListener("htmx:afterRequest", onAfterRequest);
-    if (widgetId !== undefined) window.turnstile?.remove(widgetId);
+    if (widgetId !== undefined) win.turnstile?.remove(widgetId);
     mounted.delete(container);
   };
   mounted.set(container, cleanup);

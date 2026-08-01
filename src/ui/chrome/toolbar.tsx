@@ -7,6 +7,8 @@ import { asClass, cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { commandAttrs } from "../server/command-attrs";
 import { scopeAttrs } from "../server/scope-attrs";
+import { stateAttrs } from "../state-attrs";
+import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../toolbar-contract";
 
 /** Root rail item that fires a delegated action immediately on click. @public */
 export interface ToolbarAction<A extends string = string> {
@@ -144,8 +146,23 @@ function isVerticalPlacement(placement: ToolbarPlacement): boolean {
   return placement === "left" || placement === "right";
 }
 
+/**
+ * An `<hr>` rather than a styled `<div>`, matching `core/Toolbar.Separator`: the separator role is
+ * implicit on the element, so the rail announces its divisions without an explicit `role` that would
+ * also make the node look interactive.
+ *
+ * `aria-orientation` describes the **rule's own axis**, which is across the rail — a left rail is
+ * divided by horizontal lines.
+ */
 function separatorNode(placement: ToolbarPlacement): JSXNode {
-  return <div data-slot='toolbar-separator' class={cn("bg-border shrink-0", isVerticalPlacement(placement) ? "w-6 h-px my-1" : "h-6 w-px mx-1")} />;
+  const vertical = isVerticalPlacement(placement);
+  return (
+    <hr
+      data-slot='toolbar-separator'
+      aria-orientation={vertical ? "horizontal" : "vertical"}
+      class={cn("border-0 bg-border shrink-0", vertical ? "w-6 h-px my-1" : "h-6 w-px mx-1")}
+    />
+  );
 }
 
 /** Activation attributes for an action item: native Invoker command or delegated scope event. */
@@ -164,6 +181,7 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
     return (
       <Button
         data-slot='toolbar-action'
+        {...{ [TOOLBAR_ITEM_ATTR]: "" }}
         variant='ghost'
         size={size}
         data-ref={ref}
@@ -185,6 +203,7 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
       <button
         type='button'
         data-slot='toolbar-trigger'
+        {...{ [TOOLBAR_ITEM_ATTR]: "" }}
         command='toggle-popover'
         commandfor={id}
         data-ref={ref}
@@ -196,6 +215,9 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
       <div id={id} data-slot='toolbar-flyout' popover='auto' data-placement={placement} data-compact={compact ? "" : undefined} class={FLYOUT_CLS}>
         <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
           <span>{label}</span>
+          {/* Deliberately unmarked: roving focus queries the whole `<nav>` subtree, and the flyout
+              is a descendant of it — a marker here would splice flyout buttons into the rail's ring
+              and the arrow keys would walk out of the rail into an open panel. */}
           {titleAction && (
             <Button
               data-slot='toolbar-title-action'
@@ -235,6 +257,12 @@ function renderGroup<A extends string>(group: ToolbarGroup<A>, ctx: RenderCtx): 
  * Feed a {@link ToolbarDefinition} and an `icon` prop (the app sprite binding). The `placement`
  * drives flex direction and flyout position (the flyout is anchored to its trigger via CSS).
  *
+ * The rail stamps `core/Toolbar`'s **contracts** rather than composing its parts: `role="toolbar"`,
+ * the toolbar scope, and the item marker on every rail stop, so the whole rail is one Tab stop with
+ * arrow-key navigation. It keeps its own markup because the flyout is anchored by CSS the generic
+ * `Popover` cannot express — a left rail opens its flyout to the *right*, and `data-placement` is
+ * what the theme's anchor rules match on.
+ *
  * @public
  */
 export const Toolbar: FC<ToolbarProps> = ({ config, icon: Icon, placement = "left", commandTarget, class: cls, id, ...rest }) => {
@@ -245,8 +273,20 @@ export const Toolbar: FC<ToolbarProps> = ({ config, icon: Icon, placement = "lef
     children.push(renderGroup(group, ctx));
   }
 
+  // The client reads this attribute to decide which arrows navigate, so a left or right rail must
+  // say `vertical` here or Up/Down would do nothing on it.
+  const orientation = isVerticalPlacement(placement) ? "vertical" : "horizontal";
+
   return (
-    <nav {...(id === undefined ? {} : { id })} data-slot='toolbar' class={cn(railVariants({ placement }), asClass(cls))} {...rest}>
+    <nav
+      {...(id === undefined ? {} : { id })}
+      role='toolbar'
+      data-slot='toolbar'
+      data-scope={TOOLBAR_SCOPE}
+      {...stateAttrs({ orientation })}
+      aria-orientation={orientation}
+      class={cn(railVariants({ placement }), asClass(cls))}
+      {...rest}>
       {children}
     </nav>
   );

@@ -15,7 +15,7 @@ describe("controls/Switch", () => {
       </Switch>,
     );
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="label-after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" checked data-on-change="bindField" data-field="gridVisible"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span>Grid</label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" checked data-on-change="bindField" data-field="gridVisible"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span>Grid</label>',
     );
   });
 
@@ -26,7 +26,7 @@ describe("controls/Switch", () => {
       </Switch>,
     );
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="label-after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-ref="grid-switch" data-on-change="bindField" data-field="gridVisible"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span>Grid</label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-ref="grid-switch" data-on-change="bindField" data-field="gridVisible"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span>Grid</label>',
     );
   });
 
@@ -37,7 +37,7 @@ describe("controls/Switch", () => {
       </Switch>,
     );
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="label-after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" checked data-on-change="bindField" data-field="shadows"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span>Shadows</label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" checked data-on-change="bindField" data-field="shadows"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span>Shadows</label>',
     );
   });
 
@@ -48,7 +48,7 @@ describe("controls/Switch", () => {
       </Switch>,
     );
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="label-after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-on-change="myAction" data-field="x"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span>X</label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-on-change="myAction" data-field="x"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span>X</label>',
     );
   });
 });
@@ -192,7 +192,7 @@ describe("controls/ToggleGroup.Item", () => {
       </ToggleGroup>,
     );
     expect(out).toBe(
-      '<fieldset role="toolbar" data-slot="toggle-group" data-orientation="horizontal" aria-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0" aria-label="Projection"><button type="button" data-slot="toggle-group-item" aria-pressed="true" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px] bg-primary text-primary-foreground hover:bg-primary" data-field="projection" data-value="perspective" data-on-click="bindGroup">Perspective</button></fieldset>',
+      '<fieldset data-slot="toggle-group" data-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0" aria-label="Projection"><button type="button" data-slot="toggle-group-item" data-pressed="" aria-pressed="true" class="inline-flex items-center justify-center bg-transparent text-foreground border border-input border-l-0 cursor-pointer first:border-l first:rounded-l-md last:rounded-r-md hover:bg-accent hover:text-accent-foreground [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md size-[34px] [&amp;_svg]:size-[18px] bg-primary text-primary-foreground hover:bg-primary" data-field="projection" data-value="perspective" data-on-click="bindGroup">Perspective</button></fieldset>',
     );
   });
 
@@ -243,7 +243,7 @@ describe("controls/ToggleGroup.Item", () => {
   it("root group passes aria-label and data-ref through", async () => {
     const out = await render(<ToggleGroup aria-label='Views' data-ref='view-group' />);
     expect(out).toBe(
-      '<fieldset role="toolbar" data-slot="toggle-group" data-orientation="horizontal" aria-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0" aria-label="Views" data-ref="view-group"></fieldset>',
+      '<fieldset data-slot="toggle-group" data-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0" aria-label="Views" data-ref="view-group"></fieldset>',
     );
   });
 });
@@ -255,7 +255,7 @@ describe("controls — arbitrary attribute pass-through", () => {
   it("Switch forwards an arbitrary data-* attribute", async () => {
     const out = await render(<Switch bind='b' data-test-hook='sw' />);
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="label-after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-test-hook="sw" data-on-change="bindField" data-field="b"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span></label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-test-hook="sw" data-on-change="bindField" data-field="b"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span></label>',
     );
   });
 
@@ -301,7 +301,7 @@ describe("controls — arbitrary attribute pass-through", () => {
   it("HTML-escapes forwarded attribute values", async () => {
     const out = await render(<Switch bind='b' data-note='a&b "quoted"' />);
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="label-after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-note="a&amp;b &quot;quoted&quot;" data-on-change="bindField" data-field="b"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span></label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-note="a&amp;b &quot;quoted&quot;" data-on-change="bindField" data-field="b"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-input transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform peer-checked:translate-x-4"></span></span></label>',
     );
   });
 });

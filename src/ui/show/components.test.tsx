@@ -3,7 +3,12 @@
 
 import { describe, expect, it } from "bun:test";
 import { render } from "../../jsx/render-test-helper";
-import { ShowcaseContent } from "./components";
+// The barrel is this test's subject: the property below is that every component the package
+// publishes has a showcase section, so it has to read the published surface rather than a hand-kept
+// list. The rule guards against circular dependencies, which a leaf test file cannot create.
+// biome-ignore lint/style/noRestrictedImports: the published surface is what is being asserted
+import * as core from "../core/mod";
+import { SECTIONS, ShowcaseContent } from "./components";
 import { showcasePaths } from "./route";
 
 // Minimal icon compatible with ForgeIcon<…>; renders nothing.
@@ -13,20 +18,69 @@ StubIcon.sprite = "/icons.svg";
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
 const icon = StubIcon as any;
 
+const page = () => render(<ShowcaseContent data={{ paths: showcasePaths("/showcase") }} icon={icon} />);
+
 describe("ShowcaseContent", () => {
   it("renders the showcase page shell without throwing", async () => {
-    const out = await render(<ShowcaseContent data={{ paths: showcasePaths("/showcase") }} icon={icon} />);
+    const out = await page();
     expect(out).toContain('id="main-content"');
     expect(out).toContain("UI Component Showcase");
   });
 
   it("includes the static catalog, HTMX demos, theme and resumable sections", async () => {
-    const out = await render(<ShowcaseContent data={{ paths: showcasePaths("/showcase") }} icon={icon} />);
+    const out = await page();
     expect(out).toContain('id="button"');
     expect(out).toContain('id="htmx-demos"');
     expect(out).toContain('id="theme"');
     expect(out).toContain('data-scope="show-filter"');
     // OOB flash sink present so demo toasts have a target.
     expect(out).toContain('id="flash-container"');
+  });
+});
+
+/**
+ * The showcase's completeness property, asserted rather than inspected.
+ *
+ * The epic's cut posture makes `ui/show` the living demo estate: a primitive with no section is one
+ * nobody can look at, and one the cross-cutting corpus cannot drive. Checking that by reading the
+ * file is exactly how a demo estate falls behind the library it demonstrates, so the rule is
+ * mechanical — a component export is a capitalised binding whose value is a function, and its
+ * section id is its own kebab-cased name. Adding a component to `core/mod.ts` without a section
+ * fails here, by name.
+ */
+
+/** `ToggleGroup` → `toggle-group`, `NumberField` → `number-field`. */
+function kebab(name: string): string {
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+}
+
+/** Component exports only — `cn`, `cva`, `fieldId` and the type-only exports are not components. */
+const COMPONENT_EXPORTS = Object.entries(core)
+  .filter(([name, value]) => /^[A-Z]/.test(name) && typeof value === "function")
+  .map(([name]) => name)
+  .sort();
+
+describe("ui/show is the complete demo estate", () => {
+  const ids = new Set(SECTIONS.map((section) => section.id));
+
+  it("finds every component exported from core/mod.ts", () => {
+    // A guard on the guard: were the filter above to stop matching, the property below would pass
+    // vacuously and nothing would say so.
+    expect(COMPONENT_EXPORTS.length).toBeGreaterThan(30);
+    expect(COMPONENT_EXPORTS).toContain("Menu");
+    expect(COMPONENT_EXPORTS).toContain("Turnstile");
+    expect(COMPONENT_EXPORTS).not.toContain("createIcon");
+  });
+
+  it("gives every exported component its own catalog section", () => {
+    const missing = COMPONENT_EXPORTS.filter((name) => !ids.has(kebab(name)));
+    expect(missing).toEqual([]);
+  });
+
+  it("renders a section element for every catalog entry", async () => {
+    const out = await page();
+    const unrendered = SECTIONS.filter((section) => !out.includes(`id="${section.id}"`)).map((section) => section.id);
+    // The table of contents links to `#id`; an entry with no element is a dead link.
+    expect(unrendered).toEqual([]);
   });
 });

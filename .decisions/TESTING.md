@@ -16,9 +16,10 @@ description: "Test placement, the HTML-entity exact-match assertion rule, fakes 
 
 ## 0. Quick Reference
 
-- §1 bun test Runner: the runner and its type stub
+- §1 Test Runners: the two runners, their type stub, and which question each answers
 - §1a bun:test Primitives: import source and nesting limit
 - §1b Custom bun:test Stub — No bun-types: the hard package ban
+- §1c The Browser Set: real Chromium behind its own verb
 - §2 Co-Located Test Files: tests live beside their source
 - §2a Test File Naming Convention: `foo.ts` → `foo.test.ts`, same directory
 - §2b Excluded from npm Publish: tests never ship
@@ -48,11 +49,20 @@ description: "Test placement, the HTML-entity exact-match assertion rule, fakes 
 
 ---
 
-## 1. bun test Runner
+## 1. Test Runners
+
+**Forge has two runners, and they answer different questions.** `bun test` proves that a function
+returns what it should and that the server emitted the markup it promised. The browser set (§1c)
+proves that a controller does what it claims **to a keystroke**. Neither substitutes for the other,
+and both are kept.
 
 ### 1a. bun:test Primitives
 
-**Import all test utilities from `bun:test`** — never from a third-party test library.
+**Import all test utilities from `bun:test`** — never from a third-party test library. The one
+exception is the browser set, which imports `@playwright/test` (§1c): driving a real browser needs a
+browser driver, and there is no forge-owned equivalent to reach for instead. The ban is on
+*assertion and mocking* libraries layered over a runner that already has both, and that ban is
+unchanged.
 
 **Keep `describe` nesting to at most two levels.** Deeper nesting costs more readability than
 the grouping buys.
@@ -72,6 +82,48 @@ This is a hard requirement:
 **Do NOT install `@types/bun` or `bun-types`, and do not reference them in `tsconfig.json` or
 `package.json`.** A change that adds these packages must be rejected.
 
+### 1c. The Browser Set
+
+**A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`.**
+`playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it,
+never restate it here.
+
+**The set sits outside the gate, and the reason is a prerequisite, not cost.** It needs a browser
+binary that `bun run browser:install` fetches, and a prerequisite is the only legitimate ground for
+a set to stand outside the gate. Cost never is.
+
+**`bun test` is untouched by it.** The two never share a process, so no global is ever redefined and
+forge's Cloudflare `Request` / `Response` / `fetch` semantics stay exactly as the runtime ships them
+— which matters, because forge is a Workers framework and those semantics *are* the product. File
+discovery cannot collide either: `bun test` matches `*.test.*` / `*.spec.*`, and `*.browser.ts` is
+neither.
+
+**This is why a DOM shim was rejected.** Registering one defines hundreds of globals and shadows Bun
+natives the rest of the suite exercises, and the shim available did not implement the Popover API at
+all — so the platform features these components are *built on* would have been certified against a
+model of the platform that did not have them. Worse, its shadow-root retargeting was backwards,
+which would have made the central assertion about `event.target` pass for the wrong reason. The
+browser set guarantees isolation **by construction**: a separate process, and no global ever
+redefined.
+
+**What each runner is sufficient evidence for:**
+
+| Claim | Proven by |
+|---|---|
+| the server emitted this exact markup | `bun test`, exact-HTML assertion (§3) |
+| a pure function returns this value | `bun test` |
+| a controller moves focus / writes an attribute / consumes a key | **the browser set only** |
+
+**An SSR string is not sufficient evidence for a controller**, and a behaviour test does not subsume
+an exact-HTML test — a component can behave correctly while emitting markup no stylesheet matches.
+Where a rebuild changes markup, the exact-HTML test is *updated*, never replaced by a behaviour
+test.
+
+**A case in the browser set asserts a DOM or focus state, never a call count.** It builds real
+markup — rendered by the real SSR components wherever possible — dispatches a real event through the
+browser's own input path, and reads what resulted. A test that counts calls is testing the test's
+own fixture.
+
 ---
 
 ## 2. Co-Located Test Files
@@ -86,6 +138,18 @@ This is a hard requirement:
 
 **Test files never go in a top-level `__tests__/` or `test/` directory.** Co-location makes
 coverage visible at a glance and keeps relative imports short (§2c).
+
+**The browser set follows the same rule with its own suffix** — `foo.ts` → `foo.browser.ts`, same
+directory (§1c). A subject may have both, and often should: the exact-HTML test proves what the
+server emitted, the browser test proves what the markup then does.
+
+    src/ui/core/menu.tsx        → src/ui/core/menu.browser.ts
+    src/ui/client/composite.ts  → src/ui/client/composite.browser.ts
+
+**The one exception is a spec with no single subject.** A test for a scenario that only exists
+*between* two components — nested overlays, a widget inside a form, a widget inside a shadow root —
+sits at the root of the tier it spans rather than beside an arbitrary one of its participants.
+Choosing a co-location for it would name one component as the subject when none is.
 
 ### 2b. Excluded from npm Publish
 
@@ -107,6 +171,11 @@ and masks the re-export bugs `validate-exports` exists to catch.
 
 The one exception is `@y-core/forge/testing` (§7), which consumer test code imports by
 subpath because it sits outside the source tree.
+
+**A test whose subject *is* the export surface is the second exception**, and it proves the rule
+rather than bending it: a test asserting that every component a namespace publishes has a
+corresponding demo section has to read the published surface, because a hand-kept list is exactly
+the thing that would rot. Suppress the lint rule at that import with a reason, and nowhere else.
 
 ---
 
@@ -315,6 +384,10 @@ there rather than trusting any prose copy.
 
 **Every step must pass with zero errors before a task is declared complete.** A partial pass —
 "types pass, lint has one warning" — is a failure, and skipping a step is not permitted.
+
+**`bun run test:browser` is not one of the gate's steps and is still required of any change that
+touches a controller** (§1c). It stands outside because Chromium is a prerequisite, not because it
+is optional: a green gate says nothing whatever about whether a keystroke still moves focus.
 
 Failure-triage recipes are in `src/testing/README.md`.
 

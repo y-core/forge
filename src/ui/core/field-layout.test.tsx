@@ -91,13 +91,13 @@ describe("Field.Content", () => {
 describe("Field.Title", () => {
   it("renders a div element with data-slot='field-title'", async () => {
     expect(String(await renderToString(<FormField.Title>Title</FormField.Title>))).toBe(
-      '<div data-slot="field-title" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50">Title</div>',
+      '<div data-slot="field-title" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50">Title</div>',
     );
   });
 
   it("renders children inside the div", async () => {
     expect(String(await renderToString(<FormField.Title>My Title</FormField.Title>))).toBe(
-      '<div data-slot="field-title" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled=true]/field:opacity-50">My Title</div>',
+      '<div data-slot="field-title" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50">My Title</div>',
     );
   });
 });

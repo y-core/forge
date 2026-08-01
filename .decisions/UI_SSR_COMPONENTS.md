@@ -30,6 +30,9 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 - §1d Icon Accessibility and createIcon Typing: decorative by default; name narrowing
 - §1e Switch and Slider — CSS-Only Controls: no client JS, and what stays consumer-side
 - §1f Turnstile — Server-Rendered Mount Point: deliberate omission of auto-render
+- §1g Composite Widgets: one tab stop, and the markers that make it one
+- §1h Overlays and Disclosures: native popover and native `<details>`
+- §1i Native-Input Primitives: groups, meter, number field, scroll area
 - §2 The Signal-Binding Seam: how SSR markup names a client-side binding
 - §2a fieldAttr, bindField, and bindGroup: what forge owns and what the app supplies
 - §2b bind versus field — Orthogonal Props: two contracts that may coexist
@@ -39,6 +42,9 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 - §3a cn — Conditional Class Names: the variadic filter-and-join
 - §3b asClass — Narrow a JSX class Prop: safe caller overrides
 - §3c cva — Class Variance Authority: variant resolution
+- §4 State Attribute Contract: the styling hooks, declared once for both tiers
+- §4a Presence, Not Value: why `data-open` and never `data-open="true"`
+- §4b ARIA States Are Not Styling Hooks: why both are emitted
 
 ---
 
@@ -125,6 +131,86 @@ submitted with the form.
 **`siteKey` is injected server-side from the Worker env — never hardcoded.** The markup is inert
 on its own; pair it with the client controller
 ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2c).
+
+### 1g. Composite Widgets
+
+A **composite** is a widget made of many focusable items that behaves as **one tab stop**: exactly
+one item is reachable with Tab, and the arrow keys move among the rest. `Toolbar`, `Menu`, `Tabs`
+and `ToggleGroup` are the four, and they share one controller
+([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §6b).
+
+**The markup declares which elements are items; the controller never guesses.** How it declares
+them differs by widget, and each choice is deliberate:
+
+| Widget | Root | How items are identified |
+|---|---|---|
+| `Toolbar` | `role="toolbar"`, `data-scope="toolbar"` | an explicit `data-toolbar-item` marker |
+| `Menu` | `role="menu"` on the popup, `data-scope="menu"` | the ARIA roles `menuitem` / `menuitemcheckbox` / `menuitemradio` |
+| `Tabs` | `data-scope="tabs"`, `role="tablist"` on the list | `role="tab"` |
+
+**`Toolbar` uses a marker rather than a `data-slot` prefix** because `Toolbar.Group` and
+`Toolbar.Separator` are toolbar slots that must *not* be focus stops, and a prefix selector cannot
+express the exception. The marker is public: any foreign element inside a toolbar opts in by
+carrying it, which is how an icon rail keeps its own buttons and still becomes one tab stop.
+
+**`Menu` identifies items by ARIA role rather than by a forge-specific attribute**, and that is
+load-bearing for a menu whose rows are built in the browser: a runtime-constructed row is navigable
+the moment it is a correctly-roled menu item, with nothing forge-specific to remember to stamp.
+`Menu.LinkItem` is an `<a role="menuitem">` for rows that navigate — it keeps middle-click,
+open-in-new-tab and no-JavaScript navigation, all of which a `<button>` drops — and
+`Menu.SubmenuTrigger` is the roled trigger a nested popup needs, since a bare `Menu.Trigger` carries
+no role and would be skipped by the parent's arrow navigation.
+
+**`ToggleGroup` announces what it actually is.** It emits no `role` at all — `<fieldset>` already
+has an implicit `group` — where it previously hardcoded `role="toolbar"` for every group, which
+announced a segmented control as a toolbar and offered the wrong interaction model. Its `type` prop
+(`"single" | "multiple"`) is published as `data-multiple`, present exactly when several items may be
+pressed at once, and that is what the client reads to decide whether a click replaces the pressed
+item or adds to it (§2a).
+
+**`Tabs` carries `data-activation`** — `automatic` selects a tab as focus reaches it, `manual`
+waits for a click or Enter. An unselected `Tabs.Panel` is `hidden`, which is the platform's own
+mechanism: the initial render is correct with no JavaScript, and the controller flips the same
+attribute.
+
+### 1h. Overlays and Disclosures
+
+**Nothing here re-creates a platform overlay in JavaScript.** `Menu` and `Tooltip` are built on the
+native Popover API, `Dialog` on native `<dialog>`, and `Collapsible` on native `<details>`, so the
+top layer, light-dismiss, Escape, exclusive-open and the disclosure toggle are all the platform's
+and cost nothing.
+
+- **`Menu`** — trigger is `<button command="toggle-popover" commandfor={id}>`, popup is
+  `<div popover="auto" role="menu">`, and an item closes the menu with `command="hide-popover"`.
+  Opening, closing and dismissing therefore involve **no JavaScript at all**; the client adds only
+  what ARIA's menu pattern asks for and the platform does not supply (§1g).
+- **`Collapsible`** — a `<details>`/`<summary>` pair. **`<details>` owns open and closed**; the
+  controller only *publishes* them as state attributes for CSS to react to (§4).
+- **`Tooltip`** — a `popover="hint"` surface, so it does not close the menu or dialog beneath it.
+- **`Accordion`** — several `Collapsible`s in a stack. Not a composite: each item is its own
+  disclosure and its own tab stop, because that is what a native `<details>` list is.
+
+**An item that must leave its menu open passes `for={false}`**, which omits the
+`command="hide-popover"` pair — the shape a checkbox row in a menu needs.
+
+### 1i. Native-Input Primitives
+
+Five primitives that are a native control plus SSR field wiring, and nothing more:
+
+- **`CheckboxGroup` / `RadioGroup`** — a `<fieldset>` of real `<input type="checkbox">` /
+  `<input type="radio">`. **Radio grouping and roving focus inside a radio group are the platform's**;
+  forge adds the field wiring and the state attributes, not a keyboard controller.
+- **`Meter`** — a native `<meter>`. Distinct from `Progress`: a meter is a *measurement within a
+  known range*, a progress bar is *task completion*, and conflating them announces the wrong thing.
+- **`NumberField`** — a native numeric `<input>` with stepper buttons. The steppers carry no
+  `data-on-*` action, so its scope is eager (§2d): a lazy scope would have nothing to resume it and
+  the buttons would sit inert.
+- **`ScrollArea`** — almost entirely CSS. A viewport with styled scrollbars; no scroll hijacking, no
+  synthetic thumb, no wheel listener.
+
+**`Switch` publishes `data-label-position`** (`before` / `after`) for the label's placement relative
+to the track. It is not `data-orientation`: orientation is the widget's own axis, and a switch is
+always horizontal — the two would fight the moment a stylesheet matched on either.
 
 ---
 
@@ -246,3 +332,63 @@ const buttonVariants = cva({
 
 **Combine with `cn` when additional conditional classes are needed** —
 `cn(buttonVariants({ variant }), isLoading && "opacity-50")`.
+
+---
+
+## 4. State Attribute Contract
+
+**State attributes are the styling hooks CSS matches on to react to a component's state**, and they
+are declared **once**, in a module both tiers import. It earns a section of its own rather than a
+place under §1 because it is not an SSR concern: it is the one contract the server-rendered
+component and the browser controller must agree on, and neither owns it.
+
+The reason is that a state attribute is written in **two places that cannot see each other** — an
+SSR component that runs on the Worker, and a client controller that runs in the browser. Nothing but
+a shared declaration keeps those in step, and drift here is *silent*: the selector simply stops
+matching, so the component looks unstyled rather than broken. The same argument produced the
+delegated-event vocabulary ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §3c); this is its
+sibling.
+
+The declared hooks:
+
+| Attribute | Meaning |
+|---|---|
+| `data-open` / `data-closed` | a popup, disclosure or overlay is open / closed — the pair is exhaustive, exactly one is always present |
+| `data-pressed` | a pressable trigger or toggle item is pressed |
+| `data-checked` | a checkable control is checked |
+| `data-selected` | a tab is the selected one |
+| `data-disabled` | the component is disabled |
+| `data-invalid` | the component holds a validation error |
+| `data-orientation` | layout axis — `horizontal` or `vertical`. Valued |
+| `data-side` / `data-align` | which side a popup sits on relative to its anchor, and how it aligns along it. Valued |
+| `data-starting-style` / `data-ending-style` | present while animating in / out |
+| `data-popup-open` | on a **trigger**, while the popup it controls is open — the trigger's own state, distinct from `data-open`, which belongs to the popup |
+| `data-anchor-hidden` | on a popup whose anchor has scrolled out of view |
+
+**Adding a styling hook means adding it to that declaration first.** A component that emits a state
+attribute outside the table fails a conformance test — smuggling a hook past it is the exact failure
+the single declaration exists to prevent.
+
+**`data-selected` is not `data-checked`.** ARIA models tab selection as `aria-selected`, not
+`aria-checked`, so reusing `data-checked` would announce a tab as a radio; and calling it structural
+rather than a state would be false, because it is precisely a state a stylesheet reacts to.
+
+### 4a. Presence, Not Value
+
+**Boolean states are emitted by presence, with an empty value — `data-open=""`, never
+`data-open="true"`.** `[data-open]` is a cheaper and a more honest selector than
+`[data-open="true"]`, and a false state emits nothing at all, so an unstyled state costs no bytes.
+
+The valued attributes — `data-orientation`, `data-side`, `data-align` — are the exception, because
+they carry a choice rather than a flag.
+
+### 4b. ARIA States Are Not Styling Hooks
+
+**A component emits both** — `aria-pressed="true"` beside `data-pressed`, `aria-selected` beside
+`data-selected` — and that duplication is deliberate rather than redundant.
+
+`aria-*` keeps its `"true"` / `"false"` string form because WAI-ARIA requires it. The whole point of
+the `data-` hook beside it is that **CSS should not have to read ARIA**: a stylesheet matching
+`[aria-pressed="true"]` couples presentation to an accessibility contract, so the day the correct
+ARIA for a widget changes, the styling breaks with it. The two are reconciled together by one
+function, so a controller can never write one without the other.

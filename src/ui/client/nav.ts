@@ -1,9 +1,13 @@
+import { contains, eventTarget, ownerDocument } from "./dom";
 import { createSignal, effect } from "./signal";
 
 export interface NavControllerOptions {
   menuSelector?: string;
   toggleSelector?: string;
   linkSelector?: string;
+  /** Any node in the document to mount within. Omit for the top-level page; pass one when the
+   * navbar lives in an iframe, so the outside-click and Escape listeners land on its own document. */
+  within?: Node;
 }
 
 const mountedNavs = new WeakMap<HTMLButtonElement, () => void>();
@@ -16,8 +20,9 @@ export function mountNav(options?: NavControllerOptions): () => void {
     toggleSelector = "[data-ref='nav-toggle']",
   } = options ?? {};
 
-  const toggle = document.querySelector<HTMLButtonElement>(toggleSelector);
-  const menu = document.querySelector<HTMLElement>(menuSelector);
+  const doc = ownerDocument(options?.within);
+  const toggle = doc.querySelector<HTMLButtonElement>(toggleSelector);
+  const menu = doc.querySelector<HTMLElement>(menuSelector);
   if (!toggle || !menu) {
     return () => {};
   }
@@ -43,8 +48,11 @@ export function mountNav(options?: NavControllerOptions): () => void {
       return;
     }
 
-    const target = event.target as Node | null;
-    if (!target || (!menu.contains(target) && target !== toggle)) {
+    // Shadow-safe on both counts: `eventTarget` sees past retargeting to the element actually hit,
+    // and `contains` climbs shadow hosts, so a click on a menu item inside a web component is not
+    // mistaken for an outside click that closes the menu.
+    const target = eventTarget(event) as Node | null;
+    if (!target || (!contains(menu, target) && target !== toggle)) {
       isOpen.value = false;
     }
   };
@@ -62,8 +70,8 @@ export function mountNav(options?: NavControllerOptions): () => void {
   };
 
   toggle.addEventListener("click", onToggle);
-  document.addEventListener("click", onDocumentClick);
-  document.addEventListener("keydown", onDocumentKeydown);
+  doc.addEventListener("click", onDocumentClick);
+  doc.addEventListener("keydown", onDocumentKeydown);
   linkEntries.forEach((link) => {
     link.addEventListener("click", onLinkClick);
   });
@@ -71,8 +79,8 @@ export function mountNav(options?: NavControllerOptions): () => void {
   const cleanup = () => {
     disposeEffect();
     toggle.removeEventListener("click", onToggle);
-    document.removeEventListener("click", onDocumentClick);
-    document.removeEventListener("keydown", onDocumentKeydown);
+    doc.removeEventListener("click", onDocumentClick);
+    doc.removeEventListener("keydown", onDocumentKeydown);
     linkEntries.forEach((link) => {
       link.removeEventListener("click", onLinkClick);
     });
