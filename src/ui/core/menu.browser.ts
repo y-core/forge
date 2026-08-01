@@ -96,6 +96,37 @@ test.describe("Menu — anatomy", () => {
     expect(state).toEqual({ open: false, closed: true });
   });
 
+  test("a closed popup is actually not rendered, not merely marked closed", async ({ page }) => {
+    // **The regression this file was missing, and the shape of the miss is worth stating.** Every
+    // other case here reads `:popover-open` or a state attribute — all of which were *correct* while
+    // the popup rendered permanently visible on screen, because `POPUP_BASE` ended in a bare `flex`.
+    //
+    // A closed popover is hidden by the UA rule `[popover]:not(:popover-open) { display: none }`,
+    // which is **not** `!important` — so any author-origin `display` on the same element beats it. The
+    // component looked correct in the DOM and was a menu that never went away.
+    //
+    // Asserted on the **computed** display rather than on a class, because the class is the mechanism
+    // and this is about the outcome: any future utility that reintroduces a `display` fails here.
+    await mountMenu(page, ROWS);
+
+    const closed = await page.evaluate(() => {
+      const el = document.querySelector("#file-menu") as HTMLElement;
+      return { popoverOpen: el.matches(":popover-open"), display: getComputedStyle(el).display };
+    });
+    expect(closed.popoverOpen).toBe(false);
+    expect(closed.display, "a closed popup still has a display — an author `display` is beating the UA rule").toBe("none");
+
+    // And the same claim after a real open/close round trip, which is where a user meets it.
+    await page.click("[data-slot='menu-trigger']");
+    await page.keyboard.press("Escape");
+    await expect.poll(() => isOpen(page)).toBe(false);
+    const reclosed = await page.evaluate(() => {
+      const el = document.querySelector("#file-menu") as HTMLElement;
+      return { popoverOpen: el.matches(":popover-open"), display: getComputedStyle(el).display };
+    });
+    expect(reclosed).toEqual({ popoverOpen: false, display: "none" });
+  });
+
   test("renders checkbox and radio items with their own roles and checked state", async ({ page }) => {
     const html = await render(
       Menu.Popup({

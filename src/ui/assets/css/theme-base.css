@@ -198,6 +198,57 @@ from the base stop-mapping below.
 [data-slot="toolbar-flyout"][data-placement="top"]    { top: anchor(bottom); left: anchor(left); margin-top: 0.5rem; }
 [data-slot="toolbar-flyout"][data-placement="bottom"] { bottom: anchor(top); left: anchor(left); margin-bottom: 0.5rem; }
 
+/* ── Tooltip placement ────────────────────────────────────────────────────
+   A tooltip's content is `popover="manual"` and carries **no `commandfor`**, so it has no implicit
+   anchor — a manual popover is shown by a controller rather than invoked by a button. Without an
+   explicit `anchor-name` binding there is nothing for `anchor()` to resolve against, every rule below
+   evaluates to nothing, and the UA's `[popover]` default (`inset: 0; margin: auto`) centres the hint
+   in the middle of the viewport.
+
+   That failure is **unfixable from a consuming app**: the anchor name does not exist to bind to, so
+   no consumer rule can create the relationship. Hence the binding is declared here, on the trigger,
+   beside the placement it enables.
+
+   `anchor-scope` keeps the name from leaking: many tooltips on one page all use `--forge-tooltip`,
+   and without scoping each content box would resolve against whichever trigger the engine reached
+   first. Scoping it to the `[data-slot="tooltip"]` root makes every pair independent. */
+[data-slot="tooltip"] {
+  anchor-scope: --forge-tooltip;
+}
+
+[data-slot="tooltip-trigger"] {
+  anchor-name: --forge-tooltip;
+}
+
+[data-slot="tooltip-content"] {
+  position: fixed;
+  margin: 0;
+  inset: auto;
+  position-anchor: --forge-tooltip;
+  /* A hint that runs off the edge is worse than one on the other side of its trigger — and unlike a
+     context menu, a tooltip has no pointer position to stay near, so flipping costs nothing. */
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+}
+
+[data-slot="tooltip-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
+[data-slot="tooltip-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
+[data-slot="tooltip-content"][data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
+[data-slot="tooltip-content"][data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
+
+[data-slot="tooltip-content"][data-side="top"][data-align="center"],
+[data-slot="tooltip-content"][data-side="bottom"][data-align="center"] { left: anchor(center); translate: -50% 0; }
+[data-slot="tooltip-content"][data-side="top"][data-align="start"],
+[data-slot="tooltip-content"][data-side="bottom"][data-align="start"] { left: anchor(left); }
+[data-slot="tooltip-content"][data-side="top"][data-align="end"],
+[data-slot="tooltip-content"][data-side="bottom"][data-align="end"] { right: anchor(right); }
+
+[data-slot="tooltip-content"][data-side="left"][data-align="center"],
+[data-slot="tooltip-content"][data-side="right"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
+[data-slot="tooltip-content"][data-side="left"][data-align="start"],
+[data-slot="tooltip-content"][data-side="right"][data-align="start"] { top: anchor(top); }
+[data-slot="tooltip-content"][data-side="left"][data-align="end"],
+[data-slot="tooltip-content"][data-side="right"][data-align="end"] { bottom: anchor(bottom); }
+
 /* ── Coordinate placement ─────────────────────────────────────────────────
    A popup with no invoker — a context menu opened where a right-click landed — has no anchor for
    `anchor()` to resolve against, so every rule above evaluates to nothing and the UA's `[popover]`

@@ -10,6 +10,54 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [0.0.77] — 2026-08-01
+
+### Fixed
+
+- **`Menu.Popup` rendered a closed menu permanently visible.** `POPUP_BASE` ended in `flex flex-col`,
+  and a closed popover is hidden by the UA rule `[popover]:not(:popover-open) { display: none }` —
+  which is **not** `!important`, so any author-origin `display` on the same element beats it. Escape
+  and light-dismiss both worked, `:popover-open` went false, and the menu stayed on screen. Nothing is
+  lost by removing it: every row shape already carries `flex w-full`, so the rows were block-level
+  boxes stacking on their own account. **`menu.browser.ts` gains the case that would have caught it**,
+  asserting the *computed* display rather than a class — every one of the 25 existing cases read
+  `:popover-open` or a state attribute, all of which were correct while the component was broken.
+  The general rule: a popover or `<dialog>` must not carry a bare `display` utility.
+
+### Added
+
+- **`mountActiveDescendant` / `resetActiveDescendant` (`ui/client`)** — the combobox controller, and a
+  sibling to `mountRovingFocus` rather than an option on it. Three properties of the roving controller
+  disqualify it: `belongsToTextField` hands every arrow back to the caret whenever the caret can still
+  move (so ArrowDown never reaches the ring mid-query), it calls `item.focus()` and so takes focus out
+  of the field a combobox is defined by keeping it in, and its typeahead is gated off for native
+  inputs. Items resolve **live**, so a list rebuilt between keystrokes needs no re-registration.
+  `resetActiveDescendant` is published separately because only the consumer knows when its list
+  changed — and because **reset, never clamp**: clamping keeps the highlight on whatever option now
+  occupies the old index, which after a new query is a different command, and Enter would run it.
+- **`menuItemAttrs()` and `MENU_ITEM_CLASS` (`ui/contracts`)** — a **client-built** menu row stamped
+  from forge's own declaration. An SSR component renders on the Worker and cannot be invoked from the
+  browser, so a context menu whose rows arrive from synchronous callbacks previously had no option but
+  to re-type forge's class string as a literal. `ITEM_BASE` in `core/menu.tsx` now reads the published
+  constant rather than keeping a private copy beside it.
+- **A `flip` option on `openPopoverAt`.** Clamping and flipping both keep the panel on screen; they
+  differ in where the *point* ends up. Clamping leaves it inside the box, which for a context menu
+  pre-hovers the row under the cursor; flipping mirrors the box past the point, which is the desktop
+  convention. Per axis, and a flip that would not fit falls back to clamping, so "the whole panel is
+  on screen" stays unconditional.
+- **`Tooltip.Trigger`'s `asChild`**, same contract as `core/Button`'s. The case is an app adding
+  tooltips to controls it already has: wrapping an existing button would give the row two focus stops
+  and break every selector addressing it.
+
+### Changed
+
+- **`Tooltip.Content` is positioned at all.** It is `popover="manual"` with no `commandfor`, so it has
+  no implicit anchor — and forge shipped **zero** CSS for `[data-slot="tooltip-content"]`, so every
+  tooltip rendered centred in the viewport. That was **unfixable from a consuming app**, because the
+  anchor name did not exist to bind to. `theme-base.css` now declares `anchor-name` on the trigger,
+  `anchor-scope` on the root so many tooltips on one page stay independent, and the four sides × three
+  alignments, with flip fallbacks.
+
 ## [0.0.76] — 2026-08-01
 
 Add a logging withLevels() feature 

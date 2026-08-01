@@ -1,5 +1,11 @@
 export { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
-export { MENU_ITEM_SELECTOR, MENU_SCOPE } from "./menu-contract";
+export {
+  MENU_ITEM_CLASS,
+  MENU_ITEM_SELECTOR,
+  MENU_SCOPE,
+  type MenuItemAttrsOptions,
+  menuItemAttrs,
+} from "./menu-contract";
 export { NUMBER_FIELD_SCOPE } from "./number-field-contract";
 export { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, DIALOG_SCOPE, POPOVER_COORDS_ATTR, POPOVER_SCOPE } from "./overlay-contract";
 export { SCOPE_EVENTS, type ScopeEvent } from "./scope-events";

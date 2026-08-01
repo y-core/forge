@@ -22,6 +22,23 @@ import { ownerWindow } from "./dom";
 export interface OpenPopoverAtOptions {
   /** Keep this many pixels between the popup and each viewport edge. @default 0 */
   margin?: number;
+  /**
+   * Open *away* from the point on an axis where the popup would not fit, instead of sliding it back
+   * onto the screen.
+   *
+   * **Both behaviours keep the popup on screen; they differ in where the pointer ends up.** Clamping
+   * slides the box back, which leaves the point **inside** it — for a context menu that means the row
+   * under the cursor is pre-hovered and the next click lands on a command the user never aimed at.
+   * Flipping mirrors the box to the other side of the point, which is the convention every desktop
+   * context menu follows: near the bottom edge the menu opens upward, with the cursor still at its
+   * corner.
+   *
+   * Per axis, not per popup: a menu near the bottom-right flips on both, near the bottom only on one.
+   * A flip that would not fit either falls back to clamping, so the guarantee that the whole panel
+   * stays on screen is unconditional.
+   * @default false
+   */
+  flip?: boolean;
 }
 
 function clamp(value: number, low: number, high: number): number {
@@ -29,18 +46,28 @@ function clamp(value: number, low: number, high: number): number {
 }
 
 /**
- * Write the clamped coordinates. Called twice by design: once before the popup is shown, when it is
- * still `display: none` and measures zero, and once after, when its real box is known. Clamping
- * needs the size — "does this fit" is a question about the box, not the point.
+ * Resolve one axis: flip past the point if asked and it helps, then clamp regardless.
+ *
+ * The clamp is applied **after** the flip rather than instead of it, so "the whole panel is on
+ * screen" holds however the flip turned out — a popup taller than the viewport cannot be made to fit
+ * by mirroring it, and silently leaving it off-screen would be worse than ignoring the preference.
  */
-function place(el: HTMLElement, win: Window, x: number, y: number, margin: number): void {
+function axis(point: number, size: number, extent: number, margin: number, flip: boolean): number {
+  const preferred = flip && point + size + margin > extent && point - size >= margin ? point - size : point;
+  // `Math.max(margin, …)` rather than a bare subtraction: a popup larger than the viewport would
+  // otherwise be clamped to a negative offset and hang off the *other* edge instead.
+  return clamp(preferred, margin, Math.max(margin, extent - size - margin));
+}
+
+/**
+ * Write the resolved coordinates. Called twice by design: once before the popup is shown, when it is
+ * still `display: none` and measures zero, and once after, when its real box is known. Both the flip
+ * and the clamp need the size — "does this fit" is a question about the box, not the point.
+ */
+function place(el: HTMLElement, win: Window, x: number, y: number, margin: number, flip: boolean): void {
   const rect = el.getBoundingClientRect();
-  // `Math.max(margin, …)` rather than a bare subtraction: a popup wider than the viewport would
-  // otherwise be clamped to a negative left and hang off the *other* edge instead.
-  const maxX = Math.max(margin, win.innerWidth - rect.width - margin);
-  const maxY = Math.max(margin, win.innerHeight - rect.height - margin);
-  el.style.setProperty(ANCHOR_X_PROPERTY, `${clamp(x, margin, maxX)}px`);
-  el.style.setProperty(ANCHOR_Y_PROPERTY, `${clamp(y, margin, maxY)}px`);
+  el.style.setProperty(ANCHOR_X_PROPERTY, `${axis(x, rect.width, win.innerWidth, margin, flip)}px`);
+  el.style.setProperty(ANCHOR_Y_PROPERTY, `${axis(y, rect.height, win.innerHeight, margin, flip)}px`);
 }
 
 /**
@@ -62,15 +89,18 @@ function place(el: HTMLElement, win: Window, x: number, y: number, margin: numbe
 export function openPopoverAt(el: HTMLElement, x: number, y: number, options: OpenPopoverAtOptions = {}): void {
   const win = ownerWindow(el);
   const margin = options.margin ?? 0;
+  const flip = options.flip ?? false;
 
   // Stamped rather than assumed: calling this on an element is the act that makes it
   // coordinate-placed, so a popup that opens both ways does not need two markup variants.
   el.setAttribute(POPOVER_COORDS_ATTR, "");
-  place(el, win, x, y, margin);
+  place(el, win, x, y, margin, flip);
 
   if (el.hasAttribute("popover") && !el.matches(":popover-open")) el.showPopover();
 
-  // Show, measure, re-clamp — all in one task, so the browser paints the corrected position rather
-  // than the provisional one.
-  place(el, win, x, y, margin);
+  // Show, measure, re-place — all in one task, so the browser paints the corrected position rather
+  // than the provisional one. **The second call is the one that does the real work**: before showing,
+  // the popup is `display: none` and measures zero, so neither the flip nor the clamp has a box to
+  // reason about.
+  place(el, win, x, y, margin, flip);
 }

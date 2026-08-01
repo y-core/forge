@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { MENU_SCOPE } from "../contracts/menu-contract";
+import { MENU_ITEM_CLASS, MENU_SCOPE } from "../contracts/menu-contract";
 import { POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
 import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
@@ -68,13 +68,31 @@ interface MenuGroupLabelProps extends Omit<JSX.IntrinsicElements["div"], "childr
 
 type MenuSeparatorProps = Omit<JSX.IntrinsicElements["hr"], "children">;
 
-const POPUP_BASE =
-  "z-50 min-w-[10rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md " + "outline-none flex flex-col";
-const ITEM_BASE =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-popover-foreground " +
-  "bg-transparent border-0 cursor-pointer outline-none " +
-  "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
-  "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50";
+/**
+ * **No `display` utility here, and its absence is load-bearing rather than an omission.**
+ *
+ * A closed popover is hidden by the UA rule `[popover]:not(:popover-open) { display: none }`, which
+ * is *not* `!important` — so any author-origin `display` on the same element beats it and the popup
+ * renders permanently visible. This string used to end in `flex flex-col`, which did exactly that:
+ * `Escape` and light-dismiss both worked, `:popover-open` went false, and the menu stayed on screen.
+ *
+ * Nothing was lost by removing it. Every row shape (`Menu.Item`, `Menu.LinkItem`,
+ * `Menu.SubmenuTrigger`) carries `flex w-full` from {@link ITEM_BASE}, so each is already a
+ * block-level box at full width; `Menu.Group`, `Menu.GroupLabel` and `Menu.Separator` are block-level
+ * too. The rows stacked because of their own display, not because of this one.
+ *
+ * The general rule this is an instance of: **a popover or `<dialog>` must not carry a bare `display`
+ * utility.** Express layout on the children, or behind a `:popover-open` variant.
+ */
+const POPUP_BASE = "z-50 min-w-[10rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none";
+/**
+ * The row classes, read from `contracts/menu-contract.ts` rather than declared here.
+ *
+ * It moved because a **client-built** row needs the same string and cannot invoke this component —
+ * an SSR component renders on the Worker. Keeping a private copy beside the published one is exactly
+ * how "a menu row" comes to mean two things, which is the argument the contracts modules exist for.
+ */
+const ITEM_BASE = MENU_ITEM_CLASS;
 
 const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, ...rest }) => (
   <div data-slot='menu' class={cn("relative inline-block", asClass(cls))} {...rest}>

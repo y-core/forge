@@ -192,3 +192,75 @@ test.describe("openPopoverAt", () => {
     expect(await box(page)).toMatchObject({ left: 0, top: 0 });
   });
 });
+
+/**
+ * `flip` — open *away* from the point instead of sliding back over it.
+ *
+ * Both behaviours keep the panel on screen; they differ in where the **point** ends up. Clamping
+ * leaves it inside the box, which for a context menu pre-hovers the row under the cursor. Flipping
+ * mirrors the box past the point, which is what every desktop context menu does.
+ */
+test.describe("openPopoverAt with flip", () => {
+  async function openFlipped(page: Page, x: number, y: number): Promise<void> {
+    await page.evaluate(
+      ({ x, y }) => {
+        const el = document.querySelector<HTMLElement>("#ctx");
+        if (el) window.forgePopoverAnchor.openPopoverAt(el, x, y, { flip: true });
+      },
+      { x, y },
+    );
+  }
+
+  test("leaves the point at the corner when the popup fits", async ({ page }) => {
+    // The flip is conditional on *not* fitting; where there is room, it must change nothing.
+    await mount(page, await markup(), EXPOSE);
+    await sizeIt(page);
+
+    await openFlipped(page, 200, 150);
+
+    expect(await box(page)).toMatchObject({ left: 200, top: 150 });
+  });
+
+  test("mirrors past the point on the axis that would overflow, and only that axis", async ({ page }) => {
+    await mount(page, await markup(), EXPOSE);
+    await sizeIt(page);
+    const { h } = await viewport(page);
+
+    // Comfortably inside on x, hard against the bottom on y.
+    await openFlipped(page, 200, h - 10);
+
+    const rect = await box(page);
+    expect(rect?.left, "the x axis flipped although it had room").toBe(200);
+    expect(rect?.bottom, "the y axis did not open upward from the point").toBe(h - 10);
+  });
+
+  test("flips both axes in a corner", async ({ page }) => {
+    await mount(page, await markup(), EXPOSE);
+    await sizeIt(page);
+    const { w, h } = await viewport(page);
+
+    await openFlipped(page, w - 10, h - 10);
+
+    expect(await box(page)).toMatchObject({ right: w - 10, bottom: h - 10 });
+  });
+
+  test("falls back to clamping when the mirrored box would not fit either", async ({ page }) => {
+    // The guarantee that the whole panel stays on screen is **unconditional**: a popup taller than the
+    // space on either side of the point cannot be fixed by mirroring, and silently leaving it
+    // off-screen would be worse than ignoring the preference.
+    await mount(page, await markup(), EXPOSE);
+    await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      el?.style.setProperty("width", "120px");
+      el?.style.setProperty("height", "600px");
+    });
+    const { h } = await viewport(page);
+
+    // 40px from the top: flipping upward would need 600px above the point, which does not exist.
+    await openFlipped(page, 200, 40);
+
+    const rect = await box(page);
+    expect(rect?.top, "the flip produced a negative top instead of clamping").toBeGreaterThanOrEqual(0);
+    expect(rect?.bottom, "the panel hangs off the bottom edge").toBeLessThanOrEqual(h);
+  });
+});
