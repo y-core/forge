@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mount } from "./client/browser-test-helper";
+import { mount } from "../client/browser-test-helper";
 
 /**
  * The half of the state-attribute convention a string assertion cannot reach: that the attributes
@@ -14,7 +14,7 @@ declare global {
   }
 }
 
-const EXPOSE = { expose: { forgeState: "./ui/state-attrs" } };
+const EXPOSE = { expose: { forgeState: "./ui/contracts/state-attrs" } };
 
 /** Presence selectors only — the point of `data-open=""` over `data-open="true"`. */
 const STYLES = `
@@ -83,7 +83,6 @@ test("the SSR builder and the client mutator agree on every declared state", asy
       disabled: true,
       invalid: true,
       popupOpen: true,
-      anchorHidden: true,
       orientation: "vertical",
       side: "top",
       align: "end",

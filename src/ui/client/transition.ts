@@ -1,4 +1,4 @@
-import { applyStateAttrs } from "../state-attrs";
+import { applyStateAttrs, STATE_ATTRS } from "../contracts/state-attrs";
 import { ownerWindow } from "./dom";
 
 /**
@@ -130,7 +130,7 @@ export function mountTransitionState(el: HTMLElement, options: TransitionStateOp
    */
   const onToggle = () => {
     const open = isOpen(el);
-    if (el.hasAttribute("data-open") === open) return;
+    if (el.hasAttribute(STATE_ATTRS.open) === open) return;
     if (open) enter();
     else exit();
   };

@@ -363,11 +363,16 @@ The declared hooks:
 | `data-side` / `data-align` | which side a popup sits on relative to its anchor, and how it aligns along it. Valued |
 | `data-starting-style` / `data-ending-style` | present while animating in / out |
 | `data-popup-open` | on a **trigger**, while the popup it controls is open — the trigger's own state, distinct from `data-open`, which belongs to the popup |
-| `data-anchor-hidden` | on a popup whose anchor has scrolled out of view |
 
 **Adding a styling hook means adding it to that declaration first.** A component that emits a state
 attribute outside the table fails a conformance test — smuggling a hook past it is the exact failure
 the single declaration exists to prevent.
+
+**And a name with no producer is removed, for the same reason.** `data-anchor-hidden` was declared
+here and in `STATE_ATTRS` and written by nothing — no component, no controller. A declared hook that
+is never emitted is the *inverse* of the drift above and just as misleading: a consumer styles against
+it and gets a rule that can never match. It was deleted when the table became public, because after
+publication a deletion is a breaking change. Re-add it with its producer, not before.
 
 **`data-selected` is not `data-checked`.** ARIA models tab selection as `aria-selected`, not
 `aria-checked`, so reusing `data-checked` would announce a tab as a radio; and calling it structural

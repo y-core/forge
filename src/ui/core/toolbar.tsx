@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../state-attrs";
-import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../toolbar-contract";
+import { type Orientation, stateAttrs } from "../contracts/state-attrs";
+import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { asClass, cn } from "./utils/cn";
 
 type ToolbarOrientation = Extract<Orientation, "horizontal" | "vertical">;

@@ -16,12 +16,12 @@ import { registerScope } from "../client/resume";
 import { mountTabs } from "../client/tabs";
 import { mountTooltip } from "../client/tooltip";
 import { mountTransitionState } from "../client/transition";
-import { MENU_SCOPE } from "../menu-contract";
-import { NUMBER_FIELD_SCOPE } from "../number-field-contract";
-import { applyStateAttrs } from "../state-attrs";
-import { TABS_SCOPE } from "../tabs-contract";
-import { COLLAPSIBLE_SCOPE, TOGGLE_SCOPE, TOOLTIP_SCOPE } from "../toggle-contract";
-import { TOOLBAR_ITEM_SELECTOR, TOOLBAR_SCOPE } from "../toolbar-contract";
+import { MENU_SCOPE } from "../contracts/menu-contract";
+import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
+import { applyStateAttrs } from "../contracts/state-attrs";
+import { TABS_SCOPE } from "../contracts/tabs-contract";
+import { COLLAPSIBLE_SCOPE, TOGGLE_SCOPE, TOOLTIP_SCOPE } from "../contracts/toggle-contract";
+import { TOOLBAR_ITEM_SELECTOR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 
 registerScope<"dismiss">("toast", {
   eager: true,

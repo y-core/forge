@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../state-attrs";
+import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
 
 type ScrollOrientation = Extract<Orientation, "horizontal" | "vertical">;

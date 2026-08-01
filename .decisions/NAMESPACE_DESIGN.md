@@ -108,6 +108,30 @@ Rows follow `package.json` `exports` order, which owns the subpath names. The Ke
 column is an orientation aid — **`src/{ns}/mod.ts` is authoritative for what a namespace
 exports.**
 
+**Asset rows are entries whose target is not a module**, and they carry two rules a barrel row does
+not.
+
+**Their `exports` value is a plain string, not a `{types, import}` object.** Tailwind's CSS resolver
+runs `conditionNames: ["style"]`, so neither `types` nor `import` matches and an object entry is
+unreachable from `@import` however correct it looks.
+
+**A family of assets is one subpath pattern, not one key per file.** `./ui/assets/css/*.css` is a
+Node subpath pattern — the supported replacement for the directory exports removed in Node 17 — and
+`files[]` already ships the whole of `src/ui/`, so a new stylesheet is addressable the moment it is
+written. Exactly one `*` is permitted per key and per target, `*` matches greedily across `/`, and
+exact keys take precedence over patterns, so the two forms mix safely.
+
+**What the gate asserts changed with it, and got stronger.** A literal key could only be checked for
+*declaration*; a pattern is checked by **expansion and resolution**. `validate-exports` expands each
+pattern against disk and requires every member to be published and to actually
+`import.meta.resolve`, failing a pattern that matches nothing as dead config. Reverse pass C then
+works the other way — every stylesheet on disk must resolve under some key or pattern. *Reachability
+is the property that ever went wrong here*, and it is now the property being tested: forge shipped 73
+versions of stylesheets that existed, were inside `files[]`, and could not be imported.
+`validate-docs` matches a documented subpath against patterns too, and for a pattern match
+additionally requires the file to exist — otherwise a citation of `theme-forest.css` would satisfy
+the shape and send a reader to a resolution error.
+
 | Export Path | Source | Category | Key Exports |
 |---|---|---|---|
 | `@y-core/forge/app` | `src/app/mod.ts` | Integration | `createApp`, `Forge`, `applyAssets`, `healthCheck`, `definePage`, `defineAction`, `applyMiddlewareChain`; re-exports `validateBindings`, `validateEnv`, `ConfigKey` from `context` |
@@ -137,6 +161,8 @@ exports.**
 | `@y-core/forge/testing` | `src/testing/mod.ts` | Integration | test-only fixtures — see [`TESTING.md`](./TESTING.md) §7 |
 | `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | Leaf | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
 | `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | Leaf | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
+| `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Asset (pattern) | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. `forge-show.css` is that plus the showcase's classes, opt-in. Underneath: `theme-base.css` (semantic tokens over an eleven-stop `--palette-*` ramp, plus the layered component rules), `forge-ui.css` (the utility CSS specific components require), and seven ready-made ramps — `theme-slate.css` is the structural model for an app's own |
+| `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | Leaf | the DOM contract as pure data — `STATE_ATTRS`, `stateAttrs`, `applyStateAttrs`, `SCOPE_EVENTS`, and the scope-name / selector constants each keyboard primitive shares between its SSR and client halves |
 | `@y-core/forge/ui/controls` | `src/ui/controls/mod.ts` | Integration | bound control variants that shadow the `ui/core` names — see §5b |
 | `@y-core/forge/ui/core` | `src/ui/core/mod.ts` | Integration | the SSR component set plus `cn`, `cva` — see [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) |
 | `@y-core/forge/ui/core/client` | `src/ui/core/client.ts` | Integration (sideEffect) | ui/core browser controller registration |

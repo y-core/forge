@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { MENU_SCOPE } from "../menu-contract";
-import { type Align, type Side, stateAttrs } from "../state-attrs";
+import { MENU_SCOPE } from "../contracts/menu-contract";
+import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
 
 interface MenuRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {

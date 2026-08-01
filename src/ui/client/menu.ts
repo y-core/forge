@@ -1,4 +1,4 @@
-import { MENU_ITEM_SELECTOR } from "../menu-contract";
+import { MENU_ITEM_SELECTOR } from "../contracts/menu-contract";
 import { mountRovingFocus } from "./composite";
 import { activeElement, asElement, contains, ownerDocument } from "./dom";
 import { mountTransitionState } from "./transition";

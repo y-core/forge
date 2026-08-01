@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
-import { stateAttrs } from "../state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 

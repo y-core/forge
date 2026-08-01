@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { TURNSTILE } from "../turnstile-contract";
+import { TURNSTILE } from "../contracts/turnstile-contract";
 import { asClass, cn } from "./utils/cn";
 
 export type TurnstileProps = Omit<JSX.IntrinsicElements["div"], "children"> & {

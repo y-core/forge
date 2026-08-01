@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { stateAttrs } from "../state-attrs";
-import { COLLAPSIBLE_SCOPE } from "../toggle-contract";
+import { stateAttrs } from "../contracts/state-attrs";
+import { COLLAPSIBLE_SCOPE } from "../contracts/toggle-contract";
 import { asClass, cn } from "./utils/cn";
 
 interface CollapsibleRootProps extends Omit<JSX.IntrinsicElements["details"], "children"> {

@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../state-attrs";
-import { TABS_SCOPE } from "../tabs-contract";
+import { type Orientation, stateAttrs } from "../contracts/state-attrs";
+import { TABS_SCOPE } from "../contracts/tabs-contract";
 import { asClass, cn } from "./utils/cn";
 
 type TabsOrientation = Extract<Orientation, "horizontal" | "vertical">;

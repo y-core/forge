@@ -7,8 +7,12 @@
  * the browser. Nothing but a shared module keeps those in lockstep, and drift here is *silent* — the
  * selector simply stops matching, so the component looks unstyled rather than broken. This is the
  * same argument that produced `scope-events.ts`, and this module is its sibling: pure data plus pure
- * functions, side-effect-free, safe to import into either bundle. Internal — not part of the
- * package's public export surface.
+ * functions, side-effect-free, safe to import into either bundle.
+ *
+ * The same argument reaches one step further out, which is why this is published rather than
+ * internal: an app consuming forge's components has to *address* this DOM, and with no export its
+ * only option is to re-type every name as a string literal — a third writer of the same attribute,
+ * in a repository this package's gate cannot see.
  *
  * **Boolean states are emitted by presence, with an empty value (`data-open=""`), never `"true"`.**
  * `[data-open]` is a cheaper and more honest selector than `[data-open="true"]`. `aria-*` keeps its
@@ -16,7 +20,10 @@
  * beside `aria-pressed` is that CSS should not have to read ARIA.
  */
 
-/** Every state attribute forge emits. Adding a styling hook means adding it here first. */
+/**
+ * Every state attribute forge emits. Adding a styling hook means adding it here first.
+ * @public
+ */
 export const STATE_ATTRS = {
   /** Present while a popup, disclosure or overlay is open. */
   open: "data-open",
@@ -46,30 +53,43 @@ export const STATE_ATTRS = {
   /** Present on a *trigger* while the popup it controls is open — the trigger's own state, distinct
    * from `open`, which belongs to the popup. */
   popupOpen: "data-popup-open",
-  /** Present on a popup whose anchor has scrolled out of view. */
-  anchorHidden: "data-anchor-hidden",
 } as const;
 
-/** One of the declared state-attribute names. */
+/**
+ * One of the declared state-attribute names.
+ * @public
+ */
 export type StateAttrName = (typeof STATE_ATTRS)[keyof typeof STATE_ATTRS];
 
 /** Layout axis. Composites use `horizontal` / `vertical`; `responsive` is a field-layout value
- * meaning "vertical until the container is wide enough", and only `FormField` emits it. */
+ * meaning "vertical until the container is wide enough", and only `FormField` emits it.
+ * @public
+ */
 export type Orientation = "horizontal" | "vertical" | "responsive";
 
-/** Side a popup is positioned on, relative to its anchor. */
+/**
+ * Side a popup is positioned on, relative to its anchor.
+ * @public
+ */
 export type Side = "top" | "right" | "bottom" | "left";
 
-/** Alignment of a popup along its side. */
+/**
+ * Alignment of a popup along its side.
+ * @public
+ */
 export type Align = "start" | "center" | "end";
 
-/** Animation phase, when a component is transitioning rather than at rest. */
+/**
+ * Animation phase, when a component is transitioning rather than at rest.
+ * @public
+ */
 export type TransitionState = "starting" | "ending";
 
 /**
  * The states a forge component can declare. Every key is optional and an omitted key means
  * "this component has no such state" — which is different from `false`, and matters to
  * {@link applyStateAttrs}, where an omitted key is left untouched rather than removed.
+ * @public
  */
 export interface StateAttrsProps {
   /** `true` → `data-open`, `false` → `data-closed`. The pair is exhaustive. */
@@ -80,7 +100,6 @@ export interface StateAttrsProps {
   disabled?: boolean;
   invalid?: boolean;
   popupOpen?: boolean;
-  anchorHidden?: boolean;
   orientation?: Orientation;
   side?: Side;
   align?: Align;
@@ -101,7 +120,6 @@ const SELECTED_HOOK = { "data-selected": "" };
 const DISABLED_HOOK = { "data-disabled": "" };
 const INVALID_HOOK = { "data-invalid": "" };
 const POPUP_OPEN_HOOK = { "data-popup-open": "" };
-const ANCHOR_HIDDEN_HOOK = { "data-anchor-hidden": "" };
 const STARTING_HOOK = { "data-starting-style": "" };
 const ENDING_HOOK = { "data-ending-style": "" };
 
@@ -115,7 +133,6 @@ const GOVERNS: Record<keyof StateAttrsProps, readonly StateAttrName[]> = {
   disabled: ["data-disabled"],
   invalid: ["data-invalid"],
   popupOpen: ["data-popup-open"],
-  anchorHidden: ["data-anchor-hidden"],
   orientation: ["data-orientation"],
   side: ["data-side"],
   align: ["data-align"],
@@ -126,6 +143,7 @@ const GOVERNS: Record<keyof StateAttrsProps, readonly StateAttrName[]> = {
  * Build the state attributes for an SSR element. Spread the result:
  * `<div {...stateAttrs({ open, side, align })}>`. Falsy presence states emit nothing at all, so an
  * unstyled state costs no bytes.
+ * @public
  */
 export function stateAttrs(state: StateAttrsProps): Record<string, string> {
   return {
@@ -136,7 +154,6 @@ export function stateAttrs(state: StateAttrsProps): Record<string, string> {
     ...(state.disabled ? DISABLED_HOOK : {}),
     ...(state.invalid ? INVALID_HOOK : {}),
     ...(state.popupOpen ? POPUP_OPEN_HOOK : {}),
-    ...(state.anchorHidden ? ANCHOR_HIDDEN_HOOK : {}),
     ...(state.transition === "starting" ? STARTING_HOOK : {}),
     ...(state.transition === "ending" ? ENDING_HOOK : {}),
     ...(state.orientation ? { "data-orientation": state.orientation } : {}),
@@ -153,6 +170,7 @@ export function stateAttrs(state: StateAttrsProps): Record<string, string> {
  * `data-orientation` stamped by SSR alone. Within a touched key the reconciliation is total — the
  * attributes that key owns are set or removed, so `open: false` clears `data-open` *and* writes
  * `data-closed` in one call.
+ * @public
  */
 export function applyStateAttrs(el: Element, state: StateAttrsProps): void {
   const next = stateAttrs(state);

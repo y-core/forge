@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
-import { stateAttrs } from "../state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
 
 /** Whether one item may be pressed at a time, or several. Drives both the group's announced

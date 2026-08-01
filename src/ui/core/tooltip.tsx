@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { type Align, type Side, stateAttrs } from "../state-attrs";
-import { TOOLTIP_SCOPE } from "../toggle-contract";
+import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
+import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
 import { asClass, cn } from "./utils/cn";
 
 interface TooltipRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {

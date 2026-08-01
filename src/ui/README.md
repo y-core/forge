@@ -1,9 +1,10 @@
 # `@y-core/forge/ui`
 
-Source-distributed UI primitives for forge apps, split across twelve import sub-paths. The family
+Source-distributed UI primitives for forge apps, split across thirteen import sub-paths. The family
 covers server-rendered JSX primitives (`@y-core/forge/ui/core`) with their client scopes
 (`@y-core/forge/ui/core/client`), pre-bound signal-binding wrappers (`@y-core/forge/ui/controls`),
-forge's self-owned icon asset manifest (`@y-core/forge/ui/assets`) and its browser-safe glyph parser
+the DOM contract those two halves share (`@y-core/forge/ui/contracts`), forge's self-owned icon asset
+manifest (`@y-core/forge/ui/assets`) and its browser-safe glyph parser
 (`@y-core/forge/ui/assets/glyphs`), browser-side controllers and a framework-free reactive runtime
 (`@y-core/forge/ui/client`), SSR-only stateful components (`@y-core/forge/ui/server`),
 configuration-driven app chrome — navbar, toolbar, theme toggle — (`@y-core/forge/ui/chrome`) with
@@ -26,6 +27,7 @@ configuration.
 - [`@y-core/forge/ui/core`](#y-coreforgeuicore) — server-side JSX component library
 - [`@y-core/forge/ui/core/client`](#y-coreforgeuicoreclient) — toast + alert scopes island (side-effect import)
 - [`@y-core/forge/ui/controls`](#y-coreforgeuicontrols) — pre-bound signal-binding wrapper layer
+- [`@y-core/forge/ui/contracts`](#y-coreforgeuicontracts) — the shared DOM contract as pure data
 - [`@y-core/forge/ui/assets`](#y-coreforgeuiassets) — forge's self-owned icon asset manifest
 - [`@y-core/forge/ui/assets/glyphs`](#y-coreforgeuiassetsglyphs) — browser-safe sprite glyph parser
 - [`@y-core/forge/ui/client`](#y-coreforgeuiclient) — browser controllers + signals runtime
@@ -58,7 +60,77 @@ Without `jsxImportSource: "@y-core/forge/jsx"`, JSX in component files compiles 
 runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
 `/** @jsxImportSource @y-core/forge/jsx */` pragma, so per-file overrides are unnecessary.
 
-### Dark mode with Tailwind v4
+### The stylesheet — one import, one ramp
+
+forge's components are Tailwind utilities over semantic tokens, so an app needs **two** things from
+this package: the tokens, and the *generated rules* for the utility classes the components emit.
+A single import supplies both:
+
+```css
+/* your app's stylesheet */
+@import "tailwindcss";
+@import "@y-core/forge/ui/assets/css/forge.css";
+```
+
+**Why one import rather than importing `theme-base.css` directly.** Tailwind v4's automatic content
+scan **ignores `node_modules`**, so without help none of forge's classes are ever generated — the
+markup renders and every class on it has no rule. `forge.css` carries `@source` paths for
+`ui/core`, `ui/chrome` and `ui/controls` that resolve **relative to itself**, which is the only form
+that survives pnpm, a workspace, a git dependency and a monorepo alike. Writing them consumer-side
+would mean hardcoding `../../node_modules/@y-core/forge/…`, which is wrong under most of those.
+
+Use `@y-core/forge/ui/assets/css/forge-show.css` instead if the app mounts
+[`@y-core/forge/ui/show`](#y-coreforgeuishow) — same file plus the showcase's own classes, kept
+opt-in so an app that does not mount it pays nothing.
+
+#### Supply a `--palette-*` ramp
+
+`theme-base.css` maps every semantic token — `--background`, `--primary`, `--border`, `--sidebar`
+and the rest — onto **eleven stops, `--palette-50` through `--palette-950`**, overriding only where
+it diverges from that mapping. Supplying the ramp is how an app themes forge, and any
+`theme-*.css` in `src/ui/assets/css/` is a working example: an app's own ramp is structurally
+identical to `theme-slate.css`.
+
+```css
+:root {
+  --palette-50:  oklch(0.98 0.003 250);
+  /* … through … */
+  --palette-950: oklch(0.16 0.010 250);
+}
+```
+
+**Override an individual token on top of the ramp** for the cases a ramp cannot express — a brand
+hue is one, and in forge's vocabulary a brand hue is `--primary`, not `--accent`:
+
+```css
+:root { --primary: var(--color-brand-accent); }
+```
+
+That is the supported extension point in both directions: the ramp is the general case, per-token
+override is the tail. There is no `unstyled` escape hatch, deliberately — see the note on layers
+below for why one would not solve the problem it looks like it solves.
+
+#### Component rules are in `@layer components`
+
+Everything below `theme-base.css`'s token blocks is layered, so **a utility you pass at the call
+site wins over a component default** — `<Dialog class="max-w-sm">` narrows the dialog, as it reads.
+(These rules were unlayered before `v0.0.74`, and unlayered CSS outranks *all* layered CSS whatever
+its selector weight, so such a `max-w-sm` silently did nothing.)
+
+**If your app's own component rules lose to forge's utilities, the fight is between layers, not
+selectors.** `@import "tailwindcss"` declares `@layer theme, base, components, utilities;`, so rules
+you put in `@layer components` lose to every forge utility in `@layer utilities` regardless of
+specificity. Declare a layer of your own *after* `utilities` and put them there:
+
+```css
+@import "tailwindcss";
+@import "@y-core/forge/ui/assets/css/forge.css";
+
+@layer app;              /* declared last — so it wins */
+@layer app { /* your chrome rules */ }
+```
+
+#### Dark mode with Tailwind v4
 
 Forge's palette is a set of CSS custom properties that `.dark` on `<html>` re-maps, resolved at
 runtime through `@theme inline`. **So every forge component works in dark mode with no extra setup**
@@ -460,6 +532,73 @@ Pair it with the client-side `bindGroup(signals)` action, which reads `data-fiel
 click and writes the raw string into the matching signal, bypassing `parseControlValue` (button groups
 can't express boolean/number values). The `bindField` action handles `Input` / `Textarea` / `Switch`
 / `Slider` / `Select`.
+
+---
+
+## `@y-core/forge/ui/contracts`
+
+> Import path: `@y-core/forge/ui/contracts` → `src/ui/contracts/mod.ts`
+> **Runtime-neutral.** Pure data and pure functions — no DOM, no Node built-ins, no side effects.
+> Safe in a Worker, a browser bundle, or a build script.
+
+### Features
+
+The names forge's SSR components and its browser controllers **both** write, declared once so they
+cannot drift. A state attribute or a scope name is written in two places that cannot see each other —
+a `.tsx` running on the Worker and a `.ts` running in the browser — and drift between them is
+*silent*: the selector stops matching, so the component looks unstyled rather than broken.
+
+**That argument reaches one step further out, which is why these are published rather than internal.**
+An app consuming forge's components has to address the same DOM — stamp a `data-scope`, select on
+`data-open`, mark an element `data-toolbar-item`. With no export its only option is to re-type each
+name as a string literal, making it a third writer of the same attribute, in a repository forge's gate
+cannot see.
+
+### Usage
+
+```typescript
+import { applyStateAttrs, MENU_ITEM_SELECTOR, SCOPE_EVENTS, TOOLBAR_ITEM_ATTR } from "@y-core/forge/ui/contracts";
+
+// Reconcile a live element's published state — never hand-write `data-open` / `data-closed`.
+applyStateAttrs(panel, { open: true });
+
+// Build a row the Menu controller will navigate, with nothing forge-specific to remember.
+row.setAttribute("role", "menuitem");
+row.matches(MENU_ITEM_SELECTOR);   // → true
+```
+
+**Import the modules, not the barrel, in code you bundle.** `@y-core/forge/ui/contracts` is a
+convenience for a consumer; forge's own components import each module directly
+(`../contracts/state-attrs`) so a bundle retains one table rather than eight.
+
+### Core Components & APIs
+
+| Export | Kind | Description |
+|---|---|---|
+| `STATE_ATTRS` | `const` | Every state attribute forge emits, keyed by state name. Adding a styling hook means adding it here first — a component emitting one outside the table fails a conformance test. |
+| `stateAttrs(state)` | function | Builds the attributes for an SSR element: `<div {...stateAttrs({ open, side, align })}>`. A falsy presence state emits nothing at all. |
+| `applyStateAttrs(el, state)` | function | The browser half. Only the keys present in `state` are touched, and within a touched key reconciliation is total — `open: false` clears `data-open` **and** writes `data-closed` in one call. |
+| `SCOPE_EVENTS` | `const` tuple | `["click", "input", "change", "submit"]` — the events a resumable scope delegates on. **There is no `keydown`, by decision:** a composite controller owns keyboard at its own widget root, because arrow keys are scoped to a widget, not to a page region. |
+| `MENU_SCOPE`, `MENU_ITEM_SELECTOR` | `const` | The Menu popup's scope name, and its items **by ARIA role** rather than by a forge marker — so a row built in the browser is navigable the moment it is correctly roled. |
+| `TOOLBAR_SCOPE`, `TOOLBAR_ITEM_ATTR`, `TOOLBAR_ITEM_SELECTOR` | `const` | The Toolbar root's scope name and its roving-focus stop marker. An explicit marker rather than a `data-slot^='toolbar-'` prefix match, because `Toolbar.Group` and `Toolbar.Separator` are toolbar slots that must **not** be focus stops. |
+| `TABS_SCOPE`, `TAB_SELECTOR`, `TABLIST_SELECTOR` | `const` | Tabs' scope name and its two role selectors. |
+| `TOGGLE_SCOPE`, `COLLAPSIBLE_SCOPE`, `TOOLTIP_SCOPE`, `NUMBER_FIELD_SCOPE` | `const` | The remaining scope names registered by `@y-core/forge/ui/core/client`. |
+| `TURNSTILE`, `TURNSTILE_SCRIPT_SRC`, `TURNSTILE_SCRIPT_TIMEOUT_MS` | `const` | The `data-ref` values, script URL and load budget shared by `<Turnstile>` and `mountTurnstile()`. |
+
+**Boolean states are emitted by presence with an empty value — `data-open=""`, never `"true"`.**
+`[data-open]` is a cheaper and more honest selector than `[data-open="true"]`. `aria-*` keeps its
+`"true"` / `"false"` string form because WAI-ARIA requires it; the whole point of `data-pressed`
+beside `aria-pressed` is that CSS should not have to read ARIA.
+
+> **Consuming apps: match that grammar.** An app that writes `data-open="true"` onto a forge component
+> puts one attribute name with two value grammars into a single document — precisely the drift this
+> namespace exists to prevent, re-created one repository further out. Assert on presence
+> (`toHaveAttribute("data-open", "")`), and pair it with the platform's own state
+> (`toHaveJSProperty("open", true)`) where the element has one.
+
+### Types
+
+`StateAttrName`, `StateAttrsProps`, `Orientation`, `Side`, `Align`, `TransitionState`, `ScopeEvent`.
 
 ---
 

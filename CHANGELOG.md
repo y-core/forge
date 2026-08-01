@@ -10,10 +10,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
-## [0.0.x] — unreleased
-
-<!-- Set the version and date when the tag is cut. `bun run release` infers the bump from the last
-     commit subject: a `major:` or `minor:` prefix, otherwise patch. -->
+## [0.0.73] — 2026-08-01
 
 The Base UI refactor of `@y-core/forge/ui`. Eleven new SSR primitives, seven new client controllers,
 and a real composite-widget layer — one tab stop per widget, arrow keys, typeahead, RTL, focus

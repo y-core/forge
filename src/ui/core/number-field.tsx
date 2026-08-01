@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { NUMBER_FIELD_SCOPE } from "../number-field-contract";
+import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
 import { asClass, cn } from "./utils/cn";
 
 interface NumberFieldRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {

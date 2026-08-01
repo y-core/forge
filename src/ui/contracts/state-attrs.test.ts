@@ -4,7 +4,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyStateAttrs, STATE_ATTRS, stateAttrs } from "./state-attrs";
 
-const UI_DIR = dirname(fileURLToPath(import.meta.url));
+/** `src/ui/`, the whole tree the conformance sweep below covers — the *parent* of this file's own
+ * directory. Resolving it from `import.meta.url` without stepping up would narrow the sweep to
+ * `contracts/`, which holds no component markup at all: the test would pass while asserting
+ * nothing. */
+const UI_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
  * **Structural** `data-*` attributes — anatomy, wiring and component-specific metadata, none of
@@ -120,11 +124,10 @@ describe("stateAttrs", () => {
     expect(stateAttrs({ transition: "ending" })).toEqual({ "data-ending-style": "" });
   });
 
-  it("declares exactly the fourteen names of the convention", () => {
+  it("declares exactly the thirteen names of the convention", () => {
     expect(Object.values(STATE_ATTRS).sort()).toEqual(
       [
         "data-align",
-        "data-anchor-hidden",
         "data-checked",
         "data-closed",
         "data-disabled",

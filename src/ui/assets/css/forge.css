@@ -1,0 +1,39 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   The one import a consuming app needs:
+
+     @import "tailwindcss";
+     @import "@y-core/forge/ui/assets/css/forge.css";
+
+   Two things a consumer must still supply, because neither is forge's to decide:
+
+   1. **A `--palette-50` … `--palette-950` ramp.** `theme-base.css` maps every semantic token
+      (`--background`, `--primary`, `--border`, …) onto those eleven stops and overrides only where
+      it diverges. Any `theme-*.css` in this directory is a working example, and an app's own ramp is
+      structurally identical to `theme-slate.css` — that is the supported extension point. Override an
+      individual token on top of the ramp for the cases a ramp cannot express (a brand hue is
+      `--primary`, not `--accent`).
+
+   2. **`@custom-variant dark (&:where(.dark, .dark *));`** if the app writes its own `dark:`
+      utilities. Tailwind v4 defaults that variant to `prefers-color-scheme`, so without the line an
+      app's `dark:` follows the *operating system* while every forge component follows the *user's
+      choice* — and the two disagree the moment someone picks a theme that is not `system`.
+
+   For the showcase's classes as well, import `./forge-show.css` instead of this file.
+  ────────────────────────────────────────────────────────────────────────────── */
+
+@import "./theme-base.css";
+@import "./forge-ui.css";
+
+/* Tailwind's automatic content scan ignores `node_modules`, so a consumer's build generates none of
+   the utility classes forge's components emit — the markup renders and every class on it has no
+   rule. These `@source` paths fix that from inside the package.
+
+   They are **relative to this file's directory**, which is the only form that survives every install
+   shape: Tailwind records `{base: context.base}` per imported file, so the paths resolve against
+   wherever forge actually landed. Declaring them consumer-side would mean writing
+   `../../node_modules/@y-core/forge/src/ui/core`, which is wrong under pnpm, wrong in a workspace,
+   and wrong for a git dependency. */
+@source "../../core";
+@source "../../chrome";
+@source "../../controls";
+@source not "../../**/*.test.tsx";

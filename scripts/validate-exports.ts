@@ -162,11 +162,94 @@ const barrelDirs = new Set<string>();
 // each owns its own `@public` symbols via its own subpath, so a parent barrel's source→barrel scan
 // must not demand them (see `collectOwnedSourceFiles`).
 const ownExportTargetFiles = new Set<string>();
-for (const entry of Object.values(pkgExports)) {
+for (const [specifier, entry] of Object.entries(pkgExports)) {
   const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
   if (!rawPath) continue;
+  if (specifier.includes("*")) continue; // a pattern names no single file — expanded below instead
   if (rawPath.endsWith("/mod.ts")) barrelDirs.add(dirname(resolve(ROOT, rawPath)));
   else ownExportTargetFiles.add(resolve(ROOT, rawPath));
+}
+
+// ── Subpath patterns ─────────────────────────────────────────────────────────────────────────────
+// A key containing `*` (Node's subpath pattern, the replacement for the removed directory exports)
+// names a *family* rather than a file. Every check below therefore works on the family's actual
+// members, expanded from disk — which is strictly stronger than what a literal key can assert: a
+// literal key proves a subpath was *declared*, an expanded pattern proves each real file is
+// *reachable*. That second question is the one whose absence let forge ship 73 versions of
+// unaddressable stylesheets.
+//
+// Spec constraints this relies on: exactly one `*` per key and per target, and `*` matches greedily
+// across `/`. Exact keys take precedence over patterns, so the two forms mix safely.
+
+interface PatternEntry {
+  specifier: string;
+  keyPrefix: string;
+  keySuffix: string;
+  targetPrefix: string;
+  targetSuffix: string;
+}
+
+const patternEntries: PatternEntry[] = [];
+for (const [specifier, entry] of Object.entries(pkgExports)) {
+  if (!specifier.includes("*")) continue;
+  const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
+  if (!rawPath) continue;
+  const [keyPrefix, ...keyRest] = specifier.split("*");
+  const [targetPrefix, ...targetRest] = rawPath.split("*");
+  if (keyRest.length !== 1 || targetRest.length !== 1) {
+    console.error(`FAIL ${specifier}: a subpath pattern may contain exactly one \`*\` in the key and one in the target`);
+    failed = true;
+    continue;
+  }
+  patternEntries.push({ specifier, keyPrefix, keySuffix: keyRest[0], targetPrefix, targetSuffix: targetRest[0] });
+}
+
+/** Repo-relative paths (`src/…`, no `./`) of every file a pattern's target matches on disk. */
+function expandPattern(entry: PatternEntry): string[] {
+  const prefix = entry.targetPrefix.startsWith("./") ? entry.targetPrefix.slice(2) : entry.targetPrefix;
+  // Walk from the deepest static directory the prefix names. `*` matches across `/`, so the walk
+  // must recurse rather than list one level.
+  const staticDir = prefix.slice(0, prefix.lastIndexOf("/") + 1);
+  const root = resolve(ROOT, staticDir);
+  if (!existsSync(root)) return [];
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const item of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolve(dir, item.name);
+      if (item.isDirectory()) walk(full);
+      else if (item.isFile()) {
+        const rel = relative(ROOT, full);
+        if (rel.startsWith(prefix) && rel.endsWith(entry.targetSuffix) && rel.length >= prefix.length + entry.targetSuffix.length) {
+          out.push(rel);
+        }
+      }
+    }
+  };
+  walk(root);
+  return out.sort();
+}
+
+/** The consumer specifier a pattern member is reachable under — the `*` substituted into the key. */
+function specifierForMember(entry: PatternEntry, relPath: string): string {
+  const prefix = entry.targetPrefix.startsWith("./") ? entry.targetPrefix.slice(2) : entry.targetPrefix;
+  const star = relPath.slice(prefix.length, relPath.length - entry.targetSuffix.length);
+  return `${PACKAGE_NAME}${entry.keyPrefix.slice(1)}${star}${entry.keySuffix}`;
+}
+
+/** Literal `exports` targets, repo-relative — the exact-key half of "is this file exported?". */
+const exportedTargets = new Set<string>();
+for (const [specifier, entry] of Object.entries(pkgExports)) {
+  if (specifier.includes("*")) continue;
+  const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
+  if (rawPath) exportedTargets.add(rawPath.startsWith("./") ? rawPath.slice(2) : rawPath);
+}
+
+/** The pattern that covers `relPath`, if any — exact keys are checked by the caller first. */
+function patternCovering(relPath: string): PatternEntry | undefined {
+  return patternEntries.find((entry) => {
+    const prefix = entry.targetPrefix.startsWith("./") ? entry.targetPrefix.slice(2) : entry.targetPrefix;
+    return relPath.startsWith(prefix) && relPath.endsWith(entry.targetSuffix) && relPath.length >= prefix.length + entry.targetSuffix.length;
+  });
 }
 
 function isPublished(rawPath: string): boolean {
@@ -189,6 +272,44 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
     continue;
   }
 
+  // A pattern names a family, so it is checked member by member: every file the target matches must
+  // be published *and* actually resolve under the specifier the key mints for it. An empty expansion
+  // is dead config — a key nothing can ever reach — and fails rather than passing vacuously.
+  const pattern = patternEntries.find((p) => p.specifier === specifier);
+  if (pattern) {
+    const members = expandPattern(pattern);
+    if (members.length === 0) {
+      console.error(`FAIL ${specifier}: pattern matches no file on disk — nothing is reachable under it`);
+      failed = true;
+      continue;
+    }
+    let patternOk = true;
+    for (const member of members) {
+      // Modules need the barrel and `@public` passes below, which have no meaning for a family.
+      // Fail closed rather than skip them silently.
+      if (/\.tsx?$/.test(member)) {
+        console.error(`FAIL ${specifier}: expands to the module ${member} — patterns are for assets; give a module its own key`);
+        patternOk = false;
+        continue;
+      }
+      if (!isPublished(`./${member}`)) {
+        console.error(`FAIL ${specifier}: ${member} is not covered by package.json files`);
+        patternOk = false;
+        continue;
+      }
+      const consumerSpecifier = specifierForMember(pattern, member);
+      try {
+        import.meta.resolve(consumerSpecifier);
+      } catch (err) {
+        console.error(`FAIL ${specifier}: ${member} is published but unresolvable as ${consumerSpecifier} — ${err}`);
+        patternOk = false;
+      }
+    }
+    if (patternOk) console.log(`  ok ${specifier} (pattern — ${members.length} members resolve)`);
+    else failed = true;
+    continue;
+  }
+
   const filePath = resolve(ROOT, rawPath);
   if (!existsSync(filePath)) {
     console.error(`FAIL ${specifier}: barrel file not found at ${rawPath}`);
@@ -199,6 +320,23 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   if (!isPublished(rawPath)) {
     console.error(`FAIL ${specifier}: ${rawPath} is not covered by package.json files`);
     failed = true;
+    continue;
+  }
+
+  // Asset entries (CSS today) are not barrels and have no symbols to parse — keyed on the target's
+  // extension rather than on an allowlist, so a new asset kind needs no edit here. The check that
+  // earns this branch is the resolve: an entry can exist on disk, be inside files[], and still be
+  // unreachable from a consumer, which is exactly how forge shipped 73 versions of unaddressable
+  // stylesheets. `existsSync` and `isPublished` have already run above.
+  if (!/\.tsx?$/.test(rawPath)) {
+    const consumerSpecifier = `${PACKAGE_NAME}${specifier.slice(1)}`;
+    try {
+      import.meta.resolve(consumerSpecifier);
+      console.log(`  ok ${specifier} (asset — resolves as ${consumerSpecifier})`);
+    } catch (err) {
+      console.error(`FAIL ${specifier}: published but unresolvable as ${consumerSpecifier} — ${err}`);
+      failed = true;
+    }
     continue;
   }
 
@@ -284,11 +422,6 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
 // map, so a namespace shipped in files[] but never wired into `exports` (e.g. an unpublished
 // `storage/r2`) would slip through — this catches that whole drift class by construction.
 console.log("\nChecking every src `mod.ts` barrel is exported (or sealed-internal)...");
-const exportedTargets = new Set<string>();
-for (const entry of Object.values(pkgExports)) {
-  const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
-  if (rawPath) exportedTargets.add(rawPath.startsWith("./") ? rawPath.slice(2) : rawPath);
-}
 
 function collectModFiles(dir: string): string[] {
   const out: string[] = [];
@@ -304,7 +437,7 @@ function collectModFiles(dir: string): string[] {
 }
 
 for (const modFile of collectModFiles(resolve(ROOT, "src"))) {
-  if (exportedTargets.has(modFile) || SEALED_INTERNAL.has(modFile)) {
+  if (exportedTargets.has(modFile) || patternCovering(modFile) || SEALED_INTERNAL.has(modFile)) {
     console.log(`  ok ${modFile}`);
   } else {
     console.error(`FAIL ${modFile}: barrel is not a package.json exports target and not on the sealed-internal allowlist`);
@@ -321,6 +454,51 @@ for (const entry of PUBLISHED_FILES) {
     console.log(`  ok ${entry}`);
   } else {
     console.error(`FAIL files[]: ${entry} does not exist on disk`);
+    failed = true;
+  }
+}
+
+// Reverse pass C (stylesheets → consumer): every stylesheet on disk must actually **resolve** for a
+// consumer. `files[]` ships the whole of `src/ui/`, so a new `theme-forest.css` is inside the tarball
+// the moment it is written — and an `exports` map makes every subpath it does not cover unreachable,
+// so the file would ship and be unnameable with nothing to say so.
+//
+// The assertion is reachability, not declaration, and that distinction is the point. Whether a
+// stylesheet is named by an exact key or swept up by a subpath pattern is forge's business; whether a
+// consumer's `@import` finds it is the consumer's, and it is the only thing that ever went wrong
+// here. So this pass derives each file's consumer specifier from the map and then *resolves* it —
+// which also catches a file that is covered by a key but excluded by a `files[]` negation, a case the
+// old declaration-only check passed.
+console.log("\nChecking every stylesheet resolves for a consumer...");
+const CSS_DIR = "src/ui/assets/css";
+for (const entry of readdirSync(resolve(ROOT, CSS_DIR)).sort()) {
+  if (!entry.endsWith(".css")) continue;
+  const relPath = `${CSS_DIR}/${entry}`;
+
+  let consumerSpecifier: string | undefined;
+  if (exportedTargets.has(relPath)) {
+    const key = Object.entries(pkgExports).find(([spec, value]) => {
+      if (spec.includes("*")) return false;
+      const target = typeof value === "string" ? value : (value.import ?? value.types);
+      return target && (target.startsWith("./") ? target.slice(2) : target) === relPath;
+    })?.[0];
+    if (key) consumerSpecifier = `${PACKAGE_NAME}${key.slice(1)}`;
+  } else {
+    const pattern = patternCovering(relPath);
+    if (pattern) consumerSpecifier = specifierForMember(pattern, relPath);
+  }
+
+  if (!consumerSpecifier) {
+    console.error(`FAIL ${relPath}: no exports key or pattern covers it — consumers cannot @import it`);
+    failed = true;
+    continue;
+  }
+
+  try {
+    import.meta.resolve(consumerSpecifier);
+    console.log(`  ok ${relPath} → ${consumerSpecifier}`);
+  } catch (err) {
+    console.error(`FAIL ${relPath}: covered by the exports map but unresolvable as ${consumerSpecifier} — ${err}`);
     failed = true;
   }
 }

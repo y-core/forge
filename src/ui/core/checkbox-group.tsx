@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../state-attrs";
+import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { FieldDescription, FieldError, fieldDescriptionId, fieldErrorId, fieldId } from "./field";
 import { asClass, cn } from "./utils/cn";
 

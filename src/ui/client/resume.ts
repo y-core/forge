@@ -10,7 +10,7 @@
  * @public
  */
 
-import { SCOPE_EVENTS } from "../scope-events";
+import { SCOPE_EVENTS } from "../contracts/scope-events";
 import { closestAcross, eventTarget, ownerDocument } from "./dom";
 import { createSignal, effect, type Signal } from "./signal";
 

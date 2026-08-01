@@ -5,7 +5,37 @@ import pkg from "../package.json" with { type: "json" };
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_NAME = (pkg as { name: string }).name;
-const EXPORT_SUBPATHS = new Set(Object.keys((pkg as { exports?: Record<string, unknown> }).exports ?? {}));
+const PKG_EXPORTS = (pkg as { exports?: Record<string, { import?: string; types?: string } | string> }).exports ?? {};
+const EXPORT_SUBPATHS = new Set(Object.keys(PKG_EXPORTS).filter((key) => !key.includes("*")));
+
+/**
+ * Exact keys plus Node's subpath patterns, and a pattern match carries **one extra assertion an
+ * exact key does not need**: the file it names must exist.
+ *
+ * An exact key is proven real by `validate-exports`, so a doc citing it is citing something that
+ * resolves. A pattern matches by shape, so `…/theme-forest.css` would satisfy `…/css/*.css` whether
+ * or not that file was ever written — the check would pass while sending a reader to a resolution
+ * error. Resolving the pattern's target back to disk is what keeps this as strong as it was before
+ * patterns existed.
+ */
+const EXPORT_PATTERNS = Object.entries(PKG_EXPORTS)
+  .filter(([key]) => key.includes("*"))
+  .map(([key, value]) => {
+    const target = typeof value === "string" ? value : (value.import ?? value.types);
+    const [keyPrefix, keySuffix] = key.split("*");
+    const [targetPrefix, targetSuffix] = (target ?? "").split("*");
+    return { keyPrefix, keySuffix, targetPrefix, targetSuffix };
+  });
+
+function isExportSubpath(subpath: string): boolean {
+  if (EXPORT_SUBPATHS.has(subpath)) return true;
+  return EXPORT_PATTERNS.some(({ keyPrefix, keySuffix, targetPrefix, targetSuffix }) => {
+    if (!subpath.startsWith(keyPrefix) || !subpath.endsWith(keySuffix)) return false;
+    if (subpath.length < keyPrefix.length + keySuffix.length) return false;
+    const star = subpath.slice(keyPrefix.length, subpath.length - keySuffix.length);
+    return existsSync(resolve(ROOT, `${targetPrefix}${star}${targetSuffix}`));
+  });
+}
 
 const DECISIONS_DIR = resolve(ROOT, ".decisions");
 const GUIDE_INDEX_OWNER = "CLAUDE.md";
@@ -111,8 +141,8 @@ function checkImportPaths(file: string, source: string): void {
 
       const subpath = `.${raw.replace(/[.\-/]+$/, "")}`;
       if (DOCUMENTED_NON_EXPORTS.has(subpath)) continue;
-      if (!EXPORT_SUBPATHS.has(subpath)) {
-        fail(file, `line ${i + 1}: \`${PACKAGE_NAME}${raw}\` is not a key in package.json exports`);
+      if (!isExportSubpath(subpath)) {
+        fail(file, `line ${i + 1}: \`${PACKAGE_NAME}${raw}\` is not reachable through package.json exports`);
       }
     }
   }

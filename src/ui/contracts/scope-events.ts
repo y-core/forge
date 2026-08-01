@@ -4,12 +4,18 @@
  * helper (`ui/server/scope-attrs.ts` emits one `data-on-<event>` per entry). Keeping both in
  * lockstep prevents the listener set and the emitted attributes from drifting apart.
  *
- * Pure data, side-effect-free — safe to import into either bundle. Internal: not part of the
- * package's public export surface.
+ * Pure data, side-effect-free — safe to import into either bundle, and published so an app
+ * registering its own scope reads this vocabulary rather than re-typing it.
  */
 
-/** The DOM events a resumable scope delegates on. */
+/**
+ * The DOM events a resumable scope delegates on.
+ * @public
+ */
 export const SCOPE_EVENTS = ["click", "input", "change", "submit"] as const;
 
-/** One of the delegated scope events. */
+/**
+ * One of the delegated scope events.
+ * @public
+ */
 export type ScopeEvent = (typeof SCOPE_EVENTS)[number];

@@ -1,4 +1,4 @@
-import { TURNSTILE, TURNSTILE_SCRIPT_SRC, TURNSTILE_SCRIPT_TIMEOUT_MS } from "../turnstile-contract";
+import { TURNSTILE, TURNSTILE_SCRIPT_SRC, TURNSTILE_SCRIPT_TIMEOUT_MS } from "../contracts/turnstile-contract";
 import { ownerDocument, ownerWindow } from "./dom";
 
 interface TurnstileAPI {

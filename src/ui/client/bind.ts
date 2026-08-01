@@ -1,4 +1,4 @@
-import { applyStateAttrs } from "../state-attrs";
+import { applyStateAttrs } from "../contracts/state-attrs";
 import { closestAcross } from "./dom";
 import type { ResumeContext } from "./resume";
 import type { SignalRecord } from "./signal-record";

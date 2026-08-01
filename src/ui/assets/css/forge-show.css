@@ -1,0 +1,7 @@
+/* forge.css plus the component showcase's own classes.
+   Opt-in rather than folded into `forge.css`: an app that does not mount `@y-core/forge/ui/show`
+   should not pay for the utilities its demo markup uses. */
+
+@import "./forge.css";
+
+@source "../../show";

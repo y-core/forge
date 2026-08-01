@@ -166,6 +166,11 @@
       "types": "./src/ui/assets/glyphs.ts",
       "import": "./src/ui/assets/glyphs.ts"
     },
+    "./ui/assets/css/*.css": "./src/ui/assets/css/*.css",
+    "./ui/contracts": {
+      "types": "./src/ui/contracts/mod.ts",
+      "import": "./src/ui/contracts/mod.ts"
+    },
     "./ui/controls": {
       "types": "./src/ui/controls/mod.ts",
       "import": "./src/ui/controls/mod.ts"

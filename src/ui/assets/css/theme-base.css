@@ -159,6 +159,19 @@ from the base stop-mapping below.
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* ── Component rules ──────────────────────────────────────────────────────
+   Everything below is inside `@layer components`, and that is load-bearing rather than tidy.
+
+   Unlayered CSS outranks *all* layered CSS, whatever the selector weight, so these rules used to
+   beat every Tailwind utility unconditionally — including the ones forge's own components and its
+   showcase set on the very elements these select. `@layer components` puts them where a caller's
+   utility can win, which is the relationship a component default is supposed to have.
+
+   The `:root`, `.dark` and `@theme inline` blocks above deliberately stay outside any layer: a
+   custom-property declaration is not a cascade participant in this sense, and `@theme` is a Tailwind
+   at-rule that has to be seen at the top level. */
+@layer components {
+
 /* ── Native Popover / Dialog primitives ───────────────────────────────────
    Popover panels and toolbar flyouts render in the top layer (popover="auto"),
    so normal-flow positioning can't reach the trigger. CSS Anchor Positioning
@@ -202,7 +215,9 @@ from the base stop-mapping below.
   [data-slot="toolbar-flyout"] { inset: auto auto 1rem 1rem; }
 }
 
-/* Modal dialogs center in the viewport; the platform provides the ::backdrop. */
+/* Modal dialogs center in the viewport; the platform provides the ::backdrop.
+   These are *defaults*: now that this block is layered, a caller's `max-w-sm` on the same
+   `<dialog>` wins, which is what it always read as and never did. */
 [data-slot="dialog"] {
   margin: auto;
   max-width: calc(100vw - 2rem);
@@ -210,4 +225,6 @@ from the base stop-mapping below.
 }
 [data-slot="dialog"]::backdrop {
   background-color: rgb(0 0 0 / 0.5);
+}
+
 }

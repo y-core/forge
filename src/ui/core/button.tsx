@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { cloneElement, isValidElement } from "../../jsx/element";
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { stateAttrs } from "../state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 

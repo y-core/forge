@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { stateAttrs } from "../state-attrs";
-import { TOGGLE_SCOPE } from "../toggle-contract";
+import { stateAttrs } from "../contracts/state-attrs";
+import { TOGGLE_SCOPE } from "../contracts/toggle-contract";
 import { asClass, cn } from "./utils/cn";
 
 type ToggleProps = Omit<JSX.IntrinsicElements["button"], "children"> & { pressed?: boolean; children?: JSXNode };

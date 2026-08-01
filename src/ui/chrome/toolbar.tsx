@@ -1,14 +1,14 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { stateAttrs } from "../contracts/state-attrs";
+import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { Button } from "../core/button";
 import type { ForgeIcon } from "../core/icon";
 import { asClass, cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { commandAttrs } from "../server/command-attrs";
 import { scopeAttrs } from "../server/scope-attrs";
-import { stateAttrs } from "../state-attrs";
-import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../toolbar-contract";
 
 /** Root rail item that fires a delegated action immediately on click. @public */
 export interface ToolbarAction<A extends string = string> {

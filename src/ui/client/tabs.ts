@@ -1,5 +1,5 @@
-import { applyStateAttrs } from "../state-attrs";
-import { TAB_SELECTOR, TABLIST_SELECTOR } from "../tabs-contract";
+import { applyStateAttrs } from "../contracts/state-attrs";
+import { TAB_SELECTOR, TABLIST_SELECTOR } from "../contracts/tabs-contract";
 import { mountRovingFocus } from "./composite";
 import { closestAcross, eventTarget, ownerDocument } from "./dom";
 
