@@ -14,12 +14,17 @@ function runnableCommands(root: CommandBase): CommandBase[] {
 }
 
 describe("createAssetsCommands", () => {
-  it("registers the six asset subcommands", () => {
+  it("registers the seven asset subcommands", () => {
     const root = createAssetsCommands();
     const names = runnableCommands(root)
       .map((c) => c.name)
       .sort();
-    expect(names).toEqual(["all", "css", "fonts", "icons", "js", "sprites"]);
+    expect(names).toEqual(["all", "css", "fonts", "icons", "js", "sprites", "types"]);
+  });
+
+  it("puts `types` at the root, not under `build` — it builds nothing", () => {
+    const root = createAssetsCommands();
+    expect(root.commands.map((c) => c.name).sort()).toEqual(["build", "sprites", "types"]);
   });
 
   it("gives every runnable subcommand the shared config flag", () => {

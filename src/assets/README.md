@@ -26,7 +26,7 @@ See [`.decisions/ASSET_AND_BUILD_TOOLING.md`](../../.decisions/ASSET_AND_BUILD_T
 - **Favicon / PWA icons** — `buildIcons` rasterises a master SVG (via `sharp`) into SVG, PNG, ICO, and a web-app `manifest.json`.
 - **Font downloads** — `buildFonts` fetches remote fonts into the public directory with on-disk caching.
 - **Content hashing** — with `minify: true`, every emitted file gets an 8-char SHA-256 stem (`styles.abc12345.css`) and an immutable `_headers` cache rule is written.
-- **Generated typed module** — `buildAll` writes `.forge/assets.ts` exporting an `assets` manifest plus per-sprite-group typed `*Icon` components.
+- **Generated typed module** — `buildAll` writes `.forge/assets.ts` exporting an `assets` manifest plus per-sprite-group typed `*Icon` components. `forge-assets types` emits the same module from config alone, so a clean checkout can typecheck and test without running a build.
 - **Path-containment safety** — `safeJoin` guards every config-supplied output path against escaping the asset root.
 - **Incremental state** — `loadState`/`hasChanged`/`markBuilt`/`saveState` track per-file hashes for watch-mode skip logic.
 
@@ -189,6 +189,7 @@ When the config has sprite groups, the generated module also exports a typed ico
 | Export | Signature | Purpose |
 |---|---|---|
 | `buildAll` | `(config: ResolvedConfig, opts?: BuildOptions) => Promise<void>` | Runs the full pipeline and writes `.forge/assets.ts` |
+| `generateAssetsTypes` | `(config: ResolvedConfig, opts?: { assetsPath? }) => Promise<void>` | Writes `.forge/assets.ts` from config alone — no build, no toolchain |
 | `buildJS` | `(bundles: ResolvedJsBundle[], opts: { outDir; minify?; hash? }) => Promise<Record<string, string>>` | esbuild bundling; returns logical→output mapping |
 | `buildCSS` | `(cssBuild: CssBuild, opts: { outDir; minify?; hash? }) => Record<string, string>` | Tailwind build for one entry |
 | `buildSprites` | `(sprites: Sprites, publicDir: string, opts?: { hash? }) => Promise<SpriteBuildResult>` | Assembles all sprite groups |
@@ -213,7 +214,7 @@ When the config has sprite groups, the generated module also exports a typed ico
 ### `@y-core/forge/assets/build` — sprite results & incremental state
 
 `SpriteBuildResult`: `{ mapping: Record<string, string>; groups: Record<string, SpriteGroupResult> }`.
-`SpriteGroupResult`: `{ spriteKey: string; meta: Record<string, string> }` — `spriteKey` is the logical (unhashed) target; `meta` maps each symbol ID to its `viewBox`.
+`SpriteGroupResult`: `{ spriteKey: string; meta: Record<string, string>; prefix: string }` — `spriteKey` is the logical (unhashed) target; `meta` maps each symbol ID to its `viewBox`; `prefix` is the group's symbol-ID prefix (default `icon-`).
 
 Incremental state helpers operate over `BuildState` (`Record<string, string>` of key → hash):
 
@@ -261,6 +262,7 @@ The `forge-assets` binary (`src/assets/cli/bin.ts`) exposes a nested command tre
 | `forge-assets build fonts` | Font downloads only | `--config <path>` |
 | `forge-assets build icons` | Favicon/PWA icons only | `--config <path>` |
 | `forge-assets sprites` | SVG sprite sheets only | `--minify`, `--config <path>` |
+| `forge-assets types` | Nothing — derives the generated module from config | `--config <path>`, `--out <path>` |
 
 Flag notes:
 
@@ -268,20 +270,63 @@ Flag notes:
 |---|---|---|
 | `--minify` | boolean | Minify output; on `build all` and `sprites` it also enables content-hashed filenames |
 | `--config` | string | Path to `assets.config.ts` (default: resolved from cwd) |
-| `--out` | string | Output path for the generated assets module (`build all` only; default `.forge/assets.ts`) |
+| `--out` | string | Output path for the generated assets module (`build all` and `types`; default `.forge/assets.ts`) |
 
 Pass `--help` (or `-h`) at any level for generated help, e.g. `forge-assets build --help`.
 
-### `package.json` wiring
+### The generated module in typecheck and tests
+
+`.forge/assets.ts` is a **build artifact**. It is not committed — its content hashes churn on every
+change, and a committed copy would claim to be generated while going stale. Consumers alias it as
+`@assets` in `tsconfig.json` and import it from server and client code alike.
+
+That leaves a clean-checkout hole: on a fresh clone or a cold CI runner nothing has written the file
+yet, so `@assets` does not resolve and **typecheck fails before any test runs**. Running the full
+build first closes the hole, but pays for it with the entire toolchain — `tailwindcss`, `esbuild`,
+optionally `sharp`, and the network for font and remote-sprite fetches — none of which affects
+whether TypeScript compiles.
+
+`forge-assets types` is the cheap half. It derives the module from `assets.config.ts` alone:
+
+```bash
+forge-assets types    # milliseconds; no tailwind, no esbuild, no sharp, no network
+```
+
+Everything that carries **type** information is config-derived and reproduced exactly:
+
+| Reproduced from config | Needs a real build |
+|---|---|
+| every manifest key — `css[].output`, `<outdir>/<entry>.js`, `sprites.<group>.target` | every manifest value (the content hash) |
+| every icon name — `basename(file, ".svg")` or the explicit `key`, plus the group `prefix` | each symbol's `viewBox`, scraped from the assembled sprite |
+| sprite group → `*Icon` export names, `publicPrefix`, cursor and theme keys | the baked cursor data-URIs |
+
+So the emitted module is shape-identical to a real build — same exports, same `createIcon` calls, and
+critically the same `*_META` literal keys, which are what give `createIcon` its icon-name union and
+make passing an icon-less sprite to a component a compile error. Only the *values* are placeholders:
+paths are the unhashed logical names, and every `viewBox` is empty. That last choice is deliberate —
+an empty `viewBox` renders visibly broken, so a types-only artifact that reaches a browser fails
+loudly instead of quietly shipping mis-scaled icons.
+
+Wire it as a precondition to the steps that only need the module to resolve, and keep `build all` for
+dev and deploy:
 
 ```json
 {
   "scripts": {
     "build:assets": "forge-assets build all --minify",
-    "dev:assets": "forge-assets build all"
+    "dev:assets": "forge-assets build all",
+    "typecheck": "forge-assets types && tsgo --noEmit",
+    "test": "forge-assets types && bun test"
   }
 }
 ```
+
+Both commands write the same path, so whichever ran last wins — run `build all` before serving.
+
+Because the emitted paths are unhashed and the `viewBox` values are empty, **tests must never assert
+an asset digest or a rendered `viewBox`**: those assertions pass under `build all` and fail under
+`types`, which is a test coupled to which command happened to run rather than to behaviour. Assert
+the logical name instead.
 
 ### Serving the manifest in a Worker
 

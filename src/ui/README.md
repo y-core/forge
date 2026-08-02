@@ -78,10 +78,11 @@ A single import supplies both:
 **Why one import rather than importing `theme-base.css` directly.** Tailwind v4's automatic content
 scan **ignores `node_modules`**, so without help none of forge's classes are ever generated — the
 markup renders and every class on it has no rule. `forge.css` fixes that from inside the package: it
-carries an `@source` path for **every directory whose files declare a utility class** — components
-and published class strings alike — and `scripts/validate-css-sources.ts` fails the gate if a
-directory is neither scanned nor registered as class-free, so the guarantee cannot quietly lapse when
-a new directory appears. Read `forge.css` for the current list. The paths resolve **relative to
+carries an `@source` path for **every directory under `src/ui/` whose files declare a utility
+class** — components and published class strings alike — and `scripts/validate-css-sources.ts`
+enforces exactly that scope, in both directions: a directory under `src/ui/` that is neither scanned
+nor registered as class-free fails the gate, and so does an `@source` path that resolves outside
+`src/ui/`. Read `forge.css` for the current list. The paths resolve **relative to
 itself**, which is the only form that survives pnpm, a workspace, a git dependency and a monorepo
 alike. Writing them consumer-side would mean hardcoding `../../node_modules/@y-core/forge/…`, which
 is wrong under most of those.
@@ -89,6 +90,12 @@ is wrong under most of those.
 Use `@y-core/forge/ui/assets/css/forge-show.css` instead if the app mounts
 [`@y-core/forge/ui/show`](#y-coreforgeuishow) — same file plus the showcase's own classes, kept
 opt-in so an app that does not mount it pays nothing.
+
+**`forge.css` scans `ui/` and nothing else.** Other namespaces ship server-rendered markup of their
+own, and whether an app mounts one is the app's decision rather than this package's — so their
+classes are the app's to scan. If you import a forge surface outside `ui/` that renders markup, add
+an `@source` for that namespace's directory to your own stylesheet. Each namespace's README says so
+where it applies.
 
 #### Supply a `--palette-*` ramp
 

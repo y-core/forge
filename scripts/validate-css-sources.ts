@@ -1,9 +1,10 @@
 import { resolve, dirname, relative, sep } from "node:path";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const UI = resolve(ROOT, "src/ui");
+const SRC = resolve(ROOT, "src");
+const UI = resolve(SRC, "ui");
 const CSS_DIR = resolve(UI, "assets/css");
 
 // Directories under `src/ui/` that are deliberately **not** `@source`-scanned, each with the reason
@@ -27,6 +28,11 @@ let failed = false;
 // passes forever while a *new* directory goes unscanned — which is exactly how `contracts/` shipped a
 // class-string literal that no consumer's Tailwind build ever saw. Asking disk to justify itself
 // against the config means a new directory fails until someone classifies it.
+//
+// The `src/ui/` bound on the sweep is a **policy**, not the reach of a relative path: forge.css owes
+// consumers the classes its own components emit, because importing `ui` is the statement that they
+// will be rendered. A namespace whose markup is opt-in owes them a documented `@source` requirement
+// instead — pass C. So an `@source` that escapes `src/ui/` fails here rather than being ignored.
 console.log("Checking every src/ui directory is @source-scanned or registered class-free...");
 
 const scanned: string[] = [];
@@ -37,7 +43,16 @@ for (const entry of readdirSync(CSS_DIR).sort()) {
   for (const match of css.matchAll(/@source\s+(not\s+)?["']([^"']+)["']/g)) {
     if (match[1]) continue;
     const abs = resolve(CSS_DIR, match[2]);
-    if (abs === UI || abs.startsWith(UI + sep)) scanned.push(abs);
+    if (abs !== UI && !abs.startsWith(UI + sep)) {
+      console.error(
+        `FAIL src/ui/assets/css/${entry}: @source "${match[2]}" resolves outside src/ui/ (${relative(ROOT, abs)})`,
+      );
+      console.error(`  forge.css scans ui/ and nothing else. A namespace outside it documents its own`);
+      console.error(`  @source requirement in its README for the consuming app to honour instead.`);
+      failed = true;
+      continue;
+    }
+    scanned.push(abs);
   }
 }
 
@@ -104,6 +119,20 @@ function collectSources(dir: string): string[] {
   return out;
 }
 
+// Two anchors, not one: a lone `flex` appears in prose and in a fixture; two together is a class
+// string. This is the line that separates `MENU_ITEM_CLASS` from an incidental match — and the line
+// that keeps `"grid"`, an `aria-haspopup` union member in `src/jsx/types.ts`, from reading as one.
+function declaredClasses(file: string): { literal: string; anchors: string[] }[] {
+  const source = stripComments(readFileSync(file, "utf-8"));
+  const out: { literal: string; anchors: string[] }[] = [];
+  for (const match of source.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g)) {
+    const literal = match[1] ?? match[2] ?? match[3] ?? "";
+    const anchors = literal.split(/\s+/).filter(isAnchor);
+    if (anchors.length >= 2) out.push({ literal, anchors });
+  }
+  return out;
+}
+
 const suspects: string[] = [];
 for (const name of CLASS_FREE.keys()) {
   const abs = resolve(UI, name);
@@ -121,21 +150,50 @@ for (const entry of readdirSync(UI, { withFileTypes: true })) {
   }
 }
 
+let hiddenDeclarations = 0;
 for (const file of suspects.sort()) {
-  const source = stripComments(readFileSync(file, "utf-8"));
   const rel = relative(ROOT, file);
-  for (const match of source.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g)) {
-    const literal = match[1] ?? match[2] ?? match[3] ?? "";
-    const anchors = literal.split(/\s+/).filter(isAnchor);
-    // Two anchors, not one: a lone `flex` appears in prose and in a fixture; two together is a class
-    // string. This is the line that separates `MENU_ITEM_CLASS` from an incidental match.
-    if (anchors.length >= 2) {
-      console.error(`FAIL ${rel}: string literal declares utility classes — ${anchors.join(" ")}`);
-      console.error(`  in: ${literal.length > 120 ? literal.slice(0, 120) + "…" : literal}`);
-      console.error(`  Either move the declaration into an @source-scanned directory, or drop this`);
-      console.error(`  directory from CLASS_FREE and give it an @source path in forge.css.`);
-      failed = true;
-    }
+  for (const { literal, anchors } of declaredClasses(file)) {
+    console.error(`FAIL ${rel}: string literal declares utility classes — ${anchors.join(" ")}`);
+    console.error(`  in: ${literal.length > 120 ? literal.slice(0, 120) + "…" : literal}`);
+    console.error(`  Either move the declaration into an @source-scanned directory, or drop this`);
+    console.error(`  directory from CLASS_FREE and give it an @source path in forge.css.`);
+    hiddenDeclarations++;
+    failed = true;
+  }
+}
+if (hiddenDeclarations === 0) {
+  console.log(`  ok ${suspects.length} class-free modules declare none.`);
+}
+
+// ── Pass C (disk → docs): a class-bearing namespace outside `ui/` documents its own requirement ───
+//
+// Pass A's bound makes these namespaces' classes the consuming app's to scan, which is only a
+// workable contract if the app can find that out. So the requirement is that the namespace's own
+// README says so, at the place someone adopting the surface is already reading. `src/ui/` has no
+// business cataloguing its siblings and a prose inventory drifts, so the set is derived from disk:
+// a namespace that starts rendering classed markup fails here until it is documented.
+console.log("\nChecking class-bearing namespaces outside src/ui document their @source requirement...");
+
+for (const entry of readdirSync(SRC, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+  if (!entry.isDirectory() || entry.name === "ui") continue;
+  const abs = resolve(SRC, entry.name);
+  const declaring = collectSources(abs)
+    .sort()
+    .filter((file) => declaredClasses(file).length > 0);
+  if (declaring.length === 0) continue;
+
+  const readme = resolve(abs, "README.md");
+  if (existsSync(readme) && readFileSync(readme, "utf-8").includes("@source")) {
+    console.log(`  ok src/${entry.name} (${declaring.length} class-bearing file(s), @source documented)`);
+  } else {
+    console.error(
+      `FAIL src/${entry.name}: renders utility classes, but its README.md never mentions @source`,
+    );
+    for (const file of declaring) console.error(`  ${relative(ROOT, file)}`);
+    console.error(`  forge.css scans ui/ only, so these classes are the consuming app's to scan.`);
+    console.error(`  Say so in src/${entry.name}/README.md, where someone adopting this surface reads it.`);
+    failed = true;
   }
 }
 
@@ -146,5 +204,4 @@ if (failed) {
   process.exit(1);
 }
 
-console.log(`  ok ${suspects.length} class-free modules declare none.`);
 console.log("\nAll @source coverage verified.");

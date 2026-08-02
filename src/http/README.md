@@ -207,6 +207,10 @@ return fragmentResponse(
 - `renderValidationErrors` renders a red banner containing a `<ul>` of per-error `<li>` items, each
   message escaped, under a fixed `"Please correct the following fields."` heading.
 
+Those default banner classes — and `ulClass`'s default, which lives in `fragment.ts` too — are
+Tailwind classes that `forge.css` does not scan, so add `@source "…/@y-core/forge/src/http";` to
+your own stylesheet, or override `class` and `ulClass` with your own.
+
 **`FragmentOptions`:**
 
 | Field | Type | Default | Applies to | Description |

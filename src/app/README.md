@@ -286,6 +286,9 @@ const onError = createErrorPage<Bindings>({
 export default createApp<Bindings>({ config: configStore, onError });
 ```
 
+The page is Tailwind-classed markup that `forge.css` does not scan, so add
+`@source "…/@y-core/forge/src/app";` to your own stylesheet or the page renders unstyled.
+
 ### `validateEnv(env, schema)` / `validateBindings(schema)`
 
 Two forms of binding validation against a valibot schema.

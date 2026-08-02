@@ -26,6 +26,7 @@ description: "Structural principles: the dependency facade, the runtime-only no-
 - §3a No Build Step in the Gate: the library is always consumed as source
 - §3b TypeScript Configuration Constraints: what source and test files see
 - §3c Peer Dependencies for Build Tools: esbuild and sharp are optional
+- §3d CSS Source Scanning Stops at `ui/`: what a consumer's Tailwind build must be told
 - §4 Facade Pattern Implementation: how a facade namespace is written
 - §4a Re-export Rules for Facade Namespaces: expose what consumers need
 - §4b Breaking the Facade: the sanctioned way to add an export
@@ -122,6 +123,27 @@ cross-namespace dependency.**
 
 `esbuild` and `sharp` are **optional peer dependencies** for the `assets/build` pipeline.
 Neither is in the main dependency tree — only apps that build assets need them.
+
+### 3d. CSS Source Scanning Stops at `ui/`
+
+**Tailwind never scans `node_modules`.** Shipping raw source therefore does not ship *rules* — a
+consumer's build sees forge's markup only if something tells its scanner where to look, and a class
+with no rule renders as an attribute that does nothing.
+
+`forge.css` answers that for components: it carries `@source` paths, written **relative to itself**
+so they resolve against wherever forge landed under pnpm, a workspace, a git dependency or a
+monorepo alike. A consumer-side path would have to hardcode an install layout and would be wrong
+under most of them.
+
+**The scope stops at `ui/`, and that is the decision rather than the reach of a relative path.** A
+component library owes its consumers the classes its own components emit — importing `ui` *is* the
+statement that they will be rendered. A namespace whose markup is opt-in owes them something
+different: whether an app mounts that surface is the app's call, not forge's, so what it owes is a
+**documented `@source` requirement in that namespace's README**, and the app scans it.
+
+`scripts/validate-css-sources.ts` enforces both halves — no `@source` escapes `ui/`, and a namespace
+outside `ui/` that declares a class string must document its requirement. Both are derived from
+disk, so neither is a list to keep in step.
 
 ---
 

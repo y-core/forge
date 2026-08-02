@@ -4,7 +4,7 @@ import { buildCSS } from "../build/css";
 import { buildFonts } from "../build/fonts";
 import { buildIcons } from "../build/icons";
 import { buildJS } from "../build/js";
-import { buildAll } from "../build/pipeline";
+import { buildAll, generateAssetsTypes } from "../build/pipeline";
 import { buildSprites } from "../build/sprites";
 import { loadConfig } from "../config";
 
@@ -101,6 +101,24 @@ export function createAssetsCommands(): CommandBase {
       run: async (_args, flags) => {
         const config = await loadAssetsConfig(flags);
         await buildSprites(config.sprites, config.paths.publicDir, { hash: flags.minify });
+      },
+    }),
+  );
+
+  // A sibling of `sprites` rather than a child of `build`, because it builds nothing: it derives
+  // the generated module from config so a clean checkout can typecheck and run tests.
+  addCommand(
+    root,
+    createCommand({
+      name: "types",
+      description: "Generate the typed assets module from config alone — no CSS, JS, sprite or icon build",
+      flags: {
+        config: CONFIG_FLAG,
+        out: { type: "string", description: "Output path for the generated assets module (default: .forge/assets.ts)" },
+      },
+      run: async (_args, flags) => {
+        const config = await loadAssetsConfig(flags);
+        await generateAssetsTypes(config, flags.out !== undefined ? { assetsPath: flags.out } : {});
       },
     }),
   );

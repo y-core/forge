@@ -412,6 +412,9 @@ The rendered viewer wires the HTMX interactions itself: the filter bar issues an
 message cell issues `?detail=<key>` and swaps itself for the expanded detail cell the loader
 returns.
 
+The viewer's markup is Tailwind-classed and `forge.css` does not scan it, so an app that mounts the
+viewer must add `@source "…/@y-core/forge/src/logging";` to its own stylesheet.
+
 ### Types
 
 `LogViewerAccess` and `LogViewerOptions` are the two exported types. The row/query/result shapes
