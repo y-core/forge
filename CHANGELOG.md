@@ -10,6 +10,31 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [0.0.78] — 2026-08-02
+
+### Fixed
+
+- **`forge.css` never scanned `ui/contracts`, so `Menu`'s row classes were generated for nobody.**
+  The `@source` list named `core`, `chrome` and `controls` — the directory added alongside it in the
+  same window was not on it. `MENU_ITEM_CLASS` in `contracts/menu-contract.ts` is the one place in
+  forge those 22 utilities are *written*; `core/menu.tsx` reads it as `const ITEM_BASE =
+  MENU_ITEM_CLASS`, an identifier Tailwind's textual scan cannot see through. The consequence was
+  wider than the constant's stated purpose suggests: **forge's own SSR `Menu.Item` lost the rules
+  too**, not merely a client-built row, and with it every consumer of `core/Menu`.
+  What kept it invisible is that the failure was *partial*. Most of the 22 are ordinary enough that
+  unrelated scanned components — `core/popover.tsx`, `core/dialog.tsx`, `core/button.tsx` — emit
+  them incidentally, so a menu still looked broadly right; only the five nothing else happened to
+  use fell through, and they were `text-left` plus the `focus-visible:` and `aria-disabled:`
+  affordances, i.e. exactly the keyboard-focus and disabled states a casual glance does not check.
+  A stylesheet that *mostly* works is harder to notice than one that does not.
+  **`bun run check` gains `validate-css-sources`**, which reads the direction that would have caught
+  it: every directory under `src/ui/` must be covered by an `@source` path or listed as class-free
+  with a reason, and each class-free claim is re-tested by a literal detector so an opt-out cannot
+  outlive its truth. The old failure was a new directory meeting an old list; that shape now fails
+  the gate rather than the render.
+
+---
+
 ## [0.0.77] — 2026-08-01
 
 ### Fixed

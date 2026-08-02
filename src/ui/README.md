@@ -77,10 +77,14 @@ A single import supplies both:
 
 **Why one import rather than importing `theme-base.css` directly.** Tailwind v4's automatic content
 scan **ignores `node_modules`**, so without help none of forge's classes are ever generated — the
-markup renders and every class on it has no rule. `forge.css` carries `@source` paths for
-`ui/core`, `ui/chrome` and `ui/controls` that resolve **relative to itself**, which is the only form
-that survives pnpm, a workspace, a git dependency and a monorepo alike. Writing them consumer-side
-would mean hardcoding `../../node_modules/@y-core/forge/…`, which is wrong under most of those.
+markup renders and every class on it has no rule. `forge.css` fixes that from inside the package: it
+carries an `@source` path for **every directory whose files declare a utility class** — components
+and published class strings alike — and `scripts/validate-css-sources.ts` fails the gate if a
+directory is neither scanned nor registered as class-free, so the guarantee cannot quietly lapse when
+a new directory appears. Read `forge.css` for the current list. The paths resolve **relative to
+itself**, which is the only form that survives pnpm, a workspace, a git dependency and a monorepo
+alike. Writing them consumer-side would mean hardcoding `../../node_modules/@y-core/forge/…`, which
+is wrong under most of those.
 
 Use `@y-core/forge/ui/assets/css/forge-show.css` instead if the app mounts
 [`@y-core/forge/ui/show`](#y-coreforgeuishow) — same file plus the showcase's own classes, kept

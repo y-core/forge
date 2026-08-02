@@ -155,6 +155,7 @@ cite them rather than restating them:
 | Bash allowlist patterns (incl. the exit-check literal) | `.claude/settings.local.json` `permissions.allow` |
 | Barrel rules as *enforced* | `scripts/validate-exports.ts` |
 | Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
+| `@source` coverage as *enforced* | `scripts/validate-css-sources.ts` |
 
 ---
 

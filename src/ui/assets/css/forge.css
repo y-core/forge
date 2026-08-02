@@ -32,8 +32,15 @@
    shape: Tailwind records `{base: context.base}` per imported file, so the paths resolve against
    wherever forge actually landed. Declaring them consumer-side would mean writing
    `../../node_modules/@y-core/forge/src/ui/core`, which is wrong under pnpm, wrong in a workspace,
-   and wrong for a git dependency. */
+   and wrong for a git dependency.
+
+   `contracts` sounds type-only, but `menu-contract.ts` publishes a class *string*: a row built in
+   the browser cannot invoke an SSR component, so the utilities it needs are written there
+*/
 @source "../../core";
 @source "../../chrome";
 @source "../../controls";
+@source "../../contracts";
+@source not "../../**/*.test.ts";
 @source not "../../**/*.test.tsx";
+@source not "../../**/*.browser.ts";
