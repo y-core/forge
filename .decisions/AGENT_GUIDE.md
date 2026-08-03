@@ -259,7 +259,7 @@ Facts owned by source, never restated in `.decisions/`:
 | Owns | File |
 |---|---|
 | Export subpath names | `package.json` `exports` |
-| Verification gate steps | `package.json` `scripts.check` |
+| Verification gate steps | `scripts/lib/steps.ts` |
 | Side-effectful modules | `package.json` `sideEffects` |
 | CSRF and honeypot field names | `src/form/constants.ts` |
 | Per-namespace export lists | `src/{ns}/mod.ts` |

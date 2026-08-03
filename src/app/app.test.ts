@@ -3,8 +3,10 @@ import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 import { createConfig } from "../config/config";
 import { csrfProtection, importCsrfKey } from "../form/csrf";
+import type { SerializedError } from "../logging/serialize-error";
 import { createSecurityHeaders } from "../security/headers";
 import { rateLimit } from "../security/rate-limit";
+import { requestId } from "../security/request-id";
 import { v } from "../validation/mod";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
@@ -60,7 +62,12 @@ describe("createApp", () => {
       expect(logs.length).toBeGreaterThan(0);
       const parsed = JSON.parse(logs[0]!) as Record<string, unknown>;
       expect(parsed.prefix).toBe("app");
-      expect(parsed.error).toBe("secret db error");
+      // The console sink gets the full serialized error, not just the message: the stack is what
+      // makes a 500 diagnosable, and this channel is the worker log stream, never the HTTP client.
+      const error = parsed.error as SerializedError;
+      expect(error.message).toBe("secret db error");
+      expect(error.name).toBe("Error");
+      expect(typeof error.stack).toBe("string");
     });
   });
 
@@ -211,6 +218,72 @@ describe("error path carries security headers (F9)", () => {
     expect(await res.text()).toBe("Too many requests. Please try again later.");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
+  });
+});
+
+describe("invalid env is handled by the app, not thrown out of fetch", () => {
+  const store = () => createConfig({ dbUrl: { __env: "DB_URL" } }, v.object({ dbUrl: v.string() }));
+
+  it("yields the app's own 500 with baseline hardening headers instead of a raw throw", async () => {
+    const app = createApp({ config: store() });
+    mapHandler(app, "GET", "/", () => new Response("unreachable"));
+
+    const res = await app.request("/", {}, {});
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain("An unexpected error occurred.");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("routes the failure through the consumer onError hook", async () => {
+    const app = createApp({ config: store(), onError: (err) => new Response(err.message, { status: 503 }) });
+    mapHandler(app, "GET", "/", () => new Response("unreachable"));
+
+    const res = await app.request("/", {}, {});
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe("Invalid environment: dbUrl: Invalid type: Expected string but received undefined");
+  });
+
+  it("leaves a valid env completely unaffected", async () => {
+    const app = createApp<{ DB_URL: string }>({ config: store() });
+    mapHandler(app, "GET", "/", (context) => new Response((context as unknown as { config: { dbUrl: string } }).config.dbUrl));
+
+    const res = await app.request("/", {}, { DB_URL: "postgres://localhost/test" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("postgres://localhost/test");
+  });
+});
+
+describe("a throwing app.use guard stays inside the chain", () => {
+  it("is caught by the boundary and the response still gets the pending-header flush", async () => {
+    const app = new Forge();
+    app.use("*", requestId());
+    app.use("*", () => {
+      throw new Error("guard exploded");
+    });
+    mapHandler(app, "GET", "/", () => new Response("unreachable"));
+
+    const res = await app.request("/");
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain("An unexpected error occurred.");
+    // Proves `applyHeaders` ran: the guard's queued header only reaches the response through it.
+    expect(res.headers.get("x-request-id")).not.toBeNull();
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
+  });
+
+  it("still lets a non-throwing guard chain serve a normal response", async () => {
+    const app = new Forge();
+    app.use("*", requestId());
+    app.use("*", createSecurityHeaders());
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    const res = await app.request("/");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(res.headers.get("x-request-id")).not.toBeNull();
+    expect(res.headers.get("strict-transport-security")).toBe("max-age=63072000; includeSubDomains; preload");
   });
 });
 

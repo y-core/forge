@@ -81,6 +81,14 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
       }
     }
 
+    // aria-* attributes are string-valued per WAI-ARIA, so a `false` is serialized rather than
+    // dropped: `aria-expanded="false"` means "expandable, currently collapsed", while an absent
+    // `aria-expanded` means "not expandable at all"
+    if (typeof value === "boolean" && attrName.startsWith("aria-")) {
+      attrs += ` ${attrName}="${value ? "true" : "false"}"`;
+      continue;
+    }
+
     if (value === false) continue;
 
     // Boolean attributes: emit only the attribute name when truthy
@@ -89,15 +97,9 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
       continue;
     }
 
-    // true without a boolean entry:
-    // - aria-* attributes use string values ("true"/"false" per WAI-ARIA spec)
-    // - all other attributes: emit as bare attribute name (e.g. data-active={true})
+    // true without a boolean entry: emit as a bare attribute name (e.g. data-active={true})
     if (value === true) {
-      if (attrName.startsWith("aria-")) {
-        attrs += ` ${attrName}="true"`;
-      } else {
-        attrs += ` ${attrName}`;
-      }
+      attrs += ` ${attrName}`;
       continue;
     }
 

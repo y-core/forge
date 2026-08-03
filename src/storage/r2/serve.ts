@@ -18,16 +18,34 @@ function parseRange(header: string): { offset?: number; length?: number; suffix?
 }
 
 /**
- * Builds a `Content-Disposition` value with both a sanitized ASCII `filename="…"` fallback and an
- * RFC 5987 `filename*=UTF-8''…` parameter for non-ASCII names. The fallback strips quotes,
- * backslashes, and control characters so the filename cannot break out of the quoted string.
+ * Approximates a filename in printable ASCII for the `filename="…"` parameter, which cannot hold
+ * anything else — a non-Latin-1 character reaching `Headers.set` throws and turns a legitimate
+ * download into a 500.
+ *
+ * Accents decompose to their base letter, and every other run of non-printable-ASCII collapses to a
+ * single `_`. Substituting per run rather than dropping characters keeps the surrounding ASCII in
+ * place — above all the extension, which is what most clients key their handling off — and
+ * guarantees a non-empty result for a name that is entirely non-ASCII. Quotes and backslashes are
+ * printable ASCII, so they survive the approximation and are emitted as quoted-pairs; they cannot
+ * break out of the quoted string.
+ */
+function asciiFallbackFilename(filename: string): string {
+  const approximated = filename
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\x20-\x7e]+/g, "_")
+    .replace(/(["\\])/g, "\\$1");
+  return approximated === "" ? "download" : approximated;
+}
+
+/**
+ * Builds a `Content-Disposition` value pairing an RFC 5987 `filename*=UTF-8''…` parameter, which
+ * carries the exact name, with the ASCII `filename="…"` fallback clients that ignore it read.
  */
 function contentDisposition(type: "inline" | "attachment", filename: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: strip C0 controls (\u0000-\u001f) + DEL (\u007f) from the quoted fallback
-  const fallback = filename.replace(/[\u0000-\u001f\u007f"\\]/g, "");
   // encodeURIComponent leaves a few non-attr-chars unescaped; encode them too for a strict ext-value.
   const encoded = encodeURIComponent(filename).replace(/['()*!]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
-  return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+  return `${type}; filename="${asciiFallbackFilename(filename)}"; filename*=UTF-8''${encoded}`;
 }
 
 function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {

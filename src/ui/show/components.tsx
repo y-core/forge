@@ -15,6 +15,7 @@ import { Dialog } from "../core/dialog";
 import { FormField } from "../core/field-layout";
 import { Field } from "../core/field-stack";
 import { Form } from "../core/form";
+import { Honeypot } from "../core/honeypot";
 import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Label } from "../core/label";
@@ -67,6 +68,7 @@ export const SECTIONS = [
   { id: "field", label: "Field" },
   { id: "form", label: "Form" },
   { id: "form-field", label: "FormField" },
+  { id: "honeypot", label: "Honeypot" },
   { id: "icon", label: "Icon" },
   { id: "input", label: "Input" },
   { id: "label", label: "Label" },
@@ -221,7 +223,7 @@ const FormFieldSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
     <div class='w-full max-w-xs space-y-4'>
       <FormField name='text-field'>
         <FormField.Label name='text-field'>Label</FormField.Label>
-        <Input type='text' name='text-field' placeholder='Placeholder' field={{ name: "text-field" }} />
+        <Input type='text' name='text-field' placeholder='Placeholder' field={{ name: "text-field", description: true }} />
         <FormField.Description name='text-field'>Helper text for this field.</FormField.Description>
       </FormField>
       <FormField name='error-field' invalid>
@@ -320,8 +322,11 @@ const SCROLL_ROWS = ["Alert", "Avatar", "Badge", "Button", "Card", "Dialog", "Fi
 
 const CheckboxGroupSection: FC = () => (
   <CatalogSection id='checkbox-group' title='CheckboxGroup'>
-    <CheckboxGroup name='toppings' orientation='horizontal'>
+    {/* `description` opts the group into `aria-describedby`; the `name` on `Description` is what
+        makes the id it emits match. Without both, the attribute would name nothing. */}
+    <CheckboxGroup name='toppings' orientation='horizontal' description>
       <CheckboxGroup.Label>Toppings</CheckboxGroup.Label>
+      <CheckboxGroup.Description name='toppings'>Pick as many as you like.</CheckboxGroup.Description>
       <CheckboxGroup.Item name='toppings' value='cheese' checked>
         Cheese
       </CheckboxGroup.Item>
@@ -489,11 +494,30 @@ const SwitchSection: FC = () => (
 
 const FormSection: FC = () => (
   <CatalogSection id='form' title='Form'>
-    <Form action='#' method='post' csrfToken='demo-token' honeypotField='company' class='w-full max-w-xs space-y-3'>
+    {/* `Honeypot` is composed explicitly — `Form` renders none. On a `method='get'` form the
+        browser would serialise the decoy into the query string, and it protects nothing there. */}
+    <Form action='#' method='post' csrfToken='demo-token' class='w-full max-w-xs space-y-3'>
+      <Honeypot field='company' />
       <Field label='Project name'>
         <Input type='text' name='project' placeholder='Untitled' />
       </Field>
       <Button type='submit'>Save</Button>
+    </Form>
+  </CatalogSection>
+);
+
+/**
+ * The one section with nothing to look at, and that is the demonstration: the decoy is off-canvas
+ * and `aria-hidden`, so the markup is the exhibit. It is a section because it is a published
+ * component — `Form` stopped rendering it, and a composition a consumer has to write is exactly the
+ * kind the catalog exists to show.
+ */
+const HoneypotSection: FC = () => (
+  <CatalogSection id='honeypot' title='Honeypot'>
+    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
+      <Honeypot />
+      <Input type='email' name='newsletter-email' placeholder='you@example.com' />
+      <Button type='submit'>Subscribe</Button>
     </Form>
   </CatalogSection>
 );
@@ -763,6 +787,7 @@ export const ShowcaseContent: FC<{
         <DialogSection />
         <FieldStackSection />
         <FormSection />
+        <HoneypotSection />
         <FormFieldSection icon={icon} />
         <IconSection icon={icon} />
         <InputSection />

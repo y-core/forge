@@ -1,12 +1,18 @@
 import type { AppContext } from "../../context/types";
 import type { Logger } from "../../logging/types";
 import type { Result } from "../../result/result";
+import type { SQL_FRAGMENT_BRAND } from "./sql";
 
 /**
  * A parameterised SQL fragment — values are bind params, never concatenated text.
- * Compose fragments with nested interpolation; they flatten automatically. @public
+ * Compose fragments with nested interpolation; they flatten automatically.
+ *
+ * Branded: the only way to obtain one is to call `sql`. The brand is what lets `isSqlFragment`
+ * distinguish a fragment forge minted from an arbitrary object that merely has the same shape. @public
  */
 export interface SqlFragment {
+  /** Provenance brand — set only by `sql()`, unreachable from consumer code. @internal */
+  readonly [SQL_FRAGMENT_BRAND]: true;
   readonly text: string;
   readonly params: readonly unknown[];
 }

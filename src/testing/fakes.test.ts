@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { createD1Client } from "../storage/db/client";
+import { sql } from "../storage/db/sql";
 import { createKVStore } from "../storage/kv/store";
+import { nullLogger } from "./context";
 import { fakeAssetsFetcher, fakeD1, fakeKV, fakeR2 } from "./fakes";
 
 describe("fakeKV", () => {
@@ -73,6 +76,42 @@ describe("fakeKV", () => {
     const listed = await kv.list();
     expect(listed.keys[0]).toEqual({ name: "k1", metadata: undefined, expiration: 1234 });
   });
+
+  it("round-trips a non-UTF-8 byte sequence byte-identically", async () => {
+    const kv = fakeKV();
+    const original = new Uint8Array([0xff, 0xfe, 0x00, 0x80]);
+    await kv.put("bin", original.buffer as ArrayBuffer);
+    const raw = await kv.get("bin", { type: "arrayBuffer" });
+    expect(raw).not.toBeNull();
+    expect([...new Uint8Array(raw as ArrayBuffer)]).toEqual([0xff, 0xfe, 0x00, 0x80]);
+  });
+
+  it("returns a detached copy so mutating a read result cannot reach the store", async () => {
+    const kv = fakeKV();
+    await kv.put("bin", new Uint8Array([1, 2, 3]).buffer as ArrayBuffer);
+    const first = new Uint8Array((await kv.get("bin", { type: "arrayBuffer" })) as ArrayBuffer);
+    first[0] = 9;
+    const second = await kv.get("bin", { type: "arrayBuffer" });
+    expect([...new Uint8Array(second as ArrayBuffer)]).toEqual([1, 2, 3]);
+  });
+
+  it("records expirationTtl as an absolute expiration surfaced on list", async () => {
+    const kv = fakeKV();
+    const before = Math.floor(Date.now() / 1000);
+    await kv.put("k1", "v", { expirationTtl: 60 });
+    const after = Math.floor(Date.now() / 1000);
+    const entry = (await kv.list()).keys[0];
+    expect(entry?.name).toBe("k1");
+    expect(entry?.expiration).toBeGreaterThanOrEqual(before + 60);
+    expect(entry?.expiration).toBeLessThanOrEqual(after + 60);
+  });
+
+  it("prefers an explicit expiration over expirationTtl", async () => {
+    const kv = fakeKV();
+    await kv.put("k1", "v", { expiration: 1234, expirationTtl: 60 });
+    const listed = await kv.list();
+    expect(listed.keys[0]).toEqual({ name: "k1", metadata: undefined, expiration: 1234 });
+  });
 });
 
 describe("fakeR2", () => {
@@ -131,6 +170,52 @@ describe("fakeR2", () => {
     const obj = await bucket.get("seeded");
     expect(await obj?.text()).toBe("hi");
   });
+
+  it("returns exactly the requested slice for an offset+length range", async () => {
+    const bucket = fakeR2({ file: "abcdefghij" });
+    const obj = await bucket.get("file", { range: { offset: 2, length: 3 } });
+    expect(await obj?.text()).toBe("cde");
+    expect([...new Uint8Array((await obj?.arrayBuffer()) as ArrayBuffer)]).toEqual([0x63, 0x64, 0x65]);
+  });
+
+  it("runs an offset-only range to the end of the object", async () => {
+    const bucket = fakeR2({ file: "abcdefghij" });
+    const obj = await bucket.get("file", { range: { offset: 7 } });
+    expect(await obj?.text()).toBe("hij");
+  });
+
+  it("counts a suffix range back from the end of the object", async () => {
+    const bucket = fakeR2({ file: "abcdefghij" });
+    const obj = await bucket.get("file", { range: { suffix: 4 } });
+    expect(await obj?.text()).toBe("ghij");
+  });
+
+  it("clamps a range that overruns the object and never throws", async () => {
+    const bucket = fakeR2({ file: "abcdefghij" });
+    expect(await (await bucket.get("file", { range: { offset: 8, length: 100 } }))?.text()).toBe("ij");
+    expect(await (await bucket.get("file", { range: { suffix: 100 } }))?.text()).toBe("abcdefghij");
+    expect(await (await bucket.get("file", { range: { offset: 50 } }))?.text()).toBe("");
+  });
+
+  it("reports the full object size on a ranged read", async () => {
+    const bucket = fakeR2({ file: "abcdefghij" });
+    const obj = await bucket.get("file", { range: { offset: 2, length: 3 } });
+    expect(obj?.size).toBe(10);
+  });
+
+  it("streams only the ranged bytes through body", async () => {
+    const bucket = fakeR2({ file: "abcdefghij" });
+    const obj = await bucket.get("file", { range: { offset: 1, length: 2 } });
+    expect(obj).not.toBeNull();
+    if (!obj) return;
+    expect(await new Response(obj.body).text()).toBe("bc");
+  });
+
+  it("returns the whole object when no range is given", async () => {
+    const bucket = fakeR2({ file: "abcdefghij" });
+    const obj = await bucket.get("file");
+    expect(await obj?.text()).toBe("abcdefghij");
+  });
 });
 
 describe("fakeD1", () => {
@@ -169,6 +254,52 @@ describe("fakeD1", () => {
     const statements = [db.prepare("A").bind(), db.prepare("B").bind()];
     const results = await db.batch<{ ok: boolean }>(statements);
     expect(results.map((r) => r.results)).toEqual([[{ ok: true }], [{ ok: true }]]);
+  });
+
+  it("never fails when no failure injector is configured", async () => {
+    const db = fakeD1(() => [{ id: 1 }]);
+    const client = createD1Client(db, { logger: nullLogger });
+    expect(await client.query(sql`SELECT 1`)).toEqual({ ok: true, data: [{ id: 1 }] });
+    expect(await client.execute(sql`INSERT INTO t VALUES (${1})`)).toEqual({ ok: true, data: { rowsWritten: 0, lastRowId: 0 } });
+  });
+
+  it("drives a client's error branch through failOn", async () => {
+    const failure = new Error("D1_ERROR: no such table: users");
+    const db = fakeD1(() => [], { failOn: (sqlText) => (sqlText.includes("users") ? failure : null) });
+    const client = createD1Client(db, { logger: nullLogger });
+
+    const failed = await client.query(sql`SELECT * FROM users`);
+    expect(failed).toEqual({ ok: false, error: failure });
+
+    const passed = await client.query(sql`SELECT * FROM sessions`);
+    expect(passed).toEqual({ ok: true, data: [] });
+  });
+
+  it("injects failures into execute, queryOne, batch and exec", async () => {
+    const failure = new Error("D1_ERROR: database is locked");
+    const db = fakeD1(() => [{ id: 1 }], { failOn: () => failure });
+    const client = createD1Client(db, { logger: nullLogger });
+
+    expect(await client.execute(sql`INSERT INTO t VALUES (${1})`)).toEqual({ ok: false, error: failure });
+    expect(await client.queryOne(sql`SELECT 1`)).toEqual({ ok: false, error: failure });
+    expect(await client.batch([sql`SELECT 1`])).toEqual({ ok: false, error: failure });
+    const thrownByExec = await db.exec("VACUUM").then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(thrownByExec).toBe(failure);
+  });
+
+  it("passes the executed sql and bound params to failOn", async () => {
+    const seen: { sql: string; params: unknown[] }[] = [];
+    const db = fakeD1(() => [], {
+      failOn: (sqlText, params) => {
+        seen.push({ sql: sqlText, params });
+        return null;
+      },
+    });
+    await createD1Client(db, { logger: nullLogger }).query(sql`SELECT * FROM t WHERE id = ${42}`);
+    expect(seen).toEqual([{ sql: "SELECT * FROM t WHERE id = ?", params: [42] }]);
   });
 
   it("works as the binding behind a real createKVStore", async () => {

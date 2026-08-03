@@ -95,10 +95,12 @@ interface LogTableProps {
   complete: boolean;
   loadMoreAction: string;
   tbodyId?: string;
+  level?: string;
+  q?: string;
 }
 
 /** Table of log rows with level badges and optional load-more button. @internal */
-export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAction, tbodyId }) => (
+export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAction, tbodyId, level, q }) => (
   <div class='overflow-x-auto'>
     <table class='w-full border-collapse text-sm'>
       <thead>
@@ -116,29 +118,40 @@ export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAc
         {...(cursor !== undefined ? { cursor } : {})}
         complete={complete}
         loadMoreAction={loadMoreAction}
+        {...(level !== undefined ? { level } : {})}
+        {...(q !== undefined ? { q } : {})}
       />
     </table>
   </div>
 );
 
-interface LogTableBodyProps {
+/**
+ * Builds the next-page URL for the load-more control. The active filters ride along so the
+ * appended page is drawn from the same filtered set the table already shows — otherwise page two
+ * arrives unfiltered and mixes rows the viewer asked to exclude into the rows it is showing.
+ */
+function nextPageHref(basePath: string, cursor: string, level?: string, q?: string): string {
+  const params = new URLSearchParams({ cursor });
+  if (level) params.set("level", level);
+  if (q) params.set("q", q);
+  return `${basePath}?${params.toString()}`;
+}
+
+interface LogRowsProps {
   rows: LogRow[];
   cursor?: string;
   complete: boolean;
   loadMoreAction: string;
-  id?: string;
+  level?: string;
+  q?: string;
 }
 
-/** `<tbody>` fragment — returned standalone for HTMX partial swaps. @internal */
-export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, cursor, complete, loadMoreAction }) => (
-  <tbody {...(id !== undefined ? { id } : {})}>
-    {rows.length === 0 && (
-      <tr>
-        <td colspan={5} class='py-8 text-center text-brand-500 text-sm'>
-          No log entries found.
-        </td>
-      </tr>
-    )}
+/**
+ * One page of log rows plus the load-more control, as a bare `<tr>` sequence. Rendered on its own
+ * for a load-more swap, and nested inside `LogTableBody` for a whole-table render. @internal
+ */
+export const LogRows: FC<LogRowsProps> = ({ rows, cursor, complete, loadMoreAction, level, q }) => (
+  <>
     {rows.map((row) => (
       <tr key={row.key} class='border-b border-brand-100 hover:bg-brand-50'>
         <td class='py-2 pl-4 pr-4 font-mono text-xs text-brand-600 whitespace-nowrap'>{row.timestamp}</td>
@@ -162,17 +175,47 @@ export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, cursor, complete
     {!complete && cursor && (
       <tr>
         <td colspan={5} class='py-4 text-center'>
-          <Button
-            variant='ghost'
-            size='sm'
-            hx-get={`${loadMoreAction}?cursor=${encodeURIComponent(cursor)}`}
-            hx-target='closest tbody'
-            hx-swap='outerHTML'>
+          {/* The control replaces its own row instead of appending into the tbody: it sits inside
+              that tbody, so a `beforeend` swap would append the next page below a spent control
+              that still points at the cursor just consumed. Replacing the row lands the page where
+              the control stood and leaves every row already in the table untouched. */}
+          <Button variant='ghost' size='sm' hx-get={nextPageHref(loadMoreAction, cursor, level, q)} hx-target='closest tr' hx-swap='outerHTML'>
             Load more
           </Button>
         </td>
       </tr>
     )}
+  </>
+);
+
+interface LogTableBodyProps {
+  rows: LogRow[];
+  cursor?: string;
+  complete: boolean;
+  loadMoreAction: string;
+  id?: string;
+  level?: string;
+  q?: string;
+}
+
+/** `<tbody>` fragment — returned standalone for HTMX partial swaps. @internal */
+export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, cursor, complete, loadMoreAction, level, q }) => (
+  <tbody {...(id !== undefined ? { id } : {})}>
+    {rows.length === 0 && (
+      <tr>
+        <td colspan={5} class='py-8 text-center text-brand-500 text-sm'>
+          No log entries found.
+        </td>
+      </tr>
+    )}
+    <LogRows
+      rows={rows}
+      {...(cursor !== undefined ? { cursor } : {})}
+      complete={complete}
+      loadMoreAction={loadMoreAction}
+      {...(level !== undefined ? { level } : {})}
+      {...(q !== undefined ? { q } : {})}
+    />
   </tbody>
 );
 
@@ -211,6 +254,8 @@ export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"
         complete={data.complete}
         loadMoreAction={data.basePath}
         tbodyId={LOG_TBODY_ID}
+        {...(data.level !== undefined ? { level: data.level } : {})}
+        {...(data.q !== undefined ? { q: data.q } : {})}
       />
     </div>
   </main>

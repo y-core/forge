@@ -105,6 +105,41 @@ describe("parseFormData — byte limits", () => {
     expect(status).toBe(413);
   });
 
+  it("re-checks the shared parse against each caller's own cap", async () => {
+    let generous: ReadonlyFormData | undefined;
+    let strictStatus = 0;
+    const app = new Forge();
+    mapHandler(app, "POST", "/test", async (c) => {
+      generous = await parseFormData(c, { maxBytes: 1000 });
+      try {
+        await parseFormData(c, { maxBytes: 4 });
+      } catch (err) {
+        strictStatus = (err as { status?: number }).status ?? 0;
+      }
+      return new Response("ok");
+    });
+
+    await app.request("/test", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "name=Alice" });
+    expect(generous?.get("name")).toBe("Alice");
+    expect(strictStatus).toBe(413);
+  });
+
+  it("does not let a strict caller's rejection revoke an earlier caller's accepted parse", async () => {
+    let before: ReadonlyFormData | undefined;
+    let after: ReadonlyFormData | undefined;
+    const app = new Forge();
+    mapHandler(app, "POST", "/test", async (c) => {
+      before = await parseFormData(c, { maxBytes: 1000 });
+      await parseFormData(c, { maxBytes: 4 }).catch(() => {});
+      after = await parseFormData(c, { maxBytes: 1000 });
+      return new Response("ok");
+    });
+
+    await app.request("/test", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "name=Alice" });
+    expect(before).toBe(after);
+    expect(after?.get("name")).toBe("Alice");
+  });
+
   it("accepts a body within the limit", async () => {
     const app = new Forge();
     mapHandler(app, "POST", "/test", async (c) => {

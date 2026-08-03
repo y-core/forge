@@ -151,14 +151,19 @@ export function createSecurityHeaders(options?: SecurityHeadersOptions): Middlew
     const nonce = generateNonce();
     secureHeadersNonce.set(context, nonce);
 
-    const response = await next();
-
-    // Queue headers on the pending channel so the single `applyHeaders` pass rebuilds the
-    // response body once, instead of each middleware constructing its own Response.
+    // Queued on the pending channel *before* `next()`, alongside the nonce, so the single
+    // `applyHeaders` pass rebuilds the response body once instead of each middleware constructing
+    // its own Response. Queuing before rather than after has two consequences worth stating:
+    //
+    // - The headers are already queued when anything deeper throws, so they reach the error page
+    //   regardless of which error boundary catches — they no longer depend on the response
+    //   unwinding back out through this middleware.
+    // - Conflicts resolve **inner-wins**: `setPendingHeader` is last-writer-wins per name, and a
+    //   middleware registered deeper queues after this one. See `SECURITY_HARDENING.md` §2a.
     for (const [name, value] of securityHeaderEntries(nonce, options)) {
       setPendingHeader(context, name, value);
     }
 
-    return response;
+    return next();
   };
 }

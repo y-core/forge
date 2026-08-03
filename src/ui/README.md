@@ -231,7 +231,8 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 
 | Export | Renders | Notes |
 |---|---|---|
-| `Form` | `<form>` | HTMX attributes pass through; no client submission logic. |
+| `Form` | `<form>` | HTMX attributes pass through; no client submission logic. Renders **no honeypot** — compose `Honeypot` yourself. |
+| `Honeypot` | off-screen `<input>` | Decoy field paired with `isHoneypotFilled` (`@y-core/forge/form`). `field` defaults to `HONEYPOT_FIELD_DEFAULT`. Put it in mutation forms only. |
 | `FormField` | `<fieldset>` | Accessible form field with `name` / `invalid` / `disabled`. Compounds: `FormField.Label`, `FormField.Description`, `FormField.Error`. |
 | `Field` | layout row | Lightweight label + control row — no form semantics. |
 | `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` prop (a `ForgeIcon`). |
@@ -250,7 +251,7 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `Collapsible` | native `<details>` | Compounds: `Collapsible.Trigger`, `Collapsible.Content`. `<details>` owns open and closed; the controller only publishes them. |
 | `Accordion` | stack of `<details>` | Compounds: `Accordion.Item`, `Accordion.Trigger`, `Accordion.Content`. Each item is its own disclosure and its own tab stop. |
 | `Tooltip` | `popover="hint"` | Compounds: `Tooltip.Trigger`, `Tooltip.Content`. A hint does not dismiss the `auto` popover beneath it. |
-| `CheckboxGroup`, `RadioGroup` | `<fieldset>` of native inputs | Real `<input type="checkbox">` / `<input type="radio">`. Radio grouping and its roving focus are the platform's. Compound: `.Item` on each. |
+| `CheckboxGroup`, `RadioGroup` | `<fieldset>` of native inputs | Real `<input type="checkbox">` / `<input type="radio">`. Radio grouping and its roving focus are the platform's. Compound: `.Item` on each. `description` and `scope` behave as on `FormField` — `scope` must be repeated on every `.Item`, since each item derives its own id. |
 | `Meter` | `<meter>` | A measurement in a known range — distinct from `Progress`, which is task completion. |
 | `NumberField` | numeric `<input>` + steppers | `min` / `max` / `step` enforced natively via `stepUp` / `stepDown`. Compounds: `NumberField.Input`, `NumberField.Increment`, `NumberField.Decrement`. |
 | `ScrollArea` | scroll container | Almost entirely CSS — no scroll hijacking, no synthetic thumb. Compound: `ScrollArea.Viewport`. |
@@ -270,13 +271,32 @@ The markup stays valid and accessible without it; what is missing is the arrow k
 
 | Helper | Returns |
 |---|---|
-| `fieldId(name)` | `field-${name}` — the control ID |
-| `fieldDescriptionId(name)` | `field-${name}-description` |
-| `fieldErrorId(name)` | `field-${name}-error` |
+| `fieldId(name, scope?)` | `field-${name}` — the control ID; `field-${scope}-${name}` when scoped |
+| `fieldDescriptionId(name, scope?)` | the control ID plus `-description` |
+| `fieldErrorId(name, scope?)` | the control ID plus `-error` |
+
+**`scope` separates two fields that share a `name` on one page** — two forms each with an `email`
+field would otherwise emit colliding ids and cross-wired `for` / `aria-describedby`. It is
+**caller-opt-in**: deriving a unique id automatically would require module-level mutable state,
+which [`PRODUCTION_TS_RULES.md`](../../.decisions/PRODUCTION_TS_RULES.md) §1 forbids. Omit it and
+the output is byte-identical to an unscoped field.
 
 `fieldControlProps(props, field)` is the pure function that merges a `FieldDescriptor`
-(`{ name, invalid?, disabled? }`) into control props — it is what `Input` / `Select` / `Textarea` call
-internally when given a `field` prop. `FIELD_LABEL_CLASSES` is the shared label class string.
+(`{ name, scope?, description?, invalid?, disabled? }`) into control props — it is what `Input` /
+`Select` / `Textarea` call internally when given a `field` prop. `FIELD_LABEL_CLASSES` is the shared
+label class string.
+
+**`description` declares that a description element actually renders**, and defaults to `false`.
+`aria-describedby` is emitted **only** when something really describes the field: naming an element
+that does not exist is a dangling IDREF, which assistive technology treats as an error rather than
+ignoring.
+
+`fieldDescribedBy(name, { scope?, description?, invalid?, existing? })` is that computation on its
+own, returning `undefined` when nothing to point at renders. `fieldControlProps` uses it, and so do
+`CheckboxGroup` and `RadioGroup` — a `<fieldset>` is not a labelable control, so those groups cannot
+take `fieldControlProps` wholesale (its `id` / `name` / `aria-invalid` outputs are shaped for an
+`<input>`, and the groups route invalid through `stateAttrs` instead), but the `aria-describedby`
+half is not structural and is shared rather than restated.
 
 ```tsx
 import { fieldErrorId } from "@y-core/forge/ui/core";
@@ -1081,7 +1101,7 @@ const tools: ToolbarDefinition<"selectTool" | "addLayer"> = {
 
 | Export | Kind | Description |
 |---|---|---|
-| `Navbar` | component | Renders `NavbarProps.config`. Required: `config`, `resolveHref`, `icon` (`ForgeIcon<"chevron-down" \| "hamburger" \| "close">`). Optional: `slots`, `activeFilters`, `placement` (default `"top"`), `class`, plus `<nav>` pass-through. |
+| `Navbar` | component | Renders `NavbarProps.config`. Required: `config`, `resolveHref`, `icon` (`ForgeIcon<"chevron-down" \| "hamburger" \| "close">`). Optional: `slots`, `activeFilters`, `placement` (default `"top"`), `id`, `class`, plus `<nav>` pass-through. |
 | `Toolbar` | component | Renders `ToolbarProps.config`. Required: `config`, `icon` (`ForgeIcon<string>`). Optional: `placement` (default `"left"`), `commandTarget`, `id`, `class`, plus `<nav>` pass-through. |
 | `ThemeToggle` | component | Theme-cycle button. Required: `icon` (`ForgeIcon<"sun" \| "moon" \| "monitor">`). Optional: `size` (default `20`), `class`. |
 | `FOUC_SCRIPT` | `const` string | Inline script that applies the stored preference before first paint. |
@@ -1095,6 +1115,11 @@ const tools: ToolbarDefinition<"selectTool" | "addLayer"> = {
 (`label`, `items`, `filters?` — recurses for nested submenus), or a `NavSlot` (`slot`, `label?`,
 `filters?`). Sibling sections spread across the bar via `justify-between`. `NavPlacement` is
 `"top" | "bottom" | "left" | "right"`.
+
+**`id` namespaces the generated menu ids** on both `Navbar` and `Toolbar`, falling back to
+`placement`. Supply a distinct value when two bars (or two rails) share the same `placement` —
+otherwise both mint `navbar-menu-top-0`, `commandfor` resolves to the first match in the document,
+and the second bar's trigger toggles the first bar's popup.
 
 Two rules the type does not express: **`href` is a route-map key, never a URL** — it is always passed
 through the required `resolveHref`, so links cannot be hardcoded; and a `NavSlot.slot` that is a

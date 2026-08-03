@@ -37,4 +37,4 @@ export type { JoinPatterns } from "@remix-run/route-pattern/join";
 export { joinPatterns } from "@remix-run/route-pattern/join";
 // Route-table introspection
 export type { RouteFilter } from "./filter";
-export { routePaths } from "./filter";
+export { forMethod, routePaths } from "./filter";

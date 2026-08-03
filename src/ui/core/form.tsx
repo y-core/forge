@@ -1,5 +1,6 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
+import { CSRF_FIELD_DEFAULT } from "../../form/constants";
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 
 type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx-headers"> & {
@@ -8,7 +9,6 @@ type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx
   children?: JSXNode;
   csrfToken?: string;
   csrfField?: string;
-  honeypotField?: string;
 };
 
 function parseHxHeaders(value: string): Record<string, string> | null {
@@ -53,10 +53,16 @@ function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfToken?: string
   return JSON.stringify({ "X-CSRF-Token": csrfToken });
 }
 
+/**
+ * A `<form>` that wires CSRF for you and passes htmx attributes straight through.
+ *
+ * It renders **no honeypot**. One used to be emitted unconditionally, including on `method="get"`,
+ * where the browser serialises it into the query string of every resulting URL. Compose
+ * {@link Honeypot} yourself on the forms that submit mutations — see its TSDoc, and `form/README.md`.
+ */
 export const Form: FC<PropsWithChildren<FormProps>> = ({
   csrfToken,
-  csrfField = "_csrf",
-  honeypotField = "__surname",
+  csrfField = CSRF_FIELD_DEFAULT,
   method = "post",
   children,
   "hx-headers": hxHeadersProp,
@@ -68,9 +74,6 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
   return (
     <form data-slot='form' method={method} {...(resolvedHxHeaders !== undefined ? { "hx-headers": resolvedHxHeaders } : {})} {...formProps}>
       {csrfToken && <input data-slot='form-csrf' type='hidden' name={csrfField} value={csrfToken} />}
-      <div aria-hidden='true' data-slot='form-honeypot' class='absolute -left-[9999px] opacity-0 pointer-events-none'>
-        <input type='text' name={honeypotField} tabindex={-1} autocomplete='off' />
-      </div>
       {children}
     </form>
   );

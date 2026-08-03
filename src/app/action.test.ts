@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { CSRF_FIELD_DEFAULT } from "../form/constants";
+import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
 import { defineAction } from "./action";
 import { Forge } from "./forge-app";
 import { mapHandler } from "./route-test-helper";
@@ -194,6 +196,43 @@ describe("defineAction", () => {
     );
   });
 
+  it("accepts a body above the default cap when the route raises maxBytes", async () => {
+    const app = makeApp(
+      defineAction<TestData>({
+        maxBytes: 300 * 1024,
+        parse: (fd) => ({ name: fd.get("name") as string }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
+        handle: (data) => new Response(String(data.name.length)),
+      }),
+    );
+
+    const res = await app.request("/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `name=${"x".repeat(200_000)}`,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("200000");
+  });
+
+  it("still returns 413 for a body above the route's own raised cap", async () => {
+    const app = makeApp(
+      defineAction<TestData>({
+        maxBytes: 150 * 1024,
+        parse: (fd) => ({ name: fd.get("name") as string }),
+        validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
+        handle: () => new Response("success"),
+      }),
+    );
+
+    const res = await app.request("/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `name=${"x".repeat(200_000)}`,
+    });
+    expect(res.status).toBe(413);
+  });
+
   it("logs server-side when the handler throws", async () => {
     const logs: string[] = [];
     const originalLog = console.log;
@@ -213,5 +252,79 @@ describe("defineAction", () => {
       console.log = originalLog;
     }
     expect(logs.some((l) => l.includes("Action handler threw"))).toBe(true);
+  });
+});
+
+describe("defineAction behind csrfProtection — body size cap", () => {
+  const RAISED = 300 * 1024;
+
+  function echoAction(maxBytes?: number) {
+    return defineAction<TestData>({
+      ...(maxBytes !== undefined ? { maxBytes } : {}),
+      parse: (fd) => ({ name: fd.get("name") as string }),
+      validate: (data) => (data.name ? { ok: true, data } : { ok: false, error: ["Name required"] }),
+      handle: (data) => new Response(String(data.name.length)),
+    });
+  }
+
+  async function guardedBody(path: string, key: CryptoKey, payloadLength: number): Promise<string> {
+    const token = await createCsrfToken(key, path);
+    return `${CSRF_FIELD_DEFAULT}=${token}&name=${"x".repeat(payloadLength)}`;
+  }
+
+  const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
+
+  it("accepts a body over the default cap when the route and its guard both raise maxBytes", async () => {
+    const key = await importCsrfKey("a".repeat(64));
+    const app = new Forge();
+    mapHandler(app, "POST", "/upload", {
+      middleware: [csrfProtection({ secret: () => key, subject: false, maxBytes: RAISED })],
+      handler: echoAction(RAISED),
+    });
+
+    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/upload", key, 200_000) });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("200000");
+  });
+
+  it("answers 413 rather than a misleading 403 when the body exceeds the guard's cap", async () => {
+    const key = await importCsrfKey("a".repeat(64));
+    const app = new Forge();
+    mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
+
+    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/upload", key, 200_000) });
+    expect(res.status).toBe(413);
+    expect(await res.text()).toBe("Payload Too Large");
+  });
+
+  it("keeps a genuine token failure on 403 when the body is within the cap", async () => {
+    const key = await importCsrfKey("a".repeat(64));
+    const app = new Forge();
+    mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
+
+    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: "name=Jane" });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("keeps two routes with different caps independent within the same isolate", async () => {
+    const key = await importCsrfKey("a".repeat(64));
+    const app = new Forge();
+    mapHandler(app, "POST", "/big", {
+      middleware: [csrfProtection({ secret: () => key, subject: false, maxBytes: RAISED })],
+      handler: echoAction(RAISED),
+    });
+    mapHandler(app, "POST", "/small", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
+
+    // Exercise the generous route first, then the strict one, then the generous one again: a cap
+    // that leaked across requests would show up as the wrong verdict on the second or third call.
+    const first = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", key, 200_000) });
+    expect(first.status).toBe(200);
+
+    const strict = await app.request("/small", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/small", key, 200_000) });
+    expect(strict.status).toBe(413);
+
+    const again = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", key, 200_000) });
+    expect(again.status).toBe(200);
   });
 });

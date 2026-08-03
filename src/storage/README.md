@@ -119,8 +119,90 @@ const query = sql`SELECT * FROM users WHERE ${whereActive} ORDER BY created_at D
 | Export | Description |
 |---|---|
 | `sql` | Tagged template that produces a `SqlFragment` |
-| `isSqlFragment(value)` | Type guard — confirms a value is a `SqlFragment`; use it in generic helpers that must reject raw strings |
+| `isSqlFragment(value)` | Type guard — a **provenance** check, not a shape check. Only a fragment `sql` minted passes; use it in generic helpers that must reject raw strings and look-alike objects |
 | `SQL_PLACEHOLDER` | The placeholder string (`"?"`) emitted for each bind param |
+
+#### `uuidv7()` — time-ordered record identifiers
+
+`uuidv7()` returns a canonical UUIDv7 string for a primary key: unique and non-sequential, yet
+lexicographically sortable by creation time.
+
+```ts
+import { sql, uuidv7 } from "@y-core/forge/storage/db";
+
+await db.execute(sql`INSERT INTO orders (id, customer_id) VALUES (${uuidv7()}, ${customerId})`);
+```
+
+Store it in a `TEXT` column. Because consecutive IDs share a leading prefix, inserts append to the
+right edge of the primary-key B-tree instead of scattering across it, and `ORDER BY id` doubles as
+creation order — so keyset pagination needs no separate timestamp index:
+
+```sql
+CREATE TABLE orders (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL);
+-- page forward with no OFFSET scan
+SELECT * FROM orders WHERE id > ?1 ORDER BY id LIMIT 50;
+```
+
+**IDs stay ordered inside a single request.** On Workers `Date.now()` is frozen between I/O
+operations, so a batch minted in one handler all reads the same millisecond; the generator carries
+a monotonic counter in the `rand_a` field to keep that batch ordered. This is why forge ships its
+own generator rather than deferring to a stock implementation —
+`.decisions/STORAGE_BINDINGS.md` §1e has the full rationale.
+
+**Never use a UUIDv7 as a secret.** It discloses its creation time and mint rate by construction.
+
+##### Storing the bytes instead — `uuidv7Bytes()`
+
+`uuidv7Bytes()` mints the **same value** as `uuidv7()`, from the same generator, as its raw 16
+octets. SQLite compares a `BLOB` with `memcmp` and the bytes are most-significant first, so
+ordering is identical to the `TEXT` form — this is purely a density trade.
+
+```ts
+import { sql, uuidFromBytes, uuidToBytes, uuidv7Bytes } from "@y-core/forge/storage/db";
+
+// CREATE TABLE events (id BLOB PRIMARY KEY, kind TEXT NOT NULL);
+await db.execute(sql`INSERT INTO events (id, kind) VALUES (${uuidv7Bytes()}, ${kind})`);
+
+// D1 has no binary JSON type, so a BLOB column comes back as number[].
+const row = await db.queryOne<{ id: number[]; kind: string }>(sql`SELECT id, kind FROM events LIMIT 1`);
+if (row.ok && row.data) console.log(uuidFromBytes(row.data.id)); // "0192f8a1-b2c3-7d4e-…"
+
+// Bind a string ID from a request against the BLOB column.
+await db.queryOne(sql`SELECT * FROM events WHERE id = ${uuidToBytes(id)}`);
+```
+
+**What it buys, measured** — 100k rows, 4 KB pages, two secondary indexes:
+
+| Primary key | table + PK index | secondary indexes | total |
+|---|---|---|---|
+| `TEXT` uuidv7 | 11,684 KB | 4,240 KB | **15,924 KB** |
+| `BLOB` uuidv7 | 7,400 KB | 4,240 KB | **11,640 KB** |
+| `INTEGER` rowid | 3,060 KB | 4,240 KB | 7,300 KB |
+
+About 27% off the total, or ~43 MB per million rows — which matters against D1's 10 GB
+per-database ceiling far more than it matters on the bill.
+
+**What it costs:** byte arrays in every `wrangler d1 execute` result, dashboard query, log line and
+error message; `x'0192…'` literals in hand-written SQL; no `LIKE` or prefix matching on the id; and
+`json_object('id', id)` no longer produces anything you can send to a client. Take it per table, on
+tables you do not hand-query — not as a schema-wide default.
+
+**Note what the secondary-index column does *not* show.** It is identical across all three: in an
+ordinary rowid table, index entries carry the implicit integer rowid, never the primary key. A
+36-character id costs two fixed copies per row — the column and its automatic unique index —
+however many indexes the table has. This is also why **`WITHOUT ROWID` is the wrong lever here**:
+it makes the id the table key, appending it to every secondary index entry, and past a single
+index it comes out larger than the rowid table it replaced.
+
+| Export | Description |
+|---|---|
+| `uuidv7()` | Generates a canonical lowercase UUIDv7 from a shared monotonic generator |
+| `uuidv7Bytes()` | The same value as its raw 16 octets, for a `BLOB` column — shares the generator with `uuidv7()`, so both forms stay ordered against each other |
+| `uuidFromBytes(value)` | Renders 16 octets as the canonical string; accepts the `number[]` D1 returns for a `BLOB`, plus `Uint8Array` and `ArrayBuffer`. Throws unless the value is exactly 16 bytes |
+| `uuidToBytes(id)` | Parses a canonical 36-character UUID (either case) to its 16 octets, for binding against a `BLOB` column. An **encoder, not a validator** — validate a request-supplied ID at the boundary with `v.pipe(v.string(), v.uuid())` first |
+| `createUuidv7(options?)` | Factory returning an independent string generator; pass `options.now` to inject a clock in tests |
+| `createUuidv7Bytes(options?)` | The byte-emitting factory — the core generator the other three build on |
+| `Uuidv7Options`, `UuidByteInput` | The options and accepted-byte-encoding types |
 
 ### Integration guide
 
@@ -147,7 +229,13 @@ const db = resolveD1Client(c, { binding: (c) => c.env.DB });
   accepts `SqlFragment`, so any attempt to pass a raw string is a type error — keep it that way and
   do not coerce around the type with `as`.
 - `isSqlFragment` is the runtime guard for code paths that receive `unknown` and must reject
-  non-fragments before reaching the client.
+  non-fragments before reaching the client. It checks **provenance, not shape**: `SqlFragment`
+  carries a `unique symbol` brand that only `sql` sets and that is not re-exported from `mod.ts`,
+  so a hand-built `{text, params}` literal no longer satisfies it. This is what closes the
+  injection path — `JSON.parse` output can never carry a symbol key, so attacker-controlled JSON
+  shaped like a fragment is bound as a **parameter** instead of being concatenated into the
+  statement text. The brand is non-enumerable in practice: `JSON.stringify(sql\`…\`)` round-trips
+  to a value `isSqlFragment` rejects.
 
 ---
 
@@ -460,9 +548,10 @@ boundary stays unambiguous even when the object key contains the `|` delimiter.
   call `verifySignedObjectUrl` before serving from a signed-URL route — a missing or invalid
   signature must fail closed (`403`).
 - **`Content-Disposition` is sanitized.** When you set `contentDisposition`, `serveObject` emits both
-  an RFC 5987 `filename*=UTF-8''…` parameter and a sanitized ASCII `filename="…"` fallback that strips
-  quotes, backslashes, and control characters, so a crafted filename cannot break out of the quoted
-  string.
+  an RFC 5987 `filename*=UTF-8''…` parameter carrying the exact name and an ASCII `filename="…"`
+  fallback for clients that ignore it. The fallback folds accents to their base letter, collapses
+  every other run of non-printable-ASCII to a single `_` (keeping the extension), and emits quotes
+  and backslashes as quoted-pairs, so a crafted filename cannot break out of the quoted string.
 
 ---
 

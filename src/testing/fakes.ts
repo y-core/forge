@@ -7,17 +7,31 @@ const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
 
 interface StoredEntry {
-  value: string;
+  bytes: Uint8Array;
   metadata?: unknown;
   expiration?: number;
+}
+
+/**
+ * Resolves the absolute expiry a real KV binding would record for a write: an explicit
+ * `expiration` is stored as given, while a relative `expirationTtl` is converted to unix
+ * seconds at write time — the same translation the platform performs before surfacing the
+ * value on `list`.
+ */
+function resolveExpiration(options?: KVPutOptions): number | undefined {
+  if (options?.expiration !== undefined) return options.expiration;
+  if (options?.expirationTtl !== undefined) return Math.floor(Date.now() / 1000) + options.expirationTtl;
+  return undefined;
 }
 
 /**
  * In-memory `KVNamespace` fake for tests — implements the full structural contract
  * (`get`/`getWithMetadata` in both `text` and `arrayBuffer` modes, `put`, `delete`,
  * `list` with prefix filtering and offset-based cursor pagination). Data lives in a
- * per-instance `Map`; TTLs are accepted but not enforced (tests should not depend on
- * wall-clock expiry), though an explicit `expiration` is tracked and surfaced on `list`.
+ * per-instance `Map` and is held as raw bytes, so an `arrayBuffer` round-trip is
+ * byte-identical for values that are not valid UTF-8. TTLs are recorded as an absolute
+ * `expiration` and surfaced on `list`, but expiry is never enforced — tests should not
+ * depend on wall-clock expiry.
  *
  * @example
  * ```typescript
@@ -28,12 +42,13 @@ interface StoredEntry {
  * @public
  */
 export function fakeKV(seed?: Record<string, string>): KVNamespace {
-  const data = new Map<string, StoredEntry>(Object.entries(seed ?? {}).map(([k, v]) => [k, { value: v }]));
+  const data = new Map<string, StoredEntry>(Object.entries(seed ?? {}).map(([k, v]) => [k, { bytes: TEXT_ENCODER.encode(v) }]));
 
   function read(key: string, type: "text" | "arrayBuffer"): string | ArrayBuffer | null {
     const entry = data.get(key);
     if (!entry) return null;
-    return type === "text" ? entry.value : TEXT_ENCODER.encode(entry.value).buffer;
+    // Hand out a copy so a caller mutating the result cannot reach back into the store.
+    return type === "text" ? TEXT_DECODER.decode(entry.bytes) : (entry.bytes.slice().buffer as ArrayBuffer);
   }
 
   const impl = {
@@ -46,11 +61,14 @@ export function fakeKV(seed?: Record<string, string>): KVNamespace {
       metadata: data.get(key)?.metadata ?? null,
     }),
     put: async (key: string, value: string | ArrayBuffer, options?: KVPutOptions): Promise<void> => {
-      const text = typeof value === "string" ? value : TEXT_DECODER.decode(value);
+      // Bytes are stored verbatim — decoding to a string here would replace every invalid
+      // UTF-8 sequence with U+FFFD and silently corrupt binary values.
+      const bytes = typeof value === "string" ? TEXT_ENCODER.encode(value) : new Uint8Array(value).slice();
+      const expiration = resolveExpiration(options);
       data.set(key, {
-        value: text,
+        bytes,
         ...(options?.metadata !== undefined ? { metadata: options.metadata } : {}),
-        ...(options?.expiration !== undefined ? { expiration: options.expiration } : {}),
+        ...(expiration !== undefined ? { expiration } : {}),
       });
     },
     list: async <M = unknown>(options?: KVListOptions): Promise<KVListResult<M>> => {
@@ -152,11 +170,29 @@ function toR2Object(key: string, entry: StoredR2Entry): R2ObjectLike {
   };
 }
 
+/** The range shapes an R2 `get` accepts: a forward `offset`/`length` window, or a `suffix`
+ *  byte count measured back from the end of the object. */
+interface R2GetLike {
+  range?: { offset?: number; length?: number; suffix?: number };
+}
+
+/** Resolves an R2 range option to a `[start, end)` byte window clamped to the object size. A
+ *  missing `length` runs to the end; an out-of-range `offset` yields an empty window rather than
+ *  throwing, leaving the 416 decision to the caller that serves HTTP. */
+function resolveRange(size: number, range?: R2GetLike["range"]): { start: number; end: number } {
+  if (!range) return { start: 0, end: size };
+  if (range.suffix !== undefined) return { start: Math.max(0, size - range.suffix), end: size };
+  const start = Math.min(Math.max(range.offset ?? 0, 0), size);
+  const end = range.length !== undefined ? Math.min(start + range.length, size) : size;
+  return { start, end: Math.max(start, end) };
+}
+
 /**
  * Functional in-memory `R2BucketLike` fake for tests — a per-instance `Map` backs `put`/`get`/
  * `head`/`delete`/`list`. `put` stores the body bytes plus optional http/custom metadata; `get`
  * returns an `R2ObjectBodyLike` with working `arrayBuffer()`/`text()`/`blob()` and a `body`
- * stream; `list` honors `prefix`/`limit`/`cursor` with offset-encoded cursors.
+ * stream, honouring the `range` option in both its `offset`/`length` and `suffix` forms; `list`
+ * honors `prefix`/`limit`/`cursor` with offset-encoded cursors.
  *
  * @example
  * ```typescript
@@ -191,12 +227,15 @@ export function fakeR2(seed?: Record<string, string>): R2BucketLike {
       data.set(key, entry);
       return toR2Object(key, entry);
     },
-    get: async (key: string): Promise<R2ObjectBodyLike | null> => {
+    get: async (key: string, options?: R2GetLike): Promise<R2ObjectBodyLike | null> => {
       const entry = data.get(key);
       if (!entry) return null;
-      const bytes = entry.bytes;
+      const { start, end } = resolveRange(entry.bytes.byteLength, options?.range);
+      const bytes = entry.bytes.subarray(start, end);
       let used = false;
       return {
+        // `size` stays the whole object's size even for a ranged read — R2 reports the object,
+        // not the slice, and `serveObject` builds the `Content-Range` total from it.
         ...toR2Object(key, entry),
         get body(): ReadableStream {
           used = true;
@@ -251,11 +290,23 @@ interface FakeD1Statement extends D1PreparedStatement {
   readonly params: unknown[];
 }
 
+/** Options for `fakeD1`. @public */
+export interface FakeD1Options {
+  /**
+   * Opt-in failure injector, consulted before every executed statement (`all`, `first`, `run`,
+   * `exec`, and each statement of a `batch`). Return an `Error` to make that operation reject —
+   * the shape a consumer's `Result` error branch sees — or `null` to let it succeed. Omitted,
+   * the fake never fails.
+   */
+  failOn?: (sql: string, params: unknown[]) => Error | null;
+}
+
 /**
  * Programmable `D1DatabaseLike` stub for tests. `query` is a responder invoked with the executed
  * SQL and bound params; its return becomes the `results` of `all`/`first` (default `[]`). Every
  * bound statement is appended to the returned `calls` array for assertions. Mirrors how
- * `createD1Client` drives `prepare`→`bind`→`run`/`all`/`first`/`batch`.
+ * `createD1Client` drives `prepare`→`bind`→`run`/`all`/`first`/`batch`. Pass `options.failOn` to
+ * drive a consumer's error branch; without it the fake always succeeds.
  *
  * @example
  * ```typescript
@@ -264,12 +315,24 @@ interface FakeD1Statement extends D1PreparedStatement {
  * const r = await client.query(sql`SELECT * FROM users`);
  * expect(db.calls).toHaveLength(1);
  * ```
+ * @example
+ * ```typescript
+ * const db = fakeD1(() => [], { failOn: () => new Error("D1_ERROR: no such table") });
+ * const r = await createD1Client(db).query(sql`SELECT 1`);
+ * expect(r.ok).toBe(false);
+ * ```
  * @public
  */
 export function fakeD1(
   query: (sql: string, params: unknown[]) => unknown[] = () => [],
+  options?: FakeD1Options,
 ): D1DatabaseLike & { calls: { sql: string; params: unknown[] }[] } {
   const calls: { sql: string; params: unknown[] }[] = [];
+
+  function failIfInjected(sql: string, params: unknown[]): void {
+    const failure = options?.failOn?.(sql, params);
+    if (failure) throw failure;
+  }
 
   function statement(sql: string, params: unknown[]): FakeD1Statement {
     return {
@@ -280,30 +343,36 @@ export function fakeD1(
         return statement(sql, values);
       },
       all: async <T = unknown>(): Promise<D1Result<T>> => {
+        failIfInjected(sql, params);
         const results = query(sql, params) as T[];
         return { results, success: true, meta: { duration: 0, rows_read: results.length } };
       },
       first: async <T = unknown>(column?: string): Promise<T | null> => {
+        failIfInjected(sql, params);
         const row = query(sql, params)[0];
         if (row === undefined || row === null) return null;
         return (column !== undefined ? (row as Record<string, unknown>)[column] : row) as T;
       },
-      run: async (): Promise<D1Result<unknown>> => ({
-        results: [],
-        success: true,
-        meta: { rows_written: 0, changes: 0, last_row_id: 0, duration: 0 },
-      }),
+      run: async (): Promise<D1Result<unknown>> => {
+        failIfInjected(sql, params);
+        return { results: [], success: true, meta: { rows_written: 0, changes: 0, last_row_id: 0, duration: 0 } };
+      },
     };
   }
 
   return {
     calls,
     prepare: (sql: string): D1PreparedStatement => statement(sql, []),
+    // A D1 batch is atomic, so one injected failure rejects the whole batch.
     batch: async <T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> =>
       statements.map((s) => {
         const fs = s as FakeD1Statement;
+        failIfInjected(fs.sql, fs.params);
         return { results: query(fs.sql, fs.params) as T[], success: true, meta: { duration: 0 } };
       }),
-    exec: async (): Promise<{ count: number; duration: number }> => ({ count: 0, duration: 0 }),
+    exec: async (sql: string): Promise<{ count: number; duration: number }> => {
+      failIfInjected(sql, []);
+      return { count: 0, duration: 0 };
+    },
   };
 }

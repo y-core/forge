@@ -92,6 +92,22 @@ injects it into the CSP `script-src`, and stores it on the request context for `
 the app's outermost `applyHeaders` pass, rather than each middleware rebuilding its own
 `Response`.
 
+**They are queued *before* `next()`, alongside the nonce.** Two consequences, both intended:
+
+- **Error pages always carry them.** The headers are on the channel before anything deeper can
+  throw, so they no longer depend on the response unwinding back out through this middleware. A
+  guard registered after `createSecurityHeaders` that throws previously produced a 500 with no CSP
+  and no HSTS.
+- **Header-name conflicts resolve inner-wins.** `setPendingHeader` is last-writer-wins per name and
+  a middleware registered deeper queues later, so a consumer middleware that queues an overlapping
+  name overrides the security default rather than being overridden by it. Nothing inside forge
+  overlaps — `createSecurityHeaders` owns its 8–9 names, `requestId` owns `x-request-id`, and
+  session and flash use `set-cookie` with `{ append: true }` — so this is observable only from
+  consumer middleware. Pinned in `src/security/headers.test.ts`.
+
+Both the pending channel and a header baked into the handler's own `Response` are still resolved in
+the channel's favour: `applyPendingHeaders` set-overwrites onto the response.
+
 ```typescript
 const securityHeaders: SecurityHeadersOptions = {
   scriptSrc: ["'self'", NONCE, "https://challenges.cloudflare.com"],
@@ -204,17 +220,27 @@ Three middleware defend against cross-origin mutation. They form a deliberate ti
 
 | Guard | Signal | When the signal is absent | Use when |
 |---|---|---|---|
-| `originProtection(options)` | `Sec-Fetch-Site` **with `Origin`/`Referer` fallback** | Falls back to the allowlist | **The default.** Broadest coverage — modern browsers plus older UAs |
-| `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless `allowMissingHeader` | Stricter, no fallback |
+| `originProtection(options)` | `Sec-Fetch-Site` **and** the `Origin`/`Referer` allowlist, both applied | Falls back to Fetch-Metadata vouching; fails closed with no signal at all | **The default.** Broadest coverage — modern browsers plus older UAs |
+| `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless `allowMissingHeader` | Stricter, no allowlist |
 | `originGuard(allowed)` | `Origin`/`Referer` only | Allowed through | Webhook/privileged endpoints keyed purely on an origin allowlist |
 
 **`originProtection` is the authoritative recommended default** — the other two are the
 single-signal tiers it is built from.
 
 All three exempt safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) first, so only state-changing
-requests are gated. `originProtection` treats a present `Sec-Fetch-Site` as authoritative and
-consults the `Origin`/`Referer` allowlist only when the header is absent. Its `allowedOrigins`
-is a static `string[]` or a per-request resolver.
+requests are gated. `originProtection` treats `Sec-Fetch-Site` as a **veto, not a pass**: any
+value other than `same-origin`/`none` rejects outright, and a good value does *not* short-circuit
+the allowlist. `allowedOrigins` — a static `string[]` or a per-request resolver — is consulted on
+every mutating request carrying an `Origin` or `Referer`; only when both are absent does the guard
+fall back to the browser's Fetch-Metadata vouching, and with no signal at all it fails closed.
+
+Consequence: an app must list **its own origin** in `allowedOrigins` or its
+own same-origin mutations are rejected. The prior early return let a present `Sec-Fetch-Site` skip
+the allowlist entirely — forgeable by any non-browser client, and a standing disagreement with the
+`originGuard` tier, which enforces the allowlist unconditionally.
+
+`Sec-Fetch-Site` is also matched as an **allowlist**: `same-site` is rejected, not just
+`cross-site`, since any sibling subdomain produces it. 
 
 `applyMiddlewareChain` wires `originProtection` for each guard group's `origin` option, so apps
 using the canonical chain get the recommended tier by default.

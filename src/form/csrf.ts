@@ -15,7 +15,15 @@ import {
 import { err, ok } from "../result/result";
 import { CSRF_FIELD_DEFAULT } from "./constants";
 import { parseFormData } from "./parse-form-data";
-import type { CsrfKeyRing, CsrfProtectionOptions, CsrfResult, CsrfSecretResolver, CsrfTokenOptions, CsrfVerifyOptions } from "./types";
+import type {
+  CsrfKeyRing,
+  CsrfProtectionOptions,
+  CsrfResult,
+  CsrfSecretResolver,
+  CsrfTokenOptions,
+  CsrfVerifyOptions,
+  ParseFormDataOptions,
+} from "./types";
 
 const CLOCK_SKEW_MS = 30_000;
 const DEFAULT_KEY_ID = "0";
@@ -36,6 +44,13 @@ export const csrfTokenCtx = contextVar<string>(CSRF_TOKEN_KEY);
 
 async function keyFingerprint(hexSecret: string): Promise<string> {
   return base64urlEncode(await sha256(hexSecret.toLowerCase())).slice(0, 12);
+}
+
+/**
+ * Looks a key id up in a ring **without** consulting the prototype chain.
+ */
+function lookupKey(ring: CsrfKeyRing, kid: string): CryptoKey | undefined {
+  return Object.hasOwn(ring.keys, kid) ? ring.keys[kid] : undefined;
 }
 
 function normalizeRing(keyOrRing: CryptoKey | CsrfKeyRing): CsrfKeyRing {
@@ -134,7 +149,7 @@ export async function verifyCsrfToken(
   }
 
   const ring = normalizeRing(keyOrRing);
-  const key = ring.keys[_kid];
+  const key = lookupKey(ring, _kid);
   if (!key) return err("unknown-key");
 
   const valid = await hmacVerify(key, payloadStr, sigBytes);
@@ -176,6 +191,7 @@ export type { CsrfSecretResolver };
  */
 export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
+  const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
 
   const ringCache = new WeakMap<object, CsrfKeyRing>();
   // biome-ignore lint/suspicious/noExplicitAny: context shape varies
@@ -195,7 +211,7 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   return async (context, next) => {
     const method = context.method.toUpperCase();
     const ring = await resolveRing(context);
-    const activeKey = ring.keys[ring.activeKeyId];
+    const activeKey = lookupKey(ring, ring.activeKeyId);
     if (!activeKey) {
       throw new Error(`CSRF key ring has no key for active key id "${ring.activeKeyId}"`);
     }
@@ -214,9 +230,13 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
 
     if (!token) {
       try {
-        const formData = await parseFormData(context);
+        const formData = await parseFormData(context, parseOptions);
         token = formData.get(tokenField)?.toString() ?? undefined;
-      } catch {
+      } catch (err) {
+        // An oversized body is a size failure, not a CSRF failure, so answer 413 at the point of detection
+        if ((err as { status?: number }).status === 413) {
+          return new Response("Payload Too Large", { status: 413 });
+        }
         // body cannot be parsed as form data — token stays undefined
       }
     }

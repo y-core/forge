@@ -65,8 +65,10 @@ export interface DeriveAllowedOriginsOptions {
   includeWww?: boolean;
 }
 
-/** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`). @public */
-export type CrossOriginResult = GuardResult<"missing-fetch-metadata" | "cross-site">;
+/** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`).
+ *  `same-site` is reported distinctly from `cross-site` because the two describe different
+ *  attackers — a sibling subdomain you may partly control, versus an unrelated origin. @public */
+export type CrossOriginResult = GuardResult<"missing-fetch-metadata" | "cross-site" | "same-site">;
 
 /** Options for the Fetch-Metadata cross-origin protection guard. @public */
 export interface CrossOriginProtectionOptions {
@@ -76,9 +78,10 @@ export interface CrossOriginProtectionOptions {
 
 /** Options for the Origin/Referer allowlist middleware, with per-request origin resolution. @public */
 export interface OriginProtectionOptions<Bindings = Record<string, unknown>> {
-  /** Allowed origins for the Origin/Referer fallback (applied only when Sec-Fetch-Site is
-   *  absent). A static list, or a per-request resolver over the app context (e.g. parsed
-   *  BASE_URL config). */
+  /** Allowed origins, consulted on **every** mutating request that carries an `Origin` or
+   *  `Referer` — not only when `Sec-Fetch-Site` is absent. The app's own origin must therefore
+   *  appear here, or its own same-origin mutations are rejected. A static list, or a per-request
+   *  resolver over the app context (e.g. parsed BASE_URL config). */
   allowedOrigins: string[] | ((c: AppContext<Bindings>) => string[]);
 }
 

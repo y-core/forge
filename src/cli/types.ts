@@ -74,6 +74,16 @@ export type CliErrorKind = "unknown-flag" | "missing-value" | "invalid-args" | "
 /** Map of tool command → install hint, surfaced verbatim when the tool is missing. */
 export type ToolHints = Record<string, string>;
 
+/** Outcome of a buffered child process spawned by `capture`. */
+export interface CaptureResult {
+  /** Exit code; `1` when the process was killed by a signal or never spawned. */
+  code: number;
+  /** Combined stdout and stderr, interleaved in write order. */
+  output: string;
+  /** Wall-clock duration of the spawn, in milliseconds. */
+  ms: number;
+}
+
 /** A logger bound to a `[scope]` prefix. */
 export interface ScopedLogger {
   /** Progress line to stdout: `[scope] msg`. */

@@ -91,12 +91,12 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
     await mountNavbar(page);
 
     const before = await page.evaluate(() => {
-      const el = document.querySelector("#navbar-menu-0");
+      const el = document.querySelector("#navbar-menu-top-0");
       return { open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
     });
     await page.click("[data-slot='menu-trigger']");
     const after = await page.evaluate(() => {
-      const el = document.querySelector("#navbar-menu-0");
+      const el = document.querySelector("#navbar-menu-top-0");
       return { open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
     });
 
@@ -110,7 +110,7 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
     await mountNavbar(page);
 
     const leaf = await page.evaluate(() => {
-      const el = document.querySelector("#navbar-menu-0 [data-slot='menu-link-item']");
+      const el = document.querySelector("#navbar-menu-top-0 [data-slot='menu-link-item']");
       return { tag: el?.tagName, role: el?.getAttribute("role"), href: el?.getAttribute("href") };
     });
 
@@ -160,8 +160,8 @@ test.describe("Navbar — submenus", () => {
 
     await page.click("[data-slot='menu-submenu-trigger']");
 
-    await expect.poll(() => isOpen(page, "navbar-menu-1")).toBe(true);
-    expect(await isOpen(page, "navbar-menu-0")).toBe(true);
+    await expect.poll(() => isOpen(page, "navbar-menu-top-1")).toBe(true);
+    expect(await isOpen(page, "navbar-menu-top-0")).toBe(true);
   });
 
   test("Escape closes only the innermost menu", async ({ page }) => {
@@ -172,8 +172,8 @@ test.describe("Navbar — submenus", () => {
 
     await page.keyboard.press("Escape");
 
-    await expect.poll(() => isOpen(page, "navbar-menu-1")).toBe(false);
-    expect(await isOpen(page, "navbar-menu-0")).toBe(true);
+    await expect.poll(() => isOpen(page, "navbar-menu-top-1")).toBe(false);
+    expect(await isOpen(page, "navbar-menu-top-0")).toBe(true);
   });
 });
 
@@ -181,26 +181,26 @@ test.describe("Navbar — light dismiss", () => {
   test("a click outside closes the menu, with no outside-click listener of forge's own", async ({ page }) => {
     await mountNavbar(page);
     await page.click("[data-slot='menu-trigger']");
-    expect(await isOpen(page, "navbar-menu-0")).toBe(true);
+    expect(await isOpen(page, "navbar-menu-top-0")).toBe(true);
 
     await page.click("#before");
 
     // The Popover API's own light-dismiss. The scope installs no document click listener to do
     // this, which is a claim only expressible against real behaviour — an absent listener asserted
     // against a stub proves nothing about the browser.
-    await expect.poll(() => isOpen(page, "navbar-menu-0")).toBe(false);
+    await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(false);
   });
 
   test("closing the parent closes the submenu with it", async ({ page }) => {
     await mountNavbar(page);
     await page.click("[data-slot='menu-trigger']");
     await page.click("[data-slot='menu-submenu-trigger']");
-    await expect.poll(() => isOpen(page, "navbar-menu-1")).toBe(true);
+    await expect.poll(() => isOpen(page, "navbar-menu-top-1")).toBe(true);
 
     await page.click("#before");
 
-    await expect.poll(() => isOpen(page, "navbar-menu-1")).toBe(false);
-    expect(await isOpen(page, "navbar-menu-0")).toBe(false);
+    await expect.poll(() => isOpen(page, "navbar-menu-top-1")).toBe(false);
+    expect(await isOpen(page, "navbar-menu-top-0")).toBe(false);
   });
 });
 

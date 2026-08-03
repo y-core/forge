@@ -8,18 +8,13 @@
   "type": "module",
   "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
   "scripts": {
-    "typecheck": "tsgo --noEmit",
-    "lint": "biome check src/",
-    "lint:fix": "biome check --write src/",
+    "check": "bun run scripts/check.ts",
+    "verify": "bun run scripts/verify.ts",
+    "lint:fix": "bun run scripts/check.ts --fix",
     "test": "bun test",
     "test:browser": "playwright test",
-    "browser:install": "playwright install chromium",
-    "check": "bun run typecheck && bun run lint && bun test && bun run validate-exports && bun run validate-jsx && bun run validate-docs && bun run validate-css-sources",
-    "validate-exports": "bun run scripts/validate-exports.ts",
-    "validate-css-sources": "bun run scripts/validate-css-sources.ts",
-    "validate-jsx": "bun run scripts/validate-jsx.ts",
-    "validate-docs": "bun run scripts/validate-docs.ts",
-    "prepublishOnly": "bun run check",
+    "test:install": "playwright install chromium",
+    "prepublishOnly": "bun run verify",
     "release": "bun run scripts/release.ts"
   },
   "sideEffects": [
@@ -247,6 +242,7 @@
     "!**/*-test-helper.ts",
     "!**/*.browser.ts",
     "!**/*.test.ts",
-    "!**/*.test.tsx"
+    "!**/*.test.tsx",
+    "!scripts/**/*.test.ts"
   ]
 }

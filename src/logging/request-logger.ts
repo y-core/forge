@@ -16,9 +16,12 @@ function levelForStatus(status: number): LogLevel {
 /**
  * Middleware that creates a per-request child logger, sets it on the context, and emits one
  * summary record per request/response cycle — method, query-stripped path, status, and
- * duration, at a level derived from the status code. A throwing handler produces one `error`
- * record with the serialized error instead, then rethrows. Flushes all pending async channel
- * writes via `executionCtx.waitUntil`. @public
+ * duration, at a level derived from the status code. A throwing handler is converted to a 500 by
+ * the app's error boundary before `next()` resolves, so it appears here as an error-level summary;
+ * the boundary publishes the serialized error as a separate record on this same logger. A throw
+ * that escapes `next()` — from middleware registered below this one — is recorded here with the
+ * serialized error and rethrown. Flushes all pending async channel writes via
+ * `executionCtx.waitUntil`. @public
  */
 export function requestLogger<Bindings = Record<string, unknown>>(options: RequestLoggerOptions<Bindings>): Middleware {
   return async (context, next) => {
@@ -35,6 +38,11 @@ export function requestLogger<Bindings = Record<string, unknown>>(options: Reque
       res = await next();
       log[levelForStatus(res.status)](`${method} ${path}`, { method, path, status: res.status, duration: Date.now() - start });
     } catch (err) {
+      // Reached when a throw escapes `next()` — in practice, middleware registered below this
+      // one, since the app's error boundary sits deeper still and absorbs handler throws before
+      // they get here. The outer boundary appends a second, `"unhandled error"` record after this
+      // one; the `finally` below has already spliced the pending buffer by then, so that record
+      // schedules its *own* flush rather than relying on this window.
       log.error(`${method} ${path}`, { method, path, duration: Date.now() - start, error: serializeError(err) });
       throw err;
     } finally {

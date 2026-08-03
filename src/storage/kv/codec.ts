@@ -12,5 +12,11 @@ export function textCodec(): KvCodec<string> {
 
 /** Raw bytes codec — stores as ArrayBuffer. @public */
 export function bytesCodec(): KvCodec<Uint8Array> {
-  return { type: "arrayBuffer", encode: (value) => value.buffer as ArrayBuffer, decode: (raw) => new Uint8Array(raw as ArrayBuffer) };
+  return {
+    type: "arrayBuffer",
+    // Copy only the view's own window. Handing over `value.buffer` would store the whole backing
+    // buffer, so a subarray would write the wrong length and disclose the bytes around it.
+    encode: (value) => value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer,
+    decode: (raw) => new Uint8Array(raw as ArrayBuffer),
+  };
 }

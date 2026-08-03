@@ -1,7 +1,8 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
+import { findPublicSymbols, parseBarrelExportNames, parseBarrelExports } from "./barrel-parse";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_NAME = (pkg as { name: string }).name;
@@ -19,113 +20,6 @@ const SIDE_EFFECT_ONLY = new Set(["./jsx/register"]);
 // `@internal`, consumed only cross-namespace within forge). The reverse pass below exempts these
 // from the "every barrel must be exported" check. See NAMESPACE_DESIGN.md §3b.
 const SEALED_INTERNAL = new Set(["src/crypto/mod.ts"]);
-
-function parseBarrelExports(filePath: string): { values: string[]; hasExportStar: boolean; hasTypeExports: boolean } {
-  const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");
-
-  const hasExportStar = /export\s+\*\s+from\s+/.test(source);
-  const values: string[] = [];
-  let hasTypeExports = false;
-
-  // Phase 1: export { ... } blocks (with optional leading `type` keyword)
-  // The `s` flag lets [^}]+ span newlines for multi-line brace groups.
-  const blockRe = /export\s+(type\s+)?\{([^}]+)\}/gs;
-  for (const match of source.matchAll(blockRe)) {
-    if (match[1]) {
-      hasTypeExports = true; // type-only block — erased at runtime
-      continue;
-    }
-    for (const part of match[2].split(",")) {
-      const trimmed = part.trim();
-      if (!trimmed) continue;
-      if (trimmed.startsWith("type ")) continue; // inline type marker
-      const asIdx = trimmed.indexOf(" as ");
-      const name = asIdx >= 0 ? trimmed.slice(asIdx + 4).trim() : trimmed;
-      if (name) values.push(name);
-    }
-  }
-
-  // Phase 2: inline export definitions
-  const defRe = /export\s+(?:async\s+)?(?:function|const|class)\s+([A-Za-z_$]\w*)/g;
-  for (const match of source.matchAll(defRe)) {
-    values.push(match[1]);
-  }
-
-  return { values, hasExportStar, hasTypeExports };
-}
-
-/**
- * Collects every identifier a barrel makes available — runtime values, re-exported types, and
- * both sides of an `as` alias — so a `@public` source symbol can be matched whether the barrel
- * re-exports it directly or under a new name.
- */
-function parseBarrelExportNames(filePath: string): Set<string> {
-  const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");
-  const names = new Set<string>();
-
-  const blockRe = /export\s+(?:type\s+)?\{([^}]+)\}/gs;
-  for (const match of source.matchAll(blockRe)) {
-    for (const part of match[1].split(",")) {
-      let trimmed = part.trim();
-      if (!trimmed) continue;
-      if (trimmed.startsWith("type ")) trimmed = trimmed.slice(5).trim();
-      const asIdx = trimmed.indexOf(" as ");
-      if (asIdx >= 0) {
-        names.add(trimmed.slice(0, asIdx).trim());
-        names.add(trimmed.slice(asIdx + 4).trim());
-      } else {
-        names.add(trimmed);
-      }
-    }
-  }
-
-  const defRe = /export\s+(?:async\s+)?(?:function|const|class|interface|type|enum)\s+([A-Za-z_$]\w*)/g;
-  for (const match of source.matchAll(defRe)) names.add(match[1]);
-
-  return names;
-}
-
-/** Extracts the exported identifier(s) declared on a single line, or `null` if none. */
-function exportNamesFromLine(line: string): string[] | null {
-  const decl = line.match(/export\s+(?:async\s+)?(?:function|const|class|interface|type|enum)\s+([A-Za-z_$]\w*)/);
-  if (decl) return [decl[1]];
-
-  const block = line.match(/export\s+(?:type\s+)?\{([^}]+)\}/);
-  if (block) {
-    const names = block[1]
-      .split(",")
-      .map((part) => {
-        let trimmed = part.trim();
-        if (trimmed.startsWith("type ")) trimmed = trimmed.slice(5).trim();
-        const asIdx = trimmed.indexOf(" as ");
-        return asIdx >= 0 ? trimmed.slice(asIdx + 4).trim() : trimmed;
-      })
-      .filter(Boolean);
-    return names.length > 0 ? names : null;
-  }
-  return null;
-}
-
-/**
- * Finds every `@public`-tagged exported symbol in a source file. A `@public` JSDoc tag binds to
- * the next `export` declaration within a short lookahead (skipping intervening `biome-ignore`
- * comment lines), matching the codebase convention of tagging the line above the export.
- */
-function findPublicSymbols(filePath: string): string[] {
-  const lines = readFileSync(filePath, "utf-8").split("\n");
-  const found: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].includes("@public")) continue;
-    for (let j = i; j < Math.min(lines.length, i + 9); j++) {
-      const names = exportNamesFromLine(lines[j]);
-      if (names) {
-        found.push(...names);
-        break;
-      }
-    }
-  }
-  return found;
-}
 
 /**
  * Recursively collects `.ts`/`.tsx` source files owned by `ownerDir`, stopping at any nested
@@ -343,7 +237,9 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   const { values, hasExportStar, hasTypeExports } = parseBarrelExports(filePath);
 
   if (hasExportStar) {
-    console.error(`FAIL ${specifier}: contains banned \`export *\` — use explicit named exports`);
+    console.error(
+      `FAIL ${specifier}: contains a banned star re-export (\`export *\`, \`export * as ns\`, or \`export type *\`) — use explicit named exports`,
+    );
     failed = true;
     continue;
   }

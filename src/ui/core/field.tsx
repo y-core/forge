@@ -8,6 +8,15 @@ import { cva } from "./utils/cva";
 /** Plain object describing a form field — pass explicitly to controls instead of relying on context. @public */
 export interface FieldDescriptor {
   name: string;
+  /** Distinguishes fields that share a `name` on one page — a sign-in and a sign-up form both
+   * holding an `email`. Ids are derived from `name` alone without it, so the two forms would produce
+   * one id twice and a label would point at whichever control the browser found first. Pass the same
+   * value to the field's `Label`, `Description` and `Error`. */
+  scope?: string;
+  /** A description element renders for this field. Off by default: `aria-describedby` may only name
+   * an element that is actually on the page, and a dangling IDREF is an error assistive technology
+   * reports rather than ignores. */
+  description?: boolean;
   invalid?: boolean;
   disabled?: boolean;
 }
@@ -20,6 +29,13 @@ interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children">
   disabled?: boolean;
   orientation?: FieldOrientation;
   children?: JSXNode;
+}
+
+/** What a compound member needs to derive the same id the control derived: the field's name, and the
+ * scope that separates it from a same-named field elsewhere on the page. */
+interface FieldNaming {
+  name?: string;
+  scope?: string;
 }
 
 type LabelProps = JSX.IntrinsicElements["label"];
@@ -51,39 +67,76 @@ const fieldVariants = cva({
 export const FIELD_LABEL_CLASSES =
   "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50";
 
-export function fieldId(name: string): string {
-  return `field-${name}`;
+/** The control's id. `scope` separates two fields that share a name on one page. */
+export function fieldId(name: string, scope?: string): string {
+  return scope ? `field-${scope}-${name}` : `field-${name}`;
 }
 
-export function fieldDescriptionId(name: string): string {
-  return `field-${name}-description`;
+/** The id of the field's description, derived from {@link fieldId} so the two always agree. */
+export function fieldDescriptionId(name: string, scope?: string): string {
+  return `${fieldId(name, scope)}-description`;
 }
 
-export function fieldErrorId(name: string): string {
-  return `field-${name}-error`;
+/** The id of the field's error message, derived from {@link fieldId} so the two always agree. */
+export function fieldErrorId(name: string, scope?: string): string {
+  return `${fieldId(name, scope)}-error`;
 }
 
-/** Pure function that merges field descriptor wiring into control props. @public */
+/** What {@link fieldDescribedBy} needs beyond the field's name. */
+export interface FieldDescribedByOptions {
+  scope?: string;
+  /** A description element renders for this field — see {@link FieldDescriptor.description}. */
+  description?: boolean;
+  invalid?: boolean;
+  /** An `aria-describedby` the caller already has, kept ahead of the derived ids. */
+  existing?: string;
+}
+
+/**
+ * The `aria-describedby` value for a field, or `undefined` when nothing to point at renders. @public
+ *
+ * Names only the elements that actually render — the description when the field declares one, the
+ * error when the field is invalid — because an IDREF pointing at nothing is not ignored by
+ * assistive technology, it is reported as an error.
+ *
+ * Extracted from {@link fieldControlProps} because it is the one piece of that function's output a
+ * `<fieldset>`-based group can adopt. The rest of it — `id`, `name`, `aria-invalid` — is shaped for
+ * a labelable control and is wrong on a fieldset, which is why the groups call this directly
+ * instead.
+ */
+export function fieldDescribedBy(name: string, options: FieldDescribedByOptions = {}): string | undefined {
+  const value = [
+    options.existing,
+    options.description ? fieldDescriptionId(name, options.scope) : undefined,
+    options.invalid ? fieldErrorId(name, options.scope) : undefined,
+  ]
+    .filter((id) => id !== undefined)
+    .join(" ");
+  return value ? value : undefined;
+}
+
+/**
+ * Pure function that merges field descriptor wiring into control props. @public
+ *
+ * `aria-describedby` names only the elements that actually render — the description when the
+ * descriptor declares one, the error when the field is invalid — and is omitted entirely when
+ * neither does, because an IDREF pointing at nothing is worse than no IDREF at all.
+ */
 export function fieldControlProps<T extends FieldControlProps>(props: T, field: FieldDescriptor): T {
   const invalid = field.invalid ?? false;
-  const descriptionId = fieldDescriptionId(field.name);
-  const errorId = fieldErrorId(field.name);
-
-  const existingDescribedBy = props["aria-describedby"];
-  const describedBy = existingDescribedBy
-    ? invalid
-      ? `${existingDescribedBy} ${descriptionId} ${errorId}`
-      : `${existingDescribedBy} ${descriptionId}`
-    : invalid
-      ? `${descriptionId} ${errorId}`
-      : descriptionId;
+  const describedBy = fieldDescribedBy(field.name, {
+    ...(field.scope !== undefined ? { scope: field.scope } : {}),
+    ...(field.description !== undefined ? { description: field.description } : {}),
+    invalid,
+    ...(props["aria-describedby"] !== undefined ? { existing: props["aria-describedby"] } : {}),
+  });
 
   return {
     ...props,
-    id: props.id ?? fieldId(field.name),
+    id: props.id ?? fieldId(field.name, field.scope),
     name: props.name ?? field.name,
     disabled: props.disabled ?? field.disabled,
-    "aria-describedby": describedBy,
+    ...(describedBy ? { "aria-describedby": describedBy } : {}),
     "aria-invalid": props["aria-invalid"] ?? (invalid ? true : undefined),
   };
 }
@@ -111,14 +164,18 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   );
 };
 
-export const FieldLabel: FC<PropsWithChildren<LabelProps & { name?: string }>> = ({ class: cls, for: htmlFor, name, children, ...props }) => (
-  <label data-slot='field-label' class={cn(FIELD_LABEL_CLASSES, asClass(cls))} for={htmlFor ?? (name ? fieldId(name) : undefined)} {...props}>
+export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({ class: cls, for: htmlFor, name, scope, children, ...props }) => (
+  <label
+    data-slot='field-label'
+    class={cn(FIELD_LABEL_CLASSES, asClass(cls))}
+    for={htmlFor ?? (name ? fieldId(name, scope) : undefined)}
+    {...props}>
     {children}
   </label>
 );
 
-export const FieldDescription: FC<PropsWithChildren<DescriptionProps & { name?: string }>> = ({ class: cls, id, name, children, ...props }) => {
-  const resolvedId = id ?? (name ? fieldDescriptionId(name) : undefined);
+export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNaming>> = ({ class: cls, id, name, scope, children, ...props }) => {
+  const resolvedId = id ?? (name ? fieldDescriptionId(name, scope) : undefined);
   return (
     <p
       data-slot='field-description'
@@ -130,12 +187,12 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps & { name?: 
   );
 };
 
-export const FieldError: FC<PropsWithChildren<ErrorProps & { name?: string }>> = ({ class: cls, id, role, name, children, ...props }) => {
+export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({ class: cls, id, role, name, scope, children, ...props }) => {
   if (children == null || children === false) {
     return null;
   }
 
-  const resolvedId = id ?? (name ? fieldErrorId(name) : undefined);
+  const resolvedId = id ?? (name ? fieldErrorId(name, scope) : undefined);
   return (
     <p
       data-slot='field-error'

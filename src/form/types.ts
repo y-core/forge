@@ -72,4 +72,11 @@ export interface CsrfProtectionOptions {
   headerName?: string;
   // biome-ignore lint/suspicious/noExplicitAny: context shape varies
   subject: ((context: RequestContext<any, any>) => string | undefined) | false;
+  /**
+   * Body-size cap for the token lookup's form parse. The guard runs before the route handler, so
+   * it is the first — and on a rejection the only — parse of the body; a route that raises its own
+   * cap must raise this one to match, or the guard rejects the request before the handler is
+   * reached. Defaults to `FORM_MAX_BYTES_DEFAULT`.
+   */
+  maxBytes?: number;
 }

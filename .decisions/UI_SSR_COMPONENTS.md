@@ -108,9 +108,23 @@ dynamic icon set still satisfies a component that demands a specific icon.
 ### 1e. Switch and Slider — CSS-Only Controls
 
 **Both render without any client JavaScript.** `Switch` is an `sr-only`
-`<input type="checkbox" role="switch">` holding state and focus, with sibling `peer-checked:` /
-`peer-focus-visible:` utilities painting the decorative track and thumb. `Slider` is a native
-`<input type="range">` styled cross-browser.
+`<input type="checkbox" role="switch">` holding state and focus, with utilities painting the
+decorative track and thumb off the native `:checked`. `Slider` is a native `<input type="range">`
+styled cross-browser.
+
+**The track and the thumb need different selectors, and this is easy to get wrong.** `peer-*`
+compiles to a **general-sibling** combinator (`:is(:where(.peer):checked ~ *)`), so it reaches only
+elements that are siblings of the input. The track is such a sibling and uses `peer-checked:`
+directly. The **thumb is a child of the track**, so a `peer-` utility on it matches nothing at all —
+silently, with no build error and no visual hint beyond the state never moving. The thumb therefore
+keys off a descendant selector anchored on `data-slot`:
+
+```
+[[data-slot=switch-input]:checked~[data-slot=switch-track]_&]:translate-x-4
+```
+
+A decorative element nested inside another decorative element cannot use `peer-*`. Reach for a
+`data-slot`-anchored descendant selector instead.
 
 **`Slider`'s `output` prop wraps it in an `<output>` readout seeded to `value`. Mirroring that
 readout on input is a consumer concern** — forge stays markup-only (§1a).

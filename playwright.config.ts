@@ -4,7 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
  * The browser set — real Chromium, one verb of its own (`bun run test:browser`).
  *
  * It sits outside `bun run check` because a browser binary is a *prerequisite*
- * (`bun run browser:install`), which is the only legitimate reason a set stands outside the gate.
+ * (`bun run test:install`), which is the only legitimate reason a set stands outside the gate.
  * Cost is never one.
  *
  * `bun test` is deliberately untouched by this set: the two never share a process, so no global is

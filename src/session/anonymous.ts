@@ -35,9 +35,17 @@ export interface AnonymousSessionOptions<Bindings = Record<string, unknown>> ext
  * Handlers persist per-visitor state with plain `session.set(...)` — no manual id
  * bookkeeping or KV keying.
  *
- * Secrets and bindings are resolved from the request env; the built middleware is cached
- * per `(cookieName, secure, secret)` for the isolate's lifetime, so secret rotation or a
- * secure-flag change rebuilds it while steady-state requests reuse one instance.
+ * Secrets and bindings are resolved from the request env, and the built middleware is cached
+ * against **the `env` object itself** via a `WeakMap` — the same scheme `csrfProtection` uses.
+ * In Workers production one `env` lives for the isolate's lifetime, so the middleware is built
+ * once; a different `env` (another tenant, another test) builds its own.
+ *
+ * Keying on `env` identity rather than on `(cookieName, secure, secret)` is load-bearing: the
+ * cached middleware closes over the **KV namespace** `options.kv(c)` returned for the request
+ * that built it. Two tenants sharing a cookie name, secure flag and secret hashed to one cache
+ * slot and therefore shared one KV namespace — tenant B reading and writing tenant A's sessions.
+ * A `WeakMap` also lets entries be collected, where the old `Map` grew without bound under a
+ * rotating secret.
  *
  * @example
  * ```typescript
@@ -56,34 +64,38 @@ export interface AnonymousSessionOptions<Bindings = Record<string, unknown>> ext
 export function createAnonymousSession<Bindings = Record<string, unknown>>(options: AnonymousSessionOptions<Bindings>): Middleware {
   const cookieName = options.cookieName ?? "__session";
   const maxAge = options.maxAge ?? DEFAULT_MAX_AGE;
-  const cache = new Map<string, Middleware>();
+  const cache = new WeakMap<object, Middleware>();
 
   return async (context, next) => {
     const c = getAppContext<Bindings>(context);
+    const envObj: unknown = c.env;
+    const cacheKey = envObj !== null && typeof envObj === "object" ? (envObj as object) : null;
+
+    const hit = cacheKey ? cache.get(cacheKey) : undefined;
+    if (hit) return hit(context, next);
+
     const secret = options.secret(c);
     const secure = typeof options.secure === "function" ? options.secure(c) : (options.secure ?? true);
 
-    const cacheKey = `${cookieName}|${secure}|${secret}`;
-    let mw = cache.get(cacheKey);
-    if (!mw) {
-      if (secret.length < 32) {
-        throw new Error(`createAnonymousSession: session secret must be at least 32 characters (got ${secret.length})`);
-      }
-      // Default path: createSignedCookie enforces httpOnly + Secure + HMAC signing.
-      // secure=false (plain-http test servers only) keeps the cookie signed + httpOnly and
-      // relaxes ONLY the Secure attribute — createSignedCookie deliberately cannot do that.
-      const cookie = secure
-        ? createSignedCookie(cookieName, { secrets: [secret], sameSite: "Lax", maxAge })
-        : createCookie(cookieName, { secrets: [secret], httpOnly: true, secure: false, sameSite: "Lax", maxAge });
-      const storage = options.kv
-        ? createKVSessionStorage(options.kv(c), {
-            ...(options.prefix !== undefined ? { prefix: options.prefix } : {}),
-            ttlSeconds: options.ttlSeconds ?? maxAge,
-          })
-        : createCookieSessionStorage();
-      mw = sessionMiddleware(storage, cookie);
-      cache.set(cacheKey, mw);
+    if (secret.length < 32) {
+      throw new Error(`createAnonymousSession: session secret must be at least 32 characters (got ${secret.length})`);
     }
+    // Default path: createSignedCookie enforces httpOnly + Secure + HMAC signing.
+    // secure=false (plain-http test servers only) keeps the cookie signed + httpOnly and
+    // relaxes ONLY the Secure attribute — createSignedCookie deliberately cannot do that.
+    const cookie = secure
+      ? createSignedCookie(cookieName, { secrets: [secret], sameSite: "Lax", maxAge })
+      : createCookie(cookieName, { secrets: [secret], httpOnly: true, secure: false, sameSite: "Lax", maxAge });
+    const storage = options.kv
+      ? createKVSessionStorage(options.kv(c), {
+          ...(options.prefix !== undefined ? { prefix: options.prefix } : {}),
+          ttlSeconds: options.ttlSeconds ?? maxAge,
+        })
+      : createCookieSessionStorage();
+    const mw = sessionMiddleware(storage, cookie);
+    // No env object to key on (a bare context outside the Forge chain) → build per request rather
+    // than risk sharing one instance across unrelated environments.
+    if (cacheKey) cache.set(cacheKey, mw);
     return mw(context, next);
   };
 }

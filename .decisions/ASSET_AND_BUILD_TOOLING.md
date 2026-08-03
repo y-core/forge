@@ -29,9 +29,9 @@ description: "The asset pipeline, the content-hash manifest system, the CLI fram
 - §3a createManifest — Content-Hashed Paths: the logical-to-hashed map
 - §3b createSpriteRegistry — SVG Symbol Lookup: symbol id to viewBox and content
 - §4 cli Namespace: the dependency-free command framework
-- §4a createCommand and addCommand: registering subcommands
-- §4b CLI Flags — Typed Options: the three flag types
-- §4c Error Handling in CLI: `CliError` and exit codes
+- §4a Commands Are Values: a tree built from data, not registered by side effect
+- §4b Flags Are a Typed Record: two types, inference instead of casts
+- §4c Errors Carry a Kind, Not an Exit Code: why failure is always exit 1
 - §5 pkg Namespace — Release Tooling: the blessed release path
 - §5a createReleaseCommand — Automated Release Workflow: what the command does
 - §5b SemVer Utilities: parse, bump, format, compare
@@ -170,46 +170,50 @@ components to render inline `<svg><use href="#id"/>` references with correct dim
 
 ## 4. cli Namespace
 
-### 4a. createCommand and addCommand
+Signatures, worked examples, and the full flag-parsing table live in `src/cli/README.md`. This
+section carries only the decisions behind them.
 
-    import { createCommand, addCommand, execute } from "@y-core/forge/cli"
+### 4a. Commands Are Values
 
-    const program = createCommand("forge-assets")
-    addCommand(program, {
-      name: "build",
-      description: "Build all assets",
-      action: async () => { await buildAll(config) },
-    })
-    execute(program, process.argv.slice(2))
+**`createCommand` takes a config object and returns a command; nothing is registered by side
+effect.** `addCommand(parent, child)` links two of those values into a tree, and `execute(root)`
+walks it. The handler key is `run`.
 
-`createCommand` wraps a minimal command-line parser (no external CLI framework
-dependency). `addCommand` registers a subcommand with a name, description, optional
-flags, and an async `action`. `execute` dispatches to the matched subcommand or
-prints help.
+The consequence is testability: a command tree is data a caller holds, so it can be built,
+inspected, and driven to completion without a process. `execute` accepts an explicit `argv` and an
+injectable `CliIO`, which is why forge's own CLIs are covered by ordinary unit tests rather than by
+spawning themselves.
 
-### 4b. CLI Flags — Typed Options
+**A gate or build verb is therefore a factory, not a script.** `createReleaseCommand` (§5a) and the
+verification gate's `createGateCommand` both return a command from a config whose first field is
+`cwd`; the file under `scripts/` is a two-line binding that resolves `cwd` and calls `execute`.
 
-    addCommand(program, {
-      name: "build",
-      flags: [
-        { name: "watch", short: "w", type: "boolean", default: false },
-        { name: "config", short: "c", type: "string" },
-      ],
-      action: async ({ watch, config }) => { /* ... */ },
-    })
+### 4b. Flags Are a Typed Record
 
-Flag types are `"boolean"` | `"string"` | `"number"`. Boolean flags default to
-`false`. Unknown flags cause `execute` to print an error and exit with code 1.
+**Flags are a record keyed by long name, not an array of definitions.** The key *is* the `--long`
+form and `short` is a field on the definition, so a flag cannot be declared with a name that
+disagrees with the one used to read it.
 
-### 4c. Error Handling in CLI
+**There are two flag types — `"boolean"` and `"string"`.** `ResolvedFlags<F>` derives the handler's
+flag argument from the declaration: a `string` flag with a `default` or `required: true` resolves
+to `string`, every other `string` flag to `string | undefined`, and a boolean to `boolean`. No
+handler casts, and a renamed flag fails to typecheck at its reader.
 
-    import { CliError, formatError } from "@y-core/forge/cli"
+**Number parsing is deliberately absent.** A numeric flag is a string plus the caller's own
+validation, which keeps the parser total — it has no way to fail on input it was handed. Repeated
+flags and array values are likewise absent: a list is a comma-joined string the command splits,
+which is why the gate runner takes `--only lint,typecheck` rather than a repeated flag.
 
-    throw new CliError("Asset config not found", { exitCode: 1 })
+### 4c. Errors Carry a Kind, Not an Exit Code
 
-`CliError` carries an `exitCode` (default `1`). `execute` catches `CliError`,
-calls `formatError`, prints to stderr, and exits with the code. All other errors
-surface as uncaught exceptions (exit code 2).
+**`new CliError(kind, message)`** — the discriminant is a `CliErrorKind`, and no error carries an
+exit code. `execute` catches every error, prints it to stderr via `formatError`, and exits **1**.
+
+**Exit status is a two-valued contract: 0 is success, 1 is failure.** Anything a numeric code might
+have encoded belongs in the `kind` or the message, where a reader and a test can both see it. A
+command needing a different code — or needing to exit *without* the `Error:` prefix `execute`
+would print — calls `process.exit` itself; the verification gate does exactly that so its summary
+line is the last thing printed.
 
 ---
 

@@ -4,8 +4,8 @@ A small, dependency-free toolkit for building **typed, hierarchical command-line
 TypeScript — the framework behind forge's own build and tooling scripts. Declare commands with typed
 flags, compose them into a sub-command tree, and run them with a single `execute` call that handles
 parsing, validation, `--help`, and error reporting. Bundled alongside it are node-only **process and
-PATH primitives** (`run`, `requireTools`, `hasTool`, `insertPath`) and a `[scope]`-prefixed logger
-for script output.
+PATH primitives** (`run`, `capture`, `requireTools`, `hasTool`, `insertPath`) and a
+`[scope]`-prefixed logger for script output.
 
 ```ts
 import {
@@ -39,7 +39,8 @@ import {
   `-h` is handled for free, and group commands invoked without a sub-command print their help.
 - **Structured errors** — `CliError` carries a discriminated `kind`; `execute` formats it to stderr
   and exits non-zero. User-facing messages never leak stack traces.
-- **Process primitives** — `run` spawns child processes with inherited stdio; `requireTools` asserts
+- **Process primitives** — `run` spawns child processes with inherited stdio and throws on failure;
+  `capture` buffers their combined output and returns the exit code instead; `requireTools` asserts
   external tools are on `PATH` with install hints; `insertPath` prepends a directory to `PATH`.
 - **Injectable IO** — `execute` accepts a `CliIO` ( `stdout` / `stderr` / `exit` ) so tests can drive
   a command and capture its output without touching the real console or process.
@@ -249,6 +250,35 @@ run("cargo", ["build", "--release"]);
 run("git", ["status"], { cwd: "/src/forge" });
 ```
 
+#### `capture(cmd, args, opts?)`
+
+Spawns `cmd args` synchronously with its output **buffered** rather than inherited, and **never
+throws** — the counterpart to `run` for callers that report a failure instead of aborting on it
+(a step runner, a gate). Returns a `CaptureResult`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `cmd` | `string` | Executable to run. |
+| `args` | `string[]` | Arguments. |
+| `opts.cwd` | `string` | Optional working directory; defaults to `process.cwd()`. |
+
+| Field | Type | Description |
+|---|---|---|
+| `code` | `number` | Exit code; `1` when killed by a signal or never spawned. |
+| `output` | `string` | Combined stdout and stderr, interleaved in write order. |
+| `ms` | `number` | Wall-clock duration of the spawn. |
+
+Both streams are pointed at one temp-file descriptor, so `output` matches what `cmd > log 2>&1`
+would have written — `stdio: "pipe"` returns two independent buffers whose relative order is lost.
+A spawn failure (a missing executable) produces no child output, so its error message is appended to
+`output` rather than leaving the caller with an empty capture. `stdin` is `ignore`d: a captured
+process must never block waiting on a terminal.
+
+```ts
+const { code, output, ms } = capture("biome", ["check", "src/"], { cwd: repoRoot });
+if (code !== 0) console.error(output.trimEnd().split("\n").slice(-20).join("\n"));
+```
+
 #### `requireTools(tools)`
 
 Asserts that every tool in a `ToolHints` map is present on `PATH`, in insertion order. Throws on the
@@ -355,6 +385,7 @@ Formats a `CliError` for display as `Error: <message>`.
 | `ResolvedFlags<F>` | Maps a `FlagDefs` to its inferred runtime flag-value shape. |
 | `ArgValidator` | Positional-count rule: `none`, `exact`, `min`, `max`, or `range`. |
 | `ToolHints` | `Record<string, string>` — tool command → install hint for `requireTools`. |
+| `CaptureResult` | `{ code; output; ms }` — the `capture` return type. |
 | `ScopedLogger` | `{ info; warn; done }` — the `scopeLogger` return type. |
 | `CliIO` | `{ stdout; stderr; exit }` — injectable IO for `execute`. |
 | `CliErrorKind` | Discriminant union of `CliError.kind` values. |

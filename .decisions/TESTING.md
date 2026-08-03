@@ -8,9 +8,9 @@ description: "Test placement, the HTML-entity exact-match assertion rule, fakes 
 > Owns test file placement, the assertion rules, the fakes-over-mocks posture, the security-test
 > requirements, and the verification gate. Other documents link here rather than restating them.
 >
-> Defers to: `package.json` `scripts.check` for the gate's step list; `src/testing/README.md`
-> for runner usage and debugging recipes; [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §1c for
-> what `validate-exports` proves.
+> Defers to: `scripts/lib/steps.ts` for the gate's step list; `src/testing/README.md` for the
+> `testing` namespace's fixtures and their usage; [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md)
+> §1c for what `validate-exports` proves.
 
 ---
 
@@ -39,7 +39,8 @@ description: "Test placement, the HTML-entity exact-match assertion rule, fakes 
 - §5d Security Matrix — Row-to-Test Coverage Map: where each row is covered
 - §6 The Verification Gate: what must pass before a task is complete
 - §6a The Gate and Its Steps: named, not listed
-- §6b What Each Step Catches: the failure classes
+- §6b What Each Tool Catches: the failure classes
+- §6c Prerequisites: what separates `check` from `verify`
 - §7 Testing Namespace Utilities: the shared fixtures
 - §7a Declared Integration Edge: why `testing` may import `app` and `jsx`
 - §7b In-Memory Storage Fakes: `fakeKV`, `fakeD1`, `fakeR2`
@@ -88,9 +89,10 @@ This is a hard requirement:
 `playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it,
 never restate it here.
 
-**The set sits outside the gate, and the reason is a prerequisite, not cost.** It needs a browser
-binary that `bun run browser:install` fetches, and a prerequisite is the only legitimate ground for
-a set to stand outside the gate. Cost never is.
+**The set sits outside `bun run check`, and the reason is a prerequisite, not cost.** It needs a
+browser binary that `bun run test:install` fetches, and a prerequisite is the only legitimate
+ground for a set to stand outside `check`. Cost never is. It **is** a step of `bun run verify`,
+the release gate, which is permitted to carry a prerequisite (§6c).
 
 **`bun test` is untouched by it.** The two never share a process, so no global is ever redefined and
 forge's Cloudflare `Request` / `Response` / `fetch` semantics stay exactly as the runtime ships them
@@ -379,29 +381,63 @@ guard middleware to test — see [`HTMX.md`](./HTMX.md) §2.
 
 ### 6a. The Gate and Its Steps
 
-`bun run check` is the gate. **`package.json` `scripts.check` owns the step list** — read it
-there rather than trusting any prose copy.
+**`bun run check` is the gate; `bun run verify` is the release gate.** Both are the same runner
+over one table, and **`scripts/lib/steps.ts` owns the step list** — every step, its command, and
+which gates it belongs to. Read it there rather than trusting any prose copy.
 
 **Every step must pass with zero errors before a task is declared complete.** A partial pass —
 "types pass, lint has one warning" — is a failure, and skipping a step is not permitted.
 
-**`bun run test:browser` is not one of the gate's steps and is still required of any change that
-touches a controller** (§1c). It stands outside because Chromium is a prerequisite, not because it
-is optional: a green gate says nothing whatever about whether a keystroke still moves focus.
+The runner reports each step as it finishes, stops at the first failure, and names it:
+`✗ check — failed at \`typecheck\``. **That name is the verdict** — it is read off the summary
+line, never inferred from raw tool output.
 
-Failure-triage recipes are in `src/testing/README.md`.
+Three flags, all resolved against the same table:
 
-### 6b. What Each Step Catches
+| Flag | Effect |
+|---|---|
+| `--only <a,b>` | Run only those steps. An unknown label is refused, with the known ones listed. |
+| `--list` | Print the resolved selection and exit, running nothing. |
+| `--fix` | Run each selected step's fixer, then re-run the gate to confirm. |
 
-| Step | Tool | Catches |
-|---|---|---|
-| `typecheck` | `tsgo` | Type errors, wrong argument types, missing properties |
-| `lint` | `biome` | Style violations, banned patterns, the no-sibling-barrel rule |
-| `test` | bun test | Functional regressions across all namespaces |
-| `validate-exports` | forge internal | Barrel and export-map drift ([`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §1c) |
-| `validate-jsx` | forge internal | Missing or wrong JSX pragma in `.tsx` sources |
+**A scoped run is not a gate run.** `--only` selecting fewer steps than the gate holds makes every
+summary line carry `⚠ scoped run (N of M steps) — not the gate`, so a scoped green can never be
+read as a green gate. A selection that resolves to **zero** steps is refused outright: a gate that
+ran nothing must never be indistinguishable from a gate that passed.
 
-**Fix `typecheck` failures first** — they cascade into misleading lint and test failures.
+**`bun run test:browser` is not one of `check`'s steps and is still required of any change that
+touches a controller** (§1c). A green `check` says nothing whatever about whether a keystroke still
+moves focus.
+
+### 6b. What Each Tool Catches
+
+Keyed by tool rather than by step: which steps exist drifts, and §6a already says where that list
+lives. What a given tool proves does not drift.
+
+| Tool | Catches |
+|---|---|
+| `tsgo` | Type errors, wrong argument types, missing properties |
+| `biome` | Style violations, banned patterns, the no-sibling-barrel rule |
+| `bun test` | Functional regressions across all namespaces |
+| forge's own validators | Barrel and export-map drift ([`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §1c), JSX pragmas, governing-doc format, `@source` coverage |
+
+**Fix `typecheck` failures first** — they cascade into misleading lint and test failures. The step
+table encodes this by ordering `typecheck` first, so a fail-fast run stops there without being
+told to.
+
+### 6c. `check` Carries No Machine Prerequisite; `verify` May
+
+**This is the line between the two verbs.** Every step in `check` runs on any machine with the
+repo's dependencies installed — nothing to fetch, no binary beyond `devDependencies`. That is what
+makes `check` the gate anyone may run at any time, and why cost is never grounds for moving a step
+out of it (§1c).
+
+`bun run verify` is the release gate — `prepublishOnly` runs it — and **is** permitted a
+prerequisite. It adds the browser set, whose Chromium binary comes from `bun run test:install`.
+**Publishing therefore requires that install**, and a machine that lacks it fails `verify` at
+`test:browser` with the install command in the failure line.
+
+A step needing a prerequisite belongs in `verify` only. A step needing nothing belongs in both.
 
 ---
 

@@ -6,9 +6,26 @@ import { isHxRequest } from "../../html/htmx/hx-request";
 import { fragmentResponse } from "../../http/response";
 import { renderPage, renderToString } from "../../jsx/render-to-string";
 import type { ForgeIcon } from "../../ui/core/icon";
+import { v } from "../../validation/mod";
 import type { LogChannel, LogLevel, LogQuery, LogReadResult, LogRecord } from "../types";
+import { LOG_LEVELS } from "../types";
 import type { LogViewerLoaderData } from "./components";
-import { LOG_TBODY_ID, LogDetailCell, LogTableBody, LogViewerContent } from "./components";
+import { LOG_TBODY_ID, LogDetailCell, LogRows, LogTableBody, LogViewerContent } from "./components";
+
+const LevelParamSchema = v.picklist(LOG_LEVELS);
+
+/**
+ * Narrows the untrusted `?level=` query parameter to a known level at the request boundary. An
+ * unrecognised value is dropped rather than rejected: the filter only narrows a row set the caller
+ * has already been authorised to read in full, so falling back to every level cannot expose
+ * anything `access` did not already permit, and the unfiltered view is a state the filter bar
+ * renders anyway as "All". @internal
+ */
+function parseLevelParam(raw: string | null): LogLevel | undefined {
+  if (raw === null) return undefined;
+  const parsed = v.safeParse(LevelParamSchema, raw);
+  return parsed.success ? parsed.output : undefined;
+}
 
 /**
  * Access decision for the log viewer. Either a per-request predicate (return `false` to deny
@@ -39,7 +56,8 @@ export type LogViewerOptions<Bindings = Record<string, unknown>> = {
  * Log viewer loader. Evaluates `access` first — a denial returns a `403 Forbidden` `Response`
  * without touching the channel. On allow, reads the requested log page via the channel and
  * returns a rendered `Response` for every path: the detail `<td>` fragment for `?detail=<key>`,
- * the `<tbody>` HTMX partial for `HX-Request` requests, or the full viewer page otherwise.
+ * the `<tr>` page fragment for an `HX-Request` carrying a `?cursor=`, the `<tbody>` HTMX partial
+ * for any other `HX-Request`, or the full viewer page otherwise.
  * Rendering happens only here — the record-rendering components are internal, so records can
  * never be rendered without passing `access`. Use inside `definePage`'s `loader`; a loader
  * returning a `Response` short-circuits rendering. A throwing `access` predicate propagates to
@@ -61,7 +79,7 @@ export async function loadLogViewer<Bindings = Record<string, unknown>>(
     return renderLogDetailFragment(record);
   }
 
-  const level = c.url.searchParams.get("level") as LogLevel | undefined;
+  const level = parseLevelParam(c.url.searchParams.get("level"));
   const q = c.url.searchParams.get("q") || undefined;
   const cursor = c.url.searchParams.get("cursor") || undefined;
 
@@ -78,7 +96,9 @@ export async function loadLogViewer<Bindings = Record<string, unknown>>(
   if (q) data.q = q;
 
   if (isHxRequest(c)) {
-    return renderLogFragment(data);
+    // A cursor means the load-more control fired: return only the new rows, which take the place
+    // of the spent control. Without one it is a filter submit, which replaces the whole tbody.
+    return cursor === undefined ? renderLogFragment(data) : renderLogRowsFragment(data);
   }
   return renderLogViewerPage(data, options.icon);
 }
@@ -114,6 +134,27 @@ async function renderLogFragment(data: LogViewerLoaderData): Promise<Response> {
       {...(data.cursor !== undefined ? { cursor: data.cursor } : {})}
       complete={data.complete}
       loadMoreAction={data.basePath}
+      {...(data.level !== undefined ? { level: data.level } : {})}
+      {...(data.q !== undefined ? { q: data.q } : {})}
+    />,
+  );
+  return fragmentResponse(body);
+}
+
+/**
+ * Renders the next page as a bare `<tr>` sequence — the `outerHTML` replacement of the load-more
+ * row, which appends the page while leaving the rows already loaded in place. `loadLogViewer`
+ * returns this for an HTMX request carrying a `?cursor=`. @internal
+ */
+async function renderLogRowsFragment(data: LogViewerLoaderData): Promise<Response> {
+  const body = await renderToString(
+    <LogRows
+      rows={data.rows}
+      {...(data.cursor !== undefined ? { cursor: data.cursor } : {})}
+      complete={data.complete}
+      loadMoreAction={data.basePath}
+      {...(data.level !== undefined ? { level: data.level } : {})}
+      {...(data.q !== undefined ? { q: data.q } : {})}
     />,
   );
   return fragmentResponse(body);

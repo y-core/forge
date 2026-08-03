@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
+import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { Tabs } from "./tabs";
 
 /**
@@ -23,7 +24,14 @@ function focusedId(page: Page): Promise<string | null> {
   return page.evaluate(() => document.activeElement?.id ?? null);
 }
 
-function tabsMarkup(activation?: "manual", orientation?: "vertical"): Promise<string> {
+interface Fixture {
+  activation?: "manual";
+  orientation?: "vertical";
+  selected?: "a" | "b";
+}
+
+function tabsMarkup({ activation, orientation, selected = "a" }: Fixture = {}): Promise<string> {
+  const isSelected = (key: string) => key === selected;
   return render(
     Tabs({
       ...(activation ? { activation } : {}),
@@ -32,14 +40,14 @@ function tabsMarkup(activation?: "manual", orientation?: "vertical"): Promise<st
         Tabs.List({
           ...(orientation ? { orientation } : {}),
           children: [
-            Tabs.Tab({ id: "t-a", for: "p-a", selected: true, children: "Alpha" }),
-            Tabs.Tab({ id: "t-b", for: "p-b", children: "Beta" }),
+            Tabs.Tab({ id: "t-a", for: "p-a", selected: isSelected("a"), children: "Alpha" }),
+            Tabs.Tab({ id: "t-b", for: "p-b", selected: isSelected("b"), children: "Beta" }),
             Tabs.Tab({ id: "t-c", for: "p-c", disabled: true, children: "Gamma" }),
             Tabs.Tab({ id: "t-d", for: "p-d", children: "Delta" }),
           ],
         }),
-        Tabs.Panel({ id: "p-a", selected: true, children: "A" }),
-        Tabs.Panel({ id: "p-b", children: "B" }),
+        Tabs.Panel({ id: "p-a", selected: isSelected("a"), children: "A" }),
+        Tabs.Panel({ id: "p-b", selected: isSelected("b"), children: "B" }),
         Tabs.Panel({ id: "p-c", children: "C" }),
         Tabs.Panel({ id: "p-d", children: "D" }),
       ],
@@ -102,7 +110,7 @@ test.describe("Tabs", () => {
   });
 
   test("manual activation moves focus without moving the selection until a click", async ({ page }) => {
-    await mount(page, await tabsMarkup("manual"), EXPOSE);
+    await mount(page, await tabsMarkup({ activation: "manual" }), EXPOSE);
     await start(page);
 
     await page.focus("#t-a");
@@ -115,7 +123,7 @@ test.describe("Tabs", () => {
   });
 
   test("a vertical tab list navigates with Up and Down", async ({ page }) => {
-    await mount(page, await tabsMarkup(undefined, "vertical"), EXPOSE);
+    await mount(page, await tabsMarkup({ orientation: "vertical" }), EXPOSE);
     await start(page);
 
     await page.focus("#t-a");
@@ -123,5 +131,43 @@ test.describe("Tabs", () => {
     expect(await focusedId(page)).toBe("t-a");
     await page.keyboard.press("ArrowDown");
     expect(await focusedId(page)).toBe("t-b");
+  });
+});
+
+/**
+ * The roving tab stop has to boot onto the *selected* tab. With the selected tab first, a controller
+ * that always starts at index 0 looks correct, which is how the marker went missing; every case here
+ * therefore selects a tab that is not the first.
+ */
+test.describe("Tabs — the boot tab stop follows the selection", () => {
+  test("only the selected tab carries the composite marker", async ({ page }) => {
+    await mount(page, await tabsMarkup({ selected: "b" }), EXPOSE);
+    await start(page);
+
+    const marked = await page.evaluate((attr) => [...document.querySelectorAll(`[${attr}]`)].map((el) => el.id), ACTIVE_COMPOSITE_ITEM);
+    expect(marked).toEqual(["t-b"]);
+  });
+
+  test("Tab reaches the selected tab, not the first one", async ({ page }) => {
+    await mount(page, `<button id="before">b</button>${await tabsMarkup({ selected: "b" })}`, EXPOSE);
+    await start(page);
+
+    await page.focus("#before");
+    await page.keyboard.press("Tab");
+    expect(await focusedId(page)).toBe("t-b");
+  });
+
+  test("the first arrow keypress moves relative to the selected tab", async ({ page }) => {
+    await mount(page, `<button id="before">b</button>${await tabsMarkup({ selected: "b" })}`, EXPOSE);
+    await start(page);
+
+    await page.focus("#before");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("ArrowRight");
+
+    // Relative to B, the next enabled tab is D (C is disabled). Booting at index 0 would land on B
+    // here and reselect the tab the user was already on.
+    expect(await focusedId(page)).toBe("t-d");
+    expect(await tabsState(page)).toEqual({ selected: ["t-d"], dataSelected: ["t-d"], visiblePanels: ["p-d"] });
   });
 });

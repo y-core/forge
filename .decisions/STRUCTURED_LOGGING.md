@@ -110,6 +110,12 @@ Always use in development.
 method for the log viewer. It requires a `LOGS_KV` binding. **Pair it with `consoleChannel` for
 dual output** — see §2d for the selection pattern.
 
+`record.data` is cloned into a JSON-faithful shape before persistence. `Date`, `Map` and `Set`
+carry their payload outside enumerable own properties, so each gets an explicit form instead of
+being flattened to `{}`: an ISO 8601 string, `{ type: "Map", entries: [[key, value], …] }`, and
+`{ type: "Set", values: […] }`. A reference that reappears on its own path becomes `"[circular]"`,
+so a cyclic structure stores rather than overflowing the stack.
+
 ### 2d. Channel Selection by Environment
 
 **When `LOGS_KV` is absent (local dev without wrangler bindings), fall back to console-only.
@@ -250,9 +256,14 @@ the loader rather than returning data for a view to render. In order:
    propagates to the error boundary (fail closed).
 2. For `?detail=<key>`, reads the full stored record via `channel.readEntry?.(key)` and returns
    the expanded detail `<td>` fragment `Response`.
-3. For an `HX-Request` (via `isHxRequest`), returns the `<tbody>` HTMX partial, filtered and
-   paginated via `?level=`, `?q=`, and `?cursor=`.
-4. Otherwise returns the full HTML-document viewer page.
+3. For an `HX-Request` (via `isHxRequest`) carrying a `?cursor=`, returns the next page as a bare
+   `<tr>` sequence. The "Load more" control swaps its own row (`hx-target="closest tr"`,
+   `hx-swap="outerHTML"`) rather than the `<tbody>`, so the rows already loaded survive, and its
+   URL carries the active `?level=`/`?q=` so the next page comes from the same filtered set.
+4. For any other `HX-Request`, returns the `<tbody>` HTMX partial, filtered via `?level=` and
+   `?q=`. An unrecognised `?level=` is dropped and the view renders unfiltered — the filter only
+   narrows rows `access` has already permitted, so the fallback cannot widen exposure.
+5. Otherwise returns the full HTML-document viewer page.
 
 **Auth by construction:** the record-rendering components are `@internal`, so records can never
 be rendered without first passing `access`. If the channel has no `read` method,

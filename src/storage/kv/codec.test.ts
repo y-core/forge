@@ -44,3 +44,33 @@ describe("bytesCodec", () => {
     expect(bytesCodec().type).toBe("arrayBuffer");
   });
 });
+
+describe("bytesCodec — typed-array views", () => {
+  it("encodes only the subarray window, not the whole backing buffer", () => {
+    const codec = bytesCodec();
+    const encoded = codec.encode(new Uint8Array([1, 2, 3, 4, 5, 6]).subarray(2, 4));
+    expect((encoded as ArrayBuffer).byteLength).toBe(2);
+    expect(Array.from(codec.decode(encoded))).toEqual([3, 4]);
+  });
+
+  it("encodes a view with a non-zero byteOffset and the full remaining length", () => {
+    const codec = bytesCodec();
+    const encoded = codec.encode(new Uint8Array([1, 2, 3, 4, 5, 6]).subarray(3));
+    expect((encoded as ArrayBuffer).byteLength).toBe(3);
+    expect(Array.from(codec.decode(encoded))).toEqual([4, 5, 6]);
+  });
+
+  it("encodes a zero-length view as an empty buffer", () => {
+    const codec = bytesCodec();
+    const encoded = codec.encode(new Uint8Array([1, 2, 3, 4, 5, 6]).subarray(2, 2));
+    expect((encoded as ArrayBuffer).byteLength).toBe(0);
+    expect(Array.from(codec.decode(encoded))).toEqual([]);
+  });
+
+  it("leaves a whole-buffer Uint8Array unchanged", () => {
+    const codec = bytesCodec();
+    const encoded = codec.encode(new Uint8Array([1, 2, 3, 4, 5, 6]));
+    expect((encoded as ArrayBuffer).byteLength).toBe(6);
+    expect(Array.from(codec.decode(encoded))).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+});

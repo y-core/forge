@@ -168,8 +168,8 @@ export function sanitizeSVG(content: string): string {
     if (normalized.startsWith("javascript:") || normalized.startsWith("data:text/html")) return "";
     return match;
   });
-  // Strip event handler attributes (double-quoted, single-quoted, or unquoted values)
-  result = result.replace(/\s+on[a-zA-Z]+=(?:"[^"]*"|'[^']*'|[^\s"'>]+)/g, "");
+  // Strip event handler attributes (double-quoted, single-quoted, or unquoted values).
+  result = result.replace(/\s+on[a-zA-Z]+=(?:"[^"]*"|'[^']*'|[^\s"'>]+)/gi, "");
   return result;
 }
 

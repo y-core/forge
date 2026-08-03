@@ -114,9 +114,12 @@ A route's handler comes from one of three factories in `@y-core/forge/app` — `
 
 ### 2a. Full-Page Routes with `definePage`
 
-`definePage({ loader, view, action?, headers?, cache?, onError? })` runs the optional `loader`,
-then renders `view`. The loader's return value reaches the view through render state; a loader
-may instead return a `Response` to short-circuit.
+`definePage({ loader, view, action?, headers?, cache?, onError? })` runs the optional `action` on
+a non-`GET` request, then the optional `loader`, then renders `view`. Both return values reach the
+view through render state; either may instead return a `Response` to short-circuit.
+
+**`action` is skipped entirely on a `GET`**, leaving `state.actionData` undefined and
+`state.method` `"GET"`.
 
 **The view returns a `Response`, not a bare JSX element.** Its signature is
 `(c, config, state) => Response | Promise<Response>`, where `state` is

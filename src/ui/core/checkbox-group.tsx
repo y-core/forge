@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
-import { FieldDescription, FieldError, fieldDescriptionId, fieldErrorId, fieldId } from "./field";
+import { FieldDescription, FieldError, fieldDescribedBy, fieldId } from "./field";
 import { asClass, cn } from "./utils/cn";
 
 type GroupOrientation = Extract<Orientation, "horizontal" | "vertical">;
@@ -10,6 +10,15 @@ type GroupOrientation = Extract<Orientation, "horizontal" | "vertical">;
 interface CheckboxGroupRootProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
   /** Shared `name` for every checkbox in the group — also the key its ids are derived from. */
   name: string;
+  /** Distinguishes two same-named groups on one page. Ids are derived from `name` alone without it,
+   * so both groups would emit the same id for every item as well as for the description and error.
+   * Pass the same value to every `Item`, and to the group's `Description` and `Error`. */
+  scope?: string;
+  /** A description element renders for this group. Off by default: `aria-describedby` may only name
+   * an element that is actually on the page, and a dangling IDREF is an error assistive technology
+   * reports rather than ignores. `<CheckboxGroup.Description>` must be given the same `name` (and
+   * `scope`) for the id it emits to match the one named here. */
+  description?: boolean;
   invalid?: boolean;
   disabled?: boolean;
   orientation?: GroupOrientation;
@@ -19,34 +28,45 @@ interface CheckboxGroupRootProps extends Omit<JSX.IntrinsicElements["fieldset"],
 interface CheckboxGroupItemProps extends Omit<JSX.IntrinsicElements["input"], "children" | "type"> {
   name: string;
   value: string;
+  /** Must match the group's `scope` — see {@link CheckboxGroupRootProps.scope}. */
+  scope?: string;
   children?: JSXNode;
 }
 
 /** Per-item id, derived rather than passed: the group and the item cannot see each other, and a
  * hand-written id in two places is the drift `field.tsx`'s helpers already exist to prevent. */
-function itemId(name: string, value: string): string {
-  return `${fieldId(name)}-${value}`;
+function itemId(name: string, value: string, scope?: string): string {
+  return `${fieldId(name, scope)}-${value}`;
 }
 
 const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
   name,
+  scope,
+  description = false,
   invalid = false,
   disabled = false,
   orientation = "vertical",
   class: cls,
   children,
   ...rest
-}) => (
-  <fieldset
-    data-slot='checkbox-group'
-    disabled={disabled}
-    aria-describedby={invalid ? `${fieldDescriptionId(name)} ${fieldErrorId(name)}` : fieldDescriptionId(name)}
-    {...stateAttrs({ invalid, disabled, orientation })}
-    class={cn("flex gap-2 border-0 m-0 p-0", orientation === "vertical" ? "flex-col" : "flex-row flex-wrap", asClass(cls))}
-    {...rest}>
-    {children}
-  </fieldset>
-);
+}) => {
+  // A `<fieldset>` cannot take `fieldControlProps` wholesale — it is not a labelable control, so
+  // that function's `id`/`name`/`aria-invalid` outputs are wrong here and invalid is routed through
+  // `stateAttrs` instead. `aria-describedby` is the one half that is not structural, so it comes
+  // from the same helper `fieldControlProps` uses rather than from a second, drifting expression.
+  const describedBy = fieldDescribedBy(name, { ...(scope !== undefined ? { scope } : {}), description, invalid });
+  return (
+    <fieldset
+      data-slot='checkbox-group'
+      disabled={disabled}
+      {...(describedBy !== undefined ? { "aria-describedby": describedBy } : {})}
+      {...stateAttrs({ invalid, disabled, orientation })}
+      class={cn("flex gap-2 border-0 m-0 p-0", orientation === "vertical" ? "flex-col" : "flex-row flex-wrap", asClass(cls))}
+      {...rest}>
+      {children}
+    </fieldset>
+  );
+};
 
 const CheckboxGroupLabel: FC<PropsWithChildren<Omit<JSX.IntrinsicElements["legend"], "children">>> = ({ class: cls, children, ...rest }) => (
   <legend data-slot='checkbox-group-label' class={cn("mb-1 text-sm font-medium text-foreground", asClass(cls))} {...rest}>
@@ -56,12 +76,12 @@ const CheckboxGroupLabel: FC<PropsWithChildren<Omit<JSX.IntrinsicElements["legen
 
 /** A real `<input type="checkbox">` inside a real `<label>`: it submits with the form, resets with
  * the form, and needs no JavaScript to do either. */
-const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({ name, value, class: cls, children, ...rest }) => (
+const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({ name, value, scope, class: cls, children, ...rest }) => (
   <label data-slot='checkbox-group-item' class={cn("inline-flex items-center gap-2 text-sm text-foreground", asClass(cls))}>
     <input
       type='checkbox'
       data-slot='checkbox-group-input'
-      id={itemId(name, value)}
+      id={itemId(name, value, scope)}
       name={name}
       value={value}
       class='size-4 rounded border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring'

@@ -64,6 +64,29 @@ describe("requestId middleware", () => {
     expect(body.id).toBe("ray-from-cf");
   });
 
+  it("generates a UUID when trustCfHeaders is true but CF-Ray is empty", async () => {
+    const app = makeApp({ trustCfHeaders: true });
+    const res = await app.request("/test", { headers: { "CF-Ray": "" } });
+    const xReqId = res.headers.get("X-Request-Id");
+    expect(xReqId).not.toBe("");
+    expect(xReqId).not.toBe(null);
+    expect(UUID_RE.test(xReqId!)).toBe(true);
+    const body = (await res.json()) as { id: string };
+    expect(body.id).toBe(xReqId);
+  });
+
+  it("generates a UUID when trustCfHeaders is true but CF-Ray is whitespace-only", async () => {
+    const app = makeApp({ trustCfHeaders: true });
+    // `Headers` normalizes this to "" before the middleware sees it; the blank guard covers both
+    // spellings, so a request built without that normalization lands on the same answer.
+    const res = await app.request("/test", { headers: { "CF-Ray": " \t " } });
+    const xReqId = res.headers.get("X-Request-Id");
+    expect(xReqId).not.toBe(null);
+    expect(UUID_RE.test(xReqId!)).toBe(true);
+    const body = (await res.json()) as { id: string };
+    expect(body.id).toBe(xReqId);
+  });
+
   it("ignores an inbound X-Request-Id and generates a UUID when CF-Ray is also absent", async () => {
     const app = makeApp({ trustCfHeaders: true });
     const res = await app.request("/test", { headers: { "X-Request-Id": "client-supplied-id" } });

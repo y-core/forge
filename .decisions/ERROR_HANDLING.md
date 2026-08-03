@@ -271,15 +271,27 @@ type system and forces callers into `try/catch`.
 ### 5b. Unexpected Errors — The Router Error Boundary
 
 Programming mistakes that cannot be recovered at the call site. **The app needs no per-route
-`try/catch`** — the router installs an error boundary as its innermost global middleware.
+`try/catch`** — the router installs an error boundary as a global middleware, at two depths: one
+innermost, one wrapped around the path-scoped guard stack.
 
-Two paths, with different header guarantees:
+Three paths, with different header guarantees:
 
-- **In-chain errors** (thrown by a route handler or route-level middleware) — `errorBoundary`
-  catches the throw; the response flows back out through the path-scoped guards and the
-  outermost `applyHeaders` flush, so error pages carry the consumer's full CSP.
-- **Out-of-chain errors** (thrown in router internals) never reach the consumer's security
-  middleware, so the handler emits a self-contained **baseline-hardened 500**:
+- **In-chain errors** (thrown by a route handler or route-level middleware) — the innermost
+  `errorBoundary` catches the throw; the response flows back out through the path-scoped guards
+  and the outermost `applyHeaders` flush, so error pages carry the consumer's full CSP.
+- **Guard errors** (thrown by an `app.use` middleware) — the outer boundary catches them, so the
+  response still reaches `applyHeaders` and carries whatever headers were already queued. The
+  guards downstream of the throw never ran, so their headers are not among them. `createSecurityHeaders`
+  queues **before** `next()` (`SECURITY_HARDENING.md` §2a), so a guard throwing after it still
+  yields a fully hardened error page; a guard that queues on the way out — `session`, `flash` — does
+  not, which is what the innermost boundary depth still protects.
+
+**Queued-header precedence** is *last writer wins per name*, and inner middleware queues after
+outer, so an overlapping name resolves **inner-wins**. That is distinct from the pending-vs-Response
+rule below: pending always beats a header the handler baked into its own `Response`.
+- **Out-of-chain errors** (thrown in router internals, or by env/config resolution before routing)
+  never reach the consumer's security middleware, so the handler emits a self-contained
+  **baseline-hardened 500**:
 
   | Header | Value |
   |---|---|

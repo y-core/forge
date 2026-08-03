@@ -91,10 +91,23 @@ describe("paginatedTableLink", () => {
     expect(attrs["hx-get"]).toBe("/items?p=5");
   });
 
-  it("handles absolute URL base path correctly", () => {
-    // Absolute URLs still resolve — path+search portion is preserved
+  it("keeps the scheme and host of an absolute get URL", () => {
     const attrs = paginatedTableLink({ get: "https://api.example.com/items", target: "#t", page: 2 });
-    expect(attrs).toEqual({ "hx-get": "/items?page=2", "hx-target": "#t", "hx-swap": "outerHTML" });
+    expect(attrs).toEqual({ "hx-get": "https://api.example.com/items?page=2", "hx-target": "#t", "hx-swap": "outerHTML" });
+  });
+
+  it("keeps an absolute URL's existing query and non-default port while appending the page param", () => {
+    const attrs = paginatedTableLink({ get: "https://api.example.com:8443/items?sort=asc", target: "#t", page: 4, query: { filter: "active" } });
+    expect(attrs).toEqual({
+      "hx-get": "https://api.example.com:8443/items?sort=asc&filter=active&page=4",
+      "hx-target": "#t",
+      "hx-swap": "outerHTML",
+    });
+  });
+
+  it("returns a relative get URL relative — the placeholder parse origin never leaks out", () => {
+    const attrs = paginatedTableLink({ get: "/items", target: "#t", page: 2 });
+    expect(attrs["hx-get"]).toBe("/items?page=2");
   });
 });
 

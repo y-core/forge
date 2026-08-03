@@ -14,7 +14,7 @@
  *   separate process driving real Chromium, so it can never disturb the set above. This set proves
  *   **behaviour**: a controller is mounted against the same SSR markup the string tests assert, a
  *   real event is dispatched, and the resulting DOM is the assertion. It stands outside
- *   `bun run check` only because a browser binary is a prerequisite (`bun run browser:install`) —
+ *   `bun run check` only because a browser binary is a prerequisite (`bun run test:install`) —
  *   never because of cost.
  *
  * Neither set substitutes for the other, and a controller is not proven by a string. The two

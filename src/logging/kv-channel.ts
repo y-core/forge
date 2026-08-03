@@ -11,22 +11,45 @@ const PURGE_BATCH = 20;
 // hard backstop for anything beyond that window.
 const PURGE_LIST_LIMIT = 1000;
 const DEFAULT_LIMIT = 50;
+// Substituted for a value already open on the current path, so a self-referential structure
+// terminates instead of recursing until the stack overflows.
+const CIRCULAR_MARKER = "[circular]";
 
 /**
- * Deep-clones `value`, dropping any property named `stack` from plain objects along the way, so
- * error stacks never reach KV persistence. Recurses through arrays and plain objects; leaves
- * primitives untouched and never mutates the input. @internal
+ * Deep-clones `value` into a shape `JSON.stringify` preserves, so structured context survives the
+ * trip into KV. `Date`, `Map` and `Set` hold their payload outside enumerable own properties — a
+ * property-wise clone flattens all three to `{}` — so each gets an explicit form: an ISO 8601
+ * string, and tagged lists that rebuild with `new Map(entries)` / `new Set(values)`. A reference
+ * that reappears on its own path becomes `CIRCULAR_MARKER`. When `keepStacks` is false, any
+ * property named `stack` is dropped along the way so error stacks never reach KV persistence.
+ * Never mutates the input. @internal
  */
-function stripStacks(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripStacks);
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => key !== "stack")
-        .map(([key, val]) => [key, stripStacks(val)]),
-    );
+function toPersistable(value: unknown, keepStacks: boolean): unknown {
+  const openPath = new WeakSet<object>();
+
+  function walk(input: unknown): unknown {
+    if (input === null || typeof input !== "object") return input;
+    // An invalid Date has no representable instant, and `toISOString` would throw on the log path.
+    if (input instanceof Date) return Number.isNaN(input.getTime()) ? null : input.toISOString();
+    if (openPath.has(input)) return CIRCULAR_MARKER;
+
+    openPath.add(input);
+    try {
+      if (Array.isArray(input)) return input.map((item) => walk(item));
+      if (input instanceof Map) return { type: "Map", entries: [...input].map(([key, val]) => [walk(key), walk(val)]) };
+      if (input instanceof Set) return { type: "Set", values: [...input].map((item) => walk(item)) };
+      return Object.fromEntries(
+        Object.entries(input as Record<string, unknown>)
+          .filter(([key]) => keepStacks || key !== "stack")
+          .map(([key, val]) => [key, walk(val)]),
+      );
+    } finally {
+      // Released on the way out: the same object appearing twice as siblings is not a cycle.
+      openPath.delete(input);
+    }
   }
-  return value;
+
+  return walk(value);
 }
 
 /**
@@ -64,10 +87,10 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
         ...(safeRequestId ? { requestId: safeRequestId } : {}),
       };
 
-      // Strip error stacks from a cloned record before persistence unless explicitly opted in —
-      // the caller's record is never mutated (consoleChannel keeps the stack for local debugging).
+      // Normalize a clone of the record's data for persistence — the caller's record is never
+      // mutated (consoleChannel keeps the original, stacks included, for local debugging).
       const persisted =
-        persistStack || record.data === undefined ? record : { ...record, data: stripStacks(record.data) as Record<string, unknown> };
+        record.data === undefined ? record : { ...record, data: toPersistable(record.data, persistStack) as Record<string, unknown> };
 
       const putPromise = kv.put(key, JSON.stringify(persisted), { expirationTtl: defaultTtl, metadata });
 

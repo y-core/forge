@@ -30,13 +30,16 @@
 | `biome` | Linter and formatter (use instead of `eslint`/`prettier`) |
 
 ```bash
-bun run check      # the gate — every step must pass
-bun test           # run all tests
-bun run lint:fix   # auto-fix lint and format issues
+bun run check                  # the gate — every step must pass
+bun run check --only lint      # one step, for the dev loop (any step label)
+bun run check --list           # print the steps, run none
+bun run check --fix            # every step's fixer (aliased as `bun run lint:fix`)
+bun run verify                 # the release gate — check plus the browser set
 ```
 
-`package.json` `scripts.check` is the single source of truth for the gate's steps. Gate
-philosophy and failure triage: [`TESTING.md`](.decisions/TESTING.md) §6.
+`scripts/lib/steps.ts` is the single source of truth for the gate's steps and their gate
+membership. Gate philosophy, the two verbs, and the flags:
+[`TESTING.md`](.decisions/TESTING.md) §6.
 
 **Avoid:** `tsc` (use `tsgo`), `bun-types` (use the custom stub), `eslint`/`prettier` (use `biome`).
 
@@ -147,15 +150,20 @@ cite them rather than restating them:
 | Owns | File |
 |---|---|
 | Export subpath names | `package.json` `exports` |
-| Verification gate steps | `package.json` `scripts.check` |
+| Verification gate steps | `scripts/lib/steps.ts` |
 | Side-effectful modules | `package.json` `sideEffects` |
 | CSRF and honeypot field names | `src/form/constants.ts` |
 | Per-namespace export lists | `src/{ns}/mod.ts` |
 | `lib` and `types` configuration | `tsconfig.json` |
 | Bash allowlist patterns (incl. the exit-check literal) | `.claude/settings.local.json` `permissions.allow` |
-| Barrel rules as *enforced* | `scripts/validate-exports.ts` |
+| Barrel rules as *enforced* | `scripts/validate-exports.ts` + `scripts/barrel-parse.ts` |
 | Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
 | `@source` coverage as *enforced* | `scripts/validate-css-sources.ts` |
+
+The barrel row names two files because the rule genuinely spans two. `validate-exports.ts` remains
+the entry point and retains every policy decision — what fails, in what order, with what message —
+while `barrel-parse.ts` holds the matchers it decides on (the star-ban regex among them). Stating
+the split is more honest than naming the entry point alone and sending a reader to the wrong file.
 
 ---
 

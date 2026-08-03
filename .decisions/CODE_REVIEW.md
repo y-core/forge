@@ -82,10 +82,10 @@ read its output.
 
 | Rule | detect |
 |---|---|
-| Barrel discipline, `export *` ban, export-map drift, `@public` symbols reaching their barrel | `bun run validate-exports` |
-| JSX pragma present and correct in every `.tsx` | `bun run validate-jsx` |
-| No-sibling-barrel rule (biome `noRestrictedImports`) | `bun run lint` |
-| Governing-doc import paths, numbering, references | `bun run validate-docs` |
+| Barrel discipline, `export *` ban, export-map drift, `@public` symbols reaching their barrel | `bun run check --only validate-exports` |
+| JSX pragma present and correct in every `.tsx` | `bun run check --only validate-jsx` |
+| No-sibling-barrel rule (biome `noRestrictedImports`) | `bun run check --only lint` |
+| Governing-doc import paths, numbering, references | `bun run check --only validate-docs` |
 | Behaviour of the changed unit | `bun test <path>` |
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix

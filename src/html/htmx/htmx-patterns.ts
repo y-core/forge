@@ -12,19 +12,37 @@ export const SWAP = {
   none: "none",
 } as const;
 
-function withQueryParam(path: string, key: string, value: string, extras?: Record<string, string>): string {
+/** Placeholder origin a relative target is parsed against; stripped back off on the way out. */
+const RELATIVE_BASE = "http://localhost";
+
+/** Parses `path`, reporting whether it carried a scheme and host of its own. */
+function parseTarget(path: string): { url: URL; absolute: boolean } | null {
   try {
-    const url = new URL(path, "http://localhost");
-    if (extras) {
-      for (const [k, v] of Object.entries(extras)) {
-        url.searchParams.set(k, v);
-      }
-    }
-    url.searchParams.set(key, value);
-    return url.pathname + url.search;
+    return { url: new URL(path), absolute: true };
   } catch {
-    return path;
+    // No scheme — fall through and parse it as relative instead.
   }
+  try {
+    return { url: new URL(path, RELATIVE_BASE), absolute: false };
+  } catch {
+    return null;
+  }
+}
+
+function withQueryParam(path: string, key: string, value: string, extras?: Record<string, string>): string {
+  const target = parseTarget(path);
+  if (!target) return path;
+  const { url, absolute } = target;
+  if (extras) {
+    for (const [k, v] of Object.entries(extras)) {
+      url.searchParams.set(k, v);
+    }
+  }
+  url.searchParams.set(key, value);
+  // An absolute endpoint keeps its scheme and host; returning `pathname + search` for one would
+  // silently repoint the request at the page's own origin. A relative one stays relative, so the
+  // placeholder origin never reaches the emitted attribute.
+  return absolute ? url.href : url.pathname + url.search;
 }
 
 interface LiveSearchProps {

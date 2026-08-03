@@ -97,7 +97,13 @@ export const ValidateFragment: FC<{ data: ValidateData }> = ({ data }) => {
   return (
     <FormField id={SHOW_VALIDATE_ID} name='email' invalid={showError}>
       <FormField.Label name='email'>Email</FormField.Label>
-      <Input type='email' name='email' placeholder='you@example.com' value={data.email} field={{ name: "email", invalid: showError }} />
+      <Input
+        type='email'
+        name='email'
+        placeholder='you@example.com'
+        value={data.email}
+        field={{ name: "email", invalid: showError, description: isValid }}
+      />
       {showError ? <FormField.Error name='email'>Please enter a valid email address.</FormField.Error> : null}
       {isValid ? (
         <FormField.Description name='email' class='text-emerald-600'>

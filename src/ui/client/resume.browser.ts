@@ -209,6 +209,77 @@ test.describe("resume — the disposer contract", () => {
     expect(result).toEqual({ beforeTeardown: false, afterTeardown: true });
   });
 
+  test("a swap disposes the scope it replaced instead of stacking disposers for the page's life", async ({ page }) => {
+    const markup = await scopeMarkup("demo", "act");
+    await mount(page, '<div id="host"></div>', EXPOSE);
+
+    const result = await page.evaluate(async (html) => {
+      const counts = { setups: 0, disposed: 0 };
+      const seen: number[] = [];
+      window.forgeResume.registerScope("demo", {
+        setup: ({ root }) => {
+          const generation = counts.setups++;
+          seen[generation] = 0;
+          const observer = new MutationObserver((records) => {
+            seen[generation] = (seen[generation] ?? 0) + records.length;
+          });
+          observer.observe(root, { attributes: true });
+          return () => {
+            counts.disposed += 1;
+            observer.disconnect();
+          };
+        },
+      });
+
+      const host = document.querySelector<HTMLElement>("#host");
+      if (!host) return null;
+      const roots: HTMLElement[] = [];
+      for (let i = 0; i < 5; i += 1) {
+        // What an htmx swap does to a scope: the previous markup is detached with no notice.
+        host.innerHTML = html;
+        const root = host.querySelector<HTMLElement>("[data-scope]");
+        if (!root) return null;
+        roots.push(root);
+        window.forgeResume.resumeScope(root);
+      }
+
+      // Mutating a *detached* node still notifies a connected observer, so this distinguishes
+      // "disconnected" from "merely unreachable".
+      for (const root of roots) root.setAttribute("data-touched", "1");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return { ...counts, seen };
+    }, markup);
+
+    // Four of the five generations are gone, and only the live one's observer is still listening.
+    expect(result).toEqual({ setups: 5, disposed: 4, seen: [0, 0, 0, 0, 1] });
+  });
+
+  test("a scope torn down with the runtime resumes again on the next mount", async ({ page }) => {
+    await mount(page, await scopeMarkup("demo", "act"), EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const counts = { setups: 0, disposed: 0 };
+      window.forgeResume.registerScope("demo", {
+        eager: true,
+        setup: () => {
+          counts.setups += 1;
+          return () => {
+            counts.disposed += 1;
+          };
+        },
+      });
+      const teardown = window.forgeResume.resume();
+      teardown();
+      const afterTeardown = { ...counts };
+      window.forgeResume.resume();
+      return { afterTeardown, afterRemount: { ...counts } };
+    });
+
+    // The second resume has to re-run `setup`: its disposer already ran, so a scope skipped as
+    // "already resumed" would come back with nothing bound to it.
+    expect(result).toEqual({ afterTeardown: { setups: 1, disposed: 1 }, afterRemount: { setups: 2, disposed: 1 } });
+  });
+
   test("a setup that returns nothing is not treated as a disposer", async ({ page }) => {
     await mount(page, await scopeMarkup("demo", "act"), EXPOSE);
 

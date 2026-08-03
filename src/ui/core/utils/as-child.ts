@@ -31,6 +31,17 @@ export interface AsChildOptions {
   message: string;
 }
 
+/**
+ * Drop the keys the compound never set.
+ *
+ * `cloneElement` shallow-merges, so a key present with an `undefined` value still wins over the
+ * child's own — spreading `{ type: undefined }` onto `<button type="button">` erases the attribute
+ * and leaves a button that submits the surrounding form.
+ */
+function definedEntries(candidates: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(candidates).filter(([, value]) => value !== undefined));
+}
+
 /** Merge a compound's own attributes onto a caller-supplied element child. */
 export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXElement {
   if (!isValidElement(children)) throw new Error(options.message);
@@ -41,7 +52,7 @@ export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXEle
 
   return cloneElement(children, {
     ...options.props,
-    ...(isButton ? { disabled: options.disabled, type: options.type } : {}),
+    ...(isButton ? definedEntries({ disabled: options.disabled, type: options.type }) : {}),
     ...(options.disabled && !isButton ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}),
     class: cn(options.class, childClass),
     "data-slot": options.slot,

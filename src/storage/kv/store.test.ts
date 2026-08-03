@@ -1,7 +1,19 @@
 import { describe, expect, it } from "bun:test";
-import { textCodec } from "./codec";
+import { fakeKV } from "../../testing/fakes";
+import { bytesCodec, textCodec } from "./codec";
 import { createKVStore } from "./store";
 import type { KVListResult, KVNamespace } from "./types";
+
+/**
+ * Hands out a copy of a stored `ArrayBuffer` so a caller mutating what it read cannot reach back
+ * into the store. `bytesCodec().decode` wraps the buffer it is given in a `Uint8Array` **view**, so
+ * returning the stored reference would make every retrieved value a writable window onto the stub.
+ * The write side is already safe by accident — `encode` slices — which is why nothing caught this.
+ * Strings are immutable and need no copy. Mirrors the guard `fakeKV` makes explicit.
+ */
+function copyOut(value: string | ArrayBuffer): string | ArrayBuffer {
+  return typeof value === "string" ? value : value.slice(0);
+}
 
 function makeKVStub(): KVNamespace & { _store: Map<string, { value: string | ArrayBuffer; metadata?: unknown }> } {
   const _store = new Map<string, { value: string | ArrayBuffer; metadata?: unknown }>();
@@ -10,13 +22,13 @@ function makeKVStub(): KVNamespace & { _store: Map<string, { value: string | Arr
     get(key: string, opts: { type: "text" | "arrayBuffer" }): Promise<string | ArrayBuffer | null> {
       const entry = _store.get(key);
       if (!entry) return Promise.resolve(null);
-      if (opts.type === "arrayBuffer") return Promise.resolve(entry.value as ArrayBuffer);
+      if (opts.type === "arrayBuffer") return Promise.resolve(copyOut(entry.value) as ArrayBuffer);
       return Promise.resolve(entry.value as string);
     },
     getWithMetadata(key: string, _opts: { type: "text" | "arrayBuffer" }): Promise<{ value: string | ArrayBuffer | null; metadata: unknown }> {
       const entry = _store.get(key);
       if (!entry) return Promise.resolve({ value: null, metadata: null });
-      return Promise.resolve({ value: entry.value, metadata: entry.metadata ?? null });
+      return Promise.resolve({ value: copyOut(entry.value), metadata: entry.metadata ?? null });
     },
     put(key: string, value: string | ArrayBuffer, opts?: { expirationTtl?: number; metadata?: unknown }): Promise<void> {
       _store.set(key, { value, metadata: opts?.metadata });
@@ -128,6 +140,53 @@ describe("createKVStore — log-sink write smoke test", () => {
     const res = await store.get("log:2026-01-01");
     expect(res).toEqual({ ok: true, data: "event happened" });
   });
+});
+
+describe("createKVStore — bytesCodec round-trip", () => {
+  it("stores only the subarray window, not its backing buffer", async () => {
+    const store = createKVStore<Uint8Array>(fakeKV(), { codec: bytesCodec() });
+    await store.set("blob", new Uint8Array([1, 2, 3, 4, 5, 6]).subarray(2, 4));
+    const res = await store.get("blob");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(Array.from(res.data ?? [])).toEqual([3, 4]);
+  });
+
+  it("stores a whole-buffer Uint8Array unchanged", async () => {
+    const store = createKVStore<Uint8Array>(fakeKV(), { codec: bytesCodec() });
+    await store.set("blob", new Uint8Array([1, 2, 3, 4, 5, 6]));
+    const res = await store.get("blob");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(Array.from(res.data ?? [])).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  /**
+   * A property of the *stub*, asserted because a leaky one silently invalidates every byte-level
+   * test written against it. `makeKVStub` was byte-faithful but reference-leaky: `put` kept the
+   * caller's `ArrayBuffer` and `get` handed the same object back, so the `Uint8Array` view that
+   * `bytesCodec().decode` builds was a writable window onto the store. Run against both fakes, so
+   * the two cannot drift.
+   */
+  for (const [label, makeNs] of [
+    ["makeKVStub", makeKVStub],
+    ["fakeKV", fakeKV],
+  ] as const) {
+    it(`${label}: mutating a retrieved value does not change what the next read returns`, async () => {
+      const store = createKVStore<Uint8Array>(makeNs(), { codec: bytesCodec() });
+      await store.set("blob", new Uint8Array([1, 2, 3]));
+
+      const first = await store.get("blob");
+      expect(first.ok).toBe(true);
+      if (!first.ok || !first.data) return;
+      first.data[0] = 99;
+
+      const second = await store.get("blob");
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      expect(Array.from(second.data ?? [])).toEqual([1, 2, 3]);
+    });
+  }
 });
 
 describe("createKVStore — || key rejection", () => {

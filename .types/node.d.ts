@@ -44,6 +44,9 @@ declare module "node:fs" {
   export function renameSync(oldPath: string, newPath: string): void;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function unlinkSync(path: string): void;
+  export function openSync(path: string, flags: string): number;
+  export function closeSync(fd: number): void;
+  export function writeSync(fd: number, data: string): number;
   export interface Dirent {
     name: string;
     parentPath: string;
@@ -65,7 +68,9 @@ declare module "node:child_process" {
   export function execFileSync(file: string, args?: string[], options?: ExecSyncOptions): Buffer | string;
   interface SpawnSyncOptions {
     cwd?: string;
-    stdio?: string | string[];
+    // A numeric entry is a file descriptor the child inherits — `capture` passes the same
+    // fd for both stdout and stderr to interleave them the way `cmd > log 2>&1` does.
+    stdio?: string | (string | number)[];
     env?: Record<string, string | undefined>;
   }
   interface SpawnSyncReturns {

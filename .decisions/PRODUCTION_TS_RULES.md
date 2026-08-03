@@ -23,6 +23,7 @@ description: "Six non-negotiable coding rules: zero global state, explicit error
 - §1b Factory Function Pattern: capture config, not request state
 - §1c Constants Are Acceptable: the permitted module-level form
 - §1d Factory Naming and Bare Constructors: `create*` / `define*`, and the `Forge` carve-out
+- §1e Browser-Only Modules Are Exempt: why `ui/client` may hold module state, and what still applies
 - §2 Explicit Errors via Result Monad: return failures, do not throw them
 - §2a When to Throw vs Return Result: the three-way split
 - §3 Validation First Rule: untrusted input stops at the boundary
@@ -46,6 +47,9 @@ description: "Six non-negotiable coding rules: zero global state, explicit error
 **Never store request-scoped data in a module-level variable.** Each Workers isolate handles one
 request at a time, but isolates are recycled — module-level mutations bleed between requests
 sharing a module instance.
+
+The prohibition and its rationale are both scoped to **request-scoped data in a Worker**. Code that
+never executes in a Worker is covered by §1e, not by this rule.
 
 ```typescript
 let currentUser: User | null = null   // never do this
@@ -93,6 +97,29 @@ holder is the canonical case: its constructor is `private`, and consumers call `
 from `src/app/mod.ts`, and tests instantiate it directly ([`TESTING.md`](./TESTING.md) §5a).
 The rule targets *configuration holders* that would otherwise expose partially-initialised
 state — not the app object itself, whose constructor takes only an optional logger.
+
+### 1e. Browser-Only Modules Are Exempt
+
+**§1a does not apply to modules that never execute in a Worker.** Its prohibition is on
+*request-scoped* data and its rationale is isolate recycling; a module loaded only by the browser
+has neither a request nor an isolate to bleed between. Its module scope is the page, and it is
+discarded on navigation.
+
+This is the standing arrangement for `src/ui/client/` and the other browser-only entry points
+([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §1, §5 own the hard SSR boundary that makes the
+exemption safe). Module-level mutable state is the house style there — the reactive graph's
+`activeEffect` / `epoch` / `depth` in `signal.ts`, the id counter in `active-descendant.ts`, the
+delegation registries in `resume.ts`, and the one-shot latches in `nav.ts` and `turnstile.ts`.
+Rewriting any of them as factories would buy nothing: there is one document, and these are
+page-scoped singletons by nature.
+
+**Stating it explicitly rather than leaving it implied**, because the alternative is a recurring
+review finding against seven files that carry no exemption marker and need none.
+
+**§4a still applies in full.** Page-scoped state that outlives a test is state a test has to be
+able to reset. Where module state is observable, export a reset — `active-descendant.ts` ships
+`resetActiveDescendant` for exactly this. Where it is not exported, tests must not depend on the
+order they run in.
 
 ---
 

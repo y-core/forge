@@ -93,6 +93,117 @@ test.describe("eventTarget", () => {
   });
 });
 
+/**
+ * A `[data-scope]` wrapper whose shadow root holds a button and an `<a href>` pointing at a real
+ * origin, so `link.host` is the non-empty string `"example.com"` — an anchor is the one element in
+ * the platform whose `host` property is a URL component rather than a shadow host.
+ */
+const ANCHOR_SHADOW_FIXTURE = `
+  <div data-scope="demo" id="scope"><div id="widget"></div></div>
+  <script>
+    const root = document.querySelector("#widget").attachShadow({ mode: "open" });
+    root.innerHTML = '<button id="btn">go</button><a id="link" href="https://example.com/deep">link</a>';
+  </script>
+`;
+
+test.describe("closestAcross", () => {
+  test("resolves a delegated click on an <a href> instead of throwing on its URL host", async ({ page }) => {
+    await mount(page, ANCHOR_SHADOW_FIXTURE, EXPOSE);
+
+    const result = await page.evaluate(() => {
+      return new Promise<{ scope: string | null; anchorHost: string; error: string | null }>((resolve) => {
+        const widget = document.querySelector("#widget");
+        const link = widget?.shadowRoot?.querySelector<HTMLAnchorElement>("#link");
+        document.addEventListener(
+          "click",
+          (event) => {
+            event.preventDefault();
+            const anchorHost = link?.host ?? "";
+            try {
+              const hit = window.forgeDom.closestAcross(window.forgeDom.eventTarget(event) as Node, "[data-scope]");
+              resolve({ scope: hit?.id ?? null, anchorHost, error: null });
+            } catch (error) {
+              resolve({ scope: null, anchorHost, error: String(error) });
+            }
+          },
+          { once: true },
+        );
+        link?.click();
+      });
+    });
+
+    // `anchorHost` is asserted, not incidental: it is the truthy value that made the climb step off
+    // the tree onto a string and throw on the next hop.
+    expect(result).toEqual({ scope: "scope", anchorHost: "example.com", error: null });
+  });
+
+  test("crosses a shadow boundary where Element.closest is confined to its own tree", async ({ page }) => {
+    await mount(page, ANCHOR_SHADOW_FIXTURE, EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const btn = document.querySelector("#widget")?.shadowRoot?.querySelector("#btn");
+      if (!btn) return null;
+      return { utility: window.forgeDom.closestAcross(btn, "[data-scope]")?.id ?? null, bareGlobal: btn.closest("[data-scope]")?.id ?? null };
+    });
+
+    expect(result).toEqual({ utility: "scope", bareGlobal: null });
+  });
+
+  test("returns null when the climb reaches the document without a match", async ({ page }) => {
+    await mount(page, '<div id="wrap"><a id="link" href="https://example.com/deep">link</a></div>', EXPOSE);
+
+    const isNull = await page.evaluate(() => window.forgeDom.closestAcross(document.querySelector("#link"), "[data-scope]") === null);
+
+    expect(isNull).toBe(true);
+  });
+
+  // The three cases above all climb from an **attached** node, so the `getRootNode()` fallback is
+  // never reached with anything but a Document. Detached is where it bites: the root is the topmost
+  // ancestor *element*, and on an anchor with an absolute URL its `host` is a non-empty string.
+  test("terminates on a detached subtree rooted at an <a href> with an absolute URL", async ({ page }) => {
+    await mount(page, "<div></div>", EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const link = document.createElement("a");
+      link.href = "https://example.com/deep";
+      const leaf = document.createElement("span");
+      link.append(leaf);
+      try {
+        const hit = window.forgeDom.closestAcross(leaf, "[data-scope]");
+        return { hit: hit?.id ?? null, rootHost: link.host, connected: leaf.isConnected, error: null };
+      } catch (error) {
+        return { hit: null, rootHost: link.host, connected: leaf.isConnected, error: String(error) };
+      }
+    });
+
+    // `rootHost` is asserted for the same reason as above: it is the truthy string the unguarded
+    // read stepped onto, throwing `TypeError: current.getRootNode is not a function` next hop.
+    expect(result).toEqual({ hit: null, rootHost: "example.com", connected: false, error: null });
+  });
+
+  // A *relative* href is no safer here, which is the non-obvious half. An attached anchor's `host`
+  // is `""` only when the URL fails to parse; a detached anchor resolves the relative href against
+  // the document base and reports the page's own origin — truthy, and equally fatal unguarded.
+  test("terminates on a detached subtree rooted at an <a href> with a relative URL", async ({ page }) => {
+    await mount(page, "<div></div>", EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const link = document.createElement("a");
+      link.setAttribute("href", "/relative");
+      const leaf = document.createElement("span");
+      link.append(leaf);
+      try {
+        const hit = window.forgeDom.closestAcross(leaf, "[data-scope]");
+        return { hit: hit?.id ?? null, rootHostEmpty: link.host === "", error: null };
+      } catch (error) {
+        return { hit: null, rootHostEmpty: link.host === "", error: String(error) };
+      }
+    });
+
+    expect(result).toEqual({ hit: null, rootHostEmpty: false, error: null });
+  });
+});
+
 test.describe("contains", () => {
   test("climbs the shadow host where Node.contains stops at the boundary", async ({ page }) => {
     await mount(page, SHADOW_FIXTURE, EXPOSE);
@@ -117,6 +228,41 @@ test.describe("contains", () => {
     });
 
     expect(result).toBe(false);
+  });
+
+  // `contains` carried the identical unguarded `.host` read, and unlike `closestAcross` it was
+  // recorded nowhere. Same fixture, same failure: a detached subtree under an absolute-URL anchor.
+  test("answers no for a detached subtree rooted at an <a href> rather than throwing", async ({ page }) => {
+    await mount(page, '<div id="parent"></div>', EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const parent = document.querySelector("#parent");
+      const link = document.createElement("a");
+      link.href = "https://example.com/deep";
+      const leaf = document.createElement("span");
+      link.append(leaf);
+      try {
+        return { contained: window.forgeDom.contains(parent, leaf), rootHost: link.host, error: null };
+      } catch (error) {
+        return { contained: null, rootHost: link.host, error: String(error) };
+      }
+    });
+
+    expect(result).toEqual({ contained: false, rootHost: "example.com", error: null });
+  });
+
+  test("still answers yes within a detached subtree, where no boundary is crossed", async ({ page }) => {
+    await mount(page, "<div></div>", EXPOSE);
+
+    const contained = await page.evaluate(() => {
+      const link = document.createElement("a");
+      link.href = "https://example.com/deep";
+      const leaf = document.createElement("span");
+      link.append(leaf);
+      return window.forgeDom.contains(link, leaf);
+    });
+
+    expect(contained).toBe(true);
   });
 
   test("answers no for a null parent or child rather than throwing", async ({ page }) => {

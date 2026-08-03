@@ -6,9 +6,10 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { delimiter } from "node:path";
-import type { ToolHints } from "./types";
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import type { CaptureResult, ToolHints } from "./types";
 
 /** Idempotently insert `dir` at the front of `process.env.PATH`.
  *  A no-op when `dir` is empty, does not exist on disk, or is already on `PATH`. */
@@ -40,4 +41,27 @@ export function run(cmd: string, args: string[], opts?: { cwd?: string }): numbe
     throw new Error(`\`${cmd} ${args.join(" ")}\` failed (exit ${r.status})`);
   }
   return r.status;
+}
+
+/** Spawn `cmd args`, buffering its combined output and returning the exit code — the
+ *  non-throwing counterpart to `run`, for callers that report on failure rather than abort.
+ *
+ *  Both stdout and stderr are pointed at a single temp-file descriptor, reproducing
+ *  `cmd > log 2>&1`: the two streams stay interleaved in the order the child wrote them.
+ *  `stdio: "pipe"` cannot do this — it yields two independent buffers, so a tail of their
+ *  concatenation would show only the stderr tail. A spawn failure (e.g. the tool is missing)
+ *  has no output of its own, so its message is appended instead of returning an empty capture. */
+export function capture(cmd: string, args: string[], opts?: { cwd?: string }): CaptureResult {
+  const dir = mkdtempSync(join(tmpdir(), "forge-capture-"));
+  const file = join(dir, "output");
+  const fd = openSync(file, "w");
+  const started = Date.now();
+  try {
+    const r = spawnSync(cmd, args, { stdio: ["ignore", fd, fd], env: process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
+    closeSync(fd);
+    const reason = r.error ? `${r.error.message}\n` : "";
+    return { code: r.status ?? 1, output: readFileSync(file, "utf-8") + reason, ms: Date.now() - started };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

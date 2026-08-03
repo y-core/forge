@@ -1,7 +1,7 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
 import { ConfigKey, getAppContext } from "../context/types";
 import { parseFormData } from "../form/parse-form-data";
-import type { ReadonlyFormData } from "../form/types";
+import type { ParseFormDataOptions, ReadonlyFormData } from "../form/types";
 import { renderError, renderValidationErrors } from "../http/fragment";
 import { fragmentResponse } from "../http/response";
 import { createLogger } from "../logging/logger";
@@ -31,13 +31,15 @@ const logger = createLogger("action");
 export function defineAction<Input, Bindings = Record<string, unknown>, ConfigData = unknown>(
   def: ActionDefinition<Input, Bindings, ConfigData>,
 ): RequestHandler {
+  const parseOptions: ParseFormDataOptions = def.maxBytes !== undefined ? { maxBytes: def.maxBytes } : {};
+
   return async (context) => {
     const config = context.get(ConfigKey) as ConfigData;
     const c = getAppContext<Bindings>(context);
 
     let formData: ReadonlyFormData;
     try {
-      formData = await parseFormData(context);
+      formData = await parseFormData(context, parseOptions);
     } catch (err) {
       // Oversized bodies (Content-Length fast-path or streaming cap) surface a 413; everything
       // else is an unparseable body → 400.

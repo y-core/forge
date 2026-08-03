@@ -157,6 +157,131 @@ describe("computed", () => {
   });
 });
 
+describe("batching", () => {
+  it("coalesces several writes inside one batch into exactly one downstream re-run", () => {
+    const trigger = createSignal(0);
+    const a = createSignal(0);
+    const b = createSignal(0);
+    const c = createSignal(0);
+    let downstreamRuns = 0;
+
+    // one write to `trigger` opens a batch in which three signals are written
+    effect(() => {
+      const n = trigger.value;
+      a.value = n;
+      b.value = n;
+      c.value = n;
+    });
+    effect(() => {
+      a.value;
+      b.value;
+      c.value;
+      downstreamRuns++;
+    });
+
+    expect(downstreamRuns).toBe(1);
+    trigger.value = 1;
+    expect(downstreamRuns).toBe(2);
+  });
+
+  it("flushes a shared downstream effect once across nested batches", () => {
+    const trigger = createSignal(0);
+    const mid = createSignal(0);
+    const leaf = createSignal(0);
+    let downstreamRuns = 0;
+
+    effect(() => {
+      mid.value = trigger.value;
+    });
+    // writing `mid` re-runs this inside the outer batch, opening a nested one
+    effect(() => {
+      leaf.value = mid.value;
+    });
+    effect(() => {
+      mid.value;
+      leaf.value;
+      downstreamRuns++;
+    });
+
+    expect(downstreamRuns).toBe(1);
+    trigger.value = 1;
+    expect(downstreamRuns).toBe(2);
+  });
+});
+
+describe("effect that throws", () => {
+  it("does not wedge notification for unrelated effects", () => {
+    const trigger = createSignal(0);
+    const other = createSignal(0);
+    let otherRuns = 0;
+
+    effect(() => {
+      if (trigger.value > 0) throw new Error("boom");
+    });
+    effect(() => {
+      other.value;
+      otherRuns++;
+    });
+    expect(otherRuns).toBe(1);
+
+    expect(() => {
+      trigger.value = 1;
+    }).toThrow("boom");
+
+    // two consecutive writes: the second only re-runs if the batch depth —
+    // and therefore the epoch counter — recovered from the throw
+    other.value = 1;
+    expect(otherRuns).toBe(2);
+    other.value = 2;
+    expect(otherRuns).toBe(3);
+  });
+
+  it("does not stay installed as the dependency-tracking target", () => {
+    let deadRuns = 0;
+    expect(() =>
+      effect(() => {
+        deadRuns++;
+        throw new Error("dead");
+      }),
+    ).toThrow("dead");
+    expect(deadRuns).toBe(1);
+
+    const s = createSignal(0);
+    s.value; // read outside any effect — must not subscribe the dead node
+    expect(() => {
+      s.value = 1;
+    }).not.toThrow();
+    expect(deadRuns).toBe(1);
+  });
+
+  // The case above throws *before reading anything*, so it never subscribes and cannot detect an
+  // orphaned subscription. Reading first is what makes the leak reachable — and it is unbounded,
+  // not one-shot: the disposer never reaches the caller, so nothing can ever unsubscribe the node.
+  it("leaves nothing subscribed when the first run reads a signal and then throws", () => {
+    const s = createSignal(0);
+    let runs = 0;
+
+    expect(() =>
+      effect(() => {
+        runs++;
+        s.value;
+        throw new Error("poison");
+      }),
+    ).toThrow("poison");
+    expect(runs).toBe(1);
+
+    // Each of these would rethrow "poison" out of the *setter* — an unrelated call site — while the
+    // dead node stayed subscribed, and would keep doing so for every write for the signal's life.
+    expect(() => {
+      s.value = 1;
+    }).not.toThrow();
+    expect(() => {
+      s.value = 2;
+    }).not.toThrow();
+    expect(runs).toBe(1);
+  });
+});
+
 describe("diamond dependency", () => {
   it("fires the downstream effect exactly once when two branches update", () => {
     // A → effectB (writes B), A → effectC (writes C), B + C → effectD

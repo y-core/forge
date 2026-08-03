@@ -141,6 +141,11 @@ createHref("/users/:id", { id: "42" });   // "/users/42"
 `routePaths` flattens a route map into its declared path strings, optionally filtered by method. It
 recurses into nested maps and preserves declaration order.
 
+The filter answers **"which paths serve this method?"**, not "which paths were declared with this
+method". A route declared `ANY` is dispatched for every method, so it appears under any concrete
+method filter. `{ method: "ANY" }` is the one exception — it is not a wildcard, and selects only the
+routes declared `ANY`.
+
 ```typescript
 import { routePaths } from "@y-core/forge/router";
 
@@ -148,11 +153,19 @@ const routes = route({
   home: get("/"),
   save: post("/api/save"),
   importDoc: post("/api/import"),
+  health: new Route("ANY", "/health"),
 });
 
-routePaths(routes);                      // ["/", "/api/save", "/api/import"]
-routePaths(routes, { method: "POST" });  // ["/api/save", "/api/import"]
+routePaths(routes);                      // ["/", "/api/save", "/api/import", "/health"]
+routePaths(routes, { method: "POST" });  // ["/api/save", "/api/import", "/health"]
+routePaths(routes, { method: "GET" });   // ["/", "/health"]
+routePaths(routes, { method: "ANY" });   // ["/health"]
 ```
+
+A method filter that matches nothing in a route map that does contain routes **throws**. The result
+is nearly always fed to a middleware loop, and an empty path list would attach that middleware to
+nothing — a silent hole rather than a visible error. An unfiltered call never throws, and neither
+does a route map with no routes at all.
 
 ---
 
@@ -220,15 +233,29 @@ The only addition forge layers over the upstream engine.
 
 | Symbol | Signature | Description |
 |---|---|---|
-| `routePaths` | `routePaths(routeMap, filter?)` | Collect every `Route`'s path string from a `RouteMap`, in declaration order, recursing into nested maps. |
-| `RouteFilter` | `{ method?: RequestMethod \| "ANY" }` | Restrict `routePaths` to routes whose method matches exactly. Omit `method` to match all. |
+| `routePaths` | `routePaths(routeMap, filter?)` | Collect every `Route`'s path string from a `RouteMap`, in declaration order, recursing into nested maps. Throws when a method filter matches nothing in a map that does contain routes. |
+| `RouteFilter` | `{ method?: RequestMethod \| "ANY" }` | Restrict `routePaths` to routes that serve the method — routes declared `ANY` serve every method and are always included. `"ANY"` selects only routes declared `ANY`. Omit `method` to match all. |
+| `forMethod` | `forMethod(method, middleware)` | Wrap `middleware` so it runs only for the given `RequestMethod` (or array of them) and calls `next()` otherwise. |
+
+**`app.use` is path-scoped only** — dispatch never consults the method — so a filtered `routePaths`
+list selects *paths*, not method-and-path pairs. Pair the two:
 
 ```typescript
 // Wire per-path middleware onto only the mutating endpoints.
 for (const path of routePaths(routes, { method: "POST" })) {
-  app.use(path, csrfGuard);
+  app.use(path, forMethod("POST", csrfGuard));
 }
 ```
+
+Without the wrapper the guard applies to every method those paths serve. A route declared
+`ANY` — `health: new Route("ANY", "/health")` — is included under a concrete method filter by
+design, so the unwrapped loop above guarded `/health` on GET. The same overlap always existed for a
+path declared both `get("/x")` and `post("/x")`; the `ANY` inclusion only made it reachable through
+this documented example.
+
+`forMethod` reads `context.method`, so a `methodOverride` is honoured — the value dispatch itself
+matches on. Forge rewrites `HEAD` to `GET` before routing, so `forMethod("GET", …)` also covers
+`HEAD`.
 
 ### Lower-level router engine
 

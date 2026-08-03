@@ -144,6 +144,32 @@ describe("renderToString — HTML elements", () => {
   });
 });
 
+describe("renderToString — aria-* boolean attributes", () => {
+  it('emits aria-expanded={false} as aria-expanded="false"', async () => {
+    const node = el("button", { "aria-expanded": false });
+    node.props.children = "";
+    expect(String(await renderToString(node))).toBe('<button aria-expanded="false"></button>');
+  });
+
+  it('emits aria-expanded={true} as aria-expanded="true"', async () => {
+    const node = el("button", { "aria-expanded": true });
+    node.props.children = "";
+    expect(String(await renderToString(node))).toBe('<button aria-expanded="true"></button>');
+  });
+
+  it("still omits a non-aria data-* attribute set to false", async () => {
+    const node = el("div", { "data-x": false, id: "keep" });
+    node.props.children = "";
+    expect(String(await renderToString(node))).toBe('<div id="keep"></div>');
+  });
+
+  it("still omits a boolean HTML attribute set to false", async () => {
+    const node = el("button", { disabled: false, id: "keep" });
+    node.props.children = "";
+    expect(String(await renderToString(node))).toBe('<button id="keep"></button>');
+  });
+});
+
 describe("renderToString — SafeHtml child (rawHtml)", () => {
   it("renders a rawHtml child verbatim without escaping", async () => {
     const { rawHtml } = await import("../http/html");

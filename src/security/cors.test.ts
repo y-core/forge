@@ -43,6 +43,43 @@ describe("matchOrigin", () => {
   it("returns false for a nested subdomain (two labels) against a single-wildcard pattern", () => {
     expect(matchOrigin("https://sub.api.example.com", ["https://*.example.com"])).toBe(false);
   });
+
+  // W1-2/W1-3: the wildcard expanded to `[^.]+`, which matches `/`, `:` and `@`. An attacker
+  // origin only needs one of those delimiters before the trusted suffix to satisfy the pattern
+  // and get reflected into Access-Control-Allow-Origin.
+  describe("wildcard delimiter confusion", () => {
+    it("returns false when a path separator precedes the trusted suffix", () => {
+      expect(matchOrigin("https://a/b.example.com", ["https://*.example.com"])).toBe(false);
+    });
+
+    it("returns false when userinfo precedes the trusted suffix", () => {
+      expect(matchOrigin("https://evil.com@attacker.example.com", ["https://*.example.com"])).toBe(false);
+    });
+
+    it("returns false when a port separator precedes the trusted suffix", () => {
+      expect(matchOrigin("https://evil.com:8080.example.com", ["https://*.example.com"])).toBe(false);
+    });
+
+    it("returns false when a query delimiter precedes the trusted suffix", () => {
+      expect(matchOrigin("https://evil.com?x.example.com", ["https://*.example.com"])).toBe(false);
+    });
+
+    it("returns false when a fragment delimiter precedes the trusted suffix", () => {
+      expect(matchOrigin("https://evil.com#x.example.com", ["https://*.example.com"])).toBe(false);
+    });
+
+    it("still matches a legitimate single-label subdomain", () => {
+      expect(matchOrigin("https://api.example.com", ["https://*.example.com"])).toBe(true);
+    });
+
+    it("escapes `?` rather than making the previous character optional", () => {
+      // The pattern must contain `*` to reach the regex branch at all. Unescaped, the `?` makes
+      // the preceding `b` optional, so `https://x.a.example.com` would match a pattern that only
+      // ever named `ab.example.com`.
+      expect(matchOrigin("https://x.a.example.com", ["https://*.ab?.example.com"])).toBe(false);
+      expect(matchOrigin("https://x.ab.example.com", ["https://*.ab?.example.com"])).toBe(false);
+    });
+  });
 });
 
 describe("cors factory", () => {

@@ -153,7 +153,7 @@ const MenuCheckboxItem: FC<MenuCheckboxItemProps> = ({ for: target, checked = fa
     type='button'
     role='menuitemcheckbox'
     data-slot='menu-checkbox-item'
-    aria-checked={String(checked) as "true" | "false"}
+    aria-checked={checked}
     {...stateAttrs({ checked })}
     {...closeAttrs(target)}
     class={cn(ITEM_BASE, asClass(cls))}
@@ -167,7 +167,7 @@ const MenuRadioItem: FC<MenuRadioItemProps> = ({ for: target, checked = false, c
     type='button'
     role='menuitemradio'
     data-slot='menu-radio-item'
-    aria-checked={String(checked) as "true" | "false"}
+    aria-checked={checked}
     {...stateAttrs({ checked })}
     {...closeAttrs(target)}
     class={cn(ITEM_BASE, asClass(cls))}

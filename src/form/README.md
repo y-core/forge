@@ -129,6 +129,12 @@ The cap is enforced two ways: a `Content-Length` fast-path that rejects before r
 streaming counting transform that errors once the running byte total exceeds `maxBytes` — so a request
 with an absent or lying `Content-Length` (chunked transfer) is still capped.
 
+A body can only be read once, so the **first** call for a request is what meters the stream and its
+`maxBytes` is the ceiling for everyone. Later callers are not silently bound by it: each re-checks the
+bytes actually read against its own `maxBytes` and rejects with its own `413`. The consequence for
+ordering is that a guard which parses first — `csrfProtection` — must be given the same raised cap as
+the route handler, or it rejects the request before the handler is reached.
+
 ### Field reading — `readTextField`, `readFields`
 
 ```ts
@@ -155,6 +161,7 @@ interface CsrfProtectionOptions {
   tokenField?: string;
   headerName?: string;
   subject: ((context: RequestContext) => string | undefined) | false;
+  maxBytes?: number;
 }
 ```
 
@@ -167,6 +174,7 @@ interface CsrfProtectionOptions {
 | `tokenField` | `string` | `CSRF_FIELD_DEFAULT` (`"_csrf"`) | Hidden-input field name the token is read from on mutations. |
 | `headerName` | `string` | `"X-CSRF-Token"` | Request header checked for the token before the form body. |
 | `subject` | resolver \| `false` | — | **Required.** A resolver binding the token to a session/user identifier so a token minted for one subject cannot be used by another, or the literal `false` to opt into a deliberate path-only token. |
+| `maxBytes` | `number` | `FORM_MAX_BYTES_DEFAULT` (100 KB) | Body-size cap for the token lookup's form parse. The guard parses the body first, so a route that raises its handler's cap must raise this one to match. |
 
 Behaviour by method:
 
@@ -174,7 +182,10 @@ Behaviour by method:
   `context.url.pathname`, exposed via `csrfTokenCtx`. Then calls `next()`.
 - **Mutations (`POST`, etc.)** — reads the token from the `headerName` header, falling back to the
   `tokenField` form field, and verifies it against the current pathname (and `subject`, if configured).
-  On **any** failure it short-circuits with a bare `403` `Response` and never calls `next()`.
+  On **any** token failure it short-circuits with a bare `403` `Response` and never calls `next()`.
+  A body that exceeds `maxBytes` is a size failure, not a token failure, and short-circuits with a
+  bare `413` instead — reporting it as `403` would send the client hunting for a token problem that
+  does not exist.
 
 #### Binding tokens to a session (recommended when a session exists)
 
@@ -301,6 +312,32 @@ Combine with an early return so bot submissions never reach business logic:
 if (isHoneypotFilled(formData)) return new Response("Bad request", { status: 400 });
 ```
 
+#### Rendering the decoy — compose `<Honeypot />` explicitly
+
+**`Form` does not render a honeypot.** It used to, unconditionally — including on `method="get"`,
+where the browser serialises the decoy into the query string of every resulting URL, so `?__surname=`
+leaked into the address bar, bookmarks, shared links, history, and the outbound `Referer`. It also
+protects nothing there: `isHoneypotFilled` is only consulted by mutation handlers.
+
+Render `Honeypot` from `@y-core/forge/ui/core` on the forms that submit mutations:
+
+```tsx
+import { Form, Honeypot } from "@y-core/forge/ui/core";
+
+<Form method='post' csrfToken={token}>
+  <Honeypot />
+  <input name='email' />
+</Form>;
+```
+
+`Honeypot` takes an optional `field` defaulting to `HONEYPOT_FIELD_DEFAULT`, the same constant
+`isHoneypotFilled` reads. Override both or neither.
+
+> **Migrating from ≤ 0.0.79.** Every `<Form method='post'>` needs a `<Honeypot />` child added.
+> Nothing fails at build or at runtime if you forget — the form simply stops being protected.
+> `Form`'s `honeypotField` prop was removed rather than deprecated so a form that *customised* the
+> name becomes a type error instead of degrading silently.
+
 ### Turnstile — `verifyTurnstile`
 
 ```ts
@@ -362,7 +399,7 @@ if (!result.ok) {
 | `FormFieldReader` | `(formData, field) => string` — the shape of `readTextField`. |
 | `CsrfKeyRing` | `{ activeKeyId, keys }` — active signing key plus all keys valid for verification. |
 | `CsrfSecretResolver` | `(context) => CryptoKey \| CsrfKeyRing \| Promise<…>`. |
-| `CsrfProtectionOptions` | `{ secret, tokenField?, headerName?, subject }` — the `csrfProtection` middleware options (`subject` is required: resolver or `false`). |
+| `CsrfProtectionOptions` | `{ secret, tokenField?, headerName?, subject, maxBytes? }` — the `csrfProtection` middleware options (`subject` is required: resolver or `false`). |
 | `CsrfTokenOptions` | `{ kid?, subject? }` for `createCsrfToken`. |
 | `CsrfVerifyOptions` | `{ maxAgeMs?, subject? }` for `verifyCsrfToken`. |
 | `CsrfResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. See Security below. |
@@ -421,7 +458,9 @@ site key, which is public.
 `parseFormData` caps body size both via `Content-Length` and a streaming counter, so a malicious
 chunked request without a truthful `Content-Length` cannot exhaust memory. Surface the thrown
 `{ status: 413 }` error as a `413` response; do not catch and ignore it. Lower `maxBytes` on routes
-that accept only small text payloads.
+that accept only small text payloads. When raising it above the default, raise it on **both** the
+route handler and any `csrfProtection` guard in front of it — the guard parses first, so a mismatch
+rejects the request before the handler runs.
 
 ### Layered defense
 

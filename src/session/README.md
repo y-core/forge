@@ -92,7 +92,9 @@ const setCookie = await themeCookie.serialize("dark");
 
 ## Anonymous sessions — the standard pattern
 
-For per-visitor persistence without accounts (settings, drafts, preferences), use `createAnonymousSession` with a KV binding. The cookie carries **only an opaque session id** (signed, `httpOnly`, `SameSite=Lax`); all session data lives server-side in KV under that id with a sliding TTL. Handlers persist state with plain `session.set(...)` — there is no manual id bookkeeping, no hand-rolled KV keying, and no per-isolate middleware caching to invent (the factory caches internally, keyed by `(cookieName, secure, secret)` so secret rotation rebuilds).
+For per-visitor persistence without accounts (settings, drafts, preferences), use `createAnonymousSession` with a KV binding. The cookie carries **only an opaque session id** (signed, `httpOnly`, `SameSite=Lax`); all session data lives server-side in KV under that id with a sliding TTL. Handlers persist state with plain `session.set(...)` — there is no manual id bookkeeping, no hand-rolled KV keying, and no per-isolate middleware caching to invent (the factory caches internally in a `WeakMap` keyed on **the `env` object itself**, the same scheme `csrfProtection` uses — one build per environment for the isolate's lifetime, and entries are collectable).
+
+> Keying on `env` identity rather than on `(cookieName, secure, secret)` is load-bearing, not cosmetic: the cached middleware closes over the KV namespace returned by `options.kv(c)` for the request that built it. Two tenants sharing a cookie name, secure flag and secret hashed to one cache slot and therefore shared **one KV namespace** — tenant B reading and writing tenant A's sessions.
 
 ```typescript
 import { createAnonymousSession, sessionCtx } from "@y-core/forge/session";

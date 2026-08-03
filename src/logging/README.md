@@ -260,6 +260,13 @@ const channel = kvLogChannel(env.LOGS_KV, { prefix: "app-logs", maxLogs: 1000 })
 The prefix captured at construction is used for both `write` and `read`, so a channel
 configured with `prefix: "app-logs"` always reads `app-logs||…` keys — never the default.
 
+`record.data` is cloned into a JSON-faithful shape before it is stored. `Date`, `Map` and `Set`
+keep their payload outside enumerable own properties, so each is given an explicit form rather
+than being flattened to `{}`: a `Date` becomes its ISO 8601 string, a `Map` becomes
+`{ type: "Map", entries: [[key, value], …] }`, and a `Set` becomes `{ type: "Set", values: […] }`.
+A reference that reappears on its own path becomes `"[circular]"`, so a cyclic structure stores
+rather than overflowing the stack.
+
 ### `requestLogger(options)` and `requestLog`
 
 `requestLogger(options)` is middleware that creates a per-request child logger, stores it on
@@ -317,9 +324,23 @@ level is derived from the response status code:
 This keeps alert noise low: 404s and 422s stay at `warn`. `requestLogger` never emits
 `debug`; reserve `debug` for explicit `createLogger` use and avoid it in production configs.
 
-If `next()` throws (an error escaping the app's own boundaries), `requestLogger` emits one
-`error` record with `serializeError(err)` under `data.error` (no `status` field) and
-rethrows; the flush still runs.
+A throwing route handler never reaches `requestLogger` — the app's error boundary sits below it
+and converts the throw into a 500 first, so the summary shows `status: 500` with no error detail.
+The boundary itself publishes that detail on the same per-request logger as a separate `error`
+record, message `unhandled error`, carrying `serializeError(err)` under `data.error` and the same
+`bindings`. A 500 therefore persists as two correlated records.
+
+If `next()` throws (an error escaping the app's own boundaries — middleware registered below
+`requestLogger`), `requestLogger` emits one `error` record with `serializeError(err)` under
+`data.error` (no `status` field) and rethrows; the flush still runs. The outer boundary then
+catches the rethrow and appends its own `unhandled error` record, so this path also persists **two**
+correlated records.
+
+Because `flush()` splices the pending buffer, `requestLogger`'s flush window has already closed by
+the time that second record is written. The boundary therefore schedules its **own** flush at the
+point of write — without it the record would sit in a buffer nobody awaits and, on an asynchronous
+channel such as `kvLogChannel`, could be lost to isolate teardown. Deduplicating the pair is out of
+scope; they are distinguishable by `message === "unhandled error"`.
 
 ### No PII in logs
 
@@ -365,9 +386,15 @@ so there is no view branch in app code. In order:
    `channel.readEntry?.(key)` and returns the expanded detail `<td>` fragment — including fields
    like `data.stack` that never fit in list metadata. A missing entry (expired TTL, purged, or a
    channel without `readEntry`) renders a not-found cell, not an error.
-3. For an HTMX request (`HX-Request: true`), returns the `<tbody>` partial, filtered and
-   paginated via `?level=`, `?q=`, and `?cursor=`.
-4. Otherwise returns the full HTML-document viewer page.
+3. For an HTMX request (`HX-Request: true`) carrying a `?cursor=`, returns the next page as a bare
+   `<tr>` sequence. The "Load more" control swaps its own row (`hx-target="closest tr"`,
+   `hx-swap="outerHTML"`), so the page lands where the control stood and the rows already loaded
+   survive; the control's URL carries the active `?level=` and `?q=` so page two is drawn from the
+   same filtered set.
+4. For any other HTMX request — a filter submit — returns the whole `<tbody>` partial, filtered
+   via `?level=` and `?q=`. An unrecognised `?level=` is dropped and the view renders unfiltered;
+   the filter only narrows rows `access` already permits, so falling back cannot widen exposure.
+5. Otherwise returns the full HTML-document viewer page.
 
 If the channel has no `read` method, the table renders empty rather than erroring. Logs expose
 request paths, request ids, and error messages, so `access` is required at the type level —

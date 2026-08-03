@@ -45,7 +45,10 @@ export interface ScopeDefinition<A extends string = string> {
 
 const scopes = new Map<string, ScopeDefinition>();
 const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();
-const disposers: Array<() => void> = [];
+/** Every currently-resumed scope root, mapped to the disposer its `setup` returned (`null` when it
+ * returned none). Keyed by root rather than kept as a flat list so one scope can be torn down on its
+ * own, which is what an htmx swap needs: the markup it replaces takes its scope with it. */
+const active = new Map<HTMLElement, (() => void) | null>();
 
 /** Registers a scope's setup + action handlers, keyed to a `data-scope` name. Generic over the
  * action-name union `A`, inferred from the `on` object literal.
@@ -86,7 +89,7 @@ export function resume(within?: Node): () => void {
   handlers.push(["command", commandHandler, true]);
   teardown = () => {
     for (const [type, handler, capture] of handlers) doc.removeEventListener(type, handler, capture);
-    for (const d of disposers.splice(0)) d();
+    for (const root of [...active.keys()]) disposeScope(root);
     teardown = null;
   };
   // Eager pass: scopes that opt out of lazy resume are hydrated immediately. An element whose
@@ -154,15 +157,43 @@ function findScopes(root: ParentNode): HTMLElement[] {
   return found;
 }
 
+/**
+ * Runs a scope's disposer and forgets that it was ever resumed.
+ *
+ * Forgetting is half the job: leaving the root in `resumed` after its disposer has run means a later
+ * resume of that same root is skipped as already-resumed, so `setup` never re-binds and the scope
+ * comes back inert.
+ */
+function disposeScope(root: HTMLElement): void {
+  active.get(root)?.();
+  active.delete(root);
+  resumed.delete(root);
+}
+
+/**
+ * Disposes every scope whose root has left its document.
+ *
+ * An htmx swap detaches a scope's markup with no notice to this module. Nothing else would ever run
+ * those disposers, so each swap would strand one more detached tree, its `MutationObserver`s and its
+ * listeners for the life of the page — and the entry pinning them would keep the tree itself alive.
+ * Sweeping as the replacement scope resumes is what bounds the collection to the live scopes.
+ */
+function sweepDetached(): void {
+  for (const root of [...active.keys()]) {
+    if (!root.isConnected) disposeScope(root);
+  }
+}
+
 /** Hydrates a scope's state into signals and runs its `setup` exactly once. Idempotent: a
  * second call returns the already-built state without re-running `setup`. */
 function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, Signal<unknown>> {
+  sweepDetached();
   let state = resumed.get(root);
   if (!state) {
     state = hydrateState(root.dataset.state);
     resumed.set(root, state);
     const dispose = def.setup?.({ root, state });
-    if (dispose) disposers.push(dispose);
+    active.set(root, typeof dispose === "function" ? dispose : null);
   }
   return state;
 }

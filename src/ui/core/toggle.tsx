@@ -39,7 +39,7 @@ export const Toggle: FC<ToggleProps> = ({ pressed = false, class: cls, children,
     data-slot='toggle'
     data-scope={TOGGLE_SCOPE}
     {...scopeAttrs<ToggleAction>({ onClick: "toggle" })}
-    aria-pressed={String(pressed) as "true" | "false"}
+    aria-pressed={pressed}
     {...stateAttrs({ pressed })}
     class={cn(TOGGLE_BASE, asClass(cls))}
     {...rest}>

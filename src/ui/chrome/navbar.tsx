@@ -72,6 +72,14 @@ export interface NavbarProps extends Omit<JSX.IntrinsicElements["nav"], "childre
   placement?: NavPlacement;
   /** Bound icon — must supply `chevron-down`, `hamburger`, and `close`. Required. */
   icon: ForgeIcon<"chevron-down" | "hamburger" | "close">;
+  /** Optional DOM id for the bar. Also namespaces the generated menu ids; supply a distinct
+   * value when two bars share the same `placement`, otherwise `placement` disambiguates them.
+   *
+   * Without it, two same-placement bars both mint `navbar-top-menu-0`, and each trigger's
+   * `commandfor` resolves to the first matching element in the document — so the second bar's
+   * trigger toggles the first bar's popup. Inherited from the `<nav>` intrinsic either way;
+   * declared here because the escape hatch is invisible to a consumer otherwise. */
+  id?: string;
   /** Extra classes merged onto the root element. */
   class?: string;
 }
@@ -83,6 +91,10 @@ interface NavRenderCtx {
   slots?: Record<string, JSXNode> | undefined;
   activeFilters: string[];
   icon: ForgeIcon<"chevron-down" | "hamburger" | "close">;
+  /** Namespace prefix for generated menu ids — the bar's `id` when given, else its placement.
+   * Two bars on a page must not both mint `navbar-menu-0`, or their `commandfor` links would
+   * collide and a trigger would toggle the wrong (first-in-document) popup. */
+  idBase: string;
   seq: { n: number };
 }
 
@@ -178,7 +190,7 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
   if ("slot" in item) return renderSlot(item, depth, ctx);
 
   if ("items" in item) {
-    const id = `navbar-menu-${ctx.seq.n++}`;
+    const id = `navbar-menu-${ctx.idBase}-${ctx.seq.n++}`;
     const children = item.items.map((child) => renderItem(child, depth + 1, ctx));
 
     // A nested submenu emits its trigger and popup as siblings of the rows around them, with no
@@ -251,11 +263,21 @@ function renderSection(section: NavSection, ctx: NavRenderCtx): JSXNode {
  *
  * @public
  */
-export const Navbar: FC<NavbarProps> = ({ config, resolveHref, slots, activeFilters = [], placement = "top", icon: Icon, class: cls, ...rest }) => {
-  const ctx: NavRenderCtx = { resolveHref, slots, activeFilters, icon: Icon, seq: { n: 0 } };
+export const Navbar: FC<NavbarProps> = ({
+  config,
+  resolveHref,
+  slots,
+  activeFilters = [],
+  placement = "top",
+  icon: Icon,
+  class: cls,
+  id,
+  ...rest
+}) => {
+  const ctx: NavRenderCtx = { resolveHref, slots, activeFilters, icon: Icon, idBase: id ?? placement, seq: { n: 0 } };
   return (
     <Resumable name='navbar' state={{ filters: activeFilters }}>
-      <details data-slot='navbar' class={cn(placementVariants({ placement }), asClass(cls))} {...rest}>
+      <details data-slot='navbar' class={cn(placementVariants({ placement }), asClass(cls))} {...(id === undefined ? {} : { id })} {...rest}>
         <summary
           data-slot='navbar-toggle'
           aria-label='Menu'

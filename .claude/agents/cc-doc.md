@@ -81,7 +81,7 @@ done.
 3. Skim a neighbouring doc's `## 0.` block for tone and grain.
 4. Draft: frontmatter, the opening blockquote with its **Defers to** list, `## 0. Quick
    Reference` with one line per `##` and `###`, then the body.
-5. Run `bun run validate-docs` — or delegate the gate to `cc-tester`.
+5. Run `bun run check --only validate-docs` — or delegate the gate to `cc-tester`.
 6. Register in the `CLAUDE.md` Guide Index if the doc is new.
 
 **For READMEs:** inventory the public API via `mod.ts`, match the established style of the

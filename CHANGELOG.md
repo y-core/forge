@@ -10,6 +10,392 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [0.0.80] — 2026-08-02
+
+A full-codebase review of 20 namespaces. Twenty-eight verified defects, seven of them
+security-relevant, each landed with both a passing and a failing test. Several are described at
+length because the mechanism is the interesting part — a defect that survives this long usually
+does so because something about it was invisible, and that is the part worth writing down.
+
+### Breaking Changes
+
+- **`Form` no longer renders a honeypot; compose `<Honeypot />` yourself.** It rendered one
+  *unconditionally* — including on `method="get"`, a value the public `method?: "get" | "post"`
+  union explicitly permits. On GET the browser serialises the decoy into the query string, so
+  `?…&__surname=` ended up in every shareable link, bookmark, history entry and outbound `Referer`,
+  and a consumer validating search params against a strict schema got a 400. The honeypot has no
+  defensive value there in the first place: it flags bots submitting spam, and `isHoneypotFilled` is
+  only consulted by mutation handlers. All 14 assertions in `form.test.tsx` used `method="post"` —
+  the GET half of a public API union had **zero** coverage, which is why this survived.
+
+  > ⚠️ **This degrades silently.** A POST form that is not updated loses honeypot protection with a
+  > green gate and no runtime signal. To make it as loud as the design allows, the `honeypotField`
+  > prop was **removed** from `FormProps` rather than deprecated, so any consumer who customised the
+  > name gets a **compile-time error**. Consumers on the default get no signal — audit every
+  > `<Form>` you ship.
+
+  Migration — add one child to each mutating form:
+
+  ```tsx
+  import { Form, Honeypot } from "@y-core/forge/ui/core";
+
+  <Form method='post' csrfToken={token}>
+    <Honeypot />          {/* ← add this; pass `field` if you previously set `honeypotField` */}
+    {/* … */}
+  </Form>;
+  ```
+
+- **`export type * from` is now banned in barrels.** `NAMESPACE_DESIGN.md` §1b banned `export *`
+  and was silent on the type-only spelling, which the matcher could not see across the `type` token
+  — and `barrel-parse.test.ts` *pinned it as allowed*. Erasure at emit removes only the
+  circular-dependency harm; the surface leak and the ungreppable API remain, and a barrel of nothing
+  but `export type *` previously failed as the misleading "no value exports found in barrel". There
+  are **zero** occurrences in `src/`, so nothing inside forge changes; a consumer whose own barrels
+  are checked by this script may now fail. Name the types.
+
+- **Header-conflict precedence in `createSecurityHeaders` is now inner-wins, and is stated.** The
+  middleware queued its headers *after* `await next()`, which made an overlapping header name
+  resolve outer-wins. It now queues *before* `next()`, alongside the nonce, so a middleware
+  registered deeper writes last and wins. Nothing inside forge overlaps — `createSecurityHeaders`
+  owns its 8–9 names, `requestId` owns `x-request-id`, session and flash use `set-cookie` with
+  `{ append: true }` — so only consumer middleware queuing one of those names is affected. **No
+  test broke and no doc promised either direction**, which was the actual problem: the behaviour is
+  now pinned by test and documented in `SECURITY_HARDENING.md` §2a and `ERROR_HANDLING.md` §5b.
+  See *Fixed* for the gap the move closed on the way past.
+
+- **`originProtection` now requires an app to list its own origin in `allowedOrigins`.** Previously
+  a present `Sec-Fetch-Site` header caused an early return that skipped the `allowedOrigins` check
+  **entirely**. Two things were wrong with that. `Sec-Fetch-Site` is a forbidden header name, so a
+  *browser* cannot be tricked into sending a false `same-origin` — but a non-browser client sets
+  whatever it likes, and one forged header was enough to walk past the allowlist. It also put this
+  tier in standing disagreement with its sibling `originGuard`, which enforces the allowlist
+  unconditionally. The header is now a **veto, not a pass**: a bad value still rejects outright, but
+  a good one no longer short-circuits anything. `allowedOrigins` is consulted on every mutating
+  request carrying an `Origin` or `Referer`; only when both are absent does the guard fall back to
+  the browser's vouching, and with no signal at all it fails closed. **This will break deployments
+  that relied on the early return** — add your own origin to `allowedOrigins`.
+- **`Sec-Fetch-Site: same-site` is now rejected.** The check was a denylist naming only
+  `cross-site`, so `same-site` passed — and *any* sibling subdomain produces `same-site`. A single
+  XSS or a stale CNAME on one subdomain was enough to drive authenticated mutations against
+  another. It is now an allowlist: only `same-origin` and `none` pass. Parity with Go's
+  `http.CrossOriginProtection`. `CrossOriginResult` gains a distinct `"same-site"` error code,
+  because a sibling subdomain you may partly control and an unrelated origin are different
+  attackers and worth telling apart in logs.
+- **A hand-built `{ text, params }` object no longer satisfies `isSqlFragment`.** The guard was a
+  structural duck-type, so anything with the right shape passed — including `JSON.parse` output.
+  Attacker-controlled JSON interpolated into a `` sql`…` `` template was therefore **concatenated
+  into the statement text instead of bound as a parameter**: a full SQL injection through what looks
+  like a value position. `SqlFragment` now carries a `unique symbol` brand that only `sql` sets and
+  that `mod.ts` deliberately does **not** re-export. The security property then falls out of the
+  language rather than from a rule we have to keep current: `JSON.parse` can only ever produce
+  string-keyed properties, so parsed JSON is structurally incapable of carrying the brand. Only
+  `sql` can mint a fragment; everything else gets bound.
+- **`routePaths` now includes `ANY` routes in method-filtered results, and throws on a filtered
+  miss.** Upstream `@remix-run/fetch-router` builds bare-string route definitions as method `ANY`
+  and dispatches them for *every* method. Filtering with `{method:"POST"}` used a strict `===` and
+  so omitted paths that genuinely accept POST — and the documented use of that result is
+  `app.use(path, csrfGuard)`, so the guard silently attached to **nothing**. An empty list is
+  indistinguishable from a correctly-empty one at the call site, so a method filter that matches no
+  route in a non-empty map now **throws** rather than returning `[]`. Unfiltered calls and genuinely
+  empty maps still return `[]`. Any consumer computing paths for an optionally-empty route group
+  will now throw where it previously got a silent empty list — that is the point, but it is a new
+  failure mode.
+- **`optionalGroup` actually validates its entries, and strips unknown keys.** `entries` was a type
+  carrier only: the sole runtime read was `Object.keys()`, and the return was a bare cast over the
+  raw input, so a number — or an entire Workers binding object — passed as a validated `string`.
+  Two consequences follow from running the schemas for real, both of which surface latent
+  contract violations rather than creating new ones: a `defaults` value must now satisfy its own
+  entry schema, and a key that is neither required nor defaulted must be declared `v.optional(...)`
+  if it may be absent. Unknown keys are **stripped** (`v.object`, not `v.strictObject`) — a Workers
+  `env` legitimately carries many unrelated bindings, so erroring on them would reject essentially
+  every real deployment.
+- **`aria-*` attributes now serialize `false` as `"false"`.** A blanket `value === false → omit` in
+  the renderer preceded the `aria-` branch, so `aria-expanded={false}` rendered **nothing** — while
+  `jsx/types.ts` types these as `boolean`, so it type-checked. Per WAI-ARIA these are string-valued
+  and the distinction is real: absent means "not expandable", `"false"` means "expandable,
+  currently collapsed", and screen readers act on the difference. Consumers passing an explicit
+  `aria-*={false}` will now see it in the output. Forge's own components are unaffected — they had
+  been working around this with `String(x) as "true" | "false"` casts at five call sites, all now
+  reverted, with rendered output verified byte-identical across 19 variants.
+- **`definePage`'s `action` is now wired into the pipeline.** It was declared, exported, and
+  documented — and never read. `method` was hardcoded `"GET"` and `actionData` always `undefined`,
+  so a POST through `definePage` type-checked and was then **silently discarded with a 200**.
+  Non-GET now dispatches to `action`, its result reaches the view as `actionData`, and errors route
+  through the existing boundary.
+- **`csrfProtection` answers `413` instead of `403` when a body exceeds its cap**, and both
+  `defineAction` and `csrfProtection` accept `maxBytes`. See *Fixed* for why one without the other
+  does nothing.
+
+### Added
+
+- **`uuidv7()` and `createUuidv7(options?)`** (`@y-core/forge/storage/db`) — RFC 9562 UUIDv7
+  generation for D1 primary keys: unique, non-sequential, and lexicographically sortable by
+  creation time, so inserts append to the right edge of the primary-key B-tree and `ORDER BY id`
+  doubles as a keyset cursor. The 12-bit `rand_a` field carries a monotonic counter (RFC 9562 §6.2
+  Method 1) rather than randomness, which on Workers is load-bearing rather than an optimisation:
+  `Date.now()` is frozen between I/O operations as a timing-attack mitigation, so every ID minted
+  between two awaits reads the same millisecond and a stock UUIDv7 would emit the batch in random
+  order — losing the one property it was chosen for. The counter reseeds to a random 10-bit value
+  per clock advance (≥3072 increments of headroom) and borrows the next millisecond on overflow; a
+  backwards clock step is absorbed the same way, so a generator never emits an ID that sorts before
+  one it already emitted. `createUuidv7` takes an injected clock. Implemented in the
+  sealed-internal `crypto` module so `storage/kv` or a future `auth` can consume it without a
+  layering violation, and surfaced through `storage/db` alone — there is still no importable
+  `crypto` path. **Not a secret:** a UUIDv7 discloses its creation time and mint rate by design.
+- **`uuidv7Bytes()`, `uuidFromBytes(value)`, `uuidToBytes(id)` and `createUuidv7Bytes(options?)`**
+  (`@y-core/forge/storage/db`) — the `BLOB` form of the same identifier, making the storage-density
+  decision reversible per table instead of a schema-wide bet. `uuidv7Bytes` mints the same value as
+  `uuidv7` from the **same shared generator**, so an application mixing the two forms still gets one
+  global ordering. Bytes are most-significant first, which is the order SQLite's `memcmp` sorts a
+  `BLOB` by, so ordering is identical to `TEXT`. `uuidFromBytes` accepts the `number[]` D1 returns
+  for a `BLOB` column — its JSON transport has no binary type — alongside `Uint8Array` and
+  `ArrayBuffer`; `uuidToBytes` parses a canonical string for binding against one, and is an encoder
+  rather than a validator, so a request-supplied ID should still be checked at the boundary. On a
+  100k-row table with two secondary indexes the `BLOB` form is ~27% smaller in total
+  (11,640 KB vs 15,924 KB), which counts against D1's 10 GB per-database ceiling rather than
+  against the bill; the price is byte arrays in every console query, log line and `json_object()`
+  projection, so it is a per-table choice, not a default. Related: **`WITHOUT ROWID` is not the
+  lever it looks like** — an ordinary rowid table's secondary indexes carry the implicit integer
+  rowid, not the primary key, so a 36-character id costs two fixed copies per row however many
+  indexes exist; `WITHOUT ROWID` appends the id to every index entry and comes out *larger* past a
+  single index.
+- **`forMethod(method, middleware)`** (`@y-core/forge/router`) — wraps a middleware so it runs only
+  for the given `RequestMethod` (or array of them) and calls `next()` otherwise. `app.use` is
+  **path**-scoped only; dispatch never consults the method, so feeding a
+  `routePaths(routes, { method: "POST" })` list into it guards those paths for every method they
+  serve. With `ANY` routes now included in a concrete method filter (0.0.80, above), the
+  `router/README.md` snippet that loops `csrfGuard` "onto only the mutating endpoints" was guarding
+  `/health` on GET. No method-scoped registration existed anywhere in forge or the vendored
+  `@remix-run/fetch-router` — `Router` has no `use` at all. Lives beside `routePaths`, so `router`
+  stays a leaf namespace.
+- **`Honeypot`** (`@y-core/forge/ui/core`) — the decoy field extracted out of `Form`; see *Breaking
+  Changes*. Takes an optional `field` defaulting to `HONEYPOT_FIELD_DEFAULT`.
+- **`fieldDescribedBy(name, options)`** (`@y-core/forge/ui/core`) — the `aria-describedby`
+  computation on its own, returning `undefined` when nothing to point at renders. `fieldControlProps`
+  uses it, and so do `CheckboxGroup` and `RadioGroup`, which cannot adopt `fieldControlProps`
+  wholesale because a `<fieldset>` is not a labelable control.
+- **`description` and `scope` props on `CheckboxGroup` and `RadioGroup`** — matching `FormField`.
+  `scope` must be repeated on every `.Item`, since each item derives its own id.
+- **`id` is now declared and documented on `NavbarProps`.** It was always accepted via the `<nav>`
+  intrinsic and always namespaced the generated menu ids, but the escape hatch was documented only
+  on an `@internal` field a consumer never sees.
+
+### Fixed
+
+- **A 500 could be logged and then lost.** On the guard-throw path `requestLogger`'s `finally`
+  flushes *before* the app's error boundary writes its `unhandled error` record, and `flush()`
+  **splices** the pending buffer — so the boundary's record landed in a buffer nobody awaited. With
+  the synchronous channel the tests use, both records are captured and everything looks fine; with a
+  real asynchronous `kvLogChannel`, the boundary's record **may never persist before isolate
+  teardown**. Production therefore saw two records *or* one-plus-a-lost-one, nondeterministically.
+  The boundary now schedules its own flush at the point of write, so both records sit inside an
+  awaited window on both throw paths. The suite was structurally incapable of observing this; the
+  regression tests use an asynchronous channel fixture, which is the only kind that can. The two
+  records are still not deduplicated — they are distinguishable by `message`.
+- **`closestAcross` and `contains` threw a `TypeError` on a detached subtree.** Both read
+  `getRootNode().host` with no `nodeType === 11` guard — the defect fixed at one of the three sites
+  in 0.0.80 and left at the other two, and `contains` was not recorded anywhere. For a detached
+  subtree `getRootNode()` returns the topmost ancestor *element*; on an `<a href>` that is the URL's
+  host string, and the next hop calls a method on a string. A **relative** `href` is no safer, which
+  is the non-obvious half: a detached anchor resolves it against the document base URL, so `host` is
+  the page's own origin rather than `""`. Both are public API. All three reads now go through one
+  private `shadowHost` helper so they cannot drift again.
+- **An `effect()` whose first run read a signal and then threw poisoned that signal permanently.**
+  The disposer is the return value, so a throw means the caller never receives it — and the first
+  run's own `cleanup` is a no-op, because `deps` is still empty when it runs. The dead node
+  therefore stayed in the signal's `subs` with nothing able to remove it, and **every** later write
+  to that signal re-entered it and rethrew out of the *setter*, at an arbitrary unrelated call site,
+  for the signal's lifetime. `effect()` still throws — callers may rely on that — but now
+  unsubscribes first, so a failed effect leaves no residue. The existing "does not stay installed"
+  test could not catch this: its throwing body read no signal, so it never subscribed.
+- **`CheckboxGroup` and `RadioGroup` emitted a dangling `aria-describedby`,** unconditionally
+  naming a description element that renders only when the consumer supplies one — the exact defect
+  fixed in `field.tsx` in 0.0.80 and not fixed in these two. A dangling IDREF is not ignored by
+  assistive technology; it is reported as an error. **This shipped on the component showcase**,
+  which renders both groups with no `Description` child. Separately, `itemId()` did not thread the
+  `scope` param, so *every item id* — not just the description id — collided across two same-named
+  groups on one page, and a click on the second group's item resolved to the first group's. Neither
+  group had a unit test; both now do.
+- **The console error path dropped `name` and `stack` from unhandled errors.** `_handleError`
+  logged `{ error: err.message }` to the app logger, immediately beside a line publishing the full
+  `serializeError(err)` to the request logger. Redaction in forge is a **channel**-level decision —
+  `consoleChannel` keeps stacks, `kvLogChannel` strips them via `persistStack: false` — and this is
+  the worker log stream, not the HTTP response, which is separately guarded behind `isDebug`.
+  Dropping the stack made the console the least informative sink of the three.
+- **Security headers were missing from the error page when a guard threw.** They were queued only on
+  the way back out of `createSecurityHeaders`, and on that path the response never comes back out —
+  so a throw from any middleware registered after it produced a 500 with no CSP, no HSTS and no
+  `referrer-policy`. Queuing before `next()` (see *Breaking Changes*) fixes this as a side effect;
+  it is pinned by its own test.
+- **`makeKVStub` in `store.test.ts` handed out the stored `ArrayBuffer` by reference,** so
+  `bytesCodec().decode` wrapped it in a writable *view* onto the stub and mutating a retrieved value
+  silently rewrote the store. Byte-faithful but reference-leaky — the write side was safe only by
+  accident, because `encode` already slices. No test exercised it: a latent trap rather than a live
+  bug. `get` now returns a copy, and the isolation property is asserted against both this stub and
+  `fakeKV` so the two cannot drift.
+
+- **A cached session middleware leaked one tenant's KV namespace to another.**
+  `createAnonymousSession` keyed its cache on `(cookieName, secure, secret)` — but the cached
+  closure captured the per-request `options.kv(c)`, which is **not in that key**. Two tenants
+  sharing a cookie name, secure flag and secret therefore hashed to one slot and shared one KV
+  namespace: tenant B read and wrote tenant A's sessions. The general shape is worth naming —
+  whenever a cache key is narrower than what the cached value closes over, you get cross-tenant
+  bleed. The cache is now a `WeakMap` keyed on the `env` object itself (the scheme `csrfProtection`
+  already used), which makes the key at least as wide as the capture and lets entries be collected;
+  the old `Map` also grew without bound under a rotating secret.
+- **A CSRF token with kid `constructor` returned 500, not 403.** `ring.keys[_kid]` on a plain object
+  walks the prototype chain, so an inherited member name resolved to a truthy non-`CryptoKey`, sailed
+  past the `!key` guard, and threw an uncaught `TypeError` out of `crypto.subtle.verify` — an
+  unauthenticated single-request 500 on **every** guarded mutation route. Now `Object.hasOwn`.
+- **`https://a/b.example.com` matched the CORS pattern `https://*.example.com`** and was reflected
+  into `Access-Control-Allow-Origin`. The wildcard expanded to `[^.]+`, which happily matches `/`,
+  `:` and `@` — so a path segment, userinfo or port could carry the trusted suffix. Now
+  `[^./:@]+`, and `?` is escaped rather than being left to make the previous character optional.
+- **`ONMOUSEOVER=` survived SVG sanitization.** The event-handler strip was the only regex in
+  `sanitizeSVG` without the `i` flag — every sibling rule had it — and HTML lowercases the attribute
+  back into a live handler on parse.
+- **A view stored its entire backing buffer in KV.** `bytesCodec`'s `encode` returned `value.buffer`,
+  ignoring `byteOffset`/`byteLength`. Because `subarray()` is zero-copy, a view shares its buffer
+  with whatever else was allocated there — so storing a 2-byte view durably wrote the whole
+  allocation, with the wrong length **and** disclosure of adjacent bytes, reported as `ok: true`.
+  This was invisible until the KV test fake was made byte-accurate in the same window: a fake that
+  decoded values through `TextDecoder` was structurally incapable of showing it.
+- **A single throwing effect froze every signal on the page.** `signal.ts` incremented a batching
+  `depth` and swapped the global `activeEffect` without `try/finally`, so one throw stranded
+  `depth > 0` forever, froze `epoch`, and every subsequent signal write silently stopped re-running
+  every effect — with no further error anywhere. The dead node also stayed installed as the global
+  dependency-tracking target.
+- **Every `<a href>` click threw a `TypeError` out of the delegated document listener.**
+  `closestAcross` duck-typed a shadow boundary on `.host` — but `HTMLAnchorElement.host` is the
+  URL's host **string**. Reaching an anchor during the climb reassigned `current` to a string, and
+  the next iteration called `.getRootNode()` on it. Reachable from four controllers. Now tests
+  `nodeType === 11`.
+- **An invalid env produced the raw Workers 1101 page.** `resolveConfig` ran before the `try` in
+  `fetch()`, so a config failure escaped past the error boundary, the logger, `_onError` and the
+  hardening headers — and because `Config.get` caches only on success, it threw forever. It now
+  resolves inside the `try`. The error boundary is additionally registered at an **outer** depth so
+  a throwing `app.use` guard is caught with headers intact; the innermost instance is deliberately
+  kept, because `createSecurityHeaders` queues its headers *after* `await next()`, so a boundary
+  sitting outside the guards would strip CSP and HSTS from every error page.
+- **Every 500 was persisted with no error detail at all.** `requestLogger`'s error branch was
+  unreachable — it is registered outside the innermost error boundary, so a handler throw was
+  already converted to a 500 `Response` and `await next()` resolved normally. The fix publishes the
+  error from the boundary that holds it onto the per-request logger, so it reaches KV with
+  `requestId` correlation; `persistStack: false` still strips the stack before persistence. The
+  local `catch` is **kept**: it is still reached when a throw escapes `next()` from middleware below
+  the logger, and on that path it is the only thing that lands error detail inside the `waitUntil`
+  flush window.
+- **The first caller's `maxBytes` won permanently for the isolate.** `parseFormData` read `options`
+  only when populating its cache, and `csrfProtection` always parsed first at the 100 KiB default —
+  with a bare `catch {}` that swallowed the resulting 413 and answered a misleading **403**. So a
+  CSRF-guarded route could never raise its cap. The cache now records the bytes actually read and
+  each caller re-checks that count against its own limit; keying the cache on `maxBytes` would have
+  been wrong, because a body is readable exactly once and a second caller would hit a confusing
+  "body used" error instead of a 413. `csrfProtection` gained its own `maxBytes` because the
+  acceptance case is unreachable without it — the guard runs first and short-circuits, so the
+  handler's cap never gets a say. Both sides must be raised together.
+- **A CJK filename returned 500.** `serveObject`'s "ASCII fallback" for `Content-Disposition`
+  stripped only C0 controls and DEL, so non-Latin-1 characters survived and then threw on
+  `Headers.set`. The fallback now folds accents via NFKD, collapses each remaining run of
+  non-printable-ASCII to a single `_`, and emits `"` and `\` as quoted-pairs rather than stripping
+  them. Substituting *in place* means every ASCII character survives with no filename parsing at
+  all, so the extension is preserved: `年度報告.pdf` → `_.pdf`, `invoice-年度.pdf` →
+  `invoice-_.pdf`.
+- **The Switch has never animated its thumb.** `peer-*` compiles to a **general-sibling**
+  combinator, so it reaches only siblings of the input. The track is one and painted correctly; the
+  thumb is a *child of the track*, so `peer-checked:translate-x-4` matched nothing — in any release.
+  A Tailwind selector that matches nothing produces no build error, no runtime error and no visual
+  artifact, and the correct sibling selector next to it kept the component looking half-alive. The
+  thumb now keys off a `data-slot`-anchored descendant selector, and
+  [`UI_SSR_COMPONENTS.md`](.decisions/UI_SSR_COMPONENTS.md) §1e gains the rule.
+- **A ToggleGroup's highlight was frozen on whichever item the server rendered pressed.** The active
+  class was applied at render as `pressed && ITEM_ACTIVE`, while the controller only writes
+  `aria-pressed` / `data-pressed`. It is now unconditional and keyed on `data-[pressed]:`, which
+  also raises specificity enough that `data-[pressed]:hover:` reliably beats `hover:` instead of
+  depending on stylesheet emission order.
+- **The first Tab keypress reselected tab 0.** `Tab` omitted `ACTIVE_COMPOSITE_ITEM`, so roving
+  focus resolved its initial index to 0 regardless of the selection.
+- **`asChild` turned a child `<button type="button">` into an accidental submit button.**
+  `cloneAsChild` spread `type: undefined` / `disabled: undefined` over the child's own props.
+  Undefined-valued keys are now dropped before the spread.
+- **`aria-describedby` named a description element that did not exist.** A dangling IDREF is treated
+  as an error by assistive technology rather than ignored. `FieldDescriptor` gains `description`
+  (default `false`) so the attribute is emitted only when something really describes the field, and
+  an opt-in `scope` so two forms with a same-named field stop colliding. Automatic uniqueness would
+  need module-level mutable state, which `PRODUCTION_TS_RULES.md` §1 forbids; unscoped output is
+  byte-identical to before.
+- **Two `Navbar`s on one page emitted duplicate ids.** Menu ids are now namespaced by the navbar's
+  own `id`, falling back to `placement` — the posture `ui/chrome/toolbar.tsx` already established.
+- **htmx swaps leaked detached DOM indefinitely.** `resume.ts` pushed onto a module-level disposer
+  array that only drained at whole-runtime teardown, so every swap stranded another detached tree
+  and its live `MutationObserver`s; `resumed` was never cleared, so a re-mounted scope came back
+  inert. Disposers are now keyed by root and swept when a replacement scope resumes — which
+  `htmx:load` already triggers, so no new hook was needed.
+- **`Date`, `Map` and `Set` were persisted as `{}`.** `Object.fromEntries(Object.entries(v))` clones
+  property-wise, and all three hold their payload outside enumerable own properties. They now
+  serialize to ISO 8601 and tagged rebuildable forms. Cycles are cut with a `WeakSet` of the
+  *currently open path*, so a repeated sibling reference survives and only true ancestors become
+  `"[circular]"` — the previous implementation was unbounded on a cycle.
+- **`?level=` was cast straight to `LogLevel`** with no validation, and echoed back into the rendered
+  filter bar. It is now validated at the boundary with the `v` facade. An invalid value **drops the
+  filter and renders unfiltered** rather than erroring: the level filter *narrows* a row set the
+  caller was already authorised to read in full, so it is not an authorization input, and a 400
+  would turn a stale bookmark into a broken admin page for no security gain.
+- **"Load more" destroyed the rows already loaded** and dropped the active `level` / `q` filters. It
+  `outerHTML`-swapped the whole tbody; it now replaces only its own `<tr>` and carries the filters
+  into the next-page URL. (`beforeend` is wrong here: the control lives *inside* the tbody it would
+  append to, so it would survive below the new rows still pointing at the cursor just consumed.)
+- **`withQueryParam` discarded the scheme and host of an absolute `hx-get`**, silently rewriting an
+  absolute endpoint into a path-relative one.
+- **An empty client-supplied `CF-Ray` became the request id.** `??` only guards `null` and
+  `undefined`; empty and whitespace-only values are now treated as absent.
+- **`Form` hardcoded `"_csrf"` and `"__surname"`** rather than importing the constants
+  `src/form/constants.ts` owns — so renaming either would have silently disabled the honeypot with a
+  green gate. The tests now interpolate the imported constants into the expected HTML, so a rename
+  fails loudly.
+
+### Changed
+
+- **`validate-exports` catches two evasions it previously missed.** `export * as ns from` slipped
+  past the `export *` ban by one token, and the `@public` lookahead was a fixed nine lines — so a
+  *well-documented* export was checked **less** than a sparse one. The window is now the TSDoc
+  block's actual extent. A third defect surfaced while writing the fixtures: searching forward from
+  the block's start makes an `export const` inside an `@example` look like the declaration, which
+  the old code did. Neither fix flags anything new in `src/` — verified by diffing old against new
+  across every source file, not inferred from a green run. The pure parsers moved to
+  `scripts/barrel-parse.ts` so they can be tested at all; `validate-exports.ts` remains the entry
+  point and retains every policy decision.
+- **The test fakes match the real bindings.** `fakeKV` stores bytes verbatim instead of round-tripping
+  them through `TextDecoder` (lossy for anything non-UTF-8) and records `expirationTtl`; `fakeR2`
+  honours `range`; `fakeD1` gains opt-in failure injection so consumer error branches are reachable
+  at all. Worth noting what this did **not** find: no existing test broke, because the storage suites
+  hand-roll their own local stubs and never used the shared fakes. The fakes' divergence was real but
+  load-bearing for nothing — which makes the hand-rolled stubs the place divergence will actually
+  hide next.
+
+### Documentation
+
+- **`PRODUCTION_TS_RULES.md` §1e states the browser-only carve-out.** §1a's prohibition on
+  module-level mutable state, and its rationale, are both scoped to *request-scoped* data under
+  Workers isolate recycling — but `ui/client` never executes in a Worker, and module state is the
+  house style across seven files there with no exemption marker anywhere. The carve-out was implied
+  by §1's framing plus `UI_CLIENT_RUNTIME.md` and never stated, so it kept resurfacing as a review
+  finding. §4a (testability) still applies in full: page-scoped state a test can observe needs a
+  reset export, as `active-descendant.ts` already ships.
+- **`NAMESPACE_DESIGN.md` §1b names all three star spellings** rather than leaving the type-only
+  form to the script. **`CLAUDE.md`'s Source-of-Truth Register** names both
+  `scripts/validate-exports.ts` and `scripts/barrel-parse.ts` for barrel rules, with the split
+  stated: the former is the entry point and holds every policy decision, the latter holds the
+  matchers.
+- **`src/logging/README.md` no longer claims the guard-throw path writes one error record** — it
+  writes two, and the second one's flush window is now documented. `request-logger.test.ts`'s
+  matching test title said "one error record" while its assertion pinned two.
+- **`src/form/README.md`, `INPUT_VALIDATION.md` §4a and `src/ui/README.md`** document the required
+  `<Honeypot />` composition and the migration. **`src/router/README.md`** documents `forMethod` and
+  states plainly that `app.use` is path-scoped only.
+
+---
+
 ## [0.0.78] — 2026-08-02
 
 ### Fixed
@@ -334,7 +720,7 @@ props, no portals, and above all **no JavaScript re-creation of native `dialog`,
   `data-ending-style` / `data-popup-open` / `data-anchor-hidden` — declared once for both tiers, so
   the SSR component and the browser controller cannot drift. Boolean states are emitted **by
   presence** (`data-open=""`), never `"true"`.
-- **A browser test set behind its own verb**, `bun run test:browser` (`bun run browser:install`
+- **A browser test set behind its own verb**, `bun run test:browser` (`bun run test:install`
   first). A `*.browser.ts` file runs in real Chromium; `bun test` is untouched, and the two never
   share a process. **260 cases**, including a cross-cutting corpus for the scenarios no single
   component owns: nested overlays, a trigger removed while its popup is open, a widget in a form

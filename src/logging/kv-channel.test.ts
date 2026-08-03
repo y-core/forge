@@ -487,6 +487,108 @@ describe("kvLogChannel — stack stripping", () => {
   });
 });
 
+describe("kvLogChannel — structured value serialization", () => {
+  async function storedData(data: Record<string, unknown>, options?: { persistStack?: boolean }): Promise<Record<string, unknown>> {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0, ...options });
+    await channel.write(makeRecord({ data }));
+    const entry = [...stub._store.values()][0]!;
+    return (JSON.parse(entry.value) as { data: Record<string, unknown> }).data;
+  }
+
+  it("serializes a Date to its ISO 8601 string", async () => {
+    expect(await storedData({ at: new Date("2026-05-31T10:00:00.000Z") })).toStrictEqual({ at: "2026-05-31T10:00:00.000Z" });
+  });
+
+  it("serializes an invalid Date to null rather than throwing", async () => {
+    expect(await storedData({ at: new Date("not-a-date") })).toStrictEqual({ at: null });
+  });
+
+  it("serializes a Map to a tagged entry list", async () => {
+    expect(await storedData({ counts: new Map([["a", 1]]) })).toStrictEqual({ counts: { type: "Map", entries: [["a", 1]] } });
+  });
+
+  it("serializes a Set to a tagged value list", async () => {
+    expect(await storedData({ tags: new Set(["a", "b"]) })).toStrictEqual({ tags: { type: "Set", values: ["a", "b"] } });
+  });
+
+  it("serializes Date, Map and Set nested inside objects and arrays", async () => {
+    const data = {
+      outer: { at: new Date("2026-01-02T03:04:05.000Z"), inner: [new Set([1]), { m: new Map<string, unknown>([["k", new Date(0)]]) }] },
+    };
+    expect(await storedData(data)).toStrictEqual({
+      outer: {
+        at: "2026-01-02T03:04:05.000Z",
+        inner: [{ type: "Set", values: [1] }, { m: { type: "Map", entries: [["k", "1970-01-01T00:00:00.000Z"]] } }],
+      },
+    });
+  });
+
+  it("walks Map keys as well as values", async () => {
+    const data = { m: new Map<unknown, unknown>([[new Set(["k"]), new Date("2026-05-31T10:00:00.000Z")]]) };
+    expect(await storedData(data)).toStrictEqual({ m: { type: "Map", entries: [[{ type: "Set", values: ["k"] }, "2026-05-31T10:00:00.000Z"]] } });
+  });
+
+  it("strips a stack nested inside a Map value", async () => {
+    const data = { m: new Map([["e", { message: "boom", stack: "trace" }]]) };
+    expect(await storedData(data)).toStrictEqual({ m: { type: "Map", entries: [["e", { message: "boom" }]] } });
+  });
+
+  it("leaves plain objects, arrays and primitives unchanged", async () => {
+    const data = { s: "text", n: 1, b: true, nul: null, arr: [1, "two", { deep: [3] }], obj: { nested: { flag: false } } };
+    expect(await storedData(data)).toStrictEqual({
+      s: "text",
+      n: 1,
+      b: true,
+      nul: null,
+      arr: [1, "two", { deep: [3] }],
+      obj: { nested: { flag: false } },
+    });
+  });
+
+  it("does not mutate the caller's Date, Map or Set values", async () => {
+    const at = new Date("2026-05-31T10:00:00.000Z");
+    const counts = new Map([["a", 1]]);
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+    const record = makeRecord({ data: { at, counts } });
+
+    await channel.write(record);
+
+    expect(record.data?.at).toBe(at);
+    expect(record.data?.counts).toBe(counts);
+  });
+
+  it("replaces a self-referential object with the circular marker instead of hanging", async () => {
+    const cyclic: Record<string, unknown> = { name: "root" };
+    cyclic.self = cyclic;
+    expect(await storedData({ cyclic })).toStrictEqual({ cyclic: { name: "root", self: "[circular]" } });
+  });
+
+  it("cuts a cycle that runs through an array and a Map", async () => {
+    const branch: Record<string, unknown> = {};
+    branch.items = [branch];
+    branch.lookup = new Map([["back", branch]]);
+    expect(await storedData({ branch })).toStrictEqual({
+      branch: { items: ["[circular]"], lookup: { type: "Map", entries: [["back", "[circular]"]] } },
+    });
+  });
+
+  it("keeps a repeated sibling reference intact — only ancestors count as a cycle", async () => {
+    const shared = { id: 1 };
+    expect(await storedData({ a: shared, b: shared })).toStrictEqual({ a: { id: 1 }, b: { id: 1 } });
+  });
+
+  it("serializes Date, Map and Set when persistStack is true as well", async () => {
+    const data = { at: new Date("2026-05-31T10:00:00.000Z"), tags: new Set(["x"]), error: { message: "boom", stack: "trace" } };
+    expect(await storedData(data, { persistStack: true })).toStrictEqual({
+      at: "2026-05-31T10:00:00.000Z",
+      tags: { type: "Set", values: ["x"] },
+      error: { message: "boom", stack: "trace" },
+    });
+  });
+});
+
 describe("kvLogChannel — flush (via createLogger)", () => {
   it("the put promise lands in pending and flush awaits it", async () => {
     const order: string[] = [];

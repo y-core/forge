@@ -365,9 +365,9 @@ The origin guards here are **not** a token mechanism — they are a complementar
 
 #### `crossOriginProtection(options?)` / `checkCrossOriginProtection(request, options?)`
 
-Rejects state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`/`TRACE`) flagged `cross-site` by the browser **Fetch Metadata** `Sec-Fetch-Site` header with `403`. Requests with no `Sec-Fetch-Site` header are rejected by default (fail-closed) unless `allowMissingHeader: true` is passed.
+Rejects state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`/`TRACE`) with `403` unless the browser **Fetch Metadata** `Sec-Fetch-Site` header says `same-origin` or `none`. This is an **allowlist, not a denylist**: `same-site` is rejected too, because any sibling subdomain produces it and a subdomain you do not control is an attacker for CSRF purposes. This matches Go's `http.CrossOriginProtection`. Requests with no `Sec-Fetch-Site` header are rejected by default (fail-closed) unless `allowMissingHeader: true` is passed.
 
-`checkCrossOriginProtection` is the pure predicate form, returning a `CrossOriginResult` (a `GuardResult` alias — `{ ok: true } | { ok: false; error: "missing-fetch-metadata" | "cross-site" }`, with the failure reason code in `.error`) so you can branch on it instead of auto-rejecting.
+`checkCrossOriginProtection` is the pure predicate form, returning a `CrossOriginResult` (a `GuardResult` alias — `{ ok: true } | { ok: false; error: "missing-fetch-metadata" | "cross-site" | "same-site" }`, with the failure reason code in `.error`) so you can branch on it instead of auto-rejecting. `same-site` is reported distinctly from `cross-site` because the two describe different attackers — a sibling subdomain you may partly control, versus an unrelated origin.
 
 ```typescript
 import { crossOriginProtection } from "@y-core/forge/security";
@@ -381,13 +381,17 @@ app.use("/form/*", crossOriginProtection());
 
 #### `originProtection(options)`
 
-A combined guard for mutating routes. Fetch Metadata is authoritative when `Sec-Fetch-Site` is present (cross-site → `403`); when the header is absent it falls back to an `Origin`/`Referer` allowlist check. Safe methods are always exempt.
+A combined guard for mutating routes: Fetch Metadata **and** an `Origin`/`Referer` allowlist, both applied. Safe methods are always exempt.
+
+`Sec-Fetch-Site` acts as a **veto, not a pass**. A value other than `same-origin`/`none` rejects outright, but a good value does *not* short-circuit the allowlist — `allowedOrigins` is consulted on every mutating request that carries an `Origin` or `Referer`. Only when both of those are absent does the guard fall back to the browser's Fetch-Metadata vouching (`Sec-Fetch-Site` is a forbidden header name, so web content cannot set it and a `same-origin` value there was written by the browser itself). With no signal at all, it fails closed.
+
+> **Breaking (0.0.80):** the app's **own origin must appear in `allowedOrigins`**, or its own same-origin mutations are rejected. Previously a present `Sec-Fetch-Site` returned early and skipped the allowlist entirely, which let any non-browser client bypass it with one forged header and let this tier disagree with `originGuard`. The new behaviour is fail-closed and consistent across tiers.
 
 `OriginProtectionOptions`:
 
 | Field | Type | Notes |
 |---|---|---|
-| `allowedOrigins` | `string[] \| (c) => string[]` | Static list, or a per-request resolver over the app context (e.g. parsed `BASE_URL` config) |
+| `allowedOrigins` | `string[] \| (c) => string[]` | Static list, or a per-request resolver over the app context (e.g. parsed `BASE_URL` config). Consulted on **every** mutating request carrying `Origin`/`Referer` — must include the app's own origin |
 
 ```typescript
 import { originProtection } from "@y-core/forge/security";

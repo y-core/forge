@@ -61,7 +61,18 @@ Every namespace has exactly one barrel, `src/{name}/mod.ts`, and it is the only 
 **`export * from './foo'` is banned.** It leaks internal symbols into the public surface,
 risks circular dependencies, and makes the public API ungreppable.
 
-Enforced by `scripts/validate-exports.ts`.
+**All three spellings are banned**, not just the bare one:
+
+| Form | Banned | Why |
+|---|---|---|
+| `export * from "./foo"` | yes | all three harms |
+| `export * as ns from "./foo"` | yes | the same leak behind one extra token |
+| `export type * from "./foo"` | yes | leaks every internal type, and is equally ungreppable |
+
+The type-only form is erased at emit, so it cannot create a runtime cycle — but two of the three
+harms still apply, and a barrel's job is to state its surface. Name the types.
+
+Enforced by `scripts/validate-exports.ts` via the matchers in `scripts/barrel-parse.ts`.
 
 ### 1c. validate-exports Gate
 
@@ -152,10 +163,10 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/logging/show` | `src/logging/show/mod.ts` | Integration | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
 | `@y-core/forge/pkg` | `src/pkg/mod.ts` | Integration | `createReleaseCommand`, `parseSemVer`, `bumpSemVer`, `formatSemVer` |
 | `@y-core/forge/result` | `src/result/mod.ts` | Leaf (foundational — §4c) | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
-| `@y-core/forge/router` | `src/router/mod.ts` | Leaf | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` |
+| `@y-core/forge/router` | `src/router/mod.ts` | Leaf | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
 | `@y-core/forge/security` | `src/security/mod.ts` | Integration | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
 | `@y-core/forge/session` | `src/session/mod.ts` | Leaf | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
-| `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | Leaf | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment` |
+| `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | Leaf | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment`, `uuidv7`, `uuidv7Bytes`, `uuidFromBytes`, `uuidToBytes` and the two `createUuidv7*` factories — the UUID set is implemented in `crypto` and surfaced here (§3b) |
 | `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | Leaf | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
 | `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | Leaf | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend` |
 | `@y-core/forge/testing` | `src/testing/mod.ts` | Integration | test-only fixtures — see [`TESTING.md`](./TESTING.md) §7 |
@@ -180,14 +191,27 @@ the shape and send a reader to a resolution error.
 
 | Directory | Purpose | Consumers |
 |---|---|---|
-| `src/crypto/` | HMAC / timing-safe / base64url utilities (`@internal`) | `form`, `security`, `session`, `storage/r2` |
+| `src/crypto/` | HMAC / timing-safe / base64url utilities, UUIDv7 generation | `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
 
-**`crypto` is sealed-internal:** no export entry, every symbol `@internal`, and registered on
-the `SEALED_INTERNAL` allowlist in `scripts/validate-exports.ts`. The allowlist is what lets a
-barrel exist without an export subpath — **a barrel is valid only if it is exported or
-explicitly sealed.**
+**`crypto` is sealed-internal:** no export entry, and registered on the `SEALED_INTERNAL`
+allowlist in `scripts/validate-exports.ts`. The allowlist is what lets a barrel exist without an
+export subpath — **a barrel is valid only if it is exported or explicitly sealed.**
 
 **Never import `crypto` from outside forge.** There is no `@y-core/forge/crypto` subpath.
+
+**Sealed means the path, not the symbol.** Almost everything here is `@internal` plumbing, but a
+capability may be implemented in `crypto` and surfaced publicly through the barrel of the
+namespace that owns its concern. `uuidv7` / `createUuidv7` are the standing case: implemented
+here so `storage/kv` or a future `auth` can consume them without a layering violation, exported
+to consumers only via `@y-core/forge/storage/db`
+(see [`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §1e).
+The sealed guarantee is unchanged — there is still no importable `crypto` path.
+
+**That placement costs one piece of enforcement, knowingly.** `validate-exports`'s
+source → barrel pass walks the source files each *exported* namespace owns, so a `@public` symbol
+living in `src/crypto/` is outside every namespace it scans. Nothing mechanical will catch a
+public crypto symbol that was never added to a surfacing barrel — that entry is manual
+discipline, unlike everywhere else in forge where the gate proves it.
 
 ---
 
@@ -219,7 +243,7 @@ below is declared; an undeclared cross-namespace import is a defect.
 | `ui/controls` | `ui/core` (base components) + `ui/server` (`scopeAttrs` / `fieldAttr`) |
 | `ui/chrome`, `ui/show` | `ui/core` and `jsx`; `ui/show` also `app`, `context`, `http`, `html/htmx` |
 | `ui/server` | `html/htmx`, `app`, `context`, `session`, and the `jsx` runtime |
-| `logging/show` | `logging`, `http`, `ui/core` (the injected `ForgeIcon<"chevron-down">`), `html/htmx` |
+| `logging/show` | `logging`, `http`, `ui/core` (the injected `ForgeIcon<"chevron-down">`), `html/htmx`, `validation` (the `?level=` query-param schema) |
 | `pkg` | `cli` |
 | `validation/cli` | `cli` |
 | `testing` | `app`, `jsx`, `storage/*`, `context`, `form` — the declared test-only edge |
@@ -232,7 +256,7 @@ without that import counting as a layering violation.**
 | Namespace | Public? | Imported as | Consumers |
 |---|---|---|---|
 | `result` | public | concrete file `../result/result` | anyone |
-| `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, biome-exempt) | `form`, `security`, `session`, `storage/r2` |
+| `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, biome-exempt) | `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
 
 `result` is the single result primitive ([`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1).
 Because explicit error handling is cross-cutting, `security` / `form` / `storage` importing
@@ -319,6 +343,6 @@ Add one when **all** hold:
 - [ ] Has independent tests
 - [ ] `mod.ts` written with named exports only
 - [ ] Added to `package.json` `exports`
-- [ ] `bun run validate-exports` passes
+- [ ] `bun run check --only validate-exports` passes
 - [ ] Classified leaf or integration in §4
 - [ ] Registered in the `CLAUDE.md` Guide Index if it gains a governing document

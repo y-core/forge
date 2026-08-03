@@ -22,6 +22,7 @@ description: "The D1, KV, and R2 namespaces: typed clients, codecs, object servi
 - §1b sql Tagged Template for Queries: the only injection-safe query form
 - §1c resolveD1Client — From the Request Context: binding selector at request time
 - §1d validateD1Binding — Binding Validation Middleware: first-request shape check
+- §1e uuidv7 — Time-Ordered Primary Keys: the monotonic counter, the frozen Workers clock, and the TEXT-versus-BLOB trade
 - §2 storage/kv — KV Store: codec-aware key-value access
 - §2a createKVStore Factory: the required codec option
 - §2b Codecs — jsonCodec, textCodec, bytesCodec: selection rules
@@ -65,7 +66,11 @@ The `sql` tag produces a `SqlFragment` — the parameterized query string plus i
 const rows = await db.query(sql`SELECT * FROM users WHERE id = ${userId}`)
 ```
 
-`isSqlFragment(value)` is the type guard for generic helpers that must reject raw strings.
+`isSqlFragment(value)` is the type guard for generic helpers that must reject raw strings. It is a
+**provenance** check, not a structural one: `SqlFragment` carries a `unique symbol` brand that only
+`sql` sets and that `mod.ts` does not re-export, so a hand-built `{text, params}` literal — notably
+anything `JSON.parse` returns — is rejected and gets bound as a parameter rather than spliced into
+the statement text. Duck-typing this guard was a SQL-injection path.
 
 ### 1c. resolveD1Client — From the Request Context
 
@@ -80,6 +85,53 @@ and builds the typed client, so callers need not thread the binding reference th
 first request. **Register it with `app.use("*", …)`** so the check runs before any handler.
 
 The check is functional, not merely presence-based — §4a owns the rule.
+
+### 1e. uuidv7 — Time-Ordered Primary Keys
+
+`uuidv7()` returns a canonical UUIDv7 string for use as a row identifier: unique and
+non-guessable-as-a-sequence, yet lexicographically sortable by creation time. Sequential keys
+append to the right edge of the primary-key B-tree instead of scattering inserts across it, and
+`ORDER BY id` becomes a free cursor. `createUuidv7(options?)` is the factory form, taking an
+injected clock.
+
+**The 12-bit `rand_a` field carries a monotonic counter, not randomness** (RFC 9562 Method 1,
+Section 6.2), and on Workers that is load-bearing rather than an optimisation. `Date.now()` does not
+advance during synchronous execution — it is frozen at the time of the last I/O as a timing-attack
+mitigation — so *every* ID minted between two awaits reads the same millisecond. A textbook
+UUIDv7 with a random `rand_a` therefore emits a batch in random order, losing the single property
+it was chosen for. The counter reseeds to a random 10-bit value on each clock advance, leaving
+≥3072 increments of headroom; on overflow the generator borrows the next millisecond and repays it
+when the wall clock catches up. A backwards clock step is absorbed the same way.
+
+**The module-level default generator is a deliberate exception to
+[`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1a.** That rule prohibits *request-scoped*
+data in module scope, and its rationale is bleed between recycled isolates. The retained state is
+a timestamp and a counter — nothing request-derived — and the cross-request bleed is exactly what
+stops two requests sharing an isolate from colliding inside one frozen millisecond. Code needing
+isolated or clock-injected state calls `createUuidv7` instead.
+
+**A UUIDv7 is not a secret.** It discloses its creation time and its mint rate by construction.
+It is a primary key, never a session token or an unguessable URL component.
+
+**`TEXT` is the default; `BLOB` is a per-table density trade.** `uuidv7Bytes()` mints the same
+value as its raw 16 octets, most-significant first, which is the order SQLite's `memcmp` sorts a
+`BLOB` by — so ordering is identical either way. Storing bytes costs roughly a quarter of the
+combined table-and-index footprint, and costs readable output in every console query, log line,
+`wrangler d1 execute` result and `json_object()` projection. Take it on tables you do not hand-
+query, not as a schema-wide default. `uuidFromBytes` renders a value read back — including the
+`number[]` D1 returns for a `BLOB` column, since its JSON transport has no binary type — and
+`uuidToBytes` parses a string ID for binding against one. Both forms come from **one shared
+generator**, so an application mixing them still gets a single global ordering.
+
+**Do not reach for `WITHOUT ROWID` to shrink a UUID key.** In an ordinary rowid table every
+secondary index entry carries the implicit integer rowid, not the primary key, so a 36-character
+id costs two fixed copies per row regardless of how many indexes the table has. `WITHOUT ROWID`
+makes the id the table key, which appends it to *every* secondary index entry — past one index it
+is a net loss.
+
+**It is implemented in the sealed-internal `crypto` module and surfaced here** — see
+[`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §3b for why, and for the manual barrel discipline
+that placement costs.
 
 ---
 
@@ -150,9 +202,13 @@ rejection.
 `ServeOptions` accepts `cacheControl` and `contentDisposition` (`"inline" | "attachment"`).
 
 **When a disposition is set, `Content-Disposition` carries an RFC 5987 `filename*=UTF-8''…`
-parameter plus a sanitized ASCII `filename="…"` fallback** — the fallback strips quotes,
-backslashes, and C0 control characters, so a crafted object key cannot break out of the quoted
-string.
+parameter with the exact name plus an ASCII `filename="…"` fallback** for clients that ignore it.
+The fallback is an approximation, never a strip: accents fold to their base letter, every other run
+of non-printable-ASCII collapses to a single `_` — which keeps the extension and guarantees a
+non-empty fallback for a wholly non-ASCII name — and quotes and backslashes are emitted as
+quoted-pairs, so a crafted object key cannot break out of the quoted string. A non-Latin-1 character
+must never reach the `filename=` parameter: `Headers.set` throws on it, turning a legitimate
+download into a 500.
 
 `ObjectStore` exposes the same behaviour bound: `store.serveObject(c.request, key, options?)`.
 

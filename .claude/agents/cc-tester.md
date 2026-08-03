@@ -27,10 +27,13 @@ back to the caller.
 
 ## The Step List Is Not Yours to Know
 
-**Never hardcode or recite the gate's steps.** `package.json` `scripts.check` owns them. Run
-`bun run check` and report what it does; if you need the step list, read that file.
+**Never hardcode or recite the gate's steps.** `scripts/lib/steps.ts` owns them. Run
+`bun run check` and report what it does; if you need the step list, read that file — or run
+`bun run check --list`, which prints the selection and runs nothing.
 
-A verdict that names a step the gate no longer runs is worse than no verdict.
+A verdict that names a step the gate no longer runs is worse than no verdict. You do not have to
+infer the failing step: the runner names it on its own summary line, and that name is what your
+verdict quotes.
 
 ## Verdict Format (rigid)
 

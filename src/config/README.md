@@ -156,8 +156,13 @@ const map = { apiKey: env("RESEND_API_KEY") };   // → { apiKey: rawEnv.RESEND_
 
 Builds a valibot schema for an **optional** group of related fields. If any required key is absent
 (`null`/`undefined`), the entire group resolves to `null` — ideal for integrations that should stay off
-until fully configured. Present keys are validated against their per-field schemas, and `defaults` fill
-in any missing optional keys.
+until fully configured. Otherwise `defaults` fill in any missing keys and every value is validated
+against its per-field schema.
+
+**Keys not declared in `entries` are stripped.** A group is projected out of a Worker `env` that carries
+many unrelated bindings, so only declared keys reach the parsed config. Two consequences follow: a
+`defaults` value must itself satisfy its entry schema, and a key that is neither required nor defaulted
+is still validated — declare it `v.optional(...)` if it may legitimately be absent.
 
 ```typescript
 optionalGroup(entries, { required, defaults? })

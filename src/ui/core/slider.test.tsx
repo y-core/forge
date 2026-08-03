@@ -38,13 +38,13 @@ describe("Slider", () => {
 
   it("wires field id and name from the descriptor", async () => {
     expect(await render(<Slider field={{ name: "opacity" }} />)).toBe(
-      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" id="field-opacity" name="opacity" aria-describedby="field-opacity-description">',
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" id="field-opacity" name="opacity">',
     );
   });
 
   it("adds aria-invalid and aria-describedby when the field is invalid", async () => {
     expect(await render(<Slider field={{ name: "opacity", invalid: true }} />)).toBe(
-      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" id="field-opacity" name="opacity" aria-describedby="field-opacity-description field-opacity-error" aria-invalid="true">',
+      '<input data-slot="slider" type="range" class="h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50" id="field-opacity" name="opacity" aria-describedby="field-opacity-error" aria-invalid="true">',
     );
   });
 

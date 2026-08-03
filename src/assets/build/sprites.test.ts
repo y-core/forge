@@ -34,6 +34,32 @@ describe("sanitizeSVG()", () => {
     expect(sanitizeSVG(input)).not.toContain("onload");
   });
 
+  // W1-7: the event-handler pass was the only regex in sanitizeSVG without `i`, so an
+  // uppercase or mixed-case handler survived — and HTML attribute names are case-insensitive,
+  // so the parser lowercased it straight back into a live handler.
+  it("strips uppercase event handler attributes", () => {
+    const input = `<svg><path d="M0 0" ONMOUSEOVER="alert(1)"/></svg>`;
+    expect(sanitizeSVG(input)).toBe(`<svg><path d="M0 0"/></svg>`);
+  });
+
+  it("strips mixed-case event handler attributes", () => {
+    const input = `<svg><circle OnClick='evil()'/></svg>`;
+    expect(sanitizeSVG(input)).toBe(`<svg><circle/></svg>`);
+  });
+
+  it("strips an uppercase unquoted event handler attribute", () => {
+    // The unquoted-value class `[^\s"'>]+` also consumes the self-closing slash — pre-existing
+    // and identical for the lowercase form; the handler is gone either way.
+    const input = `<circle ONLOAD=evil()/>`;
+    expect(sanitizeSVG(input)).toBe(`<circle>`);
+  });
+
+  it("leaves a non-handler attribute whose name merely starts with `on` untouched", () => {
+    // `only` is not an event handler; the `on[a-zA-Z]+=` pattern must not eat it.
+    const input = `<svg><path only-child="1"/></svg>`;
+    expect(sanitizeSVG(input)).toBe(input);
+  });
+
   it("strips foreignObject blocks (arbitrary HTML / iframe embedding)", () => {
     const input = `<rect/><foreignObject><iframe src="https://evil.com"/></foreignObject><path/>`;
     const result = sanitizeSVG(input);

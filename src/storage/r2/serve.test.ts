@@ -152,14 +152,31 @@ describe("serveObject — Content-Disposition", () => {
     expect(res.headers.get("Content-Disposition")).toBe(`attachment; filename="report final.pdf"; filename*=UTF-8''report%20final.pdf`);
   });
 
-  it("strips quotes from the fallback and percent-encodes non-ASCII in filename*", async () => {
+  it("folds an accent to its base letter and escapes a quote in the fallback", async () => {
     const backend = makeBackend(makeObjectBody({ key: 'na"me-é.txt' }));
     const res = await serveObject(backend, new Request("http://x/f"), 'na"me-é.txt', { contentDisposition: "inline" });
-    const cd = res.headers.get("Content-Disposition") ?? "";
-    // Quote removed from the quoted fallback so it cannot break out of the attribute.
-    expect(cd).toContain('filename="name-é.txt"');
-    // RFC 5987 ext-value encodes the quote (%22) and the é (%C3%A9).
-    expect(cd).toContain("filename*=UTF-8''na%22me-%C3%A9.txt");
+    expect(res.headers.get("Content-Disposition")).toBe(`inline; filename="na\\"me-e.txt"; filename*=UTF-8''na%22me-%C3%A9.txt`);
+  });
+
+  it("serves a CJK filename with an ASCII fallback that keeps the extension", async () => {
+    const backend = makeBackend(makeObjectBody({ key: "downloads/年度報告.pdf" }));
+    const res = await serveObject(backend, new Request("http://x/f"), "downloads/年度報告.pdf", { contentDisposition: "attachment" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Disposition")).toBe(`attachment; filename="_.pdf"; filename*=UTF-8''%E5%B9%B4%E5%BA%A6%E5%A0%B1%E5%91%8A.pdf`);
+  });
+
+  it("yields a non-empty ASCII fallback for an entirely non-ASCII filename", async () => {
+    const backend = makeBackend(makeObjectBody({ key: "文書" }));
+    const res = await serveObject(backend, new Request("http://x/f"), "文書", { contentDisposition: "attachment" });
+    expect(res.headers.get("Content-Disposition")).toBe(`attachment; filename="_"; filename*=UTF-8''%E6%96%87%E6%9B%B8`);
+  });
+
+  it("emits quotes and backslashes as quoted-pairs in the fallback", async () => {
+    const backend = makeBackend(makeObjectBody({ key: 'back\\slash"quote.txt' }));
+    const res = await serveObject(backend, new Request("http://x/f"), 'back\\slash"quote.txt', { contentDisposition: "attachment" });
+    expect(res.headers.get("Content-Disposition")).toBe(
+      `attachment; filename="back\\\\slash\\"quote.txt"; filename*=UTF-8''back%5Cslash%22quote.txt`,
+    );
   });
 
   it("omits Content-Disposition when no disposition is requested", async () => {

@@ -162,6 +162,12 @@ fragment.
 
 `FORM_MAX_BYTES_DEFAULT` (100 KB) applies when `maxBytes` is omitted.
 
+**The first call for a request meters the stream; every later call re-checks the bytes actually
+read against its own `maxBytes`.** A body is readable once, so a stricter caller gets its own
+`413` off the shared parse rather than a re-read. The consequence is an ordering rule: a route
+that raises `defineAction`'s `maxBytes` must raise `csrfProtection`'s to match, because the guard
+parses first and would otherwise reject before the handler runs.
+
 ---
 
 ## 3. CSRF Protection — Middleware, Keys, Token Minting
@@ -175,6 +181,10 @@ against the HMAC key or key ring resolved from the configured secret.
 The token is read from the `X-CSRF-Token` header, falling back to the `_csrf` form field
 (`CSRF_FIELD_DEFAULT`; override with `tokenField` / `headerName`). **It returns `403` when the
 token is absent, malformed, expired, path-mismatched, subject-mismatched, or badly signed.**
+
+**An oversized body returns `413`, not `403`** — the guard's form parse is capped by its own
+`maxBytes` (§2c), and a size failure reported as a token failure sends the client after a problem
+that does not exist.
 
 **`subject` is required — a per-request resolver, or the literal `false`. Omitting it is a
 compile error.** This forces a deliberate decision about token binding at every call site
@@ -257,13 +267,20 @@ if (isHoneypotFilled(formData)) {
 }
 ```
 
-**Add the honeypot to every form view as a visually hidden input, using the same field name the
-checker reads:**
+**Add the honeypot to every form view that submits a mutation, using the `Honeypot` component from
+`ui/core` so the name it renders and the name the checker reads stay the same constant:**
 
-```html
-<input type="text" name="__surname" tabIndex={-1} autoComplete="off"
-       style="position:absolute;left:-9999px" />
+```tsx
+<Form method='post' csrfToken={token}>
+  <Honeypot />
+  {/* … */}
+</Form>
 ```
+
+**`Form` renders no honeypot of its own.** It did until 0.0.80, unconditionally, which put the decoy
+into the query string of every `method="get"` submission — and the honeypot has no defensive value
+on GET, because only mutation handlers consult `isHoneypotFilled`. Composition is explicit so the
+decoy appears exactly where it protects something.
 
 **Check `isHoneypotFilled` before schema validation** — bots that fill hidden fields are
 rejected cheaply, without consuming further work.

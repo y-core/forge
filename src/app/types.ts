@@ -73,6 +73,12 @@ export interface ActionDefinition<Input, Bindings = Record<string, unknown>, Con
   handle: (data: Input, c: AppContext<Bindings>, config: ConfigData) => Response | Promise<Response>;
   onValidationError?: (errors: readonly string[], c: AppContext<Bindings>) => Response | Promise<Response>;
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
+  /**
+   * Body-size cap for this route's form parse, in bytes. Defaults to `FORM_MAX_BYTES_DEFAULT`.
+   * A CSRF guard on the same route parses the body first, so raising this above the default also
+   * requires raising `csrfProtection`'s own `maxBytes`.
+   */
+  maxBytes?: number;
 }
 
 /** @public */

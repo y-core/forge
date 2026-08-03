@@ -8,8 +8,13 @@ export function matchOrigin(origin: string, patterns: string[]): boolean {
       if (origin === pattern) return true;
       continue;
     }
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-    const rePattern = escaped.replace(/\*/g, "[^.]+");
+    // `?` must be escaped too — unescaped it makes the preceding character optional, silently
+    // widening the pattern.
+    const escaped = pattern.replace(/[.+^${}()|[\]\\?]/g, "\\$&");
+    // A label may not contain a path, port, userinfo, query or fragment delimiter. `[^.]+` alone
+    // matched `/`, `:` and `@`, so `https://a/b.example.com` satisfied `https://*.example.com`
+    // and was reflected straight into Access-Control-Allow-Origin.
+    const rePattern = escaped.replace(/\*/g, "[^./:@?#]+");
     if (new RegExp(`^${rePattern}$`).test(origin)) return true;
   }
   return false;

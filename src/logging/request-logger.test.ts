@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
 import { mapHandler } from "../app/route-test-helper";
+import type { KVNamespace } from "../storage/kv/types";
 import { withLevels } from "./channels";
+import { kvLogChannel } from "./kv-channel";
 import { requestLog, requestLogger } from "./request-logger";
 import type { LogChannel, LogRecord } from "./types";
 
@@ -12,6 +14,35 @@ function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
     channel: {
       write: (r) => {
         records.push(r);
+      },
+    },
+  };
+}
+
+/**
+ * A channel that records a write only once it **settles**, the shape a real `kvLogChannel` has.
+ *
+ * The synchronous `makeCapture` above cannot see a dropped record: it appends before returning, so
+ * a write whose promise nobody awaits still shows up. Only a channel that defers the append can
+ * distinguish "persisted" from "started and abandoned".
+ *
+ * Delays escalate per write so the distinction is deterministic rather than a race: with the second
+ * write far slower than the first, awaiting only the first flush window provably excludes it.
+ */
+function makeAsyncCapture(delaysMs: number[] = [1, 30]): { records: LogRecord[]; channel: LogChannel } {
+  const records: LogRecord[] = [];
+  let writes = 0;
+  return {
+    records,
+    channel: {
+      write: (r) => {
+        const delay = delaysMs[Math.min(writes++, delaysMs.length - 1)] ?? 1;
+        return new Promise<void>((resolve) => {
+          setTimeout(() => {
+            records.push(r);
+            resolve();
+          }, delay);
+        });
       },
     },
   };
@@ -186,7 +217,18 @@ describe("requestLogger — per-request summary record", () => {
     expect(records[0]!.data?.status).toBe(503);
   });
 
-  it("a throwing handler surfaces as an error-level 500 summary (app error boundary)", async () => {
+  it("a 200 summary carries no error field", async () => {
+    const { records, channel } = makeCapture();
+    const app = makeStatusApp(channel, 200);
+
+    await app.request("/thing");
+
+    expect(records).toHaveLength(1);
+    expect(records[0]!.level).toBe("info");
+    expect(Object.keys(records[0]!.data ?? {}).sort()).toStrictEqual(["duration", "method", "path", "status"]);
+  });
+
+  it("a throwing handler yields the boundary's serialized-error record and an error-level 500 summary", async () => {
     const { records, channel } = makeCapture();
     const app = new Forge();
     app.use("*", requestLogger({ channels: () => [channel] }));
@@ -194,15 +236,40 @@ describe("requestLogger — per-request summary record", () => {
       throw new Error("handler exploded");
     });
 
-    await app.request("/boom");
+    const res = await app.request("/boom");
 
-    expect(records).toHaveLength(1);
-    expect(records[0]!.level).toBe("error");
-    expect(records[0]!.message).toBe("GET /boom");
-    expect(records[0]!.data?.status).toBe(500);
+    expect(res.status).toBe(500);
+    expect(records).toHaveLength(2);
+
+    // The error boundary runs below requestLogger, so its detail record lands first.
+    const detail = records[0]!;
+    expect(detail.level).toBe("error");
+    expect(detail.message).toBe("unhandled error");
+    const error = detail.data?.error as { name: string; message: string; stack?: string };
+    expect(error.name).toBe("Error");
+    expect(error.message).toBe("handler exploded");
+    expect(typeof error.stack).toBe("string");
+
+    const summary = records[1]!;
+    expect(summary.level).toBe("error");
+    expect(summary.message).toBe("GET /boom");
+    expect(summary.data?.status).toBe(500);
   });
 
-  it("a throw escaping next() emits one error record with the serialized error, then rethrows", async () => {
+  it("the boundary's error record inherits the request bindings, keeping the 500 correlated", async () => {
+    const { records, channel } = makeCapture();
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [channel], bindings: () => ({ requestId: "req-boom-1" }) }));
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("handler exploded");
+    });
+
+    await app.request("/boom");
+
+    expect(records.map((r) => r.data?.requestId)).toStrictEqual(["req-boom-1", "req-boom-1"]);
+  });
+
+  it("a throw escaping next() emits this middleware's error record, then rethrows for the boundary", async () => {
     const { records, channel } = makeCapture();
     const app = new Forge();
     app.use("*", requestLogger({ channels: () => [channel] }));
@@ -214,15 +281,96 @@ describe("requestLogger — per-request summary record", () => {
 
     await app.request("/boom").catch(() => undefined);
 
-    expect(records).toHaveLength(1);
+    // This middleware's own record comes first, inside its flush window; the outer boundary then
+    // catches the rethrow and appends its own detail record.
+    expect(records.map((r) => r.message)).toStrictEqual(["GET /boom", "unhandled error"]);
     const rec = records[0]!;
     expect(rec.level).toBe("error");
-    expect(rec.message).toBe("GET /boom");
     const error = rec.data?.error as { name: string; message: string; stack?: string };
     expect(error.name).toBe("Error");
     expect(error.message).toBe("middleware exploded");
     expect(typeof error.stack).toBe("string");
     expect("status" in (rec.data ?? {})).toBe(false);
+  });
+});
+
+describe("requestLogger — flush windows under an asynchronous channel", () => {
+  function makeGuardThrowApp(channel: LogChannel) {
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [channel], bindings: () => ({ requestId: "req-async-1" }) }));
+    // Below requestLogger but above the route error boundary — the throw escapes next().
+    app.use("*", () => {
+      throw new Error("middleware exploded");
+    });
+    mapHandler(app, "GET", "/boom", () => new Response("unreached"));
+    return app;
+  }
+
+  it("a guard throw persists both records, not just the one inside requestLogger's window", async () => {
+    const { records, channel } = makeAsyncCapture();
+
+    const res = await makeGuardThrowApp(channel).request("/boom");
+
+    // `requestLogger`'s `finally` splices the pending buffer, so the boundary's later record was
+    // left in a buffer nobody awaited — with a real KV channel it could be lost to isolate
+    // teardown. A *dropped* error record is strictly worse than the duplicate this path is known
+    // to produce, and only an async channel can observe it.
+    expect(res.status).toBe(500);
+    expect(records.map((r) => r.message)).toStrictEqual(["GET /boom", "unhandled error"]);
+  });
+
+  it("keeps the two records correlated by requestId across the separate flush windows", async () => {
+    const { records, channel } = makeAsyncCapture();
+
+    await makeGuardThrowApp(channel).request("/boom");
+
+    expect(records.map((r) => r.data?.requestId)).toStrictEqual(["req-async-1", "req-async-1"]);
+  });
+
+  it("the handler-throw path still persists both records", async () => {
+    const { records, channel } = makeAsyncCapture();
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [channel] }));
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("handler exploded");
+    });
+
+    const res = await app.request("/boom");
+
+    expect(res.status).toBe(500);
+    // The boundary runs below requestLogger here, so its record is written — and now flushed —
+    // first; the summary follows in requestLogger's own window.
+    expect(records.map((r) => r.message)).toStrictEqual(["unhandled error", "GET /boom"]);
+  });
+});
+
+describe("requestLogger — persisted error detail", () => {
+  it("the 500 error record keeps its stack live but not in KV under the persistStack default", async () => {
+    const persisted: string[] = [];
+    const kv = {
+      put: (_key: string, value: string) => {
+        persisted.push(value);
+        return Promise.resolve();
+      },
+      list: () => Promise.resolve({ keys: [], list_complete: true }),
+    } as unknown as KVNamespace;
+
+    const { records, channel } = makeCapture();
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [channel, kvLogChannel(kv, { purgeProbability: 0 })] }));
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("handler exploded");
+    });
+
+    await app.request("/boom");
+
+    const live = records[0]!.data?.error as { name: string; message: string; stack?: string };
+    expect(typeof live.stack).toBe("string");
+
+    const stored = persisted.map((raw) => JSON.parse(raw) as { message: string; data?: { error?: Record<string, unknown> } });
+    const storedDetail = stored.find((r) => r.message === "unhandled error");
+    expect(storedDetail).toBeDefined();
+    expect(storedDetail?.data?.error).toStrictEqual({ name: "Error", message: "handler exploded" });
   });
 });
 

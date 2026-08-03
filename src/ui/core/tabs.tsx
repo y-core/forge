@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { TABS_SCOPE } from "../contracts/tabs-contract";
 import { asClass, cn } from "./utils/cn";
@@ -62,14 +63,18 @@ const TAB_BASE =
   "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring " +
   "aria-selected:bg-accent aria-selected:text-accent-foreground disabled:pointer-events-none disabled:opacity-50";
 
+/** The selected tab carries the composite marker, so the list's boot tab stop lands on it rather
+ * than on whichever tab happens to be first — otherwise the first arrow key moves relative to tab 0
+ * and reselects it. */
 const Tab: FC<TabProps> = ({ for: panelId, selected = false, class: cls, children, ...rest }) => (
   <button
     type='button'
     role='tab'
     data-slot='tab'
-    aria-selected={String(selected) as "true" | "false"}
+    aria-selected={selected}
     aria-controls={panelId}
     {...stateAttrs({ selected })}
+    {...(selected ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {})}
     class={cn(TAB_BASE, asClass(cls))}
     {...rest}>
     {children}

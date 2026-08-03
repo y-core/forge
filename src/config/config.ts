@@ -52,30 +52,32 @@ export function applyMapping(env: Record<string, unknown>, map: EnvMapping): unk
   return result;
 }
 
-/** Builds a schema for an optional config group that resolves to `null` when required keys are absent. @public */
+/**
+ * Builds a schema for an optional config group that resolves to `null` when required keys are absent.
+ * @public
+ */
 export function optionalGroup<T extends Record<string, v.GenericSchema>>(
   entries: T,
   options: { required: (keyof T & string)[] | "all"; defaults?: Partial<Record<keyof T & string, unknown>> },
-) {
-  type Output = { [K in keyof T]: v.InferOutput<T[K]> } | null;
-
+): v.GenericSchema<unknown, { [K in keyof T]: v.InferOutput<T[K]> } | null> {
   const requiredKeys = options.required === "all" ? Object.keys(entries) : options.required;
   const defaults = options.defaults ?? {};
+  const group = v.nullable(v.object(entries));
 
-  return v.pipe(
-    v.unknown(),
-    v.transform((raw: unknown): Output => {
-      const input = (raw !== null && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-      for (const key of requiredKeys) {
-        if (input[key] == null) return null;
-      }
-      const result: Record<string, unknown> = { ...input };
-      for (const [key, defaultVal] of Object.entries(defaults)) {
-        if (result[key] == null) result[key] = defaultVal;
-      }
-      return result as Output;
-    }),
-  );
+  const gate = v.transform((raw: unknown): unknown => {
+    const input = (raw !== null && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    // An absent required key means "integration not configured" — that is null, not invalid.
+    for (const key of requiredKeys) {
+      if (input[key] == null) return null;
+    }
+    const result: Record<string, unknown> = { ...input };
+    for (const [key, defaultVal] of Object.entries(defaults)) {
+      if (result[key] == null) result[key] = defaultVal;
+    }
+    return result;
+  });
+
+  return v.pipe(v.unknown(), gate, group as v.GenericSchema<unknown, { [K in keyof T]: v.InferOutput<T[K]> } | null>);
 }
 
 /** Returns config from store, or an empty object cast to T when no store is registered. @public */

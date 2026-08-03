@@ -32,9 +32,12 @@ function applyResponseHeaders(res: Response, def: { cache?: PageDefinition["cach
 /**
  * Wraps a view/loader into a RequestHandler with caching, custom headers, and error recovery.
  *
- * The loader may return a `Response` (e.g. a redirect or a 403) to short-circuit rendering —
- * the configured `cache`/`headers` are still applied. Prefer `createHandlerFactory` to avoid
- * repeating the `Bindings`/`ConfigData` generics on every call.
+ * A non-GET request runs the optional `action` first and its return value reaches the view as
+ * `state.actionData`; a GET skips it and leaves `state.actionData` undefined. The action and the
+ * loader may each return a `Response` (e.g. a redirect or a 403) to short-circuit rendering — the
+ * configured `cache`/`headers` are still applied. A throw from either is handled exactly like a
+ * throw from the view. Prefer `createHandlerFactory` to avoid repeating the `Bindings`/`ConfigData`
+ * generics on every call.
  *
  * @example
  * ```typescript
@@ -54,7 +57,22 @@ export function definePage<Bindings = Record<string, unknown>, ConfigData = unkn
     const config = context.get(ConfigKey) as ConfigData;
     const c = getAppContext<Bindings>(context);
 
+    // Every non-GET method is a mutation as far as the page pipeline is concerned. HEAD never
+    // reaches here as itself — the app rewrites it to GET before routing.
+    const isMutation = context.method.toUpperCase() !== "GET";
+
     try {
+      // The action runs before the loader so the view renders the state the mutation left behind,
+      // not the state it started from.
+      let actionData: ActionData | undefined;
+      if (isMutation && def.action) {
+        const result = await def.action(c, config);
+        if (result instanceof Response) {
+          return applyResponseHeaders(result, def);
+        }
+        actionData = result as ActionData;
+      }
+
       let data: LoaderData | undefined;
       if (def.loader) {
         const result = await def.loader(c, config);
@@ -64,7 +82,7 @@ export function definePage<Bindings = Record<string, unknown>, ConfigData = unkn
         data = result as LoaderData;
       }
 
-      const state = { data: data as LoaderData, actionData: undefined as ActionData, method: "GET" as const };
+      const state = { data: data as LoaderData, actionData: actionData as ActionData, method: isMutation ? ("POST" as const) : ("GET" as const) };
       const viewRes = await def.view(c, config, state);
       return applyResponseHeaders(viewRes, def);
     } catch (err) {

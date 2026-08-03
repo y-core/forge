@@ -9,8 +9,10 @@ export { Collapsible } from "./collapsible";
 export { Dialog } from "./dialog";
 export {
   FIELD_LABEL_CLASSES,
+  type FieldDescribedByOptions,
   type FieldDescriptor,
   fieldControlProps,
+  fieldDescribedBy,
   fieldDescriptionId,
   fieldErrorId,
   fieldId,
@@ -18,6 +20,7 @@ export {
 export { FormField } from "./field-layout";
 export { Field } from "./field-stack";
 export { Form } from "./form";
+export { Honeypot } from "./honeypot";
 export { createIcon, type ForgeIcon, Icon, type IconProps } from "./icon";
 export { Input } from "./input";
 export { Label } from "./label";

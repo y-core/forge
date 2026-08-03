@@ -149,6 +149,76 @@ describe("optionalGroup — returns group when required fields present", () => {
   });
 });
 
+describe("optionalGroup — validates each entry against its own schema", () => {
+  const group = optionalGroup(
+    { apiKey: v.string(), apiUrl: v.string() },
+    { required: ["apiKey"], defaults: { apiUrl: "https://api.example.com" } },
+  );
+
+  it("rejects a number supplied for an entry declared string", () => {
+    const result = v.safeParse(group, { apiKey: 42 });
+    expect(result.success).toBe(false);
+    expect(result.issues?.[0]?.message).toBe("Invalid type: Expected string but received 42");
+  });
+
+  it("rejects a binding object supplied for an entry declared string", () => {
+    const result = v.safeParse(group, { apiKey: { get: () => undefined, put: () => undefined } });
+    expect(result.success).toBe(false);
+    expect(result.issues?.[0]?.message).toBe("Invalid type: Expected string but received Object");
+  });
+
+  it("rejects a value filled in from a default that violates its entry schema", () => {
+    const badDefault = optionalGroup({ apiKey: v.string(), retries: v.string() }, { required: ["apiKey"], defaults: { retries: 7 } });
+    const result = v.safeParse(badDefault, { apiKey: "key" });
+    expect(result.success).toBe(false);
+    expect(result.issues?.[0]?.message).toBe("Invalid type: Expected string but received 7");
+  });
+
+  it("rejects a non-required entry that has neither a default nor an optional schema", () => {
+    const strict = optionalGroup({ apiKey: v.string(), region: v.string() }, { required: ["apiKey"] });
+    const result = v.safeParse(strict, { apiKey: "key" });
+    expect(result.success).toBe(false);
+    expect(result.issues?.[0]?.message).toBe('Invalid key: Expected "region" but received undefined');
+  });
+
+  it("accepts an absent non-required entry declared with an optional schema", () => {
+    const lenient = optionalGroup({ apiKey: v.string(), region: v.optional(v.string()) }, { required: ["apiKey"] });
+    expect(v.parse(lenient, { apiKey: "key" })).toEqual({ apiKey: "key" });
+  });
+
+  it("returns the validated values when every entry satisfies its schema", () => {
+    expect(v.parse(group, { apiKey: "key", apiUrl: "https://custom.example.com" })).toEqual({
+      apiKey: "key",
+      apiUrl: "https://custom.example.com",
+    });
+  });
+
+  it("resolves to null when the group is absent entirely", () => {
+    expect(v.parse(group, undefined)).toBeNull();
+  });
+
+  it("surfaces an invalid group entry as a normalized env error at the config boundary", () => {
+    const schema = v.object({ email: optionalGroup({ apiKey: v.string() }, { required: ["apiKey"] }) });
+    const cfg = createConfig({ email: { apiKey: env("EMAIL_API_KEY") } }, schema);
+    expect(() => cfg.get({ EMAIL_API_KEY: 42 })).toThrow(
+      new Error("Invalid environment: email.apiKey: Invalid type: Expected string but received 42"),
+    );
+  });
+});
+
+describe("optionalGroup — keys not declared in entries are stripped", () => {
+  const group = optionalGroup({ siteKey: v.string() }, { required: "all" });
+
+  it("drops an undeclared key from the parsed group", () => {
+    expect(v.parse(group, { siteKey: "site", LOG_LEVEL: "debug" })).toEqual({ siteKey: "site" });
+  });
+
+  it("keeps an undeclared binding object out of the parsed group", () => {
+    const result = v.parse(group, { siteKey: "site", DB: { prepare: () => undefined } }) as Record<string, unknown>;
+    expect(Object.keys(result)).toEqual(["siteKey"]);
+  });
+});
+
 // --- Config<T> ---
 
 const testDescriptor = { map: { dbUrl: env("DB_URL"), mode: env("MODE") }, schema: v.object({ dbUrl: v.string(), mode: v.optional(v.string()) }) };

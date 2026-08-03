@@ -89,7 +89,7 @@ describe("createAnonymousSession — KV mode", () => {
     expect(res.headers.get("set-cookie") ?? "").toContain("Secure");
   });
 
-  it("caches the built middleware per (cookieName, secure, secret)", async () => {
+  it("caches the built middleware per env object identity", async () => {
     let storageBuilds = 0;
     const { kv } = fakeSessionKV();
     const countingKvResolver = () => {
@@ -106,9 +106,53 @@ describe("createAnonymousSession — KV mode", () => {
     await app.request("/", {}, env);
     expect(storageBuilds).toBe(1); // storage (and middleware) built once, reused thereafter
 
-    // A different secret rebuilds:
+    // A different env object rebuilds:
     await app.request("/", {}, { SESSION_SECRET: "x".repeat(32), SESSIONS: kv });
     expect(storageBuilds).toBe(2);
+  });
+
+  // W1-6: the cache was keyed on `${cookieName}|${secure}|${secret}` while the cached middleware
+  // closed over the KV namespace resolved for whichever request built it. Two tenants that agree
+  // on those three values — the normal case for one deployment serving many customers — collapsed
+  // into a single cache slot and therefore shared one KV namespace.
+  describe("multi-tenant KV isolation", () => {
+    it("does not serve tenant A's session data to tenant B when secret and cookie name match", async () => {
+      const tenantA = fakeSessionKV();
+      const tenantB = fakeSessionKV();
+      const app = makeApp();
+
+      // Identical secret and cookie name; only the KV binding differs — exactly the collision the
+      // old string cache key could not see.
+      const envA: Env = { SESSION_SECRET: SECRET, SESSIONS: tenantA.kv };
+      const envB: Env = { SESSION_SECRET: SECRET, SESSIONS: tenantB.kv };
+
+      const writeA = await app.request("/save", { method: "POST" }, envA);
+      const cookieA = (writeA.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+
+      // Tenant A's data must be in tenant A's KV and nowhere else.
+      expect([...tenantA.data.values()].some((v) => v.includes("dark"))).toBe(true);
+      expect(tenantB.data.size).toBe(0);
+
+      // Replaying tenant A's cookie against tenant B must not resolve A's session.
+      const readB = await app.request("/read", { headers: { cookie: cookieA } }, envB);
+      expect(await readB.json()).toEqual({ settings: null });
+
+      // And tenant A still reads its own session.
+      const readA = await app.request("/read", { headers: { cookie: cookieA } }, envA);
+      expect(await readA.json()).toEqual({ settings: { theme: "dark" } });
+    });
+
+    it("writes each tenant's session into its own KV namespace", async () => {
+      const tenantA = fakeSessionKV();
+      const tenantB = fakeSessionKV();
+      const app = makeApp();
+
+      await app.request("/save", { method: "POST" }, { SESSION_SECRET: SECRET, SESSIONS: tenantA.kv });
+      await app.request("/save", { method: "POST" }, { SESSION_SECRET: SECRET, SESSIONS: tenantB.kv });
+
+      expect(tenantA.data.size).toBe(1);
+      expect(tenantB.data.size).toBe(1);
+    });
   });
 
   it("rejects a short secret with the exact error", async () => {

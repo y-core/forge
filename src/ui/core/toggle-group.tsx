@@ -35,7 +35,11 @@ const ITEM_BASE =
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:first:border-t " +
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:first:rounded-t-md " +
   "[[data-slot=toggle-group][data-orientation=vertical]_&]:last:rounded-b-md";
-const ITEM_ACTIVE = "bg-primary text-primary-foreground hover:bg-primary";
+
+// Keyed on `data-pressed`, the attribute `bindGroup` flips, rather than baked in at render time: a
+// static class is fixed for the element's life, so the paint would stay on whichever item the server
+// rendered pressed no matter what the user clicked.
+const ITEM_PRESSED = "data-[pressed]:bg-primary data-[pressed]:text-primary-foreground data-[pressed]:hover:bg-primary";
 
 /**
  * A group of toggle buttons.
@@ -73,8 +77,8 @@ const ToggleGroupItem: FC<PropsWithChildren<ToggleGroupItemProps>> = ({ class: c
     type='button'
     data-slot='toggle-group-item'
     {...stateAttrs({ pressed: pressed ?? false })}
-    aria-pressed={String(pressed ?? false)}
-    class={cn(ITEM_BASE, ITEM_SIZE[size], pressed && ITEM_ACTIVE, asClass(cls))}
+    aria-pressed={pressed ?? false}
+    class={cn(ITEM_BASE, ITEM_SIZE[size], ITEM_PRESSED, asClass(cls))}
     {...rest}>
     {children}
   </button>

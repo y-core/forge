@@ -142,19 +142,20 @@ Because `fetch` is the module handler, the whole app ships as:
 export default app;
 ```
 
-The router is built lazily on the first request, with a static middleware stack: per-request state injection → header flush → path-scoped guards → error boundary → matched route. This ordering is why error responses still carry the consumer's security headers.
+The router is built lazily on the first request, with a static middleware stack: per-request state injection → header flush → error boundary → path-scoped guards → error boundary → matched route. The inner boundary is why error responses still carry the consumer's security headers — the error response flows back out through the guards that queue them. The outer boundary catches a throw from a guard itself, which would otherwise escape the router and skip the header flush entirely. Config resolution runs inside the same `try` as routing, so an invalid env produces the app's own error page rather than the runtime's.
 
 ### `definePage(def)`
 
-Wraps a `loader` (data) + `view` (JSX → `Response`) into a `RequestHandler`, with optional caching, custom headers, and error recovery.
+Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) into a `RequestHandler`, with optional caching, custom headers, and error recovery.
 
 | Field | Type | Description |
 |---|---|---|
+| `action` | `(c, config) => ActionData \| Response \| Promise<...>` | Optional. Runs on every non-`GET` request, before the loader, so the view renders post-mutation state. Its return value reaches the view as `state.actionData`; returning a `Response` short-circuits rendering. Skipped entirely on a `GET`. |
 | `loader` | `(c, config) => LoaderData \| Response \| Promise<...>` | Optional. Fetches page data. Returning a `Response` (e.g. a redirect) short-circuits rendering — the response still gets the configured headers/cache applied. |
-| `view` | `(c, config, state) => Response \| Promise<Response>` | Required. Builds the page response. `state` is `{ data, actionData, method }`; `state.data` is the loader's return value. |
+| `view` | `(c, config, state) => Response \| Promise<Response>` | Required. Builds the page response. `state` is `{ data, actionData, method }`: `state.data` is the loader's return value, `state.actionData` the action's (`undefined` on a `GET`), and `state.method` is `"GET"` or `"POST"`. |
 | `cache` | `"no-store" \| CacheDirective` | Optional. Sets `Cache-Control`. `CacheDirective` is `{ maxAge: number; scope?: "public" \| "private" }` (scope defaults to `"public"`). |
 | `headers` | `Record<string, string>` | Optional. Extra response headers, merged onto whatever the view returned. |
-| `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Called if `loader` or `view` throws. If omitted, the error re-throws to the app's error boundary. |
+| `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Called if `action`, `loader`, or `view` throws. If omitted, the error re-throws to the app's error boundary. |
 
 ```ts
 import { definePage } from "@y-core/forge/app";
@@ -168,7 +169,7 @@ export const homePage = definePage<Bindings, AppConfig>({
 });
 ```
 
-The view receives the resolved `config` (the second argument) and the render `state` (the third). I/O belongs in the `loader`, not the `view`.
+The view receives the resolved `config` (the second argument) and the render `state` (the third). I/O belongs in the `loader` or the `action`, not the `view`.
 
 ### `defineAction(def)`
 
@@ -181,6 +182,7 @@ Wires a `parse → validate → handle` pipeline into a POST handler that return
 | `handle` | `(data: Input, c, config) => Response \| Promise<Response>` | Runs after validation succeeds. Receives the validated `data`, the context, and the resolved `config`. Returns the response directly. |
 | `onValidationError` | `(errors: readonly string[], c) => Response \| Promise<Response>` | Optional. Overrides the default `422` validation fragment; receives the message list from the `ValidationResult` failure (`.error`). |
 | `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Overrides the default `400`/`500` fragment when `parse` or `handle` throws. |
+| `maxBytes` | `number` | Optional. Body-size cap for this route's form parse. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). A `csrfProtection` guard on the same route parses the body first, so raising this also means raising the guard's own `maxBytes`. |
 
 ```ts
 import { defineAction } from "@y-core/forge/app";

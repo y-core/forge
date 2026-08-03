@@ -77,6 +77,23 @@ export function asElement(target: EventTarget | null | undefined): HTMLElement |
 }
 
 /**
+ * The shadow host of `node`, or `null` when `node` is not a shadow root.
+ *
+ * A ShadowRoot is a DOCUMENT_FRAGMENT_NODE (11) carrying `host`. The nodeType test is what keeps
+ * `HTMLAnchorElement.host` out of a climb: on any `<a href>` that is the URL's host string, so a
+ * `host`-only check steps off the tree onto a string and throws on the next hop. That matters for
+ * a **detached** subtree in particular, where `getRootNode()` returns the topmost ancestor
+ * *element* rather than a document, so an anchor can end up in root position. A relative `href` is
+ * no safer than an absolute one there: the anchor resolves it against the document base URL, so
+ * `host` reads the page's own origin rather than `""`. Single home for the check so the call sites
+ * cannot drift apart.
+ */
+function shadowHost(node: Node | null | undefined): Node | null {
+  if (node?.nodeType !== 11) return null;
+  return ((node as Partial<ShadowRoot>).host as Node | undefined) ?? null;
+}
+
+/**
  * Shadow-safe `closest`. `Element.closest` searches only the tree its element is in, so an element
  * inside a shadow root can never find an ancestor outside it — the delegated dispatcher looking for
  * `[data-scope]`, the group binder looking for `[data-field]`, and every composite controller
@@ -91,15 +108,10 @@ export function closestAcross<E extends Element = HTMLElement>(node: Node | null
       const hit = (current as Element).closest(selector);
       if (hit) return hit as E;
     }
-    // Duck-typed: only a ShadowRoot carries `host`. Being handed the root itself is the common case
-    // when climbing from a node whose parent *is* the boundary.
-    const self = current as Partial<ShadowRoot>;
-    if (self.host) {
-      current = self.host;
-      continue;
-    }
-    const root = current.getRootNode() as Partial<ShadowRoot>;
-    current = (root.host as Node | undefined) ?? null;
+    // Being handed the root itself is the common case when climbing from a node whose parent *is*
+    // the boundary; otherwise ask the tree for its root and step over that. Both reads go through
+    // {@link shadowHost}, so neither can mistake an anchor's URL host for a shadow host.
+    current = shadowHost(current) ?? shadowHost(current.getRootNode());
   }
   return null;
 }
@@ -116,8 +128,9 @@ export function contains(parent?: Node | null, child?: Node | null): boolean {
   while (node) {
     if (parent.contains(node)) return true;
     // Duck-typed rather than `instanceof ShadowRoot` — the same cross-realm trap this module exists
-    // to close. A document root has no `host`, which ends the climb.
-    const host = (node.getRootNode() as ShadowRoot).host as Node | undefined;
+    // to close. A document root, and a detached subtree's topmost element, have no shadow host,
+    // which ends the climb.
+    const host = shadowHost(node.getRootNode());
     if (!host) return false;
     node = host;
   }
