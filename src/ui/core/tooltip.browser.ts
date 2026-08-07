@@ -108,3 +108,100 @@ test.describe("Tooltip", () => {
     await expect.poll(() => page.evaluate(() => document.querySelector("#save-tip")?.hasAttribute("data-open")), { timeout: 3000 }).toBe(true);
   });
 });
+
+/**
+ * **Placement, measured.** The first coverage the tooltip's twelve `side` × `align` rules have ever
+ * had: the suite loads no CSS anywhere else, so nothing until now could tell a resolved `anchor()`
+ * from one that silently evaluated to nothing.
+ *
+ * Loading the raw stylesheet means no Tailwind utility resolves, so the fixture sizes its trigger and
+ * its hint with an explicit `<style>` rather than with classes.
+ */
+const PLACEMENT_CSS = { css: ["./ui/assets/css/theme-base.css"], expose: EXPOSE.expose };
+
+const PLACEMENT_STYLE = `<style>
+  body { margin: 0; }
+  [data-slot~="tooltip-trigger"] { position: fixed; top: 300px; left: 300px; width: 100px; height: 40px; }
+  [data-slot~="tooltip-content"] { width: 120px; height: 24px; }
+</style>`;
+
+const GAP = 6; // 0.375rem
+
+test.describe("Tooltip — anchored placement", () => {
+  async function show(page: Page, side: string, align: string) {
+    const html = await render(
+      Tooltip({
+        children: [
+          Tooltip.Trigger({ id: "save", for: "save-tip", children: "Save" }),
+          // biome-ignore lint/suspicious/noExplicitAny: the matrix is driven by data, not by literals
+          Tooltip.Content({ id: "save-tip", side: side as any, align: align as any, children: "Writes the file" }),
+        ],
+      }),
+    );
+    await mount(page, `${PLACEMENT_STYLE}${html}`, PLACEMENT_CSS);
+    await start(page);
+    await page.hover("#save");
+    await expect.poll(() => isShownAt(page), { timeout: 3000 }).toBe(true);
+    return page.evaluate(() => {
+      const round = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom) };
+      };
+      return { trigger: round(document.querySelector("#save") as Element), tip: round(document.querySelector("#save-tip") as Element) };
+    });
+  }
+
+  function isShownAt(page: Page): Promise<boolean> {
+    return page.evaluate(() => document.querySelector("#save-tip")?.matches(":popover-open") ?? false);
+  }
+
+  interface Box {
+    top: number;
+    left: number;
+    right: number;
+    bottom: number;
+  }
+
+  /** A pair of values that must agree, rather than a bare `number[]` — the tuple is what lets the
+   * destructuring below stay free of undefined checks. */
+  type Pair = (tip: Box, trigger: Box) => [number, number];
+
+  /** Which edge of the tip must meet which edge of the trigger, per side. */
+  const SIDES: ReadonlyArray<{ side: string; edge: Pair }> = [
+    { side: "top", edge: (t, g) => [t.bottom, g.top - GAP] },
+    { side: "bottom", edge: (t, g) => [t.top, g.bottom + GAP] },
+    { side: "left", edge: (t, g) => [t.right, g.left - GAP] },
+    { side: "right", edge: (t, g) => [t.left, g.right + GAP] },
+  ];
+
+  /** And which edge the alignment pins along the perpendicular axis. */
+  const ALIGNS: Record<string, { start: Pair; end: Pair }> = {
+    top: { start: (t, g) => [t.left, g.left], end: (t, g) => [t.right, g.right] },
+    bottom: { start: (t, g) => [t.left, g.left], end: (t, g) => [t.right, g.right] },
+    left: { start: (t, g) => [t.top, g.top], end: (t, g) => [t.bottom, g.bottom] },
+    right: { start: (t, g) => [t.top, g.top], end: (t, g) => [t.bottom, g.bottom] },
+  };
+
+  for (const { side, edge } of SIDES) {
+    for (const align of ["start", "center", "end"] as const) {
+      test(`side=${side} align=${align} meets the trigger on the named edges`, async ({ page }) => {
+        const { trigger, tip } = await show(page, side, align);
+
+        const [actual, expected] = edge(tip, trigger);
+        expect(Math.abs(actual - expected), `side edge: ${actual} vs ${expected}`).toBeLessThanOrEqual(2);
+
+        if (align === "center") {
+          const block = side === "top" || side === "bottom";
+          const tipMid = block ? (tip.left + tip.right) / 2 : (tip.top + tip.bottom) / 2;
+          const triggerMid = block ? (trigger.left + trigger.right) / 2 : (trigger.top + trigger.bottom) / 2;
+          expect(Math.abs(tipMid - triggerMid), `centre: ${tipMid} vs ${triggerMid}`).toBeLessThanOrEqual(2);
+        } else {
+          const pin = ALIGNS[side]?.[align];
+          if (!pin) throw new Error(`no alignment rule for ${side}/${align}`);
+          const [a, b] = pin(tip, trigger);
+          expect(Math.abs(a - b), `align edge: ${a} vs ${b}`).toBeLessThanOrEqual(2);
+        }
+      });
+    }
+  }
+});

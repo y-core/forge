@@ -28,8 +28,8 @@ const logger = createLogger("action");
  * ```
  * @public
  */
-export function defineAction<Input, Bindings = Record<string, unknown>, ConfigData = unknown>(
-  def: ActionDefinition<Input, Bindings, ConfigData>,
+export function defineAction<Input, Bindings = Record<string, unknown>, ConfigData = unknown, Out = Input>(
+  def: ActionDefinition<Input, Bindings, ConfigData, Out>,
 ): RequestHandler {
   const parseOptions: ParseFormDataOptions = def.maxBytes !== undefined ? { maxBytes: def.maxBytes } : {};
 

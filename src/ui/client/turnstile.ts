@@ -38,6 +38,10 @@ const ref = (name: string, doc: Document) => doc.querySelector<HTMLElement>(`[da
  *   blocked challenge can never brick the form's submit affordance.
  *
  * The widget theme follows the app's resolved theme (`.dark` on `<html>`) at render time.
+ *
+ * The returned cleanup clears every timer the controller has outstanding and marks it disposed, so a
+ * script `load` or poll hit that lands after an htmx swap neither renders into the detached
+ * container nor reveals a fallback that is no longer on the page.
  * @public
  */
 export function mountTurnstile(within?: Node): () => void {
@@ -56,8 +60,22 @@ export function mountTurnstile(within?: Node): () => void {
   const size = container.getAttribute("data-size") ?? "normal";
   let widgetId: string | undefined;
   let loadStarted = false;
+  let disposed = false;
+  let pollId = 0;
+  let pollTimeoutId = 0;
+  let scriptTimeoutId = 0;
+
+  /** Every timer this controller can have outstanding, cleared in one call. Clearing an id of 0 (or
+   *  one already fired) is a no-op, so this is safe to call unconditionally. */
+  const clearTimers = () => {
+    win.clearInterval(pollId);
+    win.clearTimeout(pollTimeoutId);
+    win.clearTimeout(scriptTimeoutId);
+    pollId = pollTimeoutId = scriptTimeoutId = 0;
+  };
 
   const showFallback = () => {
+    if (disposed) return;
     const fallback = ref(TURNSTILE.fallback, doc);
     if (fallback) fallback.hidden = false;
   };
@@ -67,6 +85,9 @@ export function mountTurnstile(within?: Node): () => void {
   };
 
   const renderWidget = () => {
+    // A late script `load` or poll hit must not render into a container the app has already swapped
+    // out; the widget would be mounted on a detached node nothing can reach to remove it again.
+    if (disposed) return;
     // A capability check against a third-party global, NOT a realm check — Cloudflare's script may
     // simply not have defined `render` yet. `ownerWindow` has no bearing on it; the only thing that
     // changes is which realm's global is asked.
@@ -102,27 +123,36 @@ export function mountTurnstile(within?: Node): () => void {
 
     if (doc.querySelector(`script[src="${CSS.escape(TURNSTILE_SCRIPT_SRC)}"]`)) {
       // Script already in flight from elsewhere — wait for the API, then render.
-      const poll = win.setInterval(() => {
+      pollId = win.setInterval(() => {
         if (win.turnstile) {
-          win.clearInterval(poll);
+          // Both handles: the giving-up timeout has no work left once the poll has succeeded, and
+          // leaving it pending holds this closure alive for the rest of the timeout budget.
+          clearTimers();
           renderWidget();
         }
       }, 100);
-      win.setTimeout(() => win.clearInterval(poll), TURNSTILE_SCRIPT_TIMEOUT_MS);
+      // Giving up on the poll is a load failure like any other, so it keeps the same "fails visible"
+      // promise the injected-script paths do — otherwise a pre-existing script that hangs leaves the
+      // user with neither a widget nor a message. `showFallback` no-ops once disposed, so a
+      // cleaned-up controller still reveals nothing.
+      pollTimeoutId = win.setTimeout(() => {
+        win.clearInterval(pollId);
+        showFallback();
+      }, TURNSTILE_SCRIPT_TIMEOUT_MS);
       return;
     }
 
     const script = doc.createElement("script");
     script.src = TURNSTILE_SCRIPT_SRC;
     script.async = true;
-    const timeout = win.setTimeout(showFallback, TURNSTILE_SCRIPT_TIMEOUT_MS);
+    scriptTimeoutId = win.setTimeout(showFallback, TURNSTILE_SCRIPT_TIMEOUT_MS);
     script.addEventListener("load", () => {
-      win.clearTimeout(timeout);
+      win.clearTimeout(scriptTimeoutId);
       // The async script's load event means the API is already initialised — render directly.
       renderWidget();
     });
     script.addEventListener("error", () => {
-      win.clearTimeout(timeout);
+      win.clearTimeout(scriptTimeoutId);
       showFallback();
     });
     doc.head.appendChild(script);
@@ -142,6 +172,8 @@ export function mountTurnstile(within?: Node): () => void {
   form.addEventListener("htmx:afterRequest", onAfterRequest);
 
   const cleanup = () => {
+    disposed = true;
+    clearTimers();
     form.removeEventListener("focusin", loadScript);
     form.removeEventListener("htmx:afterRequest", onAfterRequest);
     if (widgetId !== undefined) win.turnstile?.remove(widgetId);

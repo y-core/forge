@@ -93,7 +93,11 @@
     "enableWeakerNestedSandbox": true,
     "filesystem": {
       "allowWrite": [
-        "/tmp"
+        "/tmp",
+        "/home/dev/.config/.wrangler"
+      ],
+      "denyWrite": [
+        "/home/dev/.config/.wrangler/config"
       ]
     }
   },

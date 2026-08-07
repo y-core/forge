@@ -7,7 +7,7 @@ export interface HandlerFactory<Bindings = Record<string, unknown>, ConfigData =
   definePage: <LoaderData = unknown, ActionData = unknown>(
     def: PageDefinition<Bindings, ConfigData, LoaderData, ActionData>,
   ) => ReturnType<typeof definePage>;
-  defineAction: <Input>(def: ActionDefinition<Input, Bindings, ConfigData>) => ReturnType<typeof defineAction>;
+  defineAction: <Input, Out = Input>(def: ActionDefinition<Input, Bindings, ConfigData, Out>) => ReturnType<typeof defineAction>;
 }
 
 /**

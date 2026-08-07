@@ -52,17 +52,37 @@ export interface MountOptions {
   /** Modules to publish on `window`, keyed by global name. Values are specifiers resolved from
    * `src/` — e.g. `{ forgeResume: "./ui/client/resume" }`. */
   expose?: Record<string, string>;
+  /**
+   * Stylesheets to load into the page, as paths resolved from `src/` — the same convention `expose`
+   * uses, so `"./ui/assets/css/theme-base.css"` names the shipped file rather than a copy.
+   *
+   * **The file is served to the browser raw: no Tailwind build runs.** Two consequences decide how a
+   * fixture using this must be written:
+   *
+   * - `@theme inline` is an unknown at-rule, so the CSS parser discards the whole block. `@layer
+   *   components` is a real at-rule and is honoured. What survives is therefore exactly the component
+   *   rules under test, which is what a placement spec wants to measure.
+   * - **No Tailwind utility resolves.** `class="w-40"` styles nothing. Size a fixture by its content
+   *   or by an inline `<style>` in the markup string, never by a utility class.
+   */
+  css?: string[];
 }
 
 /**
- * Load `html` into the page and publish the requested modules on `window`.
+ * Load `html` into the page, apply the requested stylesheets, and publish the requested modules on
+ * `window`.
  *
- * The bundle is injected after the content, matching how a real page loads a deferred client
- * bundle: the markup exists before any controller can see it.
+ * Order is the contract: content, then CSS, then the bundle. The bundle goes last for the same
+ * reason a real page defers it — the markup exists before any controller can see it — and the CSS
+ * goes *before* it so a controller that runs on `beforetoggle` and reads or writes computed style
+ * sees the real cascade rather than an unstyled document.
  */
 export async function mount(page: Page, html: string, options: MountOptions = {}): Promise<void> {
   await givePageAnOrigin(page);
   await page.setContent(html);
+  for (const href of options.css ?? []) {
+    await page.addStyleTag({ path: new URL(href, `file://${SRC_ROOT}`).pathname });
+  }
   const expose = options.expose;
   if (expose && Object.keys(expose).length > 0) {
     await page.addScriptTag({ content: await bundleModules(expose) });

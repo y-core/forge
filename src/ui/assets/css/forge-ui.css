@@ -36,7 +36,7 @@
      this redundant UA gate.  Unknown pseudo-elements are dropped by engines
      that lack ::details-content (Firefox, Safari, older Chromium), leaving
      their legacy display-based behaviour intact. */
-  [data-slot="navbar"]::details-content {
+  [data-slot~="navbar"]::details-content {
     content-visibility: visible;
   }
 

@@ -22,7 +22,7 @@ export interface TooltipOptions {
 }
 
 export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): () => void {
-  const trigger = root.querySelector<HTMLElement>("[data-slot='tooltip-trigger']");
+  const trigger = root.querySelector<HTMLElement>("[data-slot~='tooltip-trigger']");
   const contentId = trigger?.getAttribute("aria-describedby");
   const content = contentId ? ownerDocument(root).getElementById(contentId) : null;
   if (!trigger || !content) return () => {};

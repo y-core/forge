@@ -105,6 +105,11 @@ empty table for it rather than erroring. `readEntry` returns the full stored rec
 row key — the viewer's detail view uses it to show fields (such as a stack trace in `data`)
 that don't fit in list metadata.
 
+A promise returned by `write` must cover **every** operation the write starts, maintenance work
+included — `flush()` awaits what it is handed and nothing else, so anything left outside can be
+cancelled when the isolate suspends. A maintenance failure still stays inside the channel: only a
+failure of the record write itself may reject.
+
 ### `LogRecord`
 
 ```ts
@@ -254,7 +259,7 @@ const channel = kvLogChannel(env.LOGS_KV, { prefix: "app-logs", maxLogs: 1000 })
 | `defaultTtl` | `number` | `604800` (7 days) | KV `expirationTtl` per entry — the hard retention backstop. |
 | `maxLogs` | `number` | `500` | Soft cap; purge trims down to this count. |
 | `highWater` | `number` | `maxLogs * 1.2` | Purge only runs once stored keys exceed this. |
-| `purgeProbability` | `number` | `0.02` | Chance per write that a best-effort purge sweep runs. |
+| `purgeProbability` | `number` | `0.02` | Chance per write that a best-effort purge sweep runs. A selected sweep is covered by the `write` promise, so it is flushed rather than abandoned. |
 | `persistStack` | `boolean` | `false` | When `false`, `stack` is recursively stripped from a **cloned** `record.data` before persistence, keeping error stacks out of the KV retention window. The caller's record is never mutated, so `consoleChannel` keeps the stack for local debugging. Set `true` to persist stacks. |
 
 The prefix captured at construction is used for both `write` and `read`, so a channel
@@ -454,9 +459,17 @@ from the main entry `@y-core/forge/logging`, not from `show`.
 
 Async channel writes (KV) return promises that the logger tracks in a pending queue capped at
 1000 entries; the oldest is dropped if the cap is exceeded, bounding memory in long-lived
-loggers. `flush()` awaits and clears the queue. `requestLogger` calls `flush()` in a `finally`
-block and hands the promise to `executionCtx.waitUntil` so writes complete after the response
-is returned, falling back to awaiting inline if no execution context is available.
+loggers. `flush()` awaits and clears the queue, and **settles rather than rejects**: it uses
+`allSettled`, so a channel whose write fails neither hides the other channels' completion nor
+reaches the caller as an error.
+
+`requestLogger` calls `flush()` in a `finally` block and hands the promise — already
+`.catch()`-guarded — to `executionCtx.waitUntil` so writes complete after the response is returned,
+falling back to awaiting inline if no execution context is available. The guard is what keeps that
+`finally` harmless: a `finally` that throws **replaces** whatever was propagating, so an unguarded
+flush failure would discard a successful response, or mask the handler error being rethrown, with an
+error about logging. It holds independently of how `flush` is implemented — a log flush can never
+change the request's outcome.
 
 ### KV key layout and retention
 
@@ -468,6 +481,19 @@ viewer lists rows from list metadata alone. Retention is enforced two ways: `def
 the hard backstop on every entry, and a probabilistic purge (running with `purgeProbability`
 per write, only once stored keys exceed `highWater`) trims the oldest entries down to
 `maxLogs` in batches. The purge is best-effort and swallows errors; the TTL is authoritative.
+
+Best-effort describes *whether* the purge runs and what it does with a failure — not whether it is
+tracked. A selected purge is part of the promise `write` returns, so `flush()` and `waitUntil()`
+hold the isolate open until the sweep finishes; a detached purge could be cancelled mid-pass the
+moment the tracked work completed, which is precisely when the soft cap would stop being enforced.
+The cost is that on `purgeProbability` of writes the flush window also covers one `list` and up to
+50 delete batches — post-response under `waitUntil`, inline on the fallback path.
+
+That coverage holds **even when the record write itself fails**. `write` awaits `allSettled` over the
+put and the sweep and then rethrows only the put's rejection, so a failing put cannot cut the sweep
+it already started loose — the case in which a sweep is most likely to still be mid-flight. Both
+halves of the channel contract above therefore hold at once: the promise covers every operation the
+write started, and only a failure of the record write may reject.
 
 ### Reading with filters and pagination
 

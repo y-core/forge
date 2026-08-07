@@ -57,7 +57,9 @@ function toPersistable(value: unknown, keepStacks: boolean): unknown {
  * them back via the same key convention. Keys are `{prefix}||{isoTimestamp}||{rand}`,
  * enabling lexicographic oldest-first listing. Metadata is stored alongside each entry so
  * the viewer can list rows without per-row reads. A probabilistic high/low-water purge provides
- * a best-effort soft cap; the TTL is the hard backstop. @public
+ * a best-effort soft cap; the TTL is the hard backstop. Best-effort means probabilistic and
+ * error-swallowing — not untracked: when the purge branch is selected, `write`'s promise covers it,
+ * so `flush()`/`waitUntil()` hold the isolate open until the sweep finishes. @public
  */
 export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: NS, options?: KvLogChannelOptions): LogChannel {
   const prefix = options?.prefix ?? DEFAULT_PREFIX;
@@ -98,8 +100,18 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
         return putPromise;
       }
 
-      void purge(kv, listPrefix, maxLogs, highWater).catch(() => {});
-      return putPromise;
+      // The purge joins the returned promise so `Logger.flush()` and `executionCtx.waitUntil()` keep
+      // the isolate alive until it settles — a detached purge can be cancelled mid-pass when the
+      // tracked work finishes first. Its own rejection stays swallowed: a failed sweep must never
+      // reject a log write.
+      const purgePromise = purge(kv, listPrefix, maxLogs, highWater).catch(() => {});
+      // `allSettled`, not `all`: `all` rejects the instant the put does, which stops the returned
+      // promise covering the still-running sweep — the detached-purge cancellation this branch
+      // exists to prevent, in the one case a sweep is most likely to be mid-flight. The put's
+      // rejection is then rethrown, because only a failure of the record write itself may reject
+      // (see README "A promise returned by `write` must cover every operation the write starts").
+      const [put] = await Promise.allSettled([putPromise, purgePromise]);
+      if (put.status === "rejected") throw put.reason;
     },
 
     async read(query?: LogQuery): Promise<LogReadResult> {

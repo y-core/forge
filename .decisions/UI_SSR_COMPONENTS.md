@@ -90,6 +90,22 @@ over- or under-structured:
 empty child is a programming error and **`Button` throws rather than degrading** — a ratified
 invariant, consistent with [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §2a.
 
+**`data-slot` is a token list, and `asChild` appends to it rather than replacing it.** Composing two
+compounds produces one element that genuinely is both: `<Tooltip.Trigger asChild><Menu.Trigger/>
+</Tooltip.Trigger>` renders a single button carrying `data-slot="menu-trigger tooltip-trigger"`.
+Overwriting silently unmade the inner compound — every rule and query keyed on the child's own slot
+stopped matching, and the menu lost the `anchor-name` that positions its popup
+([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2j).
+
+**Every forge selector on `data-slot` therefore uses `~=`, not `=`.** The two have identical
+specificity (0,1,0), so nothing about the cascade shifts; `=` is simply wrong on a composed element.
+A consumer keying on `[data-slot="…"]` exactly must make the same change to keep matching one.
+
+**`anchor-name` does not union across rules.** Two rules each naming the same composed element leave
+the cascade to pick one, so `theme-base.css` spells out the trigger pairs explicitly. The set is
+closed because `Tooltip.Trigger` is the only one of the four trigger compounds that offers `asChild`,
+which makes it always the outer wrapper.
+
 ### 1d. Icon Accessibility and `createIcon` Typing
 
 **`Icon` is decorative by default** — `aria-hidden="true"`, no accessible name.
@@ -120,7 +136,7 @@ silently, with no build error and no visual hint beyond the state never moving. 
 keys off a descendant selector anchored on `data-slot`:
 
 ```
-[[data-slot=switch-input]:checked~[data-slot=switch-track]_&]:translate-x-4
+[[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&]:translate-x-4
 ```
 
 A decorative element nested inside another decorative element cannot use `peer-*`. Reach for a

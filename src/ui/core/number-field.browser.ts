@@ -102,3 +102,25 @@ test("the buttons are optional: the input alone is a working number field", asyn
 
   expect(await value(page)).toBe("6");
 });
+
+test("increment still steps up when its slot carries a second token", async ({ page }) => {
+  // `data-slot` is a token list, and the buttons are found with `~=`. The direction branch used to
+  // compare the whole attribute, so a second token made the equality fail and sent the *increment*
+  // button down the `else` branch — clicking `+` decremented the value, silently and in the wrong
+  // direction. `{...rest}` on `NumberField.Increment` is enough to reach it.
+  const html = await render(
+    NumberField({
+      children: [
+        NumberField.Decrement({ id: "dec" }),
+        NumberField.Input({ id: "count", name: "count", value: "5", min: "0", max: "7", step: "1" }),
+        NumberField.Increment({ id: "inc", "data-slot": "number-field-increment tour-step" }),
+      ],
+    }),
+  );
+  await mount(page, html, EXPOSE);
+  await start(page);
+
+  await page.click("#inc");
+
+  expect(await value(page)).toBe("6");
+});

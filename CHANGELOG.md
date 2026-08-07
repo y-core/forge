@@ -10,6 +10,209 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
+## [Unreleased]
+
+**Anchored placement worked for tooltips and for nothing else.** The block in `theme-base.css` that
+positioned `popover-content` and `toolbar-flyout` rested on a stated premise — *"a popover's implicit
+anchor is the button named by `commandfor`"* — that is false. The implicit anchor comes from
+`popovertarget`; the Invoker Commands API sets none, and `popovertarget` appears nowhere in forge
+outside `src/jsx/types.ts`. **Every `anchor()` in that block resolved to nothing** and the UA's
+`[popover]` default centred the panel. `menu-popup` was never in the block at all.
+
+Measured on Chrome 151 rather than reasoned about: an invoker-opened popup computes `position-anchor:
+normal` with `CSS.supports("top", "anchor(bottom)")` true. Two things let it survive review — no
+browser spec loaded any CSS, and none asserted geometry, so the suite structurally could not see this
+class of defect. Both are now fixed.
+
+### Added
+
+- **`mountAnchorBinding(popup)`** (`ui/client`) — binds a popup to its invoker on `beforetoggle`,
+  through CSSOM. For the popup whose trigger is known only at runtime, as `openPopoverAt` is for the
+  popup with no trigger at all. `mountMenu` mounts it on **nested** popups only; every other surface
+  is already correct with no JavaScript.
+- **`mountMenu` handles ArrowRight and ArrowLeft** — ArrowRight opens the focused submenu (through the
+  row's own `command`, not around it), ArrowLeft closes a nested panel and restores focus to its row.
+  Both bail on `defaultPrevented` and claim the key they consume, so a submenu and its parent never
+  act on one press.
+- **`MountOptions.css`** in the browser-test harness, and `src/ui/core/menu-anchor.browser.ts`, the
+  first spec in the set to assert real geometry against the real stylesheet. Placement matrices for
+  `Tooltip` (12 side × align cells) and the chrome `Toolbar` flyout (4 placements) got their first
+  coverage with it.
+
+### Fixed
+
+- **Menus, popovers and toolbar flyouts anchor to their trigger** instead of centring in the
+  viewport, via an explicit `anchor-name` / `anchor-scope` / `position-anchor` binding — the pattern
+  the tooltip section already had right.
+- **A submenu anchors to its parent panel, and to its own row once the client bundle loads.** Naming
+  the *rows* cannot work: an open popup is in the top layer, where the resolution algorithm returns
+  "the last element in tree order", so every submenu but the last binds to the wrong row
+  (csswg-drafts #11602, closed as intentional).
+- **`cloneAsChild` appends to `data-slot` rather than overwriting it.**
+  `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` used to destroy `menu-trigger`
+  outright, leaving a composed button that no menu rule matched.
+- **A coordinate-placed menu is guarded structurally.** `Menu.Popup` emits `data-side` even with
+  `coords` set, so the anchored selectors really did match a context menu; `:not([data-coords])`
+  replaces the source-order tie-break that decided it before.
+- **`mountNumberField` reads its direction from a token, not from the whole attribute.** The stepper
+  branch compared `dataset.slot` for equality, so an increment button carrying a second `data-slot`
+  token fell through to the `else` and **stepped down** — a silent wrong-way bug, reachable through
+  the `{...rest}` spread `NumberField.Increment` already accepts.
+- **`mountMenu`'s ArrowRight opens a submenu and never closes one.** The row's command is
+  `toggle-popover`, so pressing it with the submenu already open used to invert the key, which ARIA's
+  menu pattern does not permit.
+- **`mountAnchorBinding`'s disposer unwinds every trigger it wrote to**, not only the most recent —
+  a popup whose invoker changes between openings left an inline `anchor-name` on each earlier one.
+- **A failed stylesheet load leaves no `<link>` behind.** `loadStylesheet` evicted the failed entry
+  from its cache but left the dead `<link>` in the head, so the retry the eviction exists to enable
+  missed the cache, fell through to the duplicate check, found that link — and **resolved for a
+  stylesheet that never loaded**. The removal is what makes the eviction mean anything. The test that
+  claimed to cover this passed for the wrong reason: the block's fake `querySelector` returned `null`
+  unconditionally, so the duplicate check, where the whole defect lives, was never reached.
+- **`lazy`'s retry waits 500ms instead of firing immediately.** `observe()` re-fires on the next
+  frame for an element already on screen, so all three attempts were spent inside a few frames —
+  a "retry" that could only ever recover from an outage that had already ended. The cap stays; it
+  guards a different thing (a visible element would otherwise spin), and the two bounds are not
+  interchangeable.
+- **A throw from `lazy`'s `init` is reported instead of becoming an unhandled rejection.**
+  `load().then(onFulfilled, onRejected)` attaches the rejection handler as a *sibling* of the
+  fulfilment handler, not downstream of it, so application code throwing inside `init` rejected with
+  nobody attached — the exact failure the `onError` path was added to close, reintroduced one branch
+  over. It now goes to `onError` and stops there: the load succeeded, so a retry would only re-run
+  the same failing `init`.
+- **A Turnstile poll that times out reveals the fallback.** The give-up timeout on the
+  already-present-script path cleared its interval and did nothing else, unlike the two other failure
+  routes — so a pre-existing script that hangs left the user with neither a widget nor a message,
+  against the widget's unconditional "fails visible" promise. This branch had no test at all.
+- **A failing KV put no longer cancels the purge it started.** `write` used `Promise.all`, which
+  rejects the instant the put does, so the returned promise stopped covering the still-running sweep
+  — reintroducing the detached-purge cancellation 0.0.81 fixed, in the one case a sweep is most
+  likely to be mid-flight. `allSettled` plus an explicit rethrow of the put's rejection keeps both
+  halves of the contract: cover everything, reject only for the record write.
+
+### Changed
+
+- **`Logger.flush()` settles rather than rejects.** It used `Promise.all`, which was stricter than
+  the best-effort contract its own TSDoc states; a single failing channel both hid the others'
+  completion and surfaced as a caller-visible error. `requestLogger` additionally `.catch()`-guards
+  the flush before handing it to `waitUntil`, because the `await flush` on the no-`executionCtx`
+  branch sits in a `finally` — and a `finally` that throws *replaces* what was propagating, which
+  meant a log failure could discard a successful response or mask the handler error being rethrown.
+
+- **`MenuPopupProps["side"]` widened to the full `Side`** (`"top" | "right" | "bottom" | "left"`).
+  `navbar`'s nested `Menu.Popup` now passes `side="right"`, so a submenu opens beside its parent panel
+  rather than below it. The default is unchanged.
+- **Every forge selector on `data-slot` uses `~=` instead of `=`.** Identical specificity (0,1,0), so
+  nothing shifts in the cascade — but `=` no longer matches a composed element.
+
+### Breaking Changes
+
+- **A consumer's own `[data-slot="…"]` selectors must become `[data-slot~="…"]`** wherever they can
+  target an `asChild`-composed element. An exact-match selector stops matching a button that carries
+  two slot tokens.
+- **A consumer restating forge's anchoring by hand should delete it.** The `anchor-name` and
+  placement rules an app added to work around the dead block are now shipped, and a local `anchor-name`
+  on the same element will win over forge's and re-break the pairing.
+
+---
+
+## [0.0.81] — 2026-08-03
+
+A follow-up review of the full source tree after 0.0.80. Four verified defects — plus a fifth found
+while fixing the third — and every one of them is the same shape: work that was *started* and then
+left outside the thing that keeps it alive. A purge outside the promise the isolate waits on. A
+rejected import with no handler on it. Timers outliving their disposer. A promise that resolved on
+an appended `<link>` rather than a loaded one. Each landed with tests that fail against the previous
+code; where a test could not have observed the defect, the reason is given, because that is usually
+the more useful half.
+
+### Added
+
+- **`lazy` accepts an `onError` callback.** Optional, and it rides on the already-exported
+  `LazyImportOptions`, so no barrel change and no existing call site changes. See *Fixed* for where
+  the rejection was going before.
+
+### Fixed
+
+- **A selected KV log purge was detached from the Worker lifetime.** `kvLogChannel.write()` started
+  the sweep with `void purge(…).catch(() => {})` and returned only the `put` promise, so
+  `Logger.flush()` and `requestLogger`'s `executionCtx.waitUntil()` both observed the write as
+  complete while the purge was still listing and deleting. A Workers isolate may be suspended the
+  moment the tracked work finishes — which is precisely the moment the sweep dies mid-pass, and
+  precisely when the soft `maxLogs`/`highWater` cap stops being enforced. "Best-effort" was meant to
+  describe *whether* the purge runs and what it does with a failure; it had quietly come to also
+  describe whether it survives. `write` now awaits
+  `Promise.all([putPromise, purge(…).catch(() => {})])`.
+  The rejection stays swallowed deliberately: `flush()` uses `Promise.all`, not
+  `allSettled`, and `requestLogger` awaits it inside a `finally`, so a propagating purge failure
+  would discard a successful response. The cost is stated rather than absorbed — on
+  `purgeProbability` of writes the flush window now also covers one `list` and up to 50 delete
+  batches, post-response under `waitUntil` and inline on the fallback path. **The existing stub was
+  structurally incapable of catching this**: its `delete` resolves in the same microtask that starts
+  it, so a fire-and-forget purge finishes inside the ticks an `await channel.write(…)` already
+  consumes. The regression test parks the deletes, which is the only arrangement in which a tracked
+  purge and a detached one look different.
+- **A failed dynamic import became an unhandled rejection and could never retry.** `lazy` calls
+  `observer.disconnect()` *before* `options.load()`, and the returned promise carried only a success
+  handler — so one failed chunk fetch both raised an unhandled rejection into whatever
+  application-level telemetry is listening and left the element unobserved forever, turning a
+  transient network blip into a permanently dead control. The rejection now goes to `onError` and
+  the element is re-observed, bounded to three `load()` calls in total. The cap is load-bearing, not
+  tidiness: `observe()` invokes its callback **immediately** for an element already on screen, so an
+  uncapped re-observe on a visible element is a spin loop, not a retry. The disposer sets a
+  `disposed` flag, so a load still in flight when the scope tears down never re-observes.
+- **`mountTurnstile`'s cleanup left up to three timers running.** The poll interval, its paired
+  giving-up timeout and the script-load fallback timeout were all held in local `const`s that
+  `cleanup` never saw. Removing an htmx-swapped widget therefore left closures over its document,
+  form and container alive for the rest of the timeout budget, and if the Turnstile API appeared
+  inside that window the controller rendered into a **detached** container — a widget nothing can
+  reach to remove again. `UI_CLIENT_RUNTIME.md` §2d ("The Disposer Contract") already required a
+  disposer to clear its pending timers, so this was a written-invariant violation rather than
+  untidiness. All three handles are now tracked and cleared through one `clearTimers()` (the
+  `clearPending()` idiom `transition.ts` already uses), and `renderWidget()` and `showFallback()`
+  return early once disposed, so a late `load` or poll hit neither renders into the detached
+  container nor reveals a fallback that has left the page.
+- **The Turnstile poll's paired timeout stayed pending after a *successful* poll.** Unreported,
+  found while fixing the above: the success branch cleared the interval and nothing else, so the
+  giving-up timeout — which had no work left to do — held the closure alive for the remainder of
+  `TURNSTILE_SCRIPT_TIMEOUT_MS`. Both handles are now cleared together.
+- **A concurrent `loadStylesheet` caller resolved before the stylesheet had loaded.** Idempotence
+  was a `querySelector` for a matching `<link>`, and an appended link is findable *immediately* —
+  long before its `load` event fires. A second caller arriving inside that window was told the sheet
+  was ready and ran its dependent code unstyled (flash, wrong layout), and an eventual load failure
+  was reported only to the first caller. The in-flight promise is now cached in a
+  `WeakMap<Document, Map<string, Promise<void>>>` and consulted **before** the duplicate check, so a
+  caller arriving mid-load joins the real `load`/`error`. The duplicate check still runs second and
+  still resolves at once for a `<link>` this function did not create — SSR markup, third-party code
+  — since for those there is no event left to wait for. A failure evicts its entry, identity-checked
+  so a slow failure cannot evict a newer entry for the same href, and a later call retries with a
+  fresh link. Keys are the `href` string as passed; normalising a relative URL against an absolute
+  one is out of scope, so two spellings of one URL remain two entries.
+
+### Changed
+
+- **`LogChannel.write` now carries a stated contract.** A returned promise must cover **every**
+  operation the write initiates, maintenance work included — `Logger.flush()` awaits what it is
+  handed and nothing else, so anything left outside it can be cancelled when the isolate suspends. A
+  best-effort operation still swallows its own rejection: only a failure of the record write itself
+  may reject. Custom channels compile unchanged; one that detaches its own maintenance is now in
+  stated violation rather than merely unlucky.
+
+### Documentation
+
+- **`UI_CLIENT_RUNTIME.md` §3b documented three signatures that do not exist.** It described
+  `lazy(() => import(…))` as deferring "until the browser is idle" — it is an IntersectionObserver
+  keyed on a `data-ref` element, takes an options object and returns a disposer — and gave
+  positional two-argument spellings for `loadScriptOnEvent` and `loadStylesheet`, the latter
+  omitting the *required* `integrity` argument. §3b now states the real signatures, notes that
+  `loadStylesheet` is the one positional member of the trio and why, and documents the retry cap and
+  the concurrency join described above.
+- **`src/logging/README.md` and `kvLogChannel`'s TSDoc separate "best-effort" from "untracked."**
+  The channel contract, the `purgeProbability` row and the retention section now each state that a
+  selected sweep is inside the `write` promise, along with what that costs the flush window.
+
+---
+
 ## [0.0.80] — 2026-08-02
 
 A full-codebase review of 20 namespaces. Twenty-eight verified defects, seven of them

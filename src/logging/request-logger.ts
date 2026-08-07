@@ -46,7 +46,11 @@ export function requestLogger<Bindings = Record<string, unknown>>(options: Reque
       log.error(`${method} ${path}`, { method, path, duration: Date.now() - start, error: serializeError(err) });
       throw err;
     } finally {
-      const flush = log.flush();
+      // Guarded independently of how `flush` is implemented, because `await flush` below sits in a
+      // `finally`: a `finally` that throws *replaces* whatever was propagating — the rethrown
+      // handler error above, or the response about to be returned. A log flush can never change the
+      // request's outcome.
+      const flush = log.flush().catch(() => {});
       try {
         c.executionCtx.waitUntil(flush);
       } catch {

@@ -1,21 +1,24 @@
 import { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
 import { ownerWindow } from "./dom";
+import { triggersFor } from "./transition";
 
 /**
- * Open a native popup at a **pointer coordinate**, for the one case anchor positioning cannot serve.
+ * The two placement escape hatches CSS alone cannot express, and the module that owns the CSSOM
+ * argument they share.
  *
- * forge positions every other popup with CSS Anchor Positioning against the invoker — a popover's
- * implicit anchor is the button its `commandfor` names, and the whole placement set in
- * `theme-base.css` is keyed off `anchor()`. A **context menu has no invoker**: it opens at the point
- * a right-click landed on a canvas, and the element under the pointer is not a trigger. Every
- * anchored rule then resolves to nothing and the UA's `[popover]` default centres the panel.
+ * forge positions every popup with CSS Anchor Positioning against an explicit `anchor-name` /
+ * `position-anchor` pair declared in `theme-base.css` — there is no implicit anchor to lean on, since
+ * the one a UA supplies comes from `popovertarget` and forge invokes with `command`/`commandfor`.
+ * That static binding covers every surface whose trigger is a *fixed* element of the compound.
+ * {@link openPopoverAt} serves the popup with **no** trigger, and {@link mountAnchorBinding} the
+ * popup whose trigger is only known at runtime.
  *
- * The coordinates travel as **custom properties written through CSSOM**, never as a generated
- * `style` attribute. Two independent reasons, and either alone would decide it: forge's CSP carries
- * no `style-src 'unsafe-inline'`, so an inline style would be blocked in exactly the app this
- * exists for, and the JSX renderer drops `style` outright, so there would be nothing to write it
- * onto server-side either. `el.style.setProperty` sets a property on the live CSSOM declaration,
- * which is not an inline-style *string* and is not what CSP gates.
+ * Both write **custom properties or anchor names through CSSOM**, never a generated `style`
+ * attribute. Two independent reasons, and either alone would decide it: forge's CSP carries no
+ * `style-src 'unsafe-inline'`, so an inline style would be blocked in exactly the app this exists
+ * for, and the JSX renderer drops `style` outright, so there would be nothing to write it onto
+ * server-side either. `el.style.setProperty` sets a property on the live CSSOM declaration, which is
+ * not an inline-style *string* and is not what CSP gates.
  */
 
 /** Options for {@link openPopoverAt}. */
@@ -103,4 +106,109 @@ export function openPopoverAt(el: HTMLElement, x: number, y: number, options: Op
   // the popup is `display: none` and measures zero, so neither the flip nor the clamp has a box to
   // reason about.
   place(el, win, x, y, margin, flip);
+}
+
+/**
+ * Anchor names minted per trigger, so re-opening a popup reuses the name it already had rather than
+ * minting a second and leaving the first on the element forever.
+ *
+ * A `WeakMap` because the key is the trigger element: a menu whose rows are rebuilt between openings
+ * discards its old triggers, and holding them in a `Map` would keep every one of them alive.
+ */
+const anchorNames = new WeakMap<HTMLElement, string>();
+let anchorSeq = 0;
+
+function anchorNameFor(trigger: HTMLElement): string {
+  const existing = anchorNames.get(trigger);
+  if (existing) return existing;
+  anchorSeq += 1;
+  const minted = `--forge-anchor-${anchorSeq}`;
+  anchorNames.set(trigger, minted);
+  return minted;
+}
+
+/** The declared `anchor-name` list, from the cascade rather than from the inline declaration — the
+ * name a composed trigger already carries comes from a stylesheet rule, and reading `el.style` would
+ * report none of it. `none` is the initial value and means "no names", not a name called `none`. */
+function declaredAnchorNames(trigger: HTMLElement, win: Window): string[] {
+  const declared = win.getComputedStyle(trigger).getPropertyValue("anchor-name").trim();
+  if (!declared || declared === "none") return [];
+  return declared
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Bind a native popup to the invoker that opens it, at the moment it opens, and return a disposer.
+ *
+ * The static rules in `theme-base.css` bind every popup whose trigger is a *fixed* part of its
+ * compound — one `Popover.Trigger` per `Popover`, one `Menu.Trigger` per `Menu`. A **submenu** is the
+ * case they cannot express: `Menu.SubmenuTrigger` and its nested `Menu.Popup` are siblings among the
+ * rows of the parent panel with no wrapper between them (a wrapper inside a `role="menu"` would break
+ * the ARIA content model), and the SSR renderer drops `style`, so no per-instance `anchor-name` can
+ * be emitted server-side. The stylesheet's answer there is to name the **parent panel**, which is
+ * correct but coarse: the submenu pins to the panel's edge rather than to the row that opened it.
+ *
+ * This upgrades that to row-accurate. It resolves the invoker, mints a stable anchor name for it, and
+ * writes `anchor-name` on the trigger and `position-anchor` on the popup through CSSOM. Inline CSSOM
+ * beats any stylesheet rule, and the placement matrix is anchor-*agnostic* — every rule is written in
+ * terms of `anchor()`, never of a particular name — so the box resolves against whatever
+ * `position-anchor` currently says.
+ *
+ * ```ts
+ * registerScope("menu", { setup: ({ root }) => mountAnchorBinding(root) });
+ * ```
+ *
+ * Three details are the whole of the correctness:
+ *
+ * - **`beforetoggle`, not `toggle`.** It fires before the open state's style and layout pass, so the
+ *   first painted frame is already anchored. `toggle` is one frame late and the popup visibly flashes
+ *   from the viewport centre — the same reasoning `mountTransitionState` uses for its enter.
+ * - **The trigger's `anchor-name` is read and appended to, never overwritten.** A composed trigger
+ *   (`<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>`) already carries `--forge-tooltip`
+ *   from the stylesheet, and a bare inline write would clobber it and leave the tooltip centred:
+ *   precisely the failure this whole mechanism exists to remove.
+ * - **A coordinate-placed popup is left alone.** `openPopoverAt` owns placement outright there, and
+ *   an anchor it does not consult would be dead weight at best.
+ *
+ * With several invokers for one popup the **first in document order** is chosen. `anchor()` resolves
+ * against a single element, so unlike `mountPopupTriggerState` — which stamps all of them — this can
+ * only pick one, and a popup opened from two places anchors to the earlier button whichever was used.
+ * @public
+ */
+export function mountAnchorBinding(popup: HTMLElement): () => void {
+  const win = ownerWindow(popup);
+  /** Every trigger this has written to, not just the last. A menu whose rows are rebuilt between
+   * openings — the case the `WeakMap` above exists for — resolves a different first invoker each
+   * time, and unwinding only the most recent would leave an inline `anchor-name` on each of the
+   * earlier ones. */
+  const bound = new Set<HTMLElement>();
+
+  const onBeforeToggle = (event: Event) => {
+    if ((event as Event & { newState?: string }).newState !== "open") return;
+    if (popup.hasAttribute(POPOVER_COORDS_ATTR)) return;
+    const trigger = triggersFor(popup)[0];
+    if (!trigger) return;
+
+    const name = anchorNameFor(trigger);
+    const names = declaredAnchorNames(trigger, win);
+    // Membership rather than a blind append: the name is stable per trigger, so the second opening
+    // reads back the list this wrote on the first and would otherwise grow it without bound.
+    if (!names.includes(name)) names.push(name);
+    trigger.style.setProperty("anchor-name", names.join(", "));
+    popup.style.setProperty("position-anchor", name);
+    bound.add(trigger);
+  };
+
+  popup.addEventListener("beforetoggle", onBeforeToggle);
+
+  return () => {
+    popup.removeEventListener("beforetoggle", onBeforeToggle);
+    // Removing the inline declarations restores whatever the stylesheet said, which is the coarse but
+    // still-correct panel binding — a disposed controller leaves a working menu, not a centred one.
+    popup.style.removeProperty("position-anchor");
+    for (const trigger of bound) trigger.style.removeProperty("anchor-name");
+    bound.clear();
+  };
 }

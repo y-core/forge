@@ -28,13 +28,13 @@ const ITEM_BASE =
   "first:border-l first:rounded-l-md last:rounded-r-md " +
   "hover:bg-accent hover:text-accent-foreground " +
   // Vertical overrides: restore full left border, remove top border, clear horizontal rounding.
-  "[[data-slot=toggle-group][data-orientation=vertical]_&]:border-l " +
-  "[[data-slot=toggle-group][data-orientation=vertical]_&]:border-t-0 " +
-  "[[data-slot=toggle-group][data-orientation=vertical]_&]:rounded-none " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:border-l " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:border-t-0 " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:rounded-none " +
   // Vertical first/last: top/bottom borders + rounding.
-  "[[data-slot=toggle-group][data-orientation=vertical]_&]:first:border-t " +
-  "[[data-slot=toggle-group][data-orientation=vertical]_&]:first:rounded-t-md " +
-  "[[data-slot=toggle-group][data-orientation=vertical]_&]:last:rounded-b-md";
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:first:border-t " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:first:rounded-t-md " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:last:rounded-b-md";
 
 // Keyed on `data-pressed`, the attribute `bindGroup` flips, rather than baked in at render time: a
 // static class is fixed for the element's life, so the paint would stay on whichever item the server

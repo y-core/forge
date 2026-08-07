@@ -23,11 +23,12 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §2b Theme Controller and FOUC Prevention: where the theme surface actually lives
 - §2c mountTurnstile — CAPTCHA Controller: engagement-gated, self-healing, fails visible
 - §2d The Disposer Contract: every controller returns one, and why
-- §2e mountMenu — Menu Keyboard Behaviour: only what the platform does not supply
+- §2e mountMenu — Menu Keyboard Behaviour: arrow navigation, typeahead, focus, and the submenu arrows
 - §2f mountTabs — Selection and Panel Visibility: automatic versus manual activation
 - §2g mountTooltip — Hint Popover: hover and focus intent
 - §2h mountNumberField — Stepper Buttons: why its scope is eager
 - §2i openPopoverAt — Coordinate Placement: the popup with no invoker to anchor to
+- §2j mountAnchorBinding — Runtime Invoker Anchoring: the popup whose trigger is known only at runtime
 - §3 Signals and Lazy Loading: client state without a framework
 - §3a Signals — Reactive State: `createSignal`, `computed`, `effect`
 - §3b Lazy Loading Utilities: deferred imports and event-triggered resources
@@ -128,11 +129,29 @@ Two consequences follow, and both are the rule rather than a special case:
 
 ### 2e. `mountMenu` — Menu Keyboard Behaviour
 
-**It opens and closes nothing.** Opening, closing, light-dismiss, Escape and top-layer stacking
-belong to the Popover API, and selecting an item closes the menu through `command="hide-popover"` in
-the markup ([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §1h). What is left is what ARIA's menu
-pattern asks for and the platform does not supply: arrow navigation over the items, typeahead, focus
-on the first item when the menu opens, and focus back on the opener when it closes.
+**It opens and closes only what the horizontal arrows ask it to.** Opening, closing, light-dismiss,
+Escape and top-layer stacking belong to the Popover API, and selecting an item closes the menu
+through `command="hide-popover"` in the markup
+([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §1h). What is left is what ARIA's menu pattern asks
+for and the platform does not supply: arrow navigation over the items, typeahead, focus on the first
+item when the menu opens, focus back on the opener when it closes, and the two arrows that move
+between a panel and its submenu.
+
+**ArrowRight and ArrowLeft go through the platform rather than around it.** ArrowRight on a
+`menu-submenu-trigger` calls `.click()` — the row's own `command="toggle-popover"` is what opens the
+panel, and the nested popup's own `mountMenu` is what moves focus into it. ArrowLeft on a nested
+popup calls `hidePopover()`, the same path Escape already takes, so focus restoration is the one
+`toggle` handler rather than a second parallel one. Nothing about the state machine is
+reimplemented.
+
+**Both keys are guarded twice**, and neither guard is optional: the handler bails on
+`event.defaultPrevented`, because `keydown` bubbles from an open submenu to the panel containing it
+and without the bail both controllers act on one press; and it calls `preventDefault()` on every key
+it consumes, which is the other half of that same contract. `mountRovingFocus` leaves both keys
+unclaimed under `orientation: "vertical"` (§6b), so there is no contention with it.
+
+**This lives in a controller mounted on the popup, never in the scope system.** The delegated
+vocabulary is `click` / `input` / `change` / `submit`, with no `keydown`, by decision (§3c).
 
 **The opener is captured, not derived from `commandfor`** — a menu can be opened by any invoker, and
 a context menu has no single trigger button.
@@ -140,6 +159,10 @@ a context menu has no single trigger button.
 **Focus is only reclaimed when the close actually stranded it.** A click elsewhere on the page has
 already put focus where the user wants it, and yanking it back to the trigger would be worse than
 the problem restoration exists to fix.
+
+**It mounts `mountAnchorBinding` only on a nested popup** (§2j). After the stylesheet's panel-level
+binding every other menu is already anchored correctly with no JavaScript at all, so restricting it
+keeps inline writes off elements that do not need one.
 
 ### 2f. `mountTabs` — Selection and Panel Visibility
 
@@ -169,12 +192,18 @@ same reasoning makes `toolbar`, `menu`, `tabs`, `tooltip`, `collapsible`, `accor
 
 ### 2i. `openPopoverAt` — Coordinate Placement
 
-**Every other popup in forge is placed by CSS, against its invoker.** A popover's implicit anchor is
-the button its `commandfor` names, and the whole placement set in `theme-base.css` is keyed off
-`anchor()`. This is the one case that cannot use it: a **context menu has no invoker**. It opens
-where a right-click landed, on an element that is not a trigger, so every anchored rule resolves to
-nothing and the UA's `[popover]` default (`inset: 0; margin: auto`) centres the panel — the one place
-a context menu must never be.
+**Every other popup in forge is placed by CSS, against its trigger** — through an *explicit*
+`anchor-name` / `position-anchor` pair declared in `theme-base.css`. There is **no implicit anchor to
+lean on**: the one a UA supplies comes from `popovertarget`, and forge invokes with
+`command`/`commandfor` throughout, which sets no anchor at all. Measured on Chrome 151, an
+invoker-opened popup computes `position-anchor: normal` and every `anchor()` resolves to nothing. An
+earlier revision of the placement block assumed otherwise and was dead for every surface it named;
+`src/ui/core/menu-anchor.browser.ts` is the geometry that would now catch it.
+
+This is the one case no anchor can serve: a **context menu has no trigger**. It opens where a
+right-click landed, on an element that is not a button, so nothing carries the anchor name, every
+anchored rule resolves to nothing, and the UA's `[popover]` default (`inset: 0; margin: auto`) centres
+the panel — the one place a context menu must never be.
 
 `openPopoverAt(el, x, y, options?)` shows the popup with its top-left corner on the point, clamped so
 the whole box stays on screen. Three properties are load-bearing:
@@ -195,6 +224,46 @@ coordinate rule; `openPopoverAt` stamps it too, so a popup that opens both ways 
 markup variant. Calling it again **repositions** an open popup, which is what a second right-click
 elsewhere should do.
 
+### 2j. `mountAnchorBinding` — Runtime Invoker Anchoring
+
+The other half of §2i's escape hatch, in the same module and for the same CSSOM reason. `openPopoverAt`
+serves the popup with **no** trigger; this serves the popup whose trigger is only known at runtime.
+
+**The submenu is the case, and the constraint is structural.** `Menu.SubmenuTrigger` and its nested
+`Menu.Popup` are siblings among the rows of the parent panel with **no wrapper** — a wrapper inside a
+`role="menu"` would break the ARIA content model — and the SSR renderer drops every `style` attribute,
+so no per-instance `anchor-name` can be emitted server-side. The stylesheet's answer is to name the
+**parent panel**, which is correct but coarse: the submenu pins to the panel's edge, top-aligned,
+rather than beside the row that opened it.
+
+**Naming the rows instead does not work, and it was measured rather than reasoned about.** An open
+popup is in the top layer, where the resolution algorithm treats every candidate as laid out before
+it, so every trigger in the panel becomes acceptable and it returns "the last element in tree order" —
+the wrong row for every submenu but the last (csswg-drafts #11602, closed as intentional). Naming the
+panel puts the lookup on the *ancestor* branch, where the nearest match wins deterministically.
+
+`mountAnchorBinding(popup)` resolves the invoker on `beforetoggle`, mints a stable per-element anchor
+name, and writes `anchor-name` on the trigger and `position-anchor` on the popup through CSSOM. Inline
+CSSOM beats any stylesheet rule, and the placement matrix is anchor-*agnostic* — written in terms of
+`anchor()`, never of a particular name — so the box resolves against whatever `position-anchor`
+currently says. Three details are the whole of the correctness:
+
+- **`beforetoggle`, not `toggle`.** It fires before the open state's style and layout pass, so the
+  first painted frame is already anchored; `toggle` is one frame late and the panel visibly flashes
+  from the viewport centre. The same reasoning `mountTransitionState` uses for its enter (§6c).
+- **The trigger's `anchor-name` is read from the *cascade* and appended to, never overwritten.** A
+  composed trigger already carries `--forge-tooltip` from a stylesheet rule, which `el.style` cannot
+  see; a bare inline write would clobber it and leave the tooltip centred — the exact failure this
+  mechanism exists to remove. The name is minted once per element via a `WeakMap`, so re-opening
+  reuses it rather than growing the list.
+- **A coordinate-placed popup returns early.** `openPopoverAt` owns placement outright there.
+
+**It is deliberately not folded into `mountPopupTriggerState`.** That name has a documented contract —
+publishing `data-popup-open` on the invokers — and conflating the two would be a silent widening.
+They do differ in one visible way: with several invokers for one popup, `mountPopupTriggerState`
+stamps all of them, while `anchor()` resolves against a single element, so this picks the **first in
+document order**.
+
 ---
 
 ## 3. Signals and Lazy Loading
@@ -209,10 +278,39 @@ that must survive navigation or be authoritative belongs on the server.
 
 ### 3b. Lazy Loading Utilities
 
-- **`lazy(() => import(…))`** defers a dynamic import until the browser is idle.
-- **`loadScriptOnEvent(event, src)`** injects a `<script>` the first time a DOM event fires —
-  for analytics or chat widgets that must not block page load.
-- **`loadStylesheet(href)`** injects a `<link rel="stylesheet">`.
+All three take an **options object**, not positional arguments, and each accepts `within` so a
+controller inside an iframe or a shadow tree searches and injects into its own document.
+
+- **`lazy({ ref, load, init, rootMargin?, threshold?, onError?, within? })`** defers a dynamic
+  import until the element carrying `data-ref="{ref}"` **intersects the viewport** — an
+  IntersectionObserver, not an idle callback — then calls `init(mod, el)`. Returns a disposer.
+- **`loadScriptOnEvent({ triggerSelector, event, scriptSrc, integrity, onLoad?, within? })`**
+  injects a `<script>` the first time a DOM event fires on the trigger — for analytics or chat
+  widgets that must not block page load. `integrity` is required: an SRI hash, or `false` to opt
+  out explicitly.
+- **`loadStylesheet(href, integrity, within?)`** injects a `<link rel="stylesheet">` and resolves on
+  its `load` event. Positional, unlike the other two, because it has no optional behaviour to name.
+
+**A failed `lazy` import retries; it does not die silently.** The rejection goes to `onError` and
+the element is re-observed after a fixed delay, so a transient chunk failure is not the end of that
+control. Both bounds are load-bearing rather than tidy. The cap — three `load()` calls — exists
+because `observe()` invokes its callback *immediately* for an element already on screen, so an
+uncapped re-observe on a visible element is a spin loop. The delay is what makes the retry a retry:
+re-observing at once spends the entire attempt budget within a few frames of the first failure,
+recovering only from an outage that is already over. Re-observing rather than calling `load()` again
+is deliberate too — an element scrolled out of view in the meantime waits for re-entry instead of
+loading off-screen. A throw from `init` is a different failure: it is reported to `onError` and stops
+there, since the load succeeded and re-running it would only re-run the same failing `init`. The
+disposer marks the controller disposed and clears a pending retry timer, so a load still in flight
+when a scope tears down never re-observes.
+
+**`loadStylesheet` joins concurrent callers to one `<link>`.** The in-flight promise is cached per
+`(document, href)`, so a second caller arriving before the first link's `load` waits for the real
+event instead of being told by the duplicate check that an appended-but-unloaded link is ready. A
+link this function did not create — SSR markup, third-party code — still resolves immediately, since
+there is no event left to wait for. A failed load removes its `<link>` as well as evicting the cache
+entry, and needs both: the next call misses the cache and falls through to the duplicate check, so a
+dead link left in the head would be read as an already-loaded stylesheet and resolve.
 
 ### 3c. Resumable Scopes
 

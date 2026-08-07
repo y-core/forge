@@ -80,7 +80,7 @@ function isPressed(item: HTMLElement): boolean {
  * `core/toggle-group.tsx` from its `type` prop — so the client behaviour and the announced semantics
  * come from one declaration rather than two.
  *
- * The group is the nearest `[data-slot='toggle-group']` ancestor, falling back to the scope root, so
+ * The group is the nearest `[data-slot~='toggle-group']` ancestor, falling back to the scope root, so
  * two independent groups inside one scope reconcile independently. Button elements cannot express a
  * boolean or numeric value, so `parseControlValue` is bypassed and `data-value` is used raw.
  *
@@ -96,7 +96,7 @@ export function bindGroup<T extends Record<string, unknown>>(signals: SignalReco
     const value = target.dataset.value;
     if (field == null || !(field in signals) || value == null) return;
 
-    const group = closestAcross(target, "[data-slot='toggle-group']") ?? root;
+    const group = closestAcross(target, "[data-slot~='toggle-group']") ?? root;
     const items = [...group.querySelectorAll<HTMLElement>("[data-field][data-value]")].filter((item) => item.dataset.field === field);
 
     if (group.hasAttribute("data-multiple")) {

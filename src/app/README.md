@@ -175,11 +175,13 @@ The view receives the resolved `config` (the second argument) and the render `st
 
 Wires a `parse → validate → handle` pipeline into a POST handler that returns structured error fragments automatically.
 
+`defineAction<Input, Bindings, ConfigData, Out>` takes four type arguments and `Out` defaults to `Input`, so a definition whose `validate` only *checks* its data names three exactly as before. Supply the fourth when `validate` **parses** — when it returns a narrower type than it was given, as a schema with a transform does — and `handle` then receives that type rather than the raw body. TypeScript has no partial type-argument inference, so a call site that names any of them names all four.
+
 | Field | Type | Description |
 |---|---|---|
 | `parse` | `(formData: ReadonlyFormData) => Input` | Reads typed fields out of the parsed form body. May throw on malformed input → `400`. |
-| `validate` | `(data: Input) => ValidationResult<Input>` | Validates the parsed data. A `{ ok: false, error }` result (with `error: readonly string[]`) produces a `422` validation fragment. |
-| `handle` | `(data: Input, c, config) => Response \| Promise<Response>` | Runs after validation succeeds. Receives the validated `data`, the context, and the resolved `config`. Returns the response directly. |
+| `validate` | `(data: Input) => ValidationResult<Out>` | Validates the parsed data, and may narrow it. A `{ ok: false, error }` result (with `error: readonly string[]`) produces a `422` validation fragment. |
+| `handle` | `(data: Out, c, config) => Response \| Promise<Response>` | Runs after validation succeeds. Receives **what `validate` returned**, the context, and the resolved `config`. Returns the response directly. |
 | `onValidationError` | `(errors: readonly string[], c) => Response \| Promise<Response>` | Optional. Overrides the default `422` validation fragment; receives the message list from the `ValidationResult` failure (`.error`). |
 | `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Overrides the default `400`/`500` fragment when `parse` or `handle` throws. |
 | `maxBytes` | `number` | Optional. Body-size cap for this route's form parse. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). A `csrfProtection` guard on the same route parses the body first, so raising this also means raising the guard's own `maxBytes`. |

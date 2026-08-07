@@ -202,7 +202,11 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
           <span>{item.label}</span>
           {chevron(ctx)}
         </Menu.SubmenuTrigger>,
-        <Menu.Popup id={id}>{children}</Menu.Popup>,
+        // `side='right'` rather than the `bottom` default: a submenu opens *beside* the panel that
+        // contains it, and on the default it would open below the whole parent panel.
+        <Menu.Popup id={id} side='right'>
+          {children}
+        </Menu.Popup>,
       ];
     }
 

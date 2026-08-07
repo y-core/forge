@@ -72,6 +72,13 @@ export interface LogReadResult {
 }
 
 export interface LogChannel {
+  /**
+   * Persists one record. A returned promise must cover **every** operation the write initiates,
+   * including best-effort maintenance work — `kvLogChannel`'s probabilistic purge is inside its
+   * promise for this reason. `Logger.flush()` awaits what is returned and nothing else, so work
+   * left outside it can be cancelled when the isolate is suspended. A best-effort operation still
+   * swallows its own rejection: only a failure of the record write itself may reject. @public
+   */
   write(record: LogRecord): void | Promise<void>;
   read?(query?: LogQuery): Promise<LogReadResult>;
   /** Reads back the full stored record for one row key (e.g. for a viewer detail view). @public */

@@ -54,9 +54,9 @@ const fieldVariants = cva({
   base: "group/field flex w-full gap-3 data-[invalid]:text-red-600",
   variants: {
     orientation: {
-      horizontal: "flex-row items-start [&>[data-slot=field-label]]:flex-auto [&>[data-slot=field-content]]:flex-1",
+      horizontal: "flex-row items-start [&>[data-slot~=field-label]]:flex-auto [&>[data-slot~=field-content]]:flex-1",
       responsive:
-        "flex-col [&>*]:w-full @md/field-group:flex-row @md/field-group:items-start @md/field-group:[&>*]:w-auto @md/field-group:[&>[data-slot=field-label]]:flex-auto @md/field-group:[&>[data-slot=field-content]]:flex-1",
+        "flex-col [&>*]:w-full @md/field-group:flex-row @md/field-group:items-start @md/field-group:[&>*]:w-auto @md/field-group:[&>[data-slot~=field-label]]:flex-auto @md/field-group:[&>[data-slot~=field-content]]:flex-1",
       vertical: "flex-col [&>*]:w-full",
     },
   },

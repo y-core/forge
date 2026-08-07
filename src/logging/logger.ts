@@ -50,10 +50,15 @@ function makeLogger(
      * by `PENDING_CAP` (dropped to bound memory in long-lived loggers) are fire-and-forget and may
      * not have completed when `flush` resolves. A guaranteed-drain contract would require backpressure
      * that makes the synchronous log API async — out of scope.
+     *
+     * A channel write that rejects is absorbed rather than propagated — `allSettled`, so one failing
+     * channel neither hides the others' completion nor turns a logging failure into a caller-visible
+     * error. Logging is best-effort about persistence in both directions: it must not fail the work
+     * it is describing.
      */
     async flush(): Promise<void> {
       const toAwait = pending.splice(0);
-      await Promise.all(toAwait);
+      await Promise.allSettled(toAwait);
     },
     child(extra: Record<string, unknown>): Logger {
       return makeLogger(prefix, { ...bindings, ...extra }, channels, pending, minLevel);

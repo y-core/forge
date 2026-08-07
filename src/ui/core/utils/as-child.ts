@@ -15,7 +15,9 @@ import { asClass, cn } from "./cn";
 
 /** How a compound describes itself to {@link cloneAsChild}. */
 export interface AsChildOptions {
-  /** `data-slot` stamped on the cloned child, so the composed element is still addressable. */
+  /** `data-slot` token contributed to the cloned child, so the composed element is still addressable.
+   * Appended to whatever slot the child already declared rather than replacing it — see
+   * {@link cloneAsChild}. */
   slot: string;
   /** Classes the compound contributes; merged ahead of whatever the child brought. */
   class: string;
@@ -42,19 +44,30 @@ function definedEntries(candidates: Record<string, unknown>): Record<string, unk
   return Object.fromEntries(Object.entries(candidates).filter(([, value]) => value !== undefined));
 }
 
-/** Merge a compound's own attributes onto a caller-supplied element child. */
+/**
+ * Merge a compound's own attributes onto a caller-supplied element child.
+ *
+ * **`data-slot` is a token list, not a single value.** Composing two compounds produces one element
+ * that genuinely is both — `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` renders one
+ * button that is a tooltip trigger *and* a menu trigger — so the outer compound appends its token
+ * rather than overwriting the inner one's. Overwriting silently unmakes the child: every
+ * `[data-slot~="menu-trigger"]` rule stops matching, and the menu loses the `anchor-name` that
+ * positions its popup. Forge's own selectors use `~=`, which has the same specificity as `=` and so
+ * changes nothing about the cascade; a consumer keying on `[data-slot="…"]` exactly must do the same.
+ */
 export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXElement {
   if (!isValidElement(children)) throw new Error(options.message);
 
   const childClass = asClass(children.props.class as string | undefined);
   const childType = typeof children.type === "string" ? children.type : undefined;
   const isButton = childType === "button";
+  const childSlot = children.props["data-slot"];
 
   return cloneElement(children, {
     ...options.props,
     ...(isButton ? definedEntries({ disabled: options.disabled, type: options.type }) : {}),
     ...(options.disabled && !isButton ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}),
     class: cn(options.class, childClass),
-    "data-slot": options.slot,
+    "data-slot": typeof childSlot === "string" && childSlot ? `${childSlot} ${options.slot}` : options.slot,
   });
 }

@@ -86,7 +86,7 @@ function scrollIntoViewIfNeeded(item: HTMLElement): void {
  *
  * ```ts
  * registerScope("toolbar", {
- *   setup: ({ root }) => mountRovingFocus(root, { items: "[data-slot='toolbar-item']" }),
+ *   setup: ({ root }) => mountRovingFocus(root, { items: "[data-slot~='toolbar-item']" }),
  * });
  * ```
  * @public

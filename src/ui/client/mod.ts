@@ -8,7 +8,7 @@ export { type MenuOptions, mountMenu } from "./menu";
 export type { NavControllerOptions } from "./nav";
 export { mountNav } from "./nav";
 export { mountNumberField } from "./number-field";
-export { type OpenPopoverAtOptions, openPopoverAt } from "./popover-anchor";
+export { mountAnchorBinding, type OpenPopoverAtOptions, openPopoverAt } from "./popover-anchor";
 export type { RepeatOptions } from "./repeat";
 export { repeat } from "./repeat";
 export type { ResumeContext, ScopeDefinition } from "./resume";

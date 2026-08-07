@@ -66,11 +66,22 @@ export interface PageDefinition<Bindings = Record<string, unknown>, ConfigData =
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
 }
 
-/** @public */
-export interface ActionDefinition<Input, Bindings = Record<string, unknown>, ConfigData = unknown> {
+/**
+ * `Out` is what `validate` produces and `handle` receives, and it defaults to `Input` — so a
+ * definition that only checks its data names three type arguments exactly as before.
+ *
+ * The two were one parameter, which made input and output equal by construction: a `validate` that
+ * *parsed* rather than merely checked had nowhere to put the narrower type, so its caller either
+ * discarded the parse or re-asserted it with a cast in the handler. Separating them is what lets a
+ * schema's transform reach `handle` as the type it actually is. It is appended last rather than
+ * inserted, because every existing call site names its arguments positionally.
+ *
+ * @public
+ */
+export interface ActionDefinition<Input, Bindings = Record<string, unknown>, ConfigData = unknown, Out = Input> {
   parse: (formData: ReadonlyFormData) => Input;
-  validate: (data: Input) => ValidationResult<Input>;
-  handle: (data: Input, c: AppContext<Bindings>, config: ConfigData) => Response | Promise<Response>;
+  validate: (data: Input) => ValidationResult<Out>;
+  handle: (data: Out, c: AppContext<Bindings>, config: ConfigData) => Response | Promise<Response>;
   onValidationError?: (errors: readonly string[], c: AppContext<Bindings>) => Response | Promise<Response>;
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
   /**

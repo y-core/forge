@@ -172,14 +172,53 @@ from the base stop-mapping below.
    at-rule that has to be seen at the top level. */
 @layer components {
 
-/* ── Native Popover / Dialog primitives ───────────────────────────────────
-   Popover panels and toolbar flyouts render in the top layer (popover="auto"),
-   so normal-flow positioning can't reach the trigger. CSS Anchor Positioning
-   places them against the invoker — a popover's implicit anchor is the button
-   named by `commandfor` — keyed by the data attributes the SSR components emit. */
+/* ── Invoker-anchored placement ───────────────────────────────────────────
+   These panels render in the top layer, so normal-flow positioning cannot reach their trigger, and
+   CSS Anchor Positioning is what places them. The binding is **explicit** — `anchor-name` on the
+   trigger, `anchor-scope` on the compound root, `position-anchor` on the panel — because the
+   implicit anchor a UA supplies comes from `popovertarget`, and forge invokes with
+   `command`/`commandfor` throughout. Measured on Chrome 151: an invoker-opened popup computes
+   `position-anchor: normal` and every `anchor()` resolves to nothing, leaving the UA's `[popover]`
+   default in charge. An earlier revision of this block relied on that implicit anchor and was dead
+   for every surface it named.
 
-[data-slot="popover-content"],
-[data-slot="toolbar-flyout"] {
+   `anchor-scope` on each compound root is what keeps one shared name per surface honest: many menus
+   on a page all use `--forge-menu`, and an open panel is in the **top layer**, where the resolution
+   algorithm treats every candidate as laid out before it and returns the last one in tree order.
+   Scoping to the root leaves exactly one trigger in view, so each pair is independent. */
+
+[data-slot~="popover"]         { anchor-scope: --forge-popover; }
+[data-slot~="popover-trigger"] { anchor-name: --forge-popover; }
+
+[data-slot~="toolbar-popover"] { anchor-scope: --forge-toolbar; }
+[data-slot~="toolbar-trigger"] { anchor-name: --forge-toolbar; }
+
+[data-slot~="menu"]            { anchor-scope: --forge-menu; }
+[data-slot~="menu-trigger"]    { anchor-name: --forge-menu; }
+
+/* The submenu names the **parent panel**, never the row, and takes no `anchor-scope`. Both halves
+   were measured, because both are counter-intuitive:
+
+   - **Row-named fails.** An open submenu is in the top layer, so every trigger in the panel is an
+     acceptable anchor and the algorithm returns "the last element in tree order" — the wrong row for
+     every submenu but the last. (csswg-drafts #11602 closed this as intentional.) Naming the panel
+     puts the lookup on the *ancestor* branch instead, where the nearest match wins deterministically.
+   - **No `anchor-scope` here.** This selector matches the nested popup too, and an element inside a
+     scope "will only be able to see anchors with those names that are in this element's subtree" —
+     its parent panel is not, so scoping it resolves to nothing. The ancestor branch needs no scope to
+     be deterministic: with two menus open on one page each submenu still finds its own panel.
+
+   Cost of the panel over the row: the submenu pins to the panel's edge, top-aligned, rather than
+   beside the row that opened it. `mountAnchorBinding` upgrades that to row-accurate at runtime; this
+   is the correct-without-JavaScript floor. */
+[data-slot~="menu-popup"]      { anchor-name: --forge-menu-sub; }
+
+/* `:not([data-coords])` rather than source order. `Menu.Popup` emits `data-side` even when `coords`
+   is set, so these selectors really do match a context menu, and the coordinate rule below used to
+   win only by tying on specificity and coming later. */
+[data-slot~="menu-popup"]:not([data-coords]),
+[data-slot~="popover-content"],
+[data-slot~="toolbar-flyout"] {
   position: fixed;
   margin: 0;
   inset: auto;
@@ -187,23 +226,53 @@ from the base stop-mapping below.
   position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
 }
 
-[data-slot="popover-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
-[data-slot="popover-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
-[data-slot="popover-content"][data-align="start"]  { left: anchor(left); }
-[data-slot="popover-content"][data-align="end"]    { right: anchor(right); }
-[data-slot="popover-content"][data-align="center"] { left: anchor(center); translate: -50% 0; }
+[data-slot~="menu-popup"]:not([data-coords])                           { position-anchor: --forge-menu; }
+[data-slot~="menu-popup"] [data-slot~="menu-popup"]:not([data-coords]) { position-anchor: --forge-menu-sub; }
+[data-slot~="popover-content"]                                         { position-anchor: --forge-popover; }
+[data-slot~="toolbar-flyout"]                                          { position-anchor: --forge-toolbar; }
 
-[data-slot="toolbar-flyout"][data-placement="left"]   { left: anchor(right); top: anchor(top); margin-left: 0.5rem; }
-[data-slot="toolbar-flyout"][data-placement="right"]  { right: anchor(left); top: anchor(top); margin-right: 0.5rem; }
-[data-slot="toolbar-flyout"][data-placement="top"]    { top: anchor(bottom); left: anchor(left); margin-top: 0.5rem; }
-[data-slot="toolbar-flyout"][data-placement="bottom"] { bottom: anchor(top); left: anchor(left); margin-bottom: 0.5rem; }
+/* The menu gets the full 4-side × 3-align matrix rather than `popover-content`'s split model, because
+   a submenu's side is `right` or `left` and a model that reads `data-side` as block-axis-only cannot
+   express those at all. */
+[data-slot~="menu-popup"]:not([data-coords])[data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
+
+[data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="start"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="start"] { left: anchor(left); }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="center"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="center"] { left: anchor(center); translate: -50% 0; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="end"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="end"] { right: anchor(right); }
+
+[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="start"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="start"] { top: anchor(top); }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="center"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="end"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="end"] { bottom: anchor(bottom); }
+
+[data-slot~="popover-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
+[data-slot~="popover-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
+[data-slot~="popover-content"][data-align="start"]  { left: anchor(left); }
+[data-slot~="popover-content"][data-align="end"]    { right: anchor(right); }
+[data-slot~="popover-content"][data-align="center"] { left: anchor(center); translate: -50% 0; }
+
+/* `data-placement` names the **rail's** edge, not the flyout's, so the inversion below is correct
+   rather than a transcription slip: a rail on the `left` opens its flyout to the right of itself
+   (`left: anchor(right)`). `toolbar.tsx` is where the value is set, from the same `placement` prop
+   that puts the rail on that edge. */
+[data-slot~="toolbar-flyout"][data-placement="left"]   { left: anchor(right); top: anchor(top); margin-left: 0.5rem; }
+[data-slot~="toolbar-flyout"][data-placement="right"]  { right: anchor(left); top: anchor(top); margin-right: 0.5rem; }
+[data-slot~="toolbar-flyout"][data-placement="top"]    { top: anchor(bottom); left: anchor(left); margin-top: 0.5rem; }
+[data-slot~="toolbar-flyout"][data-placement="bottom"] { bottom: anchor(top); left: anchor(left); margin-bottom: 0.5rem; }
 
 /* ── Tooltip placement ────────────────────────────────────────────────────
-   A tooltip's content is `popover="manual"` and carries **no `commandfor`**, so it has no implicit
-   anchor — a manual popover is shown by a controller rather than invoked by a button. Without an
-   explicit `anchor-name` binding there is nothing for `anchor()` to resolve against, every rule below
-   evaluates to nothing, and the UA's `[popover]` default (`inset: 0; margin: auto`) centres the hint
-   in the middle of the viewport.
+   The same explicit binding as the block above, for the same reason — no popup forge ships gets an
+   implicit anchor — and this is the section that had it right first. A tooltip's content is
+   `popover="manual"`, shown by a controller rather than invoked by a button, so it does not even have
+   the `commandfor` that an earlier revision above mistook for an anchor source.
 
    That failure is **unfixable from a consuming app**: the anchor name does not exist to bind to, so
    no consumer rule can create the relationship. Hence the binding is declared here, on the trigger,
@@ -211,16 +280,26 @@ from the base stop-mapping below.
 
    `anchor-scope` keeps the name from leaking: many tooltips on one page all use `--forge-tooltip`,
    and without scoping each content box would resolve against whichever trigger the engine reached
-   first. Scoping it to the `[data-slot="tooltip"]` root makes every pair independent. */
-[data-slot="tooltip"] {
+   first. Scoping it to the `[data-slot~="tooltip"]` root makes every pair independent. */
+[data-slot~="tooltip"] {
   anchor-scope: --forge-tooltip;
 }
 
-[data-slot="tooltip-trigger"] {
+[data-slot~="tooltip-trigger"] {
   anchor-name: --forge-tooltip;
 }
 
-[data-slot="tooltip-content"] {
+/* A composed trigger is **two** triggers — `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>`
+   renders one button carrying both slot tokens — and `anchor-name` is a single declaration rather
+   than a set that unions across rules. Two rules each naming the element would leave the cascade to
+   pick one, and the menu would lose to whichever came later. The pairs are therefore spelled out.
+   The set is closed: `Tooltip.Trigger` is the only one of the four that offers `asChild`, so it is
+   always the outer wrapper and no other combination can arise. */
+[data-slot~="tooltip-trigger"][data-slot~="menu-trigger"]    { anchor-name: --forge-tooltip, --forge-menu; }
+[data-slot~="tooltip-trigger"][data-slot~="popover-trigger"] { anchor-name: --forge-tooltip, --forge-popover; }
+[data-slot~="tooltip-trigger"][data-slot~="toolbar-trigger"] { anchor-name: --forge-tooltip, --forge-toolbar; }
+
+[data-slot~="tooltip-content"] {
   position: fixed;
   margin: 0;
   inset: auto;
@@ -230,24 +309,24 @@ from the base stop-mapping below.
   position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
 }
 
-[data-slot="tooltip-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
-[data-slot="tooltip-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
-[data-slot="tooltip-content"][data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
-[data-slot="tooltip-content"][data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
+[data-slot~="tooltip-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
+[data-slot~="tooltip-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
+[data-slot~="tooltip-content"][data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
+[data-slot~="tooltip-content"][data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
 
-[data-slot="tooltip-content"][data-side="top"][data-align="center"],
-[data-slot="tooltip-content"][data-side="bottom"][data-align="center"] { left: anchor(center); translate: -50% 0; }
-[data-slot="tooltip-content"][data-side="top"][data-align="start"],
-[data-slot="tooltip-content"][data-side="bottom"][data-align="start"] { left: anchor(left); }
-[data-slot="tooltip-content"][data-side="top"][data-align="end"],
-[data-slot="tooltip-content"][data-side="bottom"][data-align="end"] { right: anchor(right); }
+[data-slot~="tooltip-content"][data-side="top"][data-align="center"],
+[data-slot~="tooltip-content"][data-side="bottom"][data-align="center"] { left: anchor(center); translate: -50% 0; }
+[data-slot~="tooltip-content"][data-side="top"][data-align="start"],
+[data-slot~="tooltip-content"][data-side="bottom"][data-align="start"] { left: anchor(left); }
+[data-slot~="tooltip-content"][data-side="top"][data-align="end"],
+[data-slot~="tooltip-content"][data-side="bottom"][data-align="end"] { right: anchor(right); }
 
-[data-slot="tooltip-content"][data-side="left"][data-align="center"],
-[data-slot="tooltip-content"][data-side="right"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
-[data-slot="tooltip-content"][data-side="left"][data-align="start"],
-[data-slot="tooltip-content"][data-side="right"][data-align="start"] { top: anchor(top); }
-[data-slot="tooltip-content"][data-side="left"][data-align="end"],
-[data-slot="tooltip-content"][data-side="right"][data-align="end"] { bottom: anchor(bottom); }
+[data-slot~="tooltip-content"][data-side="left"][data-align="center"],
+[data-slot~="tooltip-content"][data-side="right"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
+[data-slot~="tooltip-content"][data-side="left"][data-align="start"],
+[data-slot~="tooltip-content"][data-side="right"][data-align="start"] { top: anchor(top); }
+[data-slot~="tooltip-content"][data-side="left"][data-align="end"],
+[data-slot~="tooltip-content"][data-side="right"][data-align="end"] { bottom: anchor(bottom); }
 
 /* ── Coordinate placement ─────────────────────────────────────────────────
    A popup with no invoker — a context menu opened where a right-click landed — has no anchor for
@@ -259,8 +338,10 @@ from the base stop-mapping below.
    so no `position-try` fallback is wanted — the clamp already did that job, and letting CSS flip the
    box afterwards would move it away from the point the user clicked.
 
-   Last in the block on purpose: `[popover][data-coords]` ties with the two-attribute anchored
-   selectors above on specificity, so source order is what decides it. */
+   Against the menu — the one surface with a `coords` prop in its markup — this rule does not compete
+   at all: every anchored menu selector is guarded by `:not([data-coords])`, so exactly one of the two
+   ever matches. It stays last as a backstop for a caller who stamps `data-coords` on some other
+   popup by hand, where the tie on specificity does still leave it to source order. */
 [popover][data-coords] {
   position: fixed;
   margin: 0;
@@ -271,11 +352,11 @@ from the base stop-mapping below.
 }
 
 /* Trigger stays highlighted while its popover is open (replaces the old <details open> group state). */
-[data-slot="popover"]:has(> [data-slot="popover-content"]:popover-open) > [data-slot="popover-trigger"] {
+[data-slot~="popover"]:has(> [data-slot~="popover-content"]:popover-open) > [data-slot~="popover-trigger"] {
   background-color: var(--accent);
   color: var(--accent-foreground);
 }
-[data-slot="toolbar-popover"]:has(> [data-slot="toolbar-flyout"]:popover-open) > [data-slot="toolbar-trigger"] {
+[data-slot~="toolbar-popover"]:has(> [data-slot~="toolbar-flyout"]:popover-open) > [data-slot~="toolbar-trigger"] {
   background-color: var(--primary);
   color: var(--primary-foreground);
 }
@@ -283,19 +364,20 @@ from the base stop-mapping below.
 /* Fallback for engines without anchor positioning: keep panels usable (a JS positioner can refine
    placement per-browser if needed). */
 @supports not (top: anchor(bottom)) {
-  [data-slot="popover-content"],
-  [data-slot="toolbar-flyout"] { inset: auto auto 1rem 1rem; }
+  [data-slot~="menu-popup"]:not([data-coords]),
+  [data-slot~="popover-content"],
+  [data-slot~="toolbar-flyout"] { inset: auto auto 1rem 1rem; }
 }
 
 /* Modal dialogs center in the viewport; the platform provides the ::backdrop.
    These are *defaults*: now that this block is layered, a caller's `max-w-sm` on the same
    `<dialog>` wins, which is what it always read as and never did. */
-[data-slot="dialog"] {
+[data-slot~="dialog"] {
   margin: auto;
   max-width: calc(100vw - 2rem);
   max-height: calc(100dvh - 2rem);
 }
-[data-slot="dialog"]::backdrop {
+[data-slot~="dialog"]::backdrop {
   background-color: rgb(0 0 0 / 0.5);
 }
 

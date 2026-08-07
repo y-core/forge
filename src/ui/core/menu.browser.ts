@@ -419,6 +419,90 @@ test.describe("Menu — submenus", () => {
     expect(await focusedId(page)).toBe("r1");
   });
 
+  test("ArrowRight on a submenu trigger opens it and lands on its first row", async ({ page }) => {
+    await openParent(page);
+
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-submenu-trigger");
+
+    await page.keyboard.press("ArrowRight");
+
+    // Nothing about opening is reimplemented: ArrowRight clicks the row, the row's own
+    // `command="toggle-popover"` opens the panel, and the nested popup's own `mountMenu` moves focus.
+    await expect.poll(() => page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(true);
+    await expect.poll(() => focusedId(page)).toBe("r0");
+  });
+
+  test("ArrowRight never closes a submenu that is already open", async ({ page }) => {
+    // The row's command is `toggle-popover`, so a bare `.click()` would *invert* the key on the
+    // second press. ARIA's menu pattern specifies ArrowRight as open-and-enter and never as close.
+    // Focus is normally inside the submenu by now — but only because the nested popup's own
+    // `mountMenu` moved it, and a popup rendered outside a menu scope has no such controller.
+    await openParent(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-submenu-trigger");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(true);
+
+    // Put focus back on the row with the submenu still open, then press it again.
+    await page.evaluate(() => document.querySelector<HTMLElement>("[data-slot='menu-submenu-trigger']")?.focus());
+    await page.keyboard.press("ArrowRight");
+
+    expect(await page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(true);
+  });
+
+  test("ArrowRight on an ordinary row does nothing", async ({ page }) => {
+    await openParent(page);
+    await expect.poll(() => focusedId(page)).toBe("new");
+
+    await page.keyboard.press("ArrowRight");
+
+    // The key is only claimed on a row that has a submenu; anywhere else the parent must be left
+    // exactly as it was rather than opening the nearest panel it can find.
+    expect(await focusedId(page)).toBe("new");
+    expect(await page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(false);
+  });
+
+  test("ArrowLeft inside a submenu closes it and returns focus to its trigger", async ({ page }) => {
+    await openParent(page);
+    await page.click("[data-slot='menu-submenu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("r0");
+
+    await page.keyboard.press("ArrowLeft");
+
+    await expect.poll(() => page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(false);
+    // Only the submenu: ArrowLeft is a step back up the menu tree, not a dismissal of the whole thing.
+    expect(await isOpen(page)).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-submenu-trigger");
+  });
+
+  test("ArrowLeft in a top-level menu leaves it open", async ({ page }) => {
+    await openParent(page);
+    await expect.poll(() => focusedId(page)).toBe("new");
+
+    await page.keyboard.press("ArrowLeft");
+
+    // A top-level panel has nothing to step back to, and closing it here would make ArrowLeft a
+    // second, less discoverable Escape.
+    expect(await isOpen(page)).toBe(true);
+    expect(await focusedId(page)).toBe("new");
+  });
+
+  test("ArrowLeft in a submenu does not also close the parent", async ({ page }) => {
+    await openParent(page);
+    await page.click("[data-slot='menu-submenu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("r0");
+
+    await page.keyboard.press("ArrowLeft");
+
+    // `keydown` bubbles from the submenu to the parent popup, whose controller would otherwise read
+    // the same press. The `defaultPrevented` bail is what stops both from acting on one key.
+    await expect.poll(() => page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(false);
+    expect(await isOpen(page)).toBe(true);
+  });
+
   test("Escape closes only the submenu and returns focus to its trigger", async ({ page }) => {
     await openParent(page);
     await page.click("[data-slot='menu-submenu-trigger']");

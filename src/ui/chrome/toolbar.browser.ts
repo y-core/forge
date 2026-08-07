@@ -190,3 +190,103 @@ test.describe("chrome Toolbar — the scope on the rail is transparent to app ac
     expect(await page.evaluate(() => window.activations)).toEqual(["addLayer"]);
   });
 });
+
+/**
+ * **Flyout placement, measured** — the rail's first geometry coverage.
+ *
+ * `data-placement` names the **rail's** edge rather than the flyout's, so the anchor rules invert:
+ * a rail on the `left` opens its flyout to the right of itself. Read as a bare pair of names that
+ * looks like a transcription error, which is exactly why it is pinned here.
+ *
+ * The stylesheet loads raw, so no Tailwind utility resolves and the fixture sizes the rail and the
+ * flyout with an explicit `<style>`.
+ */
+const PLACEMENT_CSS = { css: ["./ui/assets/css/theme-base.css"], expose: EXPOSE.expose };
+
+/** The rail sits well inside the viewport on every axis, so a flyout fits on **either** side of it.
+ * Too close to an edge and `position-try-fallbacks: flip-inline` correctly moves the panel to the
+ * other side — which is the rail's desired behaviour and would read here as the placement being
+ * inverted. */
+const PLACEMENT_STYLE = `<style>
+  body { margin: 0; }
+  [data-slot~="toolbar"] { position: fixed; top: 200px; left: 400px; width: 48px; }
+  [data-slot~="toolbar-trigger"] { display: block; width: 40px; height: 40px; }
+  [data-slot~="toolbar-flyout"] { width: 180px; height: 90px; }
+</style>`;
+
+const RAIL_GAP = 8; // 0.5rem
+
+test.describe("Toolbar — flyout placement", () => {
+  async function openFlyout(page: Page, placement: ToolbarPlacement) {
+    const html = await render(Toolbar({ config: CONFIG, icon, placement }));
+    await mount(page, `${PLACEMENT_STYLE}<div data-scope="app">${html}</div>`, PLACEMENT_CSS);
+    await page.evaluate(() => window.forgeResume.resume());
+    await page.click("[data-ref='layers']");
+    return page.evaluate(() => {
+      const round = (selector: string) => {
+        const r = (document.querySelector(selector) as HTMLElement).getBoundingClientRect();
+        return { top: Math.round(r.top), left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom) };
+      };
+      return { trigger: round("[data-ref='layers']"), flyout: round("[data-slot~='toolbar-flyout']") };
+    });
+  }
+
+  function close(actual: number, expected: number): void {
+    expect(Math.abs(actual - expected), `${actual} vs ${expected}`).toBeLessThanOrEqual(2);
+  }
+
+  test("a left rail opens its flyout to the right of the trigger", async ({ page }) => {
+    const { trigger, flyout } = await openFlyout(page, "left");
+    close(flyout.left, trigger.right + RAIL_GAP);
+    close(flyout.top, trigger.top);
+  });
+
+  test("a right rail opens its flyout to the left of the trigger", async ({ page }) => {
+    const { trigger, flyout } = await openFlyout(page, "right");
+    close(flyout.right, trigger.left - RAIL_GAP);
+    close(flyout.top, trigger.top);
+  });
+
+  test("a top rail opens its flyout below the trigger", async ({ page }) => {
+    const { trigger, flyout } = await openFlyout(page, "top");
+    close(flyout.top, trigger.bottom + RAIL_GAP);
+    close(flyout.left, trigger.left);
+  });
+
+  test("a bottom rail opens its flyout above the trigger", async ({ page }) => {
+    const { trigger, flyout } = await openFlyout(page, "bottom");
+    close(flyout.bottom, trigger.top - RAIL_GAP);
+    close(flyout.left, trigger.left);
+  });
+
+  test("the flyout is anchored to its own trigger, not to a rail elsewhere on the page", async ({ page }) => {
+    // `anchor-scope` on `[data-slot~="toolbar-popover"]` is what makes this hold: every rail on a page
+    // shares the name `--forge-toolbar`, and an open flyout is in the top layer, where the resolution
+    // algorithm would otherwise return the last matching trigger in the document.
+    const html = await render(Toolbar({ config: CONFIG, icon, placement: "left", id: "one" }));
+    const other = await render(Toolbar({ config: CONFIG, icon, placement: "left", id: "two" }));
+    // The id selector outranks `[data-slot~="toolbar"]`, so the second rail really does land somewhere
+    // else — two rails stacked at one position would let this pass without proving anything.
+    await mount(
+      page,
+      `${PLACEMENT_STYLE}<style>#two { top: 500px; left: 800px; }</style><div data-scope="app">${html}${other}</div>`,
+      PLACEMENT_CSS,
+    );
+    await page.evaluate(() => window.forgeResume.resume());
+
+    const first = await page.evaluate(() => {
+      (document.querySelectorAll("[data-ref='layers']")[0] as HTMLElement).click();
+      const round = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), left: Math.round(r.left), right: Math.round(r.right) };
+      };
+      return {
+        trigger: round(document.querySelectorAll("[data-ref='layers']")[0] as Element),
+        flyout: round(document.querySelectorAll("[data-slot~='toolbar-flyout']")[0] as Element),
+      };
+    });
+
+    close(first.flyout.left, first.trigger.right + RAIL_GAP);
+    close(first.flyout.top, first.trigger.top);
+  });
+});

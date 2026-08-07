@@ -10,12 +10,15 @@ import { closestAcross, eventTarget } from "./dom";
  */
 export function mountNumberField(root: HTMLElement): () => void {
   const onClick = (event: Event) => {
-    const button = closestAcross(eventTarget(event) as Node | null, "[data-slot='number-field-decrement'],[data-slot='number-field-increment']");
+    const button = closestAcross(eventTarget(event) as Node | null, "[data-slot~='number-field-decrement'],[data-slot~='number-field-increment']");
     if (!button || !root.contains(button)) return;
-    const input = root.querySelector<HTMLInputElement>("[data-slot='number-field-input']");
+    const input = root.querySelector<HTMLInputElement>("[data-slot~='number-field-input']");
     if (!input || input.disabled || input.readOnly) return;
 
-    if (button.dataset.slot === "number-field-increment") input.stepUp();
+    // `matches`, not `dataset.slot === …`: `data-slot` is a token list, so an equality test on the
+    // whole attribute stops recognising a button the moment it carries a second token — and the
+    // failure is silent and wrong-way, since the `else` then steps *down* on the increment button.
+    if (button.matches("[data-slot~='number-field-increment']")) input.stepUp();
     else input.stepDown();
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));

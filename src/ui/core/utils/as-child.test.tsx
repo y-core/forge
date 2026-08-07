@@ -75,6 +75,35 @@ describe("cloneAsChild — non-button children", () => {
   });
 });
 
+describe("cloneAsChild — data-slot is a token list", () => {
+  it("appends to a child that already declares a slot, rather than unmaking it", async () => {
+    // Composing two compounds produces one element that genuinely is both. Overwriting used to
+    // destroy the inner compound silently: every `[data-slot~="menu-trigger"]` rule stopped matching,
+    // and with them the `anchor-name` that positions the menu's popup.
+    const child = (
+      <button type='button' data-slot='menu-trigger'>
+        File
+      </button>
+    );
+
+    expect(await render(cloneAsChild(child, base))).toBe('<button type="button" data-slot="menu-trigger probe" class="probe-class">File</button>');
+  });
+
+  it("stamps its own slot alone when the child declares none", async () => {
+    // The single-token path, pinned so the append never leaks a leading space or an empty token into
+    // markup that has only one compound in it.
+    expect(await render(cloneAsChild(<button type='button'>Go</button>, base))).toBe(
+      '<button type="button" class="probe-class" data-slot="probe">Go</button>',
+    );
+  });
+
+  it("treats an empty child slot as none rather than appending to nothing", async () => {
+    expect(await render(cloneAsChild(<button type='button' data-slot='' />, base))).toBe(
+      '<button type="button" data-slot="probe" class="probe-class"></button>',
+    );
+  });
+});
+
 describe("Toolbar.Link asChild — the compound that sets neither option", () => {
   it("does not turn a child button into a submit button", async () => {
     // `Toolbar.Link` passes no `type` and no `disabled`; spreading those as undefined used to erase

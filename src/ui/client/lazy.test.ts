@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { lazy, loadScriptOnEvent, loadStylesheet } from "./lazy";
 
 // Polyfill the browser-only `CSS.escape` for the Bun test runtime (per the CSSOM spec algorithm).
@@ -47,6 +47,17 @@ if (typeof cssGlobal.CSS === "undefined") {
   };
 }
 
+/** The platform's own timer functions, captured before any block replaces them. The `lazy` block
+ *  stubs `setTimeout` to capture the retry delay instead of running it, and `flush` below must keep
+ *  draining against the real clock regardless. */
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
+
+/** Drain the microtask queue so every promise chain that can settle has settled. */
+function flush(): Promise<void> {
+  return new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+}
+
 // ── lazy ──────────────────────────────────────────────────────────────────────
 
 interface MockObserver {
@@ -57,11 +68,15 @@ interface MockObserver {
 type ObserverConstructor = new (callback: IntersectionObserverCallback, options?: IntersectionObserverInit) => MockObserver;
 
 interface LazyGlobalMock {
-  document: { querySelector: (selector: string) => Element | null };
+  document: { querySelector: (selector: string) => Element | null; defaultView: typeof globalThis };
   IntersectionObserver: ObserverConstructor;
 }
 
 const lg = globalThis as unknown as LazyGlobalMock;
+
+/** The delay `lazy` schedules its retry on. A module constant rather than an exported option, so the
+ *  value is spelled out here — an accidental change to either has to be an accepted change to both. */
+const RETRY_DELAY_MS = 500;
 
 describe("lazy", () => {
   let mockElement: Element;
@@ -69,14 +84,29 @@ describe("lazy", () => {
   let capturedOptions: IntersectionObserverInit | undefined;
   let observedElements: Element[];
   let disconnectCount: number;
+  let observing: boolean;
+  let capturedTimer: { fn: () => void; ms: number } | undefined;
 
   beforeEach(() => {
     mockElement = {} as Element;
     observedElements = [];
     disconnectCount = 0;
+    observing = false;
     capturedOptions = undefined;
+    capturedTimer = undefined;
 
-    lg.document = { querySelector: (selector: string) => (selector === "[data-ref='target']" ? mockElement : null) };
+    // `defaultView` is what makes the stubbed clock reachable: the retry is scheduled on the
+    // element's own realm via `ownerWindow`, which resolves through the owner document. Without it
+    // the fallback is a bare `window`, which does not exist in the Bun test runtime.
+    lg.document = { querySelector: (selector: string) => (selector === "[data-ref='target']" ? mockElement : null), defaultView: globalThis };
+
+    // Capture the retry timer instead of running it, so "did not retry yet" and "retried once the
+    // delay elapsed" are separate, assertable states rather than a race against a real 500ms wait.
+    // @ts-expect-error — intentionally replacing the global timer for test isolation
+    globalThis.setTimeout = (fn: () => void, ms: number) => {
+      capturedTimer = { fn, ms };
+      return 1;
+    };
 
     // biome-ignore lint/complexity/useArrowFunction: arrow functions cannot be constructed with `new`
     lg.IntersectionObserver = function (callback: IntersectionObserverCallback, options?: IntersectionObserverInit): MockObserver {
@@ -84,17 +114,40 @@ describe("lazy", () => {
       capturedOptions = options;
       return {
         observe: (el: Element) => {
+          observing = true;
           observedElements.push(el);
         },
         disconnect: () => {
+          observing = false;
           disconnectCount++;
         },
       };
     } as unknown as ObserverConstructor;
   });
 
+  afterEach(() => {
+    globalThis.setTimeout = realSetTimeout;
+    globalThis.clearTimeout = realClearTimeout;
+  });
+
   function makeEntry(isIntersecting: boolean): IntersectionObserverEntry {
     return { isIntersecting } as IntersectionObserverEntry;
+  }
+
+  /** Run the pending retry timer, as the platform would once the delay elapsed. */
+  function elapseRetryDelay(): void {
+    const timer = capturedTimer;
+    capturedTimer = undefined;
+    timer?.fn();
+  }
+
+  /**
+   * An intersection the platform would actually deliver. The real observer only calls back for an
+   * element it is currently observing, so driving `capturedCallback` directly would let a retry
+   * "fire" after the observer gave up and report an attempt cap that does not exist.
+   */
+  function intersect(): void {
+    if (observing) capturedCallback([makeEntry(true)], {} as IntersectionObserver);
   }
 
   it("observes the element matching the data-ref", () => {
@@ -180,6 +233,176 @@ describe("lazy", () => {
     capturedCallback([makeEntry(false)], {} as IntersectionObserver);
     await Promise.resolve();
     expect(initCalled).toBe(false);
+  });
+
+  it("routes a load rejection to onError rather than leaking an unhandled rejection", async () => {
+    // Bun reports an unhandled rejection as a test-file error, so this case passing at all is the
+    // evidence that the rejection was consumed; `errors` is the evidence it reached the caller.
+    const failure = new Error("chunk fetch failed");
+    const errors: unknown[] = [];
+    let initCalled = false;
+
+    lazy({
+      ref: "target",
+      load: () => Promise.reject(failure),
+      init: () => {
+        initCalled = true;
+      },
+      onError: (error) => errors.push(error),
+    });
+    intersect();
+    await flush();
+
+    expect(errors).toStrictEqual([failure]);
+    expect(initCalled).toBe(false);
+  });
+
+  it("swallows a load rejection when no onError is supplied", async () => {
+    const dispose = lazy({ ref: "target", load: () => Promise.reject(new Error("chunk fetch failed")), init: () => {} });
+    intersect();
+    await flush();
+    expect(() => dispose()).not.toThrow();
+  });
+
+  it("re-observes the element after a failed load so a later intersection retries", async () => {
+    lazy({ ref: "target", load: () => Promise.reject(new Error("boom")), init: () => {}, onError: () => {} });
+    expect(observedElements).toHaveLength(1);
+
+    intersect();
+    await flush();
+    elapseRetryDelay();
+
+    expect(observedElements).toStrictEqual([mockElement, mockElement]);
+  });
+
+  it("waits out the retry delay before re-observing", async () => {
+    lazy({ ref: "target", load: () => Promise.reject(new Error("boom")), init: () => {}, onError: () => {} });
+
+    intersect();
+    await flush();
+
+    // The failure has already been reported and the retry scheduled — but re-observing now would
+    // spend the whole attempt budget within a few frames, retrying an outage that is still current.
+    expect(observedElements).toStrictEqual([mockElement]);
+    expect(capturedTimer?.ms).toBe(RETRY_DELAY_MS);
+
+    elapseRetryDelay();
+    expect(observedElements).toStrictEqual([mockElement, mockElement]);
+  });
+
+  it("stops retrying at the attempt cap", async () => {
+    let attempts = 0;
+    lazy({
+      ref: "target",
+      load: () => {
+        attempts += 1;
+        return Promise.reject(new Error("boom"));
+      },
+      init: () => {},
+      onError: () => {},
+    });
+
+    for (let i = 0; i < 5; i++) {
+      intersect();
+      await flush();
+      elapseRetryDelay();
+    }
+
+    // Three `load()` calls, so two re-observes on top of the initial one — and then it gives up,
+    // even though the element stays in view and would keep re-triggering.
+    expect(attempts).toBe(3);
+    expect(observedElements).toHaveLength(3);
+  });
+
+  it("succeeds on a retry after a transient failure", async () => {
+    const mod = { doThing: () => {} };
+    let calls = 0;
+    let initMod: unknown = null;
+
+    lazy({
+      ref: "target",
+      load: () => {
+        calls += 1;
+        return calls === 1 ? Promise.reject(new Error("transient")) : Promise.resolve(mod);
+      },
+      init: (m) => {
+        initMod = m;
+      },
+      onError: () => {},
+    });
+
+    intersect();
+    await flush();
+    expect(initMod).toBeNull();
+
+    elapseRetryDelay();
+    intersect();
+    await flush();
+    expect(initMod).toBe(mod);
+  });
+
+  it("reports an init throw to onError without retrying it", async () => {
+    const failure = new Error("init exploded");
+    const errors: unknown[] = [];
+    let loads = 0;
+
+    lazy({
+      ref: "target",
+      load: () => {
+        loads += 1;
+        return Promise.resolve({});
+      },
+      init: () => {
+        throw failure;
+      },
+      onError: (error) => errors.push(error),
+    });
+
+    intersect();
+    await flush();
+
+    // The load succeeded, so a retry would only re-run the same failing `init`. This case passing at
+    // all is also the evidence the throw did not become an unhandled rejection on the fulfilment
+    // path, which Bun reports as a test-file error.
+    expect(errors).toStrictEqual([failure]);
+    expect(loads).toBe(1);
+    expect(capturedTimer).toBeUndefined();
+    expect(observedElements).toStrictEqual([mockElement]);
+  });
+
+  it("does not re-observe when disposed while the retry timer is pending", async () => {
+    const dispose = lazy({ ref: "target", load: () => Promise.reject(new Error("boom")), init: () => {}, onError: () => {} });
+
+    intersect();
+    await flush();
+    expect(capturedTimer?.ms).toBe(RETRY_DELAY_MS);
+
+    // A real `clearTimeout` cannot be observed through this stub, so the fired-after-disposal case
+    // is what proves the guard: even a timer that survives the disposer must not re-observe.
+    dispose();
+    elapseRetryDelay();
+
+    expect(observedElements).toStrictEqual([mockElement]);
+  });
+
+  it("does not re-observe when disposed while the load is in flight", async () => {
+    let failLoad: (error: unknown) => void = () => {};
+    const dispose = lazy({
+      ref: "target",
+      load: () =>
+        new Promise<unknown>((_resolve, reject) => {
+          failLoad = reject;
+        }),
+      init: () => {},
+      onError: () => {},
+    });
+
+    intersect();
+    dispose();
+    failLoad(new Error("boom"));
+    await flush();
+
+    expect(observedElements).toStrictEqual([mockElement]);
   });
 
   it("escapes a ref containing a quote so the selector cannot be broken out of", () => {
@@ -341,16 +564,18 @@ interface MockLink {
   crossOrigin: string;
   listeners: Record<string, EventListener>;
   addEventListener: (event: string, handler: EventListener) => void;
+  remove: () => void;
 }
 
 describe("loadStylesheet", () => {
-  let mockLink: MockLink;
   let appendedLinks: MockLink[];
+  let createdLinks: MockLink[];
 
-  beforeEach(() => {
-    appendedLinks = [];
-
-    mockLink = {
+  /** A distinct element per `createElement`, as the DOM gives. A shared singleton cannot tell a
+   *  fresh link from a stale one — each `addEventListener` would overwrite the previous handler, so
+   *  firing `load` on "the link" would fire it on whichever call registered last. */
+  function createLink(): MockLink {
+    const link: MockLink = {
       rel: "",
       href: "",
       integrity: "",
@@ -359,18 +584,37 @@ describe("loadStylesheet", () => {
       addEventListener(event, handler) {
         this.listeners[event] = handler;
       },
+      remove() {
+        const at = appendedLinks.indexOf(link);
+        if (at !== -1) appendedLinks.splice(at, 1);
+      },
     };
+    createdLinks.push(link);
+    return link;
+  }
+
+  /** The link the call under test is waiting on. */
+  function lastLink(): MockLink {
+    return createdLinks[createdLinks.length - 1]!;
+  }
+
+  beforeEach(() => {
+    appendedLinks = [];
+    createdLinks = [];
 
     cssG.document = {
-      querySelector: () => null,
-      createElement: (_tag: string) => mockLink,
+      // Faithful to the DOM: an appended <link> is findable immediately, long before its `load`
+      // fires. That is exactly the window in which the duplicate check alone would resolve a second
+      // caller — and, once a failed link is removed, the state that proves it cannot.
+      querySelector: () => appendedLinks[0] ?? null,
+      createElement: (_tag: string) => createLink(),
       head: { appendChild: (el: MockLink) => appendedLinks.push(el) },
     };
   });
 
   it("creates and appends a link element with correct rel and href", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
-    mockLink.listeners.load!(new Event("load"));
+    lastLink().listeners.load!(new Event("load"));
     await promise;
     expect(appendedLinks).toHaveLength(1);
     expect(appendedLinks[0]!.rel).toBe("stylesheet");
@@ -379,18 +623,22 @@ describe("loadStylesheet", () => {
 
   it("resolves the promise when the load event fires", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
-    mockLink.listeners.load!(new Event("load"));
+    lastLink().listeners.load!(new Event("load"));
     await expect(promise).resolves.toBeUndefined();
   });
 
   it("rejects the promise when the error event fires", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
-    mockLink.listeners.error!(new Event("error"));
+    lastLink().listeners.error!(new Event("error"));
     await expect(promise).rejects.toThrow("Failed to load stylesheet: /assets/css/maplibre-gl.css");
   });
 
   it("returns a resolved promise without DOM mutation when a matching link already exists", async () => {
-    cssG.document.querySelector = () => mockLink;
+    // A link this function did not create — SSR markup or third-party code — so it is not in
+    // `appendedLinks` and there is no event left to wait for.
+    const existing = createLink();
+    cssG.document.querySelector = () => existing;
+
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
     await expect(promise).resolves.toBeUndefined();
     expect(appendedLinks).toHaveLength(0);
@@ -398,7 +646,7 @@ describe("loadStylesheet", () => {
 
   it("sets integrity and crossOrigin when integrity argument is provided", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", "sha384-xyz");
-    mockLink.listeners.load!(new Event("load"));
+    lastLink().listeners.load!(new Event("load"));
     await promise;
     expect(appendedLinks[0]!.integrity).toBe("sha384-xyz");
     expect(appendedLinks[0]!.crossOrigin).toBe("anonymous");
@@ -406,10 +654,71 @@ describe("loadStylesheet", () => {
 
   it("does not set integrity or crossOrigin when integrity is false", async () => {
     const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
-    mockLink.listeners.load!(new Event("load"));
+    lastLink().listeners.load!(new Event("load"));
     await promise;
     expect(appendedLinks[0]!.integrity).toBe("");
     expect(appendedLinks[0]!.crossOrigin).toBe("");
+  });
+
+  it("makes a concurrent caller wait for the link's real load event", async () => {
+    const first = loadStylesheet("/assets/css/maplibre-gl.css", false);
+    const second = loadStylesheet("/assets/css/maplibre-gl.css", false);
+
+    let secondSettled = false;
+    const watched = second.then(() => {
+      secondSettled = true;
+    });
+
+    await flush();
+    expect(appendedLinks).toHaveLength(1);
+    expect(secondSettled).toBe(false);
+
+    lastLink().listeners.load!(new Event("load"));
+    await expect(first).resolves.toBeUndefined();
+    await watched;
+    expect(secondSettled).toBe(true);
+  });
+
+  it("rejects every concurrent caller when the link fails", async () => {
+    const first = loadStylesheet("/assets/css/maplibre-gl.css", false);
+    const second = loadStylesheet("/assets/css/maplibre-gl.css", false);
+    expect(appendedLinks).toHaveLength(1);
+
+    lastLink().listeners.error!(new Event("error"));
+
+    await expect(first).rejects.toThrow("Failed to load stylesheet: /assets/css/maplibre-gl.css");
+    await expect(second).rejects.toThrow("Failed to load stylesheet: /assets/css/maplibre-gl.css");
+  });
+
+  it("removes the failed link so a later call retries with a fresh one", async () => {
+    const failed = loadStylesheet("/assets/css/maplibre-gl.css", false);
+    const failedLink = lastLink();
+    failedLink.listeners.error!(new Event("error"));
+    await expect(failed).rejects.toThrow("Failed to load stylesheet: /assets/css/maplibre-gl.css");
+
+    // Evicting the cache entry is only half of it. The retry below misses the map and falls through
+    // to the duplicate check, which would find a dead link left in the head and resolve for a
+    // stylesheet that never loaded — so the head has to be empty here, not merely the cache.
+    expect(appendedLinks).toHaveLength(0);
+
+    const retry = loadStylesheet("/assets/css/maplibre-gl.css", false);
+    const retryLink = lastLink();
+    expect(retryLink).not.toBe(failedLink);
+    expect(appendedLinks).toHaveLength(1);
+    expect(appendedLinks[0]).toBe(retryLink);
+
+    // It resolves on its *own* load event, not on the duplicate check finding something.
+    retryLink.listeners.load!(new Event("load"));
+    await expect(retry).resolves.toBeUndefined();
+  });
+
+  it("keeps a loaded link in the head", async () => {
+    const promise = loadStylesheet("/assets/css/maplibre-gl.css", false);
+    lastLink().listeners.load!(new Event("load"));
+    await promise;
+
+    // Only the failure path removes; a stylesheet that loaded must stay applied to the page.
+    expect(appendedLinks).toHaveLength(1);
   });
 
   it("escapes an href containing a quote in the duplicate-check selector", async () => {
@@ -419,7 +728,7 @@ describe("loadStylesheet", () => {
       return null;
     };
     const promise = loadStylesheet('a"b', false);
-    mockLink.listeners.load!(new Event("load"));
+    lastLink().listeners.load!(new Event("load"));
     await promise;
     expect(capturedSelector).toBe('link[rel="stylesheet"][href="a\\"b"]');
   });

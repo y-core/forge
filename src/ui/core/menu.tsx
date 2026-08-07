@@ -19,7 +19,14 @@ interface MenuTriggerProps extends Omit<JSX.IntrinsicElements["button"], "childr
 interface MenuPopupProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   /** Element id — the `commandfor` target named by the matching `Menu.Trigger`. */
   id: string;
-  side?: Extract<Side, "top" | "bottom">;
+  /**
+   * Which side of its anchor the popup opens on. All four are expressible, because a **submenu**
+   * opens to the `right` (or `left` in a mirrored layout) of the panel that contains it, and a menu
+   * that could only say `top` or `bottom` had no way to describe that at all — a nested popup left on
+   * the default opened *below* its parent panel rather than beside it.
+   * @default "bottom"
+   */
+  side?: Side;
   align?: Align;
   /**
    * Place this popup at a coordinate handed to `openPopoverAt` instead of against an invoker.

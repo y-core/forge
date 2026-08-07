@@ -102,6 +102,28 @@ describe("createLogger", () => {
     expect(order).toStrictEqual(["before-flush", "async-done", "after-flush"]);
   });
 
+  it("flush settles rather than rejecting when a channel write fails", async () => {
+    const records: LogRecord[] = [];
+    const failing: LogChannel = { write: () => Promise.reject(new Error("channel down")) };
+    const working: LogChannel = {
+      write: (r) =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            records.push(r);
+            resolve();
+          }, 5);
+        }),
+    };
+
+    const log = createLogger("flush-failure", { channels: [failing, working] });
+    log.info("trigger");
+
+    // `allSettled`, so the failing channel neither reaches the caller nor short-circuits the wait on
+    // the working one — logging must not fail the work it is describing.
+    await expect(log.flush()).resolves.toBeUndefined();
+    expect(records.map((r) => r.message)).toStrictEqual(["trigger"]);
+  });
+
   it("flush with no pending promises resolves immediately", async () => {
     const log = createLogger("test");
     await expect(log.flush()).resolves.toBeUndefined();

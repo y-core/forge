@@ -344,6 +344,69 @@ describe("requestLogger — flush windows under an asynchronous channel", () => 
   });
 });
 
+describe("requestLogger — a failing channel never changes the request outcome", () => {
+  /** The shape a real channel takes when its backing store is unavailable: the write starts and
+   *  rejects. Nothing about it is recoverable at the request level, which is the point. */
+  const failingChannel: LogChannel = { write: () => Promise.reject(new Error("channel down")) };
+
+  function makeFailingChannelApp() {
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [failingChannel] }));
+    mapHandler(app, "GET", "/test", (c) => {
+      requestLog.get(c).info("handler ran");
+      return new Response("ok");
+    });
+    return app;
+  }
+
+  it("returns the response unchanged when the flush is handed to waitUntil", async () => {
+    const flushed: Promise<void>[] = [];
+    const mockCtx: ExecutionContext = {
+      waitUntil: (p: Promise<void>) => {
+        flushed.push(p);
+      },
+      passThroughOnException: () => {},
+    };
+
+    const res = await makeFailingChannelApp().fetch(new Request("http://localhost/test"), {}, mockCtx);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    // A rejecting promise handed to `waitUntil` is a rejection with nobody attached — the runtime
+    // reports it, and nothing about the request is improved by it.
+    expect(flushed.length).toBeGreaterThan(0);
+    await expect(Promise.all(flushed)).resolves.toBeDefined();
+  });
+
+  it("returns the response unchanged on the no-executionCtx fallback branch", async () => {
+    // The dangerous branch: `await flush` runs inside a `finally`, and a `finally` that throws
+    // replaces whatever was propagating — here, a perfectly good 200.
+    const res = await makeFailingChannelApp().request("/test");
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+  });
+
+  it("a throw escaping next() reaches the boundary unmasked by the flush failure", async () => {
+    const { records, channel } = makeCapture();
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [channel, failingChannel] }));
+    app.use("*", () => {
+      throw new Error("middleware exploded");
+    });
+    mapHandler(app, "GET", "/boom", () => new Response("unreached"));
+
+    const res = await app.request("/boom");
+
+    expect(res.status).toBe(500);
+    // The boundary's record is written after `requestLogger`'s `finally` has run, so it carries
+    // whichever error actually came out of it — the middleware's, or the flush's had the `finally`
+    // replaced it. That substitution is the whole failure mode, and it is silent without this.
+    const detail = records.find((r) => r.message === "unhandled error");
+    expect((detail?.data?.error as { message: string } | undefined)?.message).toBe("middleware exploded");
+  });
+});
+
 describe("requestLogger — persisted error detail", () => {
   it("the 500 error record keeps its stack live but not in KV under the persistStack default", async () => {
     const persisted: string[] = [];

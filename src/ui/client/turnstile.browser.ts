@@ -200,6 +200,30 @@ test.describe("mountTurnstile — fails visible", () => {
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
   });
 
+  test("reveals the fallback when a pre-existing script never defines the API", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page, "hang");
+    await mount(page, await formMarkup(), EXPOSE);
+    await seedRecorder(page);
+
+    // A script injected by something else on the page and still in flight: the controller finds it,
+    // injects none of its own, and polls. Giving up on that poll is the one failure route with no
+    // `load`, no `error` and no `render` behind it — nothing else can reveal the fallback here.
+    await page.evaluate((src) => {
+      const script = document.createElement("script");
+      script.src = src;
+      document.head.appendChild(script);
+    }, TURNSTILE_SCRIPT_SRC);
+
+    await mountController(page);
+    await engage(page);
+    expect(await scriptCount(page)).toBe(1);
+
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
+    await page.clock.fastForward(TURNSTILE_SCRIPT_TIMEOUT_MS);
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
+  });
+
   test("reveals the fallback when Turnstile's error-callback fires", async ({ page }) => {
     await serveScript(page);
     await mount(page, await formMarkup(), EXPOSE);
@@ -267,6 +291,59 @@ test.describe("mountTurnstile — lifecycle", () => {
 
     // `remove` ran once; the detached `htmx:afterRequest` listener produced no further reset.
     expect(after).toEqual({ removes: 1, resets: 0 });
+  });
+
+  test("cleanup while the script is in flight cancels the fallback timeout", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page, "hang");
+    await mount(page, await formMarkup(), EXPOSE);
+    await seedRecorder(page);
+    await mountController(page);
+    await engage(page);
+
+    await page.evaluate(() => window.turnstileCleanup?.());
+    await page.clock.fastForward(TURNSTILE_SCRIPT_TIMEOUT_MS);
+
+    // The same fast-forward reveals the fallback when the controller is still mounted (see the
+    // "never answers within the timeout budget" case), so a hidden fallback here is the timer
+    // having been cleared rather than the budget not having elapsed.
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
+  });
+
+  test("cleanup while polling an already-present script stops the poll", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page, "hang");
+    await mount(page, await formMarkup(), EXPOSE);
+    await seedRecorder(page);
+
+    // A script injected by something else on the page and still in flight: the controller finds it,
+    // injects none of its own, and polls for the API to appear.
+    await page.evaluate((src) => {
+      const script = document.createElement("script");
+      script.src = src;
+      document.head.appendChild(script);
+    }, TURNSTILE_SCRIPT_SRC);
+
+    await mountController(page);
+    await engage(page);
+    expect(await scriptCount(page)).toBe(1);
+
+    await page.evaluate(() => window.turnstileCleanup?.());
+
+    // The API arrives after cleanup. A live poll would see it and render into the detached widget.
+    await page.evaluate(() => {
+      window.turnstile = {
+        render: () => {
+          window.turnstileCalls.renders.push({ sitekey: null, size: null, theme: null });
+          return "widget-late";
+        },
+        reset: () => {},
+        remove: () => {},
+      };
+    });
+    await page.clock.fastForward(TURNSTILE_SCRIPT_TIMEOUT_MS);
+
+    expect(await page.evaluate(() => window.turnstileCalls.renders.length)).toBe(0);
   });
 
   test("returns a no-op cleanup and loads nothing when no widget is present", async ({ page }) => {

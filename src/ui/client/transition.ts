@@ -172,8 +172,12 @@ const OPENING_COMMANDS = new Set(["toggle-popover", "show-popover", "show-modal"
 /** The invokers that open `popup`, resolved live. Document-scoped, exactly as `commandfor` is: a
  * trigger is very often **outside** the popup's subtree, and a subtree query would silently find
  * none of them. Re-read on every state change, so a trigger added or removed while the popup lives
- * is neither missed nor left stamped on a detached node. */
-function triggersFor(popup: HTMLElement): HTMLElement[] {
+ * is neither missed nor left stamped on a detached node.
+ *
+ * Exported for `popover-anchor.ts`, which needs the same "who opens this?" answer to anchor against.
+ * Deliberately carries no public tag and stays out of the barrel: it is one query shared by two
+ * controllers in this namespace, not a capability the package offers. */
+export function triggersFor(popup: HTMLElement): HTMLElement[] {
   const id = popup.id;
   if (!id) return [];
   const found = ownerDocument(popup).querySelectorAll<HTMLElement>(`[commandfor="${CSS.escape(id)}"]`);
