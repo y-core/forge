@@ -77,7 +77,7 @@ test("a disabled item is excluded from the form data even when checked", async (
 test("each item gets its own id, derived from the shared name and its value", async ({ page }) => {
   await mount(page, await formMarkup());
 
-  const ids = await page.evaluate(() => [...document.querySelectorAll("[data-slot='checkbox-group-input']")].map((el) => el.id));
+  const ids = await page.evaluate(() => [...document.querySelectorAll("[data-slot~='checkbox-group-input']")].map((el) => el.id));
 
   expect(ids).toEqual(["field-toppings-cheese", "field-toppings-basil", "field-toppings-chilli"]);
 });

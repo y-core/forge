@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
+import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
 const variantClasses = {
@@ -14,9 +15,9 @@ export type BadgeVariant = keyof typeof variantClasses;
 
 type BadgeProps = JSX.IntrinsicElements["span"] & { variant?: BadgeVariant };
 
-export const Badge: FC<BadgeProps> = ({ variant = "default", class: cls, children, ...rest }) => (
+export const Badge: FC<BadgeProps> = ({ variant = "default", class: cls, children, "data-slot": inherited, ...rest }) => (
   <span
-    data-slot='badge'
+    data-slot={slotToken("badge", inherited)}
     data-variant={variant}
     class={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors", variantClasses[variant], cls)}
     {...rest}>

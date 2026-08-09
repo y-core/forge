@@ -167,3 +167,10 @@ Anything you could not resolve — state the options and your recommendation.
 
 **An empty Open Questions section is a claim.** Only write it when you genuinely resolved
 everything; an unstated ambiguity becomes `cc-dev` guessing.
+
+### Ledger Moves
+
+**Ledger writes are yours to make** — over MCP, never by editing files: the claim on the task the plan
+serves, the record of what the analysis uncovers, the move to `waiting` with the question stated
+concretely. Call `get_protocol` **and** `get_process` first and work from what they answer rather than
+from a remembered copy.

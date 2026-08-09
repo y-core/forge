@@ -58,6 +58,7 @@
       "Bash(wrangler *)",
       "Bash(xargs *)",
       "Edit(//tmp/**)",
+      "mcp__ledger",
       "Read(//src/**)",
       "Read(//tmp/**)",
       "WebFetch(domain:github.com)",
@@ -83,6 +84,10 @@
     "commit": "",
     "pr": ""
   },
+  "effortLevel": "medium",
+  "enabledMcpjsonServers": [
+    "ledger"
+  ],
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true
   },
@@ -91,10 +96,14 @@
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
     "enableWeakerNestedSandbox": true,
+    "network": {
+      "allowAllUnixSockets": true
+    },
     "filesystem": {
       "allowWrite": [
         "/tmp",
-        "/home/dev/.config/.wrangler"
+        "/home/dev/.config/.wrangler",
+        "/home/dev/.config/chromium"
       ],
       "denyWrite": [
         "/home/dev/.config/.wrangler/config"

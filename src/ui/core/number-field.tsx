@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface NumberFieldRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
@@ -19,17 +20,21 @@ const BUTTON_BASE =
   "text-foreground cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring " +
   "disabled:pointer-events-none disabled:opacity-50";
 
-const NumberFieldRoot: FC<NumberFieldRootProps> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='number-field' data-scope={NUMBER_FIELD_SCOPE} class={cn("inline-flex items-center gap-1", asClass(cls))} {...rest}>
+const NumberFieldRoot: FC<NumberFieldRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div
+    data-slot={slotToken("number-field", inherited)}
+    data-scope={NUMBER_FIELD_SCOPE}
+    class={cn("inline-flex items-center gap-1", asClass(cls))}
+    {...rest}>
     {children}
   </div>
 );
 
 /** `type="number"` and nothing else: the input is the value, the validation and the form entry. */
-const NumberFieldInput: FC<NumberFieldInputProps> = ({ class: cls, ...rest }) => (
+const NumberFieldInput: FC<NumberFieldInputProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
   <input
     type='number'
-    data-slot='number-field-input'
+    data-slot={slotToken("number-field-input", inherited)}
     class={cn(
       "w-20 rounded-md border border-input bg-background px-2 py-1 text-sm tabular-nums text-foreground",
       "focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
@@ -39,14 +44,24 @@ const NumberFieldInput: FC<NumberFieldInputProps> = ({ class: cls, ...rest }) =>
   />
 );
 
-const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({ class: cls, children, ...rest }) => (
-  <button type='button' data-slot='number-field-decrement' aria-label='Decrement' class={cn(BUTTON_BASE, asClass(cls))} {...rest}>
+const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <button
+    type='button'
+    data-slot={slotToken("number-field-decrement", inherited)}
+    aria-label='Decrement'
+    class={cn(BUTTON_BASE, asClass(cls))}
+    {...rest}>
     {children ?? "−"}
   </button>
 );
 
-const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({ class: cls, children, ...rest }) => (
-  <button type='button' data-slot='number-field-increment' aria-label='Increment' class={cn(BUTTON_BASE, asClass(cls))} {...rest}>
+const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <button
+    type='button'
+    data-slot={slotToken("number-field-increment", inherited)}
+    aria-label='Increment'
+    class={cn(BUTTON_BASE, asClass(cls))}
+    {...rest}>
     {children ?? "+"}
   </button>
 );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
+import { mapHandler } from "../testing/route";
 import { checkCrossOriginProtection, crossOriginProtection, originProtection } from "./cop";
 import type { OriginProtectionOptions } from "./types";
 

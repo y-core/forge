@@ -176,7 +176,12 @@ const OPENING_COMMANDS = new Set(["toggle-popover", "show-popover", "show-modal"
  *
  * Exported for `popover-anchor.ts`, which needs the same "who opens this?" answer to anchor against.
  * Deliberately carries no public tag and stays out of the barrel: it is one query shared by two
- * controllers in this namespace, not a capability the package offers. */
+ * controllers in this namespace, not a capability the package offers.
+ *
+ * Not a candidate for the shadow-safe id lookup the other controllers use: this is a *query* over a
+ * selector, not a lookup of one id, so root-scoping it would need a `queryAllIn(node, selector)`
+ * that does not exist. And *which* root to query is itself a design question rather than a detail —
+ * a trigger and its popup can legitimately live in different ones. */
 export function triggersFor(popup: HTMLElement): HTMLElement[] {
   const id = popup.id;
   if (!id) return [];

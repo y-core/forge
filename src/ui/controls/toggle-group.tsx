@@ -1,9 +1,9 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, PropsWithChildren } from "../../jsx/types";
+import { scopeAttrs } from "../contracts/scope-attrs";
 import { ToggleGroup as CoreToggleGroup } from "../core/toggle-group";
 import { fieldAttr } from "../server/field-attr";
-import { scopeAttrs } from "../server/scope-attrs";
 
 // Intentionally NOT built via `createBoundControl`: the binding lives on the `.Item`
 // sub-component (not the root), stamps an extra `data-value`, and delegates on `onClick` with the

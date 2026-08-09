@@ -47,7 +47,7 @@ test("groups natively — a fieldset with a legend — and submits a single valu
   await mount(page, await formMarkup());
 
   const shape = await page.evaluate(() => {
-    const el = document.querySelector("[data-slot='radio-group']");
+    const el = document.querySelector("[data-slot~='radio-group']");
     return { tag: el?.tagName, role: el?.getAttribute("role"), legend: el?.querySelector("legend")?.textContent };
   });
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyStateAttrs, STATE_ATTRS, stateAttrs } from "./state-attrs";
+import { applyStateAttrs, type Side, STATE_ATTRS, stateAttrs } from "./state-attrs";
 
 /** `src/ui/`, the whole tree the conformance sweep below covers — the *parent* of this file's own
  * directory. Resolving it from `import.meta.url` without stepping up would narrow the sweep to
@@ -183,6 +183,40 @@ describe("applyStateAttrs", () => {
     applyStateAttrs(el, { pressed: true });
     applyStateAttrs(el, { pressed: false });
     expect(el.attrs.size).toBe(0);
+  });
+
+  /**
+   * Keyed by `Side` rather than listed as an array, so the table is exhaustive **at compile time**:
+   * widening the union without adding a row fails `tsgo`, and a row for a value the union does not
+   * carry fails it too. That is what makes this a witness of the widened union under `check` rather
+   * than a restatement of eight strings.
+   */
+  const EVERY_SIDE: Record<Side, string> = {
+    top: "top",
+    right: "right",
+    bottom: "bottom",
+    left: "left",
+    "block-start": "block-start",
+    "block-end": "block-end",
+    "inline-start": "inline-start",
+    "inline-end": "inline-end",
+  };
+
+  it("round-trips every side of the union, logical spellings included, through both writers", () => {
+    const sides = Object.keys(EVERY_SIDE) as Side[];
+
+    // The SSR builder carries the value through verbatim…
+    expect(sides.map((side) => stateAttrs({ side })["data-side"])).toEqual(Object.values(EVERY_SIDE));
+
+    // …and the client mutator writes exactly the same one, which is the half that keeps a controller
+    // from disagreeing with the markup a stylesheet's `:dir()` rules are keyed on.
+    expect(
+      sides.map((side) => {
+        const el = fakeElement();
+        applyStateAttrs(el, { side });
+        return el.attrs.get("data-side");
+      }),
+    ).toEqual(Object.values(EVERY_SIDE));
   });
 
   it("leaves attributes owned by keys the caller did not name", () => {

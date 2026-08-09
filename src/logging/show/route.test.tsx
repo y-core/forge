@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
-import { mapHandler } from "../../app/route-test-helper";
 import type { KVNamespace } from "../../storage/kv/types";
+import { mapHandler } from "../../testing/route";
 import { createIcon } from "../../ui/core/icon";
 import { kvLogChannel } from "../kv-channel";
 import type { LogChannel, LogQuery } from "../types";

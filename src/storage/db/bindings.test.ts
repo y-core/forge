@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../../app/forge-app";
-import { mapHandler } from "../../app/route-test-helper";
 import type { AppContext } from "../../context/types";
+import { mapHandler } from "../../testing/route";
 import { resolveD1Client, validateD1Binding } from "./bindings";
 import type { D1BindingOptions, D1Database, D1DatabaseLike, D1PreparedStatement, D1Result } from "./types";
 

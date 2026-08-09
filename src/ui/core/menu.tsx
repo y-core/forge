@@ -4,6 +4,7 @@ import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { MENU_ITEM_CLASS, MENU_SCOPE } from "../contracts/menu-contract";
 import { POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
 import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface MenuRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
@@ -20,10 +21,14 @@ interface MenuPopupProps extends Omit<JSX.IntrinsicElements["div"], "children"> 
   /** Element id — the `commandfor` target named by the matching `Menu.Trigger`. */
   id: string;
   /**
-   * Which side of its anchor the popup opens on. All four are expressible, because a **submenu**
-   * opens to the `right` (or `left` in a mirrored layout) of the panel that contains it, and a menu
-   * that could only say `top` or `bottom` had no way to describe that at all — a nested popup left on
-   * the default opened *below* its parent panel rather than beside it.
+   * Which side of its anchor the popup opens on. All eight of `Side` are expressible, because a
+   * **submenu** opens *beside* the panel that contains it, and a menu that could only say `top` or
+   * `bottom` had no way to describe that at all — a nested popup left on the default opened below its
+   * parent panel rather than beside it.
+   *
+   * A submenu wants the logical `inline-end`: "beside" means the panel's own trailing edge, which is
+   * its left in an RTL subtree, so the logical spelling mirrors on its own and the caller never
+   * branches on direction.
    * @default "bottom"
    */
   side?: Side;
@@ -101,16 +106,16 @@ const POPUP_BASE = "z-50 min-w-[10rem] rounded-xl border border-border bg-popove
  */
 const ITEM_BASE = MENU_ITEM_CLASS;
 
-const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='menu' class={cn("relative inline-block", asClass(cls))} {...rest}>
+const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("menu", inherited)} class={cn("relative inline-block", asClass(cls))} {...rest}>
     {children}
   </div>
 );
 
-const MenuTrigger: FC<MenuTriggerProps> = ({ id, class: cls, children, ...rest }) => (
+const MenuTrigger: FC<MenuTriggerProps> = ({ id, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
-    data-slot='menu-trigger'
+    data-slot={slotToken("menu-trigger", inherited)}
     command='toggle-popover'
     commandfor={id}
     aria-haspopup='menu'
@@ -129,11 +134,20 @@ const MenuTrigger: FC<MenuTriggerProps> = ({ id, class: cls, children, ...rest }
  * element on every interaction, so a popup whose rows are replaced between openings — the shape a
  * context menu built from synchronous callbacks has — needs no re-mounting.
  */
-const MenuPopup: FC<MenuPopupProps> = ({ id, side = "bottom", align = "start", coords = false, class: cls, children, ...rest }) => (
+const MenuPopup: FC<MenuPopupProps> = ({
+  id,
+  side = "bottom",
+  align = "start",
+  coords = false,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <div
     id={id}
     role='menu'
-    data-slot='menu-popup'
+    data-slot={slotToken("menu-popup", inherited)}
     data-scope={MENU_SCOPE}
     popover='auto'
     {...(coords ? { [POPOVER_COORDS_ATTR]: "" } : {})}
@@ -149,17 +163,23 @@ function closeAttrs(target: string | false | undefined): Record<string, string> 
   return target ? { command: "hide-popover", commandfor: target } : {};
 }
 
-const MenuItem: FC<MenuItemProps> = ({ for: target, class: cls, children, ...rest }) => (
-  <button type='button' role='menuitem' data-slot='menu-item' {...closeAttrs(target)} class={cn(ITEM_BASE, asClass(cls))} {...rest}>
+const MenuItem: FC<MenuItemProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...rest }) => (
+  <button
+    type='button'
+    role='menuitem'
+    data-slot={slotToken("menu-item", inherited)}
+    {...closeAttrs(target)}
+    class={cn(ITEM_BASE, asClass(cls))}
+    {...rest}>
     {children}
   </button>
 );
 
-const MenuCheckboxItem: FC<MenuCheckboxItemProps> = ({ for: target, checked = false, class: cls, children, ...rest }) => (
+const MenuCheckboxItem: FC<MenuCheckboxItemProps> = ({ for: target, checked = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
     role='menuitemcheckbox'
-    data-slot='menu-checkbox-item'
+    data-slot={slotToken("menu-checkbox-item", inherited)}
     aria-checked={checked}
     {...stateAttrs({ checked })}
     {...closeAttrs(target)}
@@ -169,11 +189,11 @@ const MenuCheckboxItem: FC<MenuCheckboxItemProps> = ({ for: target, checked = fa
   </button>
 );
 
-const MenuRadioItem: FC<MenuRadioItemProps> = ({ for: target, checked = false, class: cls, children, ...rest }) => (
+const MenuRadioItem: FC<MenuRadioItemProps> = ({ for: target, checked = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
     role='menuitemradio'
-    data-slot='menu-radio-item'
+    data-slot={slotToken("menu-radio-item", inherited)}
     aria-checked={checked}
     {...stateAttrs({ checked })}
     {...closeAttrs(target)}
@@ -192,8 +212,8 @@ const MenuRadioItem: FC<MenuRadioItemProps> = ({ for: target, checked = false, c
  * unloads the page anyway. `MENU_ITEM_SELECTOR` matches on the ARIA role, so this is part of the
  * arrow-key ring the moment it exists — which is the case that role-based selector was chosen for.
  */
-const MenuLinkItem: FC<MenuLinkItemProps> = ({ class: cls, children, ...rest }) => (
-  <a role='menuitem' data-slot='menu-link-item' class={cn(ITEM_BASE, asClass(cls))} {...rest}>
+const MenuLinkItem: FC<MenuLinkItemProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <a role='menuitem' data-slot={slotToken("menu-link-item", inherited)} class={cn(ITEM_BASE, asClass(cls))} {...rest}>
     {children}
   </a>
 );
@@ -206,11 +226,11 @@ const MenuLinkItem: FC<MenuLinkItemProps> = ({ class: cls, children, ...rest }) 
  * skip straight past the submenu it opens. This carries `role="menuitem"` so the row is reachable,
  * and `aria-haspopup="menu"` so it announces what it does.
  */
-const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ id, class: cls, children, ...rest }) => (
+const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ id, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
     role='menuitem'
-    data-slot='menu-submenu-trigger'
+    data-slot={slotToken("menu-submenu-trigger", inherited)}
     command='toggle-popover'
     commandfor={id}
     aria-haspopup='menu'
@@ -221,21 +241,24 @@ const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ id, class: cls, child
 );
 
 /** A labelled section of a menu. `<fieldset>` for its implicit `group` role, with the UA box reset. */
-const MenuGroup: FC<MenuGroupProps> = ({ class: cls, children, ...rest }) => (
-  <fieldset data-slot='menu-group' class={cn("flex flex-col border-0 m-0 p-0", asClass(cls))} {...rest}>
+const MenuGroup: FC<MenuGroupProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <fieldset data-slot={slotToken("menu-group", inherited)} class={cn("flex flex-col border-0 m-0 p-0", asClass(cls))} {...rest}>
     {children}
   </fieldset>
 );
 
 /** Name a `Menu.Group` by giving this an `id` and pointing the group's `aria-labelledby` at it. */
-const MenuGroupLabel: FC<MenuGroupLabelProps> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='menu-group-label' class={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", asClass(cls))} {...rest}>
+const MenuGroupLabel: FC<MenuGroupLabelProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div
+    data-slot={slotToken("menu-group-label", inherited)}
+    class={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", asClass(cls))}
+    {...rest}>
     {children}
   </div>
 );
 
-const MenuSeparator: FC<MenuSeparatorProps> = ({ class: cls, ...rest }) => (
-  <hr data-slot='menu-separator' class={cn("my-1 h-px w-full border-0 bg-border", asClass(cls))} {...rest} />
+const MenuSeparator: FC<MenuSeparatorProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
+  <hr data-slot={slotToken("menu-separator", inherited)} class={cn("my-1 h-px w-full border-0 bg-border", asClass(cls))} {...rest} />
 );
 
 /**

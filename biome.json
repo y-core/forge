@@ -78,6 +78,30 @@
     },
     {
       "includes": [
+        "scripts/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "valibot"
+                    ],
+                    "message": "Import `v` from the validation facade (../src/validation/mod) — never valibot directly."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
         "src/validation/**"
       ],
       "linter": {

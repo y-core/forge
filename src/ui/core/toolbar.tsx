@@ -5,7 +5,7 @@ import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { type ButtonProps, buttonVariants } from "./button";
-import { cloneAsChild } from "./utils/as-child";
+import { cloneAsChild, slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type ToolbarOrientation = Extract<Orientation, "horizontal" | "vertical">;
@@ -69,10 +69,10 @@ function itemAttrs(pressed: boolean | undefined): Record<string, string> {
  * The scope is `eager`, because a roving tab stop has to exist before the first interaction: waiting
  * for one would mean every item is individually tabbable until the user happens to click something.
  */
-const ToolbarRoot: FC<ToolbarRootProps> = ({ orientation = "horizontal", class: cls, children, ...rest }) => (
+const ToolbarRoot: FC<ToolbarRootProps> = ({ orientation = "horizontal", class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     role='toolbar'
-    data-slot='toolbar'
+    data-slot={slotToken("toolbar", inherited)}
     data-scope={TOOLBAR_SCOPE}
     {...stateAttrs({ orientation })}
     aria-orientation={orientation}
@@ -90,13 +90,23 @@ function itemClass(styling: ToolbarItemStyling, cls: unknown, extra?: string): s
 }
 
 /** A button inside a toolbar. Carries the roving-focus marker, so it is one of the arrow-key stops. */
-const ToolbarButton: FC<ToolbarButtonProps> = ({ variant, size, pressed, asChild = false, class: cls, children, ...rest }) => {
+const ToolbarButton: FC<ToolbarButtonProps> = ({
+  variant,
+  size,
+  pressed,
+  asChild = false,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => {
   const className = itemClass({ variant, size }, cls);
   const attrs = { ...itemAttrs(pressed), ...rest };
+  const slot = slotToken("toolbar-button", inherited);
 
   if (asChild) {
     return cloneAsChild(children, {
-      slot: "toolbar-button",
+      slot,
       class: className,
       props: attrs,
       type: "button",
@@ -107,20 +117,21 @@ const ToolbarButton: FC<ToolbarButtonProps> = ({ variant, size, pressed, asChild
   }
 
   return (
-    <button type='button' data-slot='toolbar-button' class={className} {...attrs}>
+    <button type='button' data-slot={slot} class={className} {...attrs}>
       {children}
     </button>
   );
 };
 
 /** A link inside a toolbar — a focus stop like any other item. */
-const ToolbarLink: FC<ToolbarLinkProps> = ({ variant, size, pressed, asChild = false, class: cls, children, ...rest }) => {
+const ToolbarLink: FC<ToolbarLinkProps> = ({ variant, size, pressed, asChild = false, class: cls, children, "data-slot": inherited, ...rest }) => {
   const className = itemClass({ variant, size }, cls, "underline-offset-4 hover:underline");
   const attrs = { ...itemAttrs(pressed), ...rest };
+  const slot = slotToken("toolbar-link", inherited);
 
   if (asChild) {
     return cloneAsChild(children, {
-      slot: "toolbar-link",
+      slot,
       class: className,
       props: attrs,
       message:
@@ -129,7 +140,7 @@ const ToolbarLink: FC<ToolbarLinkProps> = ({ variant, size, pressed, asChild = f
   }
 
   return (
-    <a data-slot='toolbar-link' class={className} {...attrs}>
+    <a data-slot={slot} class={className} {...attrs}>
       {children}
     </a>
   );
@@ -144,9 +155,9 @@ const ToolbarLink: FC<ToolbarLinkProps> = ({ variant, size, pressed, asChild = f
  * than like the toolbar stealing the keystroke. Nothing here opts into that; it is the controller's
  * default, and `composite.browser.ts` pins it.
  */
-const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, ...rest }) => (
+const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
   <input
-    data-slot='toolbar-input'
+    data-slot={slotToken("toolbar-input", inherited)}
     {...itemAttrs(undefined)}
     class={cn(
       "rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground",
@@ -163,16 +174,16 @@ const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, ...rest }) => (
  * A `<fieldset>` with no explicit role, matching `core/toggle-group.tsx`: the implicit role is
  * already `group`, so stating it is redundant, and the UA's own border and margin are reset here.
  */
-const ToolbarGroup: FC<ToolbarGroupProps> = ({ class: cls, children, ...rest }) => (
-  <fieldset data-slot='toolbar-group' class={cn("inline-flex items-center gap-1 border-0 m-0 p-0", asClass(cls))} {...rest}>
+const ToolbarGroup: FC<ToolbarGroupProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <fieldset data-slot={slotToken("toolbar-group", inherited)} class={cn("inline-flex items-center gap-1 border-0 m-0 p-0", asClass(cls))} {...rest}>
     {children}
   </fieldset>
 );
 
 /** A divider between toolbar sections. Defaults to the axis across the toolbar. */
-const ToolbarSeparator: FC<ToolbarSeparatorProps> = ({ orientation = "vertical", class: cls, ...rest }) => (
+const ToolbarSeparator: FC<ToolbarSeparatorProps> = ({ orientation = "vertical", class: cls, "data-slot": inherited, ...rest }) => (
   <hr
-    data-slot='toolbar-separator'
+    data-slot={slotToken("toolbar-separator", inherited)}
     aria-orientation={orientation}
     class={cn(orientation === "vertical" ? "h-5 w-px" : "h-px w-full", "border-0 bg-border", asClass(cls))}
     {...rest}

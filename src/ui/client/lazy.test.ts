@@ -405,6 +405,38 @@ describe("lazy", () => {
     expect(observedElements).toStrictEqual([mockElement]);
   });
 
+  it("does not run init when disposed while the load resolves in flight", async () => {
+    let settleLoad: (mod: unknown) => void = () => {};
+    let initCalls = 0;
+    const errors: unknown[] = [];
+
+    const dispose = lazy({
+      ref: "target",
+      load: () =>
+        new Promise<unknown>((resolve) => {
+          settleLoad = resolve;
+        }),
+      init: () => {
+        initCalls += 1;
+      },
+      onError: (error) => errors.push(error),
+    });
+
+    intersect();
+    dispose();
+    settleLoad({ doThing: () => {} });
+    await flush();
+
+    // The invocation count is the assertion, deliberately — not `observedElements`. A fulfilled load
+    // never re-observes on any path, so the re-observation assertion its rejecting sibling above uses
+    // would read identically with the disposal guard deleted, and pin nothing. What must not happen
+    // is `init` mounting a controller onto an element the app has already swapped out.
+    expect(initCalls).toBe(0);
+    // Nothing failed, so nothing is reported. A load that *rejects* after disposal still reaches
+    // `onError`: that is information the app has a right to hear, not a touch on the element.
+    expect(errors).toStrictEqual([]);
+  });
+
   it("escapes a ref containing a quote so the selector cannot be broken out of", () => {
     let capturedSelector = "";
     lg.document.querySelector = (selector: string) => {

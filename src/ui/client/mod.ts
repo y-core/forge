@@ -1,7 +1,7 @@
 export { type ActiveDescendantOptions, mountActiveDescendant, resetActiveDescendant } from "./active-descendant";
 export { applyControlValue, bindField, bindGroup, parseControlValue } from "./bind";
 export { ACTIVE_COMPOSITE_ITEM, mountRovingFocus, type RovingFocusOptions } from "./composite";
-export { activeElement, asElement, closestAcross, contains, eventTarget, ownerDocument, ownerWindow } from "./dom";
+export { activeElement, asElement, closestAcross, contains, eventTarget, isRtl, ownerDocument, ownerWindow } from "./dom";
 export type { LazyImportOptions, LazyLoadOptions } from "./lazy";
 export { lazy, loadScriptOnEvent, loadStylesheet } from "./lazy";
 export { type MenuOptions, mountMenu } from "./menu";

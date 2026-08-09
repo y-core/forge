@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
+import { mapHandler } from "../testing/route";
 import { requestId, requestIdCtx } from "./request-id";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

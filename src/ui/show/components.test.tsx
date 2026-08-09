@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import { describe, expect, it } from "bun:test";
-import { render } from "../../jsx/render-test-helper";
+import { render } from "../../testing/render";
 // The barrel is this test's subject: the property below is that every component the package
 // publishes has a showcase section, so it has to read the published surface rather than a hand-kept
 // list. The rule guards against circular dependencies, which a leaf test file cannot create.

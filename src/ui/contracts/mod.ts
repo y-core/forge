@@ -8,6 +8,7 @@ export {
 } from "./menu-contract";
 export { NUMBER_FIELD_SCOPE } from "./number-field-contract";
 export { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, DIALOG_SCOPE, POPOVER_COORDS_ATTR, POPOVER_SCOPE } from "./overlay-contract";
+export { type ScopeAttrsProps, scopeAttrs } from "./scope-attrs";
 export { SCOPE_EVENTS, type ScopeEvent } from "./scope-events";
 export {
   type Align,

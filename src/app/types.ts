@@ -1,10 +1,11 @@
 import type { Middleware } from "@remix-run/fetch-router";
 import type { Matcher } from "@remix-run/route-pattern/match";
 import type { AppContext } from "../context/types";
-import type { ReadonlyFormData } from "../form/types";
+import type { TurnstileFailure, TurnstileVerifyOptions } from "../form/types";
 import type { Logger } from "../logging/types";
-import type { ValidationResult } from "../result/result";
+import type { v } from "../validation/validation";
 import type { Forge } from "./forge-app";
+import type { SubmissionPipelineDefinition } from "./pipeline";
 
 /** @public */
 export interface AppOptions<Bindings = Record<string, unknown>> {
@@ -49,16 +50,50 @@ export type RouteView<Bindings = Record<string, unknown>, ConfigData = unknown, 
   state: RouteRenderState<LoaderData, ActionData>,
 ) => Response | Promise<Response>;
 
-/** @internal */
-export type RouteAction<Bindings = Record<string, unknown>, ConfigData = unknown, ActionData = unknown> = (
+/**
+ * `data` is the page's validated body, and is meaningful only on a page that declares a `schema`.
+ * It comes last because that is where this family already puts its payload — `view` takes its render
+ * state in the same position, and an action written before the schema existed keeps compiling.
+ *
+ * @internal
+ */
+export type RouteAction<Bindings = Record<string, unknown>, ConfigData = unknown, ActionData = unknown, Data = unknown> = (
   c: AppContext<Bindings>,
   config: ConfigData,
+  data: Data,
 ) => ActionData | Response | Promise<ActionData | Response>;
 
-/** @public */
-export interface PageDefinition<Bindings = Record<string, unknown>, ConfigData = unknown, LoaderData = unknown, ActionData = unknown> {
+/**
+ * Everything the shared submission sequence consumes is inherited rather than restated, so a page and
+ * an action configure that sequence through one set of options with one set of docs. Only `schema`
+ * is projected out: an action must declare one, a page may, and a page that declares none keeps
+ * running its action against the unparsed context.
+ *
+ * @public
+ */
+export interface PageDefinition<
+  Bindings = Record<string, unknown>,
+  ConfigData = unknown,
+  LoaderData = unknown,
+  ActionData = unknown,
+  S extends v.GenericSchema = v.GenericSchema,
+> extends Omit<SubmissionPipelineDefinition<S, Bindings, ConfigData>, "schema"> {
   loader?: RouteLoader<Bindings, ConfigData, LoaderData>;
-  action?: RouteAction<Bindings, ConfigData, ActionData>;
+  /**
+   * The body schema for this page's own mutations. Declaring it *alongside an `action`* routes every
+   * non-GET request through the same read → guard → validate sequence `defineAction` runs, so
+   * `action` is reachable only with a body that passed it and receives the parsed result as its
+   * third argument.
+   *
+   * A schema without an `action` runs no sequence at all — no read, no guard, no validation — and
+   * the request renders the view as any other would. The sequence exists to protect a terminal step,
+   * and a page with nothing to run on a mutation has none to protect.
+   *
+   * Omitting the schema leaves the page as it was: `action` runs against the unparsed context and
+   * owns validation at its own boundary.
+   */
+  schema?: S;
+  action?: RouteAction<Bindings, ConfigData, ActionData, v.InferOutput<S>>;
   view: RouteView<Bindings, ConfigData, LoaderData, ActionData>;
   headers?: Record<string, string>;
   cache?: "no-store" | CacheDirective;
@@ -67,23 +102,83 @@ export interface PageDefinition<Bindings = Record<string, unknown>, ConfigData =
 }
 
 /**
- * `Out` is what `validate` produces and `handle` receives, and it defaults to `Input` — so a
- * definition that only checks its data names three type arguments exactly as before.
+ * Turnstile verification for one `defineAction` route.
  *
- * The two were one parameter, which made input and output equal by construction: a `validate` that
- * *parsed* rather than merely checked had nowhere to put the narrower type, so its caller either
- * discarded the parse or re-asserted it with a cast in the handler. Separating them is what lets a
- * schema's transform reach `handle` as the type it actually is. It is appended last rather than
- * inserted, because every existing call site names its arguments positionally.
+ * `tokenField` is fixed when the route is defined, because the pipeline drops that field whether or
+ * not verification ever reaches the network. `secretKey` and `verify` resolve per request, because a
+ * secret lives in a binding rather than in the route, and the hostname a token must have been minted
+ * on is usually the request's own. `tokenField` is deliberately absent from what `verify` returns —
+ * two spellings of one name, with only one of them consulted, is the defect this option removes.
  *
  * @public
  */
-export interface ActionDefinition<Input, Bindings = Record<string, unknown>, ConfigData = unknown, Out = Input> {
-  parse: (formData: ReadonlyFormData) => Input;
-  validate: (data: Input) => ValidationResult<Out>;
-  handle: (data: Out, c: AppContext<Bindings>, config: ConfigData) => Response | Promise<Response>;
-  onValidationError?: (errors: readonly string[], c: AppContext<Bindings>) => Response | Promise<Response>;
+export interface ActionTurnstileOptions<Bindings = Record<string, unknown>, ConfigData = unknown> {
+  /** Resolves the siteverify secret for this request. */
+  secretKey: (c: AppContext<Bindings>, config: ConfigData) => string | Promise<string>;
+  /** The field Cloudflare's widget writes the token into. Defaults to `TURNSTILE_FIELD_DEFAULT`. */
+  tokenField?: string;
+  /** Verification constraints for this request. `expectedHostname` is required — it is what stops a token solved elsewhere being replayed here. */
+  verify: (c: AppContext<Bindings>, config: ConfigData) => Omit<TurnstileVerifyOptions, "tokenField">;
+}
+
+/**
+ * Why a `defineAction` route refused a submission before it reached the schema.
+ *
+ * A `network-error` or `timeout` reason means the siteverify call failed, not that the caller is a
+ * bot. The refusal is the same either way — a CAPTCHA that cannot be checked fails closed — but an
+ * app reading the reason can tell an outage from an attack.
+ *
+ * @public
+ */
+export type BotRejection = { guard: "honeypot" } | { guard: "turnstile"; reason: TurnstileFailure };
+
+/**
+ * The schema is the only way in: `defineAction` reads the body itself, and `handle` is unreachable
+ * except through a passing `v.safeParse` of `schema`.
+ *
+ * It replaces a `parse`/`validate` pair of arbitrary callbacks. That pair fixed the *order* the two
+ * ran in and nothing more — neither was required to involve a schema, so `validate: (d) => ok(d)`
+ * compiled and was accepted, and a route could declare a validation step that validated nothing.
+ * Naming the schema instead makes the guarantee a property of the type rather than of a convention
+ * each call site has to keep.
+ *
+ * @public
+ */
+export interface ActionDefinition<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown> {
+  /**
+   * The body schema. Prefer the `validation` namespace's `strictObject`: it is what turns a field
+   * nobody declared into a refusal rather than a value silently dropped on the way to `handle`.
+   */
+  schema: S;
+  handle: (data: v.InferOutput<S>, c: AppContext<Bindings>, config: ConfigData) => Response | Promise<Response>;
+  /**
+   * Replaces the default validation-errors fragment. It receives the issues rather than formatted
+   * strings, because a valibot issue embeds the rejected value and the caller's own key — so how
+   * much of a caller's text travels back in a refusal is a decision only the app can make.
+   */
+  onValidationError?: (issues: readonly v.BaseIssue<unknown>[], c: AppContext<Bindings>) => Response | Promise<Response>;
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
+  /**
+   * The field carrying this route's honeypot decoy — the same value the view gave
+   * `<Honeypot field={…} />`, best held as one app-owned constant referenced by both. Naming it here
+   * is what checks the decoy *and* drops it, so the schema never has to declare a field no human
+   * fills.
+   *
+   * There is no default and no shorthand, because a decoy only works while its name is unguessable:
+   * a name forge could supply is a name every bot already knows to skip.
+   */
+  honeypot?: string;
+  /**
+   * Turnstile verification for this route. The pipeline consumes the token, so it also drops the
+   * token field — the schema is never asked to declare it.
+   */
+  turnstile?: ActionTurnstileOptions<Bindings, ConfigData>;
+  /**
+   * Replaces the refusal a tripped guard renders. The default answer says nothing about the guard,
+   * so a bot learns neither which one it tripped nor that one is there; an app that would rather
+   * ban, log or stall supplies this.
+   */
+  onBotDetected?: (rejection: BotRejection, c: AppContext<Bindings>) => Response | Promise<Response>;
   /**
    * Body-size cap for this route's form parse, in bytes. Defaults to `FORM_MAX_BYTES_DEFAULT`.
    * A CSRF guard on the same route parses the body first, so raising this above the default also

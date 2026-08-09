@@ -10,7 +10,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ---
 
-## [Unreleased]
+## [0.0.81] — 2026-08-09
 
 **Anchored placement worked for tooltips and for nothing else.** The block in `theme-base.css` that
 positioned `popover-content` and `toolbar-flyout` rested on a stated premise — *"a popover's implicit
@@ -24,23 +24,145 @@ normal` with `CSS.supports("top", "anchor(bottom)")` true. Two things let it sur
 browser spec loaded any CSS, and none asserted geometry, so the suite structurally could not see this
 class of defect. Both are now fixed.
 
+**Separately, `defineAction` stopped taking a validation step it could not check.** Its `parse` and
+`validate` callbacks fixed the *order* two arbitrary functions ran in and nothing more — neither was
+required to involve a schema, so `validate: (d) => ok(d)` compiled and was accepted, and a route
+could declare a validation step that validated nothing. It now names a schema, and `handle` is
+unreachable except through a passing `v.safeParse`. Forge reads the body itself, which is what let
+the named-field readers go: they collapsed an absent field into `""` before any schema could observe
+it. See **Breaking Changes**.
+
+**The release also carries a follow-up review of the full source tree after 0.0.80,** written and
+held back rather than shipped on its own. Four verified defects — plus a fifth found
+while fixing the third — and every one of them is the same shape: work that was *started* and then
+left outside the thing that keeps it alive. A purge outside the promise the isolate waits on. A
+rejected import with no handler on it. Timers outliving their disposer. A promise that resolved on
+an appended `<link>` rather than a loaded one. Each landed with tests that fail against the previous
+code; where a test could not have observed the defect, the reason is given, because that is usually
+the more useful half.
+
 ### Added
 
+- **`strictObject(entries, message?)`** (`validation`) — the strict object schema to use for anything
+  parsing untrusted input. Only a field the schema *actually declares* counts as declared, so an
+  undeclared key is refused rather than silently dropped for **every** name a caller can send —
+  `__proto__`, `constructor`, `toString`, `valueOf` and the rest of the inherited set included, with
+  no branch naming any of them. The correction is applied at construction, so it survives `v.pipe`,
+  `v.union`, `v.variant` and arbitrary nesting; a patch to a finished schema would not. Migrate
+  `v.strictObject(` → `strictObject(`. Raw `v.strictObject` keeps the old behaviour — this is opt-in,
+  and visible at the call site.
+- **`formText()` and `formMultilineText()`** (`validation`) — the default shapes for form text: trim,
+  and CRLF→LF then trim. What the fold buys is a length that means one thing, and it is the fold's
+  **presence** that buys it: under `v.pipe(formMultilineText(), v.maxLength(500))` each line break
+  counts once, so a 500-character limit means the same whether the newline arrived as LF or CRLF,
+  instead of silently halving the budget for line breaks. Its position relative to the trim is *not*
+  observable — `trim` treats `\r` and `\n` alike, so the two orderings agree on output — and
+  `src/validation/form-text.ts` records that rather than arguing for one. `formText()` deliberately
+  **preserves** CRLF — that is what makes it the `<input>` variant.
+- **`describeValidationIssue(issue)`** (`validation`) — names the field one issue is about and
+  nothing else, bounded in path depth and in per-segment length. It reproduces no part of the
+  submission (`issue.message`, `issue.input`) and no part of the schema (`issue.expected`), so a
+  refusal varies only with *which* field failed. Use it for anything a caller reads;
+  `formatValidationIssues` stays the internal `Invalid environment: …` diagnostic.
+- **`formToObject(formData, options?)`** (`form`) — the whole-body read `defineAction` uses, now
+  public for handlers outside that pipeline. Every entry passes through: absence stays absence, a
+  repeated key becomes an array (not last-wins, as `Object.fromEntries` would), a `File` survives.
+  `options.drop` is how a field a guard already consumed leaves before a strict schema sees it.
+- **`csrfFieldCtx`** (`form`) — the form field `csrfProtection` took this request's token from,
+  published above every early return in the guard. Read it with `.getOptional`: absence is
+  meaningful, not an error, and says no guard ran on this request.
+- **`TURNSTILE_FIELD_DEFAULT`** (`form`) — the field Cloudflare's widget writes its token into.
+  `src/form/turnstile.ts` inlined that literal; it now reads the constant, so `src/form/constants.ts`
+  owns all three injected field names.
+- **`honeypot`, `turnstile`, `onBotDetected` on `ActionDefinition`, plus the `ActionTurnstileOptions`
+  and `BotRejection` types** (`app`) — see **Breaking Changes**. `onBotDetected` receives
+  `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`, so an app can tell a siteverify outage
+  from an attack while the caller-visible refusal stays identical either way.
 - **`mountAnchorBinding(popup)`** (`ui/client`) — binds a popup to its invoker on `beforetoggle`,
   through CSSOM. For the popup whose trigger is known only at runtime, as `openPopoverAt` is for the
   popup with no trigger at all. `mountMenu` mounts it on **nested** popups only; every other surface
   is already correct with no JavaScript.
-- **`mountMenu` handles ArrowRight and ArrowLeft** — ArrowRight opens the focused submenu (through the
-  row's own `command`, not around it), ArrowLeft closes a nested panel and restores focus to its row.
-  Both bail on `defaultPrevented` and claim the key they consume, so a submenu and its parent never
-  act on one press.
+- **`mountMenu` handles ArrowRight and ArrowLeft, and which one opens depends on direction.** Under
+  LTR, ArrowRight opens the focused submenu (through the row's own `command`, not around it) and
+  ArrowLeft closes a nested panel and restores focus to its row; under RTL the two swap. The
+  direction is read from the popup itself with `isRtl`, not from a global, so an RTL subtree inside an
+  LTR page mirrors correctly and a runtime `dir` flip is picked up on the next press — and the read
+  sits behind the key test, since `getComputedStyle` forces a style recalculation and no other key can
+  consume the answer. Both keys bail on `defaultPrevented` and claim the key they consume, so a
+  submenu and its parent never act on one press.
+- **`isRtl(el)`** (`ui/client`) — whether an element resolves to right-to-left writing direction,
+  read from the element's own computed style. Not from a global and not from the `dir` attribute: a
+  single RTL subtree inside an LTR page must behave as RTL, `dir` is usually set on an ancestor, and
+  CSS `direction` can set it with no attribute at all. `getComputedStyle` forces a style
+  recalculation, so it is documented as a call-it-where-you-consume-it read rather than one to cache
+  at mount — a cached answer goes stale the moment `dir` flips at runtime. `mountMenu` is the first
+  consumer.
+- **`onChannelError` on `LoggerOptions` and `RequestLoggerOptions`** (`logging`) — called when a
+  channel write fails, with the rejection reason or the thrown value. Both modes are covered and
+  covered identically: each channel's `write` is wrapped in its own `try`, so one channel throwing
+  synchronously still leaves the rest of the fan-out to run, and an async write gets a sibling
+  `.catch` attached at dispatch — a sibling and never a chain, so `pending` keeps the original
+  promise and `flush` still awaits the write itself. Observing at dispatch rather than in `flush` is
+  what covers writes evicted by the pending cap, which `flush` never sees and which would otherwise
+  fail with nobody watching. The default reporter writes one structured `console.error` line in the
+  same shape `consoleChannel` uses, so a persistence outage is visible in `wrangler tail` with no
+  configuration, and `console.error` keeps it distinguishable from the log stream it reports on. It
+  never reaches the request path: a hook that itself throws is swallowed. Children inherit it, and
+  `requestLogger` passes it through to the per-request logger.
 - **`MountOptions.css`** in the browser-test harness, and `src/ui/core/menu-anchor.browser.ts`, the
   first spec in the set to assert real geometry against the real stylesheet. Placement matrices for
   `Tooltip` (12 side × align cells) and the chrome `Toolbar` flyout (4 placements) got their first
   coverage with it.
+- **`lazy` accepts an `onError` callback.** Optional, and it rides on the already-exported
+  `LazyImportOptions`, so no barrel change and no existing call site changes. See *Fixed* for where
+  the rejection was going before.
 
 ### Fixed
 
+- **A throwing schema no longer escapes `defineAction` entirely.** `v.safeParse` sat outside the
+  `try`, and valibot does not catch what a pipe action throws — so a `v.transform` or `v.check` that
+  throws on malformed input propagated out of the returned handler with no status, no `onError`, and
+  no log. Verified against the installed valibot rather than inferred: a `v.transform` wrapping
+  `JSON.parse` throws a `SyntaxError` straight out of `v.safeParse`, and a throwing `v.check`
+  predicate escapes identically. The `try` now covers validation as well as `handle`, so a throwing
+  schema is logged and answered `500`. **`500`, not `400`, deliberately:** `v.transform` is
+  documented as non-failing and `v.rawTransform`/`addIssue` is the primitive for a transform that can
+  reject, so a throw there is a schema written with the wrong primitive — a route defect. A `400`
+  would present it as a successful rejection of bad input, leaving a normal-looking refusal rate and
+  a broken transform nobody ever sees. The widened `try` also absorbs a throwing
+  `onValidationError`, which is intended and symmetric: an app must not be able to crash the Worker
+  from the arm meant to render a refusal.
+- **A schema field named `constructor` reads as absent when the caller did not send it.** The body
+  object was built with `Object.fromEntries`, so valibot's per-entry presence test reached
+  `Object.prototype` and a field named after any inherited member resolved to the **inherited
+  function** instead of being seen as missing — `Invalid type: Expected string but received Function`
+  where `Invalid key: Expected "constructor" but received undefined` was correct. `v.optional` on
+  such a field was therefore unsatisfiable, and under `v.unknown()` the `Object` constructor itself
+  would have reached `handle` as if it were user data. `constructor` is a real field name on
+  construction and contracting forms. Entries now accumulate straight into an `Object.create(null)`
+  bag, which also removes the intermediate `Map` and the second full pass `Object.fromEntries` cost
+  per request. The matching *entries*-side half is `strictObject` (see **Added**) — the two are
+  independent and neither fix implies the other. Neither is a prototype-pollution fix: assignment on
+  a prototype-less object cannot reach an inherited setter, so a caller sending `__proto__` gets an
+  own key rather than a mutated prototype, exactly as before.
+- **A Turnstile-protected route on a strict schema no longer refuses every legitimate submission.**
+  `cf-turnstile-response` was absent from the injected-field set, so a real user solving the
+  challenge had their token reach `v.strictObject` as an undeclared key —
+  `Invalid key: Expected never but received "cf-turnstile-response"`, on every submission. It was
+  invisible twice over: the refusal was served as `200`, and it reproduced only against a live
+  Cloudflare challenge, so no unit test and no local dev run could see it. Fixed by construction
+  rather than by extending a list — the pipeline verifies the token and drops the field because it
+  consumed it.
+- **Trimming and CRLF normalization have a home again.** Deleting the named-field reader was correct
+  on its own terms but took `value.replace(/\r\n/g, "\n").trim()` with it and relocated it nowhere,
+  so `v.pipe(v.string(), v.minLength(1))` began accepting `"   "` — every required-field check
+  bypassable with spaces — and un-normalized CR/LF flowed into whatever a route did next. The
+  replacement is `formText()` / `formMultilineText()` (see **Added**), named as the default in the
+  governing doc and used in every schema example. Normalizing inside the reader was considered and
+  rejected: the reader also sees `File`s and arrays, `"   "` has to stay representable for a schema
+  that wants to refuse it, a normalization the schema cannot see is the defect the old reader had,
+  and line-ending folding is right for a `<textarea>` and wrong for an `<input>` — a distinction the
+  reader cannot make.
 - **Menus, popovers and toolbar flyouts anchor to their trigger** instead of centring in the
   viewport, via an explicit `anchor-name` / `anchor-scope` / `position-anchor` binding — the pattern
   the tooltip section already had right.
@@ -61,8 +183,13 @@ class of defect. Both are now fixed.
 - **`mountMenu`'s ArrowRight opens a submenu and never closes one.** The row's command is
   `toggle-popover`, so pressing it with the submenu already open used to invert the key, which ARIA's
   menu pattern does not permit.
-- **`mountAnchorBinding`'s disposer unwinds every trigger it wrote to**, not only the most recent —
-  a popup whose invoker changes between openings left an inline `anchor-name` on each earlier one.
+- **`mountAnchorBinding` leaves no inline `anchor-name` behind on a trigger it has stopped using.**
+  It holds exactly one trigger — the one currently carrying the inline name — and unwinds it both on
+  the next open, before the incoming trigger gains its own, and again on dispose. Holding *every*
+  past trigger was considered and rejected on retention grounds: a menu whose rows are rebuilt
+  between openings resolves a different first invoker each time, and keeping each one would pin every
+  discarded row alive for as long as the popup lives — exactly the retention the `WeakMap` in this
+  module was chosen to avoid.
 - **A failed stylesheet load leaves no `<link>` behind.** `loadStylesheet` evicted the failed entry
   from its cache but left the dead `<link>` in the head, so the retry the eviction exists to enable
   missed the cache, fell through to the duplicate check, found that link — and **resolved for a
@@ -84,56 +211,6 @@ class of defect. Both are now fixed.
   already-present-script path cleared its interval and did nothing else, unlike the two other failure
   routes — so a pre-existing script that hangs left the user with neither a widget nor a message,
   against the widget's unconditional "fails visible" promise. This branch had no test at all.
-- **A failing KV put no longer cancels the purge it started.** `write` used `Promise.all`, which
-  rejects the instant the put does, so the returned promise stopped covering the still-running sweep
-  — reintroducing the detached-purge cancellation 0.0.81 fixed, in the one case a sweep is most
-  likely to be mid-flight. `allSettled` plus an explicit rethrow of the put's rejection keeps both
-  halves of the contract: cover everything, reject only for the record write.
-
-### Changed
-
-- **`Logger.flush()` settles rather than rejects.** It used `Promise.all`, which was stricter than
-  the best-effort contract its own TSDoc states; a single failing channel both hid the others'
-  completion and surfaced as a caller-visible error. `requestLogger` additionally `.catch()`-guards
-  the flush before handing it to `waitUntil`, because the `await flush` on the no-`executionCtx`
-  branch sits in a `finally` — and a `finally` that throws *replaces* what was propagating, which
-  meant a log failure could discard a successful response or mask the handler error being rethrown.
-
-- **`MenuPopupProps["side"]` widened to the full `Side`** (`"top" | "right" | "bottom" | "left"`).
-  `navbar`'s nested `Menu.Popup` now passes `side="right"`, so a submenu opens beside its parent panel
-  rather than below it. The default is unchanged.
-- **Every forge selector on `data-slot` uses `~=` instead of `=`.** Identical specificity (0,1,0), so
-  nothing shifts in the cascade — but `=` no longer matches a composed element.
-
-### Breaking Changes
-
-- **A consumer's own `[data-slot="…"]` selectors must become `[data-slot~="…"]`** wherever they can
-  target an `asChild`-composed element. An exact-match selector stops matching a button that carries
-  two slot tokens.
-- **A consumer restating forge's anchoring by hand should delete it.** The `anchor-name` and
-  placement rules an app added to work around the dead block are now shipped, and a local `anchor-name`
-  on the same element will win over forge's and re-break the pairing.
-
----
-
-## [0.0.81] — 2026-08-03
-
-A follow-up review of the full source tree after 0.0.80. Four verified defects — plus a fifth found
-while fixing the third — and every one of them is the same shape: work that was *started* and then
-left outside the thing that keeps it alive. A purge outside the promise the isolate waits on. A
-rejected import with no handler on it. Timers outliving their disposer. A promise that resolved on
-an appended `<link>` rather than a loaded one. Each landed with tests that fail against the previous
-code; where a test could not have observed the defect, the reason is given, because that is usually
-the more useful half.
-
-### Added
-
-- **`lazy` accepts an `onError` callback.** Optional, and it rides on the already-exported
-  `LazyImportOptions`, so no barrel change and no existing call site changes. See *Fixed* for where
-  the rejection was going before.
-
-### Fixed
-
 - **A selected KV log purge was detached from the Worker lifetime.** `kvLogChannel.write()` started
   the sweep with `void purge(…).catch(() => {})` and returned only the `put` promise, so
   `Logger.flush()` and `requestLogger`'s `executionCtx.waitUntil()` both observed the write as
@@ -141,11 +218,13 @@ the more useful half.
   moment the tracked work finishes — which is precisely the moment the sweep dies mid-pass, and
   precisely when the soft `maxLogs`/`highWater` cap stops being enforced. "Best-effort" was meant to
   describe *whether* the purge runs and what it does with a failure; it had quietly come to also
-  describe whether it survives. `write` now awaits
-  `Promise.all([putPromise, purge(…).catch(() => {})])`.
-  The rejection stays swallowed deliberately: `flush()` uses `Promise.all`, not
-  `allSettled`, and `requestLogger` awaits it inside a `finally`, so a propagating purge failure
-  would discard a successful response. The cost is stated rather than absorbed — on
+  describe whether it survives. `write` now awaits both, and awaits them with
+  `Promise.allSettled([putPromise, purgePromise])` rather than `Promise.all`: `all` rejects the
+  instant the put does, which would stop the returned promise covering the still-running sweep in the
+  one case a sweep is most likely to be mid-flight. The put's rejection is then rethrown explicitly,
+  so both halves of the `LogChannel.write` contract hold — cover everything, reject only for the
+  record write — while the purge's own rejection stays swallowed. The cost is stated rather than
+  absorbed — on
   `purgeProbability` of writes the flush window now also covers one `list` and up to 50 delete
   batches, post-response under `waitUntil` and inline on the fallback path. **The existing stub was
   structurally incapable of catching this**: its `delete` resolves in the same microtask that starts
@@ -191,6 +270,31 @@ the more useful half.
 
 ### Changed
 
+- **`Logger.flush()` settles rather than rejects.** It used `Promise.all`, which was stricter than
+  the best-effort contract its own TSDoc states; a single failing channel both hid the others'
+  completion and surfaced as a caller-visible error. `requestLogger` additionally `.catch()`-guards
+  the flush before handing it to `waitUntil`, because the `await flush` on the no-`executionCtx`
+  branch sits in a `finally` — and a `finally` that throws *replaces* what was propagating, which
+  meant a log failure could discard a successful response or mask the handler error being rethrown.
+
+- **`MenuPopupProps["side"]` takes the whole `Side`,** which now spans eight values rather than four
+  — see the `Side` entry below. `navbar`'s nested `Menu.Popup` passes `side='inline-end'`, so a
+  submenu opens *beside* the panel that contains it rather than below it. The logical spelling rather
+  than `right` because the panel's own edge is what "beside" means: in an RTL subtree that edge is its
+  left, and the keyboard mirrors to match. The default is unchanged.
+
+- **`Side` widened from four physical values to eight,** adding the logical `block-start`,
+  `block-end`, `inline-start` and `inline-end` (`src/ui/contracts/state-attrs.ts`). Physical and
+  logical spellings share one value space because they share one `data-side` attribute: the physical
+  four are right wherever a popup must *not* mirror with the reader's direction, and the logical four
+  resolve against the element's own inherited directionality. A component that styles only the
+  physical subset projects it with `Exclude`, so a value its stylesheet cannot express is
+  unrepresentable rather than silently unstyled. The widening is what the `menu-popup` side × align
+  matrix in `src/ui/assets/css/theme-base.css` exists to serve — the logical sides are resolved there
+  with `:dir(ltr)` / `:dir(rtl)` pairs, because `anchor(inline-end)` is not a valid `<anchor-side>`
+  and the CSS cannot express them any other way.
+- **Every forge selector on `data-slot` uses `~=` instead of `=`.** Identical specificity (0,1,0), so
+  nothing shifts in the cascade — but `=` no longer matches a composed element.
 - **`LogChannel.write` now carries a stated contract.** A returned promise must cover **every**
   operation the write initiates, maintenance work included — `Logger.flush()` awaits what it is
   handed and nothing else, so anything left outside it can be cancelled when the isolate suspends. A
@@ -198,8 +302,247 @@ the more useful half.
   may reject. Custom channels compile unchanged; one that detaches its own maintenance is now in
   stated violation rather than merely unlucky.
 
+### Breaking Changes
+
+> **Upgrading a consuming app: read [`MIGRATION.md`](MIGRATION.md) as well as this section.** The
+> entries below are the record of what changed; the guide is the procedure, and it covers the four
+> breaks that are **silent** — an implicitly-optional schema field, a refusal whose status is
+> unchanged but whose body is not, a dropped `v.safeParse` config, and a hand-rolled
+> `Object.fromEntries` body read that is last-wins where the removed reader was first-wins. Each
+> compiles clean, returns `200`, and behaves differently in production. It closes with an audit
+> checklist of concrete greps.
+
+- **`defineAction` takes a `schema` instead of a `parse`/`validate` pair.** The two callbacks were
+  arbitrary functions the type system could say nothing about: `parse` returned `Input` and
+  `validate` returned `ValidationResult<Out>`, so a `validate` that handed back its own argument
+  satisfied the contract exactly as well as one that checked anything. Naming the schema makes the
+  guarantee a property of the type rather than of a convention each call site has to keep — `handle`
+  is now reachable only through a passing `v.safeParse`, and it receives the schema's **output**, so
+  a transform arrives as the type it actually is instead of being re-asserted with a cast.
+
+  The generic list changed shape with it, from `<Input, Bindings, ConfigData, Out>` to
+  `<S extends v.GenericSchema, Bindings, ConfigData>` — so a call site naming its bindings writes
+  `defineAction<typeof ContactSchema, Bindings, AppConfig>`, since TypeScript has no partial
+  inference and the schema argument comes first. `createHandlerFactory`'s bound `defineAction`
+  narrowed to a single parameter, and because `S` infers from `def.schema` the **bound** form needs
+  no type arguments at all.
+
+  ```ts
+  // before
+  export const contactAction = defineAction<ContactInput, Bindings, AppConfig>({
+    parse: (formData) => readFields(formData, ["name", "email", "message"]),
+    validate: (data) => validateContact(data),
+    handle: async (data, c, config) => { /* … */ },
+  });
+
+  // after — forge reads the body; `phone` can now genuinely be absent rather than ""
+  const ContactSchema = strictObject({
+    name: v.pipe(formText(), v.minLength(1)),
+    email: v.pipe(formText(), v.email()),
+    phone: v.optional(formText()),
+    message: v.pipe(formMultilineText(), v.minLength(1)),
+  });
+
+  export const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
+    schema: ContactSchema,
+    honeypot: CONTACT_DECOY, // required if the view renders `<Honeypot />`
+    handle: async (data, c, config) => { /* … */ },
+  });
+  ```
+
+  `strictObject`, `formText` and `formMultilineText` all come from `@y-core/forge/validation` as
+  named exports beside `v` — see **Added**. `formText()` is not optional politeness: the body read
+  passes values through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))`
+  accepts `"   "`.
+
+  Three properties of the body read are load-bearing and are why a named-field reader could not be
+  kept underneath the new shape: an **absent field stays absent** rather than becoming `""`, which is
+  what keeps `v.optional` reachable and required-ness a presence check instead of a min-length check;
+  a **repeated key arrives as an array**, so a scalar schema refuses it in its own words and a route
+  that genuinely accepts many says so with `v.array`; and a **`File` passes through unchanged**, so an
+  upload schema can see one.
+
+  > ⚠️ **`onValidationError` now receives `readonly v.BaseIssue<unknown>[]`, not
+  > `readonly string[]`.** A handler that interpolated the strings into a response will fail to
+  > compile — deliberately, because a valibot issue embeds the **rejected value** and the caller's own
+  > key, so how much of a caller's text travels back in a refusal is a decision only the app can make.
+  > For the field name alone — what the default fragment now renders — map the issues through
+  > `describeValidationIssue` (`@y-core/forge/validation`). `formatValidationIssues` reproduces
+  > `issue.message` and is an internal diagnostic; do not put its output in a response.
+
+  **`strictObject` is the recommendation, and the fields forge's own forms carry are handled for
+  you.** A form submits entries the request itself does not assert — a CSRF token, a honeypot decoy,
+  a CAPTCHA token — and a strict schema has no reason to declare any of them, so each is dropped
+  before validation. **Each is dropped because something consumed it**, never on a guess: the
+  honeypot and the Turnstile token because the pipeline checked them, `_csrf` because
+  `csrfProtection` published the field it took the token from. A route that renames one of them
+  declares the new name once, to the guard that reads it, and never a second time to the schema.
+
+- **A validation refusal answers `422`, not `200`.** The default fragment carried no status and
+  `fragmentResponse` defaults to `200`, so a refused write reported success — invisible to
+  status-based monitoring, to a WAF rule counting non-2xx, to an analytics funnel, and to log-level
+  routing alike. It is now `422`: a well-formed request the server understood and declined.
+  **Breaking for anything built on the `200`** — an htmx client enumerating status codes needs a
+  `422` entry with the swap it wants, and a probe treating non-2xx as failure needs to stop doing so
+  for this path.
+
+- **The refusal fragment no longer carries valibot's message — only the failing field's name.**
+  Every issue used to be rendered through a formatter that reproduces `issue.message`, and valibot
+  embeds the rejected value in that message with no truncation anywhere: a 50,000-character
+  submitted value produced a 50,000-character response. Worse, `v.pipe(v.string(), v.regex(/…/))`
+  echoed the **pattern source** — the server's own rule — beside the value, so a failing password
+  field returned the plaintext and the complexity policy together. The default now renders each
+  issue through the new `describeValidationIssue`, which reproduces neither the submission nor the
+  schema and bounds the field path it does render, so the response cannot be lengthened by what the
+  caller sent. A route that wants the old text supplies `onValidationError` and decides for itself
+  what travels back. Every `<li>` was HTML-escaped before and still is — this is a disclosure and
+  amplification fix, not an XSS fix.
+
+- **The refusal carries one `<li>`, not one per failing field.** `defineAction` now passes
+  `{ abortEarly: true }` — which `.decisions/INPUT_VALIDATION.md` §1b already mandated for form
+  validation while the call did not pass it. Beyond closing that contradiction it closes an
+  amplification: an attacker could add arbitrary extra field names to multiply the issue count, and
+  every issue emitted. A form rendering a per-field list from the **default** fragment now shows the
+  first failure only; supply `onValidationError` without `abortEarly` if enumerating is genuinely
+  wanted, and bound it deliberately.
+
+- **`injectedFields` is removed from `ActionDefinition`, with no shim.** The dropped-field set is
+  derived from the request instead: the pipeline's own guards supply the names they were given, and
+  `csrfProtection` publishes the field it took the token from on the new `csrfFieldCtx`. An
+  enumerated list was already wrong on the day it shipped — it omitted the Turnstile token field —
+  and getting it wrong fails silently and only in production. Delete the option. If it named a
+  renamed CSRF field, that name is already declared once to `csrfProtection`'s `tokenField` and
+  nothing further is needed.
+
+  **A route with no CSRF middleware now drops nothing for CSRF.** Absent `csrfFieldCtx` means
+  nothing consumed the field, so a submitted `_csrf` is an ordinary undeclared field and a strict
+  schema refuses it — pointing at the missing middleware rather than absorbing its absence. A
+  permissive default and a blanket `403` were both considered and rejected; see
+  `.decisions/ROUTING_AND_MIDDLEWARE.md` §2b for why.
+
+- **`honeypot` is now required for any `defineAction` route whose view renders a decoy, and
+  `turnstile` for any route rendering the widget.** Both checks moved into the pipeline, and each
+  field is dropped *because* it was checked — so a route that does not name them gets neither the
+  check nor the strip. This closes the sharpest consequence of the `defineAction` rewrite: the
+  pipeline stripped the honeypot field **before** validation without ever checking it, and forge
+  ships no honeypot or Turnstile middleware, so bot detection did not degrade on migration — it
+  disappeared, with no compile error. Omitting `honeypot` now means the decoy reaches a strict
+  schema that does not declare it and every submission is refused, which is loud rather than silent
+  and is the intended direction to fail in.
+
+  There is deliberately **no default** for `honeypot` and no reserved prefix. A decoy works only
+  while its name is unpredictable and plausible, and forge is open source, so any name or pattern
+  forge published would be a one-line bypass for every deployment at once. Hold the name as one
+  app-owned constant and reference it twice — `<Honeypot field={CONTACT_DECOY} />` in the view and
+  `defineAction({ honeypot: CONTACT_DECOY, … })` in the action. `<Honeypot>`'s `field` prop is a
+  security feature and is neither removed nor constrained.
+
+- **`Honeypot` no longer renders `data-slot="form-honeypot"`.** Nothing read the attribute and it
+  named the decoy outright, so a bot could match the wrapper without ever inspecting the field name
+  — which made hardening the *name* largely moot. **Breaking for a consumer selector or test
+  asserting on that attribute**; there is no replacement, by design.
+
+- **`readFields` and `readTextField` are removed from `@y-core/forge/form`.** Both returned `string`
+  and never `string | undefined`, mapping an absent field, a `File` and a genuinely empty string onto
+  one value — an absence collapse that happened *before* any schema could observe it, which is what
+  made `v.optional` unreachable through them. `defineAction` reads the body itself now; a route
+  outside that pipeline uses `parseFormData` and hands the entries to `v.safeParse` directly, which
+  the `form` README shows. The namespace deliberately ships no named-field reader.
+
+- **The `FormFieldReader` type is removed.** It was declared as
+  `(formData: ReadonlyFormData, field: string) => string` and its only documented meaning was the
+  shape of `readTextField`. Keeping it as a dependency-injection seam was considered and rejected: the
+  signature returns `string`, so it *is* the absence-collapse above, and publishing it as the
+  extension point would have made the discarded contract the one consumers type against. No forge
+  module and no consumer referenced it.
+
+- **`scopeAttrs` and `ScopeAttrsProps` moved from `@y-core/forge/ui/server` to
+  `@y-core/forge/ui/contracts`.** Both are published subpaths, so an existing import stops resolving.
+  **Remedy: change the import path**; the symbols and their signatures are unchanged.
+
+  ```ts
+  // before
+  import { scopeAttrs, type ScopeAttrsProps } from "@y-core/forge/ui/server";
+  // after
+  import { scopeAttrs, type ScopeAttrsProps } from "@y-core/forge/ui/contracts";
+  ```
+
+- **A consumer's own `[data-slot="…"]` selectors must become `[data-slot~="…"]`** wherever they can
+  target an `asChild`-composed element. An exact-match selector stops matching a button that carries
+  two slot tokens.
+- **A consumer restating forge's anchoring by hand should delete it.** The `anchor-name` and
+  placement rules an app added to work around the dead block are now shipped, and a local `anchor-name`
+  on the same element will win over forge's and re-break the pairing.
+
 ### Documentation
 
+- **`HTMX.md` §7a states why URL-valued `hx-*` attributes are deliberately unsanitized.** §7's
+  argument — that a selector or JSON blob cannot be neutralized by escaping — does not reach a URL,
+  which escapes fine, so the omission read as an oversight. It is not. `safeUrl` refuses by rewriting
+  to `"#"`, and `"#"` is inert on an `href` (a visibly dead link) but **live** on an `hx-get`: a valid
+  same-origin URL naming the current page, which htmx fetches and swaps. Sanitizing here would convert
+  a loud refusal into a *successful wrong request*. Two runtime layers sit underneath and are named as
+  backstops rather than controls — htmx dispatches an XHR and never navigates the value, so a
+  `javascript:` pseudo-URL does not execute; and `htmx.config.selfRequestsOnly` plus a consumer's
+  `connect-src` bound where a request may go. §7 is rescoped to the selector/JSON set it actually
+  governs, and `hxAttrs`'s TSDoc carries the same caveat at the call site.
+- **`HTMX.md` §7b names `hx-on:*` as the one attribute family htmx evaluates as JavaScript,** and
+  records the decision **not** to type it. Typing it needs a template-pattern index signature on the
+  htmx attribute interface — which is mixed into both the HTML and SVG bases, so every element type
+  and every `ui/core` prop type inherits it. A template index signature admits every key matching its
+  pattern, so a misspelled event name would stop being an error library-wide, bought for autocomplete
+  on a capability forge's default `script-src` already disables (htmx compiles the body with
+  `new Function`). Declined — and the absence is documented as *not* a guard, since the renderer has
+  no `on*` filter and emits the attribute verbatim.
+- **Three tripwire cases in `src/jsx/render-to-string.test.ts`** pin those decisions where a future
+  change would silently reverse them: a `javascript:` `hx-get` renders verbatim; one value on both
+  `href` and `hx-push-url` renders `href="#"` beside an unchanged `hx-push-url`, so the two fates
+  cannot drift into one; and `hx-on:click` renders verbatim, so the type omission is never mistaken
+  for enforcement.
+- **`SECURITY_HARDENING.md` §2d describes `safeUrl` as it behaves.** It is an allow-list on the
+  scheme, not a denylist, and it strips control characters and whitespace before matching — but it
+  does **not** decode HTML entities, which the previous text implied. It does not need to: the same
+  pass escapes the value, so an entity-encoded payload leaves with its `&` escaped and never
+  re-decodes into a scheme. `safeUrl` picks the scheme; escaping closes the entity route. §2d now also
+  states that no `hx-*` attribute is covered, in either half.
+- **`INPUT_VALIDATION.md` §1d, `ROUTING_AND_MIDDLEWARE.md` §2b/§5b, `NAMESPACE_DESIGN.md`'s subpath
+  catalog, and `src/form/README.md` and `src/app/README.md`** all follow the `defineAction` change.
+  The former §2a/§2b on `readFields`/`readTextField` are gone rather than reworded, and
+  "input validation must occur before any side effect" is restated as structural — a property of the
+  schema contract rather than a rule each action has to keep.
+- **`INPUT_VALIDATION.md` §1a names what `validation` exports beside `v`.** The section claimed `v`
+  was the whole surface, which `strictObject`, the form-text primitives and
+  `describeValidationIssue` make false — and the distinction is load-bearing, because
+  `strictObject` and `v.strictObject` are different functions. §1b's own snippet rendered
+  `result.issues.map((i) => i.message)`, precisely the disclosure the refusal change removes, and
+  now maps through `describeValidationIssue`. §1d carries the consume-then-drop rule, the
+  `strictObject` recommendation with its opt-in residual stated rather than hidden, the decision
+  that forge does not normalize at the reader together with the four reasons, and the `422`/`500`
+  refusal shapes. §4a and §4b give the two bot checks their home inside `defineAction` and stop
+  restating field-name literals `src/form/constants.ts` owns. §6b's ordered step list said a
+  `defineAction` route gets "steps 1, 5 and 6 for free"; it now says **1, 2, 4, 5 and 6**, with
+  step 3 (CSRF) staying middleware.
+- **`INPUT_VALIDATION.md` §1d reconciles a rule that had started to read as violated.** Middleware
+  still attaches to the controller action object and never goes inside `defineAction`. The line the
+  rule draws is between a **transport** guard — deciding from the request's envelope, needing to
+  know nothing about this route's fields — and a **body-content** guard, which reads a field that is
+  part of this form's design and therefore belongs where the body is read and where the field it
+  consumes is dropped in the same step.
+- **`ROUTING_AND_MIDDLEWARE.md` §2b owns the derive-only rule,** including why a permissive default
+  and a blanket `403` were both rejected, and stops restating a `defineAction` option list that had
+  already drifted to include `injectedFields` — `ActionDefinition` and `src/app/README.md` own that
+  list. §4a adds `csrfFieldCtx` to the published context accessors with the `.getOptional`
+  requirement that makes its absence readable.
+- **`src/form/README.md`'s hand-rolled action example was wrong twice and is replaced.** It parsed
+  with `Object.fromEntries(formData.entries())` — last-wins, where the real reader groups a repeated
+  key into an array — *and* it sat under a `csrfProtection` middleware while parsing with a
+  `v.strictObject`, so as written it refused 100% of requests. The primary example is now a
+  `defineAction` route; a second, smaller one shows `formToObject` with the `drop` set a CSRF guard
+  makes necessary, for handlers outside the pipeline.
+- **`src/validation/README.md` documents the four new exports**, and two stale references to a
+  `validate` hook `defineAction` no longer has are gone. `src/app/README.md`'s status table, option
+  table and worked example follow the pipeline; its security notes now describe a refusal that names
+  a field rather than one that quotes the caller.
 - **`UI_CLIENT_RUNTIME.md` §3b documented three signatures that do not exist.** It described
   `lazy(() => import(…))` as deferring "until the browser is idle" — it is an IntersectionObserver
   keyed on a `data-ref` element, takes an options object and returns a disposer — and gave
@@ -596,6 +939,38 @@ does so because something about it was invisible, and that is the part worth wri
 - **`src/form/README.md`, `INPUT_VALIDATION.md` §4a and `src/ui/README.md`** document the required
   `<Honeypot />` composition and the migration. **`src/router/README.md`** documents `forMethod` and
   states plainly that `app.use` is path-scoped only.
+
+---
+
+## [0.0.79] — 2026-08-02
+
+Released from a single change to the asset pipeline and its governing rule; the entries below are
+the substance of it.
+
+### Added
+
+- **`generateAssetsTypes(config, options?)` and the `forge-assets types` command**
+  (`@y-core/forge/assets/build`) — writes the generated assets module from `assets.config.ts` alone,
+  with no CSS, JS, sprite, icon or font build and so no `tailwindcss`, `esbuild`, `sharp` or network.
+  Everything in that module which carries *type* information is derivable from config — the manifest
+  keys and the sprite symbol ids that give `createIcon` its icon-name union — so a clean checkout can
+  typecheck and run tests against a module no consumer commits. Only the values need a real build:
+  emitted paths are the unhashed logical names and every `viewBox` is empty, and the artifact carries
+  a distinct `TYPES ONLY` banner saying so, because the two artifacts are shape-identical and nothing
+  else in the file distinguishes them. Both paths emit through the same function as `buildAll`, so
+  they cannot drift in shape. The command is a sibling of `sprites` rather than a child of `build`,
+  since it builds nothing.
+
+### Documentation
+
+- **`LIBRARY_ARCHITECTURE.md` §3d states where CSS source scanning stops.** Tailwind never scans
+  `node_modules`, so shipping raw source ships no *rules* — a class with no rule renders as an
+  attribute that does nothing. `forge.css` carries `@source` paths written relative to itself, so
+  they resolve wherever forge landed. The scope stops at `ui/` as a decision rather than as the reach
+  of a relative path: a component library owes its consumers the classes its own components emit,
+  while a namespace whose markup is opt-in owes them a documented `@source` requirement in its own
+  README instead. `scripts/validate-css-sources.ts` enforces both halves from disk, so neither is a
+  list to keep in step. `src/app`, `src/assets`, `src/http`, `src/logging` and `src/ui` READMEs follow.
 
 ---
 
@@ -1272,6 +1647,12 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.0.81]: https://github.com/y-core/forge/compare/v0.0.80...v0.0.81
+[0.0.80]: https://github.com/y-core/forge/compare/v0.0.79...v0.0.80
+[0.0.79]: https://github.com/y-core/forge/compare/v0.0.78...v0.0.79
+[0.0.78]: https://github.com/y-core/forge/compare/v0.0.77...v0.0.78
+[0.0.77]: https://github.com/y-core/forge/compare/v0.0.76...v0.0.77
+[0.0.76]: https://github.com/y-core/forge/compare/v0.0.75...v0.0.76
 [0.0.75]: https://github.com/y-core/forge/compare/v0.0.74...v0.0.75
 [0.0.74]: https://github.com/y-core/forge/compare/v0.0.73...v0.0.74
 [0.0.73]: https://github.com/y-core/forge/compare/v0.0.68...v0.0.73

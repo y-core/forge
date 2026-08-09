@@ -1,9 +1,9 @@
 # `@y-core/forge/form`
 
 Form submission handling for server-rendered apps on `@remix-run/fetch-router` + Cloudflare Workers:
-byte-capped form-data parsing, field reading, **stateless CSRF protection**, **honeypot bot
-detection**, and **Cloudflare Turnstile** verification. Each concern is a separate, independently
-useful function — compose only what a route needs.
+byte-capped form-data parsing, **stateless CSRF protection**, **honeypot bot detection**, and
+**Cloudflare Turnstile** verification. Each concern is a separate, independently useful function —
+compose only what a route needs.
 
 ```ts
 import {
@@ -11,12 +11,25 @@ import {
   importCsrfKey,
   mintCsrf,
   csrfTokenCtx,
+  csrfFieldCtx,
   parseFormData,
-  readFields,
+  formToObject,
   isHoneypotFilled,
   verifyTurnstile,
 } from "@y-core/forge/form";
 ```
+
+**The recommended path does not call most of this.** `defineAction` (`@y-core/forge/app`) takes a
+schema and runs the whole pipeline itself — the byte-capped read, the honeypot check, Turnstile
+verification, and the parse — so a route names its schema plus the field each guard consumes and
+writes none of the plumbing. The functions here are the primitives that pipeline is built from, and
+they stay public for handlers outside it.
+
+`formToObject` is how a body becomes something a schema can parse: it carries **every** entry
+through, so an undeclared field is refused rather than silently dropped, an absent field stays
+absent rather than becoming `""`, a repeated key arrives as an array, and a `File` survives. This
+namespace deliberately exposes no **named-field** reader — one existed, and it collapsed absence
+into `""` before any schema could observe it.
 
 ---
 
@@ -25,69 +38,106 @@ import {
 - **Byte-capped form parsing** — `parseFormData` enforces a body-size budget via a `Content-Length`
   fast-path **and** a streaming counting transform, closing the chunked-transfer bypass. The parse is
   memoized per `Request`, so CSRF verification and the action handler share a single body read.
-- **Field reading** — `readTextField` / `readFields` normalise CRLF to LF and trim, returning `""`
-  for absent or non-string (file) fields.
 - **Stateless CSRF** — HMAC-SHA256 tokens bound to a request **path** and an optional **subject**,
   with **key-ring rotation** and a 30s clock-skew tolerance. No server-side token store.
 - **CSRF middleware** — `csrfProtection` pre-mints a token on `GET`/`HEAD` and verifies it on every
-  mutation, collapsing **every** failure to a bare `403`.
+  mutation, collapsing **every** failure to a bare `403`. It also publishes the field it took the
+  token from on `csrfFieldCtx`, so a route builder downstream can drop exactly what the guard
+  consumed.
+- **Whole-body read** — `formToObject` turns a parsed form into a plain object with nothing named and
+  nothing collapsed: absence stays absence, a repeated key becomes an array, a `File` passes through.
+  Its `drop` set is how a consumed field leaves before a strict schema sees it.
 - **Honeypot detection** — `isHoneypotFilled` flags submissions that filled an invisible decoy field.
+  A `defineAction` route does not call it — it names `honeypot` and the pipeline runs the check.
 - **Turnstile verification** — `verifyTurnstile` calls the Cloudflare siteverify API with mandatory
-  hostname pinning plus optional action/cdata pinning and a request timeout.
+  hostname pinning plus optional action/cdata pinning and a request timeout. A `defineAction` route
+  names `turnstile` instead of calling it.
 
 ---
 
 ## Usage
 
 A complete contact-form flow: middleware verifies CSRF, the page handler mints a token for its form,
-and the action handler parses, filters bots, reads fields, and verifies Turnstile.
+and the action declares its schema and the two fields its bot guards consume.
 
 ```ts
-import {
-  csrfProtection,
-  importCsrfKey,
-  csrfTokenCtx,
-  parseFormData,
-  readFields,
-  isHoneypotFilled,
-  verifyTurnstile,
-} from "@y-core/forge/form";
+import { csrfProtection, importCsrfKey, csrfTokenCtx } from "@y-core/forge/form";
+import { defineAction } from "@y-core/forge/app";
 import { getAppContext } from "@y-core/forge/context";
+import { fragmentResponse, renderSuccess } from "@y-core/forge/http";
+import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation";
 
-// 1. CSRF middleware — the secret is resolved lazily from the request context.
-//    On GET/HEAD it pre-mints a token bound to the current path; on POST it verifies.
+// One app-owned constant, referenced by the view and by the action. Never a forge-published name:
+// a decoy works only while a bot cannot predict it, and forge is open source.
+export const CONTACT_DECOY = "company";
+
+// 1. CSRF middleware — the secret is resolved lazily from the request context. On GET/HEAD it
+//    pre-mints a token bound to the current path; on POST it verifies, and on both it records the
+//    field it read the token from so the action can drop exactly that field.
 const csrfGuard = csrfProtection({
   secret: (context) => importCsrfKey(getAppContext(context).env.CSRF_SECRET),
+  subject: false, // path-only tokens — the greppable opt-out; bind to a session where one exists
 });
 
-// 2. Page handler (GET /contact) — read the pre-minted token bound to the current path
-//    and stamp it into the form's hidden `_csrf` input.
+// 2. Page handler (GET /contact) — read the pre-minted token bound to the current path and stamp it
+//    into the form's hidden `_csrf` input, alongside the decoy under the shared constant.
 function contactPage(context) {
   const token = csrfTokenCtx.get(context);
-  return renderPage(<ContactForm csrfToken={token} />);
+  return renderPage(<ContactForm csrfToken={token} decoy={CONTACT_DECOY} />);
 }
 
-// 3. Action handler (POST /contact) — runs only after csrfGuard verified the token.
+// 3. Action handler (POST /contact) — the pipeline reads the body, checks the decoy, verifies the
+//    CAPTCHA, drops all three consumed fields, then parses. `_csrf` is dropped because csrfGuard
+//    published its name; the other two because this route named them.
+const ContactSchema = strictObject({
+  name: v.pipe(formText(), v.minLength(2)),
+  email: v.pipe(formText(), v.email()),
+  message: v.pipe(formMultilineText(), v.minLength(10)),
+});
+
+const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
+  schema: ContactSchema,
+  honeypot: CONTACT_DECOY,
+  turnstile: {
+    secretKey: (_c, config) => config.services.turnstile.secretKey,
+    verify: (c) => ({
+      expectedHostname: c.url.hostname,
+      expectedAction: "contact",
+      remoteIp: c.request.headers.get("CF-Connecting-IP") ?? undefined,
+    }),
+  },
+  handle: async (data) => {
+    await sendEmail(data);
+    return fragmentResponse(renderSuccess("Thanks — we'll be in touch."));
+  },
+});
+```
+
+### Outside the pipeline
+
+A handler that cannot use `defineAction` reads the body with `parseFormData` and converts it with
+`formToObject`. **Behind a CSRF guard, that conversion must drop the field the guard consumed** —
+otherwise a strict schema refuses `_csrf` and the route rejects every legitimate request:
+
+```ts
+import { csrfFieldCtx, formToObject, parseFormData } from "@y-core/forge/form";
+import { describeValidationIssue, v } from "@y-core/forge/validation";
+
 async function contactAction(context) {
   const formData = await parseFormData(context);
 
-  // Reject obvious bots before any work.
-  if (isHoneypotFilled(formData)) {
-    return new Response("Bad request", { status: 400 });
+  // The guard published the field it read the token from. Absent means no guard ran, so nothing was
+  // consumed and nothing is dropped — and a `_csrf` arriving anyway is an undeclared field the
+  // strict schema is right to refuse, which names the missing middleware.
+  const consumed = csrfFieldCtx.getOptional(context);
+  const body = formToObject(formData, { drop: new Set(consumed === undefined ? [] : [consumed]) });
+
+  const parsed = v.safeParse(ContactSchema, body, { abortEarly: true });
+  if (!parsed.success) {
+    return new Response(parsed.issues.map(describeValidationIssue).join(", "), { status: 422 });
   }
 
-  // Verify the Turnstile challenge response.
-  const env = getAppContext(context).env;
-  const turnstile = await verifyTurnstile(formData, env.TURNSTILE_SECRET_KEY, {
-    expectedHostname: "example.com",
-    expectedAction: "contact",
-  });
-  if (!turnstile.ok) {
-    return new Response("Verification failed", { status: 403 });
-  }
-
-  const { name, email, message } = readFields(formData, ["name", "email", "message"]);
-  await sendEmail({ name, email, message });
+  await sendEmail(parsed.output);
   return new Response("Thanks — we'll be in touch.");
 }
 ```
@@ -135,21 +185,39 @@ bytes actually read against its own `maxBytes` and rejects with its own `413`. T
 ordering is that a guard which parses first — `csrfProtection` — must be given the same raised cap as
 the route handler, or it rejects the request before the handler is reached.
 
-### Field reading — `readTextField`, `readFields`
+### Body to object — `formToObject`
 
 ```ts
-function readTextField(formData: ReadonlyFormData, field: string): string;
-function readFields<K extends string>(formData: ReadonlyFormData, fields: K[]): Record<K, string>;
+function formToObject(
+  formData: ReadonlyFormData,
+  options?: FormToObjectOptions,
+): Record<string, FormDataEntryValue | FormDataEntryValue[]>;
 ```
 
-`readTextField` returns the field value with `\r\n` normalised to `\n` and surrounding whitespace
-trimmed. It returns `""` when the field is absent or is a `File` (non-string) value — never `null` or
-`undefined`. `readFields` applies `readTextField` across a list of names and returns a record keyed by
-those names.
+Converts a parsed form into a plain object a schema can validate, carrying every entry the caller
+sent. This is what `defineAction` uses internally; call it directly only for a handler outside that
+pipeline.
 
-```ts
-const { name, email } = readFields(formData, ["name", "email"]); // Record<"name" | "email", string>
-```
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `formData` | `ReadonlyFormData` | — | The parsed body, from `parseFormData`. |
+| `options.drop` | `ReadonlySet<string>` | — | Field names to leave out. Use it for fields a guard already consumed — a CSRF token, a decoy, a CAPTCHA token — since a strict schema has no reason to declare them. |
+
+Four properties are load-bearing, and each is why a named-field reader could not do this job:
+
+- **An absent field is absent**, never `""`. That keeps `v.optional` reachable and required-ness a
+  presence check rather than a min-length check.
+- **A repeated key arrives as an array**, so a scalar schema refuses it in its own words and a route
+  that genuinely accepts many says so with `v.array`. Note this is *not* `Object.fromEntries`
+  behaviour, which is last-wins and hides the duplicate entirely.
+- **A `File` passes through unchanged**, so an upload schema can see one.
+- **The result has no prototype**, which matters to a caller that inspects it:
+  `body.hasOwnProperty(name)` is `undefined` rather than a method and calling it throws. Use
+  `Object.hasOwn(body, name)` or `name in body`.
+
+Text normalization is deliberately **not** done here — it belongs to the schema, via `formText()` and
+`formMultilineText()` from `@y-core/forge/validation`. See
+[`INPUT_VALIDATION.md`](../../.decisions/INPUT_VALIDATION.md) §1d for the four reasons.
 
 ### CSRF middleware — `csrfProtection`
 
@@ -210,17 +278,29 @@ resolved. `form` and `session` are independent leaf namespaces — this composit
 consuming app, which is why forge does not auto-wire it. The subject-mismatch contract is pinned
 by the integration test in `csrf.test.ts` ("subject binding — wrong session returns 403").
 
-### CSRF context accessors — `csrfTokenCtx`, `csrfMinterCtx`
+### CSRF context accessors — `csrfTokenCtx`, `csrfMinterCtx`, `csrfFieldCtx`
 
 ```ts
 const csrfTokenCtx: ContextVar<string>;
 const csrfMinterCtx: ContextVar<(path: string) => Promise<string>>;
+const csrfFieldCtx: ContextVar<string>;
 ```
 
 `csrfTokenCtx.get(context)` returns the pre-minted token bound to the **current request's pathname**,
 set by `csrfProtection` on `GET`/`HEAD`. Use it only when the form POSTs back to the same path —
 otherwise verification fails with `path-mismatch`. `csrfMinterCtx` holds the underlying minter function
 and is normally accessed indirectly through `mintCsrf`.
+
+`csrfFieldCtx` carries the field name this request's guard took the token from — `tokenField`, or its
+default. `csrfProtection` sets it above every early return, so it is present on every request the
+guard ran on: the `GET` that mints, the mutation that passes, and the mutation it refuses alike.
+
+**Read it with `.getOptional`, never `.get`.** Absence is meaningful rather than an error: it says no
+guard ran on this request, so nothing consumed the field and nothing should be dropped for it. That is
+the whole contract a downstream reader needs, which is why the accessor lives apart from `csrf.ts` —
+importing it pulls in no token implementation and no Web Crypto work. See
+[`ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §2b for the derive-only rule
+built on it.
 
 ### Mint for another path — `mintCsrf`
 
@@ -289,7 +369,7 @@ the front, deploy, and retire the old secret only after the longest token lifeti
 
 ```ts
 const ring = await importCsrfKeyRing([env.CSRF_SECRET_NEW, env.CSRF_SECRET_OLD]);
-const csrfGuard = csrfProtection({ secret: () => ring });
+const csrfGuard = csrfProtection({ secret: () => ring, subject: false });
 ```
 
 ### Honeypot — `isHoneypotFilled`
@@ -306,10 +386,20 @@ is hidden from human users. Returns `false` when the field is absent or empty.
 | `formData` | `ReadonlyFormData` | — | Parsed form data. |
 | `field` | `string` | `HONEYPOT_FIELD_DEFAULT` (`"__surname"`) | The decoy field name to inspect. |
 
-Combine with an early return so bot submissions never reach business logic:
+**A `defineAction` route does not call this.** It names `honeypot: CONTACT_DECOY`, and the pipeline
+runs the check before the schema and drops the field because it checked it — so the schema never has
+to declare a field no human fills. There is no default for that option and no shorthand: a name forge
+could supply is a name every bot already knows to skip, in every deployment at once.
+
+Hold the name as **one app-owned constant referenced twice** — by the view that renders the decoy and
+by the action that checks it. Forgetting the action half is then a missing argument at the call site
+rather than a form that silently stops being protected.
+
+For a handler outside the pipeline, combine `isHoneypotFilled` with an early return so bot
+submissions never reach business logic:
 
 ```ts
-if (isHoneypotFilled(formData)) return new Response("Bad request", { status: 400 });
+if (isHoneypotFilled(formData, CONTACT_DECOY)) return new Response("Bad request", { status: 400 });
 ```
 
 #### Rendering the decoy — compose `<Honeypot />` explicitly
@@ -325,13 +415,16 @@ Render `Honeypot` from `@y-core/forge/ui/core` on the forms that submit mutation
 import { Form, Honeypot } from "@y-core/forge/ui/core";
 
 <Form method='post' csrfToken={token}>
-  <Honeypot />
+  <Honeypot field={CONTACT_DECOY} />
   <input name='email' />
 </Form>;
 ```
 
-`Honeypot` takes an optional `field` defaulting to `HONEYPOT_FIELD_DEFAULT`, the same constant
-`isHoneypotFilled` reads. Override both or neither.
+`Honeypot` takes an optional `field` defaulting to `HONEYPOT_FIELD_DEFAULT`. Pass the app's own
+constant instead — the default is public, so it is the one name every bot already knows — and pass the
+same constant to whatever checks it: `defineAction`'s `honeypot`, or `isHoneypotFilled`'s second
+argument. The rendered markup carries no attribute naming the wrapper as a honeypot, for the same
+reason the field name should not be forge's: an attribute nothing reads still identifies the decoy.
 
 > **Migrating from ≤ 0.0.79.** Every `<Form method='post'>` needs a `<Honeypot />` child added.
 > Nothing fails at build or at runtime if you forget — the form simply stops being protected.
@@ -352,6 +445,12 @@ Verifies a Cloudflare Turnstile token against the siteverify API and returns a d
 The token field and the client IP live **inside** `options` (`tokenField` / `remoteIp`) — there are no
 trailing positional arguments.
 
+**A `defineAction` route does not call this either.** It names `turnstile: { secretKey, verify }`, and
+the pipeline verifies the token and drops the token field in one step. `tokenField` is fixed when the
+route is defined, because the field is dropped whether or not verification ever reaches the network,
+while `secretKey` and `verify` resolve per request — a secret lives in a binding, and the hostname a
+token must have been minted on is usually the request's own.
+
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `formData` | `ReadonlyFormData` | — | Parsed form data carrying the Turnstile response. |
@@ -359,7 +458,7 @@ trailing positional arguments.
 | `options.expectedHostname` | `string` | — | **Required.** The siteverify hostname must match exactly, else `hostname-mismatch`. Prevents cross-site token replay. |
 | `options.expectedAction` | `string` | — | When set, the verified action must match, else `action-mismatch`. |
 | `options.expectedCData` | `string` | — | When set, the verified cdata must match, else `cdata-mismatch`. |
-| `options.tokenField` | `string` | `"cf-turnstile-response"` | Form field holding the Turnstile response token. |
+| `options.tokenField` | `string` | `TURNSTILE_FIELD_DEFAULT` | Form field holding the Turnstile response token — the field Cloudflare's widget writes. |
 | `options.remoteIp` | `string` | — | Client IP forwarded to siteverify (e.g. the `CF-Connecting-IP` header). |
 | `options.timeoutMs` | `number` | `5000` | Request timeout; clamped to a 1 ms minimum. A timed-out request returns `timeout`. |
 
@@ -385,7 +484,8 @@ if (!result.ok) {
 | Export | Value | Description |
 |---|---|---|
 | `CSRF_FIELD_DEFAULT` | `"_csrf"` | Default CSRF hidden-input field name. |
-| `HONEYPOT_FIELD_DEFAULT` | `"__surname"` | Default honeypot field name. |
+| `HONEYPOT_FIELD_DEFAULT` | `"__surname"` | Default honeypot field name. Prefer an app-owned name — this one is public. |
+| `TURNSTILE_FIELD_DEFAULT` | `"cf-turnstile-response"` | The field Cloudflare's Turnstile widget writes its token into. |
 | `FORM_MAX_BYTES_DEFAULT` | `102400` | Default max form body size (100 KB). |
 | `CsrfConfigSchema` | valibot schema | Validates `{ secret }` as ≥32 hex characters. |
 | `TurnstileConfigSchema` | valibot schema | Validates `{ secretKey, siteKey }`. |
@@ -394,9 +494,9 @@ if (!result.ok) {
 
 | Type | Description |
 |---|---|
-| `ReadonlyFormData` | Read-only `FormData` view (`get`/`getAll`/`has`/iteration); the shape every reader accepts. |
+| `ReadonlyFormData` | Read-only `FormData` view (`get`/`getAll`/`has`/iteration); what `parseFormData` resolves to and what every consumer of a parsed body accepts. |
 | `ParseFormDataOptions` | `{ maxBytes? }` for `parseFormData`. |
-| `FormFieldReader` | `(formData, field) => string` — the shape of `readTextField`. |
+| `FormToObjectOptions` | `{ drop? }` for `formToObject` — the field names a guard already consumed. |
 | `CsrfKeyRing` | `{ activeKeyId, keys }` — active signing key plus all keys valid for verification. |
 | `CsrfSecretResolver` | `(context) => CryptoKey \| CsrfKeyRing \| Promise<…>`. |
 | `CsrfProtectionOptions` | `{ secret, tokenField?, headerName?, subject, maxBytes? }` — the `csrfProtection` middleware options (`subject` is required: resolver or `false`). |

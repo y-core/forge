@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { resolveChromiumPath } from "./scripts/lib/browser.ts";
 
 /**
  * The browser set — real Chromium, one verb of its own (`bun run test:browser`).
@@ -15,16 +16,17 @@ import { defineConfig, devices } from "@playwright/test";
  * There is **no `webServer`**: specs bundle the module under test with esbuild and inject it into
  * `page.setContent()` markup (`src/ui/client/browser-test-helper.ts`). forge has no dev server and
  * needs none.
+ *
+ * `executablePath` is not a preference: playwright reads no environment variable for the browser
+ * path, so a container that bakes Chromium in is invisible to it without this line and every spec
+ * fails inside `browserType.launch()` rather than in the code under test.
+ * `scripts/lib/browser.ts` owns that resolution, because the gate's prerequisite probe must answer
+ * from the same rule.
  */
 export default defineConfig({
   testDir: ".",
   testMatch: "src/**/*.browser.ts",
   fullyParallel: true,
   reporter: "list",
-  projects: [
-    {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
-    },
-  ],
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], launchOptions: { executablePath: resolveChromiumPath() } } }],
 });

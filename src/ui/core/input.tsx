@@ -3,6 +3,7 @@
 import type { FC, JSX } from "../../jsx/types";
 import type { FieldDescriptor } from "./field";
 import { fieldControlProps } from "./field";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type InputProps = JSX.IntrinsicElements["input"] & { field?: FieldDescriptor };
@@ -11,8 +12,8 @@ const INPUT_BASE = "w-full rounded-lg border border-input bg-background px-3 py-
 const INPUT_FOCUS = "focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20";
 const INPUT_DISABLED = "disabled:cursor-not-allowed disabled:opacity-50";
 
-export const Input: FC<InputProps> = ({ class: cls, field, ...props }) => {
+export const Input: FC<InputProps> = ({ class: cls, field, "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 
-  return <input data-slot='input' class={cn(INPUT_BASE, INPUT_FOCUS, INPUT_DISABLED, asClass(cls))} {...resolved} />;
+  return <input data-slot={slotToken("input", inherited)} class={cn(INPUT_BASE, INPUT_FOCUS, INPUT_DISABLED, asClass(cls))} {...resolved} />;
 };

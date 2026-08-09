@@ -33,7 +33,9 @@ export function parseBarrelExports(filePath: string): { values: string[]; hasExp
       hasTypeExports = true; // type-only block — erased at runtime
       continue;
     }
-    for (const part of match[2].split(",")) {
+    const body = match[2]; // the brace group is a mandatory group, so a match implies it
+    if (body === undefined) continue;
+    for (const part of body.split(",")) {
       const trimmed = part.trim();
       if (!trimmed) continue;
       if (trimmed.startsWith("type ")) continue; // inline type marker
@@ -46,7 +48,9 @@ export function parseBarrelExports(filePath: string): { values: string[]; hasExp
   // Phase 2: inline export definitions
   const defRe = /export\s+(?:async\s+)?(?:function|const|class)\s+([A-Za-z_$]\w*)/g;
   for (const match of source.matchAll(defRe)) {
-    values.push(match[1]);
+    const name = match[1]; // the identifier is a mandatory group, so a match implies it
+    if (name === undefined) continue;
+    values.push(name);
   }
 
   return { values, hasExportStar, hasTypeExports };
@@ -63,7 +67,9 @@ export function parseBarrelExportNames(filePath: string): Set<string> {
 
   const blockRe = /export\s+(?:type\s+)?\{([^}]+)\}/gs;
   for (const match of source.matchAll(blockRe)) {
-    for (const part of match[1].split(",")) {
+    const body = match[1]; // the brace group is a mandatory group, so a match implies it
+    if (body === undefined) continue;
+    for (const part of body.split(",")) {
       let trimmed = part.trim();
       if (!trimmed) continue;
       if (trimmed.startsWith("type ")) trimmed = trimmed.slice(5).trim();
@@ -78,7 +84,11 @@ export function parseBarrelExportNames(filePath: string): Set<string> {
   }
 
   const defRe = /export\s+(?:async\s+)?(?:function|const|class|interface|type|enum)\s+([A-Za-z_$]\w*)/g;
-  for (const match of source.matchAll(defRe)) names.add(match[1]);
+  for (const match of source.matchAll(defRe)) {
+    const name = match[1]; // the identifier is a mandatory group, so a match implies it
+    if (name === undefined) continue;
+    names.add(name);
+  }
 
   return names;
 }
@@ -86,11 +96,13 @@ export function parseBarrelExportNames(filePath: string): Set<string> {
 /** Extracts the exported identifier(s) declared on a single line, or `null` if none. */
 export function exportNamesFromLine(line: string): string[] | null {
   const decl = line.match(/export\s+(?:async\s+)?(?:function|const|class|interface|type|enum)\s+([A-Za-z_$]\w*)/);
-  if (decl) return [decl[1]];
+  const declName = decl?.[1]; // the identifier is a mandatory group, so a match implies it
+  if (declName !== undefined) return [declName];
 
   const block = line.match(/export\s+(?:type\s+)?\{([^}]+)\}/);
-  if (block) {
-    const names = block[1]
+  const blockBody = block?.[1]; // the brace group is a mandatory group, so a match implies it
+  if (blockBody !== undefined) {
+    const names = blockBody
       .split(",")
       .map((part) => {
         let trimmed = part.trim();
@@ -114,18 +126,22 @@ export function exportNamesFromLine(line: string): string[] | null {
 function tsdocBlockEnd(lines: string[], index: number): number {
   let start = -1;
   for (let i = index; i >= 0; i--) {
-    if (lines[i].includes("/**")) {
+    const line = lines[i];
+    if (line === undefined) continue;
+    if (line.includes("/**")) {
       start = i;
       break;
     }
-    if (i < index && lines[i].includes("*/")) break; // an earlier block already closed — not ours
+    if (i < index && line.includes("*/")) break; // an earlier block already closed — not ours
   }
   if (start < 0) return index;
 
   for (let i = start; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === undefined) continue;
     // On the opening line the search must begin past `/**`, so a one-line block closes on itself.
-    const from = i === start ? lines[i].indexOf("/**") + 3 : 0;
-    if (lines[i].indexOf("*/", from) >= 0) return i;
+    const from = i === start ? line.indexOf("/**") + 3 : 0;
+    if (line.indexOf("*/", from) >= 0) return i;
   }
   return index;
 }
@@ -144,10 +160,14 @@ export function findPublicSymbols(filePath: string): string[] {
   const lines = readFileSync(filePath, "utf-8").split("\n");
   const found: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].includes("@public")) continue;
+    const line = lines[i];
+    if (line === undefined) continue;
+    if (!line.includes("@public")) continue;
     const blockEnd = tsdocBlockEnd(lines, i);
     for (let j = blockEnd; j < Math.min(lines.length, blockEnd + DECLARATION_LOOKAHEAD); j++) {
-      const names = exportNamesFromLine(lines[j]);
+      const candidate = lines[j];
+      if (candidate === undefined) continue;
+      const names = exportNamesFromLine(candidate);
       if (names) {
         found.push(...names);
         break;

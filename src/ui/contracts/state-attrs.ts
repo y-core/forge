@@ -69,9 +69,17 @@ export type Orientation = "horizontal" | "vertical" | "responsive";
 
 /**
  * Side a popup is positioned on, relative to its anchor.
+ *
+ * Physical and logical spellings share one value space because they share one attribute. The
+ * physical four are the right answer wherever a popup must *not* mirror with the reader's
+ * direction; the logical four resolve against the element's own inherited directionality, so a
+ * submenu opens away from the text it belongs to in both LTR and RTL.
+ *
+ * A component that styles only the physical subset projects it with `Exclude`, so a value its
+ * stylesheet cannot express is unrepresentable rather than silently unstyled.
  * @public
  */
-export type Side = "top" | "right" | "bottom" | "left";
+export type Side = "top" | "right" | "bottom" | "left" | "block-start" | "block-end" | "inline-start" | "inline-end";
 
 /**
  * Alignment of a popup along its side.

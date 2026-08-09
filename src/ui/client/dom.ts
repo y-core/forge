@@ -1,5 +1,5 @@
 /**
- * Owner-document utilities — the realm- and shadow-safe replacements for the four global reflexes a
+ * Owner-document utilities — the realm- and shadow-safe replacements for the global reflexes a
  * browser controller reaches for by habit.
  *
  * Each of those reflexes has a failure mode that is invisible in the common case and total in the
@@ -13,6 +13,11 @@
  *   reports the focused item inside an open shadow root.
  * - **`instanceof HTMLElement`** is `false` for an element from another realm, because every realm
  *   has its own constructor. It compiles, it type-narrows, and it rejects a perfectly good element.
+ * - **`document.getElementById`** searches the document only, and an id inside a shadow root is not
+ *   in it — a `commandfor` or `aria-controls` naming a sibling in the same shadow tree resolves to
+ *   `null`.
+ * - **Bare `getComputedStyle`** is the top-level window's again, and a *global* direction read cannot
+ *   see that one subtree of an LTR page is RTL.
  *
  * These are the primitives a composite widget is built out of: "which item has focus" and "which
  * item was hit" are the two questions a roving-focus controller exists to answer, and both are
@@ -39,6 +44,21 @@ export function ownerDocument(node?: Node | null): Document {
  */
 export function ownerWindow(node?: Node | null): Window {
   return ownerDocument(node).defaultView ?? window;
+}
+
+/**
+ * Whether an element resolves to right-to-left writing direction.
+ *
+ * Read from the element and not from a global: a single RTL subtree inside an LTR page must behave as
+ * RTL, and only the resolved style knows that. The `dir` attribute is no substitute — it is usually
+ * set on an ancestor, and CSS `direction` can set it without any attribute at all.
+ *
+ * `getComputedStyle` forces a style recalculation, so call it where the answer is actually consumed
+ * rather than caching it: a mount-time read goes stale the moment `dir` flips at runtime.
+ * @public
+ */
+export function isRtl(el: Element): boolean {
+  return ownerWindow(el).getComputedStyle(el).direction === "rtl";
 }
 
 /**
@@ -135,4 +155,28 @@ export function contains(parent?: Node | null, child?: Node | null): boolean {
     node = host;
   }
   return false;
+}
+
+/**
+ * An element by id, resolved in the tree `node` actually lives in rather than the document.
+ *
+ * Ids do not cross a shadow boundary: `commandfor`, `aria-controls` and every other id reference are
+ * scoped to the root that contains them, so a document-scoped lookup returns `null` for a target
+ * inside a shadow tree — the failure is silent, and the caller reads it as "no such element".
+ *
+ * Duck-typed on the method rather than on the root's type, for the same reason {@link shadowHost}
+ * tests `nodeType`: a **detached** subtree's `getRootNode()` is its topmost ancestor *element*, which
+ * has no `getElementById` at all. There the owner document is the only tree left to ask, which is
+ * also the answer a document-scoped lookup would have given.
+ *
+ * Exported for `tabs.ts` and `tooltip.ts` here, and for `ui/show`'s scope setups, which resolve the
+ * same kind of id reference from inside a scope root. Deliberately carries no public tag and stays
+ * out of the barrel: it is one lookup shared by a handful of controllers across an already-declared
+ * `ui/show → ui/client` edge, not a capability the package offers.
+ */
+export function elementById(node: Node, id: string): HTMLElement | null {
+  if (!id) return null;
+  const root = node.getRootNode() as Partial<Document>;
+  if (typeof root.getElementById === "function") return root.getElementById(id);
+  return ownerDocument(node).getElementById(id);
 }

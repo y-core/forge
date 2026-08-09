@@ -4,6 +4,7 @@ import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { FieldDescriptor } from "./field";
 import { fieldControlProps } from "./field";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type SwitchProps = Omit<JSX.IntrinsicElements["input"], "type"> & { field?: FieldDescriptor; orientation?: "label-before" | "label-after" };
@@ -14,7 +15,14 @@ const SWITCH_THUMB =
   "absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform " +
   "[[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&]:translate-x-4";
 
-export const Switch: FC<PropsWithChildren<SwitchProps>> = ({ class: cls, field, children, orientation = "label-after", ...props }) => {
+export const Switch: FC<PropsWithChildren<SwitchProps>> = ({
+  class: cls,
+  field,
+  children,
+  orientation = "label-after",
+  "data-slot": inherited,
+  ...props
+}) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 
   return (
@@ -24,7 +32,7 @@ export const Switch: FC<PropsWithChildren<SwitchProps>> = ({ class: cls, field, 
       data-label-position={orientation === "label-before" ? "before" : "after"}
       class={cn("inline-flex items-center gap-2", orientation === "label-before" && "flex-row-reverse", asClass(cls))}>
       {/* biome-ignore lint/a11y/useAriaPropsForRole: a native checkbox conveys checked-state to the switch role via its `checked` property — a static aria-checked would be wrong */}
-      <input data-slot='switch-input' type='checkbox' role='switch' class='peer sr-only' {...resolved} />
+      <input data-slot={slotToken("switch-input", inherited)} type='checkbox' role='switch' class='peer sr-only' {...resolved} />
       <span data-slot='switch-track' aria-hidden='true' class={SWITCH_TRACK}>
         <span data-slot='switch-thumb' class={SWITCH_THUMB} />
       </span>

@@ -56,7 +56,7 @@ const CONFIG: NavDefinition = {
  * loading the whole stylesheet keeps the dependency visible: without it every case below fails on
  * "element is not visible", which is a fact about the UA, not about the navbar.
  */
-const DETAILS_CONTENT_RULE = '<style>[data-slot="navbar"]::details-content { content-visibility: visible }</style>';
+const DETAILS_CONTENT_RULE = '<style>[data-slot~="navbar"]::details-content { content-visibility: visible }</style>';
 
 async function mountNavbar(page: Page, config: NavDefinition = CONFIG): Promise<void> {
   const html = await render(Navbar({ config, resolveHref: (key: string) => `#${key}`, icon }));
@@ -79,7 +79,7 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
     const roles = await page.evaluate(() => ({
       menubar: document.querySelectorAll("[role='menubar']").length,
       menus: document.querySelectorAll("[role='menu']").length,
-      barLink: document.querySelector("[data-slot='navbar-link']")?.getAttribute("role"),
+      barLink: document.querySelector("[data-slot~='navbar-link']")?.getAttribute("role"),
     }));
 
     // A bar link is a link, not a menu item; announcing a menubar without roving focus among its
@@ -94,7 +94,7 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
       const el = document.querySelector("#navbar-menu-top-0");
       return { open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
     });
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     const after = await page.evaluate(() => {
       const el = document.querySelector("#navbar-menu-top-0");
       return { open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
@@ -110,7 +110,7 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
     await mountNavbar(page);
 
     const leaf = await page.evaluate(() => {
-      const el = document.querySelector("#navbar-menu-top-0 [data-slot='menu-link-item']");
+      const el = document.querySelector("#navbar-menu-top-0 [data-slot~='menu-link-item']");
       return { tag: el?.tagName, role: el?.getAttribute("role"), href: el?.getAttribute("href") };
     });
 
@@ -122,14 +122,14 @@ test.describe("Navbar — keyboard", () => {
   test("opening a bar menu focuses its first row", async ({ page }) => {
     await mountNavbar(page);
 
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
 
     await expect.poll(() => focusedText(page)).toBe("New");
   });
 
   test("arrow keys walk the menu, including the submenu trigger", async ({ page }) => {
     await mountNavbar(page);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedText(page)).toBe("New");
 
     await page.keyboard.press("ArrowDown");
@@ -143,22 +143,22 @@ test.describe("Navbar — keyboard", () => {
 
   test("Escape returns focus to the bar trigger", async ({ page }) => {
     await mountNavbar(page);
-    await page.focus("[data-slot='menu-trigger']");
+    await page.focus("[data-slot~='menu-trigger']");
     await page.keyboard.press("Enter");
     await expect.poll(() => focusedText(page)).toBe("New");
 
     await page.keyboard.press("Escape");
 
-    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-trigger");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? [])).toContain("menu-trigger");
   });
 });
 
 test.describe("Navbar — submenus", () => {
   test("opening a submenu leaves its parent open", async ({ page }) => {
     await mountNavbar(page);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
 
-    await page.click("[data-slot='menu-submenu-trigger']");
+    await page.click("[data-slot~='menu-submenu-trigger']");
 
     await expect.poll(() => isOpen(page, "navbar-menu-top-1")).toBe(true);
     expect(await isOpen(page, "navbar-menu-top-0")).toBe(true);
@@ -166,8 +166,8 @@ test.describe("Navbar — submenus", () => {
 
   test("Escape closes only the innermost menu", async ({ page }) => {
     await mountNavbar(page);
-    await page.click("[data-slot='menu-trigger']");
-    await page.click("[data-slot='menu-submenu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
+    await page.click("[data-slot~='menu-submenu-trigger']");
     await expect.poll(() => focusedText(page)).toBe("alpha");
 
     await page.keyboard.press("Escape");
@@ -180,7 +180,7 @@ test.describe("Navbar — submenus", () => {
 test.describe("Navbar — light dismiss", () => {
   test("a click outside closes the menu, with no outside-click listener of forge's own", async ({ page }) => {
     await mountNavbar(page);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     expect(await isOpen(page, "navbar-menu-top-0")).toBe(true);
 
     await page.click("#before");
@@ -193,8 +193,8 @@ test.describe("Navbar — light dismiss", () => {
 
   test("closing the parent closes the submenu with it", async ({ page }) => {
     await mountNavbar(page);
-    await page.click("[data-slot='menu-trigger']");
-    await page.click("[data-slot='menu-submenu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
+    await page.click("[data-slot~='menu-submenu-trigger']");
     await expect.poll(() => isOpen(page, "navbar-menu-top-1")).toBe(true);
 
     await page.click("#before");
@@ -223,7 +223,7 @@ test.describe("Navbar — hidden items stay out of the keyboard ring", () => {
       ],
     });
 
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedText(page)).toBe("New");
     await page.keyboard.press("ArrowDown");
 

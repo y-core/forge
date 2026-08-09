@@ -40,10 +40,16 @@ function groupMarkup(pressed: number): Promise<string> {
   );
 }
 
-/** The class list of the first toggle item, un-escaped back from HTML. */
+/** The class list of the first toggle item, un-escaped back from HTML.
+ *
+ * `data-slot` is a **token list**, so the token is matched at its own boundaries rather than as the
+ * whole attribute value: the moment the element carries a second token an exact-value pattern stops
+ * matching and this helper throws its "no class attribute" error, which reads as a mount failure
+ * rather than the composition change it actually is. The leading group demands whitespace before the
+ * token and the trailing one whitespace after, so `x-toggle-group-item` still misses. */
 function itemClasses(html: string): string[] {
-  const match = /data-slot="toggle-group-item"[^>]*?class="([^"]*)"/.exec(html);
-  if (!match?.[1]) throw new Error("no class attribute on [data-slot='toggle-group-item']");
+  const match = /data-slot="(?:[^"]*\s)?toggle-group-item(?:\s[^"]*)?"[^>]*?class="([^"]*)"/.exec(html);
+  if (!match?.[1]) throw new Error("no class attribute on [data-slot~='toggle-group-item']");
   return match[1].replaceAll("&amp;", "&").split(" ");
 }
 
@@ -70,7 +76,7 @@ async function install(page: Page, css: string): Promise<void> {
  * the state that is supposed to produce it. */
 function paintState(page: Page) {
   return page.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>("[data-slot='toggle-group-item']")].map((el) => ({
+    [...document.querySelectorAll<HTMLElement>("[data-slot~='toggle-group-item']")].map((el) => ({
       background: getComputedStyle(el).backgroundColor,
       pressed: el.hasAttribute("data-pressed"),
     })),

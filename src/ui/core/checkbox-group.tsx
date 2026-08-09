@@ -3,6 +3,7 @@
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { FieldDescription, FieldError, fieldDescribedBy, fieldId } from "./field";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type GroupOrientation = Extract<Orientation, "horizontal" | "vertical">;
@@ -48,6 +49,7 @@ const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
   orientation = "vertical",
   class: cls,
   children,
+  "data-slot": inherited,
   ...rest
 }) => {
   // A `<fieldset>` cannot take `fieldControlProps` wholesale — it is not a labelable control, so
@@ -57,7 +59,7 @@ const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
   const describedBy = fieldDescribedBy(name, { ...(scope !== undefined ? { scope } : {}), description, invalid });
   return (
     <fieldset
-      data-slot='checkbox-group'
+      data-slot={slotToken("checkbox-group", inherited)}
       disabled={disabled}
       {...(describedBy !== undefined ? { "aria-describedby": describedBy } : {})}
       {...stateAttrs({ invalid, disabled, orientation })}
@@ -68,19 +70,32 @@ const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
   );
 };
 
-const CheckboxGroupLabel: FC<PropsWithChildren<Omit<JSX.IntrinsicElements["legend"], "children">>> = ({ class: cls, children, ...rest }) => (
-  <legend data-slot='checkbox-group-label' class={cn("mb-1 text-sm font-medium text-foreground", asClass(cls))} {...rest}>
+const CheckboxGroupLabel: FC<PropsWithChildren<Omit<JSX.IntrinsicElements["legend"], "children">>> = ({
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
+  <legend data-slot={slotToken("checkbox-group-label", inherited)} class={cn("mb-1 text-sm font-medium text-foreground", asClass(cls))} {...rest}>
     {children}
   </legend>
 );
 
 /** A real `<input type="checkbox">` inside a real `<label>`: it submits with the form, resets with
  * the form, and needs no JavaScript to do either. */
-const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({ name, value, scope, class: cls, children, ...rest }) => (
+const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({
+  name,
+  value,
+  scope,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <label data-slot='checkbox-group-item' class={cn("inline-flex items-center gap-2 text-sm text-foreground", asClass(cls))}>
     <input
       type='checkbox'
-      data-slot='checkbox-group-input'
+      data-slot={slotToken("checkbox-group-input", inherited)}
       id={itemId(name, value, scope)}
       name={name}
       value={value}

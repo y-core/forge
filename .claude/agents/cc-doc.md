@@ -109,6 +109,12 @@ Report back:
 3. **Factual corrections** — each claim you found wrong, with the source that settled it
 4. **`cc-tester`'s verdict** (or `validate-docs`' result)
 5. **Deferrals** — anything you found and deliberately left, and why
+6. **Ledger changes** — the task id and its lane move, or "no ledger item"
+
+When the doc pass closes a task, close it yourself over MCP, never by editing files — calling
+`get_protocol` **and** `get_process` first and working from what they answer rather than a remembered
+copy. A docs-only change runs no gate — `cc-tester` runs after code changes only — so what was
+written, and the source claims verified, are themselves the evidence the close rests on.
 
 ## Delegation
 

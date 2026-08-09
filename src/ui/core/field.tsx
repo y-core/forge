@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
@@ -148,6 +149,7 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   orientation = "vertical",
   class: cls,
   children,
+  "data-slot": inherited,
   ...props
 }) => {
   // cva's `class` is `class?: string` (no `undefined`), so omit it rather than pass undefined.
@@ -155,7 +157,7 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   return (
     <fieldset
       disabled={disabled}
-      data-slot='field'
+      data-slot={slotToken("field", inherited)}
       {...stateAttrs({ disabled, invalid, orientation })}
       class={fieldVariants({ orientation, ...(clsValue !== undefined ? { class: clsValue } : {}) })}
       {...props}>
@@ -164,9 +166,17 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   );
 };
 
-export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({ class: cls, for: htmlFor, name, scope, children, ...props }) => (
+export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({
+  class: cls,
+  for: htmlFor,
+  name,
+  scope,
+  children,
+  "data-slot": inherited,
+  ...props
+}) => (
   <label
-    data-slot='field-label'
+    data-slot={slotToken("field-label", inherited)}
     class={cn(FIELD_LABEL_CLASSES, asClass(cls))}
     for={htmlFor ?? (name ? fieldId(name, scope) : undefined)}
     {...props}>
@@ -174,11 +184,19 @@ export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({ cl
   </label>
 );
 
-export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNaming>> = ({ class: cls, id, name, scope, children, ...props }) => {
+export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNaming>> = ({
+  class: cls,
+  id,
+  name,
+  scope,
+  children,
+  "data-slot": inherited,
+  ...props
+}) => {
   const resolvedId = id ?? (name ? fieldDescriptionId(name, scope) : undefined);
   return (
     <p
-      data-slot='field-description'
+      data-slot={slotToken("field-description", inherited)}
       class={cn("text-sm leading-normal text-muted-foreground", asClass(cls))}
       {...(resolvedId !== undefined ? { id: resolvedId } : {})}
       {...props}>
@@ -187,7 +205,16 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNami
   );
 };
 
-export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({ class: cls, id, role, name, scope, children, ...props }) => {
+export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
+  class: cls,
+  id,
+  role,
+  name,
+  scope,
+  children,
+  "data-slot": inherited,
+  ...props
+}) => {
   if (children == null || children === false) {
     return null;
   }
@@ -195,7 +222,7 @@ export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({ cl
   const resolvedId = id ?? (name ? fieldErrorId(name, scope) : undefined);
   return (
     <p
-      data-slot='field-error'
+      data-slot={slotToken("field-error", inherited)}
       class={cn("text-sm font-normal text-red-600", asClass(cls))}
       {...(resolvedId !== undefined ? { id: resolvedId } : {})}
       role={role ?? "alert"}

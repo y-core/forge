@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type ScrollOrientation = Extract<Orientation, "horizontal" | "vertical">;
@@ -15,8 +16,8 @@ interface ScrollAreaViewportProps extends Omit<JSX.IntrinsicElements["div"], "ch
   children?: JSXNode;
 }
 
-const ScrollAreaRoot: FC<ScrollAreaRootProps> = ({ orientation = "vertical", class: cls, children, ...rest }) => (
-  <div data-slot='scroll-area' {...stateAttrs({ orientation })} class={cn("relative", asClass(cls))} {...rest}>
+const ScrollAreaRoot: FC<ScrollAreaRootProps> = ({ orientation = "vertical", class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("scroll-area", inherited)} {...stateAttrs({ orientation })} class={cn("relative", asClass(cls))} {...rest}>
     {children}
   </div>
 );
@@ -28,9 +29,9 @@ const ScrollAreaRoot: FC<ScrollAreaRootProps> = ({ orientation = "vertical", cla
  * `tabindex={0}` is not decoration: a scrollable region that cannot be focused cannot be scrolled
  * with the keyboard at all, which is the accessibility failure custom scroll areas are notorious for.
  */
-const ScrollAreaViewport: FC<ScrollAreaViewportProps> = ({ class: cls, children, ...rest }) => (
+const ScrollAreaViewport: FC<ScrollAreaViewportProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
-    data-slot='scroll-area-viewport'
+    data-slot={slotToken("scroll-area-viewport", inherited)}
     tabindex={0}
     class={cn(
       "h-full w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring",

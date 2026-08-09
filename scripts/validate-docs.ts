@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
+import { findSubpathCitations } from "./docs-parse";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_NAME = (pkg as { name: string }).name;
@@ -22,8 +23,9 @@ const EXPORT_PATTERNS = Object.entries(PKG_EXPORTS)
   .filter(([key]) => key.includes("*"))
   .map(([key, value]) => {
     const target = typeof value === "string" ? value : (value.import ?? value.types);
-    const [keyPrefix, keySuffix] = key.split("*");
-    const [targetPrefix, targetSuffix] = (target ?? "").split("*");
+    // Only starred keys reach here, so both halves of each split are present; the defaults never apply.
+    const [keyPrefix = "", keySuffix = ""] = key.split("*");
+    const [targetPrefix = "", targetSuffix = ""] = (target ?? "").split("*");
     return { keyPrefix, keySuffix, targetPrefix, targetSuffix };
   });
 
@@ -39,6 +41,13 @@ function isExportSubpath(subpath: string): boolean {
 
 const DECISIONS_DIR = resolve(ROOT, ".decisions");
 const GUIDE_INDEX_OWNER = "CLAUDE.md";
+
+/** The repository's front page — the first document a consumer reads, and until now the one
+ *  markdown file with no automated check at all. It is deliberately *not* a governing document:
+ *  including it here subjects it to the subpath, rot and reference checks, while the numbered-
+ *  section format stays out of reach because §-parsing, frontmatter, size and Quick Reference are
+ *  all gated on `.decisions/`. No flag is needed to exempt it. */
+const ROOT_README = "README.md";
 
 const SIZE_WARN = 600;
 const SIZE_FAIL = 800;
@@ -87,6 +96,7 @@ function collectMarkdown(): string[] {
     }
   }
   if (existsSync(resolve(ROOT, GUIDE_INDEX_OWNER))) files.push(GUIDE_INDEX_OWNER);
+  if (existsSync(resolve(ROOT, ROOT_README))) files.push(ROOT_README);
 
   const agentsDir = resolve(ROOT, ".claude/agents");
   if (existsSync(agentsDir)) {
@@ -117,33 +127,33 @@ function collectMarkdown(): string[] {
 // forbid it, and the sealed-internal namespace (`SEALED_INTERNAL` in validate-exports.ts).
 const DOCUMENTED_NON_EXPORTS = new Set(["./auth", "./handler", "./all", "./crypto"]);
 
-// A README's job includes describing what does *not* exist ("there is no top-level
-// `@y-core/forge/storage` barrel"), so only genuine import positions are checked there.
-// Governing documents are checked everywhere: under §8 they cite paths, they do not narrate them.
-const IMPORT_POSITION = /\b(?:from|import)\s*\(?\s*["']/;
-
 function isGoverningDoc(file: string): boolean {
   return file.startsWith(".decisions/") || file === GUIDE_INDEX_OWNER || file.startsWith(".claude/agents/");
 }
 
+/**
+ * Which files have *every* `@y-core/forge/…` string checked, rather than only those on a line that
+ * looks like an import statement.
+ *
+ * The root README is strict alongside the governing docs, and the reason is the defect that put it
+ * here: its stale subpaths lived in a markdown table cell and in a `**[…](…)**` link, neither of
+ * which matches `IMPORT_POSITION`. Restricted to import positions, the check would have read the
+ * file and found nothing — passing while the front page sent consumers to a resolution error.
+ *
+ * The cost is that the root README may no longer *name* a subpath in order to deny it. That is the
+ * intended trade: an absence is described with the real subpaths that do exist ("each client is
+ * imported from its own subpath; there is no aggregate `storage` barrel") rather than by quoting a
+ * path that resolves to nothing.
+ */
+function isSubpathStrict(file: string): boolean {
+  return isGoverningDoc(file) || file === ROOT_README;
+}
+
 function checkImportPaths(file: string, source: string): void {
-  const re = new RegExp(`${PACKAGE_NAME.replace("/", "\\/")}(\\/[A-Za-z0-9._\\-\\/]*)`, "g");
-  const strict = isGoverningDoc(file);
-  const lines = source.split("\n");
-
-  for (let i = 0; i < lines.length; i++) {
-    if (!strict && !IMPORT_POSITION.test(lines[i])) continue;
-
-    for (const match of lines[i].matchAll(re)) {
-      const raw = match[1];
-      if (!raw || raw.endsWith("/")) continue; // bare name, or a `{namespace}`/`<subpath>` placeholder
-      if (raw.includes("...")) continue; // an elided path fragment, not a subpath
-
-      const subpath = `.${raw.replace(/[.\-/]+$/, "")}`;
-      if (DOCUMENTED_NON_EXPORTS.has(subpath)) continue;
-      if (!isExportSubpath(subpath)) {
-        fail(file, `line ${i + 1}: \`${PACKAGE_NAME}${raw}\` is not reachable through package.json exports`);
-      }
+  for (const { line, raw, subpath } of findSubpathCitations(source, PACKAGE_NAME, { strict: isSubpathStrict(file) })) {
+    if (DOCUMENTED_NON_EXPORTS.has(subpath)) continue;
+    if (!isExportSubpath(subpath)) {
+      fail(file, `line ${line}: \`${PACKAGE_NAME}${raw}\` is not reachable through package.json exports`);
     }
   }
 }
@@ -157,11 +167,14 @@ function parseSections(file: string, lines: string[]): Section[] {
   let parent: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
-    const heading = lines[i].match(/^(#{2,3}) (.*)$/);
+    const line = lines[i];
+    if (line === undefined) continue;
+    const heading = line.match(/^(#{2,3}) (.*)$/);
     if (!heading) continue;
 
-    const level = heading[1].length;
-    const rest = heading[2];
+    // Both groups of the heading pattern are mandatory, so a match implies both.
+    const [, hashes = "", rest = ""] = heading;
+    const level = hashes.length;
     const numbered = rest.match(/^(\d[A-Za-z0-9]*)\. (.+)$/);
 
     if (!numbered) {
@@ -173,7 +186,8 @@ function parseSections(file: string, lines: string[]): Section[] {
       continue;
     }
 
-    const [, number, title] = numbered;
+    // Both groups of the numbering pattern are mandatory, so a match implies both.
+    const [, number = "", title = ""] = numbered;
     const previous = seen.get(number);
     if (previous !== undefined) {
       fail(file, `line ${i + 1}: duplicate section number \`${number}\` (first seen at line ${previous})`);
@@ -197,22 +211,26 @@ function checkReferences(file: string, lines: string[], ownSections: Set<string>
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) continue;
 
     // Markdown links to sibling markdown documents must resolve on disk.
     for (const match of line.matchAll(/\]\((\.{0,2}\/?[A-Za-z0-9._\-/]+\.md)(?:#[A-Za-z0-9-]+)?\)/g)) {
-      const target = resolve(fileDir, match[1]);
+      // The pattern's single group is mandatory, so a match implies it.
+      const [, href = ""] = match;
+      const target = resolve(fileDir, href);
       if (!existsSync(target)) {
-        fail(file, `line ${i + 1}: link target \`${match[1]}\` does not exist`);
+        fail(file, `line ${i + 1}: link target \`${href}\` does not exist`);
       }
     }
 
     // `OTHER.md §N` — the cited section must exist in that document.
     for (const match of line.matchAll(/([A-Z_]+\.md)`?\)?\s+§([0-9][A-Za-z0-9]*)/g)) {
-      const doc = match[1];
+      // Both groups are mandatory, so a match implies both.
+      const [, doc = "", section = ""] = match;
       const known = sectionsByDoc.get(doc);
       if (!known) continue; // not a governing document we parsed
-      if (!known.has(match[2])) {
-        fail(file, `line ${i + 1}: \`${doc} §${match[2]}\` does not resolve to a section in that document`);
+      if (!known.has(section)) {
+        fail(file, `line ${i + 1}: \`${doc} §${section}\` does not resolve to a section in that document`);
       }
     }
 
@@ -220,8 +238,9 @@ function checkReferences(file: string, lines: string[], ownSections: Set<string>
     if (/[A-Z_]+\.md/.test(line)) continue;
     if (ownSections.size === 0) continue;
     for (const match of line.matchAll(/§([0-9][A-Za-z0-9]*)/g)) {
-      if (!ownSections.has(match[1])) {
-        fail(file, `line ${i + 1}: intra-document \`§${match[1]}\` does not resolve to a section in this file`);
+      const [, section = ""] = match;
+      if (!ownSections.has(section)) {
+        fail(file, `line ${i + 1}: intra-document \`§${section}\` does not resolve to a section in this file`);
       }
     }
   }
@@ -266,10 +285,13 @@ function checkSize(file: string, lineCount: number): void {
 // ── Check 6: dated or ticketed content ────────────────────────────────────────────────────────
 function checkRot(file: string, lines: string[]): void {
   for (let i = 0; i < lines.length; i++) {
-    const date = lines[i].match(/\d{4}-\d{2}-\d{2}/);
+    const line = lines[i];
+    if (line === undefined) continue;
+
+    const date = line.match(/\d{4}-\d{2}-\d{2}/);
     if (date) fail(file, `line ${i + 1}: calendar date \`${date[0]}\` — governing docs carry no history (AGENT_GUIDE.md §9)`);
 
-    const ticket = lines[i].match(/\b[A-Z]{1,3}\d+-\d+(?:\.\d+)*\b/);
+    const ticket = line.match(/\b[A-Z]{1,3}\d+-\d+(?:\.\d+)*\b/);
     if (ticket) fail(file, `line ${i + 1}: ticket identifier \`${ticket[0]}\` — governing docs carry no task IDs (AGENT_GUIDE.md §9)`);
   }
 }
@@ -283,7 +305,9 @@ function checkQuickReference(file: string, lines: string[], sections: Section[])
   }
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^## /.test(lines[i])) {
+    const line = lines[i];
+    if (line === undefined) continue;
+    if (/^## /.test(line)) {
       end = i;
       break;
     }
@@ -310,7 +334,9 @@ function checkGuideIndex(decisionsDocs: string[]): void {
   }
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^## /.test(lines[i])) {
+    const line = lines[i];
+    if (line === undefined) continue;
+    if (/^## /.test(line)) {
       end = i;
       break;
     }
@@ -319,9 +345,11 @@ function checkGuideIndex(decisionsDocs: string[]): void {
   const indexed = new Set<string>();
   for (const line of lines.slice(start, end)) {
     for (const match of line.matchAll(/\]\((?:\.\/)?\.decisions\/([A-Za-z0-9_]+\.md)\)/g)) {
-      indexed.add(match[1]);
-      if (!existsSync(resolve(DECISIONS_DIR, match[1]))) {
-        fail(GUIDE_INDEX_OWNER, `Guide Index names \`${match[1]}\`, which does not exist`);
+      // The pattern's single group is mandatory, so a match implies it.
+      const [, doc = ""] = match;
+      indexed.add(doc);
+      if (!existsSync(resolve(DECISIONS_DIR, doc))) {
+        fail(GUIDE_INDEX_OWNER, `Guide Index names \`${doc}\`, which does not exist`);
       }
     }
   }

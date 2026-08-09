@@ -12,4 +12,14 @@ export { healthCheck } from "./health";
 export type { MiddlewareChainOptions, MiddlewareGuardGroup } from "./middleware-chain";
 export { applyMiddlewareChain } from "./middleware-chain";
 export { definePage } from "./page";
-export type { ActionDefinition, AppOptions, AssetOptions, AssetsFetcher, CacheDirective, HealthCheckResult, PageDefinition } from "./types";
+export type {
+  ActionDefinition,
+  ActionTurnstileOptions,
+  AppOptions,
+  AssetOptions,
+  AssetsFetcher,
+  BotRejection,
+  CacheDirective,
+  HealthCheckResult,
+  PageDefinition,
+} from "./types";

@@ -120,6 +120,14 @@ Report back:
 3. `cc-tester`'s verdict on the full gate
 4. Coverage gaps you deliberately left, and why
 5. Implementation defects found while testing — route these to `cc-dev`, do not fix them
+6. Ledger changes — the task id and its lane move, or "no ledger item"
+
+Once `cc-tester` is green, update the ledger yourself over MCP, never by editing files. Call
+`get_protocol` **and** `get_process` first and work from what they answer rather than from a
+remembered copy.
+
+What you supply is the evidence: the verdict and the test files that now carry it, against the task's
+own `Done when:`.
 
 ## Delegation
 

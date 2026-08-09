@@ -110,6 +110,15 @@ Report back:
 4. **`cc-tester`'s verdict** on the full gate
 5. **Deviations and deferrals** — anything the plan specified that you did not do, anything you
    found and deliberately left alone, and why
+6. **Ledger changes** — the task id and its lane move, or "no ledger item"
+
+**Update the ledger yourself** once the work the task describes is green. It is reached over MCP,
+never by editing files — call `get_protocol` **and** `get_process` first and work from what they
+answer rather than from a remembered copy.
+
+Anything found and deliberately left alone (per **When to Stop**) is reported
+with its evidence and routed by the fold-vs-file test — but whatever the ledger ends up carrying,
+**your implementation scope stays plan-bound**.
 
 ## Delegation
 

@@ -28,6 +28,7 @@ description: "Test placement, the HTML-entity exact-match assertion rule, fakes 
 - §3a The Encoding Map: character to entity, and what is not escaped
 - §3b Exact Match — Never Substring Matching: why `toContain` is banned
 - §3c Render Once, Assert Once: the single enforced shape
+- §3d Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees: the deletion check
 - §4 Fakes Over Mocks: implement the interface, add no libraries
 - §4a Fake Pattern — Implement the Interface: compile-time drift detection
 - §4b Why Fakes Over Mocks: the comparison, and the no-mock-library rule
@@ -236,6 +237,43 @@ it("renders the exact button markup", async () => {
 do not fall back to `toContain` / `toMatch`.** A single entity-aware `toBe` on the full output
 is the only accepted shape.
 
+### 3d. Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees
+
+**The operational check, applied before a test is counted as written: delete the mechanism the test
+names; a test that still passes was never testing it.**
+
+The failure shape is always the same. The subject is a *mechanism* — a timer cleared, a list that
+does not grow, an observer disconnected — and the assertion reads an *outcome* that a second,
+independent mechanism also produces. A guard clause is the usual second mechanism: `if (disposed)
+return;` at the top of a callback makes "nothing visibly happened" true whether or not the timer
+that calls it was ever cancelled.
+
+Two shapes worth recognising:
+
+- **A guard downstream of the subject.** Remove the disposal guard from a lazy-loading controller
+  and every case but one stays green — the one counting initialisations. The pre-existing assertion
+  re-observed the element and checked what appeared, which the guard and the mechanism produce
+  identically.
+- **An assertion that passes when its subject is absent.** `expect(probe?.[0]).not.toBe("x")` passes
+  when `probe` has been deleted outright, because optional chaining makes the expression `undefined`.
+  A negative assertion over an optional path asserts nothing.
+
+**Pin the mechanism, and pin that it was armed.** "The timer never fired" is worth nothing without
+"a timer was scheduled" — a mechanism never set up also never runs. Both halves in one assertion is
+the cheapest form: `expect(timers).toEqual({ scheduled: 1, fired: 0 })`.
+
+This does not weaken §1c's rule that a browser case asserts a DOM state rather than a call count.
+What is counted here is the **platform's** own invocation — a timer callback firing, a property being
+read — which *is* the mechanism. §1c bans substituting a count of calls into the test's own fixture
+for the DOM state a controller was supposed to produce; where the subject is a DOM state, assert the
+DOM state.
+
+**The `page.clock` corollary.** Instrumentation of a page global — a wrapped `setTimeout`, an
+accessor over a third-party global — is installed **after** the harness's `mount` and after
+`page.clock.install()`. `setContent` replaces the document and discards every window mutation made
+before it, and wrapping the clock's timers rather than the platform's is what keeps a fast-forward in
+charge of the wrapped timer. Instrumenting earlier reads as correct and does nothing.
+
 ---
 
 ## 4. Fakes Over Mocks
@@ -435,7 +473,7 @@ out of it (§1c).
 `bun run verify` is the release gate — `prepublishOnly` runs it — and **is** permitted a
 prerequisite. It adds the browser set, whose Chromium binary comes from `bun run test:install`.
 **Publishing therefore requires that install**, and a machine that lacks it fails `verify` at
-`test:browser` with the install command in the failure line.
+`test:browser` before running any test, with the install command in the failure line.
 
 A step needing a prerequisite belongs in `verify` only. A step needing nothing belongs in both.
 

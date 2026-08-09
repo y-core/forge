@@ -1,9 +1,10 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { scopeAttrs } from "../contracts/scope-attrs";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOGGLE_SCOPE, type ToggleAction } from "../contracts/toggle-contract";
-import { scopeAttrs } from "../server/scope-attrs";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type ToggleProps = Omit<JSX.IntrinsicElements["button"], "children"> & { pressed?: boolean; children?: JSXNode };
@@ -33,10 +34,10 @@ const TOGGLE_BASE =
  * nothing can ever act on, which is a button that looks wired and is not.
  * @public
  */
-export const Toggle: FC<ToggleProps> = ({ pressed = false, class: cls, children, ...rest }) => (
+export const Toggle: FC<ToggleProps> = ({ pressed = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
-    data-slot='toggle'
+    data-slot={slotToken("toggle", inherited)}
     data-scope={TOGGLE_SCOPE}
     {...scopeAttrs<ToggleAction>({ onClick: "toggle" })}
     aria-pressed={pressed}

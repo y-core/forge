@@ -27,7 +27,11 @@ export function requestLogger<Bindings = Record<string, unknown>>(options: Reque
   return async (context, next) => {
     const c = getAppContext<Bindings>(context);
     const minLevel = typeof options.minLevel === "function" ? options.minLevel(c) : options.minLevel;
-    const base = createLogger(options.prefix ?? "request", { channels: options.channels(c), ...(minLevel !== undefined ? { minLevel } : {}) });
+    const base = createLogger(options.prefix ?? "request", {
+      channels: options.channels(c),
+      ...(minLevel !== undefined ? { minLevel } : {}),
+      ...(options.onChannelError !== undefined ? { onChannelError: options.onChannelError } : {}),
+    });
     const log = base.child(options.bindings ? options.bindings(c) : {});
     requestLog.set(context, log);
     const method = c.request.method;

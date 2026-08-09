@@ -9,10 +9,14 @@
  *  `verify` is the pre-release gate and may. See `.decisions/TESTING.md` §6. */
 export type Gate = "check" | "verify";
 
-/** A tool that must be installed before a step can run, with the command that installs it. */
+/** A prerequisite that must be satisfied before a step can run, with the command that installs
+ *  it and the command that answers whether it is already there. */
 export interface StepRequirement {
-  /** Executable probed with `hasTool` (i.e. `<tool> --version` must exit 0). */
+  /** What is missing, named verbatim in the failure line. */
   tool: string;
+  /** Command whose exit code answers whether the prerequisite is satisfied. Defaults to
+   *  `<tool> --version`, which only holds when the prerequisite *is* an executable on `PATH`. */
+  probe?: readonly [string, ...string[]];
   /** Install hint shown verbatim when the probe fails. */
   hint: string;
 }
@@ -43,18 +47,32 @@ const CHECK_AND_VERIFY: readonly Gate[] = ["check", "verify"];
  */
 export const STEPS: readonly Step[] = [
   { label: "typecheck", gates: CHECK_AND_VERIFY, tail: 20, cmd: ["tsgo", "--noEmit"] },
-  { label: "lint", gates: CHECK_AND_VERIFY, tail: 20, cmd: ["biome", "check", "src/"], fix: ["biome", "check", "--write", "src/"] },
-  { label: "test", gates: CHECK_AND_VERIFY, tail: 40, cmd: ["bun", "test"] },
+  {
+    label: "lint",
+    gates: CHECK_AND_VERIFY,
+    tail: 20,
+    cmd: ["biome", "check", "src/", "scripts/"],
+    fix: ["biome", "check", "--write", "src/", "scripts/"],
+  },
+  // 120, matching `test:browser`: at 40, console output from suites that run late (`storage/kv`,
+  // `storage/db`, `assets/build`, `validation/cli`) filled the window and pushed the `(fail)`
+  // blocks out of it. The tail is a probability reduction, not the fix — that is the full log
+  // path printed beneath it.
+  { label: "test", gates: CHECK_AND_VERIFY, tail: 120, cmd: ["bun", "test"] },
   { label: "validate-exports", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-exports.ts"] },
+  { label: "validate-namespace-graph", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-namespace-graph.ts"] },
   { label: "validate-jsx", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-jsx.ts"] },
   { label: "validate-docs", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-docs.ts"] },
   { label: "validate-css-sources", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-css-sources.ts"] },
   {
+    // The prerequisite is the downloaded browser, not the `playwright` CLI: the CLI is a
+    // devDependency and so is always present, which would make `playwright --version` pass
+    // vacuously and let every spec fail inside `browserType.launch()` instead.
     label: "test:browser",
     gates: ["verify"],
-    tail: 40,
+    tail: 120,
     cmd: ["playwright", "test"],
-    requires: { tool: "playwright", hint: "bun run test:install" },
+    requires: { tool: "chromium", probe: ["bun", "run", "scripts/probe-browser.ts"], hint: "bun run test:install" },
   },
 ];
 

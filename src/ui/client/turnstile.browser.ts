@@ -27,6 +27,12 @@ declare global {
     };
     /** Cleanup returned by the controller, parked so a later evaluate can call it. */
     turnstileCleanup?: () => void;
+    /** Delays of every `setTimeout` the page **scheduled**, and of every one that actually **fired**.
+     * A cleared timer is a delay that appears in `scheduled` and never in `fired`; a timer that was
+     * never armed at all appears in neither, which is why both halves are recorded. */
+    forgeTimers: { scheduled: number[]; fired: number[] };
+    /** Reads of `window.turnstile` since the counter was last zeroed. */
+    forgeTurnstileReads: { count: number };
   }
 }
 
@@ -84,6 +90,71 @@ const EXPOSE = { expose: { forgeTurnstile: "./ui/client/turnstile" } };
 /** Count of `<script>` tags the controller injected for Cloudflare's API. */
 function scriptCount(page: Page): Promise<number> {
   return page.evaluate((src) => document.querySelectorAll(`script[src="${src}"]`).length, TURNSTILE_SCRIPT_SRC);
+}
+
+/**
+ * Count `setTimeout` **firings**, not merely its scheduling.
+ *
+ * **Install after `mount` and after `page.clock.install()`.** `page.setContent` replaces the document
+ * and discards every window mutation made before it, so an earlier install silently instruments a
+ * window nothing under test will ever see; and wrapping the *clock's* `setTimeout` rather than the
+ * platform's is what keeps `fastForward` in charge of the wrapped timer.
+ */
+async function countTimerFirings(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.forgeTimers = { scheduled: [], fired: [] };
+    const schedule = window.setTimeout;
+    const wrapped = (handler: TimerHandler, delay?: number, ...args: unknown[]): number => {
+      const wait = delay ?? 0;
+      const run = typeof handler === "function" ? (handler as unknown as (...rest: unknown[]) => void) : () => {};
+      const fire = () => {
+        window.forgeTimers.fired.push(wait);
+        run(...args);
+      };
+      window.forgeTimers.scheduled.push(wait);
+      return schedule.call(window, fire, wait);
+    };
+    window.setTimeout = wrapped as typeof window.setTimeout;
+  });
+}
+
+/** Delays equal to `ms`, counted on both sides of the wrapper — one call, so a spec reads the pair. */
+function timersAt(page: Page, ms: number): Promise<{ scheduled: number; fired: number }> {
+  return page.evaluate((delay) => {
+    const at = (delays: number[]) => delays.filter((each) => each === delay).length;
+    return { scheduled: at(window.forgeTimers.scheduled), fired: at(window.forgeTimers.fired) };
+  }, ms);
+}
+
+/**
+ * Count **reads** of `window.turnstile`, which is what a live poll does and a cleared one cannot.
+ *
+ * **The `set` trap is mandatory.** The polling case assigns `window.turnstile = {…}` to make the API
+ * arrive late, and an accessor property with only a getter throws `TypeError` on assignment. Same
+ * install-after-`mount` rule as {@link countTimerFirings}.
+ */
+async function countTurnstileReads(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.forgeTurnstileReads = { count: 0 };
+    let held: Window["turnstile"];
+    Object.defineProperty(window, "turnstile", {
+      configurable: true,
+      get: () => {
+        window.forgeTurnstileReads.count += 1;
+        return held;
+      },
+      set: (next: Window["turnstile"]) => {
+        held = next;
+      },
+    });
+  });
+}
+
+/** Zero the read counter, so the next assertion speaks only about what happened after this point. */
+async function zeroTurnstileReads(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.forgeTurnstileReads.count = 0;
+  });
 }
 
 test.describe("mountTurnstile — engagement-gated load", () => {
@@ -298,15 +369,24 @@ test.describe("mountTurnstile — lifecycle", () => {
     await serveScript(page, "hang");
     await mount(page, await formMarkup(), EXPOSE);
     await seedRecorder(page);
+    // Instrumented here and not a line earlier: see `countTimerFirings`.
+    await countTimerFirings(page);
     await mountController(page);
     await engage(page);
 
     await page.evaluate(() => window.turnstileCleanup?.());
     await page.clock.fastForward(TURNSTILE_SCRIPT_TIMEOUT_MS);
 
-    // The same fast-forward reveals the fallback when the controller is still mounted (see the
-    // "never answers within the timeout budget" case), so a hidden fallback here is the timer
-    // having been cleared rather than the budget not having elapsed.
+    // **The subject is `clearTimers()`, so the assertion is the firing.** A hidden fallback cannot
+    // establish it: `showFallback` opens with `if (disposed) return`, so an *uncleared* timer that
+    // fires into a disposed controller reveals nothing either, and the case would pass with
+    // `clearTimers()` deleted from `cleanup()`. `scheduled: 1` is the other half — "never fired" is
+    // worth nothing without "was armed", since a timer the controller never created also never fires.
+    expect(await timersAt(page, TURNSTILE_SCRIPT_TIMEOUT_MS)).toEqual({ scheduled: 1, fired: 0 });
+
+    // Kept beside the above rather than replaced by it: a distinct subject, namely that the *user*
+    // sees no fallback appear on a torn-down widget. That is `showFallback`'s `disposed` guard, and
+    // it would still be worth pinning if the timer were left running deliberately.
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
   });
 
@@ -315,6 +395,8 @@ test.describe("mountTurnstile — lifecycle", () => {
     await serveScript(page, "hang");
     await mount(page, await formMarkup(), EXPOSE);
     await seedRecorder(page);
+    // Instrumented here and not a line earlier: see `countTimerFirings`.
+    await countTurnstileReads(page);
 
     // A script injected by something else on the page and still in flight: the controller finds it,
     // injects none of its own, and polls for the API to appear.
@@ -328,7 +410,16 @@ test.describe("mountTurnstile — lifecycle", () => {
     await engage(page);
     expect(await scriptCount(page)).toBe(1);
 
+    // The poll, evidenced live before it is stopped: three ticks of the 100ms interval, each of which
+    // reads the global. Without this, the assertion below would pass just as happily for a poll that
+    // was never started, or for a getter that was never wired up.
+    await zeroTurnstileReads(page);
+    await page.clock.fastForward(300);
+    const polled = await page.evaluate(() => window.forgeTurnstileReads.count);
+    expect(polled, "the poll never read `window.turnstile`, so the assertion below is vacuous").toBeGreaterThan(0);
+
     await page.evaluate(() => window.turnstileCleanup?.());
+    await zeroTurnstileReads(page);
 
     // The API arrives after cleanup. A live poll would see it and render into the detached widget.
     await page.evaluate(() => {
@@ -343,6 +434,12 @@ test.describe("mountTurnstile — lifecycle", () => {
     });
     await page.clock.fastForward(TURNSTILE_SCRIPT_TIMEOUT_MS);
 
+    // **The subject is the interval, so the assertion is that it stopped ticking.** `renders.length`
+    // alone cannot say it — `renderWidget` opens with `if (disposed) return`, so a still-ticking
+    // interval that sees the late API renders nothing either, and the case would pass with
+    // `clearTimers()` deleted from `cleanup()`. A read count of 0 is reachable only by a cleared
+    // interval, and the count above proves reads are observable in the first place.
+    expect(await page.evaluate(() => window.forgeTurnstileReads.count)).toBe(0);
     expect(await page.evaluate(() => window.turnstileCalls.renders.length)).toBe(0);
   });
 

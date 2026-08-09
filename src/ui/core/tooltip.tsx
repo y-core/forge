@@ -3,7 +3,7 @@
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
 import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
-import { cloneAsChild } from "./utils/as-child";
+import { cloneAsChild, slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface TooltipRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
@@ -26,15 +26,20 @@ interface TooltipTriggerProps extends Omit<JSX.IntrinsicElements["button"], "chi
   children?: JSXNode;
 }
 
+/** The tooltip's stylesheet is a complete *physical* matrix, so a logical side would match no rule
+ * at all and the popup would fall back to centred on its anchor. Projecting the subset makes that
+ * unrepresentable rather than a silent placement bug. */
+type TooltipSide = Exclude<Side, "block-start" | "block-end" | "inline-start" | "inline-end">;
+
 interface TooltipContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   id: string;
-  side?: Side;
+  side?: TooltipSide;
   align?: Align;
   children?: JSXNode;
 }
 
-const TooltipRoot: FC<TooltipRootProps> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='tooltip' data-scope={TOOLTIP_SCOPE} class={cn("relative inline-block", asClass(cls))} {...rest}>
+const TooltipRoot: FC<TooltipRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("tooltip", inherited)} data-scope={TOOLTIP_SCOPE} class={cn("relative inline-block", asClass(cls))} {...rest}>
     {children}
   </div>
 );
@@ -43,16 +48,17 @@ const TooltipRoot: FC<TooltipRootProps> = ({ class: cls, children, ...rest }) =>
  * `aria-describedby`, not `aria-labelledby`: a tooltip supplements the trigger's own name rather
  * than replacing it. Getting this wrong is how a button ends up announced only by its hint.
  */
-const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = false, class: cls, children, ...rest }) => {
+const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = false, class: cls, children, "data-slot": inherited, ...rest }) => {
   const className = cn("cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls));
   // `aria-describedby` is also what `mountTooltip` resolves the content by, so it is part of the
   // wiring rather than only of the announcement — an `asChild` trigger that lost it would be a
   // control with a tooltip that never shows.
   const attrs = { "aria-describedby": contentId, ...rest };
+  const slot = slotToken("tooltip-trigger", inherited);
 
   if (asChild) {
     return cloneAsChild(children, {
-      slot: "tooltip-trigger",
+      slot,
       class: className,
       props: attrs,
       type: "button",
@@ -63,7 +69,7 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = fal
   }
 
   return (
-    <button type='button' data-slot='tooltip-trigger' class={className} {...attrs}>
+    <button type='button' data-slot={slot} class={className} {...attrs}>
       {children}
     </button>
   );
@@ -77,11 +83,11 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = fal
  * It carries **no `tabindex`** and is never focusable — a focusable tooltip is a keyboard trap that
  * announces itself twice.
  */
-const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "center", class: cls, children, ...rest }) => (
+const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "center", class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     id={id}
     role='tooltip'
-    data-slot='tooltip-content'
+    data-slot={slotToken("tooltip-content", inherited)}
     popover='manual'
     {...stateAttrs({ open: false, side, align })}
     class={cn("z-50 w-max max-w-xs rounded-md bg-foreground px-2 py-1 text-xs text-background shadow-md", asClass(cls))}

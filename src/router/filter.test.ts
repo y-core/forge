@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Middleware } from "@remix-run/fetch-router";
 import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
+import { mapHandler } from "../testing/route";
 import { forMethod, routePaths } from "./filter";
 import { get, post, Route, route } from "./mod";
 

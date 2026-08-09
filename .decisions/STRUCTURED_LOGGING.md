@@ -23,6 +23,7 @@ description: "The logging namespace: channels and their composable wrappers, the
 - §2c kvLogChannel for Production Persistence: symmetric read/write over KV
 - §2d Channel Selection by Environment: the canonical fallback pattern
 - §2e withRedaction and Stack-Redaction Posture: per-channel transforms and `persistStack`
+- §2f Channel Write Failures and `flush`'s Error Contract: what absorbs a failed write, and who observes it
 - §3 requestLogger Middleware: the per-request child logger
 - §3a requestLogger Configuration: per-request channels and bindings
 - §3b What requestLogger Records: the emitted fields
@@ -44,7 +45,8 @@ description: "The logging namespace: channels and their composable wrappers, the
 
 From `@y-core/forge/logging` (`src/logging/mod.ts`):
 
-- `createLogger(prefix, options?)` — creates a Logger instance with channels
+- `createLogger(prefix, options?)` — creates a Logger instance with channels; `options.onChannelError`
+  observes writes that fail, and is the only thing that does (§2f)
 - `consoleChannel()` — log channel that writes to console; no `read`
 - `kvLogChannel(kv, options?)` — log channel that writes to and reads from Workers KV
 - `withMinLevel(channel, min)` — composable wrapper: drops records below `min` per channel
@@ -150,6 +152,46 @@ from a **cloned** `record.data` before persistence — error stacks never enter 
 retention window. The caller's record is never mutated, so `consoleChannel` keeps the full stack
 for local debugging. Set `persistStack: true` only when stacks must survive in KV (e.g. a
 short-retention debug namespace).
+
+### 2f. Channel Write Failures and flush's Error Contract
+
+**`Logger.flush()` never rejects.** A channel write that fails is absorbed: the failure does not
+reach the caller, and one failing channel does not hide the others' completion. This is the
+deliberate posture — logging describes work and must never fail the work it describes. It is
+load-bearing at the one call site that matters: `requestLogger` flushes inside a `finally` (§3),
+and a `finally` that throws *replaces* whatever was propagating, so a rejecting flush could discard
+a successful response or mask the handler error being rethrown.
+
+Absorbing the rejection removes the last place a persistence outage was visible, so
+**`LoggerOptions.onChannelError` is the only observer of a failed write.** Nothing else reports
+one: `flush` resolves, `consoleChannel` writes synchronously and never sees the KV promise, and the
+handler attached at dispatch means the runtime sees no unhandled rejection either. A `LOGS_KV`
+outage with no observer is an app that looks healthy over an empty log store.
+
+**It is on by default.** Absent a hook, a failed write produces one structured `console.error` line
+in the shape `consoleChannel` writes, so an outage is visible in `wrangler tail` with zero
+configuration. Supplying a hook replaces that line — route failures to a counter, a health route,
+or an alerting channel. A hook that throws is swallowed: reporting a logging failure must not become
+a second failure on the request path.
+
+**The hook observes strictly more than `flush` does.** It is attached to the write as a sibling
+handler rather than a chain, so `flush` still awaits the original write and its contract is
+unchanged; and because the observation happens at dispatch, it also covers writes evicted from the
+pending buffer by its cap — writes `flush` never sees, and which would otherwise fail with nobody
+watching. The cap, the eviction policy, and `flush`'s best-effort contract over evicted writes are
+owned by `src/logging/logger.ts`; usage is in `src/logging/README.md`.
+
+**Both failure modes are absorbed, not only the asynchronous one.** A channel may fail two ways: by
+rejecting the promise it returned, or by throwing before it returns one at all. The second is not
+hypothetical and is reachable through the default channel — `consoleChannel` calls `JSON.stringify`,
+which throws on a cyclic `data` payload, so an object graph holding a back-reference would otherwise
+take the request down. A synchronous throw has no promise to attach a sibling handler to, so it is
+reported directly instead, and nothing enters the pending buffer for `flush` to await. The guard is
+per channel rather than around the fan-out, so one channel throwing still leaves the rest to run.
+The claim in the first paragraph is therefore unconditional: **no channel failure of either kind
+reaches the caller.**
+
+`RequestLoggerOptions` mirrors the option and threads it into the per-request logger (§3a).
 
 ---
 

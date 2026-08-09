@@ -13,16 +13,22 @@ import { Switch } from "./switch";
  * does not emit.
  */
 
-const TRACK = "[data-slot='switch-track']";
-const THUMB = "[data-slot='switch-thumb']";
-const INPUT = "[data-slot='switch-input']";
+const TRACK = "[data-slot~='switch-track']";
+const THUMB = "[data-slot~='switch-thumb']";
+const INPUT = "[data-slot~='switch-input']";
 
 const markup = (): Promise<string> => render(Switch({ children: "Snap to grid" }));
 
-/** The rendered class list of one slot, un-escaped back from HTML. */
+/** The rendered class list of one slot, un-escaped back from HTML.
+ *
+ * `data-slot` is a **token list**, so the token is matched at its own boundaries rather than as the
+ * whole attribute value: the moment the element carries a second token an exact-value pattern stops
+ * matching and this helper throws its "no class attribute" error, which reads as a mount failure
+ * rather than the composition change it actually is. The leading group demands whitespace before the
+ * token and the trailing one whitespace after, so `x-switch-thumb` and `switch-thumb-2` still miss. */
 function classesOf(html: string, slot: string): string[] {
-  const match = new RegExp(`data-slot="${slot}"[^>]*?class="([^"]*)"`).exec(html);
-  if (!match?.[1]) throw new Error(`no class attribute on [data-slot='${slot}']`);
+  const match = new RegExp(`data-slot="(?:[^"]*\\s)?${slot}(?:\\s[^"]*)?"[^>]*?class="([^"]*)"`).exec(html);
+  if (!match?.[1]) throw new Error(`no class attribute on [data-slot~='${slot}']`);
   return match[1].replaceAll("&amp;", "&").split(" ");
 }
 

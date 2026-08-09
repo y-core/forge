@@ -14,8 +14,8 @@ import { ScrollArea } from "./scroll-area";
  * height comes from a stylesheet here. Without a bound height nothing overflows and there is nothing
  * to scroll, which would make every case below pass vacuously. */
 const STYLES = `<style>
-  [data-slot='scroll-area'] { height: 96px; width: 192px; }
-  [data-slot='scroll-area-viewport'] { height: 100%; overflow: auto; }
+  [data-slot~='scroll-area'] { height: 96px; width: 192px; }
+  [data-slot~='scroll-area-viewport'] { height: 100%; overflow: auto; }
 </style>`;
 
 async function markup(): Promise<string> {

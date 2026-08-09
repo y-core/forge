@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
+import { mapHandler } from "../testing/route";
 import { parseFormData } from "./parse-form-data";
 import type { ReadonlyFormData } from "./types";
 

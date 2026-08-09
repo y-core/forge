@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../../app/forge-app";
-import { mapHandler } from "../../app/route-test-helper";
 import type { AppContext } from "../../context/types";
+import { mapHandler } from "../../testing/route";
 import { resolveObjectStore, validateR2Binding } from "./bindings";
 import type { R2BindingOptions, R2Bucket, R2BucketLike, R2Object } from "./types";
 

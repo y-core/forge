@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { FIELD_LABEL_CLASSES } from "./field";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface LabelProps extends Omit<JSX.IntrinsicElements["label"], "children"> {
@@ -9,8 +10,8 @@ interface LabelProps extends Omit<JSX.IntrinsicElements["label"], "children"> {
   children?: JSXNode;
 }
 
-export const Label: FC<LabelProps> = ({ required, class: cls, for: htmlFor, children, ...props }) => (
-  <label data-slot='label' for={htmlFor} class={cn(FIELD_LABEL_CLASSES, asClass(cls))} {...props}>
+export const Label: FC<LabelProps> = ({ required, class: cls, for: htmlFor, children, "data-slot": inherited, ...props }) => (
+  <label data-slot={slotToken("label", inherited)} for={htmlFor} class={cn(FIELD_LABEL_CLASSES, asClass(cls))} {...props}>
     {children}
     {required ? (
       <span data-slot='label-required' aria-hidden='true' class='ml-0.5 text-red-500'>

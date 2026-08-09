@@ -75,7 +75,7 @@ test.describe("chrome Toolbar — anatomy", () => {
     await mountRail(page, "left");
 
     const rail = await page.evaluate(() => {
-      const el = document.querySelector("[data-slot='toolbar']");
+      const el = document.querySelector("[data-slot~='toolbar']");
       return {
         role: el?.getAttribute("role"),
         scope: el?.getAttribute("data-scope"),
@@ -92,14 +92,14 @@ test.describe("chrome Toolbar — anatomy", () => {
   test("a top rail is horizontal", async ({ page }) => {
     await mountRail(page, "top");
 
-    expect(await page.evaluate(() => document.querySelector("[data-slot='toolbar']")?.getAttribute("data-orientation"))).toBe("horizontal");
+    expect(await page.evaluate(() => document.querySelector("[data-slot~='toolbar']")?.getAttribute("data-orientation"))).toBe("horizontal");
   });
 
   test("separators announce the axis across the rail", async ({ page }) => {
     await mountRail(page, "left");
 
     const sep = await page.evaluate(() => {
-      const el = document.querySelector("[data-slot='toolbar-separator']");
+      const el = document.querySelector("[data-slot~='toolbar-separator']");
       return { tag: el?.tagName, orientation: el?.getAttribute("aria-orientation") };
     });
 
@@ -151,7 +151,7 @@ test.describe("chrome Toolbar — one tab stop", () => {
   test("the flyout's title action is NOT a rail stop", async ({ page }) => {
     await mountRail(page);
 
-    const marked = await page.evaluate(() => document.querySelector("[data-slot='toolbar-title-action']")?.hasAttribute("data-toolbar-item"));
+    const marked = await page.evaluate(() => document.querySelector("[data-slot~='toolbar-title-action']")?.hasAttribute("data-toolbar-item"));
 
     // Roving focus queries the whole `<nav>` subtree and the flyout is inside it, so a marker here
     // would splice flyout buttons into the rail's ring.

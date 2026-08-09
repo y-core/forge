@@ -12,6 +12,16 @@ export interface CsrfVerifyOptions {
   subject?: string;
 }
 
+/** Options for `formToObject`. @public */
+export interface FormToObjectOptions {
+  /**
+   * Field names to leave out of the result. A form carries entries the schema has no reason to
+   * declare — a CSRF token already consumed by the guard, a honeypot decoy — and an undeclared
+   * leftover is what a strict object schema refuses.
+   */
+  drop?: ReadonlySet<string>;
+}
+
 /** Maximum allowed form body size in bytes. Default: 100 KB. */
 export interface ParseFormDataOptions {
   /** Maximum allowed Content-Length in bytes. Requests exceeding this are rejected with a 413 Response. Defaults to 100 KB. */
@@ -29,23 +39,33 @@ export interface ReadonlyFormData {
   [Symbol.iterator](): IterableIterator<[string, FormDataEntryValue]>;
 }
 
+/**
+ * Why a Turnstile verification did not pass. `network-error` and `timeout` describe the siteverify
+ * call rather than the caller, so they are the two reasons that do not imply a bot. @public
+ */
+export type TurnstileFailure =
+  | "action-mismatch"
+  | "cdata-mismatch"
+  | "hostname-mismatch"
+  | "missing-token"
+  | "network-error"
+  | "parse-error"
+  | "timeout"
+  | "verification-failed";
+
 /** Result of a Cloudflare Turnstile verification. @public */
-export type TurnstileResult = GuardResult<
-  "action-mismatch" | "cdata-mismatch" | "hostname-mismatch" | "missing-token" | "network-error" | "parse-error" | "timeout" | "verification-failed"
->;
+export type TurnstileResult = GuardResult<TurnstileFailure>;
 
 export interface TurnstileVerifyOptions {
   expectedAction?: string;
   expectedCData?: string;
   expectedHostname: string /** cross-site token replay prevention */;
-  /** Form field holding the Turnstile token. Defaults to `"cf-turnstile-response"`. */
+  /** Form field holding the Turnstile token. Defaults to `TURNSTILE_FIELD_DEFAULT`. */
   tokenField?: string;
   /** Client IP forwarded to the siteverify API as `remoteip`. */
   remoteIp?: string;
   timeoutMs?: number;
 }
-
-export type FormFieldReader = (formData: ReadonlyFormData, field: string) => string;
 
 /** Result of a CSRF token verification. @public */
 export type CsrfResult = GuardResult<

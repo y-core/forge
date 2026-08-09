@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { TURNSTILE } from "../contracts/turnstile-contract";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 export type TurnstileProps = Omit<JSX.IntrinsicElements["div"], "children"> & {
@@ -24,8 +25,14 @@ const DEFAULT_FALLBACK = "The security challenge couldn't load. Please disable a
  * controller only when the challenge cannot load; override it by passing children.
  * @public
  */
-export const Turnstile: FC<TurnstileProps> = ({ siteKey, size = "normal", class: cls, children, ...rest }) => (
-  <div data-slot='turnstile' data-ref={TURNSTILE.widget} data-sitekey={siteKey} data-size={size} class={cn(asClass(cls))} {...rest}>
+export const Turnstile: FC<TurnstileProps> = ({ siteKey, size = "normal", class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div
+    data-slot={slotToken("turnstile", inherited)}
+    data-ref={TURNSTILE.widget}
+    data-sitekey={siteKey}
+    data-size={size}
+    class={cn(asClass(cls))}
+    {...rest}>
     <p data-ref={TURNSTILE.fallback} role='alert' hidden={true} class='text-sm text-red-600'>
       {children ?? DEFAULT_FALLBACK}
     </p>

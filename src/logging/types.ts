@@ -90,6 +90,14 @@ export interface LoggerOptions {
   bindings?: Record<string, unknown>;
   /** Records below this level are dropped before reaching any channel. Children inherit it. */
   minLevel?: LogLevel;
+  /**
+   * Called when a channel write fails, with the rejection reason or the thrown value — a write that
+   * throws synchronously is reported exactly like one that rejects — including writes `flush()` never
+   * sees. Defaults to one structured `console.error` line, so a persistence outage is visible
+   * without configuration. Never reaches the request path: a hook that throws is swallowed, and the
+   * failure it reports is not propagated to the caller either. Children inherit it.
+   */
+  onChannelError?: (error: unknown) => void;
 }
 
 export interface Logger {
@@ -116,6 +124,8 @@ export interface RequestLoggerOptions<Bindings = Record<string, unknown>> {
   bindings?: (c: AppContext<Bindings>) => Record<string, unknown>;
   /** Static level, or a per-request resolver (e.g. from an env var); `undefined` means no filtering. */
   minLevel?: LogLevel | ((c: AppContext<Bindings>) => LogLevel | undefined);
+  /** Passed through to the per-request logger; see `LoggerOptions.onChannelError`. */
+  onChannelError?: (error: unknown) => void;
 }
 
 /** @public */

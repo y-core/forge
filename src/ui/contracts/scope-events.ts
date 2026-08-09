@@ -1,7 +1,7 @@
 /**
  * Single source of truth for the delegated-event vocabulary shared by the client resume
  * runtime (`ui/client/resume.ts` installs one listener per entry) and the server attribute
- * helper (`ui/server/scope-attrs.ts` emits one `data-on-<event>` per entry). Keeping both in
+ * helper (`ui/contracts/scope-attrs.ts` emits one `data-on-<event>` per entry). Keeping both in
  * lockstep prevents the listener set and the emitted attributes from drifting apart.
  *
  * Pure data, side-effect-free — safe to import into either bundle, and published so an app

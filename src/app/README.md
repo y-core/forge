@@ -14,7 +14,7 @@ This namespace is an **integration namespace** — it composes `form`, `http`, `
 - **Fail-closed error boundary** — every throw inside or outside the middleware chain produces a hardened `500` page; an in-chain throw still flows back out through security headers.
 - **Path-scoped middleware** — `app.use("*", ...)` / `app.use("/api/*", ...)` register guards that wrap matched routes.
 - **Declarative route registration** — `app.map(routes, controller)` binds a route map to its controller.
-- **Two route-handler factories** — `definePage` (loader → view, with caching and error recovery) and `defineAction` (parse → validate → handle, with automatic `413`/`400`/`422`/`500` error fragments).
+- **Two route-handler factories** — `definePage` (loader → view, with caching and error recovery) and `defineAction` (read → bot guards → schema → handle, with automatic `413`/`400`/`422`/`500` error fragments).
 - **Static-asset catch-all** — `applyAssets` serves the `ASSETS` binding with a typed `notFoundView` fallback.
 - **Config injection** — a `Config` store passed to `createApp` is resolved once per request and exposed on the context (`ConfigKey`, `c.config`).
 - **Startup binding validation** — `validateEnv` (one-shot, throws) and `validateBindings` (middleware form) check Worker bindings against a valibot schema.
@@ -150,12 +150,15 @@ Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) int
 
 | Field | Type | Description |
 |---|---|---|
-| `action` | `(c, config) => ActionData \| Response \| Promise<...>` | Optional. Runs on every non-`GET` request, before the loader, so the view renders post-mutation state. Its return value reaches the view as `state.actionData`; returning a `Response` short-circuits rendering. Skipped entirely on a `GET`. |
+| `action` | `(c, config, data) => ActionData \| Response \| Promise<...>` | Optional. Runs on every non-`GET` request, before the loader, so the view renders post-mutation state. Its return value reaches the view as `state.actionData`; returning a `Response` short-circuits rendering. Skipped entirely on a `GET`. `data` is the `schema`'s output, and is `undefined` on a page that declares none. |
+| `schema` | `S extends v.GenericSchema` | Optional. Routes every non-`GET` request through the same read → guard → validate sequence `defineAction` runs, so `action` is unreachable without a passing `v.safeParse` and receives the output as its third argument. A refused body becomes a `422` fragment (with the configured `cache`/`headers` applied) and `action`, `loader` and `view` never run. Omitting it leaves the page as it was. |
 | `loader` | `(c, config) => LoaderData \| Response \| Promise<...>` | Optional. Fetches page data. Returning a `Response` (e.g. a redirect) short-circuits rendering — the response still gets the configured headers/cache applied. |
 | `view` | `(c, config, state) => Response \| Promise<Response>` | Required. Builds the page response. `state` is `{ data, actionData, method }`: `state.data` is the loader's return value, `state.actionData` the action's (`undefined` on a `GET`), and `state.method` is `"GET"` or `"POST"`. |
 | `cache` | `"no-store" \| CacheDirective` | Optional. Sets `Cache-Control`. `CacheDirective` is `{ maxAge: number; scope?: "public" \| "private" }` (scope defaults to `"public"`). |
 | `headers` | `Record<string, string>` | Optional. Extra response headers, merged onto whatever the view returned. |
 | `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Called if `action`, `loader`, or `view` throws. If omitted, the error re-throws to the app's error boundary. |
+
+**The submission sequence's options are declared here too.** `honeypot`, `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. `onValidationError` is what lets a self-posting page answer a refused body by re-rendering its own view with the field errors in place, instead of the default `422` fragment.
 
 ```ts
 import { definePage } from "@y-core/forge/app";
@@ -173,28 +176,47 @@ The view receives the resolved `config` (the second argument) and the render `st
 
 ### `defineAction(def)`
 
-Wires a `parse → validate → handle` pipeline into a POST handler that returns structured error fragments automatically.
+Wires a `read → guard → validate → handle` pipeline into a POST handler that returns structured error fragments automatically.
 
-`defineAction<Input, Bindings, ConfigData, Out>` takes four type arguments and `Out` defaults to `Input`, so a definition whose `validate` only *checks* its data names three exactly as before. Supply the fourth when `validate` **parses** — when it returns a narrower type than it was given, as a schema with a transform does — and `handle` then receives that type rather than the raw body. TypeScript has no partial type-argument inference, so a call site that names any of them names all four.
+**The schema is the only way in.** `defineAction` reads the parsed body itself and `handle` is unreachable except through a passing `v.safeParse` of `schema`, so a route cannot accept a body nothing checked. This replaced a `parse`/`validate` pair of arbitrary callbacks, which fixed the *order* the two ran in but never that either involved a schema — `validate: (d) => ok(d)` compiled and was accepted.
+
+**The body-content guards live here; transport guards do not.** The honeypot and Turnstile checks each read a named field out of this form, so they belong where the body is read and where the field they consume can be dropped in the same step. CSRF, origin and rate-limit guards decide from the request's envelope and need to know nothing about the route's fields, so they stay in the controller action's `middleware` array (`defineAction` accepts no `middleware` field).
+
+`defineAction<S, Bindings, ConfigData>` takes three type arguments and infers `S` from `def.schema`. TypeScript has no partial type-argument inference, so a call site naming `Bindings` names the schema too (`defineAction<typeof ContactSchema, Bindings, AppConfig>`); `createHandlerFactory` removes the need for any of them.
 
 | Field | Type | Description |
 |---|---|---|
-| `parse` | `(formData: ReadonlyFormData) => Input` | Reads typed fields out of the parsed form body. May throw on malformed input → `400`. |
-| `validate` | `(data: Input) => ValidationResult<Out>` | Validates the parsed data, and may narrow it. A `{ ok: false, error }` result (with `error: readonly string[]`) produces a `422` validation fragment. |
-| `handle` | `(data: Out, c, config) => Response \| Promise<Response>` | Runs after validation succeeds. Receives **what `validate` returned**, the context, and the resolved `config`. Returns the response directly. |
-| `onValidationError` | `(errors: readonly string[], c) => Response \| Promise<Response>` | Optional. Overrides the default `422` validation fragment; receives the message list from the `ValidationResult` failure (`.error`). |
-| `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Overrides the default `400`/`500` fragment when `parse` or `handle` throws. |
+| `schema` | `S extends v.GenericSchema` | The body schema. Prefer `strictObject` from `@y-core/forge/validation` — it is what turns a field nobody declared into a refusal rather than a value silently dropped, and it holds for every key a caller can send. |
+| `handle` | `(data: v.InferOutput<S>, c, config) => Response \| Promise<Response>` | Runs after the schema passes. Receives the schema's **output** (so a transform reaches it as the type it actually is), the context, and the resolved `config`. |
+| `onValidationError` | `(issues: readonly v.BaseIssue<unknown>[], c) => Response \| Promise<Response>` | Optional. Replaces the default validation fragment. It receives the **issues**, not formatted strings: an issue embeds the rejected value, and under a strict object the caller's own key, so how much of a caller's text travels back in a refusal is the app's decision. |
+| `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Overrides the default `500` fragment for anything that throws inside the validate-and-handle region — `handle`, the schema, or `onValidationError`. |
+| `honeypot` | `string` | Optional. The field carrying this route's decoy — the same value the view gave `<Honeypot field={…} />`, best held as one app-owned constant referenced by both. Naming it here is what checks the decoy **and** drops it, so the schema never declares a field no human fills. No default and no shorthand: a name forge could supply is a name every bot already knows to skip. |
+| `turnstile` | `ActionTurnstileOptions` | Optional. `{ secretKey, tokenField?, verify }`. The pipeline verifies the token and drops the token field, so the schema is never asked to declare it. `tokenField` is fixed at definition time (the field is dropped whether or not verification reaches the network); `secretKey` and `verify` resolve per request. |
+| `onBotDetected` | `(rejection: BotRejection, c) => Response \| Promise<Response>` | Optional. Replaces the refusal a tripped guard renders. `BotRejection` is `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`, so an app can tell a siteverify outage from an attack. The default says nothing about the guard at all. |
 | `maxBytes` | `number` | Optional. Body-size cap for this route's form parse. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). A `csrfProtection` guard on the same route parses the body first, so raising this also means raising the guard's own `maxBytes`. |
+
+**What reaches the schema.** Every entry the caller sent, minus the fields a guard on that request consumed. An **absent field is absent** rather than `""`, which is what keeps `v.optional` reachable and required-ness a presence check. A **repeated key arrives as an array**, so a scalar schema refuses it in its own words and a route that genuinely accepts many says so with `v.array`. A **`File` passes through unchanged**, so an upload schema can see one.
+
+**Nothing is dropped on a guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them; the CSRF field is dropped because `csrfProtection` published the field it took the token from. A route with no CSRF middleware drops nothing for CSRF, so a submitted `_csrf` is an ordinary undeclared field that a strict schema refuses — which names the missing middleware instead of absorbing its absence. See [`.decisions/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §2b for the rule and the alternatives it rejects.
+
+**Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control and `formMultilineText()` for a `<textarea>` — both from `@y-core/forge/validation`. The body read passes values through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "`.
 
 ```ts
 import { defineAction } from "@y-core/forge/app";
-import { readFields } from "@y-core/forge/form";
-import { renderSuccess } from "@y-core/forge/http";
-import { fragmentResponse } from "@y-core/forge/http";
+import { fragmentResponse, renderSuccess } from "@y-core/forge/http";
+import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation";
+import { CONTACT_DECOY } from "./forms";
 
-export const contactAction = defineAction<ContactInput, Bindings, AppConfig>({
-  parse: (formData) => readFields(formData, ["name", "email", "message"]),
-  validate: (data) => validateContact(data),         // ValidationResult<ContactInput>
+const ContactSchema = strictObject({
+  name: v.pipe(formText(), v.minLength(1)),
+  email: v.pipe(formText(), v.email()),
+  phone: v.optional(formText()),
+  message: v.pipe(formMultilineText(), v.minLength(10)),
+});
+
+export const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
+  schema: ContactSchema,
+  honeypot: CONTACT_DECOY,
   handle: async (data, c, config) => {
     await sendEmail(config.email, data);
     return fragmentResponse(renderSuccess("Thanks — we'll be in touch."));
@@ -207,13 +229,14 @@ The automatic error responses (all are HTMX-swappable fragments):
 | Status | Cause |
 |---|---|
 | `413` | Form body exceeds the size cap (`parseFormData` throws with `status: 413`). |
-| `400` | Body is unparseable, or `parse` throws (and no `onError`). |
-| `422` | `validate` returns `{ ok: false }` (and no `onValidationError`). |
-| `500` | `handle` throws (and no `onError`); the failure is logged. |
+| `400` | Body is unparseable as form data. |
+| `422` | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else: validation runs `abortEarly`, and each issue is rendered through `describeValidationIssue`, so neither the submitted value nor the schema's own rule travels back, and the response length cannot be steered by what the caller sent. |
+| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above — one `<li>` naming a field the schema declares, never the decoy — so a bot cannot tell a guard from a mistyped field by comparing answers. |
+| `500` | Anything in the validate-and-handle region throws, and no `onError` was supplied; the failure is logged. That covers `handle`, a schema whose `v.transform`/`v.check` throws on malformed input (valibot does not catch those), and a throwing `onValidationError`. A throwing schema is a route defect, not a bad request, which is why it is a `500` and not a `400`. |
 
 ### `createHandlerFactory<Bindings, ConfigData>()`
 
-Returns `{ definePage, defineAction }` with the app's `Bindings` and `ConfigData` generics pre-bound, so individual route modules stop repeating them. Per-call generics (`LoaderData`, `ActionData`, `Input`) remain inferred as usual. Bind once in an `app/handlers.ts` module and import the bound pair everywhere:
+Returns `{ definePage, defineAction }` with the app's `Bindings` and `ConfigData` generics pre-bound, so individual route modules stop repeating them. Per-call generics (`LoaderData`, `ActionData`, and the action's schema) remain inferred as usual — and since the schema infers from `def.schema`, a bound `defineAction` needs no type arguments at all. Bind once in an `app/handlers.ts` module and import the bound pair everywhere:
 
 ```ts
 // app/handlers.ts
@@ -423,7 +446,7 @@ import { Forge } from "@y-core/forge/app";
 const res = await app.request("/api/contact", {
   method: "POST",
   headers: { "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ __csrf: token, name: "Jane", email: "j@x.io", message: "Hello there" }),
+  body: new URLSearchParams({ _csrf: token, name: "Jane", email: "j@x.io", message: "Hello there" }),
 }, MINIMUM_ENV);
 
 expect(res.status).toBe(200);
@@ -435,7 +458,9 @@ expect(res.status).toBe(200);
 
 - **Hardened error boundary.** Every throw — inside the middleware chain or in router internals outside it — yields a `500` page with `x-content-type-options: nosniff`, `content-security-policy: default-src 'none'`, and `referrer-policy: no-referrer`. The in-chain path overlays the consumer's CSP via the pending-header pass; out-of-chain throws still get this baseline. Error responses thus carry security headers by construction.
 - **Error detail is gated.** The default `500` page reveals the error message **only** when `isDebug(c)` returns `true`; otherwise it shows a generic message. Never wire `isDebug` to a value an attacker controls.
-- **Validation failures are generic by default.** `defineAction` collapses parse/handle failures to neutral `400`/`500` fragments and renders validation errors as a `422` fragment — supply `onError`/`onValidationError` only if you control what is surfaced. Do not leak internal exception detail to clients.
+- **Validation failures are generic by default.** `defineAction` collapses body-parse and handler failures to neutral `400`/`500` fragments — supply `onError` only if you control what is surfaced, and do not leak internal exception detail to clients.
+- **A refusal names the field and nothing else.** A valibot issue embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and under a strict object the caller's own key lands in the issue path. The default refusal reproduces none of it: `abortEarly` bounds the issue count and `describeValidationIssue` bounds the description, so a 50,000-character value and a 5-character one produce the same response and extra fields cannot multiply it. **`onValidationError` opts out of that bound** — it receives the raw issues, so an app rendering more than the field name is choosing to. `formatValidationIssues` reproduces `issue.message` and is an internal diagnostic; never put its output in a response.
+- **A tripped bot guard is indistinguishable from a schema refusal.** Same status, same single `<li>`, naming a field the schema declares rather than the decoy — so a bot learns neither which guard it tripped nor that one is there. `onBotDetected` receives the reason for logging or banning without changing what the caller sees.
 - **Validate bindings at the edge.** Use `validateEnv`/`validateBindings` so a missing or malformed secret (e.g. `CSRF_SECRET`) fails loudly at startup or on the first request, never silently downstream.
 - **Asset method gating.** `serveAssets` answers only `GET`/`HEAD`; every other method falls through to `notFoundView`, so the asset catch-all cannot be used as a write surface.
 
@@ -461,7 +486,7 @@ Related docs:
 | `createApp` | function | Creates a `Forge` app with a structured error boundary. |
 | `Forge` | class | The app object — a Workers-native router with `fetch`/`use`/`map`/`request`. |
 | `definePage` | function | Loader + view → `RequestHandler`, with caching and error recovery. |
-| `defineAction` | function | `parse → validate → handle` POST pipeline with auto error fragments. |
+| `defineAction` | function | Schema-validated POST pipeline with auto error fragments. |
 | `createHandlerFactory` | function | Returns `definePage`/`defineAction` with `Bindings`/`ConfigData` pre-bound. |
 | `HandlerFactory` | type | The pre-bound pair returned by `createHandlerFactory`. |
 | `healthCheck` | function | Concurrent named checks → JSON `{ ok, checks }` (`200`/`503`). |
@@ -471,9 +496,11 @@ Related docs:
 | `validateBindings` | function | Middleware-form binding validation (first request / on change). |
 | `ConfigKey` | const | Context key holding the resolved per-request app config. |
 | `ActionDefinition` | type | The `defineAction` config shape. |
+| `ActionTurnstileOptions` | type | `{ secretKey, tokenField?, verify }` for `turnstile` on either builder. |
+| `BotRejection` | type | Why a guard refused — `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`. |
 | `AppOptions` | type | The `createApp` options shape. |
 | `AssetOptions` | type | The `applyAssets`/`serveAssets` options (`notFoundView`). |
 | `AssetsFetcher` | type | Shape of the `ASSETS` binding (`fetch(req)`). |
 | `CacheDirective` | type | `{ maxAge; scope? }` for `definePage({ cache })`. |
 | `HealthCheckResult` | type | `{ ok; checks }` health response body. |
-| `PageDefinition` | type | The `definePage` config shape. |
+| `PageDefinition` | type | The `definePage` config shape, inheriting the submission sequence's options. |

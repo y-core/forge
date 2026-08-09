@@ -1,7 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
-import { scopeAttrs } from "../server/scope-attrs";
+import { scopeAttrs } from "../contracts/scope-attrs";
+import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
 const variantClasses = {
@@ -16,9 +17,9 @@ export type AlertVariant = keyof typeof variantClasses;
 
 type AlertProps = JSX.IntrinsicElements["div"] & { variant?: AlertVariant; dismissible?: boolean };
 
-const AlertRoot: FC<AlertProps> = ({ variant = "default", dismissible = false, class: cls, children, ...rest }) => (
+const AlertRoot: FC<AlertProps> = ({ variant = "default", dismissible = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
-    data-slot='alert'
+    data-slot={slotToken("alert", inherited)}
     data-variant={variant}
     {...(dismissible ? { "data-scope": "alert" } : {})}
     class={cn("relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm", variantClasses[variant], dismissible && "pr-8", cls)}
@@ -39,14 +40,14 @@ const AlertRoot: FC<AlertProps> = ({ variant = "default", dismissible = false, c
   </div>
 );
 
-const AlertTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='alert-title' class={cn("font-medium leading-none tracking-tight", cls)} {...rest}>
+const AlertTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("alert-title", inherited)} class={cn("font-medium leading-none tracking-tight", cls)} {...rest}>
     {children}
   </div>
 );
 
-const AlertDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='alert-description' class={cn("text-sm leading-relaxed opacity-90", cls)} {...rest}>
+const AlertDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("alert-description", inherited)} class={cn("text-sm leading-relaxed opacity-90", cls)} {...rest}>
     {children}
   </div>
 );

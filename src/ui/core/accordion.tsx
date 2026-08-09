@@ -4,6 +4,7 @@ import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { ACCORDION_SCOPE } from "../contracts/toggle-contract";
 import type { ForgeIcon } from "./icon";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface AccordionRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
@@ -25,8 +26,8 @@ interface AccordionContentProps extends Omit<JSX.IntrinsicElements["div"], "chil
   children?: JSXNode;
 }
 
-const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='accordion' class={cn("flex flex-col", asClass(cls))} {...rest}>
+const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("accordion", inherited)} class={cn("flex flex-col", asClass(cls))} {...rest}>
     {children}
   </div>
 );
@@ -34,9 +35,9 @@ const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children, ...rest }
 /** One disclosure. `data-open` / `data-closed` start at the server's value and are then reconciled
  * from the `<details>` element's own `open` by the eager `accordion` scope — without that client
  * half a stylesheet keyed on the pair would match the initial state forever. */
-const AccordionItem: FC<AccordionItemProps> = ({ open, class: cls, children, ...props }) => (
+const AccordionItem: FC<AccordionItemProps> = ({ open, class: cls, children, "data-slot": inherited, ...props }) => (
   <details
-    data-slot='accordion-item'
+    data-slot={slotToken("accordion-item", inherited)}
     data-scope={ACCORDION_SCOPE}
     {...(open ? { open } : {})}
     {...stateAttrs({ open: open === true })}
@@ -46,9 +47,9 @@ const AccordionItem: FC<AccordionItemProps> = ({ open, class: cls, children, ...
   </details>
 );
 
-const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, class: cls, children, ...rest }) => (
+const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, class: cls, children, "data-slot": inherited, ...rest }) => (
   <summary
-    data-slot='accordion-trigger'
+    data-slot={slotToken("accordion-trigger", inherited)}
     class={cn(
       "flex items-center gap-2 cursor-pointer list-none select-none py-2 px-1 rounded text-sm font-medium outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
       asClass(cls),
@@ -64,8 +65,8 @@ const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, cla
   </summary>
 );
 
-const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, children, ...rest }) => (
-  <div data-slot='accordion-content' class={cn("px-1 pb-3 pt-1", asClass(cls))} {...rest}>
+const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("accordion-content", inherited)} class={cn("px-1 pb-3 pt-1", asClass(cls))} {...rest}>
     {hint ? <p class='mb-2 text-[11px] text-muted-foreground'>{hint}</p> : null}
     {children}
   </div>

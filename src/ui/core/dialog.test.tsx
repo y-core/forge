@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
-import { render } from "../../jsx/render-test-helper";
+import { render } from "../../testing/render";
 import { Dialog } from "./dialog";
 
 describe("Dialog", () => {

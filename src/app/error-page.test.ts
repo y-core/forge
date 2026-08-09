@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createTestContext } from "../testing/context";
+import { mapHandler } from "../testing/route";
 import { createApp } from "./app";
 import { createErrorPage } from "./error-page";
-import { mapHandler } from "./route-test-helper";
 
 describe("createErrorPage — debug gate", () => {
   it("hides the real error message by default (no isDebug)", async () => {

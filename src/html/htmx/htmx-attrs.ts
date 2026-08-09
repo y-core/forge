@@ -42,6 +42,13 @@ function encodeMap(m: Record<string, string>): string | undefined {
  * swaps, exfiltrate form fields via `hx-include`, or inject request headers. Escaping does not
  * help — these are behavioral directives, not display text.
  *
+ * The URL-valued props — `get`, `post`, `put`, `patch`, `delete`, `pushUrl` and `replaceUrl` — must
+ * be trusted for a different reason: the JSX renderer's URL sanitizer does not cover any `hx-*`
+ * attribute, and deliberately so. It rejects a URL by rewriting it to `"#"`, which on an `href` is
+ * a dead link but on an `hx-get` is a live same-origin request for the current page — so
+ * sanitizing here would turn a refusal into a silently successful wrong request. Build these from
+ * route definitions, never from request data.
+ *
  * @public
  */
 export function hxAttrs(p: HxAttrsProps): HxAttrs {

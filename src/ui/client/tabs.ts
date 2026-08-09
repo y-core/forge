@@ -1,7 +1,7 @@
 import { applyStateAttrs } from "../contracts/state-attrs";
 import { TAB_SELECTOR, TABLIST_SELECTOR } from "../contracts/tabs-contract";
 import { mountRovingFocus } from "./composite";
-import { closestAcross, eventTarget, ownerDocument } from "./dom";
+import { closestAcross, elementById, eventTarget } from "./dom";
 
 /**
  * Tab selection and keyboard navigation.
@@ -20,9 +20,8 @@ function tabsIn(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(TAB_SELECTOR)];
 }
 
-function panelFor(root: HTMLElement, tab: HTMLElement): HTMLElement | null {
-  const id = tab.getAttribute("aria-controls");
-  return id ? ownerDocument(root).getElementById(id) : null;
+function panelFor(tab: HTMLElement): HTMLElement | null {
+  return elementById(tab, tab.getAttribute("aria-controls") ?? "");
 }
 
 function select(root: HTMLElement, chosen: HTMLElement): void {
@@ -30,7 +29,7 @@ function select(root: HTMLElement, chosen: HTMLElement): void {
     const isChosen = tab === chosen;
     tab.setAttribute("aria-selected", String(isChosen));
     applyStateAttrs(tab, { selected: isChosen });
-    const panel = panelFor(root, tab);
+    const panel = panelFor(tab);
     if (!panel) continue;
     panel.hidden = !isChosen;
     applyStateAttrs(panel, { selected: isChosen });

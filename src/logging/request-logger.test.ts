@@ -1,8 +1,8 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
 import type { KVNamespace } from "../storage/kv/types";
-import { withLevels } from "./channels";
+import { mapHandler } from "../testing/route";
+import { consoleChannel, withLevels } from "./channels";
 import { kvLogChannel } from "./kv-channel";
 import { requestLog, requestLogger } from "./request-logger";
 import type { LogChannel, LogRecord } from "./types";
@@ -349,6 +349,22 @@ describe("requestLogger — a failing channel never changes the request outcome"
    *  rejects. Nothing about it is recoverable at the request level, which is the point. */
   const failingChannel: LogChannel = { write: () => Promise.reject(new Error("channel down")) };
 
+  // Every case here drives a rejecting write, so the default channel-error reporter fires on each
+  // one. Captured rather than printed: the no-executionCtx case asserts them below, and left
+  // unstubbed they bury the rest of the run's output.
+  let reports: string[] = [];
+  let originalError: typeof console.error;
+
+  beforeEach(() => {
+    reports = [];
+    originalError = console.error;
+    console.error = (...args: unknown[]) => reports.push(args.map(String).join(" "));
+  });
+
+  afterEach(() => {
+    console.error = originalError;
+  });
+
   function makeFailingChannelApp() {
     const app = new Forge();
     app.use("*", requestLogger({ channels: () => [failingChannel] }));
@@ -372,8 +388,8 @@ describe("requestLogger — a failing channel never changes the request outcome"
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
-    // A rejecting promise handed to `waitUntil` is a rejection with nobody attached — the runtime
-    // reports it, and nothing about the request is improved by it.
+    // The promise handed to `waitUntil` resolves even though every write failed: `flush` absorbs the
+    // failures, and `requestLogger` wraps it in a `.catch` besides. Nothing about the request changes.
     expect(flushed.length).toBeGreaterThan(0);
     await expect(Promise.all(flushed)).resolves.toBeDefined();
   });
@@ -385,6 +401,10 @@ describe("requestLogger — a failing channel never changes the request outcome"
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
+    // The failure is not silent — it surfaces on the default reporter instead of on the response:
+    // one report for the handler record, one for the per-request summary.
+    expect(reports).toHaveLength(2);
+    expect(JSON.parse(reports[0]!).message).toBe("log channel write failed");
   });
 
   it("a throw escaping next() reaches the boundary unmasked by the flush failure", async () => {
@@ -517,5 +537,168 @@ describe("requestLogger — per-channel level allowlists", () => {
       ["warn", 404],
       ["error", 500],
     ]);
+  });
+});
+
+describe("requestLogger — onChannelError", () => {
+  let capturedErrors: string[] = [];
+  let originalError: typeof console.error;
+
+  beforeEach(() => {
+    capturedErrors = [];
+    originalError = console.error;
+    console.error = (...args: unknown[]) => capturedErrors.push(args.map(String).join(" "));
+  });
+
+  afterEach(() => {
+    console.error = originalError;
+  });
+
+  /** A channel whose write always rejects — a `kvLogChannel` whose binding is unavailable. */
+  function failingChannel(error: unknown): LogChannel {
+    return { write: () => Promise.reject(error) };
+  }
+
+  function makeFailingApp(error: unknown, onChannelError?: (e: unknown) => void) {
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [failingChannel(error)], ...(onChannelError !== undefined ? { onChannelError } : {}) }));
+    mapHandler(app, "GET", "/test", (c) => {
+      requestLog.get(c).info("handler ran");
+      return new Response("ok");
+    });
+    return app;
+  }
+
+  it("threads the option through to the per-request logger", async () => {
+    const errors: unknown[] = [];
+    const boom = new Error("kv down");
+    const app = makeFailingApp(boom, (e) => {
+      errors.push(e);
+    });
+
+    const res = await app.request("/test");
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    // the handler record and the per-request summary record, each a failed write
+    expect(errors).toStrictEqual([boom, boom]);
+    // the supplied hook replaces the default reporter outright
+    expect(capturedErrors).toStrictEqual([]);
+  });
+
+  it("a throwing hook does not become a request failure", async () => {
+    let calls = 0;
+    const app = makeFailingApp(new Error("kv down"), () => {
+      calls += 1;
+      throw new Error("the reporter is broken too");
+    });
+
+    const res = await app.request("/test");
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(calls).toBe(2);
+    expect(capturedErrors).toStrictEqual([]);
+  });
+
+  it("falls back to the default console.error report when the option is omitted", async () => {
+    const boom = new Error("kv down");
+    const app = makeFailingApp(boom);
+
+    const res = await app.request("/test");
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(capturedErrors).toHaveLength(2);
+    const report = JSON.parse(capturedErrors[0]!);
+    expect(Object.keys(report)).toStrictEqual(["error", "level", "prefix", "message", "timestamp"]);
+    expect(report.message).toBe("log channel write failed");
+    expect(report.prefix).toBe("logger");
+    expect(report.level).toBe("error");
+    expect(report.error).toStrictEqual({ name: "Error", message: "kv down", stack: boom.stack });
+  });
+});
+
+describe("requestLogger — the real consoleChannel on a cyclic data payload", () => {
+  let capturedLogs: string[] = [];
+  let capturedErrors: string[] = [];
+  let originalLog: typeof console.log;
+  let originalError: typeof console.error;
+
+  beforeEach(() => {
+    capturedLogs = [];
+    capturedErrors = [];
+    originalLog = console.log;
+    originalError = console.error;
+    console.log = (...args: unknown[]) => capturedLogs.push(args.map(String).join(" "));
+    console.error = (...args: unknown[]) => capturedErrors.push(args.map(String).join(" "));
+  });
+
+  afterEach(() => {
+    console.log = originalLog;
+    console.error = originalError;
+  });
+
+  /** An object graph with a back-reference — the ordinary shape that makes `JSON.stringify` throw. */
+  function makeCyclic(): Record<string, unknown> {
+    const node: Record<string, unknown> = { name: "loop" };
+    node.self = node;
+    return node;
+  }
+
+  /** What `JSON.stringify` actually throws here, derived rather than hardcoded to an engine string. */
+  function stringifyFailure(value: unknown): { name: string; message: string } {
+    try {
+      JSON.stringify(value);
+    } catch (err) {
+      const error = err as Error;
+      return { name: error.name, message: error.message };
+    }
+    throw new Error("expected JSON.stringify to throw on a cyclic structure");
+  }
+
+  function makeCyclicApp(cyclic: Record<string, unknown>) {
+    const app = new Forge();
+    // The real channel, not a fake: the defect is reachable through the *default* channel, and a
+    // fake that throws on demand would prove only that a hand-written throw is absorbed.
+    app.use("*", requestLogger({ channels: () => [consoleChannel()] }));
+    mapHandler(app, "GET", "/cyclic", (c) => {
+      requestLog.get(c).info("x", { cyclic });
+      return new Response("ok");
+    });
+    return app;
+  }
+
+  it("returns 200 and reports the stringify failure instead of failing the request", async () => {
+    const cyclic = makeCyclic();
+    const expected = stringifyFailure(cyclic);
+
+    const res = await makeCyclicApp(cyclic).request("/cyclic");
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+
+    // Exactly one report: the handler's record could not be serialized, the per-request summary
+    // carries no cyclic data and wrote normally.
+    expect(capturedErrors).toHaveLength(1);
+    const report = JSON.parse(capturedErrors[0]!);
+    expect(Object.keys(report)).toStrictEqual(["error", "level", "prefix", "message", "timestamp"]);
+    expect(report.message).toBe("log channel write failed");
+    expect(report.prefix).toBe("logger");
+    expect(report.level).toBe("error");
+    expect(report.error.name).toBe(expected.name);
+    expect(report.error.message).toBe(expected.message);
+  });
+
+  it("the summary record still reaches the log stream, so the request is not lost from the record", async () => {
+    const cyclic = makeCyclic();
+
+    await makeCyclicApp(cyclic).request("/cyclic");
+
+    expect(capturedLogs).toHaveLength(1);
+    const summary = JSON.parse(capturedLogs[0]!);
+    expect(summary.message).toBe("GET /cyclic");
+    expect(summary.level).toBe("info");
+    expect(summary.status).toBe(200);
   });
 });

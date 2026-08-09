@@ -109,6 +109,87 @@ test.describe("Tooltip", () => {
   });
 });
 
+// ─── Tooltips across a shadow boundary ───────────────────────────────────────
+
+/** Which tree a case reads its markup out of — the light document, or the host's open shadow root. */
+type Tree = "light" | "shadow";
+
+/**
+ * Whether the tip is open, read out of whichever tree the case mounted into.
+ *
+ * **Opening is the falsifiable difference, and nothing weaker will do.** `mountTooltip` resolves its
+ * content from the trigger's own `aria-describedby`; a document-scoped lookup answers `null` for an
+ * id that lives in a shadow tree, the `if (!trigger || !content)` guard returns the no-op disposer,
+ * and **no listener is ever bound**. Every ARIA-wiring assertion in this file is served by SSR alone
+ * and stays green through that, so only a tip that actually appears distinguishes the two.
+ */
+function isShownIn(page: Page, tree: Tree): Promise<boolean> {
+  return page.evaluate((where) => {
+    const root: ParentNode | null | undefined = where === "shadow" ? document.querySelector("#host")?.shadowRoot : document;
+    if (!root) throw new Error("no tree to read: the shadow root was never attached");
+    return root.querySelector("#save-tip")?.matches(":popover-open") ?? false;
+  }, tree);
+}
+
+test.describe("Tooltip — inside a shadow root", () => {
+  const markup = () =>
+    render(
+      Tooltip({
+        children: [
+          Tooltip.Trigger({ id: "save", for: "save-tip", children: "Save" }),
+          Tooltip.Content({ id: "save-tip", children: "Writes the file to disk" }),
+        ],
+      }),
+    );
+
+  /** Attach the template's contents to a shadow root, then resume — whose eager pass descends into
+   * open roots at any depth, so a tooltip scope inside one is discovered like any other. */
+  async function attachAndResume(page: Page, hostSelector: string): Promise<void> {
+    await page.evaluate((selector) => {
+      const host = document.querySelector(selector);
+      const template = document.querySelector<HTMLTemplateElement>("#source");
+      if (!host || !template) return;
+      host.attachShadow({ mode: "open" }).append(template.content.cloneNode(true));
+      window.forgeResume.resume();
+    }, hostSelector);
+  }
+
+  test("a tooltip inside an open shadow root still opens on hover and closes on Escape", async ({ page }) => {
+    await mount(page, `<div id="host"></div><template id="source">${await markup()}</template>`, EXPOSE);
+    await attachAndResume(page, "#host");
+
+    // Asserted, not assumed: it is the precondition that makes this case about a shadow boundary at
+    // all. With the content id visible to the document, a document-scoped lookup would pass too.
+    expect(await page.evaluate(() => document.getElementById("save-tip") === null)).toBe(true);
+    expect(await isShownIn(page, "shadow")).toBe(false);
+
+    await page.hover("#save");
+    await expect.poll(() => isShownIn(page, "shadow"), { timeout: 3000 }).toBe(true);
+
+    // The keydown listener sits on the owner document and is bound by the same guarded block, so it
+    // is dead in exactly the same way when the content does not resolve.
+    await page.keyboard.press("Escape");
+
+    await expect.poll(() => isShownIn(page, "shadow")).toBe(false);
+  });
+
+  test("the identical markup in the light DOM opens on hover and closes on Escape", async ({ page }) => {
+    // The parity half. Without it a regression that broke the ordinary document path could hide
+    // behind a green shadow case, because the shadow lookup and the document lookup are one call.
+    await mount(page, await markup(), EXPOSE);
+    await start(page);
+
+    expect(await isShownIn(page, "light")).toBe(false);
+
+    await page.hover("#save");
+    await expect.poll(() => isShownIn(page, "light"), { timeout: 3000 }).toBe(true);
+
+    await page.keyboard.press("Escape");
+
+    await expect.poll(() => isShownIn(page, "light")).toBe(false);
+  });
+});
+
 /**
  * **Placement, measured.** The first coverage the tooltip's twelve `side` × `align` rules have ever
  * had: the suite loads no CSS anywhere else, so nothing until now could tell a resolved `anchor()`

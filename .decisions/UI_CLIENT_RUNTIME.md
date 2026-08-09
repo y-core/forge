@@ -36,7 +36,7 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §4 htmx Bundle Import: the side-effect entry point
 - §5 Never Use ui/client in an SSR Context: the hard boundary and how it is kept
 - §6 Controller Primitives: the shared internals every controller is built from
-- §6a Owner-Document Utilities: the four global reflexes and their failure modes
+- §6a Owner-Document Utilities: the global reflexes a controller may not reach for, and their node-resolved replacements
 - §6b mountRovingFocus — The Composite Controller: one function over a DOM subtree
 - §6c mountTransitionState — The Transition Protocol: one controller, never per-component
 - §6d mountPopupTriggerState — The Trigger's Own State: `data-popup-open` and its producer
@@ -137,12 +137,14 @@ for and the platform does not supply: arrow navigation over the items, typeahead
 item when the menu opens, focus back on the opener when it closes, and the two arrows that move
 between a panel and its submenu.
 
-**ArrowRight and ArrowLeft go through the platform rather than around it.** ArrowRight on a
-`menu-submenu-trigger` calls `.click()` — the row's own `command="toggle-popover"` is what opens the
-panel, and the nested popup's own `mountMenu` is what moves focus into it. ArrowLeft on a nested
-popup calls `hidePopover()`, the same path Escape already takes, so focus restoration is the one
-`toggle` handler rather than a second parallel one. Nothing about the state machine is
-reimplemented.
+**The two horizontal arrows go through the platform rather than around it**, and which arrow means
+which is **resolved from the popup's own writing direction** rather than hardcoded (§6a) — so the
+pair mirrors under `dir="rtl"`, including for a single RTL subtree inside an LTR page. The key
+pointing *toward* the submenu calls `.click()` on a `menu-submenu-trigger` — the row's own
+`command="toggle-popover"` is what opens the panel, and the nested popup's own `mountMenu` is what
+moves focus into it. The key pointing *away* calls `hidePopover()` on a nested popup, the same path
+Escape already takes, so focus restoration is the one `toggle` handler rather than a second parallel
+one. Nothing about the state machine is reimplemented.
 
 **Both keys are guarded twice**, and neither guard is optional: the handler bails on
 `event.defaultPrevented`, because `keydown` bubbles from an open submenu to the panel containing it
@@ -302,7 +304,7 @@ is deliberate too — an element scrolled out of view in the meantime waits for 
 loading off-screen. A throw from `init` is a different failure: it is reported to `onError` and stops
 there, since the load succeeded and re-running it would only re-run the same failing `init`. The
 disposer marks the controller disposed and clears a pending retry timer, so a load still in flight
-when a scope tears down never re-observes.
+when a scope tears down never touches the element again: it neither re-observes nor runs `init`.
 
 **`loadStylesheet` joins concurrent callers to one `<link>`.** The in-flight promise is cached per
 `(document, href)`, so a second caller arriving before the first link's `load` waits for the real
@@ -398,7 +400,7 @@ section because the rules in them are the ones a new controller most often gets 
 
 ### 6a. Owner-Document Utilities
 
-**A browser controller never reaches for a bare global.** Four reflexes each have a failure mode
+**A browser controller never reaches for a bare global.** Each of these reflexes has a failure mode
 that is invisible in the common case and total in the uncommon one:
 
 | Reflex | What breaks |
@@ -407,19 +409,32 @@ that is invisible in the common case and total in the uncommon one:
 | `event.target` | retargeted at a shadow boundary: for an event that crossed one it reports the **host**, not the element hit |
 | `document.activeElement` | the same problem in reverse — it stops at the host and never reports the focused item inside an open shadow root |
 | `instanceof HTMLElement` | `false` for an element from another realm, because every realm has its own constructor. It compiles, it type-narrows, and it rejects a perfectly good element |
+| `document.getElementById` | searches the document only, and an id inside a shadow root is not in it — a `commandfor` or `aria-controls` naming a sibling in the same shadow tree resolves to `null` |
+| bare `getComputedStyle` | the top-level window's again, and a *global* direction read cannot see that one subtree of an LTR page is RTL |
 
 The replacements resolve everything **from a node**: the document and window a node belongs to, the
 *deeply* focused element, the real target via `composedPath()`, a duck-typed element narrowing on
-`nodeType`, and shadow-crossing `closest` and `contains`.
+`nodeType`, the resolved writing direction, root-scoped id resolution, and shadow-crossing `closest`
+and `contains`. `src/ui/client/dom.ts` owns that inventory and the hazard each entry closes.
+
+**Direction is resolved where it is consumed, never cached at mount.** Reading it forces a style
+recalculation, so a controller resolves it at the keystroke that actually depends on it (§6b) rather
+than once per mount — and a mount-time read would go stale the moment `dir` flips at runtime.
+
+**Root-scoped id resolution is a primitive of this namespace, not of the package.** It carries no
+`@public` tag and is not barrelled, so no `@y-core/forge/ui/client` consumer can reach it — the same
+posture as the transition module's trigger lookup (§6d). Both are shared *inside* `ui/client`, and
+the tag is what decides whether a symbol must appear in a barrel at all
+([`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §1c). The rule it exists to serve is public and binds
+every controller here: **an id reference is resolved in the tree that declares it**, because ids do
+not cross a shadow boundary. A detached subtree has no root that can answer, and falls back to the
+owner document — which is exactly what the document-scoped lookup already returned, so adopting it
+widens the answer without changing any case that previously worked.
 
 **These are the primitives a composite is built out of, which is why they come first.** "Which item
 has focus" and "which item was hit" are the two questions a roving-focus controller exists to answer,
 and both are wrong by default — a controller written against bare globals reports the shadow *host*
 the moment a widget is used inside a web component.
-
-**One limitation is worth knowing:** `resume()` discovers scopes with a document query, which does
-not descend into shadow roots. Delegated dispatch out of a shadow root works, because action routing
-climbs hosts; an **eager** scope inside one is not yet found.
 
 ### 6b. `mountRovingFocus` — The Composite Controller
 

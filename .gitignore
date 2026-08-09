@@ -19,3 +19,23 @@ test-results/
 
 *.test
 *.out
+
+# Agent-sandbox placeholders, not project files.
+.bash_profile
+.bashrc
+.profile
+.zprofile
+.zshrc
+.gitconfig
+.gitmodules
+.ripgreprc
+.idea
+.vscode
+.claude/commands
+.claude/hooks
+.claude/launch.json
+.claude/routines
+.claude/scheduled_tasks.json
+.claude/settings.json
+.claude/skills
+.claude/workflows

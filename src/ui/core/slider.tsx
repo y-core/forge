@@ -3,6 +3,7 @@
 import type { FC, JSX } from "../../jsx/types";
 import type { FieldDescriptor } from "./field";
 import { fieldControlProps } from "./field";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type SliderProps = Omit<JSX.IntrinsicElements["input"], "type" | "children"> & {
@@ -14,11 +15,11 @@ type SliderProps = Omit<JSX.IntrinsicElements["input"], "type" | "children"> & {
 const SLIDER_BASE = "h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50";
 const SLIDER_VERTICAL = "[writing-mode:vertical-lr] [direction:rtl] h-22 w-5";
 
-export const Slider: FC<SliderProps> = ({ class: cls, field, output, orientation = "horizontal", ...props }) => {
+export const Slider: FC<SliderProps> = ({ class: cls, field, output, orientation = "horizontal", "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
   const isVertical = orientation === "vertical";
   const sliderCls = cn(SLIDER_BASE, isVertical && SLIDER_VERTICAL, asClass(cls));
-  const control = <input data-slot='slider' type='range' class={sliderCls} {...resolved} />;
+  const control = <input data-slot={slotToken("slider", inherited)} type='range' class={sliderCls} {...resolved} />;
 
   if (!output) {
     return control;

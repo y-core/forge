@@ -29,7 +29,7 @@ interface HoneypotProps {
  * ```
  */
 export const Honeypot: FC<HoneypotProps> = ({ field = HONEYPOT_FIELD_DEFAULT }) => (
-  <div aria-hidden='true' data-slot='form-honeypot' class='absolute -left-[9999px] opacity-0 pointer-events-none'>
+  <div aria-hidden='true' class='absolute -left-[9999px] opacity-0 pointer-events-none'>
     <input type='text' name={field} tabindex={-1} autocomplete='off' />
   </div>
 );

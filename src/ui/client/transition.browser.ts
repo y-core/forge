@@ -64,7 +64,7 @@ test.describe("popover — open and close through the platform", () => {
     await mount(page, await popoverMarkup(), EXPOSE);
     await install(page, "#panel");
 
-    await page.click("[data-slot='popover-trigger']");
+    await page.click("[data-slot~='popover-trigger']");
     await expect.poll(() => readState(page, "#panel")).toEqual({ open: true, closed: false, starting: false, ending: false, platformOpen: true });
   });
 
@@ -72,7 +72,7 @@ test.describe("popover — open and close through the platform", () => {
     await mount(page, `${await popoverMarkup()}<div id="elsewhere" style="height:200px"></div>`, EXPOSE);
     await install(page, "#panel");
 
-    await page.click("[data-slot='popover-trigger']");
+    await page.click("[data-slot~='popover-trigger']");
     await expect.poll(async () => (await readState(page, "#panel"))?.open).toBe(true);
 
     await page.click("#elsewhere");
@@ -83,7 +83,7 @@ test.describe("popover — open and close through the platform", () => {
     await mount(page, await popoverMarkup(), EXPOSE);
     await install(page, "#panel");
 
-    await page.click("[data-slot='popover-trigger']");
+    await page.click("[data-slot~='popover-trigger']");
     await expect.poll(async () => (await readState(page, "#panel"))?.open).toBe(true);
 
     await page.keyboard.press("Escape");
@@ -109,7 +109,7 @@ test.describe("data-open and data-closed are mutually exclusive", () => {
       tick();
     });
 
-    await page.click("[data-slot='popover-trigger']");
+    await page.click("[data-slot~='popover-trigger']");
     await page.waitForTimeout(60);
     await page.keyboard.press("Escape");
     await page.waitForTimeout(60);
@@ -131,7 +131,7 @@ test.describe("data-starting-style", () => {
 
     const sawStarting = await page.evaluate(async () => {
       const el = document.querySelector<HTMLElement>("#panel");
-      const trigger = document.querySelector<HTMLElement>("[data-slot='popover-trigger']");
+      const trigger = document.querySelector<HTMLElement>("[data-slot~='popover-trigger']");
       trigger?.click();
       // Read synchronously after the click: `beforetoggle` has already run.
       return el?.hasAttribute("data-starting-style") ?? false;
@@ -147,7 +147,7 @@ test.describe("data-ending-style", () => {
     await mount(page, await popoverMarkup(), EXPOSE);
     await install(page, "#panel");
 
-    await page.click("[data-slot='popover-trigger']");
+    await page.click("[data-slot~='popover-trigger']");
     await expect.poll(async () => (await readState(page, "#panel"))?.open).toBe(true);
     await page.keyboard.press("Escape");
 
@@ -160,14 +160,14 @@ test.describe("data-ending-style", () => {
       `<style>
          /* Keyed on the attribute the controller writes — the duration is only discoverable once
             that attribute is applied, which is the ordering the controller has to get right. */
-         [data-slot='popover-content'][data-ending-style] { transition: opacity 400ms linear; }
+         [data-slot~='popover-content'][data-ending-style] { transition: opacity 400ms linear; }
        </style>
        ${await popoverMarkup()}`,
       EXPOSE,
     );
     await install(page, "#panel");
 
-    await page.click("[data-slot='popover-trigger']");
+    await page.click("[data-slot~='popover-trigger']");
     await expect.poll(async () => (await readState(page, "#panel"))?.open).toBe(true);
     await page.keyboard.press("Escape");
 
@@ -182,7 +182,7 @@ test.describe("data-ending-style", () => {
     await mount(page, await popoverMarkup(), EXPOSE);
     await install(page, "#panel", { exitDurationMs: 300 });
 
-    await page.click("[data-slot='popover-trigger']");
+    await page.click("[data-slot~='popover-trigger']");
     await expect.poll(async () => (await readState(page, "#panel"))?.open).toBe(true);
     await page.keyboard.press("Escape");
 
@@ -204,10 +204,10 @@ test.describe("dialog", () => {
     const initial = await page.evaluate(() => document.querySelector("#confirm")?.hasAttribute("data-closed"));
     expect(initial).toBe(true);
 
-    await page.click("[data-slot='dialog-trigger']");
+    await page.click("[data-slot~='dialog-trigger']");
     await expect.poll(() => page.evaluate(() => document.querySelector("#confirm")?.hasAttribute("data-open"))).toBe(true);
 
-    await page.click("[data-slot='dialog-close']");
+    await page.click("[data-slot~='dialog-close']");
     await expect.poll(() => page.evaluate(() => document.querySelector("#confirm")?.hasAttribute("data-closed"))).toBe(true);
   });
 
@@ -216,7 +216,7 @@ test.describe("dialog", () => {
     await mount(page, html, EXPOSE);
     await install(page, "#confirm");
 
-    await page.click("[data-slot='dialog-trigger']");
+    await page.click("[data-slot~='dialog-trigger']");
     await expect.poll(() => page.evaluate(() => document.querySelector("#confirm")?.hasAttribute("data-open"))).toBe(true);
 
     await page.keyboard.press("Escape");
@@ -242,7 +242,7 @@ test.describe("disposer", () => {
     await install(page, "#panel");
     await page.evaluate(() => window.disposeTransition?.());
 
-    await page.click("[data-slot='popover-trigger']");
+    await page.click("[data-slot~='popover-trigger']");
 
     const state = await readState(page, "#panel");
     // The popover still opened — the controller never owned that — but published nothing about it.

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import type { AppContext } from "../context/types";
+import { mapHandler } from "../testing/route";
+import { v } from "../validation/validation";
 import { Forge } from "./forge-app";
 import { createHandlerFactory } from "./handler-factory";
-import { mapHandler } from "./route-test-helper";
 
 interface TestEnv {
   SITE_NAME: string;
@@ -33,14 +34,12 @@ describe("createHandlerFactory — definePage", () => {
   });
 });
 
+const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "name is required")) });
+
 describe("createHandlerFactory — defineAction", () => {
-  it("produces a working parse → validate → handle pipeline with Bindings pre-bound", async () => {
+  it("produces a working read → validate → handle pipeline with Bindings pre-bound", async () => {
     const app = new Forge<TestEnv>();
-    const action = defineAction({
-      parse: (formData) => ({ name: String(formData.get("name") ?? "") }),
-      validate: (data) => (data.name.length > 0 ? { ok: true, data } : { ok: false, error: ["name is required"] }),
-      handle: async (data, c) => new Response(`${data.name}@${c.env.SITE_NAME}`),
-    });
+    const action = defineAction({ schema: NameSchema, handle: async (data, c) => new Response(`${data.name}@${c.env.SITE_NAME}`) });
     mapHandler(app, "POST", "/submit", action);
     const res = await app.request(
       "/submit",
@@ -53,11 +52,7 @@ describe("createHandlerFactory — defineAction", () => {
 
   it("keeps the automatic validation-error fragment for invalid input", async () => {
     const app = new Forge<TestEnv>();
-    const action = defineAction({
-      parse: (formData) => ({ name: String(formData.get("name") ?? "") }),
-      validate: (data) => (data.name.length > 0 ? { ok: true, data } : { ok: false, error: ["name is required"] }),
-      handle: async (data) => new Response(data.name),
-    });
+    const action = defineAction({ schema: NameSchema, handle: async (data) => new Response(data.name) });
     mapHandler(app, "POST", "/submit", action);
     const res = await app.request(
       "/submit",
@@ -67,8 +62,9 @@ describe("createHandlerFactory — defineAction", () => {
       { SITE_NAME: "forge" },
     );
     const html = await res.text();
+    expect(res.status).toBe(422);
     expect(html).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name is required</li></ul></div>',
+      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
     );
   });
 });

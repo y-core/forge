@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type FieldOrientation = "vertical" | "horizontal";
@@ -17,8 +18,15 @@ const FIELD_LAYOUT: Record<FieldOrientation, string> = { vertical: "flex flex-co
  * decorative `<span>`; pass any control as `children`. Theme-token styled and `class`-overridable.
  * @public
  */
-export const Field: FC<PropsWithChildren<FieldProps>> = ({ label, orientation = "vertical", class: cls, children, ...props }) => (
-  <div data-slot='field' {...stateAttrs({ orientation })} class={cn(FIELD_LAYOUT[orientation], asClass(cls))} {...props}>
+export const Field: FC<PropsWithChildren<FieldProps>> = ({
+  label,
+  orientation = "vertical",
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...props
+}) => (
+  <div data-slot={slotToken("field", inherited)} {...stateAttrs({ orientation })} class={cn(FIELD_LAYOUT[orientation], asClass(cls))} {...props}>
     <span data-slot='field-label' class='text-xs font-medium text-muted-foreground'>
       {label}
     </span>

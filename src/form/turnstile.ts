@@ -1,4 +1,5 @@
 import { err, ok } from "../result/result";
+import { TURNSTILE_FIELD_DEFAULT } from "./constants";
 import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "./types";
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -14,7 +15,7 @@ export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: str
   if (!options.expectedHostname) {
     return err("hostname-mismatch");
   }
-  const token = formData.get(options.tokenField ?? "cf-turnstile-response");
+  const token = formData.get(options.tokenField ?? TURNSTILE_FIELD_DEFAULT);
   if (typeof token !== "string" || token === "") {
     return err("missing-token");
   }

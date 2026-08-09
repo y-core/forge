@@ -3,6 +3,7 @@
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import type { ForgeIcon } from "../core/icon";
 import { Menu } from "../core/menu";
+import { slotToken } from "../core/utils/as-child";
 import { asClass, cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { Resumable } from "../server/resumable";
@@ -168,7 +169,11 @@ function renderSlot(item: NavSlot, depth: number, ctx: NavRenderCtx): JSXNode {
   // No label and no filter marker → render the node inline with no wrapper.
   if (!item.label && !("data-filter" in fattrs)) return node ?? null;
   return (
-    <span data-slot='navbar-slot' {...(depth === 0 ? {} : { role: "none" })} class='inline-flex items-center gap-2' {...fattrs}>
+    <span
+      data-slot={slotToken("navbar-slot", fattrs["data-slot"])}
+      {...(depth === 0 ? {} : { role: "none" })}
+      class='inline-flex items-center gap-2'
+      {...fattrs}>
       {item.label ? <span>{item.label}</span> : null}
       {node ?? null}
     </span>
@@ -202,9 +207,11 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
           <span>{item.label}</span>
           {chevron(ctx)}
         </Menu.SubmenuTrigger>,
-        // `side='right'` rather than the `bottom` default: a submenu opens *beside* the panel that
-        // contains it, and on the default it would open below the whole parent panel.
-        <Menu.Popup id={id} side='right'>
+        // `side='inline-end'` rather than the `bottom` default: a submenu opens *beside* the panel
+        // that contains it, and on the default it would open below the whole parent panel. The
+        // logical spelling rather than `right` because the panel's own edge is what "beside" means —
+        // in an RTL subtree that is its left, and the keyboard already mirrors to match.
+        <Menu.Popup id={id} side='inline-end'>
           {children}
         </Menu.Popup>,
       ];
@@ -231,7 +238,7 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
   }
 
   return (
-    <a href={href} data-slot='navbar-link' class={BAR_LINK} {...fattrs}>
+    <a href={href} data-slot={slotToken("navbar-link", fattrs["data-slot"])} class={BAR_LINK} {...fattrs}>
       {item.label}
     </a>
   );
@@ -276,12 +283,17 @@ export const Navbar: FC<NavbarProps> = ({
   icon: Icon,
   class: cls,
   id,
+  "data-slot": inherited,
   ...rest
 }) => {
   const ctx: NavRenderCtx = { resolveHref, slots, activeFilters, icon: Icon, idBase: id ?? placement, seq: { n: 0 } };
   return (
     <Resumable name='navbar' state={{ filters: activeFilters }}>
-      <details data-slot='navbar' class={cn(placementVariants({ placement }), asClass(cls))} {...(id === undefined ? {} : { id })} {...rest}>
+      <details
+        data-slot={slotToken("navbar", inherited)}
+        class={cn(placementVariants({ placement }), asClass(cls))}
+        {...(id === undefined ? {} : { id })}
+        {...rest}>
         <summary
           data-slot='navbar-toggle'
           aria-label='Menu'

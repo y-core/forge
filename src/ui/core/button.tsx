@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { cloneAsChild } from "./utils/as-child";
+import { cloneAsChild, slotToken } from "./utils/as-child";
 import { asClass } from "./utils/cn";
 import { cva } from "./utils/cva";
 
@@ -45,7 +45,17 @@ export const buttonVariants = cva({
 
 export type ButtonSize = NonNullable<ButtonProps["size"]>;
 
-export const Button: FC<ButtonProps> = ({ variant, size, asChild = false, type = "button", disabled, class: cls, children, ...rest }) => {
+export const Button: FC<ButtonProps> = ({
+  variant,
+  size,
+  asChild = false,
+  type = "button",
+  disabled,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => {
   const clsValue = asClass(cls);
   const className = buttonVariants({
     ...(variant !== undefined ? { variant } : {}),
@@ -53,9 +63,11 @@ export const Button: FC<ButtonProps> = ({ variant, size, asChild = false, type =
     ...(clsValue !== undefined ? { class: clsValue } : {}),
   });
 
+  const slot = slotToken("button", inherited);
+
   if (asChild) {
     return cloneAsChild(children, {
-      slot: "button",
+      slot,
       class: className,
       props: rest,
       type,
@@ -66,7 +78,7 @@ export const Button: FC<ButtonProps> = ({ variant, size, asChild = false, type =
   }
 
   return (
-    <button type={type} data-slot='button' class={className} {...(disabled !== undefined ? { disabled } : {})} {...rest}>
+    <button type={type} data-slot={slot} class={className} {...(disabled !== undefined ? { disabled } : {})} {...rest}>
       {children}
     </button>
   );

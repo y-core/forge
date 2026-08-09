@@ -14,6 +14,7 @@ import {
 } from "../crypto/mod";
 import { err, ok } from "../result/result";
 import { CSRF_FIELD_DEFAULT } from "./constants";
+import { csrfFieldCtx } from "./field-context";
 import { parseFormData } from "./parse-form-data";
 import type {
   CsrfKeyRing,
@@ -219,6 +220,10 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
     const tokenOptions: CsrfTokenOptions = { kid: ring.activeKeyId, ...(subject !== undefined ? { subject } : {}) };
 
     csrfMinterCtx.set(context, (path: string) => createCsrfToken(activeKey, path, tokenOptions));
+    // Published here, above every early return below, because the request that needs it most is the
+    // mutation: a route builder downstream drops the field this guard consumed, and it can only do
+    // that on a request where the guard actually recorded the name it took the token from.
+    csrfFieldCtx.set(context, tokenField);
 
     if (method === "GET" || method === "HEAD") {
       csrfTokenCtx.set(context, await createCsrfToken(activeKey, context.url.pathname, tokenOptions));

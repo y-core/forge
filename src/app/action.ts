@@ -1,25 +1,43 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
 import { ConfigKey, getAppContext } from "../context/types";
-import { parseFormData } from "../form/parse-form-data";
-import type { ParseFormDataOptions, ReadonlyFormData } from "../form/types";
-import { renderError, renderValidationErrors } from "../http/fragment";
+import { renderError } from "../http/fragment";
 import { fragmentResponse } from "../http/response";
 import { createLogger } from "../logging/logger";
 import { toError } from "../result/result";
+import type { v } from "../validation/validation";
+import { createSubmissionPipeline } from "./pipeline";
 import type { ActionDefinition } from "./types";
 
 const logger = createLogger("action");
 
 /**
- * Wires a parse → validate → handle pipeline into a POST handler with structured error
- * responses: oversized body → 413 fragment, unparseable body or throwing `parse` → 400,
- * failed `validate` → validation-errors fragment, throwing `handle` → logged 500 fragment.
+ * Wires a read → guard → validate → handle pipeline into a POST handler with structured error
+ * responses: oversized body → 413 fragment, unparseable body → 400, a tripped bot guard or a failed
+ * `schema` → 422 validation-errors fragment, anything that throws → logged 500 fragment.
+ *
+ * `handle` is reachable only through a passing `v.safeParse` of `schema`, so a browser write cannot
+ * arrive at it unchecked. The shared pipeline is what establishes that — `definePage` reaches the
+ * same sequence, so the guarantee belongs to the sequence rather than to this builder.
+ *
+ * **The pipeline runs inside the same `try` as `handle`, deliberately.** Valibot does not catch what
+ * a pipe action throws, so a `v.transform` or `v.check` that throws on malformed input would
+ * otherwise escape the returned handler entirely — no status, no `onError`, no log. One throw path
+ * for the whole handler is what this buys, and it follows that a throwing `onValidationError`,
+ * `onBotDetected`, `secretKey` or `verify` lands there too. That is intended: a hook that throws is
+ * the same class of route defect as a schema that throws, and answering it differently would mean an
+ * app could crash the Worker from the arm meant to render a refusal.
  *
  * @example
  * ```typescript
- * export const contactAction = defineAction<ContactInput, Bindings, AppConfig>({
- *   parse: (formData) => readFields(formData, ["name", "email", "message"]),
- *   validate: (data) => validateContact(data), // ValidationResult<ContactInput>
+ * const ContactSchema = strictObject({
+ *   name: v.string(),
+ *   email: v.pipe(v.string(), v.email()),
+ *   phone: v.optional(v.string()),
+ *   message: v.string(),
+ * });
+ *
+ * export const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
+ *   schema: ContactSchema,
  *   handle: async (data, c, config) => {
  *     await sendEmail(config.email, data);
  *     return fragmentResponse(renderSuccess("Thanks — we'll be in touch."));
@@ -28,46 +46,23 @@ const logger = createLogger("action");
  * ```
  * @public
  */
-export function defineAction<Input, Bindings = Record<string, unknown>, ConfigData = unknown, Out = Input>(
-  def: ActionDefinition<Input, Bindings, ConfigData, Out>,
+export function defineAction<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown>(
+  def: ActionDefinition<S, Bindings, ConfigData>,
 ): RequestHandler {
-  const parseOptions: ParseFormDataOptions = def.maxBytes !== undefined ? { maxBytes: def.maxBytes } : {};
+  const pipeline = createSubmissionPipeline<S, Bindings, ConfigData>(def);
 
   return async (context) => {
     const config = context.get(ConfigKey) as ConfigData;
     const c = getAppContext<Bindings>(context);
 
-    let formData: ReadonlyFormData;
     try {
-      formData = await parseFormData(context, parseOptions);
-    } catch (err) {
-      // Oversized bodies (Content-Length fast-path or streaming cap) surface a 413; everything
-      // else is an unparseable body → 400.
-      if ((err as { status?: number }).status === 413) {
-        return fragmentResponse(renderError("The submitted form is too large. Please reduce its size and try again."), 413);
-      }
-      return fragmentResponse(renderError("Unable to process the form data. Please try again."), 400);
-    }
+      const submission = await pipeline(c, config);
+      if (!submission.ok) return submission.error;
 
-    let parsed: Input;
-    try {
-      parsed = def.parse(formData);
-    } catch (err) {
-      if (def.onError) return def.onError(toError(err), c);
-      return fragmentResponse(renderError("Unable to process the form data. Please try again."), 400);
-    }
-
-    const validation = def.validate(parsed);
-    if (!validation.ok) {
-      if (def.onValidationError) return def.onValidationError(validation.error, c);
-      return fragmentResponse(renderValidationErrors(validation.error));
-    }
-
-    try {
-      return await def.handle(validation.data, c, config);
+      return await def.handle(submission.data, c, config);
     } catch (err) {
       const error = toError(err);
-      logger.error("Action handler threw", { error: error.message });
+      logger.error("Action threw", { error: error.message });
       if (def.onError) return def.onError(error, c);
       return fragmentResponse(renderError("Something went wrong. Please try again."), 500);
     }

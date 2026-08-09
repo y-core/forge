@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
-import { render } from "../../jsx/render-test-helper";
+import { render } from "../../testing/render";
 import { Popover } from "./popover";
 
 describe("Popover", () => {
@@ -15,6 +15,34 @@ describe("Popover", () => {
 
   it("merges a custom class", async () => {
     expect(await render(<Popover class='my-popover' />)).toBe('<div data-slot="popover" class="relative inline-block my-popover"></div>');
+  });
+});
+
+/**
+ * `data-slot` is a token list. `Popover.Trigger` composes an inherited token with its own rather than
+ * letting `{...props}` replace it — the token `theme-base.css` keys `anchor-name: --forge-popover` and
+ * the `[data-slot~="tooltip-trigger"][data-slot~="popover-trigger"]` pair rule on. The composed case
+ * is in `utils/as-child.test.tsx`; this is the mechanism reached directly.
+ */
+describe("Popover.Trigger — data-slot", () => {
+  const TRIGGER_CLASS = "list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+  it("emits its own token alone when none was inherited", async () => {
+    expect(await render(<Popover.Trigger id='p' />)).toBe(
+      `<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="p" class="${TRIGGER_CLASS}"></button>`,
+    );
+  });
+
+  it("keeps its own token ahead of one handed down through props", async () => {
+    expect(await render(<Popover.Trigger id='p' data-slot='rail-tool' />)).toBe(
+      `<button type="button" data-slot="popover-trigger rail-tool" command="toggle-popover" commandfor="p" class="${TRIGGER_CLASS}"></button>`,
+    );
+  });
+
+  it("treats an empty inherited token as none rather than emitting a trailing space", async () => {
+    expect(await render(<Popover.Trigger id='p' data-slot='' />)).toBe(
+      `<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="p" class="${TRIGGER_CLASS}"></button>`,
+    );
   });
 });
 

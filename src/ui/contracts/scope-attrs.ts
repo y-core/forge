@@ -1,4 +1,4 @@
-import { SCOPE_EVENTS, type ScopeEvent } from "../contracts/scope-events";
+import { SCOPE_EVENTS, type ScopeEvent } from "./scope-events";
 
 /** Typed `data-on-<event>` props for a `Resumable` scope. Each optional `on<Event>` key carries an
  * action name from the union `A` — the same vocabulary the client feeds `registerScope<A>` — so a

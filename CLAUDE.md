@@ -17,6 +17,7 @@
 - ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
 - ALWAYS run local verification after changes — **delegate every gate run to `cc-tester`** (see _Verification Delegation_)
 - ALWAYS report a command's exit status with the one canonical suffix — never a variant (see _Shell Exit Checks_)
+- ALWAYS reach the ledger over MCP and work from what `get_protocol` and `get_process` return — never a remembered copy (see _Ledger Maintenance_)
 - Use `rg` for content search and `find` for file search
 
 ---
@@ -79,6 +80,20 @@ that owns the fix, and `cc-tester` never edits the code it judges.
 guaranteed**. Treat the whole split as convention: every agent obeys its stated boundaries because
 it is told to, not because a mechanism stops it. No hook enforces the routing either — a decision,
 not an omission.
+
+### Ledger Maintenance
+
+**Forge's work is tracked in the task-forge ledger, and the MCP tools are the only way in.**
+`.mcp.json` connects it as `ledger`, and this repository is the `forge` project inside it. `cc-plan`,
+`cc-dev`, `cc-test` and `cc-doc` each own the ledger entry for the work they carry, and every move
+goes through those tools — never through a text editor. `cc-tester` is the one exception: it runs
+gates and has **no ledger tools at all**, because a green gate is not by itself a decision that a
+task is done. A docs-only change runs no gate, so the doc edit is its own evidence.
+
+**Call `get_protocol` and `get_process` first, and work from what they return rather than from a
+remembered copy.** Nothing they return is restated here — the protocol is the one document where a
+second copy is indistinguishable from a rule change, because a stale paragraph and an amended rule
+read identically and the reader cannot tell which they are holding.
 
 ---
 
@@ -157,6 +172,8 @@ cite them rather than restating them:
 | `lib` and `types` configuration | `tsconfig.json` |
 | Bash allowlist patterns (incl. the exit-check literal) | `.claude/settings.local.json` `permissions.allow` |
 | Barrel rules as *enforced* | `scripts/validate-exports.ts` + `scripts/barrel-parse.ts` |
+| Declared cross-namespace dependency graph | `scripts/namespace-graph.ts` |
+| That graph as *enforced* | `scripts/validate-namespace-graph.ts` + `scripts/namespace-graph-parse.ts` |
 | Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
 | `@source` coverage as *enforced* | `scripts/validate-css-sources.ts` |
 
@@ -164,6 +181,16 @@ The barrel row names two files because the rule genuinely spans two. `validate-e
 the entry point and retains every policy decision — what fails, in what order, with what message —
 while `barrel-parse.ts` holds the matchers it decides on (the star-ban regex among them). Stating
 the split is more honest than naming the entry point alone and sending a reader to the wrong file.
+
+The namespace-graph rows split three ways for the same reason, and the first is the unusual one:
+`namespace-graph.ts` is *data*, and it is authoritative over the prose. `NAMESPACE_DESIGN.md` §4
+cites it and enumerates nothing, because a second copy of a graph is indistinguishable from an
+amendment the moment the two disagree. The enforcement then splits as the barrel row does —
+`validate-namespace-graph.ts` owns the policy (what fails, the namespace set it derives from
+`exports`, the guard that the enumeration has not returned), while `namespace-graph-parse.ts` owns
+the matchers and the diff (which files are walked, how an import resolves to a namespace, how edge
+kind is decided). A reader chasing "why is this an edge at all" wants the parser; one chasing "why
+did this fail" wants the entry point, and naming only one would send half of them wrong.
 
 ---
 

@@ -4,7 +4,7 @@ A small, dependency-free toolkit for building **typed, hierarchical command-line
 TypeScript — the framework behind forge's own build and tooling scripts. Declare commands with typed
 flags, compose them into a sub-command tree, and run them with a single `execute` call that handles
 parsing, validation, `--help`, and error reporting. Bundled alongside it are node-only **process and
-PATH primitives** (`run`, `capture`, `requireTools`, `hasTool`, `insertPath`) and a
+PATH primitives** (`run`, `capture`, `requireTools`, `hasTool`, `probeOk`, `insertPath`) and a
 `[scope]`-prefixed logger for script output.
 
 ```ts
@@ -41,7 +41,8 @@ import {
   and exits non-zero. User-facing messages never leak stack traces.
 - **Process primitives** — `run` spawns child processes with inherited stdio and throws on failure;
   `capture` buffers their combined output and returns the exit code instead; `requireTools` asserts
-  external tools are on `PATH` with install hints; `insertPath` prepends a directory to `PATH`.
+  external tools are on `PATH` with install hints; `hasTool` / `probeOk` answer a prerequisite check
+  by exit code alone; `insertPath` prepends a directory to `PATH`.
 - **Injectable IO** — `execute` accepts a `CliIO` ( `stdout` / `stderr` / `exit` ) so tests can drive
   a command and capture its output without touching the real console or process.
 
@@ -295,7 +296,28 @@ requireTools({
 #### `hasTool(cmd)`
 
 Returns `true` when `cmd --version` exits 0 — i.e. the tool is present and runnable. Non-throwing;
-use it for optional-tool branching.
+use it for optional-tool branching. A thin wrapper over `probeOk(cmd, ["--version"])`.
+
+#### `probeOk(cmd, args)`
+
+Returns `true` when `cmd args` exits 0, with stdout and stderr discarded — a prerequisite check
+whose only signal is the exit code. Non-throwing.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `cmd` | `string` | Executable to run. |
+| `args` | `readonly string[]` | Arguments passed to it. |
+
+Reach for it when the prerequisite is **not** the presence of an executable on `PATH` — a
+downloaded browser, a running service, a provisioned credential — where `hasTool` would pass
+vacuously because the CLI is installed but the thing it needs is not. Such a prerequisite needs a
+command of its own to answer for it.
+
+```ts
+if (!probeOk("bun", ["run", "scripts/probe-browser.ts"])) {
+  throw new Error("chromium not found — bun run test:install");
+}
+```
 
 #### `insertPath(dir)`
 

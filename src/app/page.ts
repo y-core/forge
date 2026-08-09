@@ -3,6 +3,8 @@ import { ConfigKey, getAppContext } from "../context/types";
 import { CacheControl } from "../http/headers";
 import { createLogger } from "../logging/logger";
 import { toError } from "../result/result";
+import type { v } from "../validation/validation";
+import { createSubmissionPipeline } from "./pipeline";
 import type { CacheDirective, PageDefinition } from "./types";
 
 const logger = createLogger("page");
@@ -39,6 +41,18 @@ function applyResponseHeaders(res: Response, def: { cache?: PageDefinition["cach
  * throw from the view. Prefer `createHandlerFactory` to avoid repeating the `Bindings`/`ConfigData`
  * generics on every call.
  *
+ * **Declaring a `schema` alongside an `action` puts that action behind the same read → guard →
+ * validate sequence `defineAction` runs**, and hands it the validated body as its third argument; a
+ * body the schema refuses becomes a 422 fragment and the action never runs. The sequence's other
+ * options — `honeypot`, `turnstile`, `onBotDetected`, `onValidationError`, `maxBytes` — are declared
+ * on the page as well, and `onValidationError` is what lets a self-posting page answer a refused body
+ * by re-rendering its own view with field errors instead of the default fragment.
+ *
+ * A `schema` with no `action` runs no sequence: the sequence guards a terminal step, and a page that
+ * runs nothing on a mutation has none to guard, so the request renders the view like any other. A
+ * page with no `schema` is likewise unchanged: its action sees the unparsed context and validates at
+ * its own boundary.
+ *
  * @example
  * ```typescript
  * export const homePage = definePage<Bindings, AppConfig>({
@@ -50,9 +64,20 @@ function applyResponseHeaders(res: Response, def: { cache?: PageDefinition["cach
  * ```
  * @public
  */
-export function definePage<Bindings = Record<string, unknown>, ConfigData = unknown, LoaderData = unknown, ActionData = unknown>(
-  def: PageDefinition<Bindings, ConfigData, LoaderData, ActionData>,
-): RequestHandler {
+export function definePage<
+  Bindings = Record<string, unknown>,
+  ConfigData = unknown,
+  LoaderData = unknown,
+  ActionData = unknown,
+  S extends v.GenericSchema = v.GenericSchema,
+>(def: PageDefinition<Bindings, ConfigData, LoaderData, ActionData, S>): RequestHandler {
+  // Built once per route, and only for a page that declares a schema: a page without one keeps
+  // running its action against the unparsed context, so there is no sequence to build. The whole
+  // definition is spread rather than its pipeline options listed, so an option added to the sequence
+  // reaches a page without a second list here to keep in step; the pipeline reads only what it
+  // declares. `schema` is restated because the guard narrows it, and the sequence requires it.
+  const pipeline = def.schema === undefined ? undefined : createSubmissionPipeline<S, Bindings, ConfigData>({ ...def, schema: def.schema });
+
   return async (context) => {
     const config = context.get(ConfigKey) as ConfigData;
     const c = getAppContext<Bindings>(context);
@@ -66,7 +91,16 @@ export function definePage<Bindings = Record<string, unknown>, ConfigData = unkn
       // not the state it started from.
       let actionData: ActionData | undefined;
       if (isMutation && def.action) {
-        const result = await def.action(c, config);
+        // A refusal from the pipeline is already the whole answer, so it short-circuits exactly like
+        // an action's own `Response` — headers and all.
+        const submission = pipeline === undefined ? undefined : await pipeline(c, config);
+        if (submission !== undefined && !submission.ok) {
+          return applyResponseHeaders(submission.error, def);
+        }
+
+        // With no pipeline there is no body to hand over, and the cast is a no-op: a page that
+        // declared no schema types its action's `data` as `unknown`, which is what it already ignores.
+        const result = await def.action(c, config, submission?.data as v.InferOutput<S>);
         if (result instanceof Response) {
           return applyResponseHeaders(result, def);
         }

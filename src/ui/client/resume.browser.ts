@@ -1,9 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
+import { type ScopeAttrsProps, scopeAttrs } from "../contracts/scope-attrs";
 import { SCOPE_EVENTS } from "../contracts/scope-events";
 import { Resumable } from "../server/resumable";
-import { type ScopeAttrsProps, scopeAttrs } from "../server/scope-attrs";
 import { mount } from "./browser-test-helper";
 
 /**

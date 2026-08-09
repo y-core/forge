@@ -144,12 +144,19 @@ keeping it in the dev entry only means it cannot leak by construction.
 
 **URL attributes in JSX are sanitized automatically at render time.** The renderer routes
 `href`, `src`, `action`, and the other URL-bearing attribute values through `safeUrl`
-(`@y-core/forge/http`), which neutralizes dangerous schemes — `javascript:`, `vbscript:`,
-`data:`, including whitespace- and entity-obfuscated variants — to `"#"`. **Consumers never
-call it.** This is the render-layer complement to the nonce: a user-controlled URL cannot become
-script execution even if it reaches an attribute.
+(`@y-core/forge/http`), which admits an allow-list of schemes and collapses everything else —
+`javascript:`, `vbscript:`, `data:` — to `"#"`. Before matching the scheme it strips control
+characters and whitespace, so `java\tscript:` and a leading-newline variant are caught. **It does
+not decode HTML entities**, and does not need to: the same pass escapes the value, so an
+entity-encoded payload is emitted with its `&` escaped and never re-decodes into a scheme in the
+browser. `safeUrl` picks the scheme; escaping is what closes the entity route. **Consumers never
+call either.** Together they are the render-layer complement to the nonce: a user-controlled URL
+cannot become script execution even if it reaches an attribute.
 
-htmx selector and JSON attributes are **not** covered by this — see [`HTMX.md`](./HTMX.md) §7.
+**No `hx-*` attribute is covered by this**, in either half. Selector and JSON values cannot be
+sanitized at all ([`HTMX.md`](./HTMX.md) §7); URL-valued `hx-*` attributes deliberately are not,
+because `"#"` is a live same-origin request rather than a dead link once htmx fetches it
+([`HTMX.md`](./HTMX.md) §7a).
 
 ### 2e. Default Header Set
 

@@ -22,7 +22,7 @@ log.info("server started", { port: 8787 });
 - **Per-channel level allowlists** — `withLevels(channel, levels)` names the accepted set outright rather than a floor, so it can express a non-contiguous selection and — with an empty array — silence one channel entirely by configuration. `parseLogLevels` turns a comma-separated env var (including the literal `"none"`) into that set.
 - **Per-channel redaction** — `withRedaction(channel, redact)` transforms each record before write, so sensitive fields can be stripped for a persisting channel while the console stream stays intact. Independently, `kvLogChannel` strips error `stack` from persisted `data` by default (`persistStack: false`), keeping stacks out of KV retention.
 - **Error serialization** — `serializeError(err)` converts any thrown value into a JSON-safe `{ name, message, stack? }` for structured `data` fields; it never throws.
-- **Async-safe flushing** — pending KV writes are tracked and awaited via `flush()`; `requestLogger` flushes them through `executionCtx.waitUntil` so the response is not blocked.
+- **Async-safe flushing** — pending KV writes are tracked and awaited via `flush()`; `requestLogger` flushes them through `executionCtx.waitUntil` so the response is not blocked. `flush()` never rejects, so a failed write is reported through `onChannelError` instead — by default one `console.error` line, visible in `wrangler tail` without configuration.
 - **Request logging middleware** — one record per request with method, path, status, and duration, with the level derived from the response status code.
 - **KV persistence** — time-ordered keys, per-entry metadata for zero-cost listing, TTL retention, and a probabilistic soft-cap purge.
 - **SSR log viewer** — a single auth-gated `loadLogViewer` loader from `@y-core/forge/logging/show` that returns a fully rendered `Response` (full page, HTMX `<tbody>` partial, or record-detail fragment) for browsing persisted logs; the JSX components are internal so records cannot render without passing the access check.
@@ -78,6 +78,7 @@ Creates a structured logger that dispatches records to its channels.
 | `options.channels` | `LogChannel[]` | Channels to fan records out to. Defaults to `[consoleChannel()]`. |
 | `options.bindings` | `Record<string, unknown>` | Static fields merged into every record's `data`. |
 | `options.minLevel` | `LogLevel` | Records below this level are dropped before any channel sees them. Children inherit it. |
+| `options.onChannelError` | `(error: unknown) => void` | Called with the rejection reason when a channel write fails. Defaults to one structured `console.error` line. A hook that throws is swallowed. Children inherit it. See [Flush semantics](#flush-semantics). |
 
 Returns a `Logger`:
 
@@ -307,6 +308,7 @@ app.get("/orders", (c) => {
 | `channels` | `(c) => LogChannel[]` | Per-request factory returning the channels to write to. |
 | `bindings` | `(c) => Record<string, unknown>` | Per-request fields merged into every record (e.g. `requestId`). |
 | `minLevel` | `LogLevel \| ((c) => LogLevel \| undefined)` | Logger-wide floor, static or resolved per request (e.g. `(c) => parseLogLevel(c.env.LOG_LEVEL, "info")`). `undefined` means no filtering. |
+| `onChannelError` | `(error: unknown) => void` | Passed through to the per-request logger; see `createLogger`'s option of the same name. |
 
 ## Integration Guide
 
@@ -463,6 +465,26 @@ loggers. `flush()` awaits and clears the queue, and **settles rather than reject
 `allSettled`, so a channel whose write fails neither hides the other channels' completion nor
 reaches the caller as an error.
 
+Because nothing about a failed write reaches the caller, `onChannelError` is the only place one is
+observable — with no hook configured it prints one structured `console.error` line, so a `LOGS_KV`
+outage shows up in `wrangler tail` unconfigured. Pass a hook to route failures somewhere else:
+
+```ts
+let droppedWrites = 0;
+
+const log = createLogger("billing", {
+  channels: [consoleChannel(), kvLogChannel(env.LOGS_KV)],
+  onChannelError: (error) => {
+    droppedWrites++; // e.g. surfaced on a health route
+    console.error(JSON.stringify({ event: "log_write_failed", error: serializeError(error) }));
+  },
+});
+```
+
+The hook is attached where the write is dispatched, alongside the promise `flush()` tracks rather
+than in front of it, so it also fires for writes evicted by the pending cap — the ones `flush()`
+never awaits.
+
 `requestLogger` calls `flush()` in a `finally` block and hands the promise — already
 `.catch()`-guarded — to `executionCtx.waitUntil` so writes complete after the response is returned,
 falling back to awaiting inline if no execution context is available. The guard is what keeps that
@@ -487,7 +509,8 @@ tracked. A selected purge is part of the promise `write` returns, so `flush()` a
 hold the isolate open until the sweep finishes; a detached purge could be cancelled mid-pass the
 moment the tracked work completed, which is precisely when the soft cap would stop being enforced.
 The cost is that on `purgeProbability` of writes the flush window also covers one `list` and up to
-50 delete batches — post-response under `waitUntil`, inline on the fallback path.
+`⌈(PURGE_LIST_LIMIT − maxLogs) / PURGE_BATCH⌉` delete batches — 25 with the shipped defaults —
+post-response under `waitUntil`, inline on the fallback path.
 
 That coverage holds **even when the record write itself fails**. `write` awaits `allSettled` over the
 put and the sweep and then rethrows only the put's rejection, so a failing put cannot cut the sweep

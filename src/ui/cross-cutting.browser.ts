@@ -79,9 +79,12 @@ function menuTrigger(popupId: string, ref: string, label: string) {
 
 const triggerRef = (ref: string) => `[data-ref='${ref}']`;
 
-/** The `data-slot` of whatever holds focus — enough to tell a menu trigger from a dialog trigger. */
-function focusedSlot(page: Page): Promise<string | null | undefined> {
-  return page.evaluate(() => document.activeElement?.getAttribute("data-slot"));
+/**
+ * The `data-slot` tokens of whatever holds focus — enough to tell a menu trigger from a dialog
+ * trigger. `data-slot` is a token list, so the value is parsed rather than compared whole.
+ */
+function focusedSlots(page: Page): Promise<string[]> {
+  return page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []);
 }
 
 // ─── 1. Nested overlays ──────────────────────────────────────────────────────
@@ -128,7 +131,7 @@ test.describe("nested overlays — a Menu inside a Dialog", () => {
 
     // Two triggers are live at once; restoring to the wrong one is the failure this catches, and it
     // is only reachable with both overlays open.
-    await expect.poll(() => focusedSlot(page)).toBe("menu-trigger");
+    await expect.poll(() => focusedSlots(page)).toContain("menu-trigger");
     expect(await focusedId(page)).not.toBe("open-dialog");
   });
 
@@ -237,7 +240,7 @@ test.describe("a composite widget inside a form", () => {
   /** The pressed item's value read from the DOM, beside the value the signal holds. */
   function agreement(page: Page): Promise<{ dom: string | undefined; signal: unknown }> {
     return page.evaluate(() => ({
-      dom: [...document.querySelectorAll<HTMLElement>("[data-slot='toggle-group-item']")].find((el) => el.getAttribute("aria-pressed") === "true")
+      dom: [...document.querySelectorAll<HTMLElement>("[data-slot~='toggle-group-item']")].find((el) => el.getAttribute("aria-pressed") === "true")
         ?.dataset.value,
       signal: window.lastChoice,
     }));
@@ -284,7 +287,7 @@ test.describe("a composite widget inside a form", () => {
     await page.click("#u-mm");
 
     const pressed = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>("[data-slot='toggle-group-item']")].map((el) => el.getAttribute("aria-pressed")),
+      [...document.querySelectorAll<HTMLElement>("[data-slot~='toggle-group-item']")].map((el) => el.getAttribute("aria-pressed")),
     );
     expect(pressed).toEqual(["true", "false", "false"]);
     expect(await agreement(page)).toEqual({ dom: "mm", signal: "mm" });

@@ -3,6 +3,7 @@
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { COLLAPSIBLE_SCOPE } from "../contracts/toggle-contract";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface CollapsibleRootProps extends Omit<JSX.IntrinsicElements["details"], "children"> {
@@ -29,9 +30,9 @@ interface CollapsiblePanelProps extends Omit<JSX.IntrinsicElements["div"], "chil
  * `core/accordion.tsx` makes the same platform bet at multi-item granularity and shares this markup;
  * the two are deliberately the same shape rather than two disclosure implementations.
  */
-const CollapsibleRoot: FC<CollapsibleRootProps> = ({ open = false, class: cls, children, ...rest }) => (
+const CollapsibleRoot: FC<CollapsibleRootProps> = ({ open = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <details
-    data-slot='collapsible'
+    data-slot={slotToken("collapsible", inherited)}
     data-scope={COLLAPSIBLE_SCOPE}
     {...(open ? { open } : {})}
     {...stateAttrs({ open })}
@@ -41,9 +42,9 @@ const CollapsibleRoot: FC<CollapsibleRootProps> = ({ open = false, class: cls, c
   </details>
 );
 
-const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ class: cls, children, ...rest }) => (
+const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <summary
-    data-slot='collapsible-trigger'
+    data-slot={slotToken("collapsible-trigger", inherited)}
     class={cn(
       "flex cursor-pointer list-none select-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none",
       "hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
@@ -54,8 +55,8 @@ const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ class: cls, children,
   </summary>
 );
 
-const CollapsiblePanel: FC<CollapsiblePanelProps> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='collapsible-panel' class={cn("px-1 pb-2 text-sm text-muted-foreground", asClass(cls))} {...rest}>
+const CollapsiblePanel: FC<CollapsiblePanelProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("collapsible-panel", inherited)} class={cn("px-1 pb-2 text-sm text-muted-foreground", asClass(cls))} {...rest}>
     {children}
   </div>
 );

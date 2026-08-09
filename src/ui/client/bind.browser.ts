@@ -57,7 +57,7 @@ async function install(page: Page, initial: unknown): Promise<void> {
 /** `aria-pressed` and `data-pressed` for every item, so the two are checked in lockstep. */
 function pressedState(page: Page) {
   return page.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>("[data-slot='toggle-group-item']")].map((el) => ({
+    [...document.querySelectorAll<HTMLElement>("[data-slot~='toggle-group-item']")].map((el) => ({
       aria: el.getAttribute("aria-pressed"),
       data: el.hasAttribute("data-pressed"),
     })),
@@ -170,7 +170,7 @@ test.describe("bindGroup — scoping", () => {
 
     const pressedIds = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-pressed]")].map((el) => el.id).sort());
     // The second group's pressed item is untouched: `bindGroup` reconciles within the nearest
-    // `[data-slot='toggle-group']`, not across the whole scope.
+    // `[data-slot~='toggle-group']`, not across the whole scope.
     expect(pressedIds).toEqual(["a1", "b0"]);
   });
 

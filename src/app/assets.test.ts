@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { mapHandler } from "../testing/route";
 import { applyAssets, serveAssets } from "./assets";
 import { Forge } from "./forge-app";
-import { mapHandler } from "./route-test-helper";
 
 type Bindings = { ASSETS?: { fetch: (req: Request) => Promise<Response> } };
 

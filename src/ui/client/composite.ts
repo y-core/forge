@@ -1,5 +1,5 @@
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
-import { activeElement, contains, eventTarget, ownerWindow } from "./dom";
+import { activeElement, contains, eventTarget, isRtl, ownerWindow } from "./dom";
 
 /**
  * Roving-focus controller — the shared keyboard behaviour every composite widget needs.
@@ -114,10 +114,6 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
    */
   const listItems = (): HTMLElement[] => Array.from(root.querySelectorAll<HTMLElement>(selector)).filter((el) => el.checkVisibility?.() !== false);
 
-  /** Read the direction off the element rather than a global: a single RTL subtree inside an LTR
-   * page must navigate as RTL, and only the resolved style knows that. */
-  const isRtl = (): boolean => win.getComputedStyle(root).direction === "rtl";
-
   function setTabStop(items: HTMLElement[], index: number): void {
     for (let i = 0; i < items.length; i += 1) {
       const item = items[i];
@@ -220,12 +216,6 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
     const items = listItems();
     if (items.length === 0) return;
 
-    const rtl = isRtl();
-    const horizontalForward = rtl ? ARROW_LEFT : ARROW_RIGHT;
-    const horizontalBackward = rtl ? ARROW_RIGHT : ARROW_LEFT;
-    const forwardKey = orientation === "vertical" ? ARROW_DOWN : horizontalForward;
-    const backwardKey = orientation === "vertical" ? ARROW_UP : horizontalBackward;
-
     if (typeahead && key.length === 1 && key !== " " && !keyEvent.ctrlKey && !keyEvent.metaKey && !keyEvent.altKey) {
       if (isNativeInput(eventTarget(keyEvent))) return; // the field is being typed into
       if (runTypeahead(items, key)) keyEvent.preventDefault();
@@ -234,6 +224,17 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
 
     if (!COMPOSITE_KEYS.has(key)) return;
     if (keyEvent.ctrlKey || keyEvent.metaKey || keyEvent.altKey) return;
+
+    // Direction can only change the meaning of a *horizontal* arrow in a composite that navigates
+    // horizontally — every other key resolves to the same answer either way, so the `&&` chain keeps
+    // `getComputedStyle`'s forced style recalculation off Up, Down, Home, End and every typeahead
+    // character. Read per press rather than cached at mount, so a runtime `dir` flip takes effect.
+    const rtl = orientation !== "vertical" && (key === ARROW_LEFT || key === ARROW_RIGHT) && isRtl(root);
+    const horizontalForward = rtl ? ARROW_LEFT : ARROW_RIGHT;
+    const horizontalBackward = rtl ? ARROW_RIGHT : ARROW_LEFT;
+    const forwardKey = orientation === "vertical" ? ARROW_DOWN : horizontalForward;
+    const backwardKey = orientation === "vertical" ? ARROW_UP : horizontalBackward;
+
     if (belongsToTextField(eventTarget(keyEvent), key, keyEvent.shiftKey, forwardKey, backwardKey)) return;
 
     const current = tabStopIndex(items);

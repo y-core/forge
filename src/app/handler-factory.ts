@@ -1,20 +1,22 @@
+import type { v } from "../validation/validation";
 import { defineAction } from "./action";
 import { definePage } from "./page";
 import type { ActionDefinition, PageDefinition } from "./types";
 
 /** Pre-bound `definePage`/`defineAction` pair returned by `createHandlerFactory`. @public */
 export interface HandlerFactory<Bindings = Record<string, unknown>, ConfigData = unknown> {
-  definePage: <LoaderData = unknown, ActionData = unknown>(
-    def: PageDefinition<Bindings, ConfigData, LoaderData, ActionData>,
+  definePage: <LoaderData = unknown, ActionData = unknown, S extends v.GenericSchema = v.GenericSchema>(
+    def: PageDefinition<Bindings, ConfigData, LoaderData, ActionData, S>,
   ) => ReturnType<typeof definePage>;
-  defineAction: <Input, Out = Input>(def: ActionDefinition<Input, Bindings, ConfigData, Out>) => ReturnType<typeof defineAction>;
+  defineAction: <S extends v.GenericSchema>(def: ActionDefinition<S, Bindings, ConfigData>) => ReturnType<typeof defineAction>;
 }
 
 /**
  * Returns `definePage`/`defineAction` with `Bindings` and `ConfigData` pre-bound, so route
  * handlers stop repeating the same two generic arguments on every call. Call it once per app
- * and import the bound pair everywhere. The per-call generics (`LoaderData`, `ActionData`,
- * `Input`) remain inferable or explicitly specifiable as before.
+ * and import the bound pair everywhere. The per-call generics (`LoaderData`, `ActionData`, and the
+ * action's schema) remain inferable as before — and because the schema infers from `def.schema`, a
+ * bound `defineAction` needs no type arguments at all.
  *
  * @example
  * ```typescript

@@ -5,8 +5,8 @@ description: "The valibot facade, form parsing and its byte cap, CSRF protection
 
 # Input Validation
 
-> Owns the validation and form-parsing pipeline: the valibot facade, `defineAction`'s
-> parse → validate → handle steps, field reading, CSRF, honeypot, and Turnstile.
+> Owns the validation and form-parsing pipeline: the valibot facade, `defineAction`'s schema
+> contract, body parsing and its byte cap, CSRF, honeypot, and Turnstile.
 >
 > Defers to: [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1c for `ValidationResult` and §2c for
 > rendering its message list; [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) for the
@@ -21,13 +21,11 @@ description: "The valibot facade, form parsing and its byte cap, CSRF protection
 ## 0. Quick Reference
 
 - §1 Validation Namespace: the valibot facade and the action pipeline
-- §1a v Namespace — Complete valibot Re-Export: the facade rule
-- §1b v.safeParse with abortEarly: form-validation default
+- §1a v Namespace — Complete valibot Re-Export: the facade rule, and what the namespace exports beside `v`
+- §1b v.safeParse with abortEarly: the form-validation default, and which formatter a caller may read
 - §1c ValidationResult Type: the domain alias, owned elsewhere
-- §1d defineAction — parse → validate → handle Pipeline: the wiring and its failure modes
-- §2 Form Namespace — Field Reading and Parsing: FormData in, typed records out
-- §2a readFields — Type-Safe FormData Extraction: literal keys narrow the record
-- §2b readTextField — Single Field Extraction: the one-field form
+- §1d defineAction — The Schema Contract: the only way to reach a handler, what its guards consume, and the failure modes
+- §2 Form Namespace — Body Parsing: FormData in, with a byte cap
 - §2c parseFormData — Body Read with Size Limit: the two-way byte cap and 413
 - §3 CSRF Protection: middleware, keys, token minting
 - §3a csrfProtection Middleware: guarding mutating routes and the required `subject`
@@ -35,8 +33,8 @@ description: "The valibot facade, form parsing and its byte cap, CSRF protection
 - §3c mintCsrf — Token Minting for Form Injection: path scoping
 - §3d createCsrfToken and verifyCsrfToken: the lower-level API
 - §4 Bot Protection: honeypot and Turnstile
-- §4a isHoneypotFilled — Hidden Field Bot Detection: the field name and placement
-- §4b verifyTurnstile — Cloudflare Turnstile CAPTCHA: options and `expectedHostname`
+- §4a isHoneypotFilled — Hidden Field Bot Detection: the decoy's name, its home in the pipeline, and where it is rendered
+- §4b verifyTurnstile — Cloudflare Turnstile CAPTCHA: options, `expectedHostname`, and failing closed
 - §5 Config Schemas: startup validation of credentials
 - §5a CsrfConfigSchema: hex secret validation
 - §5b TurnstileConfigSchema: site and secret key validation
@@ -55,94 +53,157 @@ description: "The valibot facade, form parsing and its byte cap, CSRF protection
 **Never import `valibot` directly — always use `v` from `@y-core/forge/validation`.** The
 facade is what keeps the valibot version single-sourced and lets forge bound its surface.
 
-```typescript
-import { v } from "@y-core/forge/validation"
+**`v` is complete, but it is not alone.** The namespace also ships forge's own schema and issue
+helpers, and they are named exports sitting *beside* `v`, never members of it: `strictObject`
+(§1d), `formText` and `formMultilineText` (§1d), and `describeValidationIssue` (§1b).
+`src/validation/mod.ts` is authoritative for the list. The import shape is what matters here,
+because `strictObject` and `v.strictObject` are two different functions and only one of them is
+the recommendation (§1d):
 
-const ContactSchema = v.object({
-  name:    v.pipe(v.string(), v.minLength(2)),
-  email:   v.pipe(v.string(), v.email()),
-  message: v.pipe(v.string(), v.minLength(10)),
+```typescript
+import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation"
+
+const ContactSchema = strictObject({
+  name:    v.pipe(formText(), v.minLength(2)),
+  email:   v.pipe(formText(), v.email()),
+  message: v.pipe(formMultilineText(), v.minLength(10)),
 })
 
 type ContactInput = v.InferOutput<typeof ContactSchema>
 ```
 
-All valibot primitives, pipes, and combinators are available under the `v` prefix.
+All valibot primitives, pipes, and combinators are available under the `v` prefix; nothing forge
+added is.
 
 ### 1b. `v.safeParse` with `abortEarly`
 
-**`abortEarly: true` stops at the first error — use it for form validation.**
+**`abortEarly: true` stops at the first error — use it for form validation.** `defineAction`
+passes it unconditionally (§1d), and bounding the issue count is half of why: one issue reaches
+the fragment however many fields a caller chose to break, so a submission cannot multiply the
+refusal it receives.
+
+**Render issues through `describeValidationIssue` — never `issue.message`.** It names the failing
+field and nothing else, bounded in depth and in per-segment length, so the refusal varies only
+with *which* field failed and not with what was sent. The three parts it refuses to reproduce are
+each a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source
+text of the schema's own `v.regex`, and `issue.input` is the submission itself.
 
 ```typescript
 const result = v.safeParse(ContactSchema, fields, { abortEarly: true })
 if (!result.success) {
-  return fragmentResponse(renderValidationErrors(result.issues.map((i) => i.message)))
+  return fragmentResponse(renderValidationErrors(result.issues.map(describeValidationIssue)), 422)
 }
 const contact = result.output   // typed as ContactInput
 ```
 
-**Omit it (default `false`) when the response must enumerate every failing field** — an API
-response rather than a progressive form.
+**`formatValidationIssues` is not interchangeable with it.** That one reproduces `issue.message`,
+which is what makes it the internal diagnostic the env and config validators share (§5a, §5b).
+It must never reach a response a caller reads.
+
+**Omit `abortEarly` (default `false`) when the response must enumerate every failing field** — an
+API response rather than a progressive form. An enumerating refusal is one a caller can lengthen
+by adding fields, so choose it deliberately rather than by omission.
 
 ### 1c. `ValidationResult` Type
 
-`ValidationResult<T>` is the standard return type for the `validate` step and for service
-functions that validate their own input. It is a domain alias of the one `Result` primitive —
+`ValidationResult<T>` is the standard return type for service functions that validate their own
+input. It is a domain alias of the one `Result` primitive —
 success carries `data`, failure carries the per-field message list in the single `error` field.
 
 [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1c owns the type. It is exported from
 `@y-core/forge/result` and re-exported from `@y-core/forge/validation`.
 
-### 1d. `defineAction` — parse → validate → handle Pipeline
+### 1d. `defineAction` — The Schema Contract
 
-`defineAction` (from `@y-core/forge/app`) wires a POST handler that parses the body, validates
-it, and delegates to `handle`, returning a structured fragment for each failure mode.
+`defineAction` (from `@y-core/forge/app`) wires a POST handler that reads the body, runs the
+route's body-content guards, validates against a declared schema, and delegates to `handle`,
+returning a structured fragment for each failure mode. `ActionDefinition` (`src/app/types.ts`) is
+authoritative for the option list, and `src/app/README.md` documents each option with its type.
 
-```typescript
-export const handleContact = defineAction<ContactInput, AppEnv, AppConfig>({
-  parse: (formData) => readFields(formData, ["name", "email", "message"]),
-  validate: (data): ValidationResult<ContactInput> => {
-    const result = v.safeParse(ContactSchema, data, { abortEarly: true })
-    return result.success
-      ? { ok: true, data: result.output }
-      : { ok: false, error: result.issues.map((i) => i.message) }
-  },
-  handle: async (data, c, config) => {
-    await contactService.send(data, config)
-    return fragmentResponse(renderSuccess("Thanks — we'll be in touch."))
-  },
-})
-```
+**The schema is the only way in.** `handle` is unreachable except through a passing `v.safeParse`
+of `schema`, and it receives the schema's *output*, so a transform arrives as the type it actually
+is. This replaced a `parse`/`validate` pair of arbitrary callbacks: that pair fixed the order the
+two ran in and nothing more — neither had to involve a schema, so a `validate` that returned its
+own argument compiled and was accepted. **Order is a weaker guarantee than validation, and only
+the second one is worth stating.**
+
+**forge reads the body, so no named-field reader is needed or offered.** Every entry the caller
+sent reaches the schema, which is what gives `strictObject` something to refuse; an **absent
+field stays absent** rather than becoming `""`, which is what keeps `v.optional` reachable and
+required-ness a presence check; a **repeated key arrives as an array**, so a scalar schema refuses
+it and a route that accepts many declares `v.array`; and a **`File` passes through unchanged**.
+
+**A guard that consumes a field is what removes it.** A form carries entries the request itself
+does not assert — a CSRF token, a honeypot decoy, a CAPTCHA token — and a strict schema has no
+reason to declare any of them, so each is dropped before validation. **Nothing is dropped on a
+guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them (§4a,
+§4b); the CSRF field is dropped because `csrfProtection` recorded which field it took the token
+from (§3a). A route that renames one of those fields therefore declares the name once, to the
+guard that reads it, and never a second time to the schema. What happens on a request where no
+guard ran is the derive-only rule, owned by
+[`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §2b.
+
+**Prefer `strictObject` from `validation` over `v.strictObject`** (§1a). The unknown-key
+guarantee — an undeclared field is *refused*, not silently stripped — is stated against the
+former, and a schema written with the raw valibot form does not carry the correction that makes
+that guarantee hold for every key a caller can send. That is an opt-in property rather than a
+hidden one: the choice is visible at the call site, and `src/validation/strict-object.ts` states
+exactly what it settles.
+
+**Normalizing form text is the schema's job, not the reader's** — `formText()` for a single-line
+control, `formMultilineText()` for a `<textarea>` (§1a). The reader hands the schema exactly what
+was submitted, and that is a deliberate split rather than an omission, for four reasons. It does
+not only see strings, so trimming there would mean one special case for a `File` and another for
+the array a repeated key produces. `"   "` has to stay representable, or a schema that wants to
+refuse whitespace-only input no longer can — by the time it runs, an all-spaces submission and a
+well-formed one are indistinguishable. A normalization the schema cannot see makes the parsed
+output differ from the declared input for reasons written down nowhere in the schema, which is the
+defect the old named-field reader had. And line-ending folding is right for a `<textarea>` and
+wrong for an `<input>`, a distinction the reader cannot make, because it sees a name and a value
+and never the control that produced them.
+
+**`formMultilineText()` folds CRLF, and that is what makes a length check mean one thing:** under
+`v.pipe(formMultilineText(), v.maxLength(500))` each line break counts once, so the limit means the
+same whether the newline arrived as LF or CRLF rather than silently halving the budget. The benefit
+belongs to the fold's *presence*, not to where it sits relative to the trim — that position is not
+observable from anywhere, including from a check the caller appends, and `src/validation/form-text.ts`
+records why so the justification is not invented a third time.
 
 **`defineAction` calls `parseFormData(c)` internally**, so it enforces the body cap and surfaces
-`413` on oversized bodies (§2c). A failing `validate` emits `renderValidationErrors` unless
-`onValidationError` is supplied; a throwing `handle` returns a 500 fragment unless `onError` is.
+`413` on oversized bodies (§2c). A refused body answers **`422`** — a well-formed request the
+server understood and declined — carrying one `<li>` that names the failing field and nothing
+else (§1b). A schema, an `onValidationError` or a `handle` that *throws* is a route defect rather
+than a bad request: it is logged and answered `500` unless `onError` is supplied. Valibot does not
+catch what a pipe action throws, so a `v.transform` or `v.check` that throws on malformed input
+reaches that same path instead of escaping the handler.
 
-**Middleware (CSRF, origin guards) attaches to the controller action object
-`{ middleware, handler }` — never inside `defineAction`.**
+**A tripped bot guard answers with the refusal the schema itself would have produced** — the same
+status, one `<li>` naming a field the schema declares, never the decoy, whose name only the guard
+knows. Because `abortEarly` holds a real refusal to a single issue too, a bot cannot tell a guard
+from a mistyped field by comparing the two answers. `onBotDetected` replaces that default for an
+app that would rather ban, log, or stall.
+
+**`onValidationError` receives the issues, not formatted strings.** A valibot issue embeds the
+rejected value, and under a strict object the caller's own key lands in its path — so an app that
+renders more than the field name is choosing to, and how much of a caller's text travels back is
+a decision only the consuming app can make. The default chooses the field name alone (§1b).
+
+**Transport guards attach to the controller action object `{ middleware, handler }`; body-content
+guards live inside `defineAction`.** The rule is unchanged, and the line it draws is what the
+guard needs in order to decide. A **transport** guard decides from the request's envelope — an
+origin, a header, a signed token it minted itself — and needs to know nothing about what this
+route's form contains; that is why CSRF, origin, and rate-limit guards sit in the `middleware`
+array and refuse before any route builder runs. (`csrfProtection` falls back to reading a field out
+of the body, which is a lookup of the one field the guard itself owns and named, not a reading of
+the route's own fields.) A **body-content** guard decides from a field that is part of the form's
+design — a
+decoy the view placed, a CAPTCHA token the widget wrote — so it belongs where the body is read,
+and where the field it consumes is dropped in the same step. No middleware moved inside
+`defineAction`, and neither guard became middleware.
 
 ---
 
-## 2. Form Namespace — Field Reading and Parsing
-
-### 2a. `readFields` — Type-Safe FormData Extraction
-
-`readFields` extracts named fields from a `ReadonlyFormData` with keys inferred from the
-field-name literals. Values are normalized (`\r\n` → `\n`) and trimmed; a missing field yields
-an empty string.
-
-```typescript
-const fields = readFields(formData, ["name", "email", "message"])
-// Record<"name" | "email" | "message", string>
-```
-
-**Pass the field names as literals (optionally `as const`)** so the key type narrows to the
-union rather than widening to `string`.
-
-### 2b. `readTextField` — Single Field Extraction
-
-Returns the trimmed, newline-normalized value, or `""` when the field is absent or is not a
-text value. **Use `readFields` when all expected fields are known upfront.**
+## 2. Form Namespace — Body Parsing
 
 ### 2c. `parseFormData` — Body Read with Size Limit
 
@@ -259,53 +320,57 @@ non-standard token transport. Prefer the middleware for all standard form submis
 ### 4a. `isHoneypotFilled` — Hidden Field Bot Detection
 
 Checks whether a hidden field that legitimate users never fill has been populated by a bot.
-`HONEYPOT_FIELD_DEFAULT` is `"__surname"`; pass a second argument to override it.
+`HONEYPOT_FIELD_DEFAULT` is the fallback field name (`src/form/constants.ts`); pass a second
+argument to override it.
 
-```typescript
-if (isHoneypotFilled(formData)) {
-  return fragmentResponse(renderError("Invalid submission"), 400)
-}
-```
+**A `defineAction` route does not call it — it names `honeypot`,** and the pipeline runs the check
+and drops the field in one step, before the schema (§1d). Bots that fill hidden fields are
+therefore rejected cheaply, without the schema running. `isHoneypotFilled` stays public for a
+hand-rolled handler outside that pipeline.
 
-**Add the honeypot to every form view that submits a mutation, using the `Honeypot` component from
-`ui/core` so the name it renders and the name the checker reads stay the same constant:**
+**The `honeypot` option has no default and no shorthand, and that is the security property, not an
+ergonomic gap.** A decoy works only while its name is unguessable and plausible; forge is open
+source, so any name or prefix forge could supply is a name every bot already knows to skip, in
+every deployment at once. **Declare the name once as the app's own constant and reference it from
+both the view and the action** — `<Honeypot field={CONTACT_DECOY} />` beside
+`defineAction({ honeypot: CONTACT_DECOY, … })`. Forgetting the action half is then a missing
+argument at the call site rather than a silent loss of protection in production.
 
-```tsx
-<Form method='post' csrfToken={token}>
-  <Honeypot />
-  {/* … */}
-</Form>
-```
-
-**`Form` renders no honeypot of its own.** It did until 0.0.80, unconditionally, which put the decoy
-into the query string of every `method="get"` submission — and the honeypot has no defensive value
-on GET, because only mutation handlers consult `isHoneypotFilled`. Composition is explicit so the
-decoy appears exactly where it protects something.
-
-**Check `isHoneypotFilled` before schema validation** — bots that fill hidden fields are
-rejected cheaply, without consuming further work.
+**Render the decoy with the `Honeypot` component from `ui/core`, on every form view that submits a
+mutation.** `Form` renders none of its own, deliberately: a form that renders one unconditionally
+puts the decoy into the query string of every `method="get"` submission — into the address bar,
+bookmarks, shared links, history, and the outbound `Referer` — where it also protects nothing,
+since only mutation handlers consult a honeypot at all. Explicit composition puts the decoy
+exactly where it defends something. The rendered markup carries no attribute naming it as a
+honeypot, for the same reason the field name is unpublished.
 
 ### 4b. `verifyTurnstile` — Cloudflare Turnstile CAPTCHA
 
 `verifyTurnstile(formData, secretKey, options)` calls the siteverify API and returns a
 `TurnstileResult`. It reads the token field itself; **the token field and connecting IP live
-inside the options object** — `options.tokenField` (default `"cf-turnstile-response"`) and
+inside the options object** — `options.tokenField`, defaulting to `TURNSTILE_FIELD_DEFAULT`
+(`src/form/constants.ts`, which owns the name the Cloudflare widget writes), and
 `options.remoteIp`.
 
-**Always pass `options.expectedHostname` in production.** Without it the token's origin hostname
-is not checked, so a token minted on an attacker-controlled site can be replayed against this
-one. A runtime warning is logged when it is omitted.
+**A `defineAction` route does not call it — it names `turnstile`,** and the pipeline verifies the
+token and drops the token field in one step (§1d). The split inside that option is deliberate:
+`tokenField` is fixed when the route is defined, because the field is dropped whether or not
+verification ever reaches the network, while the secret and the verification constraints resolve
+per request, because a secret lives in a binding and the hostname a token must have been minted on
+is usually the request's own.
 
-```typescript
-const result = await verifyTurnstile(formData, config.services.turnstile.secretKey, {
-  expectedHostname: new URL(c.url).hostname,
-  remoteIp: c.request.headers.get("CF-Connecting-IP") ?? undefined,
-})
-```
+**Always pass `expectedHostname` in production.** Without it the token's origin hostname is not
+checked, so a token minted on an attacker-controlled site can be replayed against this one. A
+runtime warning is logged when it is omitted.
 
-The options object also accepts `expectedAction`, `expectedCData`, and `timeoutMs` (default
-5000). **`secretKey` is server-side only and must never appear in a client bundle**; `siteKey`
-is the client-side half.
+**An unverifiable CAPTCHA fails closed.** A siteverify call that timed out or never landed says
+nothing about the caller, so the submission is refused anyway — but it is logged, because a run of
+those is an outage rather than an attack, and `onBotDetected` receives the reason so an app can
+tell the two apart.
+
+The options object also accepts `expectedAction`, `expectedCData`, and `timeoutMs`.
+**`secretKey` is server-side only and must never appear in a client bundle**; `siteKey` is the
+client-side half.
 
 ---
 
@@ -340,9 +405,11 @@ The canonical sequence for a mutating form handler:
 2. `isHoneypotFilled` — reject bots cheaply
 3. `csrfProtection` middleware — already applied at route level; rejects before the handler
 4. `verifyTurnstile` — CAPTCHA check when configured
-5. `readFields` — extract the expected field names
-6. `v.safeParse` — produce typed output or issues
-7. pass the typed output to the service
+5. `v.safeParse` — the whole body against the schema, producing typed output or issues
+6. pass the typed output to the service
 
-**Steps 1–4 reject invalid requests before schema validation runs**; steps 5–7 produce the typed
-domain object services consume.
+**Steps 1–4 reject invalid requests before schema validation runs**; steps 5–6 produce the typed
+domain object services consume. A route built on `defineAction` gets steps 1, 2, 4, 5 and 6 for
+free — it names the schema and the field each of its body-content guards consumes, and nothing
+else (§1d). **Step 3 stays middleware**, because CSRF is a transport guard and rejects before the
+body's contents matter (§1d, §3a).

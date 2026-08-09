@@ -362,6 +362,73 @@ test.describe("asElement", () => {
   });
 });
 
+test.describe("elementById", () => {
+  test("resolves an id inside a shadow root, where document.getElementById cannot see it", async ({ page }) => {
+    await mount(page, SHADOW_FIXTURE, EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const wrap = document.querySelector("#host")?.shadowRoot?.querySelector("#inner-wrap");
+      if (!wrap) return null;
+      return { utility: window.forgeDom.elementById(wrap, "inner")?.id ?? null, bareGlobal: document.getElementById("inner")?.id ?? null };
+    });
+
+    // The disagreement IS the assertion, exactly as for the utilities above. Ids do not cross a shadow
+    // boundary, so a `commandfor` naming a sibling in the same shadow tree resolves to nothing through
+    // the document — and the caller reads that silence as "no such element".
+    expect(result).toEqual({ utility: "inner", bareGlobal: null });
+  });
+
+  test("resolves a document-scoped id exactly as the document lookup would", async ({ page }) => {
+    await mount(page, '<div id="wrap"><button id="target">go</button></div>', EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const wrap = document.querySelector("#wrap");
+      if (!wrap) return null;
+      return { utility: window.forgeDom.elementById(wrap, "target")?.id ?? null, bareGlobal: document.getElementById("target")?.id ?? null };
+    });
+
+    // The widening half: nothing about the ordinary case changes, so no existing caller moves.
+    expect(result).toEqual({ utility: "target", bareGlobal: "target" });
+  });
+
+  // A **detached** subtree is where the duck-typed method test earns its place: `getRootNode()` there
+  // returns the topmost ancestor *element*, which has no `getElementById` at all. A root-type check —
+  // or no check — reaches for a method that is not there and throws.
+  test("falls back to the owner document for a detached subtree, whose root is an Element", async ({ page }) => {
+    await mount(page, '<div id="wrap"><button id="target">go</button></div>', EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const detachedRoot = document.createElement("div");
+      const leaf = document.createElement("span");
+      detachedRoot.append(leaf);
+      const root = leaf.getRootNode() as Partial<Document> & { nodeType: number };
+      const probe = { rootIsElement: root.nodeType === 1, rootHasLookup: typeof root.getElementById, connected: leaf.isConnected };
+      try {
+        return { ...probe, found: window.forgeDom.elementById(leaf, "target")?.id ?? null, error: null };
+      } catch (error) {
+        return { ...probe, found: null, error: String(error) };
+      }
+    });
+
+    // `rootHasLookup` is asserted, not incidental: it is the whole reason the `typeof` guard exists,
+    // and without it here the case reads as an ordinary fallback rather than as the guard it pins.
+    // Delete the guard and this becomes `TypeError: root.getElementById is not a function`.
+    expect(result).toEqual({ rootIsElement: true, rootHasLookup: "undefined", connected: false, found: "target", error: null });
+  });
+
+  test("answers null for an empty id rather than asking the tree for one", async ({ page }) => {
+    await mount(page, '<div id="wrap"><button id="target">go</button></div>', EXPOSE);
+
+    // The shape a caller hands in when the attribute is absent: `el.getAttribute("commandfor") ?? ""`.
+    const result = await page.evaluate(() => {
+      const wrap = document.querySelector("#wrap");
+      return wrap ? window.forgeDom.elementById(wrap, "") : "no wrap";
+    });
+
+    expect(result).toBe(null);
+  });
+});
+
 test.describe("resume — shadow delegation", () => {
   test("dispatches an action for a trigger inside a shadow root", async ({ page }) => {
     await mount(

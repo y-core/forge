@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { scopeAttrs } from "../contracts/scope-attrs";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { Button } from "../core/button";
@@ -8,10 +9,10 @@ import type { ForgeIcon } from "../core/icon";
 // The rail renders its own `<nav>`, but every *part* of it is a `core/Toolbar` primitive — aliased
 // because this module publishes a `Toolbar` of its own.
 import { Toolbar as CoreToolbar } from "../core/toolbar";
+import { slotToken } from "../core/utils/as-child";
 import { asClass, cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { commandAttrs } from "../server/command-attrs";
-import { scopeAttrs } from "../server/scope-attrs";
 
 /** Root rail item that fires a delegated action immediately on click. @public */
 export interface ToolbarAction<A extends string = string> {
@@ -174,7 +175,7 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
     const { icon, label, ref, data = {}, active, size = "icon" } = item;
     return (
       <CoreToolbar.Button
-        data-slot='toolbar-action'
+        data-slot={slotToken("toolbar-action", data["data-slot"])}
         size={size}
         {...(active ? { pressed: true } : {})}
         data-ref={ref}
@@ -256,7 +257,16 @@ function renderGroup<A extends string>(group: ToolbarGroup<A>, ctx: RenderCtx): 
  *
  * @public
  */
-export const Toolbar: FC<ToolbarProps> = ({ config, icon: Icon, placement = "left", commandTarget, class: cls, id, ...rest }) => {
+export const Toolbar: FC<ToolbarProps> = ({
+  config,
+  icon: Icon,
+  placement = "left",
+  commandTarget,
+  class: cls,
+  id,
+  "data-slot": inherited,
+  ...rest
+}) => {
   const ctx: RenderCtx = { placement, icon: Icon, commandTarget, idBase: id ?? placement, seq: { n: 0 } };
   const children: JSXNode[] = [];
   for (const [i, group] of config.groups.entries()) {
@@ -272,7 +282,7 @@ export const Toolbar: FC<ToolbarProps> = ({ config, icon: Icon, placement = "lef
     <nav
       {...(id === undefined ? {} : { id })}
       role='toolbar'
-      data-slot='toolbar'
+      data-slot={slotToken("toolbar", inherited)}
       data-scope={TOOLBAR_SCOPE}
       {...stateAttrs({ orientation })}
       aria-orientation={orientation}

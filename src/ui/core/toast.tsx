@@ -1,7 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
-import { scopeAttrs } from "../server/scope-attrs";
+import { scopeAttrs } from "../contracts/scope-attrs";
+import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
 export type ToastVariant = "default" | "success" | "info" | "warning" | "destructive";
@@ -28,9 +29,9 @@ const positionClasses: Record<ToastPosition, string> = {
   "bottom-right": "bottom-4 right-4 items-end",
 };
 
-const ToastContainer: FC<ToastContainerProps> = ({ position = "bottom-right", class: cls, children, ...rest }) => (
+const ToastContainer: FC<ToastContainerProps> = ({ position = "bottom-right", class: cls, children, "data-slot": inherited, ...rest }) => (
   <section
-    data-slot='toast-container'
+    data-slot={slotToken("toast-container", inherited)}
     data-position={position}
     aria-label='Notifications'
     aria-live='polite'
@@ -41,11 +42,19 @@ const ToastContainer: FC<ToastContainerProps> = ({ position = "bottom-right", cl
   </section>
 );
 
-const ToastRoot: FC<ToastProps> = ({ variant = "default", dismissible = false, duration, class: cls, children, ...rest }) => {
+const ToastRoot: FC<ToastProps> = ({
+  variant = "default",
+  dismissible = false,
+  duration,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => {
   const interactive = dismissible || (duration !== undefined && duration > 0);
   return (
     <div
-      data-slot='toast'
+      data-slot={slotToken("toast", inherited)}
       data-variant={variant}
       role='status'
       aria-atomic='true'
@@ -76,14 +85,14 @@ const ToastRoot: FC<ToastProps> = ({ variant = "default", dismissible = false, d
   );
 };
 
-const ToastTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='toast-title' class={cn("text-sm font-semibold leading-none", cls)} {...rest}>
+const ToastTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("toast-title", inherited)} class={cn("text-sm font-semibold leading-none", cls)} {...rest}>
     {children}
   </div>
 );
 
-const ToastDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, ...rest }) => (
-  <div data-slot='toast-description' class={cn("text-sm opacity-90", cls)} {...rest}>
+const ToastDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("toast-description", inherited)} class={cn("text-sm opacity-90", cls)} {...rest}>
     {children}
   </div>
 );

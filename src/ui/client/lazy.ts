@@ -49,7 +49,7 @@ export interface LazyLoadOptions {
  * re-running it would only re-run the same failing `init`.
  *
  * The disposer sets `disposed` and clears a pending retry timer, so a load still in flight when the
- * scope tears down never re-observes.
+ * scope tears down never touches the element again: it neither re-observes nor runs `init`.
  * @public
  */
 export function lazy<T>(options: LazyImportOptions<T>): () => void {
@@ -72,6 +72,9 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
     attempts += 1;
     options.load().then(
       (mod) => {
+        // A load that settles after the scope tore down must not mount onto an element the app has
+        // already swapped out; whatever `init` sets up would hand its disposer to nobody and leak.
+        if (disposed) return;
         try {
           options.init(mod, el);
         } catch (error) {

@@ -1,5 +1,5 @@
-import { resolve, dirname, relative, sep } from "node:path";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -17,8 +17,7 @@ const CLASS_FREE = new Map([
   ["server", "SSR helpers that delegate to core/ components for all markup"],
 ]);
 
-const SKIP_FILE = (name: string) =>
-  name.endsWith(".test.ts") || name.endsWith(".test.tsx") || name.endsWith(".browser.ts");
+const SKIP_FILE = (name: string) => name.endsWith(".test.ts") || name.endsWith(".test.tsx") || name.endsWith(".browser.ts");
 
 let failed = false;
 
@@ -42,11 +41,12 @@ for (const entry of readdirSync(CSS_DIR).sort()) {
   // `@source not "…"` is an exclusion, not coverage — skip it.
   for (const match of css.matchAll(/@source\s+(not\s+)?["']([^"']+)["']/g)) {
     if (match[1]) continue;
-    const abs = resolve(CSS_DIR, match[2]);
+    // Group 2 is mandatory in the pattern, so a match always carries it.
+    const source = match[2];
+    if (source === undefined) continue;
+    const abs = resolve(CSS_DIR, source);
     if (abs !== UI && !abs.startsWith(UI + sep)) {
-      console.error(
-        `FAIL src/ui/assets/css/${entry}: @source "${match[2]}" resolves outside src/ui/ (${relative(ROOT, abs)})`,
-      );
+      console.error(`FAIL src/ui/assets/css/${entry}: @source "${source}" resolves outside src/ui/ (${relative(ROOT, abs)})`);
       console.error(`  forge.css scans ui/ and nothing else. A namespace outside it documents its own`);
       console.error(`  @source requirement in its README for the consuming app to honour instead.`);
       failed = true;
@@ -66,12 +66,8 @@ for (const entry of readdirSync(UI, { withFileTypes: true }).sort((a, b) => a.na
   } else if (CLASS_FREE.has(entry.name)) {
     console.log(`  ok src/ui/${entry.name} (class-free: ${CLASS_FREE.get(entry.name)})`);
   } else {
-    console.error(
-      `FAIL src/ui/${entry.name}: no @source path in src/ui/assets/css/ covers it, and it is not registered in CLASS_FREE`,
-    );
-    console.error(
-      `  Add \`@source "../../${entry.name}";\` to forge.css if its files declare utility classes,`,
-    );
+    console.error(`FAIL src/ui/${entry.name}: no @source path in src/ui/assets/css/ covers it, and it is not registered in CLASS_FREE`);
+    console.error(`  Add \`@source "../../${entry.name}";\` to forge.css if its files declare utility classes,`);
     console.error(`  or add it to CLASS_FREE in scripts/validate-css-sources.ts with the reason it cannot.`);
     failed = true;
   }
@@ -187,9 +183,7 @@ for (const entry of readdirSync(SRC, { withFileTypes: true }).sort((a, b) => a.n
   if (existsSync(readme) && readFileSync(readme, "utf-8").includes("@source")) {
     console.log(`  ok src/${entry.name} (${declaring.length} class-bearing file(s), @source documented)`);
   } else {
-    console.error(
-      `FAIL src/${entry.name}: renders utility classes, but its README.md never mentions @source`,
-    );
+    console.error(`FAIL src/${entry.name}: renders utility classes, but its README.md never mentions @source`);
     for (const file of declaring) console.error(`  ${relative(ROOT, file)}`);
     console.error(`  forge.css scans ui/ only, so these classes are the consuming app's to scan.`);
     console.error(`  Say so in src/${entry.name}/README.md, where someone adopting this surface reads it.`);
@@ -198,9 +192,7 @@ for (const entry of readdirSync(SRC, { withFileTypes: true }).sort((a, b) => a.n
 }
 
 if (failed) {
-  console.error(
-    "\nEvery utility class forge emits must be textually visible to a consumer's Tailwind scan.",
-  );
+  console.error("\nEvery utility class forge emits must be textually visible to a consumer's Tailwind scan.");
   process.exit(1);
 }
 

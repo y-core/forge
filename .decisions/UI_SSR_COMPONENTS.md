@@ -31,7 +31,8 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 - §1e Switch and Slider — CSS-Only Controls: no client JS, and what stays consumer-side
 - §1f Turnstile — Server-Rendered Mount Point: deliberate omission of auto-render
 - §1g Composite Widgets: one tab stop, and the markers that make it one
-- §1h Overlays and Disclosures: native popover and native `<details>`
+- §1h Overlays and Disclosures: native popover and native `<details>`; how a popup's side resolves
+  against the reader's direction
 - §1i Native-Input Primitives: groups, meter, number field, scroll area
 - §2 The Signal-Binding Seam: how SSR markup names a client-side binding
 - §2a fieldAttr, bindField, and bindGroup: what forge owns and what the app supplies
@@ -105,6 +106,25 @@ A consumer keying on `[data-slot="…"]` exactly must make the same change to ke
 the cascade to pick one, so `theme-base.css` spells out the trigger pairs explicitly. The set is
 closed because `Tooltip.Trigger` is the only one of the four trigger compounds that offers `asChild`,
 which makes it always the outer wrapper.
+
+**The merge is not specific to `asChild` — every compound merges on plain render too.** A `ui/core`
+or `ui/chrome` compound destructures an inherited `"data-slot"` out of its props and writes
+`data-slot={slotToken("own-token", inherited)}`, own token first. A bare literal instead loses the
+compound's own token to any caller that passes `data-slot`, because the rest-props spread that
+follows it wins. `slotToken` is owned by `src/ui/core/utils/as-child.ts`.
+
+**The attribute order is gate-enforced, not conventional.** `scripts/validate-jsx.ts` — matchers in
+`scripts/jsx-parse.ts` — fails on any JSX element carrying a literal `data-slot` before a spread of
+a **bare identifier** (`{...rest}`, `{...props}`, `{...attrs}`). A computed spread such as
+`{...stateAttrs({ open })}` is deliberately outside the rule: it is built at the call site out of
+values the component itself controls, so no caller token can hide inside it. There is no per-site
+suppression, matching `validate-exports.ts` and `validate-docs.ts`.
+
+**The destructure preserves attribute position, which is why it is the recipe.** The JSX transform
+merges duplicate keys in source order — a later spread overwrites the *value* but keeps the *first*
+insertion position — so a literal rewritten in place serializes byte-identically. A spread-last
+props helper would achieve the same merge while moving `data-slot` after `class` in every rendered
+string, for no behavioural gain.
 
 ### 1d. Icon Accessibility and `createIcon` Typing
 
@@ -237,6 +257,39 @@ would be asserting a fact the platform owns and the component cannot follow. The
 reconciles the pair from the element's own `:popover-open` at mount and on every state change.
 `Dialog` and `Accordion.Item` do stamp an initial value, because `<dialog open>` and `<details open>`
 are attributes the server genuinely sets — and the same controller then keeps them honest.
+
+**A side is stamped at SSR, where the Worker cannot know the reader's direction, so `Side` carries
+physical and logical spellings in one value space** (`src/ui/contracts/state-attrs.ts`). The
+physical members stay, because a popup that must *not* mirror still needs them; there is
+deliberately no separate logical type, since `data-side` is one attribute with one value space and
+splitting the type would let a caller hold a value the attribute cannot express.
+
+**The mechanism is physical declarations selected by `:dir()`, not logical CSS**
+(`src/ui/assets/css/theme-base.css`). Both shorter spellings are wrong, and both are reliably
+tempting. `anchor(inline-end)` is outright invalid — `<anchor-side>` has no logical keywords.
+`inset-inline-start: anchor(start)` parses, but logical properties and `anchor()` resolve against
+the **containing block's** writing mode, and a top-layer `position: fixed` popup's containing block
+is the viewport, whose direction is the root element's: a `dir="rtl"` subtree inside an LTR document
+resolves to the LTR answer, which is the original bug reintroduced through its own fix. `:dir()`
+asks the *tree*, and the tree is the only thing that knows.
+
+**Align runs on the axis perpendicular to the side, and is read in whichever vocabulary the side
+used.** `inline-*` sides therefore align on the block axis, which does not mirror, so they join the
+physical alignment rows verbatim; `block-*` sides align on the inline axis, which does, so those
+rows are `:dir()`-keyed. `block-*` **placement** rows carry no `:dir()` at all — direction mirrors
+the inline axis only, and `horizontal-tb` is the only writing mode forge ships.
+
+`position-try-fallbacks` needs nothing added for any of this: `flip-inline` transforms *used*
+declarations after the cascade has settled, so `:dir()` selection happens first and the flip
+operates on its result.
+
+**A component projects the subset its stylesheet can render.** `Tooltip`'s own block is a complete
+*physical* matrix, so `tooltip.tsx` narrows its prop with `Exclude<Side, …>` — a logical value there
+would match no rule and the popup would centre. Make the same projection for any component whose
+rules cover one vocabulary only, so an unrenderable value is unrepresentable rather than silently
+unstyled. `popover.tsx` narrows too but differently: `PopoverSide` is an independent literal union
+rather than a projection of `Side`, so it does not track future growth of `Side` the way the
+tooltip's does.
 
 ### 1i. Native-Input Primitives
 
@@ -405,7 +458,7 @@ The declared hooks:
 | `data-disabled` | the component is disabled |
 | `data-invalid` | the component holds a validation error |
 | `data-orientation` | layout axis — `horizontal` or `vertical`. Valued |
-| `data-side` / `data-align` | which side a popup sits on relative to its anchor, and how it aligns along it. Valued |
+| `data-side` / `data-align` | which side a popup sits on relative to its anchor, and how it aligns along it. Valued; `data-side` admits physical and logical spellings in one value space (§1h) |
 | `data-starting-style` / `data-ending-style` | present while animating in / out |
 | `data-popup-open` | on a **trigger**, while the popup it controls is open — the trigger's own state, distinct from `data-open`, which belongs to the popup. Produced by `mountPopupTriggerState` ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §6d) |
 

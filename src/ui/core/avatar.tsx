@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type AvatarSize = "sm" | "md" | "lg";
@@ -26,8 +27,8 @@ const AvatarRoot: FC<PropsWithChildren<AvatarProps>> = ({ size = "md", class: cl
   </span>
 );
 
-const AvatarImage: FC<AvatarImageProps> = ({ class: cls, alt, ...props }) => (
-  <img data-slot='avatar-image' class={cn("aspect-square size-full object-cover", asClass(cls))} alt={alt} {...props} />
+const AvatarImage: FC<AvatarImageProps> = ({ class: cls, alt, "data-slot": inherited, ...props }) => (
+  <img data-slot={slotToken("avatar-image", inherited)} class={cn("aspect-square size-full object-cover", asClass(cls))} alt={alt} {...props} />
 );
 
 const AvatarFallback: FC<PropsWithChildren<AvatarFallbackProps>> = ({ class: cls, children }) => (

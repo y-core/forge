@@ -169,8 +169,9 @@ function declaredAnchorNames(trigger: HTMLElement, win: Window): string[] {
  *   (`<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>`) already carries `--forge-tooltip`
  *   from the stylesheet, and a bare inline write would clobber it and leave the tooltip centred:
  *   precisely the failure this whole mechanism exists to remove.
- * - **A coordinate-placed popup is left alone.** `openPopoverAt` owns placement outright there, and
- *   an anchor it does not consult would be dead weight at best.
+ * - **A coordinate-placed popup gets no anchor binding.** `openPopoverAt` owns placement outright
+ *   there, and an anchor it does not consult would be dead weight at best — so none is written, and
+ *   whatever an earlier anchored open left behind is dropped.
  *
  * With several invokers for one popup the **first in document order** is chosen. `anchor()` resolves
  * against a single element, so unlike `mountPopupTriggerState` — which stamps all of them — this can
@@ -179,17 +180,33 @@ function declaredAnchorNames(trigger: HTMLElement, win: Window): string[] {
  */
 export function mountAnchorBinding(popup: HTMLElement): () => void {
   const win = ownerWindow(popup);
-  /** Every trigger this has written to, not just the last. A menu whose rows are rebuilt between
-   * openings — the case the `WeakMap` above exists for — resolves a different first invoker each
-   * time, and unwinding only the most recent would leave an inline `anchor-name` on each of the
-   * earlier ones. */
-  const bound = new Set<HTMLElement>();
+  /** The one trigger currently carrying an inline `anchor-name` from this controller, unwound on the
+   * next open. A menu whose rows are rebuilt between openings — the case the `WeakMap` above exists
+   * for — resolves a different first invoker each time, so the previous one still has to lose the
+   * name it was given; holding *every* past trigger instead would keep each discarded row alive for
+   * as long as the popup lives, which is the retention that `WeakMap` was chosen to avoid. */
+  let anchored: HTMLElement | null = null;
 
   const onBeforeToggle = (event: Event) => {
+    // Above the clear below, and load-bearing in that order: `mountTransitionState` keeps the panel
+    // painted through its exit animation, so dropping `position-anchor` on a close would re-expose
+    // the stylesheet's panel binding on a still-visible panel and jump it from the row it opened
+    // from to the parent panel's own edge, mid-fade.
     if ((event as Event & { newState?: string }).newState !== "open") return;
+
+    // Cleared at the top of the open path so that every return below it falls back to the
+    // stylesheet's panel binding — coarse but correct — rather than to a stale name from an earlier
+    // open that no live element answers to, which resolves to nothing and centres the popup instead.
+    popup.style.removeProperty("position-anchor");
+
     if (popup.hasAttribute(POPOVER_COORDS_ATTR)) return;
     const trigger = triggersFor(popup)[0];
     if (!trigger) return;
+
+    // The outgoing trigger gives up its inline name before the incoming one gains one, so at most a
+    // single element is retained. Guarded because re-opening from the same trigger is the common
+    // case, and unwinding there would only strip the declaration this is about to rewrite.
+    if (anchored && anchored !== trigger) anchored.style.removeProperty("anchor-name");
 
     const name = anchorNameFor(trigger);
     const names = declaredAnchorNames(trigger, win);
@@ -198,7 +215,7 @@ export function mountAnchorBinding(popup: HTMLElement): () => void {
     if (!names.includes(name)) names.push(name);
     trigger.style.setProperty("anchor-name", names.join(", "));
     popup.style.setProperty("position-anchor", name);
-    bound.add(trigger);
+    anchored = trigger;
   };
 
   popup.addEventListener("beforetoggle", onBeforeToggle);
@@ -208,7 +225,7 @@ export function mountAnchorBinding(popup: HTMLElement): () => void {
     // Removing the inline declarations restores whatever the stylesheet said, which is the coarse but
     // still-correct panel binding — a disposed controller leaves a working menu, not a centred one.
     popup.style.removeProperty("position-anchor");
-    for (const trigger of bound) trigger.style.removeProperty("anchor-name");
-    bound.clear();
+    anchored?.style.removeProperty("anchor-name");
+    anchored = null;
   };
 }

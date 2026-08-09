@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
-import { render } from "../../jsx/render-test-helper";
+import { render } from "../../testing/render";
 import { Toolbar } from "./toolbar";
 
 /**
@@ -98,10 +98,67 @@ describe("Toolbar.Button", () => {
   });
 });
 
+/**
+ * `data-slot` is a token list, and this is the compound where that matters most in practice:
+ * `chrome/Toolbar` passes `toolbar-trigger`, `toolbar-action` and `toolbar-title-action` *through* the
+ * primitives' rest spread, which used to replace the primitive's own token and unmake the item.
+ * Composed-with-a-tooltip cases live with the rule, in `utils/as-child.test.tsx`.
+ */
+describe("Toolbar.Button — data-slot", () => {
+  it("keeps its own token ahead of one handed down through props", async () => {
+    expect(await render(<Toolbar.Button data-slot='toolbar-action'>B</Toolbar.Button>)).toBe(
+      `<button type="button" data-slot="toolbar-button toolbar-action" class="${ITEM_BASE} h-8 px-3 text-sm" data-toolbar-item="">B</button>`,
+    );
+  });
+
+  it("treats an empty inherited token as none rather than emitting a trailing space", async () => {
+    expect(await render(<Toolbar.Button data-slot=''>B</Toolbar.Button>)).toBe(
+      `<button type="button" data-slot="toolbar-button" class="${ITEM_BASE} h-8 px-3 text-sm" data-toolbar-item="">B</button>`,
+    );
+  });
+
+  it("carries an inherited token onto the caller's element with asChild", async () => {
+    // The reverse of the composition bug: `cloneAsChild` writes `data-slot` last, so a token arriving
+    // through the prop bag used to be spread in and then overwritten by the compound's own literal.
+    expect(
+      await render(
+        <Toolbar.Button asChild data-slot='toolbar-action'>
+          <a href='/x'>Go</a>
+        </Toolbar.Button>,
+      ),
+    ).toBe(`<a href="/x" data-toolbar-item="" class="${ITEM_BASE} h-8 px-3 text-sm" data-slot="toolbar-button toolbar-action">Go</a>`);
+  });
+});
+
 describe("Toolbar.Link", () => {
   it("shares the item base and adds its own underline affordance", async () => {
     expect(await render(<Toolbar.Link href='/docs'>Docs</Toolbar.Link>)).toBe(
       `<a data-slot="toolbar-link" class="${ITEM_BASE} h-8 px-3 text-sm underline-offset-4 hover:underline" data-toolbar-item="" href="/docs">Docs</a>`,
+    );
+  });
+
+  it("keeps its own token ahead of one handed down through props", async () => {
+    expect(
+      await render(
+        <Toolbar.Link href='/docs' data-slot='rail-tool'>
+          Docs
+        </Toolbar.Link>,
+      ),
+    ).toBe(
+      `<a data-slot="toolbar-link rail-tool" class="${ITEM_BASE} h-8 px-3 text-sm underline-offset-4 hover:underline" data-toolbar-item="" href="/docs">Docs</a>`,
+    );
+  });
+
+  it("carries an inherited token onto the caller's element with asChild", async () => {
+    expect(
+      await render(
+        <Toolbar.Link asChild data-slot='rail-tool'>
+          <button type='button'>Docs</button>
+        </Toolbar.Link>,
+      ),
+    ).toBe(
+      `<button type="button" data-toolbar-item="" class="${ITEM_BASE} h-8 px-3 text-sm underline-offset-4 hover:underline" ` +
+        'data-slot="toolbar-link rail-tool">Docs</button>',
     );
   });
 });

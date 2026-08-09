@@ -1,7 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
+import type { JSXNode } from "../../jsx/types";
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
-import { scopeAttrs } from "../server/scope-attrs";
+import { scopeAttrs } from "../contracts/scope-attrs";
 import { Menu } from "./menu";
 
 /**
@@ -13,6 +14,8 @@ declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
     activations: string[];
+    /** Every keydown seen at the document, with whether the menu's handler had claimed it by then. */
+    keyClaims: { key: string; prevented: boolean }[];
   }
 }
 
@@ -78,8 +81,8 @@ test.describe("Menu — anatomy", () => {
 
     const roles = await page.evaluate(() => ({
       popup: document.querySelector("#file-menu")?.getAttribute("role"),
-      trigger: document.querySelector("[data-slot='menu-trigger']")?.getAttribute("aria-haspopup"),
-      items: [...document.querySelectorAll("[data-slot='menu-item']")].map((el) => el.getAttribute("role")),
+      trigger: document.querySelector("[data-slot~='menu-trigger']")?.getAttribute("aria-haspopup"),
+      items: [...document.querySelectorAll("[data-slot~='menu-item']")].map((el) => el.getAttribute("role")),
     }));
 
     expect(roles).toEqual({ popup: "menu", trigger: "menu", items: ["menuitem", "menuitem", "menuitem", "menuitem"] });
@@ -117,7 +120,7 @@ test.describe("Menu — anatomy", () => {
     expect(closed.display, "a closed popup still has a display — an author `display` is beating the UA rule").toBe("none");
 
     // And the same claim after a real open/close round trip, which is where a user meets it.
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await page.keyboard.press("Escape");
     await expect.poll(() => isOpen(page)).toBe(false);
     const reclosed = await page.evaluate(() => {
@@ -158,7 +161,7 @@ test.describe("Menu — the platform opens and closes it", () => {
   test("the trigger's native command opens the popup and publishes the open state", async ({ page }) => {
     await mountMenu(page, ROWS);
 
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
 
     expect(await isOpen(page)).toBe(true);
     await expect.poll(() => page.evaluate(() => document.querySelector("#file-menu")?.hasAttribute("data-open"))).toBe(true);
@@ -166,7 +169,7 @@ test.describe("Menu — the platform opens and closes it", () => {
 
   test("Escape closes it", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
 
     await page.keyboard.press("Escape");
 
@@ -175,7 +178,7 @@ test.describe("Menu — the platform opens and closes it", () => {
 
   test("a click outside light-dismisses it", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
 
     await page.click("#before");
 
@@ -187,14 +190,14 @@ test.describe("Menu — keyboard", () => {
   test("focuses the first item when it opens", async ({ page }) => {
     await mountMenu(page, ROWS);
 
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
 
     await expect.poll(() => focusedId(page)).toBe("new");
   });
 
   test("arrow keys navigate and skip a disabled item", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.keyboard.press("ArrowDown");
@@ -208,7 +211,7 @@ test.describe("Menu — keyboard", () => {
 
   test("Home and End jump to the ends", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.keyboard.press("End");
@@ -219,7 +222,7 @@ test.describe("Menu — keyboard", () => {
 
   test("typeahead jumps to an item by its label", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.keyboard.press("q");
@@ -231,7 +234,7 @@ test.describe("Menu — keyboard", () => {
 test.describe("Menu — activation", () => {
   test("Enter activates the focused item and the platform closes the menu", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.keyboard.press("ArrowDown");
@@ -243,7 +246,7 @@ test.describe("Menu — activation", () => {
 
   test("Space activates too", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.keyboard.press(" ");
@@ -253,7 +256,7 @@ test.describe("Menu — activation", () => {
 
   test("an item that opted out of closing runs its action and leaves the menu open", async ({ page }) => {
     await mountMenu(page, [{ id: "wrap", label: "Wrap", keepOpen: true }, ...ROWS]);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("wrap");
 
     await page.keyboard.press("Enter");
@@ -264,7 +267,7 @@ test.describe("Menu — activation", () => {
 
   test("a disabled item activates nothing", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.evaluate(() => document.querySelector<HTMLElement>("#save")?.click());
@@ -276,30 +279,30 @@ test.describe("Menu — activation", () => {
 test.describe("Menu — focus restoration", () => {
   test("Escape returns focus to the trigger", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.focus("[data-slot='menu-trigger']");
+    await page.focus("[data-slot~='menu-trigger']");
     await page.keyboard.press("Enter");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.keyboard.press("Escape");
 
     // Without restoration this is "" — focus falls to <body> and the keyboard user loses their place.
-    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-trigger");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? [])).toEqual(["menu-trigger"]);
   });
 
   test("selecting an item returns focus to the trigger", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.focus("[data-slot='menu-trigger']");
+    await page.focus("[data-slot~='menu-trigger']");
     await page.keyboard.press("Enter");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.keyboard.press("Enter");
 
-    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-trigger");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? [])).toEqual(["menu-trigger"]);
   });
 
   test("a click elsewhere keeps the focus the user chose", async ({ page }) => {
     await mountMenu(page, ROWS);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
 
     await page.click("#before");
@@ -339,7 +342,7 @@ test.describe("Menu — link items", () => {
     await mount(page, html, EXPOSE);
     await start(page);
 
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("save");
     await page.keyboard.press("ArrowDown");
 
@@ -370,7 +373,7 @@ test.describe("Menu — submenus", () => {
   async function openParent(page: Page): Promise<void> {
     await mount(page, await nestedMarkup(), EXPOSE);
     await start(page);
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
   }
 
@@ -381,11 +384,12 @@ test.describe("Menu — submenus", () => {
     await page.keyboard.press("ArrowDown");
 
     const row = await page.evaluate(() => ({
-      focused: document.activeElement?.getAttribute("data-slot"),
+      focused: document.activeElement?.getAttribute("data-slot")?.split(" ") ?? [],
       haspopup: document.activeElement?.getAttribute("aria-haspopup"),
     }));
-    // A bare `Menu.Trigger` carries no role, so this row would be skipped entirely.
-    expect(row).toEqual({ focused: "menu-submenu-trigger", haspopup: "menu" });
+    // A bare `Menu.Trigger` carries no role, so this row would be skipped entirely. `data-slot` is a
+    // token list and is compared as one; `aria-haspopup` is a single value and is compared whole.
+    expect(row).toEqual({ focused: ["menu-submenu-trigger"], haspopup: "menu" });
   });
 
   test("a closed submenu's items are not in the parent's ring", async ({ page }) => {
@@ -401,7 +405,7 @@ test.describe("Menu — submenus", () => {
   test("opening the submenu leaves the parent open and moves focus into it", async ({ page }) => {
     await openParent(page);
 
-    await page.click("[data-slot='menu-submenu-trigger']");
+    await page.click("[data-slot~='menu-submenu-trigger']");
 
     await expect.poll(() => focusedId(page)).toBe("r0");
     expect(await isOpen(page)).toBe(true);
@@ -409,7 +413,7 @@ test.describe("Menu — submenus", () => {
 
   test("arrow keys inside the submenu do not also move the parent", async ({ page }) => {
     await openParent(page);
-    await page.click("[data-slot='menu-submenu-trigger']");
+    await page.click("[data-slot~='menu-submenu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("r0");
 
     await page.keyboard.press("ArrowDown");
@@ -424,7 +428,9 @@ test.describe("Menu — submenus", () => {
 
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
-    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-submenu-trigger");
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []))
+      .toEqual(["menu-submenu-trigger"]);
 
     await page.keyboard.press("ArrowRight");
 
@@ -442,12 +448,14 @@ test.describe("Menu — submenus", () => {
     await openParent(page);
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
-    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-submenu-trigger");
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []))
+      .toEqual(["menu-submenu-trigger"]);
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(true);
 
     // Put focus back on the row with the submenu still open, then press it again.
-    await page.evaluate(() => document.querySelector<HTMLElement>("[data-slot='menu-submenu-trigger']")?.focus());
+    await page.evaluate(() => document.querySelector<HTMLElement>("[data-slot~='menu-submenu-trigger']")?.focus());
     await page.keyboard.press("ArrowRight");
 
     expect(await page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(true);
@@ -467,7 +475,7 @@ test.describe("Menu — submenus", () => {
 
   test("ArrowLeft inside a submenu closes it and returns focus to its trigger", async ({ page }) => {
     await openParent(page);
-    await page.click("[data-slot='menu-submenu-trigger']");
+    await page.click("[data-slot~='menu-submenu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("r0");
 
     await page.keyboard.press("ArrowLeft");
@@ -475,7 +483,9 @@ test.describe("Menu — submenus", () => {
     await expect.poll(() => page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(false);
     // Only the submenu: ArrowLeft is a step back up the menu tree, not a dismissal of the whole thing.
     expect(await isOpen(page)).toBe(true);
-    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-submenu-trigger");
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []))
+      .toEqual(["menu-submenu-trigger"]);
   });
 
   test("ArrowLeft in a top-level menu leaves it open", async ({ page }) => {
@@ -492,7 +502,7 @@ test.describe("Menu — submenus", () => {
 
   test("ArrowLeft in a submenu does not also close the parent", async ({ page }) => {
     await openParent(page);
-    await page.click("[data-slot='menu-submenu-trigger']");
+    await page.click("[data-slot~='menu-submenu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("r0");
 
     await page.keyboard.press("ArrowLeft");
@@ -505,14 +515,388 @@ test.describe("Menu — submenus", () => {
 
   test("Escape closes only the submenu and returns focus to its trigger", async ({ page }) => {
     await openParent(page);
-    await page.click("[data-slot='menu-submenu-trigger']");
+    await page.click("[data-slot~='menu-submenu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("r0");
 
     await page.keyboard.press("Escape");
 
     await expect.poll(() => page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open"))).toBe(false);
     expect(await isOpen(page)).toBe(true);
-    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe("menu-submenu-trigger");
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []))
+      .toEqual(["menu-submenu-trigger"]);
+  });
+});
+
+// ─── Direction-resolved submenu keys ─────────────────────────────────────────
+
+/** The submenu popup's own rows. A factory rather than a shared constant, so no two fixtures ever
+ * render the same node objects and a rendering that touched its input could not couple them. */
+function submenuRows(): JSXNode[] {
+  return [Menu.Item({ id: "r0", for: "recent-menu", children: "alpha" }), Menu.Item({ id: "r1", for: "recent-menu", children: "beta" })];
+}
+
+/**
+ * A File menu whose second row opens a nested Recent submenu, with `dir` placed where the case needs
+ * it.
+ *
+ * `"wrapper"` puts it on an ancestor of the whole compound — a page laid out right-to-left. `"popup"`
+ * puts it on the panel element itself inside an explicitly `ltr` wrapper, which is the arrangement a
+ * document-level direction read gets wrong and an element-level one gets right.
+ */
+async function submenuMarkup(dir: "ltr" | "rtl", dirOn: "wrapper" | "popup"): Promise<string> {
+  const popup = Menu.Popup({
+    id: "file-menu",
+    ...(dirOn === "popup" ? { dir } : {}),
+    children: [
+      Menu.Item({ id: "new", for: "file-menu", children: "New" }),
+      Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent" }),
+      Menu.Popup({ id: "recent-menu", children: submenuRows() }),
+      Menu.Item({ id: "quit", for: "file-menu", children: "Quit" }),
+    ],
+  });
+  const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+  return `<div dir="${dirOn === "popup" ? "ltr" : dir}">${html}</div>`;
+}
+
+function submenuOpen(page: Page): Promise<boolean> {
+  return page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open") ?? false);
+}
+
+/** `data-slot` is a token list, so it is parsed to one before anything is asserted about it. */
+function focusedSlots(page: Page): Promise<string[]> {
+  return page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []);
+}
+
+/**
+ * ARIA's menu pattern specifies the two horizontal submenu keys as **mirrored** in RTL: the key
+ * pointing *at* the submenu opens it and the key pointing *away* closes it, in both directions. One
+ * table rather than two suites, because the mirroring is only legible when the two rows sit together
+ * and expect different keys — and because that is also what makes each row falsifiable. A controller
+ * that hardcoded either physical key would pass one row and fail the other.
+ */
+const DIRECTIONS = [
+  { dir: "ltr", toward: "ArrowRight", away: "ArrowLeft" },
+  { dir: "rtl", toward: "ArrowLeft", away: "ArrowRight" },
+] as const;
+
+test.describe("Menu — submenu keys mirror with the writing direction", () => {
+  async function openParentIn(page: Page, dir: "ltr" | "rtl", dirOn: "wrapper" | "popup" = "wrapper"): Promise<void> {
+    await mount(page, await submenuMarkup(dir, dirOn), EXPOSE);
+    await start(page);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+  }
+
+  /** One row down from the opening position, which is the row that has a submenu. */
+  async function focusSubmenuRow(page: Page): Promise<void> {
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => focusedSlots(page)).toEqual(["menu-submenu-trigger"]);
+  }
+
+  for (const { dir, toward, away } of DIRECTIONS) {
+    test(`dir=${dir}: ${toward} — the key pointing at the submenu — opens it`, async ({ page }) => {
+      await openParentIn(page, dir);
+      await focusSubmenuRow(page);
+
+      await page.keyboard.press(toward);
+
+      await expect.poll(() => submenuOpen(page)).toBe(true);
+      // Nothing about opening is reimplemented: the key clicks the row, the row's own
+      // `command="toggle-popover"` opens the panel, and the nested popup's `mountMenu` moves focus.
+      await expect.poll(() => focusedId(page)).toBe("r0");
+    });
+
+    test(`dir=${dir}: ${away} — the key pointing away — closes the open nested panel`, async ({ page }) => {
+      await openParentIn(page, dir);
+      await focusSubmenuRow(page);
+      await page.keyboard.press(toward);
+      await expect.poll(() => focusedId(page)).toBe("r0");
+
+      await page.keyboard.press(away);
+
+      await expect.poll(() => submenuOpen(page)).toBe(false);
+      // A step back up the menu tree, not a dismissal of the whole thing.
+      expect(await isOpen(page)).toBe(true);
+      await expect.poll(() => focusedSlots(page)).toEqual(["menu-submenu-trigger"]);
+    });
+
+    test(`dir=${dir}: ${away} does NOT open the submenu`, async ({ page }) => {
+      // The half that stops the pair from being vacuous. Without it a controller that opened the
+      // submenu on *either* horizontal key would satisfy both rows of the table above.
+      await openParentIn(page, dir);
+      await focusSubmenuRow(page);
+
+      await page.keyboard.press(away);
+
+      expect(await submenuOpen(page)).toBe(false);
+      expect(await focusedSlots(page)).toEqual(["menu-submenu-trigger"]);
+    });
+  }
+
+  test("an RTL panel inside an LTR page mirrors, because direction is read off the popup", async ({ page }) => {
+    // The highest-value case in this describe: it is the one a document-level or `documentElement`
+    // read fails outright, and the one no amount of page-level `dir` testing reaches.
+    await openParentIn(page, "rtl", "popup");
+
+    const directions = await page.evaluate(() => ({
+      document: getComputedStyle(document.documentElement).direction,
+      popup: getComputedStyle(document.querySelector("#file-menu") as Element).direction,
+      submenu: getComputedStyle(document.querySelector("#recent-menu") as Element).direction,
+    }));
+    // The disagreement IS the setup: a global read answers `ltr` here and would pick the wrong key.
+    expect(directions).toEqual({ document: "ltr", popup: "rtl", submenu: "rtl" });
+
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => focusedSlots(page)).toEqual(["menu-submenu-trigger"]);
+    await page.keyboard.press("ArrowLeft");
+
+    await expect.poll(() => submenuOpen(page)).toBe(true);
+    await expect.poll(() => focusedId(page)).toBe("r0");
+  });
+
+  test("in RTL the toward-key over a row with no submenu opens nothing and leaves the key unclaimed", async ({ page }) => {
+    await openParentIn(page, "rtl");
+    await page.evaluate(() => {
+      window.keyClaims = [];
+      // Bubble phase at the document, so it runs *after* the popup's own handler and reads whatever
+      // that handler decided. `defaultPrevented` is the platform's own flag, not a count of calls into
+      // a fixture — it is the signal the parent controller reads to know a key was claimed.
+      document.addEventListener("keydown", (event) => window.keyClaims.push({ key: event.key, prevented: event.defaultPrevented }));
+    });
+
+    // `#new` has no submenu, so the toward-key has nothing to point at.
+    expect(await focusedId(page)).toBe("new");
+    await page.keyboard.press("ArrowLeft");
+    const afterPlainRow = { submenu: await submenuOpen(page), parent: await isOpen(page), focused: await focusedId(page) };
+
+    // The same physical key over the row that *does* have a submenu. Without this second half the
+    // assertion below would pass against a controller with no keydown handler at all.
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => focusedSlots(page)).toEqual(["menu-submenu-trigger"]);
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => submenuOpen(page)).toBe(true);
+
+    expect(afterPlainRow).toEqual({ submenu: false, parent: true, focused: "new" });
+    const claims = await page.evaluate(() => window.keyClaims.filter((c) => c.key === "ArrowLeft").map((c) => c.prevented));
+    expect(claims).toEqual([false, true]);
+  });
+});
+
+// ─── Submenus across a shadow boundary ───────────────────────────────────────
+
+/**
+ * The whole nested menu inside one shadow root — trigger, panel, submenu row and submenu panel.
+ *
+ * This is the arrangement a web component encapsulating a menu produces, and the one the open-state
+ * guard's id lookup depends on: the parent panel is itself in the shadow tree, so resolving
+ * `commandfor` against the panel's own root reaches the submenu and resolving it against the document
+ * does not.
+ */
+async function shadowMenuMarkup(): Promise<string> {
+  const popup = Menu.Popup({
+    id: "file-menu",
+    children: [
+      Menu.Item({ id: "new", for: "file-menu", children: "New" }),
+      Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent" }),
+      Menu.Popup({ id: "recent-menu", children: submenuRows() }),
+      Menu.Item({ id: "quit", for: "file-menu", children: "Quit" }),
+    ],
+  });
+  const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+  return `<div id="host"></div><template id="source">${html}</template>`;
+}
+
+/**
+ * The parent panel in the light DOM with **only the submenu** inside a shadow root, whose host is one
+ * of the panel's own rows.
+ *
+ * That is the arrangement the nested-ness climb turns on. The submenu popup's parent is a
+ * `ShadowRoot`, which `parentElement` reports as `null` — so a climb starting from `parentElement`
+ * loses the boundary entirely and classifies the submenu as top-level. The host div is inserted in the
+ * browser rather than rendered, because a `Menu.Popup`'s children are JSX and a bare shadow host is
+ * not one of the row shapes the component offers.
+ */
+async function lightParentShadowSubmenuMarkup(): Promise<string> {
+  const popup = Menu.Popup({
+    id: "file-menu",
+    children: [Menu.Item({ id: "new", for: "file-menu", children: "New" }), Menu.Item({ id: "quit", for: "file-menu", children: "Quit" })],
+  });
+  const outer = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+  const inner = await render(Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent" }));
+  const panel = await render(Menu.Popup({ id: "recent-menu", children: submenuRows() }));
+  return `${outer}<template id="source">${inner}${panel}</template>`;
+}
+
+test.describe("Menu — a submenu across a shadow boundary", () => {
+  /** Attach the template's contents to a shadow root, then resume — whose eager pass descends into
+   * open roots at any depth, so a menu scope inside one is discovered like any other. */
+  async function attachAndResume(page: Page, hostSelector: string): Promise<void> {
+    await page.evaluate((selector) => {
+      const host = document.querySelector(selector);
+      const template = document.querySelector<HTMLTemplateElement>("#source");
+      if (!host || !template) return;
+      host.attachShadow({ mode: "open" }).append(template.content.cloneNode(true));
+      window.activations = [];
+      window.forgeResume.resume();
+    }, hostSelector);
+  }
+
+  /** `document.activeElement` stops at the host, so the deep read is the only way to ask. */
+  function shadowFocusedId(page: Page): Promise<string | null> {
+    return page.evaluate(() => document.querySelector("#host")?.shadowRoot?.activeElement?.id ?? null);
+  }
+
+  /** `data-slot` is a token list, so it is parsed to one before anything is asserted about it. */
+  function shadowFocusedSlots(page: Page): Promise<string[]> {
+    return page.evaluate(() => document.querySelector("#host")?.shadowRoot?.activeElement?.getAttribute("data-slot")?.split(" ") ?? []);
+  }
+
+  function shadowSubmenuOpen(page: Page): Promise<boolean> {
+    return page.evaluate(() => document.querySelector("#host")?.shadowRoot?.querySelector("#recent-menu")?.matches(":popover-open") ?? false);
+  }
+
+  /**
+   * Pre-set an inline `position-anchor` on a popup, and report what stuck.
+   *
+   * This is the observable for "an anchor binding is mounted on this popup". `mountAnchorBinding`'s
+   * open path clears `position-anchor` **before** it resolves a trigger, so the property surviving an
+   * open means no binding is listening and the property vanishing means one is — a DOM-state read that
+   * does not depend on the trigger lookup succeeding. It cannot: `triggersFor` queries the *document*,
+   * which sees nothing inside a shadow root. That degradation is pre-existing and systemic (it is
+   * recorded in the task rather than fixed by it), and probing the clear rather than the write is what
+   * keeps this case measuring nested-ness instead of measuring that unrelated gap.
+   *
+   * The return value is asserted by every caller, never ignored: `position-anchor` is only settable if
+   * the browser recognises it, and an unrecognised property would make the probe silently vacuous.
+   */
+  function armAnchorProbe(page: Page, where: "light" | "shadow"): Promise<string> {
+    return page.evaluate((scope) => {
+      const popup =
+        scope === "shadow"
+          ? document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("#recent-menu")
+          : document.querySelector<HTMLElement>("#file-menu");
+      popup?.style.setProperty("position-anchor", "--probe");
+      return popup?.style.getPropertyValue("position-anchor") ?? "";
+    }, where);
+  }
+
+  /** What the probed popup's inline `position-anchor` says now — `""` once a binding has cleared it. */
+  function readAnchorProbe(page: Page, where: "light" | "shadow"): Promise<string> {
+    return page.evaluate((scope) => {
+      const popup =
+        scope === "shadow"
+          ? document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("#recent-menu")
+          : document.querySelector<HTMLElement>("#file-menu");
+      return popup?.style.getPropertyValue("position-anchor") ?? "";
+    }, where);
+  }
+
+  test("a nested popup whose parent panel is outside its shadow root still reports nested", async ({ page }) => {
+    await mount(page, await lightParentShadowSubmenuMarkup(), EXPOSE);
+    await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.id = "host";
+      // A row of the parent panel, so the panel is a shadow-crossing ancestor of what goes inside.
+      document.querySelector("#quit")?.before(host);
+    });
+    await attachAndResume(page, "#host");
+
+    // Pin the shape the fix turns on, so the case cannot quietly stop being about a shadow boundary.
+    const shape = await page.evaluate(() => {
+      const popup = document.querySelector("#host")?.shadowRoot?.querySelector("#recent-menu");
+      return {
+        parentIsShadowRoot: popup?.parentNode?.nodeType === 11,
+        parentElementIsNull: popup?.parentElement === null,
+        hostIsInsidePanel: document.querySelector("#host")?.closest("[data-slot~='menu-popup']")?.id ?? null,
+      };
+    });
+    expect(shape).toEqual({ parentIsShadowRoot: true, parentElementIsNull: true, hostIsInsidePanel: "file-menu" });
+
+    const armed = await armAnchorProbe(page, "shadow");
+    expect(armed, "position-anchor did not stick, so the anchor-binding probe below asserts nothing").toBe("--probe");
+
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+    // Through the row's own invoker; `commandfor` resolves inside the shadow tree that holds both.
+    //
+    // **A real click, not `el.click()`** — Playwright's selector engine pierces an open shadow root,
+    // so the row is reachable, and the browser's own input path focuses a `<button>` on mousedown
+    // where a programmatic `.click()` dispatches the event and leaves focus untouched. That
+    // difference decides the last assertion of this case: `mountMenu` captures its `opener` as
+    // whatever was focused when the submenu opened, so a synthetic click leaves the parent panel's
+    // `#new` as the opener and the away-key restores focus there — correctly, and to an element that
+    // says nothing about the row.
+    await page.click("[data-slot~='menu-submenu-trigger']");
+    await expect.poll(() => shadowSubmenuOpen(page)).toBe(true);
+    // The platform premise this whole arrangement rests on, asserted rather than assumed: the
+    // Popover API treats a `popover=auto` inside a shadow root as **nested** relative to a light-DOM
+    // ancestor panel, so opening the submenu does not light-dismiss the parent. Were it not so, the
+    // parent would be gone by now and everything below would be reading a torn-down menu — a way for
+    // this case to stop being about nested-ness without a single assertion changing.
+    expect(await isOpen(page)).toBe(true);
+    await expect.poll(() => shadowFocusedId(page)).toBe("r0");
+
+    // First observable of nested-ness: the anchor binding was mounted and cleared the probe on open.
+    expect(await readAnchorProbe(page, "shadow")).toBe("");
+
+    // Second observable, and the one a user meets: the away-key closes a nested panel and is a no-op
+    // on a top-level one. Climbing from `parentElement` classifies this as top-level, and the key
+    // becomes dead.
+    await page.keyboard.press("ArrowLeft");
+
+    await expect.poll(() => shadowSubmenuOpen(page)).toBe(false);
+    await expect.poll(() => shadowFocusedSlots(page)).toEqual(["menu-submenu-trigger"]);
+  });
+
+  test("a top-level panel still reports NOT nested", async ({ page }) => {
+    // The converse, and the reason it is written down: the climb has to start at the popup's **parent**
+    // because `closest` matches the element it starts from. Starting at the popup itself would match
+    // the popup's own `[data-slot~="menu-popup"]` and make every panel in the library nested — the
+    // away-key would close a top-level menu like a second Escape, and every panel would take an anchor
+    // binding it does not need. Neither shows up in a nested-submenu case, so without this assertion
+    // that one-word mistake ships green.
+    await mount(page, await submenuMarkup("ltr", "wrapper"), EXPOSE);
+    await start(page);
+
+    const armed = await armAnchorProbe(page, "light");
+    expect(armed, "position-anchor did not stick, so the anchor-binding probe below asserts nothing").toBe("--probe");
+
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+    await page.keyboard.press("ArrowLeft");
+
+    expect(await isOpen(page)).toBe(true);
+    expect(await focusedId(page)).toBe("new");
+    expect(await readAnchorProbe(page, "light")).toBe("--probe");
+  });
+
+  test("the toward-key never closes an already-open submenu inside a shadow root", async ({ page }) => {
+    // The shadow-DOM mirror of "ArrowRight never closes a submenu that is already open" above. The row's
+    // command is `toggle-popover`, so the open-state guard is the only thing standing between a second
+    // press and an inverted key — and a *document*-scoped id lookup cannot see a shadow-scoped id, so
+    // it answers `null`, the guard reads that as "not open", and the click closes the panel.
+    await mount(page, await shadowMenuMarkup(), EXPOSE);
+    await attachAndResume(page, "#host");
+
+    await page.evaluate(() => document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("[data-slot~='menu-trigger']")?.click());
+    await expect.poll(() => shadowFocusedId(page)).toBe("new");
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => shadowFocusedSlots(page)).toEqual(["menu-submenu-trigger"]);
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => shadowSubmenuOpen(page)).toBe(true);
+
+    // Focus back on the row with the submenu still open — the state a popup rendered outside a menu
+    // scope leaves behind, since nothing moved focus into it — then press the same key again.
+    await page.evaluate(() =>
+      document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("[data-slot~='menu-submenu-trigger']")?.focus(),
+    );
+    await page.keyboard.press("ArrowRight");
+
+    expect(await shadowSubmenuOpen(page)).toBe(true);
+    // Asserted, not assumed: it is the precondition that makes the case about a shadow boundary at all.
+    // With the id visible to the document this would pass against the document-scoped lookup too.
+    expect(await page.evaluate(() => document.getElementById("recent-menu") === null)).toBe(true);
   });
 });
 
@@ -520,7 +904,7 @@ test.describe("Menu — items replaced between openings", () => {
   test("navigates a rebuilt item set without re-mounting", async ({ page }) => {
     await mountMenu(page, ROWS);
 
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
     await page.keyboard.press("Escape");
     await expect.poll(() => isOpen(page)).toBe(false);
@@ -546,7 +930,7 @@ test.describe("Menu — items replaced between openings", () => {
       }
     });
 
-    await page.click("[data-slot='menu-trigger']");
+    await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("cut");
     await page.keyboard.press("ArrowDown");
     expect(await focusedId(page)).toBe("copy");

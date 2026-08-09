@@ -78,3 +78,10 @@ export function formatFixSummary(gate: string, fixed: number, skipped: number): 
 export function formatMissingRequirement(label: string, tool: string, hint: string): string {
   return `✗ ${label} — ${tool} not found; run \`${hint}\``;
 }
+
+/** The pointer to a failing step's untruncated output, printed under the excerpt and indented to
+ *  match it. The excerpt is a blind tail, so a failure whose signal fell outside the window —
+ *  late console noise from unrelated suites is enough — is recoverable rather than lost. */
+export function formatFullLogPath(path: string): string {
+  return `    full log at ${path}`;
+}

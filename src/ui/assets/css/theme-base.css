@@ -231,27 +231,69 @@ from the base stop-mapping below.
 [data-slot~="popover-content"]                                         { position-anchor: --forge-popover; }
 [data-slot~="toolbar-flyout"]                                          { position-anchor: --forge-toolbar; }
 
-/* The menu gets the full 4-side × 3-align matrix rather than `popover-content`'s split model, because
-   a submenu's side is `right` or `left` and a model that reads `data-side` as block-axis-only cannot
+/* The menu gets the full side × align matrix rather than `popover-content`'s split model, because
+   a submenu's side is an inline-axis one and a model that reads `data-side` as block-axis-only cannot
    express those at all. */
 [data-slot~="menu-popup"]:not([data-coords])[data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
 
+/* The block-axis logical sides carry no `:dir()`: direction mirrors the *inline* axis only, and
+   `horizontal-tb` is the sole writing mode forge ships, so these are exactly the physical
+   `top` / `bottom` declarations under a second name. */
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"] { bottom: anchor(top); margin-bottom: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"]   { top: anchor(bottom); margin-top: 0.375rem; }
+
+/* The inline-axis logical sides, spelled physically and selected by `:dir()`. Two shorter-looking spellings are
+   both wrong: `anchor(inline-end)` is not a valid `<anchor-side>` at all, and `inset-inline-start:
+   anchor(start)` resolves against the *containing block's* writing mode — which for a top-layer
+   `position: fixed` popup is the viewport, i.e. the root element's direction. A `dir="rtl"` subtree
+   inside an LTR document would then get the LTR answer, which is the bug these rules exist to fix.
+   `:dir()` matches on the element's own inherited directionality, so the tree decides. */
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"]:dir(ltr)   { left: anchor(right); margin-left: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"]:dir(rtl)   { right: anchor(left); margin-right: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"]:dir(ltr) { right: anchor(left); margin-right: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"]:dir(rtl) { left: anchor(right); margin-left: 0.375rem; }
+
+/* Align runs on the axis perpendicular to the side, and is read in whichever vocabulary the side
+   used. A physical block-axis side therefore aligns physically along the inline axis — no mirroring,
+   because the caller asked for `left`/`right` and got it. */
 [data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="start"],
 [data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="start"] { left: anchor(left); }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="center"] { left: anchor(center); translate: -50% 0; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="center"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="center"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="center"] { left: anchor(center); translate: -50% 0; }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="end"],
 [data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="end"] { right: anchor(right); }
 
+/* An inline-axis side aligns along the *block* axis, which does not mirror — so the logical sides
+   join the physical rows verbatim rather than needing `:dir()` variants of their own. */
 [data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="start"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="start"] { top: anchor(top); }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="start"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="start"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="start"] { top: anchor(top); }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="center"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="center"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="end"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="end"] { bottom: anchor(bottom); }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="end"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="end"],
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="end"] { bottom: anchor(bottom); }
+
+/* A logical block-axis side aligns along the *inline* axis, which does mirror — and the side was
+   asked for logically, so the align must answer logically too: `start` is the edge the text starts
+   at. `center` needs no variant and joins the physical center row above. */
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="start"]:dir(ltr),
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="start"]:dir(ltr) { left: anchor(left); }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="start"]:dir(rtl),
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="start"]:dir(rtl) { right: anchor(right); }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="end"]:dir(ltr),
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="end"]:dir(ltr) { right: anchor(right); }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="end"]:dir(rtl),
+[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="end"]:dir(rtl) { left: anchor(left); }
 
 [data-slot~="popover-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
 [data-slot~="popover-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
@@ -293,8 +335,9 @@ from the base stop-mapping below.
    renders one button carrying both slot tokens — and `anchor-name` is a single declaration rather
    than a set that unions across rules. Two rules each naming the element would leave the cascade to
    pick one, and the menu would lose to whichever came later. The pairs are therefore spelled out.
-   The set is closed: `Tooltip.Trigger` is the only one of the four that offers `asChild`, so it is
-   always the outer wrapper and no other combination can arise. */
+   The set is **not** closed — `Button`, `Toolbar.Button` and `Toolbar.Link` offer `asChild` too, so
+   either side of a pair can be the outer wrapper and further combinations are expressible. These
+   three are the ones with an `anchor-name` on both halves; add a pair here when a new one arises. */
 [data-slot~="tooltip-trigger"][data-slot~="menu-trigger"]    { anchor-name: --forge-tooltip, --forge-menu; }
 [data-slot~="tooltip-trigger"][data-slot~="popover-trigger"] { anchor-name: --forge-tooltip, --forge-popover; }
 [data-slot~="tooltip-trigger"][data-slot~="toolbar-trigger"] { anchor-name: --forge-tooltip, --forge-toolbar; }

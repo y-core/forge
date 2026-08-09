@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSXElement } from "../../jsx/types";
+import { type ScopeAttrsProps, scopeAttrs } from "../contracts/scope-attrs";
 import { fieldAttr } from "../server/field-attr";
-import { type ScopeAttrsProps, scopeAttrs } from "../server/scope-attrs";
 
 /** The delegated events a bound control listens on. Each maps to a `data-on-<event>` attribute. */
 type BoundEvent = "onChange" | "onInput" | "onClick";

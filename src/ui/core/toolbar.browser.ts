@@ -45,7 +45,7 @@ test.describe("Toolbar — markup", () => {
     await mount(page, await pageMarkup("vertical"), EXPOSE);
 
     const attrs = await page.evaluate(() => {
-      const el = document.querySelector("[data-slot='toolbar']");
+      const el = document.querySelector("[data-slot~='toolbar']");
       return {
         role: el?.getAttribute("role"),
         ariaOrientation: el?.getAttribute("aria-orientation"),

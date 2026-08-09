@@ -1,4 +1,4 @@
-import { ownerDocument, ownerWindow } from "./dom";
+import { elementById, ownerDocument, ownerWindow } from "./dom";
 import { mountTransitionState } from "./transition";
 
 /**
@@ -23,8 +23,7 @@ export interface TooltipOptions {
 
 export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): () => void {
   const trigger = root.querySelector<HTMLElement>("[data-slot~='tooltip-trigger']");
-  const contentId = trigger?.getAttribute("aria-describedby");
-  const content = contentId ? ownerDocument(root).getElementById(contentId) : null;
+  const content = trigger ? elementById(trigger, trigger.getAttribute("aria-describedby") ?? "") : null;
   if (!trigger || !content) return () => {};
 
   const win = ownerWindow(root);

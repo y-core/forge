@@ -3,6 +3,7 @@
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { DIALOG_SCOPE } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface DialogProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> {
@@ -25,10 +26,10 @@ interface DialogCloseProps extends Omit<JSX.IntrinsicElements["button"], "childr
   children?: JSXNode;
 }
 
-const DialogRoot: FC<DialogProps> = ({ id, open, class: cls, children, ...props }) => (
+const DialogRoot: FC<DialogProps> = ({ id, open, class: cls, children, "data-slot": inherited, ...props }) => (
   <dialog
     id={id}
-    data-slot='dialog'
+    data-slot={slotToken("dialog", inherited)}
     data-scope={DIALOG_SCOPE}
     {...(open ? { open } : {})}
     {...stateAttrs({ open: open === true })}
@@ -38,12 +39,12 @@ const DialogRoot: FC<DialogProps> = ({ id, open, class: cls, children, ...props 
   </dialog>
 );
 
-const DialogTrigger: FC<DialogTriggerProps> = ({ for: target, class: cls, children, ...props }) => {
+const DialogTrigger: FC<DialogTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...props }) => {
   const className = asClass(cls);
   return (
     <button
       type='button'
-      data-slot='dialog-trigger'
+      data-slot={slotToken("dialog-trigger", inherited)}
       command='show-modal'
       commandfor={target}
       {...(className ? { class: className } : {})}
@@ -53,12 +54,12 @@ const DialogTrigger: FC<DialogTriggerProps> = ({ for: target, class: cls, childr
   );
 };
 
-const DialogClose: FC<DialogCloseProps> = ({ for: target, request = false, class: cls, children, ...props }) => {
+const DialogClose: FC<DialogCloseProps> = ({ for: target, request = false, class: cls, children, "data-slot": inherited, ...props }) => {
   const className = asClass(cls);
   return (
     <button
       type='button'
-      data-slot='dialog-close'
+      data-slot={slotToken("dialog-close", inherited)}
       command={request ? "request-close" : "close"}
       commandfor={target}
       {...(className ? { class: className } : {})}

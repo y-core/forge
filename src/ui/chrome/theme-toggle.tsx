@@ -1,10 +1,10 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC } from "../../jsx/types";
+import { scopeAttrs } from "../contracts/scope-attrs";
 import type { ForgeIcon } from "../core/icon";
 import { cn } from "../core/utils/cn";
 import { Resumable } from "../server/resumable";
-import { scopeAttrs } from "../server/scope-attrs";
 import { DEFAULT_PREF } from "./theme";
 
 /** Props for {@link ThemeToggle}. @public */

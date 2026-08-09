@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 /** Whether one item may be pressed at a time, or several. Drives both the group's announced
@@ -60,10 +61,11 @@ const ToggleGroupRoot: FC<PropsWithChildren<ToggleGroupProps>> = ({
   orientation = "horizontal",
   type = "single",
   children,
+  "data-slot": inherited,
   ...rest
 }) => (
   <fieldset
-    data-slot='toggle-group'
+    data-slot={slotToken("toggle-group", inherited)}
     {...(type === "multiple" ? { "data-multiple": "" } : {})}
     {...stateAttrs({ orientation })}
     class={cn(GROUP_BASE, orientation === "vertical" && "flex-col", asClass(cls))}
@@ -72,10 +74,17 @@ const ToggleGroupRoot: FC<PropsWithChildren<ToggleGroupProps>> = ({
   </fieldset>
 );
 
-const ToggleGroupItem: FC<PropsWithChildren<ToggleGroupItemProps>> = ({ class: cls, pressed, size = "sm", children, ...rest }) => (
+const ToggleGroupItem: FC<PropsWithChildren<ToggleGroupItemProps>> = ({
+  class: cls,
+  pressed,
+  size = "sm",
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <button
     type='button'
-    data-slot='toggle-group-item'
+    data-slot={slotToken("toggle-group-item", inherited)}
     {...stateAttrs({ pressed: pressed ?? false })}
     aria-pressed={pressed ?? false}
     class={cn(ITEM_BASE, ITEM_SIZE[size], ITEM_PRESSED, asClass(cls))}

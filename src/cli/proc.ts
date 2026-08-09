@@ -19,9 +19,16 @@ export function insertPath(dir: string): void {
   process.env.PATH = `${dir}${delimiter}${process.env.PATH ?? ""}`;
 }
 
+/** True when `cmd args` exits 0, with its output discarded — a prerequisite check whose
+ *  only signal is the exit code. A prerequisite that is not the presence of an executable
+ *  (a downloaded browser, a running service) needs a command of its own to answer for it. */
+export function probeOk(cmd: string, args: readonly string[]): boolean {
+  return spawnSync(cmd, [...args], { stdio: "ignore", env: process.env }).status === 0;
+}
+
 /** True when `cmd --version` exits 0 — i.e. the tool is present and runnable. */
 export function hasTool(cmd: string): boolean {
-  return spawnSync(cmd, ["--version"], { stdio: "ignore", env: process.env }).status === 0;
+  return probeOk(cmd, ["--version"]);
 }
 
 /** Assert every tool is present, in insertion order. Throws on the first missing one

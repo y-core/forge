@@ -81,6 +81,9 @@ the agent that owns the fix.**
   gate is green and let them reconcile it.
 - **You do not re-run to "see if it passes this time."** A flaky result is itself the finding —
   report the flake.
+- **You have no ledger tools, and that is deliberate.** A green gate is not by itself a decision that
+  a task is done — that judgement belongs to the agent that owns the work. Report the verdict; the
+  owner records it.
 
 Your `tools:` list omits `Write` and `Edit`, but **that allowlist is not guaranteed to be
 enforced**. Treat the boundary as a rule you follow because you were told to, not one a mechanism

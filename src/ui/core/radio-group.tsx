@@ -3,6 +3,7 @@
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { FieldDescription, FieldError, fieldDescribedBy, fieldId } from "./field";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type GroupOrientation = Extract<Orientation, "horizontal" | "vertical">;
@@ -64,6 +65,7 @@ const RadioGroupRoot: FC<PropsWithChildren<RadioGroupRootProps>> = ({
   orientation = "vertical",
   class: cls,
   children,
+  "data-slot": inherited,
   ...rest
 }) => {
   // Same reasoning as `CheckboxGroup`: only the `aria-describedby` half of `fieldControlProps` is
@@ -72,7 +74,7 @@ const RadioGroupRoot: FC<PropsWithChildren<RadioGroupRootProps>> = ({
   const describedBy = fieldDescribedBy(name, { ...(scope !== undefined ? { scope } : {}), description, invalid });
   return (
     <fieldset
-      data-slot='radio-group'
+      data-slot={slotToken("radio-group", inherited)}
       disabled={disabled}
       {...(describedBy !== undefined ? { "aria-describedby": describedBy } : {})}
       {...stateAttrs({ invalid, disabled, orientation })}
@@ -83,17 +85,30 @@ const RadioGroupRoot: FC<PropsWithChildren<RadioGroupRootProps>> = ({
   );
 };
 
-const RadioGroupLabel: FC<PropsWithChildren<Omit<JSX.IntrinsicElements["legend"], "children">>> = ({ class: cls, children, ...rest }) => (
-  <legend data-slot='radio-group-label' class={cn("mb-1 text-sm font-medium text-foreground", asClass(cls))} {...rest}>
+const RadioGroupLabel: FC<PropsWithChildren<Omit<JSX.IntrinsicElements["legend"], "children">>> = ({
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
+  <legend data-slot={slotToken("radio-group-label", inherited)} class={cn("mb-1 text-sm font-medium text-foreground", asClass(cls))} {...rest}>
     {children}
   </legend>
 );
 
-const RadioGroupItem: FC<PropsWithChildren<RadioGroupItemProps>> = ({ name, value, scope, class: cls, children, ...rest }) => (
+const RadioGroupItem: FC<PropsWithChildren<RadioGroupItemProps>> = ({
+  name,
+  value,
+  scope,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <label data-slot='radio-group-item' class={cn("inline-flex items-center gap-2 text-sm text-foreground", asClass(cls))}>
     <input
       type='radio'
-      data-slot='radio-group-input'
+      data-slot={slotToken("radio-group-input", inherited)}
       id={itemId(name, value, scope)}
       name={name}
       value={value}

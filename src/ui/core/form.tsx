@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { CSRF_FIELD_DEFAULT } from "../../form/constants";
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
+import { slotToken } from "./utils/as-child";
 
 type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx-headers"> & {
   method?: "get" | "post";
@@ -66,13 +67,18 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
   method = "post",
   children,
   "hx-headers": hxHeadersProp,
+  "data-slot": inherited,
   ...props
 }) => {
   const formProps = props as Record<string, unknown>;
   const resolvedHxHeaders = resolveHxHeaders(hxHeadersProp, csrfToken);
 
   return (
-    <form data-slot='form' method={method} {...(resolvedHxHeaders !== undefined ? { "hx-headers": resolvedHxHeaders } : {})} {...formProps}>
+    <form
+      data-slot={slotToken("form", inherited)}
+      method={method}
+      {...(resolvedHxHeaders !== undefined ? { "hx-headers": resolvedHxHeaders } : {})}
+      {...formProps}>
       {csrfToken && <input data-slot='form-csrf' type='hidden' name={csrfField} value={csrfToken} />}
       {children}
     </form>

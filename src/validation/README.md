@@ -1,18 +1,23 @@
 # `@y-core/forge/validation`
 
-Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge-cfgen`) under the `/cli` sub-path.
+Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge-cfgen`) under the `/cli` sub-path.
 
 | Import path | Surface |
 |---|---|
-| `@y-core/forge/validation` | `v` (valibot namespace) + `ValidationResult` |
+| `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `describeValidationIssue`, `formatValidationIssues`, `ValidationResult` |
 | `@y-core/forge/validation/cli` | `forge-cfgen` env-schema generator API (also a `bin`) |
+
+**Everything except `v` is a sibling of it, not a member.** `strictObject` and `v.strictObject` are two different functions, and the one without the prefix is the recommendation for untrusted input.
 
 ---
 
 ## Features
 
 - **Single valibot entry point** — `v` is the complete valibot namespace re-exported as one import, so every app uses the same pinned valibot version and never deep-imports the upstream package.
-- **`ValidationResult<T>`** — a domain alias of forge's one `Result` primitive, `Result<T, readonly string[]>` (`{ ok: true; data: T } | { ok: false; error: readonly string[] }`), that is the canonical return type for the `validate` hook of `defineAction` and for any service that validates its own input.
+- **`strictObject`** — the strict object schema to use for anything parsing untrusted input. Only a field the schema actually declares counts as declared, so an undeclared key is refused rather than silently dropped, for **every** key a caller can send.
+- **Form-text primitives** — `formText()` for a single-line control and `formMultilineText()` for a `<textarea>`. A form body reaches a schema exactly as submitted, so trimming and CRLF folding are the schema's job; these are the two shapes worth having.
+- **Bounded issue descriptions** — `describeValidationIssue` names the field one issue is about and nothing else, so a refusal a caller reads cannot carry the submitted value, the schema's own rule, or a length the caller chose. `formatValidationIssues` is the internal diagnostic counterpart.
+- **`ValidationResult<T>`** — a domain alias of forge's one `Result` primitive, `Result<T, readonly string[]>` (`{ ok: true; data: T } | { ok: false; error: readonly string[] }`), the canonical return type for any service that validates its own input.
 - **`forge-cfgen` env-schema generator** — reads `wrangler.jsonc` bindings and `.dev.vars` keys and emits a committed, schema-first valibot `EnvSchema` (plus an inferred `type Env`), replacing the env half of `wrangler types`.
 
 ---
@@ -21,15 +26,22 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 
 ### Usage
 
-Define a schema with `v`, parse untrusted input with `v.safeParse`, and convert the result into a `ValidationResult` at the system boundary.
+Declare the schema with `strictObject` and the form-text primitives, parse untrusted input with `v.safeParse`, and convert the result into a `ValidationResult` at the system boundary.
 
 ```typescript
-import { v, type ValidationResult } from "@y-core/forge/validation";
+import {
+  describeValidationIssue,
+  formMultilineText,
+  formText,
+  strictObject,
+  v,
+  type ValidationResult,
+} from "@y-core/forge/validation";
 
-const ContactSchema = v.object({
-  name: v.pipe(v.string(), v.minLength(2)),
-  email: v.pipe(v.string(), v.email()),
-  message: v.pipe(v.string(), v.minLength(10)),
+const ContactSchema = strictObject({
+  name: v.pipe(formText(), v.minLength(2)),
+  email: v.pipe(formText(), v.email()),
+  message: v.pipe(formMultilineText(), v.minLength(10)),
 });
 
 type ContactInput = v.InferOutput<typeof ContactSchema>;
@@ -37,7 +49,8 @@ type ContactInput = v.InferOutput<typeof ContactSchema>;
 function validateContact(fields: unknown): ValidationResult<ContactInput> {
   const result = v.safeParse(ContactSchema, fields, { abortEarly: true });
   if (!result.success) {
-    return { ok: false, error: result.issues.map((issue) => issue.message) };
+    // `describeValidationIssue`, not `issue.message` — the message embeds the rejected value.
+    return { ok: false, error: result.issues.map(describeValidationIssue) };
   }
   return { ok: true, data: result.output };
 }
@@ -48,14 +61,14 @@ Inspect `result.ok` before reading `data`:
 ```typescript
 const outcome = validateContact(rawFields);
 if (!outcome.ok) {
-  // outcome.error: readonly string[] — human-readable messages
+  // outcome.error: readonly string[] — the field names that failed
   return;
 }
 // outcome.data: ContactInput — typed, validated
 sendContact(outcome.data);
 ```
 
-`validateContact` matches the shape `defineAction` (from `@y-core/forge/app`) expects for its `validate` hook — `(data: unknown) => ValidationResult<T>` — so the same function plugs directly into the request pipeline.
+A route on `defineAction` (from `@y-core/forge/app`) writes none of this: it hands the same `ContactSchema` to the pipeline, which reads the body, parses with `abortEarly`, and renders the refusal through `describeValidationIssue` itself. Write a function like the one above for a **service** that validates its own input, or for a handler outside that pipeline.
 
 ### Core Components & APIs
 
@@ -70,7 +83,76 @@ const schema = v.object({ count: v.pipe(v.number(), v.minValue(0)) });
 const result = v.safeParse(schema, { count: 3 }); // { success, output | issues }
 ```
 
-`v.safeParse(schema, value, config?)` returns a valibot result (`success`/`output`/`issues`), not a `ValidationResult`. Pass `{ abortEarly: true }` to stop at the first issue (typical for field-level form errors); omit it to collect every issue.
+`v.safeParse(schema, value, config?)` returns a valibot result (`success`/`output`/`issues`), not a `ValidationResult`. Pass `{ abortEarly: true }` to stop at the first issue (typical for field-level form errors); omit it to collect every issue. An enumerating refusal is one a caller can lengthen by adding fields, so choose it deliberately.
+
+#### `strictObject(entries, message?)`
+
+```typescript
+function strictObject<TEntries extends v.ObjectEntries>(
+  entries: TEntries,
+  message?: v.ErrorMessage<v.StrictObjectIssue>,
+): v.StrictObjectSchema<TEntries, …>;
+```
+
+A strict object schema in which only a field the schema *actually declares* counts as declared. Use it in place of `v.strictObject` for anything parsing untrusted input — a request body above all.
+
+```typescript
+import { strictObject, v } from "@y-core/forge/validation";
+
+const ContactSchema = strictObject({ name: v.string(), email: v.pipe(v.string(), v.email()) });
+```
+
+The difference is the declared-key test. Valibot answers "is this key declared?" by looking the name up on the schema's entries object, and on an ordinary object literal that lookup reaches inherited members — so a caller sending `__proto__`, `constructor`, `toString`, `valueOf` or any other inherited name reads as declared for *any* schema and is dropped from the parsed output instead of being refused. That is the one case where the unknown-key guarantee would not hold, and `strictObject` closes it for the whole class of names at once, with no branch naming any of them.
+
+The correction is applied **at construction**, so it survives composition: the property holds when the schema is nested in another object, wrapped in `v.pipe`, or used as a `v.union` / `v.variant` option. A patch applied to a finished schema would not.
+
+> A schema written with raw `v.strictObject` keeps the original behaviour. This is opt-in rather than automatic, and the choice is visible at the call site.
+
+#### `formText()` / `formMultilineText()`
+
+```typescript
+function formText(): v.GenericSchema<string, string>;          // trim
+function formMultilineText(): v.GenericSchema<string, string>; // CRLF → LF, then trim
+```
+
+The default shapes for form text. `formText()` is the single-line variant and **preserves** CRLF; `formMultilineText()` folds CRLF pairs to LF first, which is what a browser submits from a `<textarea>` regardless of platform. Compose either like any other schema:
+
+```typescript
+import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation";
+
+const MessageSchema = strictObject({
+  subject: v.pipe(formText(), v.minLength(1)),                        // refuses "   "
+  body: v.pipe(formMultilineText(), v.minLength(1), v.maxLength(2000)),
+});
+```
+
+**Why here and not in the body reader.** A form body reaches a schema exactly as submitted, so without one of these a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "` and every required-field check becomes bypassable with spaces. Normalizing in the reader was rejected for four reasons, and [`INPUT_VALIDATION.md`](../../.decisions/INPUT_VALIDATION.md) §1d owns them — the short version is that only the schema knows a field was a textarea.
+
+**The fold runs before the trim, and that ordering is about length, not output.** `trim` treats `\r` and `\n` alike, so the two operations produce the same string in either order. What the order decides is what the rest of the pipe sees: under `v.pipe(formMultilineText(), v.maxLength(500))` each line break counts once, so a 500-character limit means the same thing whether the newline arrived as LF or CRLF instead of silently halving the budget for line breaks.
+
+#### `describeValidationIssue(issue)` / `formatValidationIssues(issues)`
+
+```typescript
+function describeValidationIssue(issue: v.BaseIssue<unknown>): string;
+function formatValidationIssues(issues: readonly v.BaseIssue<unknown>[]): string;
+```
+
+Two formatters with different audiences, and they are **not** interchangeable.
+
+| | `describeValidationIssue` | `formatValidationIssues` |
+|---|---|---|
+| Audience | the caller — a response body | the operator — a log line or a thrown message |
+| Output | the failing field's name, bounded in depth and per-segment length | `path: message` per issue, joined by `; ` |
+| Reproduces the submission | no | **yes**, via `issue.message` |
+
+Use `describeValidationIssue` for anything a caller reads. It names the field and nothing else, because each of the alternatives is a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and `issue.input` is the submission itself. Only the path survives, bounded, because a `v.record` key or a refused undeclared key is caller-chosen text of caller-chosen length. The result therefore varies only with *which* field failed — a 50,000-character value and a 5-character one produce the same string, and extra fields cannot multiply the response.
+
+```typescript
+const messages = result.issues.map(describeValidationIssue); // ["email"]
+return fragmentResponse(renderValidationErrors(messages), 422);
+```
+
+`formatValidationIssues` exists so the `Invalid environment: …` message shape stays uniform across the env and config validators. **Never put its output in a response.**
 
 #### `ValidationResult<T>`
 
@@ -86,7 +168,7 @@ type ValidationResult<T> = Result<T, readonly string[]>;
 | Success | `ok: true`, `data: T` | Input parsed; `data` is the typed value. |
 | Failure | `ok: false`, `error: readonly string[]` | Validation failed; `error` holds the human-readable messages. |
 
-This type is defined in and re-exported from `@y-core/forge/result` (the single result primitive). Convert a valibot result into it by mapping `result.issues` to `issue.message` on failure (see the usage example above).
+This type is defined in and re-exported from `@y-core/forge/result` (the single result primitive). Convert a valibot result into it by mapping `result.issues` through `describeValidationIssue` on failure (see the usage example above) — not through `issue.message`, which reproduces the submitted value.
 
 ---
 

@@ -1,4 +1,4 @@
-import { ownerDocument } from "../client/dom";
+import { elementById } from "../client/dom";
 import { openPopoverAt } from "../client/popover-anchor";
 import { registerScope } from "../client/resume";
 import { computed, effect } from "../client/signal";
@@ -11,7 +11,7 @@ import { computed, effect } from "../client/signal";
 registerScope("show-context-menu", {
   eager: true,
   setup: ({ root, state }) => {
-    const popup = ownerDocument(root).getElementById(String(state.target?.value ?? ""));
+    const popup = elementById(root, String(state.target?.value ?? ""));
     if (!popup) return;
     const onContextMenu = (event: Event) => {
       event.preventDefault();

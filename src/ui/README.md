@@ -613,6 +613,7 @@ convenience for a consumer; forge's own components import each module directly
 | `stateAttrs(state)` | function | Builds the attributes for an SSR element: `<div {...stateAttrs({ open, side, align })}>`. A falsy presence state emits nothing at all. |
 | `applyStateAttrs(el, state)` | function | The browser half. Only the keys present in `state` are touched, and within a touched key reconciliation is total — `open: false` clears `data-open` **and** writes `data-closed` in one call. |
 | `SCOPE_EVENTS` | `const` tuple | `["click", "input", "change", "submit"]` — the events a resumable scope delegates on. **There is no `keydown`, by decision:** a composite controller owns keyboard at its own widget root, because arrow keys are scoped to a widget, not to a page region. |
+| `scopeAttrs(props)` | function | Builds typed `data-on-<event>` delegation attributes for a scope — the emitter half of `SCOPE_EVENTS`, one attribute per entry. |
 | `MENU_SCOPE`, `MENU_ITEM_SELECTOR` | `const` | The Menu popup's scope name, and its items **by ARIA role** rather than by a forge marker — so a row built in the browser is navigable the moment it is correctly roled. |
 | `TOOLBAR_SCOPE`, `TOOLBAR_ITEM_ATTR`, `TOOLBAR_ITEM_SELECTOR` | `const` | The Toolbar root's scope name and its roving-focus stop marker. An explicit marker rather than a `data-slot^='toolbar-'` prefix match, because `Toolbar.Group` and `Toolbar.Separator` are toolbar slots that must **not** be focus stops. |
 | `TABS_SCOPE`, `TAB_SELECTOR`, `TABLIST_SELECTOR` | `const` | Tabs' scope name and its two role selectors. |
@@ -632,7 +633,7 @@ beside `aria-pressed` is that CSS should not have to read ARIA.
 
 ### Types
 
-`StateAttrName`, `StateAttrsProps`, `Orientation`, `Side`, `Align`, `TransitionState`, `ScopeEvent`.
+`StateAttrName`, `StateAttrsProps`, `Orientation`, `Side`, `Align`, `TransitionState`, `ScopeEvent`, `ScopeAttrsProps`.
 
 ---
 
@@ -808,7 +809,8 @@ DOM effects once), and `on` (action handlers keyed by `data-on-<event>` value). 
 
 #### Field binding
 
-Pair the SSR `fieldAttr` / `scopeAttrs` helpers (from `@y-core/forge/ui/server`) with `bindField` to
+Pair the SSR `fieldAttr` (from `@y-core/forge/ui/server`) and `scopeAttrs` (from
+`@y-core/forge/ui/contracts`) helpers with `bindField` to
 two-way-bind controls to a `SignalRecord` with no per-field wiring. forge owns the generic glue; the app
 layers its own effects (persist, render) on the same signals.
 
@@ -974,7 +976,8 @@ import throws at runtime.
 
 - Flash messages — cookie-backed, one-shot, rendered as toasts (`createFlash`, `Flash`,
   `FlashContainer`, `FlashOob`).
-- The server half of the resumability island pattern (`Resumable`, `scopeAttrs`, `fieldAttr`).
+- The server half of the resumability island pattern (`Resumable`, `fieldAttr`; the `scopeAttrs`
+  emitter lives in `@y-core/forge/ui/contracts` beside the `SCOPE_EVENTS` it writes).
 
 ### Usage — flash messages
 
@@ -1021,7 +1024,6 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 | `FlashContainer` | component | A `Toast.Container` wrapping `Flash` — use on full page render. |
 | `FlashOob` | component | Wraps each toast in an HTMX OOB-swap div targeting `#flash-container`. |
 | `Resumable` | component | Wraps children in a `data-scope` + serialized `data-state` island. |
-| `scopeAttrs(props)` | helper | Builds typed `data-on-<event>` delegation attributes for a scope. |
 | `fieldAttr(name)` | helper | Stamps `data-field` so the client `bindField` action knows which signal to write. |
 
 `createFlash(options)` takes `FlashCookieOptions` (`secrets`, optional `name` / `path` / `maxAge` /
@@ -1034,7 +1036,8 @@ clears the cookie as it reads — messages are one-shot.
 must match the client-side `registerScope`; `state` is the serializable object rehydrated into signals:
 
 ```tsx
-import { Resumable, scopeAttrs, fieldAttr } from "@y-core/forge/ui/server";
+import { scopeAttrs } from "@y-core/forge/ui/contracts";
+import { Resumable, fieldAttr } from "@y-core/forge/ui/server";
 
 <Resumable name="settings" state={{ gridVisible: true }}>
   <Switch {...scopeAttrs({ onChange: "bindField" })} {...fieldAttr("gridVisible")} checked={true} />
@@ -1047,7 +1050,7 @@ hydration — the scope resumes on the first interaction with any descendant car
 
 ### Types
 
-`FlashMessage`, `FlashType`, `FlashCookieOptions`, `Flasher`, `ResumableProps`, `ScopeAttrsProps`.
+`FlashMessage`, `FlashType`, `FlashCookieOptions`, `Flasher`, `ResumableProps`.
 
 ---
 

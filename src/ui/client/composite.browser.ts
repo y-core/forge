@@ -14,6 +14,8 @@ declare global {
   interface Window {
     forgeComposite: typeof import("./composite");
     disposeComposite?: () => void;
+    /** Elements `getComputedStyle` was asked about, recorded by the direction-read instrumentation. */
+    styleReads: string[];
   }
 }
 
@@ -151,6 +153,129 @@ test.describe("RTL", () => {
     await page.focus("#b0");
     await page.keyboard.press("ArrowLeft");
     // The composite's own subtree is RTL even though the page around it is LTR.
+    expect(await focusedId(page)).toBe("b1");
+  });
+
+  test("mirrors under orientation:both too, where the vertical arrows keep their meaning", async ({ page }) => {
+    // `both` is the other side of the `orientation !== "vertical"` half of the direction read: it must
+    // mirror the horizontal pair while leaving Up/Down alone, and a narrowing written as
+    // `orientation === "horizontal"` would silently stop mirroring here.
+    await mount(page, toolbar({ count: 3, dir: "rtl" }), EXPOSE);
+    await install(page, { orientation: "both", loop: false });
+
+    await page.focus("#b0");
+    await page.keyboard.press("ArrowLeft");
+    expect(await focusedId(page)).toBe("b1");
+    await page.keyboard.press("ArrowDown");
+    // Down is *not* mirrored — there is no such thing as a right-to-left vertical axis here.
+    expect(await focusedId(page)).toBe("b2");
+    await page.keyboard.press("ArrowRight");
+    expect(await focusedId(page)).toBe("b1");
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedId(page)).toBe("b0");
+  });
+
+  test("a vertical composite is unmirrored, and its Up/Down still navigate under dir=rtl", async ({ page }) => {
+    await mount(page, toolbar({ count: 3, dir: "rtl" }), EXPOSE);
+    await install(page, { orientation: "vertical" });
+
+    await page.focus("#b0");
+    await page.keyboard.press("ArrowDown");
+    expect(await focusedId(page)).toBe("b1");
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedId(page)).toBe("b0");
+    // Neither horizontal arrow is this orientation's, in either direction — so RTL cannot make one
+    // of them navigate by mirroring the pair it does not own.
+    await page.keyboard.press("ArrowLeft");
+    expect(await focusedId(page)).toBe("b0");
+    await page.keyboard.press("ArrowRight");
+    expect(await focusedId(page)).toBe("b0");
+  });
+
+  test("Home, End and typeahead are unaffected by direction", async ({ page }) => {
+    // These resolve to the same answer either way, which is *why* they sit in front of the direction
+    // read. Asserting them under RTL is an invariance claim: a mirroring that leaked past the
+    // horizontal pair would make Home jump to the visually-leftmost item instead of the first.
+    await mount(page, toolbar({ labels: ["Apple", "Banana", "Cherry", "Date"], dir: "rtl" }), EXPOSE);
+    await install(page, { orientation: "both", typeahead: true });
+
+    await page.focus("#b1");
+    await page.keyboard.press("End");
+    expect(await focusedId(page)).toBe("b3");
+    await page.keyboard.press("Home");
+    expect(await focusedId(page)).toBe("b0");
+    await page.keyboard.press("c");
+    expect(await focusedId(page)).toBe("b2");
+  });
+});
+
+/**
+ * The direction read itself, rather than the navigation it decides.
+ *
+ * The controller narrows `isRtl(root)` to a horizontal arrow in a non-vertical composite so
+ * `getComputedStyle`'s forced style recalculation stays off every other key. That narrowing has **no
+ * navigational consequence at all** — every key it excludes resolves to the same item either way — so
+ * no focus assertion anywhere in this file can distinguish it from its own absence. Counting the
+ * platform's own `getComputedStyle` invocations is the only read that can, and per TESTING.md §3d
+ * that invocation *is* the mechanism.
+ */
+test.describe("the direction read is narrowed to the keys that can consume it", () => {
+  /**
+   * Wrap `getComputedStyle` and record what it was asked about.
+   *
+   * **After `mount` and after `install`, and both halves matter.** `setContent` replaces the document
+   * and discards every window mutation made before it, so instrumenting earlier reads as correct and
+   * records nothing; and `isRtl` resolves `ownerWindow(el).getComputedStyle` per call rather than
+   * caching it at mount, which is what lets a wrapper installed after the controller still be seen.
+   */
+  async function instrumentStyleReads(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      window.styleReads = [];
+      const real = window.getComputedStyle.bind(window);
+      window.getComputedStyle = ((el: Element, pseudo?: string | null) => {
+        window.styleReads.push((el as HTMLElement).id || el.tagName);
+        return real(el, pseudo);
+      }) as typeof window.getComputedStyle;
+    });
+  }
+
+  /** The elements `getComputedStyle` was asked about while handling exactly one key press. */
+  async function readsWhilePressing(page: Page, key: string): Promise<string[]> {
+    await page.evaluate(() => {
+      window.styleReads = [];
+    });
+    await page.keyboard.press(key);
+    return page.evaluate(() => window.styleReads);
+  }
+
+  test("a horizontal arrow reads it once; Up, Down, Home, End and typeahead never do", async ({ page }) => {
+    await mount(page, toolbar({ labels: ["Apple", "Banana", "Cherry"], dir: "rtl" }), EXPOSE);
+    await install(page, { orientation: "both", typeahead: true });
+    await instrumentStyleReads(page);
+
+    await page.focus("#b0");
+    const reads: Record<string, string[]> = {};
+    for (const key of ["ArrowDown", "ArrowUp", "Home", "End", "c", "ArrowLeft", "ArrowRight"]) {
+      reads[key] = await readsWhilePressing(page, key);
+    }
+
+    // Both halves in one assertion, which is what makes either half worth reading. "Home never reads
+    // the style" is worth nothing without "ArrowLeft does" — a direction read deleted outright also
+    // never runs, and the empty arrays alone would certify that as correct.
+    expect(reads).toEqual({ ArrowDown: [], ArrowUp: [], Home: [], End: [], c: [], ArrowLeft: ["root"], ArrowRight: ["root"] });
+  });
+
+  test("a vertical composite never reads it, not even for a horizontal arrow", async ({ page }) => {
+    await mount(page, toolbar({ count: 3, dir: "rtl" }), EXPOSE);
+    await install(page, { orientation: "vertical" });
+    await instrumentStyleReads(page);
+
+    await page.focus("#b0");
+    const reads = { ArrowLeft: await readsWhilePressing(page, "ArrowLeft"), ArrowDown: await readsWhilePressing(page, "ArrowDown") };
+
+    // The `orientation !== "vertical"` clause, which the case above cannot reach. Paired with the
+    // move Down still makes, so "no read" is distinguishable from "no controller".
+    expect(reads).toEqual({ ArrowLeft: [], ArrowDown: [] });
     expect(await focusedId(page)).toBe("b1");
   });
 });

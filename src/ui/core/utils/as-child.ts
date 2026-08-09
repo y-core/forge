@@ -45,6 +45,28 @@ function definedEntries(candidates: Record<string, unknown>): Record<string, unk
 }
 
 /**
+ * Compose a compound's own `data-slot` token with one it inherited through its props.
+ *
+ * Every compound renders its literal `data-slot` *before* its `{...rest}` spread, so a token handed
+ * down by an outer compound — which arrives as an ordinary prop — would otherwise replace the inner
+ * one's and silently unmake the element it was composed onto. Both are kept, own first, because the
+ * element genuinely is both compounds at once.
+ *
+ * `inherited` is `unknown` because it comes from a caller-supplied prop bag: anything that is not a
+ * non-empty string contributes no token rather than stringifying into the attribute. `own` is the
+ * compound's own literal and is expected to be non-empty.
+ *
+ * @example
+ * ```ts
+ * slotToken("menu-trigger", "tooltip-trigger"); // "menu-trigger tooltip-trigger"
+ * slotToken("menu-trigger", undefined);         // "menu-trigger"
+ * ```
+ */
+export function slotToken(own: string, inherited: unknown): string {
+  return typeof inherited === "string" && inherited ? `${own} ${inherited}` : own;
+}
+
+/**
  * Merge a compound's own attributes onto a caller-supplied element child.
  *
  * **`data-slot` is a token list, not a single value.** Composing two compounds produces one element
@@ -68,6 +90,6 @@ export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXEle
     ...(isButton ? definedEntries({ disabled: options.disabled, type: options.type }) : {}),
     ...(options.disabled && !isButton ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}),
     class: cn(options.class, childClass),
-    "data-slot": typeof childSlot === "string" && childSlot ? `${childSlot} ${options.slot}` : options.slot,
+    "data-slot": typeof childSlot === "string" && childSlot ? slotToken(childSlot, options.slot) : options.slot,
   });
 }

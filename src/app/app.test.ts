@@ -7,10 +7,10 @@ import type { SerializedError } from "../logging/serialize-error";
 import { createSecurityHeaders } from "../security/headers";
 import { rateLimit } from "../security/rate-limit";
 import { requestId } from "../security/request-id";
+import { mapHandler } from "../testing/route";
 import { v } from "../validation/mod";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
-import { mapHandler } from "./route-test-helper";
 
 describe("createApp", () => {
   it("error boundary returns 500 HTML for unhandled errors", async () => {

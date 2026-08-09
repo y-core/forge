@@ -4,8 +4,8 @@ import { createSession, createSessionId, Session } from "@remix-run/session";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 import { createMemorySessionStorage } from "@remix-run/session/memory-storage";
 import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
 import { setPendingHeader } from "../context/pending-headers";
+import { mapHandler } from "../testing/route";
 import { sessionCtx, sessionMiddleware } from "./session";
 
 const sessionCookie = createCookie("__session", { path: "/" });

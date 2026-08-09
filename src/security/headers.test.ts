@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
 import { setPendingHeader } from "../context/pending-headers";
+import { mapHandler } from "../testing/route";
 import { applySecurityHeaders, createSecurityHeaders, getNonce, mergeSecurityHeaders } from "./headers";
 import { NONCE } from "./nonce";
 import type { SecurityHeadersOptions } from "./types";

@@ -2,10 +2,10 @@ import { describe, expect, it } from "bun:test";
 import type { Middleware } from "@remix-run/fetch-router";
 import { getNonce } from "../security/headers";
 import { requestIdCtx } from "../security/request-id";
+import { mapHandler } from "../testing/route";
 import { v } from "../validation/mod";
 import { Forge } from "./forge-app";
 import { applyMiddlewareChain } from "./middleware-chain";
-import { mapHandler } from "./route-test-helper";
 
 function probe(label: string, order: string[]): Middleware {
   return async (_context, next) => {

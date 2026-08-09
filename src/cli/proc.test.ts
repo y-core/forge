@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import * as childProcess from "node:child_process";
 import { readdirSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,7 +12,7 @@ import { delimiter } from "node:path";
 const mockSpawnSync = mock((_cmd: string, _args?: string[], _opts?: unknown): { status: number | null; error?: Error } => ({ status: 0 }));
 mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
 
-const { run, capture, hasTool, requireTools, insertPath } = await import("./proc");
+const { run, capture, hasTool, probeOk, requireTools, insertPath } = await import("./proc");
 
 describe("run()", () => {
   it("returns 0 and spawns with inherited stdio on success", () => {
@@ -132,6 +132,55 @@ describe("capture()", () => {
   });
 });
 
+describe("probeOk()", () => {
+  type SpawnCallOpts = { stdio?: string };
+  afterEach(() => {
+    mockSpawnSync.mockReturnValue({ status: 0 });
+  });
+
+  it("returns true when the probe exits 0", () => {
+    mockSpawnSync.mockReturnValue({ status: 0 });
+    expect(probeOk("bun", ["run", "scripts/probe-browser.ts"])).toBe(true);
+  });
+
+  it("returns false when the probe exits non-zero", () => {
+    mockSpawnSync.mockReturnValue({ status: 1 });
+    expect(probeOk("bun", ["run", "scripts/probe-browser.ts"])).toBe(false);
+  });
+
+  it("returns false when the probe never started at all (spawn error, null status)", () => {
+    // A missing binary yields `status: null` plus an `error`, not a non-zero exit — a different
+    // code path from a failing probe, and the one the gate's fail-closed posture rests on.
+    mockSpawnSync.mockReturnValue({ status: null, error: new Error("spawnSync forge-no-such-binary ENOENT") });
+    expect(probeOk("forge-no-such-binary", ["--version"])).toBe(false);
+  });
+
+  it("spawns exactly the command and arguments it was given, with all output discarded", () => {
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValue({ status: 0 });
+
+    probeOk("bun", ["run", "scripts/probe-browser.ts"]);
+
+    expect(mockSpawnSync.mock.calls).toHaveLength(1);
+    expect(mockSpawnSync.mock.calls[0]![0]).toBe("bun");
+    expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["run", "scripts/probe-browser.ts"]);
+    // A probe that inherited stdio would print the prerequisite's own output into the gate's
+    // step report, which reads as the step having run.
+    expect((mockSpawnSync.mock.calls[0]![2] as SpawnCallOpts).stdio).toBe("ignore");
+  });
+
+  it("copies the caller's args rather than handing the declared tuple to the spawner", () => {
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValue({ status: 0 });
+    const declared = ["run", "scripts/probe-browser.ts"];
+
+    probeOk("bun", declared);
+
+    expect(mockSpawnSync.mock.calls[0]![1]).toEqual(declared);
+    expect(mockSpawnSync.mock.calls[0]![1]).not.toBe(declared);
+  });
+});
+
 describe("hasTool()", () => {
   it("returns true when --version exits 0", () => {
     mockSpawnSync.mockReturnValue({ status: 0 });
@@ -142,6 +191,24 @@ describe("hasTool()", () => {
     mockSpawnSync.mockReturnValue({ status: 1 });
     expect(hasTool("nope")).toBe(false);
     mockSpawnSync.mockReturnValue({ status: 0 });
+  });
+
+  it("returns false when the tool never started at all", () => {
+    mockSpawnSync.mockReturnValue({ status: null, error: new Error("spawnSync nope ENOENT") });
+    expect(hasTool("nope")).toBe(false);
+    mockSpawnSync.mockReturnValue({ status: 0 });
+  });
+
+  it("probes with exactly `--version` and no other argument", () => {
+    // This is the shape `StepRequirement.probe` documents as its default, so a change here
+    // silently changes what an un-probed gate requirement resolves to.
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValue({ status: 0 });
+
+    hasTool("tsgo");
+
+    expect(mockSpawnSync.mock.calls[0]![0]).toBe("tsgo");
+    expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["--version"]);
   });
 });
 
@@ -207,5 +274,65 @@ describe("insertPath()", () => {
     process.env.PATH = "/usr/bin";
     insertPath("");
     expect(process.env.PATH).toBe("/usr/bin");
+  });
+});
+
+// `node:child_process` is replaced process-wide by this file and by three sibling test files, so
+// every assertion above answers for `probeOk`'s branching over a *stub's* return value — not for
+// what `spawnSync` really does when a binary is absent. The gate fails closed on exactly that
+// case, so it is proven here against real processes: a fresh `bun` child imports the real `./proc`
+// with no module registry mocked at all, and reports what it observed. `Bun.spawnSync` is the
+// spawner because it is the one the module mock cannot reach.
+declare const Bun: {
+  spawnSync(opts: { cmd: string[]; cwd: string }): { exitCode: number; stdout: { toString(): string }; stderr: { toString(): string } };
+};
+
+interface RealAnswers {
+  exitsZero: boolean;
+  exitsNonZero: boolean;
+  neverStarts: boolean;
+  hasToolPresent: boolean;
+  hasToolMissing: boolean;
+}
+
+describe("probeOk() and hasTool() — against real processes", () => {
+  const MISSING = "forge-no-such-binary-9f3a";
+  const source = [
+    `import { hasTool, probeOk } from ${JSON.stringify(new URL("./proc.ts", import.meta.url).pathname)};`,
+    "console.log(JSON.stringify({",
+    '  exitsZero: probeOk("node", ["--version"]),',
+    '  exitsNonZero: probeOk("node", ["--no-such-flag-9f3a"]),',
+    `  neverStarts: probeOk(${JSON.stringify(MISSING)}, ["--version"]),`,
+    '  hasToolPresent: hasTool("node"),',
+    `  hasToolMissing: hasTool(${JSON.stringify(MISSING)}),`,
+    "}));",
+  ].join("\n");
+
+  let real: RealAnswers | undefined;
+
+  beforeAll(() => {
+    const child = Bun.spawnSync({ cmd: ["bun", "-e", source], cwd: new URL("../../", import.meta.url).pathname });
+    if (child.exitCode !== 0) throw new Error(`harness failed (exit ${child.exitCode}): ${child.stderr.toString()}`);
+    real = JSON.parse(child.stdout.toString()) as RealAnswers;
+  });
+
+  it("returns true for a command that really exits zero", () => {
+    expect(real?.exitsZero).toBe(true);
+  });
+
+  it("returns false for a command that really exits non-zero", () => {
+    expect(real?.exitsNonZero).toBe(false);
+  });
+
+  it("returns false, without throwing, for a command that does not exist", () => {
+    expect(real?.neverStarts).toBe(false);
+  });
+
+  it("keeps hasTool answering true for a tool that is present", () => {
+    expect(real?.hasToolPresent).toBe(true);
+  });
+
+  it("keeps hasTool answering false for a tool that is absent", () => {
+    expect(real?.hasToolMissing).toBe(false);
   });
 });

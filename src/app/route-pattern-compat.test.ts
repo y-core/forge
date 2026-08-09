@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { mapHandler } from "../testing/route";
 import { createApp } from "./app";
-import { mapHandler } from "./route-test-helper";
 
 /**
  * Regression guard for the `@remix-run/route-pattern` 0.23.0 alignment.

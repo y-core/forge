@@ -17,14 +17,30 @@ declare const process: {
   env: Record<string, string | undefined>;
 };
 
+interface PathApi {
+  readonly sep: string;
+  readonly delimiter: string;
+  resolve(...paths: string[]): string;
+  dirname(path: string): string;
+  join(...paths: string[]): string;
+  basename(path: string, ext?: string): string;
+  extname(path: string): string;
+  relative(from: string, to: string): string;
+  normalize(path: string): string;
+}
+
 declare module "node:path" {
   export const delimiter: string;
+  export const sep: string;
   export function resolve(...paths: string[]): string;
   export function dirname(path: string): string;
   export function join(...paths: string[]): string;
   export function basename(path: string, ext?: string): string;
   export function extname(path: string): string;
   export function relative(from: string, to: string): string;
+  /** POSIX-semantics variants, used where a path is a repo-relative identifier rather than a
+   *  filesystem location and must resolve the same way on every host. */
+  export const posix: PathApi;
 }
 
 declare module "node:url" {
@@ -37,7 +53,12 @@ declare module "node:fs" {
   export function readFileSync(path: string, encoding: "utf-8"): string;
   export function writeFileSync(path: string, data: string | Uint8Array): void;
   export function writeFileSync(path: string, data: string, encoding: "utf-8"): void;
-  export function existsSync(path: string): boolean;
+  export function existsSync(path: string | URL): boolean;
+  export interface Stats {
+    isDirectory(): boolean;
+    isFile(): boolean;
+  }
+  export function statSync(path: string): Stats;
   export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
   export function mkdtempSync(prefix: string): string;
   export function copyFileSync(src: string, dest: string): void;
@@ -72,10 +93,14 @@ declare module "node:child_process" {
     // fd for both stdout and stderr to interleave them the way `cmd > log 2>&1` does.
     stdio?: string | (string | number)[];
     env?: Record<string, string | undefined>;
+    encoding?: string;
   }
   interface SpawnSyncReturns {
     status: number | null;
     error?: Error;
+    /** Present only when the child's output was captured and decoded — i.e. when `stdio` did not
+     *  redirect it away and an `encoding` was given. */
+    stdout?: string;
   }
   export function spawnSync(command: string, args?: string[], options?: SpawnSyncOptions): SpawnSyncReturns;
 }

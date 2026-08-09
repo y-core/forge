@@ -30,13 +30,13 @@ description: "Barrel export rules, the authoritative subpath catalog, leaf-versu
 - §3a Public Export Paths: the catalog table
 - §3b Internal Namespaces: sealed-internal `crypto`
 - §4 Namespace Classification: the leaf/integration split
-- §4a Leaf Namespace Rules: zero cross-namespace forge imports
-- §4b Integration Namespace Rules: declared composition edges
-- §4c Foundational Primitive Namespaces: `result` and `crypto` sit below the split
+- §4a Leaf Namespace Rules: no cross-namespace forge imports beyond the §4c primitives
+- §4b Integration Namespace Rules: where edges are declared, and what the graph gate proves
+- §4c Foundational Primitive Namespaces: `result`, `crypto`, `context` and `validation` sit below the split
 - §5 Growth Rules: where a new concern belongs
 - §5a security — Transport-Layer Hardening Only: what goes to a future `auth`
 - §5b ui/core — SSR Components Only: and the deliberate `ui/controls` shadowing
-- §5c app — Bootstrap and Pipeline Builders: the third-builder trigger
+- §5c app — Bootstrap and Pipeline Builders: the third-builder trigger and what counts toward it
 - §5d http — All HTTP Output Concerns: the canonical output home
 - §5e Exported Factory and Type Naming Convention: `create*`, `resolve*`, and type suffixes
 - §6 When to Add a New Namespace: criteria and checklist
@@ -104,10 +104,11 @@ the published surface, not a convenience.
 ### 2c. The validation and crypto Exemptions
 
 - **`validation/mod.ts`** is the valibot facade — all of forge uses `v` for schemas.
-- **`crypto/mod.ts`** is an `@internal` utility module needed by `form`, `security`, `session`,
-  and `storage/r2`.
+- **`crypto/mod.ts`** is an `@internal` utility module several namespaces need.
 
-Both are shared utilities with no circular risk.
+Both are §4c foundational primitives, which is the same fact this exemption exists for: §4c owns
+the consumer lists and the closure argument that makes them safe. Restating either here would
+give a reader two copies to reconcile and no way to tell which had drifted.
 
 ---
 
@@ -147,44 +148,44 @@ the shape and send a reader to a resolution error.
 |---|---|---|---|
 | `@y-core/forge/app` | `src/app/mod.ts` | Integration | `createApp`, `Forge`, `applyAssets`, `healthCheck`, `definePage`, `defineAction`, `applyMiddlewareChain`; re-exports `validateBindings`, `validateEnv`, `ConfigKey` from `context` |
 | `@y-core/forge/assets` | `src/assets/mod.ts` | Integration | `defineAssetsConfig`, `loadConfig`, `AssetsConfig` |
-| `@y-core/forge/assets/build` | `src/assets/build/mod.ts` | Leaf | `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets` |
+| `@y-core/forge/assets/build` | `src/assets/build/mod.ts` | Integration | `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets` |
 | `@y-core/forge/assets/manifest` | `src/assets/manifest/mod.ts` | Leaf | `createManifest`, `createSpriteRegistry` |
 | `@y-core/forge/cli` | `src/cli/mod.ts` | Leaf | `createCommand`, `addCommand`, `execute`, `CliError` |
 | `@y-core/forge/config` | `src/config/mod.ts` | Leaf | `Config`, `createConfig`, `env`, `resolveConfig` |
-| `@y-core/forge/context` | `src/context/mod.ts` | Leaf | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
-| `@y-core/forge/form` | `src/form/mod.ts` | Leaf | `readFields`, `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `isHoneypotFilled`, `verifyTurnstile` |
+| `@y-core/forge/context` | `src/context/mod.ts` | Leaf (foundational — §4c) | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
+| `@y-core/forge/form` | `src/form/mod.ts` | Leaf | `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `isHoneypotFilled`, `verifyTurnstile`, `formToObject` — `formToObject` reads a body into a plain object; applying a schema to it is `defineAction`'s |
 | `@y-core/forge/jsx` | `src/jsx/mod.ts` | Integration | `createElement`, `cloneElement`, `Fragment`, `isValidElement`, `renderToString`, `renderPage` — imports `http` |
 | `@y-core/forge/jsx/jsx-runtime` | `src/jsx/jsx-runtime.ts` | Integration | automatic-runtime transform target |
 | `@y-core/forge/jsx/jsx-dev-runtime` | `src/jsx/jsx-dev-runtime.ts` | Integration | automatic-runtime dev transform target |
 | `@y-core/forge/jsx/register` | `src/jsx/register.ts` | Integration (sideEffect) | global JSX runtime registration |
 | `@y-core/forge/html/htmx` | `src/html/htmx/mod.ts` | Leaf | `isHxRequest`, `readHxRequest`, `hxHeaders`, `hxAttrs`, `SWAP`, and the pattern helpers |
 | `@y-core/forge/http` | `src/http/mod.ts` | Leaf | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `htmlResponse`, `fragmentResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
-| `@y-core/forge/logging` | `src/logging/mod.ts` | Leaf | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withRedaction`, `requestLogger`, `requestLog` |
+| `@y-core/forge/logging` | `src/logging/mod.ts` | Integration | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withRedaction`, `requestLogger`, `requestLog` |
 | `@y-core/forge/logging/show` | `src/logging/show/mod.ts` | Integration | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
 | `@y-core/forge/pkg` | `src/pkg/mod.ts` | Integration | `createReleaseCommand`, `parseSemVer`, `bumpSemVer`, `formatSemVer` |
 | `@y-core/forge/result` | `src/result/mod.ts` | Leaf (foundational — §4c) | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
 | `@y-core/forge/router` | `src/router/mod.ts` | Leaf | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
 | `@y-core/forge/security` | `src/security/mod.ts` | Integration | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
 | `@y-core/forge/session` | `src/session/mod.ts` | Leaf | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
-| `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | Leaf | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment`, `uuidv7`, `uuidv7Bytes`, `uuidFromBytes`, `uuidToBytes` and the two `createUuidv7*` factories — the UUID set is implemented in `crypto` and surfaced here (§3b) |
-| `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | Leaf | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
+| `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | Integration | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment`, `uuidv7`, `uuidv7Bytes`, `uuidFromBytes`, `uuidToBytes` and the two `createUuidv7*` factories — the UUID set is implemented in `crypto` and surfaced here (§3b) |
+| `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | Integration | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
 | `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | Leaf | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend` |
 | `@y-core/forge/testing` | `src/testing/mod.ts` | Integration | test-only fixtures — see [`TESTING.md`](./TESTING.md) §7 |
-| `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | Leaf | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
+| `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | Integration | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
 | `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | Leaf | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
 | `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Asset (pattern) | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. `forge-show.css` is that plus the showcase's classes, opt-in. Underneath: `theme-base.css` (semantic tokens over an eleven-stop `--palette-*` ramp, plus the layered component rules), `forge-ui.css` (the utility CSS specific components require), and seven ready-made ramps — `theme-slate.css` is the structural model for an app's own |
-| `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | Leaf | the DOM contract as pure data — `STATE_ATTRS`, `stateAttrs`, `applyStateAttrs`, `SCOPE_EVENTS`, and the scope-name / selector constants each keyboard primitive shares between its SSR and client halves |
+| `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | Leaf | the DOM contract as pure data — `STATE_ATTRS`, `stateAttrs`, `applyStateAttrs`, `SCOPE_EVENTS`, `scopeAttrs`, and the scope-name / selector constants each keyboard primitive shares between its SSR and client halves |
 | `@y-core/forge/ui/controls` | `src/ui/controls/mod.ts` | Integration | bound control variants that shadow the `ui/core` names — see §5b |
 | `@y-core/forge/ui/core` | `src/ui/core/mod.ts` | Integration | the SSR component set plus `cn`, `cva` — see [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) |
 | `@y-core/forge/ui/core/client` | `src/ui/core/client.ts` | Integration (sideEffect) | ui/core browser controller registration |
 | `@y-core/forge/ui/chrome` | `src/ui/chrome/mod.ts` | Integration | `Navbar`, `Toolbar`, `ThemeToggle`, `FOUC_SCRIPT`, `THEME_ATTR` |
 | `@y-core/forge/ui/chrome/client` | `src/ui/chrome/client.ts` | Integration (sideEffect) | theme/nav chrome controller registration |
-| `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | Leaf | `mountNav`, `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `bindField`, `bindGroup`, `resume`, `registerScope` |
+| `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | Integration | `mountNav`, `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `bindField`, `bindGroup`, `resume`, `registerScope` |
 | `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | Leaf (sideEffect) | htmx bundle |
-| `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | Integration | `Flash`, `FlashContainer`, `FlashOob`, `Resumable`, `scopeAttrs`, `fieldAttr`, `commandAttrs` |
+| `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | Integration | `Flash`, `FlashContainer`, `FlashOob`, `Resumable`, `fieldAttr`, `commandAttrs` |
 | `@y-core/forge/ui/show` | `src/ui/show/mod.ts` | Integration | `ShowcaseContent`, `registerShowcase`, `showcaseRoutes` |
 | `@y-core/forge/ui/show/client` | `src/ui/show/client.ts` | Integration (sideEffect) | showcase browser controller registration |
-| `@y-core/forge/validation` | `src/validation/mod.ts` | Leaf | `v` (valibot facade), `ValidationResult` |
+| `@y-core/forge/validation` | `src/validation/mod.ts` | Leaf (foundational — §4c) | `v` (valibot facade), `ValidationResult` |
 | `@y-core/forge/validation/cli` | `src/validation/cli/mod.ts` | Integration | `createGenEnv`, `readWranglerConfig`, `emit` — imports `cli` |
 
 ### 3b. Internal Namespaces
@@ -220,51 +221,78 @@ discipline, unlike everywhere else in forge where the gate proves it.
 ### 4a. Leaf Namespace Rules
 
 A namespace is **leaf** when it imports only from its own `src/{name}/` directory, external npm
-packages, and Web APIs — **zero imports from other forge namespaces.**
+packages, Web APIs, and the foundational primitives of §4c — **zero other cross-namespace forge
+imports.**
 
-Leaf: `assets/build`, `assets/manifest`, `cli`, `config`, `context`, `form`, `html/htmx`,
-`http`, `logging`, `result`, `router`, `session`, `storage/db`, `storage/kv`, `storage/r2`,
-`ui/assets`, `ui/client`, `validation`.
+**Which namespaces are leaf is declared in `scripts/namespace-graph.ts` (`LEAF`), not here.**
+That file is authoritative for the graph, and this document enumerates none of it — the reasoning
+for that inversion is stated at the head of the file. What stays here is why a classification
+holds, which is the part prose is better at.
 
-`jsx` is **not** leaf — it imports `http` (§4b).
+**A directory is a namespace only when it owns an export subpath.** `src/assets/cli/` has none,
+so it is part of `assets` and its `cli` import is `assets`' edge. Classifying by directory instead
+of by subpath reports namespaces the package does not have, and edges nobody can import.
+
+**A type-only import still counts as an edge.** It is erased at emit and so cannot create a
+runtime cycle (§2), but it is a coupling that a rename breaks, so it is declared with its kind
+rather than left out. A namespace whose every edge is type-only is integration all the same.
 
 ### 4b. Integration Namespace Rules
 
-A namespace is **integration** when it explicitly composes across forge namespaces. Every edge
-below is declared; an undeclared cross-namespace import is a defect.
+A namespace is **integration** when it composes across forge namespaces. **Every edge is declared
+in `scripts/namespace-graph.ts` (`EDGES`) as source, target and kind**; an undeclared
+cross-namespace import is a defect, and so is a declared edge no source file makes. Imports of §4c
+primitives are not edges and are not declared.
 
-| Namespace | Composes |
-|---|---|
-| `app` | `form`, `http`, `logging`, `result`, `router`, `security`, `validation`; re-exports from `context` |
-| `assets` | `validation` (schema and type definitions) |
-| `jsx` | `http` — `escapeHtml`/`safeUrl`, `SafeHtml`/`isSafeHtml`/`rawHtml`, `htmlResponse` |
-| `security` | `logging` (rate-limit internals) |
-| `ui/core` | `form` (`CSRF_FIELD_DEFAULT`, `HONEYPOT_FIELD_DEFAULT`); renders via the `jsx` runtime |
-| `ui/controls` | `ui/core` (base components) + `ui/server` (`scopeAttrs` / `fieldAttr`) |
-| `ui/chrome`, `ui/show` | `ui/core` and `jsx`; `ui/show` also `app`, `context`, `http`, `html/htmx` |
-| `ui/server` | `html/htmx`, `app`, `context`, `session`, and the `jsx` runtime |
-| `logging/show` | `logging`, `http`, `ui/core` (the injected `ForgeIcon<"chevron-down">`), `html/htmx`, `validation` (the `?level=` query-param schema) |
-| `pkg` | `cli` |
-| `validation/cli` | `cli` |
-| `testing` | `app`, `jsx`, `storage/*`, `context`, `form` — the declared test-only edge |
+`scripts/validate-namespace-graph.ts` walks `src/**`, builds the observed graph and diffs it
+against that declaration, so an undeclared import, a stale declaration, and a leaf that quietly
+gained an edge each fail the gate rather than passing unnoticed. Three properties of the walk are
+load-bearing and not self-evident:
 
-### 4c. Foundational Primitive Namespaces — `result` and `crypto`
+- **Test files are excluded.** Counting `*.test.ts(x)` and `*.browser.ts(x)` would reclassify most
+  of the declared leaves as integration and invent edges into `testing` no consumer can reach. A
+  fixture import is not a layering claim.
+- **The §4c exemption is target-only.** An edge *into* a primitive is exempt; an edge *out of* one
+  is a reported violation. That is §4c's own closure property, enforced rather than trusted.
+- **An edge's kind is the AND across its import sites.** One value import anywhere makes the whole
+  edge a value edge, so declaring an edge type-only is a claim about every site, not the first.
 
-Two namespaces sit **below** the leaf/integration split: **any namespace may import them
+**A type-only edge is what lets two namespaces name each other.** Erased at emit, it cannot close a
+runtime cycle, so a mutually-naming pair is legal exactly while one direction stays `import type` —
+flipping it to a value import would close a real cycle. Kind is therefore a rule, not an
+annotation, which is why the gate checks it in both directions.
+
+### 4c. Foundational Primitive Namespaces — `result`, `crypto`, `context`, `validation`
+
+Four namespaces sit **below** the leaf/integration split: **any namespace may import them
 without that import counting as a layering violation.**
 
 | Namespace | Public? | Imported as | Consumers |
 |---|---|---|---|
 | `result` | public | concrete file `../result/result` | anyone |
 | `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, biome-exempt) | `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
+| `context` | public | concrete file `../context/{accessor,app-context}` | `app`, `form`, `logging`, `logging/show`, `security`, `session`, `storage/db`, `storage/kv`, `storage/r2`, `testing`, `ui/server`, `ui/show` |
+| `validation` | public | `validation/mod` (the `v` facade) | `app`, `assets`, `config`, `context`, `form`, `logging/show`, `security`, `storage/db`, `storage/kv`, `storage/r2` |
 
 `result` is the single result primitive ([`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1).
 Because explicit error handling is cross-cutting, `security` / `form` / `storage` importing
 `result` is **expected** — treat it like importing a Web API.
 
-Both are themselves free of forge-namespace imports, so neither can introduce a cycle.
-`result` stays leaf (§4a); its concrete-file import path keeps it clear of the §2 guard without
-an exemption, while `crypto` carries the biome exemption instead (§2c).
+**The test is arithmetic, not taste: how many namespaces reach for it independently.** Twelve
+reach for `context` and ten for `validation` — near-supersets of the six listed against `crypto`,
+which §4c already accepts on exactly this argument. A namespace that a dozen others need is a
+primitive; declaring twelve edges instead would describe the same graph while implying a choice
+each consumer made, and none of them did.
+
+**The set is closed, so no primitive can reach back into a consumer.** `context` imports
+`validation`, `validation` imports `result`, and `crypto` and `result` import nothing — every edge
+out of a primitive lands inside the set. That is what makes the carve-out safe, and it is the
+property to re-check before admitting a fifth member: a primitive that imported a leaf would put
+every consumer of the primitive behind that leaf.
+
+`result` and `context` stay leaf (§4a); their concrete-file import paths keep them clear of the §2
+guard without an exemption, while `crypto` carries the biome exemption instead (§2c).
+`validation` is leaf and is imported through its barrel, which §2c already exempts.
 
 ---
 
@@ -295,6 +323,11 @@ both.** The mechanism is in [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md).
 
 `app` owns bootstrap and the `definePage` / `defineAction` pipeline builders. **If a third
 pipeline-builder variant is needed, extract all builders into a new `handler` namespace.**
+
+**The trigger counts exported `define*` entry points, not modules.** The two builders share one
+internal submission-pipeline module inside `app`; factoring a sequence out of them is an
+implementation seam and keeps the count at two, so it does not fire the rule
+([`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §2d).
 
 ### 5d. http — All HTTP Output Concerns
 
@@ -344,5 +377,7 @@ Add one when **all** hold:
 - [ ] `mod.ts` written with named exports only
 - [ ] Added to `package.json` `exports`
 - [ ] `bun run check --only validate-exports` passes
-- [ ] Classified leaf or integration in §4
+- [ ] Classified leaf or integration in `scripts/namespace-graph.ts` — `LEAF` or an `EDGES` entry per
+      cross-namespace import (§4a, §4b); that file is authoritative, not this document
+- [ ] `bun run check --only validate-namespace-graph` passes
 - [ ] Registered in the `CLAUDE.md` Guide Index if it gains a governing document

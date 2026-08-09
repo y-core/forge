@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { render } from "../../jsx/render-test-helper";
+import { render } from "../../testing/render";
 import { FormField } from "./field-layout";
 import { createIcon } from "./icon";
 import { Select } from "./select";

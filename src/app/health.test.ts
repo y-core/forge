@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { AppContext } from "../context/types";
+import { mapHandler } from "../testing/route";
 import { Forge } from "./forge-app";
 import { healthCheck } from "./health";
-import { mapHandler } from "./route-test-helper";
 
 function makeApp(checks: Parameters<typeof healthCheck>[0]) {
   const app = new Forge();

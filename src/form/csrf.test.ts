@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
-import { mapHandler } from "../app/route-test-helper";
 import type { AppContext } from "../context/types";
+import { mapHandler } from "../testing/route";
 import { createCsrfToken, csrfMinterCtx, csrfProtection, csrfTokenCtx, importCsrfKey, importCsrfKeyRing, mintCsrf, verifyCsrfToken } from "./csrf";
 import { parseFormData } from "./parse-form-data";
 import type { CsrfKeyRing } from "./types";

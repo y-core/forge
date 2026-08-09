@@ -1,6 +1,6 @@
 /** Build native Invoker Command attributes (`command` + `commandfor`) that route a custom
  * `--action` into the resumable scope handler table via the `CommandEvent` bridge in
- * `ui/client/resume.ts`. A sibling to `scopeAttrs`: both dispatch into the same `on` map, but
+ * `ui/client/resume.ts`. A counterpart to `ui/contracts/scope-attrs.ts`: both dispatch into the same `on` map, but
  * `commandAttrs` covers *activation* (a `<button>` press) while `scopeAttrs` covers stateful
  * `input`/`change`/`submit` wiring. Generic over the same action union `A` as `scopeAttrs`, so a
  * typo is a compile error and client + server share one action namespace.

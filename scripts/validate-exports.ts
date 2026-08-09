@@ -88,14 +88,19 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   if (!specifier.includes("*")) continue;
   const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
   if (!rawPath) continue;
-  const [keyPrefix, ...keyRest] = specifier.split("*");
-  const [targetPrefix, ...targetRest] = rawPath.split("*");
-  if (keyRest.length !== 1 || targetRest.length !== 1) {
+  // `split` always yields a first element, so the defaults can never apply.
+  const [keyPrefix = "", ...keyRest] = specifier.split("*");
+  const [targetPrefix = "", ...targetRest] = rawPath.split("*");
+  const keySuffix = keyRest[0];
+  const targetSuffix = targetRest[0];
+  // The `undefined` disjuncts are what a length of exactly 1 already rules out, and come last so
+  // the message a real mismatch produces is unchanged.
+  if (keyRest.length !== 1 || targetRest.length !== 1 || keySuffix === undefined || targetSuffix === undefined) {
     console.error(`FAIL ${specifier}: a subpath pattern may contain exactly one \`*\` in the key and one in the target`);
     failed = true;
     continue;
   }
-  patternEntries.push({ specifier, keyPrefix, keySuffix: keyRest[0], targetPrefix, targetSuffix: targetRest[0] });
+  patternEntries.push({ specifier, keyPrefix, keySuffix, targetPrefix, targetSuffix });
 }
 
 /** Repo-relative paths (`src/…`, no `./`) of every file a pattern's target matches on disk. */

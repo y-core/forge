@@ -3,6 +3,7 @@
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { POPOVER_SCOPE } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface PopoverProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
@@ -26,16 +27,16 @@ interface PopoverContentProps extends Omit<JSX.IntrinsicElements["div"], "childr
   children?: JSXNode;
 }
 
-const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, ...props }) => (
-  <div data-slot='popover' class={cn("relative inline-block", asClass(cls))} {...props}>
+const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, "data-slot": inherited, ...props }) => (
+  <div data-slot={slotToken("popover", inherited)} class={cn("relative inline-block", asClass(cls))} {...props}>
     {children}
   </div>
 );
 
-const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, ...props }) => (
+const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, "data-slot": inherited, ...props }) => (
   <button
     type='button'
-    data-slot='popover-trigger'
+    data-slot={slotToken("popover-trigger", inherited)}
     command='toggle-popover'
     commandfor={id}
     class={cn("list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls))}
@@ -55,10 +56,18 @@ const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, ...
  * from the element's own `:popover-open`. A server-stamped `data-closed` would be an assertion this
  * component is in no position to keep true.
  */
-const PopoverContent: FC<PopoverContentProps> = ({ id, align = "start", side = "bottom", class: cls, children, ...rest }) => (
+const PopoverContent: FC<PopoverContentProps> = ({
+  id,
+  align = "start",
+  side = "bottom",
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <div
     id={id}
-    data-slot='popover-content'
+    data-slot={slotToken("popover-content", inherited)}
     data-scope={POPOVER_SCOPE}
     popover='auto'
     {...stateAttrs({ side, align })}

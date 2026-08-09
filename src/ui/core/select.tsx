@@ -4,6 +4,7 @@ import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
 import type { FieldDescriptor } from "./field";
 import { fieldControlProps } from "./field";
 import type { ForgeIcon } from "./icon";
+import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type SelectProps = JSX.IntrinsicElements["select"] & { field?: FieldDescriptor; icon: ForgeIcon<"chevron-down"> };
@@ -14,12 +15,12 @@ const SELECT_BASE = "w-full appearance-none rounded-lg border border-input bg-ba
 const SELECT_FOCUS = "focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20";
 const SELECT_DISABLED = "disabled:cursor-not-allowed disabled:pointer-events-none";
 
-const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({ class: cls, field, icon: Icon, children, ...props }) => {
+const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({ class: cls, field, icon: Icon, children, "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 
   return (
     <div data-slot='select-wrapper' class='group/select relative w-full has-[select:disabled]:opacity-50'>
-      <select data-slot='select' class={cn(SELECT_BASE, SELECT_FOCUS, SELECT_DISABLED, asClass(cls))} {...resolved}>
+      <select data-slot={slotToken("select", inherited)} class={cn(SELECT_BASE, SELECT_FOCUS, SELECT_DISABLED, asClass(cls))} {...resolved}>
         {children}
       </select>
       <span
@@ -32,16 +33,16 @@ const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({ class: cls, field, ico
   );
 };
 
-const SelectOption: FC<PropsWithChildren<SelectOptionProps>> = ({ children, ...props }) => (
-  <option data-slot='select-option' {...props}>
+const SelectOption: FC<PropsWithChildren<SelectOptionProps>> = ({ children, "data-slot": inherited, ...props }) => (
+  <option data-slot={slotToken("select-option", inherited)} {...props}>
     {children}
   </option>
 );
 
-const SelectOptGroup: FC<PropsWithChildren<SelectOptGroupProps>> = ({ class: cls, children, ...props }) => {
+const SelectOptGroup: FC<PropsWithChildren<SelectOptGroupProps>> = ({ class: cls, children, "data-slot": inherited, ...props }) => {
   const clsValue = asClass(cls);
   return (
-    <optgroup data-slot='select-optgroup' {...(clsValue !== undefined ? { class: clsValue } : {})} {...props}>
+    <optgroup data-slot={slotToken("select-optgroup", inherited)} {...(clsValue !== undefined ? { class: clsValue } : {})} {...props}>
       {children}
     </optgroup>
   );

@@ -376,6 +376,25 @@ describe("renderToString — URL attribute sanitization", () => {
     const node = el("image", { "xml:base": "https://cdn.example.com" });
     expect(String(await renderToString(node))).toBe('<image xml:base="https://cdn.example.com"></image>');
   });
+
+  it("leaves a javascript: hx-get verbatim — no hx-* attribute is URL-sanitized", async () => {
+    const node = el("div", { "hx-get": "javascript:alert(1)" });
+    expect(String(await renderToString(node))).toBe('<div hx-get="javascript:alert(1)"></div>');
+  });
+
+  // Tripwire: sanitizing hx-* would rewrite a rejected URL to "#", which htmx fetches as the
+  // current page rather than leaving dead as an href does. One value, two attributes, two fates.
+  it("sanitizes href but not hx-push-url when both carry the same value", async () => {
+    const node = el("a", { href: "javascript:alert(1)", "hx-push-url": "javascript:alert(1)", children: "x" });
+    expect(String(await renderToString(node))).toBe('<a href="#" hx-push-url="javascript:alert(1)">x</a>');
+  });
+
+  // hx-on:* is absent from the JSX attribute types, but the renderer has no on* filter and emits it
+  // like any other attribute. Pinned so the type omission is never mistaken for enforcement.
+  it("emits hx-on:click verbatim — the renderer has no on* filter", async () => {
+    const node = el("button", { "hx-on:click": "alert(1)", children: "go" });
+    expect(String(await renderToString(node))).toBe('<button hx-on:click="alert(1)">go</button>');
+  });
 });
 
 describe("renderPage", () => {

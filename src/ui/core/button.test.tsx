@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { render } from "../../jsx/render-test-helper";
+import { render } from "../../testing/render";
 import { Button } from "./button";
 
 const BASE =
@@ -104,6 +104,37 @@ describe("Button", () => {
 
   it("throws when asChild is given a non-element child", async () => {
     await expect(render(<Button asChild>just text</Button>)).rejects.toThrow("Button with asChild requires exactly one JSX element child");
+  });
+
+  // `data-slot` is a token list, so `Button` composes an inherited token with its own rather than
+  // letting `{...rest}` replace it. `chrome/Toolbar`'s flyout title action is the live caller: it
+  // passes `data-slot='toolbar-title-action'`, which used to erase `button`.
+  it("keeps its own data-slot token ahead of one handed down through props", async () => {
+    expect(await render(<Button data-slot='toolbar-title-action'>Go</Button>)).toBe(
+      '<button type="button" data-slot="button toolbar-title-action" ' +
+        `class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Go</button>`,
+    );
+  });
+
+  it("treats an empty inherited data-slot as none rather than emitting a trailing space", async () => {
+    expect(await render(<Button data-slot=''>Go</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Go</button>`,
+    );
+  });
+
+  it("carries an inherited data-slot onto the caller's element with asChild", async () => {
+    // The reverse of the composition bug: `cloneAsChild` writes `data-slot` last, so a token arriving
+    // through the prop bag used to be spread in and then overwritten by the compound's own literal.
+    expect(
+      await render(
+        <Button asChild data-slot='toolbar-title-action'>
+          <a href='/contact'>Contact</a>
+        </Button>,
+      ),
+    ).toBe(
+      `<a href="/contact" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm" ` +
+        'data-slot="button toolbar-title-action">Contact</a>',
+    );
   });
 
   it("forwards arbitrary data-* attributes with HTML-escaped values", async () => {
