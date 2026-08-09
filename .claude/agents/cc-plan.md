@@ -172,5 +172,8 @@ everything; an unstated ambiguity becomes `cc-dev` guessing.
 
 **Ledger writes are yours to make** — over MCP, never by editing files: the claim on the task the plan
 serves, the record of what the analysis uncovers, the move to `waiting` with the question stated
-concretely. Call `get_protocol` **and** `get_process` first and work from what they answer rather than
-from a remembered copy.
+concretely. Fetch `get_protocol` or `get_process` when one would settle the move in front of you —
+when a refusal cites a rule you do not hold, or before an operation you have not performed in this
+session — and work from what it answers rather than from a remembered copy. A refusal quotes the
+`rule` it applied and the `requires` it failed, and `check_transition` answers a hypothetical
+without touching the database, so the fetch can wait until there is something it would settle.

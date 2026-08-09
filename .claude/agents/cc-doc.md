@@ -111,9 +111,12 @@ Report back:
 5. **Deferrals** — anything you found and deliberately left, and why
 6. **Ledger changes** — the task id and its lane move, or "no ledger item"
 
-When the doc pass closes a task, close it yourself over MCP, never by editing files — calling
-`get_protocol` **and** `get_process` first and working from what they answer rather than a remembered
-copy. A docs-only change runs no gate — `cc-tester` runs after code changes only — so what was
+When the doc pass closes a task, close it yourself over MCP, never by editing files. Fetch
+`get_protocol` or `get_process` when you need one — when a refusal cites a rule you do not hold, or
+before an operation you have not performed in this session — and work from what it answers rather
+than a remembered copy. A refusal quotes the `rule` it applied and the `requires` it failed, and
+`check_transition` answers a hypothetical without touching the database, so the fetch can wait until
+there is something it would settle. A docs-only change runs no gate — `cc-tester` runs after code changes only — so what was
 written, and the source claims verified, are themselves the evidence the close rests on.
 
 ## Delegation

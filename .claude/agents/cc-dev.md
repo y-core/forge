@@ -113,8 +113,11 @@ Report back:
 6. **Ledger changes** — the task id and its lane move, or "no ledger item"
 
 **Update the ledger yourself** once the work the task describes is green. It is reached over MCP,
-never by editing files — call `get_protocol` **and** `get_process` first and work from what they
-answer rather than from a remembered copy.
+never by editing files. Fetch `get_protocol` or `get_process` when you need one — when a refusal
+cites a rule you do not hold, or before an operation you have not performed in this session — and
+work from what it answers rather than from a remembered copy. A refusal quotes the `rule` it applied
+and the `requires` it failed, and `check_transition` answers a hypothetical without touching the
+database, so the fetch can wait until there is something it would settle.
 
 Anything found and deliberately left alone (per **When to Stop**) is reported
 with its evidence and routed by the fold-vs-file test — but whatever the ledger ends up carrying,

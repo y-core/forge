@@ -17,7 +17,7 @@
 - ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
 - ALWAYS run local verification after changes — **delegate every gate run to `cc-tester`** (see _Verification Delegation_)
 - ALWAYS report a command's exit status with the one canonical suffix — never a variant (see _Shell Exit Checks_)
-- ALWAYS reach the ledger over MCP and work from what `get_protocol` and `get_process` return — never a remembered copy (see _Ledger Maintenance_)
+- ALWAYS reach the ledger over MCP, and never work from a remembered copy of the protocol — fetch `get_protocol` or `get_process` when one would settle the question in front of you (see _Ledger Maintenance_)
 - Use `rg` for content search and `find` for file search
 
 ---
@@ -90,8 +90,16 @@ goes through those tools — never through a text editor. `cc-tester` is the one
 gates and has **no ledger tools at all**, because a green gate is not by itself a decision that a
 task is done. A docs-only change runs no gate, so the doc edit is its own evidence.
 
-**Call `get_protocol` and `get_process` first, and work from what they return rather than from a
-remembered copy.** Nothing they return is restated here — the protocol is the one document where a
+**Call `get_protocol` or `get_process` when there is something it would settle — when a refusal
+cites a rule you do not hold, or before an operation you have not performed in this session — and
+work from what it returns rather than from a remembered copy.** Neither is fetched up front. They
+are the two largest documents the ledger serves, and a lifecycle of isolated contexts pays for them
+once per agent whether or not the work ever needs them. Deferring costs nothing because the recovery
+path is already load-bearing: a refusal quotes the `rule` it applied and the `requires` it failed,
+and `check_transition` answers a hypothetical without touching the database — so no agent is ever
+stuck for want of a document it did not prefetch.
+
+Nothing they return is restated here — the protocol is the one document where a
 second copy is indistinguishable from a rule change, because a stale paragraph and an amended rule
 read identically and the reader cannot tell which they are holding.
 

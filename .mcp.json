@@ -2,7 +2,7 @@
   "mcpServers": {
     "ledger": {
       "type": "http",
-      "url": "http://task-forge:8787/mcp"
+      "url": "http://task-forge:8787/mcp/forge"
     }
   }
 }

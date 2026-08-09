@@ -17,6 +17,10 @@
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
     "DISABLE_TELEMETRY": "1"
   },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
     "allow": [
       "Bash(awk *)",
@@ -75,15 +79,12 @@
     "defaultMode": "bypassPermissions",
     "additionalDirectories": [
       "/tmp",
-      "/root/.bun",
-      "/root/.cache"
+      "/home/dev/.cargo",
+      "/home/dev/.bun",
+      "/home/dev/.cache"
     ]
   },
-  "model": "opus",
-  "attribution": {
-    "commit": "",
-    "pr": ""
-  },
+  "model": "opusplan",
   "effortLevel": "medium",
   "enabledMcpjsonServers": [
     "ledger"
