@@ -77,8 +77,13 @@ describe("Toolbar.Button", () => {
     );
   });
 
+  // Exact markup, not `.not.toContain("aria-pressed")`: a `not.toContain` over this markup passes
+  // just as happily if `Toolbar.Button` renders nothing at all, so it never distinguished "the
+  // pressed pair was omitted" from "there was no button".
   it("omits the pressed pair entirely for a one-state item", async () => {
-    expect(await render(<Toolbar.Button>Bold</Toolbar.Button>)).not.toContain("aria-pressed");
+    expect(await render(<Toolbar.Button>Bold</Toolbar.Button>)).toBe(
+      `<button type="button" data-slot="toolbar-button" class="${ITEM_BASE} h-8 px-3 text-sm" data-toolbar-item="">Bold</button>`,
+    );
   });
 
   it("renders onto the caller's element with asChild, carrying the marks with it", async () => {

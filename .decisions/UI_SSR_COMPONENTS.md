@@ -24,68 +24,50 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 ## 0. Quick Reference
 
 - §1 ui/core Component Contract: the rules every SSR component obeys
-- §1a Universal DOM Attribute Pass-Through: no class-only components; why `style` is dropped
-- §1b FormField versus Field: the two field primitives and when each applies
-- §1c Button and the asChild Invariant: the ratified throw
-- §1d Icon Accessibility and createIcon Typing: decorative by default; name narrowing
-- §1e Switch and Slider — CSS-Only Controls: no client JS, and what stays consumer-side
+- §1a Dropped and Unsanitized Pass-Through Attributes: why `style` never arrives, and the one
+  attribute family left unsanitized
+- §1c Button and the asChild Invariant: the ratified throw, and the `data-slot` token list
+- §1e Switch and Slider — CSS-Only Controls: the `peer-*` trap, the sanitized readout, and the
+  declined formatter seam
 - §1f Turnstile — Server-Rendered Mount Point: deliberate omission of auto-render
-- §1g Composite Widgets: one tab stop, and the markers that make it one
+- §1g Composite Widgets: the markers that make many focusable items one tab stop
 - §1h Overlays and Disclosures: native popover and native `<details>`; how a popup's side resolves
   against the reader's direction
-- §1i Native-Input Primitives: groups, meter, number field, scroll area
+- §1i Native-Input Primitive Decisions: an axis that is not an orientation, and a scroll area that
+  hijacks nothing
+- §1j Derived Ids Must Be Id Tokens: why a whitespace-bearing `name` or `scope` derives no wiring,
+  and why suppressing beat sanitizing and throwing
 - §2 The Signal-Binding Seam: how SSR markup names a client-side binding
-- §2a fieldAttr, bindField, and bindGroup: what forge owns and what the app supplies
-- §2b bind versus field — Orthogonal Props: two contracts that may coexist
-- §2c ui/controls — Bound Variants: the factory, the table, and the bespoke case
+- §2a The Binding Ownership Boundary: what forge owns, what the app supplies, and why `bindGroup`
+  exists
+- §2c ui/controls — Bound Variants: the static barrel, the bespoke case, and the deliberate
+  name collision
 - §2d Scoped Components Require the Client Scope Import: the `resume()` precondition
 - §3 Class Utilities: ratified public composition helpers
-- §3a cn — Conditional Class Names: the variadic filter-and-join
-- §3b asClass — Narrow a JSX class Prop: safe caller overrides
-- §3c cva — Class Variance Authority: variant resolution
-- §4 State Attribute Contract: the styling hooks, declared once for both tiers
+- §3d Conflict Resolution and the Fail-Open Boundary: what the resolver decides, where it stops,
+  and the ratified inversion of the fail-closed posture
+- §4 State Attribute Contract: one declaration two tiers must agree on
 - §4a Presence, Not Value: why `data-open` and never `data-open="true"`
 - §4b ARIA States Are Not Styling Hooks: why both are emitted
+- §4c The Caller Is Authoritative: class precedence and state precedence as one rule
 
 ---
 
 ## 1. ui/core Component Contract
 
-### 1a. Universal DOM Attribute Pass-Through
-
-**Every `ui/core` component extends the intrinsic props for its root tag
-(`JSX.IntrinsicElements[tag]`) and spreads unrecognized props onto that element.**
-
-**There are no class-only components.** Any standard HTML attribute, `data-*`, `aria-*`, or
-`hx-*` attribute passes straight through.
+### 1a. Dropped and Unsanitized Pass-Through Attributes
 
 **`style` is dropped deliberately** — forge's CSP carries no `style-src 'unsafe-inline'`, so an
 inline style attribute could never take effect. Use `class` and the theme tokens.
 
-The renderer HTML-escapes forwarded values, and routes URL-bearing attributes (`href`, `src`,
-`action`, `formaction`, `poster`, `cite`, `background`) through `safeUrl` — a `javascript:`-style
-value collapses to `"#"`. **This is automatic; components never call it.** See
+The renderer HTML-escapes forwarded values and routes URL-bearing attributes through `safeUrl`, so
+a `javascript:`-style value collapses to `"#"`. **This is automatic; components never call it.** See
 [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §2d.
 
 htmx selector and JSON attributes are **not** sanitized — [`HTMX.md`](./HTMX.md) §7 owns that
 trust obligation.
 
-### 1b. FormField versus Field
-
-Two field primitives exist, and choosing the wrong one produces markup that is either
-over- or under-structured:
-
-- **`FormField`** is the `<fieldset>`-based **accessible form field**. Use it when you need
-  `name` / `invalid` / error / description wiring. Its compound members auto-wire `for`, `id`,
-  and `aria-describedby` from the field name.
-- **`Field`** is a lightweight **layout** primitive — a caption bound to its control children,
-  with no form semantics. Use it for settings rows and labelled controls that are not validated
-  form fields.
-
 ### 1c. Button and the `asChild` Invariant
-
-`asChild` merges the button's classes and forwarded props onto a single JSX element child via
-`cloneElement`, instead of emitting a `<button>`.
 
 **`asChild` requires exactly one JSX element child.** A string, number, fragment, array, or
 empty child is a programming error and **`Button` throws rather than degrading** — a ratified
@@ -126,27 +108,7 @@ insertion position — so a literal rewritten in place serializes byte-identical
 props helper would achieve the same merge while moving `data-slot` after `class` in every rendered
 string, for no behavioural gain.
 
-### 1d. Icon Accessibility and `createIcon` Typing
-
-**`Icon` is decorative by default** — `aria-hidden="true"`, no accessible name.
-
-**Passing `aria-label` flips it to a labelled graphic**: the icon emits `role="img"` with that
-label and drops `aria-hidden`, so assistive technology announces it.
-
-`createIcon(sprite, meta)` binds a sprite URL to a typed `ForgeIcon` whose `name` is narrowed to
-the sprite's keys, with the viewBox resolved from `meta`. **`createIcon(sprite)` — no `meta` —
-yields a permissive `ForgeIcon<string>`** for apps whose icon set is not known at compile time;
-the viewBox then comes from the prop.
-
-**A `ForgeIcon<string>` is assignable to any narrower `ForgeIcon<Name>`** (contravariance), so a
-dynamic icon set still satisfies a component that demands a specific icon.
-
 ### 1e. Switch and Slider — CSS-Only Controls
-
-**Both render without any client JavaScript.** `Switch` is an `sr-only`
-`<input type="checkbox" role="switch">` holding state and focus, with utilities painting the
-decorative track and thumb off the native `:checked`. `Slider` is a native `<input type="range">`
-styled cross-browser.
 
 **The track and the thumb need different selectors, and this is easy to get wrong.** `peer-*`
 compiles to a **general-sibling** combinator (`:is(:where(.peer):checked ~ *)`), so it reaches only
@@ -162,21 +124,29 @@ keys off a descendant selector anchored on `data-slot`:
 A decorative element nested inside another decorative element cannot use `peer-*`. Reach for a
 `data-slot`-anchored descendant selector instead.
 
-**`Slider`'s `output` prop wraps it in an `<output>` readout seeded to `value`. Mirroring that
-readout on input is a consumer concern** — forge stays markup-only (§1a).
+**`Slider`'s `output` prop carries the *sanitized* value rather than the raw `value` prop** — the
+string HTML's value-sanitization algorithm for `input[type=range]` settles on, which is the same
+string that positions the thumb, since a readout taken from the prop can disagree with the thumb
+permanently and `Slider` ships no client controller to reconcile the two after paint. The algorithm
+lives in `slider.tsx`'s module-local `sanitizeRangeValue`, `@internal` and in no barrel; it takes the
+serialized attribute string, not the prop, so it parses byte-for-byte what the browser parses.
+**Mirroring that readout on input is a consumer concern** — forge stays markup-only (§1a). This is
+§1h's "a server may only stamp what it can keep true" resolving *toward* stamping: the sanitized
+value is a total function of attributes forge emits in the same breath, with nothing from the client
+environment entering it.
 
-Both take an optional `field` descriptor that wires `id` / `name` / `aria-*`.
+**`output` stays a boolean, and the unformatted readout is a decision rather than a gap** — no
+formatting hook, no locale, no unit; a consumer wanting `"50%"` composes their own `<output>`
+alongside the `Slider`. **`Meter` is the precedent and the argument**: `Meter.Value` has no
+formatting seam either, its text being caller-supplied children, so presenting a number is already
+composition rather than configuration, and a formatter prop here would make the two disagree about
+who owns it. **Any future formatter seam receives the *sanitized* string, never the raw prop** — the
+prop reintroduces the readout/thumb divergence sanitization exists to close.
 
 ### 1f. Turnstile — Server-Rendered Mount Point
 
-`Turnstile` renders a `[data-ref='turnstile']` container carrying `data-sitekey` and
-`data-size`, holding a hidden `[data-ref='turnstile-fallback']` message.
-
-**It deliberately omits Cloudflare's `cf-turnstile` auto-render class** — the client controller
-owns rendering, so the widget lifecycle is deterministic rather than implicit.
-
-**Place the component inside the `<form>`** so the hidden token input Cloudflare injects is
-submitted with the form.
+**`Turnstile` deliberately omits Cloudflare's `cf-turnstile` auto-render class** — the client
+controller owns rendering, so the widget lifecycle is deterministic rather than implicit.
 
 **`siteKey` is injected server-side from the Worker env — never hardcoded.** The markup is inert
 on its own; pair it with the client controller
@@ -184,32 +154,25 @@ on its own; pair it with the client controller
 
 ### 1g. Composite Widgets
 
-A **composite** is a widget made of many focusable items that behaves as **one tab stop**: exactly
-one item is reachable with Tab, and the arrow keys move among the rest. `Toolbar`, `Menu`, `Tabs`
-and `ToggleGroup` are the four, and they share one controller
-([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §6b).
+A **composite** is a widget made of many focusable items that behaves as **one tab stop**.
+`Toolbar`, `Menu`, `Tabs` and `ToggleGroup` are the four, and they share one controller
+([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §6b). **The markup declares which elements are
+items; the controller never guesses.** How it declares them differs by widget, and each choice is
+deliberate.
 
-**The markup declares which elements are items; the controller never guesses.** How it declares
-them differs by widget, and each choice is deliberate:
+**`Toolbar` uses an explicit `data-toolbar-item` marker rather than a `data-slot` prefix** because
+`Toolbar.Group` and `Toolbar.Separator` are toolbar slots that must *not* be focus stops, and a
+prefix selector cannot express the exception. The marker is public: any foreign element inside a
+toolbar opts in by carrying it, which is how an icon rail keeps its own buttons and still becomes
+one tab stop.
 
-| Widget | Root | How items are identified |
-|---|---|---|
-| `Toolbar` | `role="toolbar"`, `data-scope="toolbar"` | an explicit `data-toolbar-item` marker |
-| `Menu` | `role="menu"` on the popup, `data-scope="menu"` | the ARIA roles `menuitem` / `menuitemcheckbox` / `menuitemradio` |
-| `Tabs` | `data-scope="tabs"`, `role="tablist"` on the list | `role="tab"` |
-
-**`Toolbar` uses a marker rather than a `data-slot` prefix** because `Toolbar.Group` and
-`Toolbar.Separator` are toolbar slots that must *not* be focus stops, and a prefix selector cannot
-express the exception. The marker is public: any foreign element inside a toolbar opts in by
-carrying it, which is how an icon rail keeps its own buttons and still becomes one tab stop.
-
-**`Menu` identifies items by ARIA role rather than by a forge-specific attribute**, and that is
-load-bearing for a menu whose rows are built in the browser: a runtime-constructed row is navigable
-the moment it is a correctly-roled menu item, with nothing forge-specific to remember to stamp.
-`Menu.LinkItem` is an `<a role="menuitem">` for rows that navigate — it keeps middle-click,
-open-in-new-tab and no-JavaScript navigation, all of which a `<button>` drops — and
-`Menu.SubmenuTrigger` is the roled trigger a nested popup needs, since a bare `Menu.Trigger` carries
-no role and would be skipped by the parent's arrow navigation.
+**`Menu` identifies items by ARIA role** (`menuitem` / `menuitemcheckbox` / `menuitemradio`) **rather
+than by a forge-specific attribute**, and that is load-bearing for a menu whose rows are built in the
+browser: a runtime-constructed row is navigable the moment it is a correctly-roled menu item, with
+nothing forge-specific to remember to stamp. `Menu.LinkItem` is an `<a role="menuitem">` for rows
+that navigate — it keeps middle-click, open-in-new-tab and no-JavaScript navigation, all of which a
+`<button>` drops — and `Menu.SubmenuTrigger` is the roled trigger a nested popup needs, since a bare
+`Menu.Trigger` carries no role and would be skipped by the parent's arrow navigation.
 
 **`ToggleGroup` announces what it actually is.** It emits no `role` at all — `<fieldset>` already
 has an implicit `group` — where it previously hardcoded `role="toolbar"` for every group, which
@@ -218,10 +181,8 @@ announced a segmented control as a toolbar and offered the wrong interaction mod
 pressed at once, and that is what the client reads to decide whether a click replaces the pressed
 item or adds to it (§2a).
 
-**`Tabs` carries `data-activation`** — `automatic` selects a tab as focus reaches it, `manual`
-waits for a click or Enter. An unselected `Tabs.Panel` is `hidden`, which is the platform's own
-mechanism: the initial render is correct with no JavaScript, and the controller flips the same
-attribute.
+An unselected `Tabs.Panel` is `hidden`, which is the platform's own mechanism: the initial render is
+correct with no JavaScript, and the controller flips the same attribute.
 
 ### 1h. Overlays and Disclosures
 
@@ -230,18 +191,14 @@ native Popover API, `Dialog` on native `<dialog>`, and `Collapsible` on native `
 top layer, light-dismiss, Escape, exclusive-open and the disclosure toggle are all the platform's
 and cost nothing.
 
-- **`Menu`** — trigger is `<button command="toggle-popover" commandfor={id}>`, popup is
-  `<div popover="auto" role="menu">`, and an item closes the menu with `command="hide-popover"`.
-  Opening, closing and dismissing therefore involve **no JavaScript at all**; the client adds only
-  what ARIA's menu pattern asks for and the platform does not supply (§1g).
-- **`Collapsible`** — a `<details>`/`<summary>` pair. **`<details>` owns open and closed**; the
-  controller only *publishes* them as state attributes for CSS to react to (§4).
+- **`Menu`** — opening, closing and dismissing involve **no JavaScript at all**, being
+  `command="toggle-popover"` / `command="hide-popover"` against a `popover="auto"` popup; the client
+  adds only what ARIA's menu pattern asks for and the platform does not supply (§1g).
+- **`Collapsible`** — **`<details>` owns open and closed**; the controller only *publishes* them as
+  state attributes for CSS to react to (§4).
 - **`Tooltip`** — a `popover="hint"` surface, so it does not close the menu or dialog beneath it.
-- **`Accordion`** — several `Collapsible`s in a stack. Not a composite: each item is its own
-  disclosure and its own tab stop, because that is what a native `<details>` list is.
-
-**An item that must leave its menu open passes `for={false}`**, which omits the
-`command="hide-popover"` pair — the shape a checkbox row in a menu needs.
+- **`Accordion`** — not a composite: each item is its own disclosure and its own tab stop, because
+  that is what a native `<details>` list is.
 
 **Every overlay stamps a scope, and every one of those scopes is eager.** `Dialog` stamps
 `DIALOG_SCOPE`, `Popover.Content` stamps `POPOVER_SCOPE` (both in
@@ -249,7 +206,7 @@ and cost nothing.
 `Collapsible`'s in `contracts/toggle-contract.ts`. Eager out of *necessity*, not taste: an overlay's
 markup carries no `data-on-*` action at all — opening, closing, Escape and light-dismiss are the
 platform's — so a lazy scope would have nothing to resume it, and every state attribute would stay
-frozen at its server-rendered value (§2d).
+frozen at its server-rendered value (§2d). `NumberField`'s steppers are eager for the same reason.
 
 **A server may only stamp what it can keep true.** `Popover.Content` emits `side` and `align`,
 decided at render and fixed for the element's life, and emits **no** `data-open` / `data-closed`: it
@@ -291,77 +248,76 @@ unstyled. `popover.tsx` narrows too but differently: `PopoverSide` is an indepen
 rather than a projection of `Side`, so it does not track future growth of `Side` the way the
 tooltip's does.
 
-### 1i. Native-Input Primitives
-
-Five primitives that are a native control plus SSR field wiring, and nothing more:
-
-- **`CheckboxGroup` / `RadioGroup`** — a `<fieldset>` of real `<input type="checkbox">` /
-  `<input type="radio">`. **Radio grouping and roving focus inside a radio group are the platform's**;
-  forge adds the field wiring and the state attributes, not a keyboard controller.
-- **`Meter`** — a native `<meter>`. Distinct from `Progress`: a meter is a *measurement within a
-  known range*, a progress bar is *task completion*, and conflating them announces the wrong thing.
-- **`NumberField`** — a native numeric `<input>` with stepper buttons. The steppers carry no
-  `data-on-*` action, so its scope is eager (§2d): a lazy scope would have nothing to resume it and
-  the buttons would sit inert.
-- **`ScrollArea`** — almost entirely CSS. A viewport with styled scrollbars; no scroll hijacking, no
-  synthetic thumb, no wheel listener.
+### 1i. Native-Input Primitive Decisions
 
 **`Switch` publishes `data-label-position`** (`before` / `after`) for the label's placement relative
 to the track. It is not `data-orientation`: orientation is the widget's own axis, and a switch is
 always horizontal — the two would fight the moment a stylesheet matched on either.
 
+**`ScrollArea` adds no behaviour to the platform's scrolling** — no scroll hijacking, no synthetic
+thumb, no wheel listener.
+
+### 1j. Derived Ids Must Be Id Tokens
+
+**Every id forge derives for a form field must be a single id token, and a field whose `name` — or
+whose non-blank `scope` — is not one derives no `id`, no `for` and no `aria-describedby` at all.**
+HTML forbids ASCII whitespace inside an id and splits every IDREF list on it, so an id built from
+such a value can be *declared* but never *named*: the browser tokenizes the reference into fragments
+that match nothing. Deriving the same unusable string on both halves does not redeem it — the harm
+is the platform's tokenization, not a disagreement between forge's two code paths. The field itself
+still renders, and its `name` attribute is still passed through as the caller wrote it; only the
+wiring is withheld. The predicates and the character set are `field.tsx`'s TSDoc to state, not this
+document's.
+
+**The hostile set is exactly HTML's ASCII whitespace, and JS `\s` is the wrong class for it.** `\s`
+also matches U+00A0 and the Unicode spaces, which are legal id characters that no parser treats as a
+separator. Using it was an active defect rather than a loose approximation: splitting an IDREF on a
+non-breaking space breaks a resolvable id into pieces, so the declaration and the reference stop
+agreeing byte-for-byte and forge manufactures the dangling reference the rule exists to prevent.
+
+**Suppressing beat sanitizing** — collapsing whitespace would have forge rewrite caller input, which
+it does not do (§1e emits the caller's `value` verbatim and lets only the readout follow the
+platform), and any collapse maps distinct names onto one id, so two fields that were distinguishable
+would silently share wiring.
+
+**Suppressing beat throwing.** The ratified throw of §1c is for a component that cannot render at
+all ([`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §2a); this component renders correctly and
+only the association is unexpressible, which is a degraded field rather than a broken one.
+
+**A blank `scope` is no scope; a whitespace-bearing one is not.** Blank falls back to the unscoped
+id, because the caller named no scope. A non-blank scope that is not an id token **suppresses
+instead of falling back**, since the unscoped id is precisely the one the scope exists to avoid
+colliding with — falling back would re-create the cross-wiring the prop was introduced to fix.
+
+**The rule governs references forge emits, not ids it merely declares.** The groups' per-item id is
+declared and never named by any IDREF — the input is wrapped in its `<label>` — so it stays outside
+the rule and round-trips a `value` verbatim. Giving any such id a reference means routing it through
+the same gate first.
+
 ---
 
 ## 2. The Signal-Binding Seam
 
-### 2a. `fieldAttr`, `bindField`, and `bindGroup`
+### 2a. The Binding Ownership Boundary
 
 **Forge owns the generic glue between a control and a reactive signal; the app supplies the
-signal record and any domain effects layered on it.**
+signal record and any domain effects layered on it.** `fieldAttr` stamps the field name on the SSR
+side and `bindField` reads it in the browser; **domain effects — persist, render, readouts,
+pressed-state reconciliation — stay app-side** as additional effects on the same signals.
 
-`fieldAttr(name)` (from `ui/server`) stamps `data-field` on the SSR side. `bindField(signals)`
-(from `ui/client`) returns a resumable-scope action that reads `data-field`, parses the
-control's value by the target signal's current type, and writes `signals[field]`.
-`applyControlValue` is the inverse, seeding an uncontrolled input from a typed value.
-
-**`bindGroup` exists because button groups cannot express boolean or number values.** It
-resolves `el.closest("[data-field][data-value]")` — handling inner `<svg>` / `<span>` click
-targets — and writes the raw `data-value` string, bypassing value parsing.
-
-**Domain effects — persist, render, readouts, pressed-state reconciliation — stay app-side** as
-additional effects on the same signals.
-
-### 2b. `bind` versus `field` — Orthogonal Props
-
-Two similarly-named props drive different contracts, and they may coexist on one control:
-
-- **`bind`** (on the `ui/controls` wrappers, §2c) drives the `data-field` / `data-on-*`
-  signal-binding contract.
-- **`field?: FieldDescriptor`** (on `Input` / `Select` / `Switch`) drives `id` / `name` /
-  `aria-*` form-accessibility wiring.
+**`bindGroup` exists because button groups cannot express boolean or number values.** It resolves
+the nearest `[data-field][data-value]` ancestor — handling inner `<svg>` / `<span>` click targets —
+and writes the raw `data-value` string, bypassing value parsing.
 
 ### 2c. `ui/controls` — Bound Variants
 
-`@y-core/forge/ui/controls` re-exports `Input`, `Textarea`, `Select`, `Slider`, `Switch`, and
-`ToggleGroup` under the **same names** as `ui/core`, as bound variants. Each wraps its `ui/core`
-base and adds a required `bind` prop plus an optional `action` override, pre-spreading
-`scopeAttrs` + `fieldAttr` so the control joins the signal contract without a manual spread.
-
 **The static `ui/controls` barrel is the only bound-control API — there is no runtime factory to
-call.**
+call.** The single-element wrappers are built from an **internal** `createBoundControl` factory
+(`@internal`, not exported), so their shape is uniform.
 
-The five single-element wrappers are built from an **internal** `createBoundControl` factory
-(`@internal`, not exported), so their shape is uniform:
-
-| Bound control | Delegated event → `data-on-*` | Default action |
-|---|---|---|
-| `Input`, `Textarea`, `Slider` | `onInput` | `bindField` |
-| `Switch`, `Select` | `onChange` | `bindField` |
-| `ToggleGroup.Item` | `onClick` | `bindGroup` |
-
-**`ToggleGroup` is bespoke, not factory-built** — its binding lives on the `.Item`
-sub-component rather than the root, it stamps an extra `data-value`, and it delegates on
-`onClick`; the single-element factory cannot express that shape.
+**`ToggleGroup` is bespoke, not factory-built** — its binding lives on the `.Item` sub-component
+rather than the root, it stamps an extra `data-value`, and it delegates on `onClick`; the
+single-element factory cannot express that shape.
 
 **The name collision with `ui/core` is intentional and must not be renamed.**
 [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5b owns the resulting rule: a module imports a
@@ -370,19 +326,9 @@ given control name from exactly one of the two barrels, never both.
 ### 2d. Scoped Components Require the Client Scope Import
 
 Some `ui/core` components render a **resumable scope** — a region stamped with `data-scope` and
-a serialized `data-state` whose behaviour wakes only once the matching scope is registered.
-`Toast` is such a component, and therefore so are the `ui/server` `Flash` wrappers built on it.
-
-**The scope registrations live in `@y-core/forge/ui/core/client`, a side-effect module. An app
-rendering any scoped component must import it once in the client entry, before calling
-`resume()`.**
-
-```typescript
-import "@y-core/forge/ui/core/client"   // registers the toast + alert scopes
-import { resume } from "@y-core/forge/ui/client"
-
-resume()
-```
+a serialized `data-state` whose behaviour wakes only once the matching scope is registered. The
+scope registrations live in `@y-core/forge/ui/core/client`, a side-effect module an app must import
+once in the client entry, before calling `resume()`.
 
 Without it the markup still renders but no handler is registered, so **`resume()` warns on every
 `data-scope` it finds unregistered. Treat that warning as a missing client-entry import or a
@@ -392,44 +338,72 @@ scope-name typo — never as an expected runtime condition.**
 
 ## 3. Class Utilities
 
-`cn`, `asClass`, and `cva` are exported from `@y-core/forge/ui/core` and are **ratified
-`@public` utilities** — apps compose classes with them exactly as forge's own components do.
+`cn`, `asClass`, and `cva` are **ratified `@public` utilities** — apps compose classes with them
+exactly as forge's own components do.
 
-### 3a. `cn` — Conditional Class Names
+### 3d. Conflict Resolution and the Fail-Open Boundary
 
-`cn(...classes)` is variadic over `string | false | null | undefined`: it filters falsy entries
-and joins the rest with a single space. **It is the canonical way to merge a component's base
-classes with a caller-supplied `class`.**
+**Conflict resolution is a table lookup, and the table is `src/ui/core/utils/class-groups.ts`.** It
+maps a utility to the name of the CSS concern it sets; `cn` keeps the last utility to claim a
+concern and drops the earlier ones. The file is `@internal` and deliberately absent from every
+barrel — it is data, not API — and it is **authoritative over any prose describing forge's covered
+utility surface**. Nothing here enumerates it, and nothing anywhere else may: a second copy of a
+table is indistinguishable from an amendment the moment the two disagree.
 
-**Use short-circuit expressions for conditionals** — `cn("base", isActive && "active", cls)`.
-`cn` does not interpret arrays or objects.
+Two things scope a conflict beyond the concern itself: a utility's **modifier prefix** and its
+**importance marker** both belong to the key, so `hover:h-5` never displaces `h-full`.
 
-### 3b. `asClass` — Narrow a JSX `class` Prop
+**The coverage boundary.** The table covers the families forge's own primitives emit plus those a
+consumer override plausibly targets. **It is not a complete map of Tailwind and will never be.** A
+utility outside it passes through untouched — so two conflicting utilities from an uncovered family
+are *both* emitted and stylesheet order decides between them. That is the behaviour every consumer
+already had before conflict resolution existed; an uncovered family is a gap, not a regression.
 
-`asClass(cls)` narrows an untyped JSX `class` prop — which the runtime may hand you as a
-non-string — to `string | undefined`, returning `undefined` for any non-string.
+**Fail-open, and the inversion is deliberate.** An unrecognised utility is always kept, which
+inverts the fail-closed posture of [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §4a. The reasoning is
+specific to this seam and does not generalise:
 
-**Pair it with `cn`** — `cn(BASE, asClass(cls))` — so a caller override merges safely.
+- The "failure" is **forge's incomplete knowledge of a third-party utility vocabulary**, not
+  untrusted input. Nothing here is deciding whether to trust a caller.
+- There is **no security boundary**. `cn` produces a `class` attribute the renderer escapes anyway
+  (§1a), so dropping a token buys no safety.
+- Failing closed would mean **silently deleting** a consumer's own class or a utility from a newer
+  Tailwind — no error, no signal, and no fix available from outside forge.
+- Failing open's worst case is the status quo ante, which every consumer already lives with.
 
-### 3c. `cva` — Class Variance Authority
+**Importance is kept, diverging from the stated design reference.** forge keeps `!important` in the
+conflict key, so a later *normal* utility cannot displace an earlier *important* one and
+`cn("h-full!", "h-5")` keeps both. tailwind-merge strips importance and would drop the first. That
+behaviour is wrong at the cascade — `!important` wins regardless of source order — so deleting the
+important utility changes what renders. Where the reference is wrong about CSS, forge does not
+follow it.
 
-`cva({ base?, variants?, defaultVariants? })` returns a resolver. Call it with the selected
-variant values to produce the composed class string; pass a `class` field to append a call-site
-override.
+**Closed value spaces are matched by exact whole-utility entry; only open ones are matched by
+prefix.** The reason is false positives: a `select-` prefix entry would let a consumer's
+`select-wrapper` claim the user-select concern and silently delete a real `select-none`. A value
+space that can be enumerated is enumerated.
 
-```typescript
-const buttonVariants = cva({
-  base: "inline-flex items-center rounded-md font-medium",
-  variants: {
-    variant: { primary: "bg-primary text-white", outline: "border border-input" },
-    size:    { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-base" },
-  },
-  defaultVariants: { variant: "primary", size: "md" },
-})
-```
+**Known limitations.** Some covered utilities occupy a concern alone with no override edge to a
+related one, so both survive — `cn("sr-only", "w-full")` emits both. Which families are covered at
+all is `class-groups.ts`'s answer, not this document's.
 
-**Combine with `cn` when additional conditional classes are needed** —
-`cn(buttonVariants({ variant }), isLoading && "opacity-50")`.
+**Extending the table is a data edit, not a decision.** Adding a family is one line in
+`class-groups.ts` plus a test case, and needs no governing-document change, because additions
+strictly **narrow** behaviour: a family moves from pass-through to resolved, and nothing that was
+previously dropped starts surviving.
+
+**The ratified decision is an in-house resolver, with tailwind-merge as a design reference only.**
+The runtime dependency was declined: a Workers library pays its cost into every consumer bundle and
+again per render on the SSR path, against a general-purpose Tailwind parser almost none of which
+forge needs. The in-house table is tractable precisely because forge is a fixed set of primitives
+rather than a general Tailwind consumer, which is what makes a bounded table a real option here and
+not elsewhere.
+
+**No cache was added, also deliberately.** A memo keyed on the argument list would be unbounded
+mutable module state needing its own eviction policy — against
+[`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1 — and Cloudflare evicts isolates
+aggressively enough that a cold refill is paid often rather than amortised. It is retrofittable
+behind the unchanged signature if a profile ever demands one.
 
 ---
 
@@ -447,35 +421,26 @@ matching, so the component looks unstyled rather than broken. The same argument 
 delegated-event vocabulary ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §3c); this is its
 sibling.
 
-The declared hooks:
-
-| Attribute | Meaning |
-|---|---|
-| `data-open` / `data-closed` | a popup, disclosure or overlay is open / closed — the pair is exhaustive, exactly one is always present |
-| `data-pressed` | a pressable trigger or toggle item is pressed |
-| `data-checked` | a checkable control is checked |
-| `data-selected` | a tab is the selected one |
-| `data-disabled` | the component is disabled |
-| `data-invalid` | the component holds a validation error |
-| `data-orientation` | layout axis — `horizontal` or `vertical`. Valued |
-| `data-side` / `data-align` | which side a popup sits on relative to its anchor, and how it aligns along it. Valued; `data-side` admits physical and logical spellings in one value space (§1h) |
-| `data-starting-style` / `data-ending-style` | present while animating in / out |
-| `data-popup-open` | on a **trigger**, while the popup it controls is open — the trigger's own state, distinct from `data-open`, which belongs to the popup. Produced by `mountPopupTriggerState` ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §6d) |
+**The declaration is `src/ui/contracts/state-attrs.ts`, and it is authoritative over any prose
+naming forge's state attributes.** Nothing here enumerates it, for the reason §3d gives about
+`class-groups.ts`.
 
 **Adding a styling hook means adding it to that declaration first.** A component that emits a state
 attribute outside the table fails a conformance test — smuggling a hook past it is the exact failure
 the single declaration exists to prevent.
 
 **And a name with no producer is removed, for the same reason.** `data-anchor-hidden` was declared
-here and in `STATE_ATTRS` and written by nothing — no component, no controller. A declared hook that
-is never emitted is the *inverse* of the drift above and just as misleading: a consumer styles against
-it and gets a rule that can never match. It was deleted when the table became public, because after
-publication a deletion is a breaking change. Re-add it with its producer, not before.
+there and written by nothing — no component, no controller. A declared hook that is never emitted is
+the *inverse* of the drift above and just as misleading: a consumer styles against it and gets a rule
+that can never match. It was deleted when the table became public, because after publication a
+deletion is a breaking change. Re-add it with its producer, not before.
 
 `data-popup-open` was in the same position and took the **other** exit: it named something a trigger
-genuinely knows, so it got a producer rather than a deletion. Which exit a producerless hook takes is
-the whole question — *is there an element whose state this describes?* `data-anchor-hidden` had no
-such element.
+genuinely knows — its own state while the popup it controls is open, distinct from the popup's
+`data-open` — so it got a producer, `mountPopupTriggerState`
+([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §6d), rather than a deletion. Which exit a
+producerless hook takes is the whole question — *is there an element whose state this describes?*
+`data-anchor-hidden` had no such element.
 
 **`data-selected` is not `data-checked`.** ARIA models tab selection as `aria-selected`, not
 `aria-checked`, so reusing `data-checked` would announce a tab as a radio; and calling it structural
@@ -500,3 +465,14 @@ the `data-` hook beside it is that **CSS should not have to read ARIA**: a style
 `[aria-pressed="true"]` couples presentation to an accessibility contract, so the day the correct
 ARIA for a widget changes, the styling breaks with it. The two are reconciled together by one
 function, so a controller can never write one without the other.
+
+### 4c. The Caller Is Authoritative
+
+**A caller's explicit state attribute wins over the component's computed one**, which is the same
+principle as class precedence (§3d) applied to a different mechanism: **the caller is authoritative
+over both the class list and the state attributes.** Here the mechanism is spread order — a
+component spreading `{...stateAttrs({…})}` onto the element that also takes forwarded caller props
+spreads it **before** `{...props}` / `{...rest}`, so the duplicate key resolves to the caller's.
+Where the two land on different elements nothing collides. The rule is asserted for every
+participating component by the `ui/core` conformance sweep (`src/ui/core/conformance.test.tsx`),
+with a `ui/chrome` case in `toolbar.test.tsx`.

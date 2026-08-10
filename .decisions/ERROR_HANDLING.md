@@ -244,6 +244,10 @@ await verifyCsrf(c, csrfKey)
 This covers authentication tokens, signing keys, and origin validation secrets: absent binding
 → `503`, never a degraded unauthenticated mode.
 
+`cn`'s Tailwind conflict resolver is the single ratified exception to this posture — it fails open
+on an unrecognised utility, for the reasons in
+[`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §3d.
+
 ### 4b. `required: false` — Non-Security Features Only
 
 Some middleware accepts `required: false` for graceful degradation. **It is scoped to

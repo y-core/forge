@@ -54,15 +54,20 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/storage/db` | D1 database client | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/storage/kv` | Workers KV typed store | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/storage/r2` | R2 object storage | [src/storage/README.md](src/storage/README.md) |
+| `@y-core/forge/testing` | Test fixtures & fakes | [src/testing/README.md](src/testing/README.md) |
 | `@y-core/forge/ui/contracts` | Shared SSR/browser DOM contract as pure data | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/core` | Server-side JSX component library | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/core/client` | Browser island for ui/core scopes (side-effect) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/controls` | Pre-bound signal-binding wrappers | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/assets` | Forge icon asset manifest (`forgeUiSpriteSources`) | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/assets/glyphs` | Browser-safe sprite glyph parser | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/client` | Browser-side UI scripts | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/client/htmx` | HTMX bundle (side-effect) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/chrome` | SSR app chrome: Navbar, Toolbar, ThemeToggle | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/chrome/client` | Browser island for chrome scopes (side-effect) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/server` | SSR-only: Flash, Resumable | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/show` | Component showcase route helpers | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/show/client` | Showcase filter island (side-effect) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/validation` | Schema validation (valibot) | [src/validation/README.md](src/validation/README.md) |
 | `@y-core/forge/validation/cli` | `forge-cfgen` env-schema generator | [src/validation/README.md](src/validation/README.md) |
 

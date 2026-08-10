@@ -34,6 +34,9 @@ interface RadioGroupItemProps extends Omit<JSX.IntrinsicElements["input"], "chil
   children?: JSXNode;
 }
 
+/** This id is declared but never referenced — the input is wrapped in its `<label>`, so no `for`
+ * names it, and a `value` containing whitespace is caller data that round-trips verbatim. Adding an
+ * IDREF to it means gating it through `field.tsx`'s id-token predicate first. */
 function itemId(name: string, value: string, scope?: string): string {
   return `${fieldId(name, scope)}-${value}`;
 }

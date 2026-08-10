@@ -68,9 +68,34 @@ const fieldVariants = cva({
 export const FIELD_LABEL_CLASSES =
   "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50";
 
-/** The control's id. `scope` separates two fields that share a name on one page. */
+/** HTML's ASCII whitespace set — the characters an id may not contain and the ones an IDREF list is
+ * split on. Deliberately not JS `\s`, which also matches U+00A0 and the Unicode spaces: those are
+ * legal id characters that no parser treats as a token separator, so folding them in here would
+ * suppress ids that resolve perfectly well. @internal */
+const ASCII_WS = /[\t\n\f\r ]/;
+
+/** The blank test for the same set as {@link ASCII_WS} — again not JS `\s`, for the same reason: a
+ * value of only non-breaking spaces is a real, resolvable id, not a blank one. @internal */
+const ASCII_WS_ONLY = /^[\t\n\f\r ]*$/;
+
+/** Whether a value can stand as a whole id token: non-empty, and free of {@link ASCII_WS}. @internal */
+function idToken(value: string): boolean {
+  return value !== "" && !ASCII_WS.test(value);
+}
+
+/** Whether an id can be derived for this field at all. `name` must be an id token. A blank `scope`
+ * is no scope; a non-blank one must be an id token too — falling back to the unscoped id instead
+ * would collide with the very field the scope exists to be distinguished from. Every site that
+ * derives an id or an IDREF routes through this, which is what keeps a control's
+ * `aria-describedby` and the compound members' ids agreeing. @internal */
+function derivable(name: string | undefined, scope?: string): name is string {
+  return name !== undefined && idToken(name) && (scope === undefined || ASCII_WS_ONLY.test(scope) || idToken(scope));
+}
+
+/** The control's id. `scope` separates two fields that share a name on one page; a blank one is no
+ * scope. */
 export function fieldId(name: string, scope?: string): string {
-  return scope ? `field-${scope}-${name}` : `field-${name}`;
+  return scope !== undefined && !ASCII_WS_ONLY.test(scope) ? `field-${scope}-${name}` : `field-${name}`;
 }
 
 /** The id of the field's description, derived from {@link fieldId} so the two always agree. */
@@ -104,14 +129,18 @@ export interface FieldDescribedByOptions {
  * `<fieldset>`-based group can adopt. The rest of it — `id`, `name`, `aria-invalid` — is shaped for
  * a labelable control and is wrong on a fieldset, which is why the groups call this directly
  * instead.
+ *
+ * The `name` and `scope` must each be a single id token — see {@link fieldControlProps}.
  */
 export function fieldDescribedBy(name: string, options: FieldDescribedByOptions = {}): string | undefined {
+  const named = derivable(name, options.scope);
   const value = [
     options.existing,
-    options.description ? fieldDescriptionId(name, options.scope) : undefined,
-    options.invalid ? fieldErrorId(name, options.scope) : undefined,
+    named && options.description ? fieldDescriptionId(name, options.scope) : undefined,
+    named && options.invalid ? fieldErrorId(name, options.scope) : undefined,
   ]
-    .filter((id) => id !== undefined)
+    .flatMap((part) => (part === undefined ? [] : part.split(/[\t\n\f\r ]+/)))
+    .filter((token) => token !== "")
     .join(" ");
   return value ? value : undefined;
 }
@@ -122,6 +151,11 @@ export function fieldDescribedBy(name: string, options: FieldDescribedByOptions 
  * `aria-describedby` names only the elements that actually render — the description when the
  * descriptor declares one, the error when the field is invalid — and is omitted entirely when
  * neither does, because an IDREF pointing at nothing is worse than no IDREF at all.
+ *
+ * The `name`, and any non-blank `scope`, must each be a single id token: anything containing ASCII
+ * whitespace derives no `id` and no `aria-describedby`, because HTML forbids ASCII whitespace in an
+ * id and splits every IDREF list on it. That matches the compound members; the `name` attribute
+ * itself is still passed through as given.
  */
 export function fieldControlProps<T extends FieldControlProps>(props: T, field: FieldDescriptor): T {
   const invalid = field.invalid ?? false;
@@ -132,9 +166,11 @@ export function fieldControlProps<T extends FieldControlProps>(props: T, field: 
     ...(props["aria-describedby"] !== undefined ? { existing: props["aria-describedby"] } : {}),
   });
 
+  const id = props.id ?? (derivable(field.name, field.scope) ? fieldId(field.name, field.scope) : undefined);
+
   return {
     ...props,
-    id: props.id ?? fieldId(field.name, field.scope),
+    ...(id !== undefined ? { id } : {}),
     name: props.name ?? field.name,
     disabled: props.disabled ?? field.disabled,
     ...(describedBy ? { "aria-describedby": describedBy } : {}),
@@ -178,7 +214,7 @@ export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({
   <label
     data-slot={slotToken("field-label", inherited)}
     class={cn(FIELD_LABEL_CLASSES, asClass(cls))}
-    for={htmlFor ?? (name ? fieldId(name, scope) : undefined)}
+    for={htmlFor ?? (derivable(name, scope) ? fieldId(name, scope) : undefined)}
     {...props}>
     {children}
   </label>
@@ -193,7 +229,7 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNami
   "data-slot": inherited,
   ...props
 }) => {
-  const resolvedId = id ?? (name ? fieldDescriptionId(name, scope) : undefined);
+  const resolvedId = id ?? (derivable(name, scope) ? fieldDescriptionId(name, scope) : undefined);
   return (
     <p
       data-slot={slotToken("field-description", inherited)}
@@ -219,7 +255,7 @@ export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
     return null;
   }
 
-  const resolvedId = id ?? (name ? fieldErrorId(name, scope) : undefined);
+  const resolvedId = id ?? (derivable(name, scope) ? fieldErrorId(name, scope) : undefined);
   return (
     <p
       data-slot={slotToken("field-error", inherited)}

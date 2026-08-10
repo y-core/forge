@@ -27,7 +27,8 @@ describe("Skeleton", () => {
 
   it("merges a custom shape class", async () => {
     expect(await render(<Skeleton class='h-10 w-10 rounded-full' />)).toBe(
-      '<div data-slot="skeleton" aria-hidden="true" class="animate-pulse rounded-md bg-muted h-10 w-10 rounded-full"></div>',
+      // The caller's `rounded-full` displaces the base `rounded-md` — same group, later wins.
+      '<div data-slot="skeleton" aria-hidden="true" class="animate-pulse bg-muted h-10 w-10 rounded-full"></div>',
     );
   });
 

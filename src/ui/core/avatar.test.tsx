@@ -50,6 +50,18 @@ describe("Avatar", () => {
       '<span data-slot="avatar" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm"><span data-slot="avatar-fallback" class="flex size-full items-center justify-center font-medium text-muted-foreground">AB</span></span>',
     );
   });
+
+  it("forwards id, data-* and aria-* attributes after class, HTML-escaped", async () => {
+    expect(await render(<Avatar id='a1' data-testid='avatar' data-note='a&b' aria-label={`R&D's "n" <x>`} />)).toBe(
+      '<span data-slot="avatar" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm" id="a1" data-testid="avatar" data-note="a&amp;b" aria-label="R&amp;D&#39;s &quot;n&quot; &lt;x&gt;"></span>',
+    );
+  });
+
+  it("composes a caller data-slot onto its own token rather than replacing it", async () => {
+    expect(await render(<Avatar data-slot='profile' />)).toBe(
+      '<span data-slot="avatar profile" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm"></span>',
+    );
+  });
 });
 
 describe("Avatar.Image", () => {
@@ -76,6 +88,12 @@ describe("Avatar.Image", () => {
       '<img data-slot="avatar-image" class="aspect-square size-full object-cover" alt="User" src="/u.jpg">',
     );
   });
+
+  it("composes a caller data-slot onto its own token rather than replacing it", async () => {
+    expect(await render(<Avatar.Image src='/u.jpg' alt='User' data-slot='photo' />)).toBe(
+      '<img data-slot="avatar-image photo" class="aspect-square size-full object-cover" alt="User" src="/u.jpg">',
+    );
+  });
 });
 
 describe("Avatar.Fallback", () => {
@@ -94,6 +112,24 @@ describe("Avatar.Fallback", () => {
   it("merges a custom class", async () => {
     expect(await render(<Avatar.Fallback class='text-lg'>XL</Avatar.Fallback>)).toBe(
       '<span data-slot="avatar-fallback" class="flex size-full items-center justify-center font-medium text-muted-foreground text-lg">XL</span>',
+    );
+  });
+
+  it("forwards id, data-* and aria-* attributes after class, HTML-escaped", async () => {
+    expect(
+      await render(
+        <Avatar.Fallback id='f1' data-testid='fallback' data-note='a&b' aria-label={`R&D's "n" <x>`}>
+          AB
+        </Avatar.Fallback>,
+      ),
+    ).toBe(
+      '<span data-slot="avatar-fallback" class="flex size-full items-center justify-center font-medium text-muted-foreground" id="f1" data-testid="fallback" data-note="a&amp;b" aria-label="R&amp;D&#39;s &quot;n&quot; &lt;x&gt;">AB</span>',
+    );
+  });
+
+  it("composes a caller data-slot onto its own token rather than replacing it", async () => {
+    expect(await render(<Avatar.Fallback data-slot='initials'>AB</Avatar.Fallback>)).toBe(
+      '<span data-slot="avatar-fallback initials" class="flex size-full items-center justify-center font-medium text-muted-foreground">AB</span>',
     );
   });
 });

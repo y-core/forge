@@ -54,7 +54,6 @@ const MASK = "\u0001";
 /** Extensions a specifier may carry that must be stripped before namespace attribution. */
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js"];
 
-/** Suffixes that mark a file as test-only. */
 const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx"];
 
 /** Characters an import/export clause may contain between the keyword and its `from`. Excluding
@@ -312,11 +311,8 @@ export function resolveSpecifier(fromFile: string, specifier: string): string | 
  * Self-edges are dropped, since a namespace importing its own files is the normal case and says
  * nothing about coupling. Edge kind is the AND over every contributing site: one value import
  * anywhere makes the whole edge a value edge, because it is the runtime dependency that a leaf
- * classification actually forbids.
- *
- * When a value site overrides an earlier type-only edge, the recorded site moves with it. Reporting
- * a value edge while pointing at a `import type` line sends the reader to a line that looks
- * blameless, and a message that cannot be checked is worse than no message.
+ * classification actually forbids. When a value site overrides an earlier type-only edge, the
+ * recorded site moves with it — see {@link ObservedEdge.file}.
  */
 export function buildGraph(files: readonly SourceFile[], dirs: readonly string[]): Map<string, Map<string, ObservedEdge>> {
   const graph = new Map<string, Map<string, ObservedEdge>>();
@@ -505,6 +501,99 @@ export function diffGraph(observed: Map<string, Map<string, ObservedEdge>>, decl
         detail: `\`EDGES\` declares \`${from}\` → \`${to}\` but ${reason} — remove \`"${to}"\` from \`EDGES["${from}"]\``,
       });
     }
+  }
+
+  return findings;
+}
+
+// ── Document enumeration guards ───────────────────────────────────────────────────────────────
+
+/** The classification section, whose prose cites `EDGES` and must enumerate nothing. */
+const CLASSIFICATION_START = /^### 4a\. /;
+
+/** The catalog section, whose table names every export subpath. */
+const CATALOG_START = /^### 3a\. /;
+
+/** The header row of the enumeration table that `EDGES` replaced. */
+const COMPOSES_TABLE = /^\|\s*Namespace\s*\|\s*Composes\s*\|/;
+
+/** A catalog header row carrying leaf/integration or side-effect status as a column. */
+const CLASSIFICATION_COLUMN = /^\|.*\|\s*(?:Category|Classification)\s*\|/;
+
+/**
+ * The half-open line range from the first heading matching `start` to the next `## `. `null` when
+ * the heading is absent — the caller reports that, because a section that moved silently is how a
+ * guard stops covering the thing it names.
+ *
+ * The window ends at the next `## `, **not** the next `###`, so a window opened on a `### Na.`
+ * heading runs past its sibling subsections to the end of the whole numbered section. A table placed
+ * in `### 4b.` therefore falls inside the window opened on `### 4a.`. That reach was ruled on and
+ * kept: the guard's subject is the numbered section, not the subsection its anchor heading names,
+ * and §4b is exactly where an integration table most invites the enumeration back — sibling-`###`
+ * scoping would leave the likeliest reoffending spot uncovered. `NAMESPACE_DESIGN.md` §3b and §4b
+ * state the reach where an editor of those subsections will meet it; keep the three in step.
+ *
+ * The anchor is still a subsection heading, and the two absent-heading messages name it as such.
+ * That stays accurate under the wide window, and a table hit reports its own line, so no message
+ * points at a section the offending row does not sit in.
+ */
+export function sectionWindow(lines: readonly string[], start: RegExp): { from: number; to: number } | null {
+  const from = lines.findIndex((line) => start.test(line));
+  if (from === -1) return null;
+
+  for (let i = from + 1; i < lines.length; i++) {
+    // Every index below `lines.length` is populated; the binding is what lets the type say so.
+    const line = lines[i];
+    if (line !== undefined && /^## /.test(line)) return { from, to: i };
+  }
+  return { from, to: lines.length };
+}
+
+/** The four ways the document can carry an enumeration the data files own — or stop being
+ *  windowable at all. */
+export type EnumerationFindingKind = "missing-catalog-section" | "missing-classification-section" | "composes-table" | "classification-column";
+
+/** One enumeration finding. It carries no message: unlike a `Finding`, whose text is parameterised
+ *  by namespace names only `diffGraph` computes, these four remedies are fixed strings the caller
+ *  can emit knowing nothing this module knows. */
+export interface EnumerationFinding {
+  kind: EnumerationFindingKind;
+  /** 1-indexed line, or null for a missing section. */
+  line: number | null;
+}
+
+/**
+ * Every enumeration the document carries, in the order the caller reports them: the classification
+ * section first, then the catalog.
+ *
+ * A missing classification heading does not stop the catalog checks — the two sections are
+ * independent, and one having moved says nothing about the other. A missing *catalog* heading does:
+ * with no window there is nothing to scan, and reporting column hits found elsewhere in the document
+ * would point the reader at rows the guard never claimed to cover.
+ */
+export function findEnumerations(lines: readonly string[]): EnumerationFinding[] {
+  const findings: EnumerationFinding[] = [];
+
+  const classification = sectionWindow(lines, CLASSIFICATION_START);
+  if (classification === null) {
+    findings.push({ kind: "missing-classification-section", line: null });
+  } else {
+    for (let i = classification.from; i < classification.to; i++) {
+      const line = lines[i];
+      if (line === undefined || !COMPOSES_TABLE.test(line)) continue;
+      findings.push({ kind: "composes-table", line: i + 1 });
+    }
+  }
+
+  const catalog = sectionWindow(lines, CATALOG_START);
+  if (catalog === null) {
+    findings.push({ kind: "missing-catalog-section", line: null });
+    return findings;
+  }
+  for (let i = catalog.from; i < catalog.to; i++) {
+    const line = lines[i];
+    if (line === undefined || !CLASSIFICATION_COLUMN.test(line)) continue;
+    findings.push({ kind: "classification-column", line: i + 1 });
   }
 
   return findings;

@@ -130,7 +130,7 @@ doc via the **Guide Index** — never duplicate that detail here.
 > whole file.
 
 - [`AGENT_GUIDE.md`](.decisions/AGENT_GUIDE.md): how `.decisions/` docs are structured, numbered, sized, and cross-referenced; the single-home rule and source-of-truth register
-- [`LIBRARY_ARCHITECTURE.md`](.decisions/LIBRARY_ARCHITECTURE.md): the dependency facade, the runtime-only no-build-step constraint, demand composition, Web-APIs-only
+- [`LIBRARY_ARCHITECTURE.md`](.decisions/LIBRARY_ARCHITECTURE.md): the dependency facade, the runtime-only no-build-step constraint, demand composition, Web-APIs-only, the `tsconfig` type-system constraints
 - [`NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md): barrel rules and the `export *` ban, the no-sibling-barrel guard, the authoritative subpath catalog, leaf/integration classification, naming conventions
 - [`PRODUCTION_TS_RULES.md`](.decisions/PRODUCTION_TS_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, TSDoc, declarative style
 - [`ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md): declarative route maps and controllers, `definePage`/`defineAction`, middleware ordering, the `context` namespace
@@ -161,52 +161,3 @@ never duplicate a capability that already exists.
 | Browser controller, signal, or lazy-loaded resource | `ui/client` — never imported from a Worker-executed file | `UI_CLIENT_RUNTIME.md` §5 |
 | Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | `NAMESPACE_DESIGN.md` §5c |
 | HTTP output concern (response builders, header classes, HTML escaping, streaming) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | `NAMESPACE_DESIGN.md` §5d |
-
----
-
-## Source-of-Truth Register
-
-**A rule lives in exactly one file. Everywhere else is a link.** Never put in prose what drifts —
-signatures, constant values, step counts, file inventories. These files own the following facts;
-cite them rather than restating them:
-
-| Owns | File |
-|---|---|
-| Export subpath names | `package.json` `exports` |
-| Verification gate steps | `scripts/lib/steps.ts` |
-| Side-effectful modules | `package.json` `sideEffects` |
-| CSRF and honeypot field names | `src/form/constants.ts` |
-| Per-namespace export lists | `src/{ns}/mod.ts` |
-| `lib` and `types` configuration | `tsconfig.json` |
-| Bash allowlist patterns (incl. the exit-check literal) | `.claude/settings.local.json` `permissions.allow` |
-| Barrel rules as *enforced* | `scripts/validate-exports.ts` + `scripts/barrel-parse.ts` |
-| Declared cross-namespace dependency graph | `scripts/namespace-graph.ts` |
-| That graph as *enforced* | `scripts/validate-namespace-graph.ts` + `scripts/namespace-graph-parse.ts` |
-| Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
-| `@source` coverage as *enforced* | `scripts/validate-css-sources.ts` |
-
-The barrel row names two files because the rule genuinely spans two. `validate-exports.ts` remains
-the entry point and retains every policy decision — what fails, in what order, with what message —
-while `barrel-parse.ts` holds the matchers it decides on (the star-ban regex among them). Stating
-the split is more honest than naming the entry point alone and sending a reader to the wrong file.
-
-The namespace-graph rows split three ways for the same reason, and the first is the unusual one:
-`namespace-graph.ts` is *data*, and it is authoritative over the prose. `NAMESPACE_DESIGN.md` §4
-cites it and enumerates nothing, because a second copy of a graph is indistinguishable from an
-amendment the moment the two disagree. The enforcement then splits as the barrel row does —
-`validate-namespace-graph.ts` owns the policy (what fails, the namespace set it derives from
-`exports`, the guard that the enumeration has not returned), while `namespace-graph-parse.ts` owns
-the matchers and the diff (which files are walked, how an import resolves to a namespace, how edge
-kind is decided). A reader chasing "why is this an edge at all" wants the parser; one chasing "why
-did this fail" wants the entry point, and naming only one would send half of them wrong.
-
----
-
-## Type System
-
-- `"types": []` — prevents auto-inclusion of any `@types/*` packages
-- `.types/bun-test.d.ts` — the minimal `bun:test` module stub
-- **Source files see:** `ESNext` + `DOM` + `DOM.Iterable` (standard Web APIs only)
-- **Test files see:** the above plus `bun:test` via the stub
-- Do NOT install or use `bun-types` — it overrides DOM's `fetch` type with Bun-specific
-  properties, causing type errors in test fakes

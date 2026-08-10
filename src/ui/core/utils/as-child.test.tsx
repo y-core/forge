@@ -20,13 +20,41 @@ const BUTTON_BASE =
   "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none " +
   "focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 const TOOLBAR_ITEM_CLASS = `${BUTTON_BASE} text-foreground hover:bg-accent h-8 px-3 text-sm`;
-const MENU_TRIGGER_CLASS = "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const POPOVER_TRIGGER_CLASS = "list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const TOOLTIP_TRIGGER_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const MENU_ITEM_CLASS =
+
+/**
+ * The composed cases below assert the class string *after* `cn` has merged the two components'
+ * own strings, so each is spelled out whole rather than concatenated from its parts — writing
+ * `${A} ${B}` here would assert the inputs, not the merge.
+ *
+ * Every composed trigger declares `outline-none focus-visible:ring-2 focus-visible:ring-ring`
+ * for itself, so composing two of them yields the token twice and the earlier copy is dropped.
+ * A repeated identical class name has no cascade effect, so the rendered result is unchanged.
+ *
+ * The `cursor-*` pair is a real conflict rather than a duplicate: a trigger that declares
+ * `cursor-pointer` loses it to the tooltip's later `cursor-default`, which is the resolution the
+ * stylesheet would have had to make anyway.
+ */
+const MENU_WITH_TOOLTIP_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const POPOVER_WITH_TOOLTIP_CLASS = "list-none cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/** `focus-visible:outline-none` survives: a modifier scope is part of the key, so it never met the bare `outline-none`. */
+const TOOLBAR_ITEM_WITH_TOOLTIP_CLASS =
+  "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none " +
+  "disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm " +
+  "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const MENU_ITEM_WITH_TOOLTIP_CLASS =
   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-popover-foreground bg-transparent border-0 " +
-  "cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
-  "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50";
+  "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
+  "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 " +
+  "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/**
+ * Coincides with `TOOLBAR_ITEM_WITH_TOOLTIP_CLASS` — the menu trigger's only surviving contribution
+ * was `cursor-pointer`, which the tooltip's `cursor-default` now takes. Kept as its own constant so
+ * a change to either assertion fails on its own rather than silently co-moving with the other.
+ */
+const MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS =
+  "inline-flex items-center justify-center rounded-lg font-medium transition-colors " +
+  "focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent " +
+  "h-8 px-3 text-sm cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 describe("cloneAsChild — button options the compound never set", () => {
   it("leaves a child button's own type alone when no type option is given", async () => {
@@ -201,7 +229,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-haspopup="menu" class="${MENU_TRIGGER_CLASS} ${TOOLTIP_TRIGGER_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
     );
   });
 
@@ -214,7 +242,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="popover-trigger tooltip-trigger" command="toggle-popover" commandfor="panel" ' +
-        `class="${POPOVER_TRIGGER_CLASS} ${TOOLTIP_TRIGGER_CLASS}" aria-describedby="tip">Panel</button>`,
+        `class="${POPOVER_WITH_TOOLTIP_CLASS}" aria-describedby="tip">Panel</button>`,
     );
   });
 
@@ -233,7 +261,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="toolbar-button toolbar-trigger tooltip-trigger" ' +
-        `class="${TOOLBAR_ITEM_CLASS} ${TOOLTIP_TRIGGER_CLASS}" data-toolbar-item="" command="toggle-popover" ` +
+        `class="${TOOLBAR_ITEM_WITH_TOOLTIP_CLASS}" data-toolbar-item="" command="toggle-popover" ` +
         'commandfor="flyout" aria-describedby="tip">B</button>',
     );
   });
@@ -247,7 +275,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="toolbar-button tooltip-trigger" ' +
-        `class="${TOOLBAR_ITEM_CLASS} ${TOOLTIP_TRIGGER_CLASS}" data-toolbar-item="" aria-describedby="tip">B</button>`,
+        `class="${TOOLBAR_ITEM_WITH_TOOLTIP_CLASS}" data-toolbar-item="" aria-describedby="tip">B</button>`,
     );
   });
 
@@ -260,7 +288,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" role="menuitem" data-slot="menu-submenu-trigger tooltip-trigger" command="toggle-popover" ' +
-        `commandfor="more" aria-haspopup="menu" class="${MENU_ITEM_CLASS} ${TOOLTIP_TRIGGER_CLASS}" aria-describedby="tip">More</button>`,
+        `commandfor="more" aria-haspopup="menu" class="${MENU_ITEM_WITH_TOOLTIP_CLASS}" aria-describedby="tip">More</button>`,
     );
   });
 
@@ -277,7 +305,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger toolbar-button tooltip-trigger" command="toggle-popover" ' +
-        `commandfor="file-menu" aria-haspopup="menu" class="${MENU_TRIGGER_CLASS} ${TOOLBAR_ITEM_CLASS} ${TOOLTIP_TRIGGER_CLASS}" ` +
+        `commandfor="file-menu" aria-haspopup="menu" class="${MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS}" ` +
         'data-toolbar-item="" aria-describedby="tip">File</button>',
     );
   });
@@ -294,7 +322,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-haspopup="menu" class="${MENU_TRIGGER_CLASS} ${TOOLTIP_TRIGGER_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
     );
   });
 });

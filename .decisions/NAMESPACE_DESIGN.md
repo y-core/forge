@@ -118,7 +118,8 @@ give a reader two copies to reconcile and no way to tell which had drifted.
 
 Rows follow `package.json` `exports` order, which owns the subpath names. The Key Exports
 column is an orientation aid — **`src/{ns}/mod.ts` is authoritative for what a namespace
-exports.**
+exports.** Leaf/integration classification is declared in `scripts/namespace-graph.ts` (see §4a)
+and side-effect status in `package.json` `sideEffects`; this table enumerates neither.
 
 **Asset rows are entries whose target is not a module**, and they carry two rules a barrel row does
 not.
@@ -144,49 +145,49 @@ versions of stylesheets that existed, were inside `files[]`, and could not be im
 additionally requires the file to exist — otherwise a citation of `theme-forest.css` would satisfy
 the shape and send a reader to a resolution error.
 
-| Export Path | Source | Category | Key Exports |
-|---|---|---|---|
-| `@y-core/forge/app` | `src/app/mod.ts` | Integration | `createApp`, `Forge`, `applyAssets`, `healthCheck`, `definePage`, `defineAction`, `applyMiddlewareChain`; re-exports `validateBindings`, `validateEnv`, `ConfigKey` from `context` |
-| `@y-core/forge/assets` | `src/assets/mod.ts` | Integration | `defineAssetsConfig`, `loadConfig`, `AssetsConfig` |
-| `@y-core/forge/assets/build` | `src/assets/build/mod.ts` | Integration | `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets` |
-| `@y-core/forge/assets/manifest` | `src/assets/manifest/mod.ts` | Leaf | `createManifest`, `createSpriteRegistry` |
-| `@y-core/forge/cli` | `src/cli/mod.ts` | Leaf | `createCommand`, `addCommand`, `execute`, `CliError` |
-| `@y-core/forge/config` | `src/config/mod.ts` | Leaf | `Config`, `createConfig`, `env`, `resolveConfig` |
-| `@y-core/forge/context` | `src/context/mod.ts` | Leaf (foundational — §4c) | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
-| `@y-core/forge/form` | `src/form/mod.ts` | Leaf | `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `isHoneypotFilled`, `verifyTurnstile`, `formToObject` — `formToObject` reads a body into a plain object; applying a schema to it is `defineAction`'s |
-| `@y-core/forge/jsx` | `src/jsx/mod.ts` | Integration | `createElement`, `cloneElement`, `Fragment`, `isValidElement`, `renderToString`, `renderPage` — imports `http` |
-| `@y-core/forge/jsx/jsx-runtime` | `src/jsx/jsx-runtime.ts` | Integration | automatic-runtime transform target |
-| `@y-core/forge/jsx/jsx-dev-runtime` | `src/jsx/jsx-dev-runtime.ts` | Integration | automatic-runtime dev transform target |
-| `@y-core/forge/jsx/register` | `src/jsx/register.ts` | Integration (sideEffect) | global JSX runtime registration |
-| `@y-core/forge/html/htmx` | `src/html/htmx/mod.ts` | Leaf | `isHxRequest`, `readHxRequest`, `hxHeaders`, `hxAttrs`, `SWAP`, and the pattern helpers |
-| `@y-core/forge/http` | `src/http/mod.ts` | Leaf | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `htmlResponse`, `fragmentResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
-| `@y-core/forge/logging` | `src/logging/mod.ts` | Integration | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withRedaction`, `requestLogger`, `requestLog` |
-| `@y-core/forge/logging/show` | `src/logging/show/mod.ts` | Integration | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
-| `@y-core/forge/pkg` | `src/pkg/mod.ts` | Integration | `createReleaseCommand`, `parseSemVer`, `bumpSemVer`, `formatSemVer` |
-| `@y-core/forge/result` | `src/result/mod.ts` | Leaf (foundational — §4c) | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
-| `@y-core/forge/router` | `src/router/mod.ts` | Leaf | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
-| `@y-core/forge/security` | `src/security/mod.ts` | Integration | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
-| `@y-core/forge/session` | `src/session/mod.ts` | Leaf | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
-| `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | Integration | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment`, `uuidv7`, `uuidv7Bytes`, `uuidFromBytes`, `uuidToBytes` and the two `createUuidv7*` factories — the UUID set is implemented in `crypto` and surfaced here (§3b) |
-| `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | Integration | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
-| `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | Leaf | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend` |
-| `@y-core/forge/testing` | `src/testing/mod.ts` | Integration | test-only fixtures — see [`TESTING.md`](./TESTING.md) §7 |
-| `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | Integration | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
-| `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | Leaf | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
-| `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Asset (pattern) | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. `forge-show.css` is that plus the showcase's classes, opt-in. Underneath: `theme-base.css` (semantic tokens over an eleven-stop `--palette-*` ramp, plus the layered component rules), `forge-ui.css` (the utility CSS specific components require), and seven ready-made ramps — `theme-slate.css` is the structural model for an app's own |
-| `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | Leaf | the DOM contract as pure data — `STATE_ATTRS`, `stateAttrs`, `applyStateAttrs`, `SCOPE_EVENTS`, `scopeAttrs`, and the scope-name / selector constants each keyboard primitive shares between its SSR and client halves |
-| `@y-core/forge/ui/controls` | `src/ui/controls/mod.ts` | Integration | bound control variants that shadow the `ui/core` names — see §5b |
-| `@y-core/forge/ui/core` | `src/ui/core/mod.ts` | Integration | the SSR component set plus `cn`, `cva` — see [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) |
-| `@y-core/forge/ui/core/client` | `src/ui/core/client.ts` | Integration (sideEffect) | ui/core browser controller registration |
-| `@y-core/forge/ui/chrome` | `src/ui/chrome/mod.ts` | Integration | `Navbar`, `Toolbar`, `ThemeToggle`, `FOUC_SCRIPT`, `THEME_ATTR` |
-| `@y-core/forge/ui/chrome/client` | `src/ui/chrome/client.ts` | Integration (sideEffect) | theme/nav chrome controller registration |
-| `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | Integration | `mountNav`, `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `bindField`, `bindGroup`, `resume`, `registerScope` |
-| `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | Leaf (sideEffect) | htmx bundle |
-| `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | Integration | `Flash`, `FlashContainer`, `FlashOob`, `Resumable`, `fieldAttr`, `commandAttrs` |
-| `@y-core/forge/ui/show` | `src/ui/show/mod.ts` | Integration | `ShowcaseContent`, `registerShowcase`, `showcaseRoutes` |
-| `@y-core/forge/ui/show/client` | `src/ui/show/client.ts` | Integration (sideEffect) | showcase browser controller registration |
-| `@y-core/forge/validation` | `src/validation/mod.ts` | Leaf (foundational — §4c) | `v` (valibot facade), `ValidationResult` |
-| `@y-core/forge/validation/cli` | `src/validation/cli/mod.ts` | Integration | `createGenEnv`, `readWranglerConfig`, `emit` — imports `cli` |
+| Export Path | Source | Key Exports |
+|---|---|---|
+| `@y-core/forge/app` | `src/app/mod.ts` | `createApp`, `Forge`, `applyAssets`, `healthCheck`, `definePage`, `defineAction`, `applyMiddlewareChain`; re-exports `validateBindings`, `validateEnv`, `ConfigKey` from `context` |
+| `@y-core/forge/assets` | `src/assets/mod.ts` | `defineAssetsConfig`, `loadConfig`, `AssetsConfig` |
+| `@y-core/forge/assets/build` | `src/assets/build/mod.ts` | `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets` |
+| `@y-core/forge/assets/manifest` | `src/assets/manifest/mod.ts` | `createManifest`, `createSpriteRegistry` |
+| `@y-core/forge/cli` | `src/cli/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError` |
+| `@y-core/forge/config` | `src/config/mod.ts` | `Config`, `createConfig`, `env`, `resolveConfig` |
+| `@y-core/forge/context` | `src/context/mod.ts` | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
+| `@y-core/forge/form` | `src/form/mod.ts` | `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `isHoneypotFilled`, `verifyTurnstile`, `formToObject` — `formToObject` reads a body into a plain object; applying a schema to it is `defineAction`'s |
+| `@y-core/forge/jsx` | `src/jsx/mod.ts` | `createElement`, `cloneElement`, `Fragment`, `isValidElement`, `renderToString`, `renderPage` — imports `http` |
+| `@y-core/forge/jsx/jsx-runtime` | `src/jsx/jsx-runtime.ts` | automatic-runtime transform target |
+| `@y-core/forge/jsx/jsx-dev-runtime` | `src/jsx/jsx-dev-runtime.ts` | automatic-runtime dev transform target |
+| `@y-core/forge/jsx/register` | `src/jsx/register.ts` | global JSX runtime registration |
+| `@y-core/forge/html/htmx` | `src/html/htmx/mod.ts` | `isHxRequest`, `readHxRequest`, `hxHeaders`, `hxAttrs`, `SWAP`, and the pattern helpers |
+| `@y-core/forge/http` | `src/http/mod.ts` | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `htmlResponse`, `fragmentResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
+| `@y-core/forge/logging` | `src/logging/mod.ts` | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withRedaction`, `requestLogger`, `requestLog` |
+| `@y-core/forge/logging/show` | `src/logging/show/mod.ts` | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
+| `@y-core/forge/pkg` | `src/pkg/mod.ts` | `createReleaseCommand`, `parseSemVer`, `bumpSemVer`, `formatSemVer` |
+| `@y-core/forge/result` | `src/result/mod.ts` | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
+| `@y-core/forge/router` | `src/router/mod.ts` | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
+| `@y-core/forge/security` | `src/security/mod.ts` | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
+| `@y-core/forge/session` | `src/session/mod.ts` | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
+| `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | `createD1Client`, `resolveD1Client`, `validateD1Binding`, `sql`, `isSqlFragment`, `uuidv7`, `uuidv7Bytes`, `uuidFromBytes`, `uuidToBytes` and the two `createUuidv7*` factories — the UUID set is implemented in `crypto` and surfaced here (§3b) |
+| `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
+| `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend` |
+| `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TESTING.md`](./TESTING.md) §7 |
+| `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
+| `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
+| `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. `forge-show.css` is that plus the showcase's classes, opt-in. Underneath: `theme-base.css` (semantic tokens over an eleven-stop `--palette-*` ramp, plus the layered component rules), `forge-ui.css` (the utility CSS specific components require), and seven ready-made ramps — `theme-slate.css` is the structural model for an app's own |
+| `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | the DOM contract as pure data — `STATE_ATTRS`, `stateAttrs`, `applyStateAttrs`, `SCOPE_EVENTS`, `scopeAttrs`, and the scope-name / selector constants each keyboard primitive shares between its SSR and client halves |
+| `@y-core/forge/ui/controls` | `src/ui/controls/mod.ts` | bound control variants that shadow the `ui/core` names — see §5b |
+| `@y-core/forge/ui/core` | `src/ui/core/mod.ts` | the SSR component set plus `cn`, `cva` — see [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) |
+| `@y-core/forge/ui/core/client` | `src/ui/core/client.ts` | ui/core browser controller registration |
+| `@y-core/forge/ui/chrome` | `src/ui/chrome/mod.ts` | `Navbar`, `Toolbar`, `ThemeToggle`, `FOUC_SCRIPT`, `THEME_ATTR` |
+| `@y-core/forge/ui/chrome/client` | `src/ui/chrome/client.ts` | theme/nav chrome controller registration |
+| `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | `mountNav`, `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `bindField`, `bindGroup`, `resume`, `registerScope` |
+| `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | htmx bundle |
+| `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | `Flash`, `FlashContainer`, `FlashOob`, `Resumable`, `fieldAttr`, `commandAttrs` |
+| `@y-core/forge/ui/show` | `src/ui/show/mod.ts` | `ShowcaseContent`, `registerShowcase`, `showcaseRoutes` |
+| `@y-core/forge/ui/show/client` | `src/ui/show/client.ts` | showcase browser controller registration |
+| `@y-core/forge/validation` | `src/validation/mod.ts` | `v` (valibot facade), `ValidationResult` |
+| `@y-core/forge/validation/cli` | `src/validation/cli/mod.ts` | `createGenEnv`, `readWranglerConfig`, `emit` — imports `cli` |
 
 ### 3b. Internal Namespaces
 
@@ -207,6 +208,12 @@ here so `storage/kv` or a future `auth` can consume them without a layering viol
 to consumers only via `@y-core/forge/storage/db`
 (see [`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §1e).
 The sealed guarantee is unchanged — there is still no importable `crypto` path.
+
+**The catalog's enumeration guard reaches this subsection.** `validate-namespace-graph.ts` opens
+its window on the `### 3a.` heading and closes it at the next `## `, so §3a and §3b are one
+window: a catalog table gaining a leaf/integration or side-effect column fails the gate here just
+as it would in §3a. Covering the whole of §3 is deliberate — the guard's subject is the document's
+catalog, and a table moved one subsection down is the same enumeration in a new place.
 
 **That placement costs one piece of enforcement, knowingly.** `validate-exports`'s
 source → barrel pass walks the source files each *exported* namespace owns, so a `@public` symbol
@@ -256,6 +263,12 @@ load-bearing and not self-evident:
   is a reported violation. That is §4c's own closure property, enforced rather than trusted.
 - **An edge's kind is the AND across its import sites.** One value import anywhere makes the whole
   edge a value edge, so declaring an edge type-only is a claim about every site, not the first.
+
+**The `| Namespace | Composes |` table may not come back here either.** The guard windows from the
+`### 4a.` heading to the next `## `, so §4a, §4b and §4c are one window and a table written in this
+subsection fails the gate at its own line. The reach is the ruling, not an oversight: §4b is the
+subsection an integration table most invites, so a guard scoped to §4a alone would leave the
+likeliest spot for the enumeration to return unguarded.
 
 **A type-only edge is what lets two namespaces name each other.** Erased at emit, it cannot close a
 runtime cycle, so a mutually-naming pair is legal exactly while one direction stays `import type` —

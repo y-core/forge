@@ -22,33 +22,40 @@ function collectTsx(dir: string): string[] {
   return out;
 }
 
-const files = collectTsx(SRC);
-let failed = false;
+/** Runs the scan and returns the exit code rather than exiting, so a test can import this module,
+ *  call it, and read the verdict without the runner dying. Nothing above this line touches disk. */
+export function main(): number {
+  const files = collectTsx(SRC);
+  let failed = false;
 
-for (const file of files) {
-  const src = readFileSync(file, "utf-8");
-  const missingRuntime = !src.includes(PRAGMA_RUNTIME);
-  const missingSource = !src.includes(PRAGMA_SOURCE);
-  const clobbers = findSlotClobbers(src);
-  if (missingRuntime || missingSource || clobbers.length > 0) {
-    const rel = file.slice(ROOT.length + 1);
-    console.error(`FAIL ${rel}`);
-    if (missingRuntime) console.error(`  missing: /** @jsxRuntime automatic */`);
-    if (missingSource) console.error(`  missing: /** @jsxImportSource @y-core/forge/jsx */`);
-    for (const { line, tag, slot, spread } of clobbers) {
-      console.error(
-        `  line ${line}: \`<${tag}>\` has a literal \`data-slot='${slot}'\` before \`{...${spread}}\` — the spread wins and the token is lost; destructure \`"data-slot": inherited\` and write \`data-slot={slotToken("${slot}", inherited)}\``,
-      );
+  for (const file of files) {
+    const src = readFileSync(file, "utf-8");
+    const missingRuntime = !src.includes(PRAGMA_RUNTIME);
+    const missingSource = !src.includes(PRAGMA_SOURCE);
+    const clobbers = findSlotClobbers(src);
+    if (missingRuntime || missingSource || clobbers.length > 0) {
+      const rel = file.slice(ROOT.length + 1);
+      console.error(`FAIL ${rel}`);
+      if (missingRuntime) console.error(`  missing: /** @jsxRuntime automatic */`);
+      if (missingSource) console.error(`  missing: /** @jsxImportSource @y-core/forge/jsx */`);
+      for (const { line, tag, slot, spread } of clobbers) {
+        console.error(
+          `  line ${line}: \`<${tag}>\` has a literal \`data-slot='${slot}'\` before \`{...${spread}}\` — the spread wins and the token is lost; destructure \`"data-slot": inherited\` and write \`data-slot={slotToken("${slot}", inherited)}\``,
+        );
+      }
+      failed = true;
     }
-    failed = true;
   }
+
+  if (failed) {
+    console.error(
+      "\nEach shipped .tsx file must carry both JSX pragma lines, and must merge every `data-slot` it writes rather than leaving it exposed to a later spread.",
+    );
+    return 1;
+  }
+
+  console.log(`  ok ${files.length} .tsx files carry both JSX pragmas and no clobberable \`data-slot\`.`);
+  return 0;
 }
 
-if (failed) {
-  console.error(
-    "\nEach shipped .tsx file must carry both JSX pragma lines, and must merge every `data-slot` it writes rather than leaving it exposed to a later spread.",
-  );
-  process.exit(1);
-}
-
-console.log(`  ok ${files.length} .tsx files carry both JSX pragmas and no clobberable \`data-slot\`.`);
+if (import.meta.main) process.exit(main());

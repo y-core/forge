@@ -24,8 +24,8 @@ write already exists in another `.decisions/` doc, in `CLAUDE.md`, or in a sourc
 the single source of truth, **cite it and stop**. Prefer deleting a duplicate over syncing it.
 
 **Never put in prose what drifts**: function signatures, constant values, step counts, file
-inventories. Name the file that owns them — the register is in `CLAUDE.md`, and
-`AGENT_GUIDE.md` §8 owns the rule.
+inventories. Name the file that owns them — `AGENT_GUIDE.md` §8 owns both the rule and the
+register.
 
 Two corollaries you will need constantly:
 

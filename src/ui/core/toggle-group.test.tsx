@@ -93,6 +93,21 @@ describe("ToggleGroup", () => {
     );
   });
 
+  // Two absences, one rationale, and the vertical case is the one worth pinning because it is where
+  // adding them looks most reasonable. ARIA does not define `aria-orientation` for `group`, and a
+  // `<fieldset>` already *is* a group — so a `role` would be a restatement and an `aria-orientation`
+  // would be an undefined attribute on the role the element already has. The axis travels as
+  // `data-orientation`, which is what the stylesheet and `bindGroup` read; see the component's own
+  // TSDoc and the "No `role` — a `<fieldset>` is already a `group`" line in `src/ui/README.md`.
+  it("gives the group neither a role nor an aria-orientation, on either axis", async () => {
+    expect(await render(<ToggleGroup orientation='vertical' aria-label='Projection' />)).toBe(
+      '<fieldset data-slot="toggle-group" data-orientation="vertical" class="flex justify-center min-w-0 border-0 m-0 p-0 flex-col" aria-label="Projection"></fieldset>',
+    );
+    expect(await render(<ToggleGroup orientation='horizontal' aria-label='Projection' />)).toBe(
+      '<fieldset data-slot="toggle-group" data-orientation="horizontal" class="flex justify-center min-w-0 border-0 m-0 p-0" aria-label="Projection"></fieldset>',
+    );
+  });
+
   it("vertical orientation stamps data-orientation and adds flex-col to the group", async () => {
     expect(await render(<ToggleGroup orientation='vertical' />)).toBe(
       '<fieldset data-slot="toggle-group" data-orientation="vertical" class="flex justify-center min-w-0 border-0 m-0 p-0 flex-col"></fieldset>',

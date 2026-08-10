@@ -35,7 +35,11 @@ interface CheckboxGroupItemProps extends Omit<JSX.IntrinsicElements["input"], "c
 }
 
 /** Per-item id, derived rather than passed: the group and the item cannot see each other, and a
- * hand-written id in two places is the drift `field.tsx`'s helpers already exist to prevent. */
+ * hand-written id in two places is the drift `field.tsx`'s helpers already exist to prevent.
+ *
+ * This id is declared but never referenced — the input is wrapped in its `<label>`, so no `for`
+ * names it, and a `value` containing whitespace is caller data that round-trips verbatim. Adding an
+ * IDREF to it means gating it through `field.tsx`'s id-token predicate first. */
 function itemId(name: string, value: string, scope?: string): string {
   return `${fieldId(name, scope)}-${value}`;
 }
@@ -81,8 +85,7 @@ const CheckboxGroupLabel: FC<PropsWithChildren<Omit<JSX.IntrinsicElements["legen
   </legend>
 );
 
-/** A real `<input type="checkbox">` inside a real `<label>`: it submits with the form, resets with
- * the form, and needs no JavaScript to do either. */
+/** Submits with the form, resets with the form, and needs no JavaScript to do either. */
 const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({
   name,
   value,

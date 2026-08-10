@@ -1,3 +1,5 @@
+import { cn } from "./cn";
+
 type VariantMap = Record<string, string>;
 type VariantConfig = Record<string, VariantMap>;
 type DefaultVariants<V extends VariantConfig> = { [K in keyof V]?: keyof V[K] };
@@ -15,7 +17,11 @@ export type CVAProps<V extends VariantConfig> = {
 /**
  * Class-variance-authority: builds a class-name resolver from a `base` string plus named
  * variant maps and their defaults. The returned function takes selected variant values (and
- * an optional `class` override) and returns the composed class string. @public
+ * an optional `class` override) and returns the composed class string.
+ *
+ * Composition order is base → variants → `class`, and the parts are merged through `cn`, so a
+ * later part *overrides* an earlier one on any Tailwind utility they both set rather than
+ * appending to it. @public
  */
 export function cva<V extends VariantConfig>(config: CVADefinition<V>) {
   const base = config.base ?? "";
@@ -38,6 +44,6 @@ export function cva<V extends VariantConfig>(config: CVADefinition<V>) {
       parts.push(props.class);
     }
 
-    return parts.join(" ");
+    return cn(...parts);
   };
 }

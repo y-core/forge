@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
-import { findSubpathCitations } from "./docs-parse";
+import { findSubpathCitations, uncitedSubpaths } from "./docs-parse";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_NAME = (pkg as { name: string }).name;
@@ -53,8 +53,11 @@ const SIZE_WARN = 600;
 const SIZE_FAIL = 800;
 const DESCRIPTION_MAX = 200;
 
+// Run state, shared by the seven checks below rather than threaded through all of them. `main` is
+// the only writer that resets it, so importing this module observes a zero count and an empty list —
+// and a second call to `main` starts from the same place a fresh process would.
 let failures = 0;
-const warnings: string[] = [];
+let warnings: string[] = [];
 
 function fail(file: string, message: string): void {
   console.error(`FAIL ${file}: ${message}`);
@@ -127,6 +130,19 @@ function collectMarkdown(): string[] {
 // forbid it, and the sealed-internal namespace (`SEALED_INTERNAL` in validate-exports.ts).
 const DOCUMENTED_NON_EXPORTS = new Set(["./auth", "./handler", "./all", "./crypto"]);
 
+/**
+ * Published subpaths the root README is licensed *not* to cite: the three JSX runtime entry points,
+ * which are written by the compiler and by build configuration and never by a consumer.
+ * `src/jsx/README.md` says so directly — they are imported "only in build configuration" — and the
+ * consumer's real obligation, setting `jsxImportSource`, is already covered under §Supported
+ * Environments. A table row for any of the three would document an import the reader must not write.
+ *
+ * Subpath *patterns* are excluded structurally rather than listed: `EXPORT_SUBPATHS` drops every
+ * starred key, because one row per stylesheet is exactly the enumeration a pattern exists to replace
+ * (`NAMESPACE_DESIGN.md` §3a).
+ */
+const TABLE_EXEMPT_SUBPATHS = new Set(["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"]);
+
 function isGoverningDoc(file: string): boolean {
   return file.startsWith(".decisions/") || file === GUIDE_INDEX_OWNER || file.startsWith(".claude/agents/");
 }
@@ -155,6 +171,23 @@ function checkImportPaths(file: string, source: string): void {
     if (!isExportSubpath(subpath)) {
       fail(file, `line ${line}: \`${PACKAGE_NAME}${raw}\` is not reachable through package.json exports`);
     }
+  }
+}
+
+/**
+ * The other direction: a published subpath the front page never names.
+ *
+ * A whole-file assertion, not a per-line one — the property is that the citation exists somewhere in
+ * the README, so it is checked once against the entire source. Strict matching is what makes a table
+ * cell and a `**[…](…)**` link both count, which is where these citations actually live.
+ */
+function checkExportCoverage(source: string): void {
+  const citations = findSubpathCitations(source, PACKAGE_NAME, { strict: true });
+  for (const subpath of uncitedSubpaths(EXPORT_SUBPATHS, citations, TABLE_EXEMPT_SUBPATHS)) {
+    fail(
+      ROOT_README,
+      `\`${subpath}\` is published by package.json exports but not cited in README.md — add a namespace-table row, or add it to TABLE_EXEMPT_SUBPATHS in scripts/validate-docs.ts with its rationale`,
+    );
   }
 }
 
@@ -362,45 +395,59 @@ function checkGuideIndex(decisionsDocs: string[]): void {
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────────────────────
-const files = collectMarkdown();
-const sources = new Map<string, string>();
-const sectionsByDoc = new Map<string, Set<string>>();
-const parsed = new Map<string, Section[]>();
+/** Runs every check and returns the exit code rather than exiting, so a test can import this module,
+ *  call it, and read the verdict without the runner dying. Nothing above this line reads a document —
+ *  the walk starts here. */
+export function main(): number {
+  failures = 0;
+  warnings = [];
 
-for (const file of files) {
-  const source = readFileSync(resolve(ROOT, file), "utf-8");
-  sources.set(file, source);
-  if (!file.startsWith(".decisions/")) continue;
-  const sections = parseSections(file, stripFences(source));
-  parsed.set(file, sections);
-  sectionsByDoc.set(file.slice(".decisions/".length), new Set(sections.map((s) => s.number)));
-}
+  const files = collectMarkdown();
+  const sources = new Map<string, string>();
+  const sectionsByDoc = new Map<string, Set<string>>();
+  const parsed = new Map<string, Section[]>();
 
-for (const file of files) {
-  const source = sources.get(file) as string;
-  const stripped = stripFences(source);
-  const isDecision = file.startsWith(".decisions/");
-  const before = failures;
-
-  checkImportPaths(file, source);
-  checkRot(file, stripped);
-  checkReferences(file, stripped, new Set((parsed.get(file) ?? []).map((s) => s.number)), sectionsByDoc);
-
-  if (isDecision) {
-    checkFrontmatter(file, source);
-    checkSize(file, source.split("\n").length);
-    checkQuickReference(file, stripped, parsed.get(file) as Section[]);
+  for (const file of files) {
+    const source = readFileSync(resolve(ROOT, file), "utf-8");
+    sources.set(file, source);
+    if (!file.startsWith(".decisions/")) continue;
+    const sections = parseSections(file, stripFences(source));
+    parsed.set(file, sections);
+    sectionsByDoc.set(file.slice(".decisions/".length), new Set(sections.map((s) => s.number)));
   }
 
-  if (failures === before) console.log(`  ok ${file}`);
+  for (const file of files) {
+    const source = sources.get(file) as string;
+    const stripped = stripFences(source);
+    const isDecision = file.startsWith(".decisions/");
+    const before = failures;
+
+    checkImportPaths(file, source);
+    checkRot(file, stripped);
+    checkReferences(file, stripped, new Set((parsed.get(file) ?? []).map((s) => s.number)), sectionsByDoc);
+
+    if (isDecision) {
+      checkFrontmatter(file, source);
+      checkSize(file, source.split("\n").length);
+      checkQuickReference(file, stripped, parsed.get(file) as Section[]);
+    }
+
+    if (failures === before) console.log(`  ok ${file}`);
+  }
+
+  const rootReadme = sources.get(ROOT_README);
+  if (rootReadme !== undefined) checkExportCoverage(rootReadme);
+
+  checkGuideIndex([...sectionsByDoc.keys()].sort());
+
+  for (const line of warnings) console.warn(line);
+
+  if (failures > 0) {
+    console.error(`\n${failures} problem${failures === 1 ? "" : "s"} found.`);
+    return 1;
+  }
+  console.log(`\nAll docs verified (${files.length} files, ${warnings.length} warnings).`);
+  return 0;
 }
 
-checkGuideIndex([...sectionsByDoc.keys()].sort());
-
-for (const line of warnings) console.warn(line);
-
-if (failures > 0) {
-  console.error(`\n${failures} problem${failures === 1 ? "" : "s"} found.`);
-  process.exit(1);
-}
-console.log(`\nAll docs verified (${files.length} files, ${warnings.length} warnings).`);
+if (import.meta.main) process.exit(main());

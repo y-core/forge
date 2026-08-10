@@ -254,7 +254,7 @@ below, cite it and stop. Prefer deleting a duplicate over syncing it.
 **Never put in prose what drifts** — function signatures, constant values, step counts, file
 inventories. Name the file that owns them.
 
-Facts owned by source, never restated in `.decisions/`:
+Facts owned by a file, never restated in `.decisions/` or `CLAUDE.md`:
 
 | Owns | File |
 |---|---|
@@ -264,7 +264,34 @@ Facts owned by source, never restated in `.decisions/`:
 | CSRF and honeypot field names | `src/form/constants.ts` |
 | Per-namespace export lists | `src/{ns}/mod.ts` |
 | `lib` and `types` configuration | `tsconfig.json` |
-| Barrel rules as *enforced* | `scripts/validate-exports.ts` |
+| Bash allowlist patterns (incl. the exit-check literal) | `.claude/settings.local.json` `permissions.allow` |
+| Tailwind conflict-group table | `src/ui/core/utils/class-groups.ts` |
+| Barrel rules as *enforced* | `scripts/validate-exports.ts` + `scripts/barrel-parse.ts` |
+| Declared cross-namespace dependency graph | `scripts/namespace-graph.ts` |
+| That graph as *enforced* | `scripts/validate-namespace-graph.ts` + `scripts/namespace-graph-parse.ts` |
+| Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
+| `@source` coverage as *enforced* | `scripts/validate-css-sources.ts` |
+
+The barrel row names two files because the rule genuinely spans two. `validate-exports.ts` remains
+the entry point and retains every policy decision — what fails, in what order, with what message —
+while `barrel-parse.ts` holds the matchers it decides on (the star-ban regex among them). Stating
+the split is more honest than naming the entry point alone and sending a reader to the wrong file.
+
+The conflict-group row names the data file alone because the split is the one the barrel and
+namespace-graph rows describe: `class-groups.ts` is *data* and is authoritative over any prose
+describing forge's covered utility surface, while `cn.ts` retains every policy decision — which
+class is dropped, in what order, and the fail-open rule for anything the table does not claim.
+
+The namespace-graph rows split three ways for the same reason, and the first is the unusual one:
+`namespace-graph.ts` is *data*, and it is authoritative over the prose.
+[`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §4 cites it and enumerates nothing, because a second
+copy of a graph is indistinguishable from an amendment the moment the two disagree. The enforcement
+then splits as the barrel row does — `validate-namespace-graph.ts` owns the policy (what fails, the
+namespace set it derives from `exports`, the guard that the enumeration has not returned), while
+`namespace-graph-parse.ts` owns the matchers and the diff (which files are walked, how an import
+resolves to a namespace, how edge kind is decided). A reader chasing "why is this an edge at all"
+wants the parser; one chasing "why did this fail" wants the entry point, and naming only one would
+send half of them wrong.
 
 Every `@y-core/forge/<subpath>` written anywhere in the documentation set is checked against
 `package.json` `exports`; an unresolvable subpath fails the gate.

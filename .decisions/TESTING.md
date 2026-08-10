@@ -186,7 +186,8 @@ the thing that would rot. Suppress the lint rule at that import with a reason, a
 
 ### 3a. The Encoding Map
 
-The JSX renderer escapes dynamic content. Assert the escaped forms:
+The JSX renderer escapes **every** string child, static and interpolated alike. Assert the
+escaped forms:
 
 | Character | Escaped form |
 |---|---|
@@ -196,8 +197,12 @@ The JSX renderer escapes dynamic content. Assert the escaped forms:
 | `>` (greater-than) | `&gt;` |
 | `"` in attributes | `&#34;` or `&quot;` |
 
-**Static JSX content is NOT escaped — only interpolated values are.** Know which you are
-asserting on before writing the assertion.
+**Static text in the JSX source is escaped exactly as an interpolated value is** — `<p>Tom &
+Co</p>` and `<p>{name}</p>` produce the same entities. Never assert raw `&`, `<`, `>`, `'` or
+`"` on the strength of a literal being written in the source.
+
+**The one bypass is `SafeHtml`:** a child that passed through `rawHtml` is emitted verbatim.
+Assert the unescaped form there, and only there. See `src/jsx/render-to-string.ts`.
 
 **URL-bearing attributes are a further exception:** the renderer routes `href` / `src` /
 `action` through `safeUrl`, so a `javascript:` URL renders as `"#"`. Assert the sanitized form.

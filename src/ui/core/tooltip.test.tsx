@@ -18,7 +18,14 @@ import { Tooltip } from "./tooltip";
 const ROOT_CLASS = "relative inline-block";
 const TRIGGER_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const CONTENT_CLASS = "z-50 w-max max-w-xs rounded-md bg-foreground px-2 py-1 text-xs text-background shadow-md";
-const MENU_TRIGGER_CLASS = "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/**
+ * The merged result of `Menu.Trigger`'s own class and `TRIGGER_CLASS`, spelled out whole. Both
+ * declare `outline-none focus-visible:ring-2 focus-visible:ring-ring`, so `cn` drops the earlier
+ * copy and keeps the later one in place — a repeated class name has no cascade effect. The menu
+ * trigger's `cursor-pointer` is a genuine conflict and loses to the later `cursor-default`, which
+ * leaves the merge byte-identical to `TRIGGER_CLASS`.
+ */
+const MENU_TRIGGER_WITH_TOOLTIP_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 describe("Tooltip — data-slot", () => {
   it("emits its own token alone when none was inherited", async () => {
@@ -94,7 +101,7 @@ describe("Tooltip.Trigger asChild — the three-way token composition", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger my-thing" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-haspopup="menu" class="${MENU_TRIGGER_CLASS} ${TRIGGER_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-haspopup="menu" class="${MENU_TRIGGER_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
     );
   });
 });

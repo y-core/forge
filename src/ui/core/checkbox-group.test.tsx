@@ -60,9 +60,43 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
     );
 
     expect(html).toContain('aria-describedby="field-toppings-description field-toppings-error"');
-    // Every referenced id is declared somewhere in the same markup — the whole point of the change.
     const ids = idsAndRefs(html);
     expect(ids).toEqual(["field-toppings-description", "field-toppings-error", "field-toppings-description", "field-toppings-error"]);
+  });
+});
+
+describe("CheckboxGroup — a name must be a single id token", () => {
+  it("an item value containing a space still declares its id, because nothing references it", async () => {
+    // Pinned deliberately rather than left to chance. The input is wrapped in its `<label>`, so no
+    // `for` and no `aria-describedby` ever names this id — a declared id no IDREF resolves is inert,
+    // and the `value` is caller data that must round-trip to the server verbatim. Gating it through
+    // the id-token predicate would be a change to make only if something ever referenced it.
+    expect(
+      await render(
+        <CheckboxGroup name='pets'>
+          <CheckboxGroup.Item name='pets' value='a b'>
+            A B
+          </CheckboxGroup.Item>
+        </CheckboxGroup>,
+      ),
+    ).toBe(
+      '<fieldset data-slot="checkbox-group" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" id="field-pets-a b" name="pets" value="a b" class="size-4 rounded border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring">A B</label></fieldset>',
+    );
+  });
+
+  it("a group name containing a space emits no aria-describedby, and its description no id", async () => {
+    // Both halves in one render: an id of `field-fav pet-description` splits into two tokens the
+    // browser can resolve neither of, so the group must reference nothing and the description must
+    // declare nothing. Either half alone would leave the pair able to disagree.
+    expect(
+      await render(
+        <CheckboxGroup name='fav pet' description>
+          <CheckboxGroup.Description name='fav pet'>Pick one.</CheckboxGroup.Description>
+        </CheckboxGroup>,
+      ),
+    ).toBe(
+      '<fieldset data-slot="checkbox-group" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick one.</p></fieldset>',
+    );
   });
 });
 

@@ -56,3 +56,20 @@ export function findSubpathCitations(source: string, packageName: string, opts: 
   }
   return found;
 }
+
+/**
+ * The reverse direction: every published subpath that no citation names and no exemption licenses,
+ * sorted so the failure order is stable.
+ *
+ * `findSubpathCitations` asks whether a *cited* subpath resolves; this asks whether a *resolvable*
+ * subpath is cited. Without it a document falls behind the exports map indefinitely, because
+ * omission is invisible to a check that only reads what is written.
+ *
+ * Subpath *patterns* never appear here, and that is the caller's business rather than a filter of
+ * this function's: the caller decides which keys are exact, and one row per file expanded from a
+ * pattern would be the enumeration a pattern exists to avoid.
+ */
+export function uncitedSubpaths(exportSubpaths: Iterable<string>, citations: readonly SubpathCitation[], exempt: ReadonlySet<string>): string[] {
+  const cited = new Set(citations.map((citation) => citation.subpath));
+  return [...exportSubpaths].filter((subpath) => !cited.has(subpath) && !exempt.has(subpath)).sort();
+}

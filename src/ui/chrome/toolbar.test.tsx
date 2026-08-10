@@ -129,3 +129,17 @@ describe("Toolbar — action dispatch", () => {
     );
   });
 });
+
+describe("Toolbar — attribute precedence", () => {
+  // The rail computes `data-orientation` from `placement` rather than from a prop of that name, so
+  // a caller has no way to correct it other than by naming the attribute directly. That works only
+  // because `toolbar.tsx` spreads `{...stateAttrs({ orientation })}` before `{...rest}` — invert the
+  // two and the caller's value is silently dropped. `ui/core`'s roots are swept for the same rule in
+  // `core/conformance.test.tsx`; this is the one participant outside that barrel.
+  it("lets a caller's explicit data-orientation beat the one computed from placement", async () => {
+    const out = await render(<Toolbar config={{ groups: [] }} icon={icon} data-orientation='caller-wins' />);
+    expect(out).toBe(
+      '<nav role="toolbar" data-slot="toolbar" data-scope="toolbar" data-orientation="caller-wins" aria-orientation="vertical" class="group flex flex-col items-center"></nav>',
+    );
+  });
+});

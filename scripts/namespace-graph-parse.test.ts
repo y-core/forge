@@ -1,5 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import { buildGraph, type EdgeKind, isTestSource, namespaceOf, parseImports, resolveSpecifier, type SourceFile } from "./namespace-graph-parse";
+import {
+  buildGraph,
+  type EdgeKind,
+  findEnumerations,
+  isTestSource,
+  namespaceOf,
+  parseImports,
+  resolveSpecifier,
+  type SourceFile,
+  sectionWindow,
+} from "./namespace-graph-parse";
 
 // Every namespace named below is synthetic — `alpha`, `beta`, `gamma`, `core/one`, `core/two`. None
 // of them exists in `src/`, and no assertion here reads forge's real import graph. That ordering is
@@ -325,6 +335,231 @@ describe("buildGraph() — kind is the AND over every site (the reader chasing t
     expect(edges(files, ["alpha", "beta", "gamma"])).toEqual([
       { from: "alpha", to: "beta", kind: "type", file: "src/alpha/a.ts", line: 1 },
       { from: "alpha", to: "gamma", kind: "value", file: "src/alpha/a.ts", line: 2 },
+    ]);
+  });
+});
+
+// Every markdown fixture below is synthetic too, for the same reason the import fixtures are: the
+// guard's job is to notice when `NAMESPACE_DESIGN.md` reacquires an enumeration, and a test that
+// read that document would only ever assert the document's current state. `## 3.` / `## 4.` here are
+// section *shapes*, not citations — the real doc's headings belong to validate-namespace-graph.test.ts.
+
+describe("sectionWindow() — where a guard is allowed to look", () => {
+  it("returns null when no line matches the heading, since a section that moved silently is the failure", () => {
+    const lines = ["# Namespace design", "## 3. Catalog", "Prose only."];
+
+    expect(sectionWindow(lines, /^### 4a\. /)).toEqual(null);
+  });
+
+  it("opens the window on the heading line itself, not the line after it", () => {
+    // The heading is inside the window on purpose: a table written on the very next line is as much
+    // an enumeration as one written ten lines down, and an off-by-one here would exempt it.
+    const lines = ["# Namespace design", "Prose.", "### 4a. Classification", "Prose.", "## 5. Next"];
+
+    expect(sectionWindow(lines, /^### 4a\. /)).toEqual({ from: 2, to: 4 });
+  });
+
+  it("closes the window at the next `## ` line", () => {
+    const lines = ["### 3a. Catalog", "| Subpath | Purpose |", "## 4. Composition", "| Subpath | Category |"];
+
+    expect(sectionWindow(lines, /^### 3a\. /)).toEqual({ from: 0, to: 2 });
+  });
+
+  it("closes the window at the end of the document when no `## ` follows", () => {
+    const lines = ["# Namespace design", "### 3a. Catalog", "| Subpath | Purpose |"];
+
+    expect(sectionWindow(lines, /^### 3a\. /)).toEqual({ from: 1, to: 3 });
+  });
+
+  it("runs past a sibling `###` heading, covering §3b from a window opened on §3a", () => {
+    // PINNED SEMANTICS, and ruled on rather than merely inherited. The window ends at the next
+    // `## `, so opening it on a `### Na.` heading covers every sibling subsection to the end of the
+    // numbered section — a table in §3b is inside the window opened on §3a, and is reported.
+    //
+    // The ruling kept the wide reach: the guard's subject is the numbered section, and a table moved
+    // one subsection down is the same enumeration in a new place. `NAMESPACE_DESIGN.md` §3b and §4b
+    // now state that reach for the editors it binds. A future reader who narrows this to
+    // sibling-`###` scoping will see this test fail — that is the signal working, and it means
+    // reopening the ruling and the two doc paragraphs, not folding a tidy-up into an unrelated change.
+    const lines = ["### 3a. Catalog", "Prose.", "### 3b. Sibling", "| Subpath | Category |", "## 4. Composition"];
+
+    expect(sectionWindow(lines, /^### 3a\. /)).toEqual({ from: 0, to: 4 });
+  });
+
+  it("opens on the first matching heading when the pattern appears twice", () => {
+    const lines = ["### 4a. Classification", "Prose.", "## 5. Next", "### 4a. Classification", "Prose."];
+
+    expect(sectionWindow(lines, /^### 4a\. /)).toEqual({ from: 0, to: 2 });
+  });
+});
+
+describe("findEnumerations() — the enumerations the data files own", () => {
+  it("reports nothing for a document whose sections cite the data files and enumerate nothing", () => {
+    const lines = [
+      "# Namespace design",
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "| Subpath | Purpose |",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "Prose citing `EDGES`.",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([]);
+  });
+
+  it("reports a `| Namespace | Composes |` row inside the §4a window, at the row's own line", () => {
+    const lines = [
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "| Subpath | Purpose |",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "| Namespace | Composes |",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([{ kind: "composes-table", line: 6 }]);
+  });
+
+  it("reports nothing for the same `| Namespace | Composes |` row placed outside the §4a window", () => {
+    // The window is the whole claim: this row is byte-identical to the one above and is not a
+    // finding, because the guard only ever promised to police the classification section.
+    const lines = [
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "| Namespace | Composes |",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "Prose citing `EDGES`.",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([]);
+  });
+
+  it("reports a `Category` column row inside the §3a window", () => {
+    const lines = [
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "| Subpath | Category |",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "Prose citing `EDGES`.",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([{ kind: "classification-column", line: 3 }]);
+  });
+
+  it("reports a `Classification` column row inside the §3a window on the same terms", () => {
+    const lines = [
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "| Subpath | Classification |",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "Prose citing `EDGES`.",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([{ kind: "classification-column", line: 3 }]);
+  });
+
+  it("reports nothing for the same column row placed outside the §3a window", () => {
+    const lines = [
+      "# Namespace design",
+      "| Subpath | Category |",
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "Prose only.",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "Prose citing `EDGES`.",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([]);
+  });
+
+  it("reports an absent §4a heading and still runs the §3a checks, since the sections are independent", () => {
+    // One section having moved says nothing about the other, so a missing classification heading must
+    // not swallow a catalog hit — that would let a single rename hide a second, unrelated regression.
+    const lines = ["## 3. Catalog", "### 3a. Subpath catalog", "| Subpath | Category |", "## 4. Composition", "Prose only."];
+
+    expect(findEnumerations(lines)).toEqual([
+      { kind: "missing-classification-section", line: null },
+      { kind: "classification-column", line: 3 },
+    ]);
+  });
+
+  it("reports an absent §3a heading and no column finding, even for a row later in the document", () => {
+    // The early return, pinned. With no window there is nothing the guard claimed to scan, and
+    // reporting the row below would point the reader at a table this check never covered.
+    const lines = ["## 4. Composition", "### 4a. Classification", "Prose citing `EDGES`.", "## 5. Catalog", "| Subpath | Category |"];
+
+    expect(findEnumerations(lines)).toEqual([{ kind: "missing-catalog-section", line: null }]);
+  });
+
+  it("reports both missing sections, classification before catalog", () => {
+    const lines = ["# Namespace design", "## 3. Catalog", "Prose only."];
+
+    expect(findEnumerations(lines)).toEqual([
+      { kind: "missing-classification-section", line: null },
+      { kind: "missing-catalog-section", line: null },
+    ]);
+  });
+
+  it("reports both offending rows in one window, ascending by line", () => {
+    const lines = [
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "Prose only.",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "| Namespace | Composes |",
+      "Prose.",
+      "| Namespace | Composes |",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([
+      { kind: "composes-table", line: 6 },
+      { kind: "composes-table", line: 8 },
+    ]);
+  });
+
+  it("reports the §4a hit before the §3a hit, whichever line each sits on", () => {
+    // Section order, not line order. The §3a row is the earlier line and is reported second.
+    const lines = [
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "| Subpath | Category |",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "| Namespace | Composes |",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([
+      { kind: "composes-table", line: 6 },
+      { kind: "classification-column", line: 3 },
+    ]);
+  });
+
+  it("numbers lines from one and names the offending row, not the heading that opened the window", () => {
+    // The reader jumps to the line the message prints. Naming the heading would send them to a line
+    // that carries no table at all, and a message that cannot be checked where it points is worse
+    // than none.
+    const lines = [
+      "# Namespace design",
+      "## 3. Catalog",
+      "### 3a. Subpath catalog",
+      "Prose.",
+      "Prose.",
+      "| Subpath | Category |",
+      "## 4. Composition",
+      "### 4a. Classification",
+      "Prose.",
+      "| Namespace | Composes |",
+    ];
+
+    expect(findEnumerations(lines)).toEqual([
+      { kind: "composes-table", line: 10 },
+      { kind: "classification-column", line: 6 },
     ]);
   });
 });

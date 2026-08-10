@@ -3,7 +3,7 @@ import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
 import { EDGES, LEAF, PRIMITIVES } from "./namespace-graph";
-import { buildGraph, diffGraph, type SourceFile } from "./namespace-graph-parse";
+import { buildGraph, diffGraph, findEnumerations, type SourceFile } from "./namespace-graph-parse";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PKG_EXPORTS = (pkg as { exports?: Record<string, { import?: string; types?: string } | string> }).exports ?? {};
@@ -57,21 +57,14 @@ function collectSources(): SourceFile[] {
   return files;
 }
 
+// Run state, written only by `fail` and reset by `main`, so importing this module observes a zero
+// count and a second call starts from the same place a fresh process would.
 let failures = 0;
 
 function fail(subject: string, message: string): void {
   console.error(`FAIL ${subject}: ${message}`);
   failures++;
 }
-
-// ── Check 1: the observed graph matches the declared one ──────────────────────────────────────
-// The assertion the whole file exists for. An undeclared import is how a leaf quietly becomes an
-// integration namespace and how a cycle gets its first half — neither leaves any other trace, since
-// both compile, both pass every test, and both read as ordinary code at the call site.
-
-const namespaces = collectNamespaces();
-const observed = buildGraph(collectSources(), namespaces);
-const findings = diffGraph(observed, { primitives: PRIMITIVES, leaf: LEAF, edges: EDGES }, namespaces);
 
 // ── Check 2: the enumeration has not come back ────────────────────────────────────────────────
 // `scripts/namespace-graph.ts` is authoritative, so the document must cite it and enumerate
@@ -80,8 +73,54 @@ const findings = diffGraph(observed, { primitives: PRIMITIVES, leaf: LEAF, edges
 // reintroduce the markdown parser this design rejects, and with it a gate that fails on a reflow.
 
 const CLASSIFICATION_DOC = ".decisions/NAMESPACE_DESIGN.md";
-const CLASSIFICATION_START = /^### 4a\. /;
-const COMPOSES_TABLE = /^\|\s*Namespace\s*\|\s*Composes\s*\|/;
+
+/**
+ * The failure line each enumeration finding produces, in the order `findEnumerations` reports them.
+ *
+ * The four messages stay in this file rather than travelling with the findings, and deliberately
+ * unlike `Finding.detail`: those are parameterised by namespace names only `diffGraph` can compute,
+ * while these are fixed strings that depend on nothing the scan discovers. Keeping them in the entry
+ * point is what makes this the one file that decides what the gate prints.
+ *
+ * Returned rather than printed so the mapping is assertable: `lines` is the only input, so a test
+ * drives all four arms over synthetic markdown without a document, a spawn, or a console capture.
+ */
+export function enumerationFailures(lines: string[]): { subject: string; message: string }[] {
+  const out: { subject: string; message: string }[] = [];
+  for (const finding of findEnumerations(lines)) {
+    switch (finding.kind) {
+      case "missing-classification-section":
+        out.push({
+          subject: CLASSIFICATION_DOC,
+          message: "no `### 4a.` heading — the classification section moved, and the guard below no longer covers it",
+        });
+        break;
+      case "composes-table":
+        out.push({
+          subject: `${CLASSIFICATION_DOC}:${finding.line}`,
+          message:
+            "the `| Namespace | Composes |` table is back — `scripts/namespace-graph.ts` is authoritative for the graph and the document enumerates nothing; delete the table and cite `EDGES` instead",
+        });
+        break;
+      case "missing-catalog-section":
+        out.push({
+          subject: CLASSIFICATION_DOC,
+          message: "no `### 3a.` heading — the catalog section moved, and the guard below no longer covers it",
+        });
+        break;
+      // The catalog table names every export path, so a classification column there is the same
+      // enumeration in a second place — and `sideEffects` in `package.json` owns the other half of it.
+      case "classification-column":
+        out.push({
+          subject: `${CLASSIFICATION_DOC}:${finding.line}`,
+          message:
+            "the catalog's classification column is back — `scripts/namespace-graph.ts` is authoritative for leaf/integration and `package.json` `sideEffects` for side-effect status; the document enumerates neither, so delete the column and cite them instead",
+        });
+        break;
+    }
+  }
+  return out;
+}
 
 function checkNoEnumeration(): void {
   const path = resolve(ROOT, CLASSIFICATION_DOC);
@@ -90,30 +129,8 @@ function checkNoEnumeration(): void {
     return;
   }
 
-  const lines = readFileSync(path, "utf-8").split("\n");
-  const start = lines.findIndex((line) => CLASSIFICATION_START.test(line));
-  if (start === -1) {
-    fail(CLASSIFICATION_DOC, "no `### 4a.` heading — the classification section moved, and the guard below no longer covers it");
-    return;
-  }
-
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    // Every index below `lines.length` is populated; the binding is what lets the type say so.
-    const line = lines[i];
-    if (line !== undefined && /^## /.test(line)) {
-      end = i;
-      break;
-    }
-  }
-
-  for (let i = start; i < end; i++) {
-    const line = lines[i];
-    if (line === undefined || !COMPOSES_TABLE.test(line)) continue;
-    fail(
-      `${CLASSIFICATION_DOC}:${i + 1}`,
-      "the `| Namespace | Composes |` table is back — `scripts/namespace-graph.ts` is authoritative for the graph and the document enumerates nothing; delete the table and cite `EDGES` instead",
-    );
+  for (const { subject, message } of enumerationFailures(readFileSync(path, "utf-8").split("\n"))) {
+    fail(subject, message);
   }
 }
 
@@ -141,27 +158,46 @@ function checkNoMutualValuePairs(): void {
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────────────────────
-const bySource = new Map<string, number>();
-for (const finding of findings) {
-  const subject = finding.file === undefined ? "EDGES" : `${finding.file}:${finding.line}`;
-  fail(subject, finding.detail);
-  bySource.set(finding.from, (bySource.get(finding.from) ?? 0) + 1);
+/** Runs all three checks and returns the exit code rather than exiting, so a test can import this
+ *  module, call it, and read the verdict without the runner dying. Nothing above this line walks
+ *  `src/` or reads the classification document — that starts here.
+ *
+ *  Check 1 is inline: the observed graph must match the declared one. An undeclared import is how a
+ *  leaf quietly becomes an integration namespace and how a cycle gets its first half — neither leaves
+ *  any other trace, since both compile, both pass every test, and both read as ordinary code at the
+ *  call site. */
+export function main(): number {
+  failures = 0;
+
+  const namespaces = collectNamespaces();
+  const observed = buildGraph(collectSources(), namespaces);
+  const findings = diffGraph(observed, { primitives: PRIMITIVES, leaf: LEAF, edges: EDGES }, namespaces);
+
+  const bySource = new Map<string, number>();
+  for (const finding of findings) {
+    const subject = finding.file === undefined ? "EDGES" : `${finding.file}:${finding.line}`;
+    fail(subject, finding.detail);
+    bySource.set(finding.from, (bySource.get(finding.from) ?? 0) + 1);
+  }
+
+  let edgeCount = 0;
+  for (const namespace of namespaces) {
+    const declared = Object.keys(EDGES[namespace] ?? {}).length;
+    edgeCount += declared;
+    if (bySource.has(namespace)) continue;
+    const shape = LEAF.includes(namespace) ? "leaf" : `${declared} edge${declared === 1 ? "" : "s"}`;
+    console.log(`  ok ${namespace} (${shape})`);
+  }
+
+  checkNoEnumeration();
+  checkNoMutualValuePairs();
+
+  if (failures > 0) {
+    console.error(`\n${failures} problem${failures === 1 ? "" : "s"} found.`);
+    return 1;
+  }
+  console.log(`\nAll namespace edges verified (${namespaces.length} namespaces, ${edgeCount} declared edges).`);
+  return 0;
 }
 
-let edgeCount = 0;
-for (const namespace of namespaces) {
-  const declared = Object.keys(EDGES[namespace] ?? {}).length;
-  edgeCount += declared;
-  if (bySource.has(namespace)) continue;
-  const shape = LEAF.includes(namespace) ? "leaf" : `${declared} edge${declared === 1 ? "" : "s"}`;
-  console.log(`  ok ${namespace} (${shape})`);
-}
-
-checkNoEnumeration();
-checkNoMutualValuePairs();
-
-if (failures > 0) {
-  console.error(`\n${failures} problem${failures === 1 ? "" : "s"} found.`);
-  process.exit(1);
-}
-console.log(`\nAll namespace edges verified (${namespaces.length} namespaces, ${edgeCount} declared edges).`);
+if (import.meta.main) process.exit(main());

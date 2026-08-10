@@ -81,6 +81,24 @@ describe("Toast", () => {
     expect(await render(<Toast duration={0}>Message</Toast>)).toBe(DEFAULT_TOAST);
   });
 
+  it("keeps a duration of 0 in data-state, distinguishable from a duration never passed", async () => {
+    // The falsy-number trap: `duration={0}` must not serialize like an absent duration. It does not
+    // — 0 survives `JSON.stringify` where `undefined` is dropped, so the state key is present and
+    // zero here and absent in DISMISSIBLE_TOAST above. The client scope reads it as
+    // `Number(state.duration?.value) || 0` and schedules only on a positive value, so both spellings
+    // mean "no auto-close" downstream; what matters is that the markup does not lose the 0 the
+    // caller wrote.
+    expect(
+      await render(
+        <Toast dismissible duration={0}>
+          Message
+        </Toast>,
+      ),
+    ).toBe(
+      '<div data-slot="toast" data-variant="default" role="status" aria-atomic="true" data-scope="toast" data-state="{&quot;duration&quot;:0}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-border bg-background text-foreground pr-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>',
+    );
+  });
+
   it("merges a custom class", async () => {
     expect(await render(<Toast class='my-toast'>Hello</Toast>)).toBe(
       '<div data-slot="toast" data-variant="default" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-border bg-background text-foreground my-toast"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',

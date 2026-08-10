@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyStateAttrs, type Side, STATE_ATTRS, stateAttrs } from "./state-attrs";
+import { type Align, applyStateAttrs, type Orientation, type Side, STATE_ATTRS, stateAttrs } from "./state-attrs";
 
 /** `src/ui/`, the whole tree the conformance sweep below covers — the *parent* of this file's own
  * directory. Resolving it from `import.meta.url` without stepping up would narrow the sweep to
@@ -128,6 +128,15 @@ describe("stateAttrs", () => {
     expect(stateAttrs({ transition: "ending" })).toEqual({ "data-ending-style": "" });
   });
 
+  it("drops an empty valued state rather than emitting it as a presence flag", () => {
+    // The valued three are guarded by truthiness, so `""` is dropped. That is the right answer and
+    // not the falsy-value trap: `""` is not a member of Orientation / Side / Align — the cast below
+    // is the only way to reach this at all — and emitting `data-orientation=""` would make a valued
+    // attribute indistinguishable from a presence flag to every `[data-orientation]` selector.
+    // Every legal value is a non-empty string, so no legal value can be lost this way.
+    expect(stateAttrs({ orientation: "" as unknown as Orientation, side: "" as unknown as Side, align: "" as unknown as Align })).toEqual({});
+  });
+
   it("declares exactly the thirteen names of the convention", () => {
     expect(Object.values(STATE_ATTRS).sort()).toEqual(
       [
@@ -205,11 +214,10 @@ describe("applyStateAttrs", () => {
   it("round-trips every side of the union, logical spellings included, through both writers", () => {
     const sides = Object.keys(EVERY_SIDE) as Side[];
 
-    // The SSR builder carries the value through verbatim…
     expect(sides.map((side) => stateAttrs({ side })["data-side"])).toEqual(Object.values(EVERY_SIDE));
 
-    // …and the client mutator writes exactly the same one, which is the half that keeps a controller
-    // from disagreeing with the markup a stylesheet's `:dir()` rules are keyed on.
+    // The client mutator must write exactly the value the SSR builder did, which is what keeps a
+    // controller from disagreeing with the markup a stylesheet's `:dir()` rules are keyed on.
     expect(
       sides.map((side) => {
         const el = fakeElement();

@@ -8,8 +8,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_NAME = (pkg as { name: string }).name;
 const PUBLISHED_FILES = new Set((pkg as { files?: string[] }).files ?? []);
 
-// Only ./ui/client imports DOM globals (document, window, MutationObserver) and
-// cannot be imported. Static parsing still runs; runtime import is skipped.
+// Browser-only subpaths: each reaches DOM globals (document, window, MutationObserver) through the
+// `ui/client` runtime, and `./ui/client/htmx` touches `document.body` at load. Static parsing still
+// runs; the runtime import is skipped rather than risking a load-time DOM access.
 const BROWSER_ONLY = new Set(["./ui/chrome/client", "./ui/client", "./ui/client/htmx", "./ui/core/client", "./ui/show/client"]);
 
 // Side-effect-only modules: intentionally export no values (they mutate globals or perform
@@ -47,7 +48,6 @@ function collectOwnedSourceFiles(ownerDir: string, barrelDirs: Set<string>, barr
 }
 
 const pkgExports = (pkg as { exports?: Record<string, { import?: string; types?: string } | string> }).exports ?? {};
-let failed = false;
 
 // Pre-compute the directory of every `mod.ts` barrel so the source→barrel scan can stop at
 // sub-namespace boundaries (e.g. `./logging` must not pull in `./logging/show` symbols).
@@ -83,6 +83,11 @@ interface PatternEntry {
   targetSuffix: string;
 }
 
+/** Malformed pattern keys, collected rather than printed: parsing is module-scope so the derived
+ *  lookups below stay plain consts, and a module that prints on import is what this file no longer
+ *  does. `main` reports these first, in the order they were found. */
+const patternErrors: string[] = [];
+
 const patternEntries: PatternEntry[] = [];
 for (const [specifier, entry] of Object.entries(pkgExports)) {
   if (!specifier.includes("*")) continue;
@@ -96,8 +101,7 @@ for (const [specifier, entry] of Object.entries(pkgExports)) {
   // The `undefined` disjuncts are what a length of exactly 1 already rules out, and come last so
   // the message a real mismatch produces is unchanged.
   if (keyRest.length !== 1 || targetRest.length !== 1 || keySuffix === undefined || targetSuffix === undefined) {
-    console.error(`FAIL ${specifier}: a subpath pattern may contain exactly one \`*\` in the key and one in the target`);
-    failed = true;
+    patternErrors.push(`FAIL ${specifier}: a subpath pattern may contain exactly one \`*\` in the key and one in the target`);
     continue;
   }
   patternEntries.push({ specifier, keyPrefix, keySuffix, targetPrefix, targetSuffix });
@@ -163,248 +167,266 @@ function isPublished(rawPath: string): boolean {
   return false;
 }
 
-for (const [specifier, entry] of Object.entries(pkgExports)) {
-  const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
-  if (!rawPath) {
-    console.error(`FAIL ${specifier}: no import path in package.json`);
+// ── Run ───────────────────────────────────────────────────────────────────────────────────────
+/** Runs every pass and returns the exit code rather than exiting, so a test can import this module,
+ *  call it, and read the verdict without the runner dying. Nothing above this line reads a file or
+ *  prints — the walks start here. */
+export async function main(): Promise<number> {
+  let failed = false;
+
+  // A malformed subpath pattern is diagnosed while `patternEntries` is built; report it here so
+  // parsing stays printless and this stays the one place the run decides anything.
+  for (const error of patternErrors) {
+    console.error(error);
     failed = true;
-    continue;
   }
 
-  // A pattern names a family, so it is checked member by member: every file the target matches must
-  // be published *and* actually resolve under the specifier the key mints for it. An empty expansion
-  // is dead config — a key nothing can ever reach — and fails rather than passing vacuously.
-  const pattern = patternEntries.find((p) => p.specifier === specifier);
-  if (pattern) {
-    const members = expandPattern(pattern);
-    if (members.length === 0) {
-      console.error(`FAIL ${specifier}: pattern matches no file on disk — nothing is reachable under it`);
+  for (const [specifier, entry] of Object.entries(pkgExports)) {
+    const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
+    if (!rawPath) {
+      console.error(`FAIL ${specifier}: no import path in package.json`);
       failed = true;
       continue;
     }
-    let patternOk = true;
-    for (const member of members) {
-      // Modules need the barrel and `@public` passes below, which have no meaning for a family.
-      // Fail closed rather than skip them silently.
-      if (/\.tsx?$/.test(member)) {
-        console.error(`FAIL ${specifier}: expands to the module ${member} — patterns are for assets; give a module its own key`);
-        patternOk = false;
+
+    // A pattern names a family, so it is checked member by member: every file the target matches must
+    // be published *and* actually resolve under the specifier the key mints for it. An empty expansion
+    // is dead config — a key nothing can ever reach — and fails rather than passing vacuously.
+    const pattern = patternEntries.find((p) => p.specifier === specifier);
+    if (pattern) {
+      const members = expandPattern(pattern);
+      if (members.length === 0) {
+        console.error(`FAIL ${specifier}: pattern matches no file on disk — nothing is reachable under it`);
+        failed = true;
         continue;
       }
-      if (!isPublished(`./${member}`)) {
-        console.error(`FAIL ${specifier}: ${member} is not covered by package.json files`);
-        patternOk = false;
-        continue;
+      let patternOk = true;
+      for (const member of members) {
+        // Modules need the barrel and `@public` passes below, which have no meaning for a family.
+        // Fail closed rather than skip them silently.
+        if (/\.tsx?$/.test(member)) {
+          console.error(`FAIL ${specifier}: expands to the module ${member} — patterns are for assets; give a module its own key`);
+          patternOk = false;
+          continue;
+        }
+        if (!isPublished(`./${member}`)) {
+          console.error(`FAIL ${specifier}: ${member} is not covered by package.json files`);
+          patternOk = false;
+          continue;
+        }
+        const consumerSpecifier = specifierForMember(pattern, member);
+        try {
+          import.meta.resolve(consumerSpecifier);
+        } catch (err) {
+          console.error(`FAIL ${specifier}: ${member} is published but unresolvable as ${consumerSpecifier} — ${err}`);
+          patternOk = false;
+        }
       }
-      const consumerSpecifier = specifierForMember(pattern, member);
+      if (patternOk) console.log(`  ok ${specifier} (pattern — ${members.length} members resolve)`);
+      else failed = true;
+      continue;
+    }
+
+    const filePath = resolve(ROOT, rawPath);
+    if (!existsSync(filePath)) {
+      console.error(`FAIL ${specifier}: barrel file not found at ${rawPath}`);
+      failed = true;
+      continue;
+    }
+
+    if (!isPublished(rawPath)) {
+      console.error(`FAIL ${specifier}: ${rawPath} is not covered by package.json files`);
+      failed = true;
+      continue;
+    }
+
+    // Asset entries (CSS today) are not barrels and have no symbols to parse — keyed on the target's
+    // extension rather than on an allowlist, so a new asset kind needs no edit here. The check that
+    // earns this branch is the resolve: an entry can exist on disk, be inside files[], and still be
+    // unreachable from a consumer, which is exactly how forge shipped 73 versions of unaddressable
+    // stylesheets. `existsSync` and `isPublished` have already run above.
+    if (!/\.tsx?$/.test(rawPath)) {
+      const consumerSpecifier = `${PACKAGE_NAME}${specifier.slice(1)}`;
       try {
         import.meta.resolve(consumerSpecifier);
+        console.log(`  ok ${specifier} (asset — resolves as ${consumerSpecifier})`);
       } catch (err) {
-        console.error(`FAIL ${specifier}: ${member} is published but unresolvable as ${consumerSpecifier} — ${err}`);
-        patternOk = false;
+        console.error(`FAIL ${specifier}: published but unresolvable as ${consumerSpecifier} — ${err}`);
+        failed = true;
+      }
+      continue;
+    }
+
+    const { values, hasExportStar, hasTypeExports } = parseBarrelExports(filePath);
+
+    if (hasExportStar) {
+      console.error(
+        `FAIL ${specifier}: contains a banned star re-export (\`export *\`, \`export * as ns\`, or \`export type *\`) — use explicit named exports`,
+      );
+      failed = true;
+      continue;
+    }
+
+    if (values.length === 0) {
+      if (hasTypeExports) {
+        console.log(`  ok ${specifier} (type-only barrel — no runtime exports)`);
+        continue;
+      }
+      if (BROWSER_ONLY.has(specifier)) {
+        console.log(`  ok ${specifier} (browser-only side-effect — no exports)`);
+        continue;
+      }
+      if (SIDE_EFFECT_ONLY.has(specifier)) {
+        console.log(`  ok ${specifier} (side-effect-only — no exports)`);
+        continue;
+      }
+      console.error(`FAIL ${specifier}: no value exports found in barrel`);
+      failed = true;
+      continue;
+    }
+
+    if (BROWSER_ONLY.has(specifier) || SIDE_EFFECT_ONLY.has(specifier)) {
+      console.log(`  ok ${specifier} (browser-only — ${values.length} exports parsed)`);
+      continue;
+    }
+
+    try {
+      const consumerSpecifier = specifier === "." ? PACKAGE_NAME : `${PACKAGE_NAME}${specifier.slice(1)}`;
+      const mod = await import(consumerSpecifier);
+      const missing = values.filter((name) => !(name in mod));
+      if (missing.length > 0) {
+        console.error(`FAIL ${specifier}: missing from runtime: ${missing.join(", ")}`);
+        failed = true;
+      } else {
+        console.log(`  ok ${specifier} (${values.length} exports verified)`);
+      }
+    } catch (err) {
+      console.error(`FAIL ${specifier}: import failed — ${err}`);
+      failed = true;
+    }
+  }
+
+  // Source → barrel: every `@public`-tagged symbol in a namespace's source must be re-exported by
+  // that namespace's barrel. Catches a public symbol that was never added to the barrel — the
+  // inverse of the barrel→runtime check above, which only sees symbols already in the barrel.
+  console.log("\nChecking @public source symbols are exported from their barrel...");
+  for (const [specifier, entry] of Object.entries(pkgExports)) {
+    const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
+    if (!rawPath?.endsWith("/mod.ts")) continue; // single-file modules are their own barrel
+
+    const barrelFile = resolve(ROOT, rawPath);
+    const ownerDir = dirname(barrelFile);
+    if (!existsSync(barrelFile)) continue; // already reported by the loop above
+
+    const barrelNames = parseBarrelExportNames(barrelFile);
+    const sourceFiles = collectOwnedSourceFiles(ownerDir, barrelDirs, barrelFile, ownExportTargetFiles);
+
+    const missing = new Set<string>();
+    for (const file of sourceFiles) {
+      for (const symbol of findPublicSymbols(file)) {
+        if (!barrelNames.has(symbol)) missing.add(symbol);
       }
     }
-    if (patternOk) console.log(`  ok ${specifier} (pattern — ${members.length} members resolve)`);
-    else failed = true;
-    continue;
-  }
 
-  const filePath = resolve(ROOT, rawPath);
-  if (!existsSync(filePath)) {
-    console.error(`FAIL ${specifier}: barrel file not found at ${rawPath}`);
-    failed = true;
-    continue;
-  }
-
-  if (!isPublished(rawPath)) {
-    console.error(`FAIL ${specifier}: ${rawPath} is not covered by package.json files`);
-    failed = true;
-    continue;
-  }
-
-  // Asset entries (CSS today) are not barrels and have no symbols to parse — keyed on the target's
-  // extension rather than on an allowlist, so a new asset kind needs no edit here. The check that
-  // earns this branch is the resolve: an entry can exist on disk, be inside files[], and still be
-  // unreachable from a consumer, which is exactly how forge shipped 73 versions of unaddressable
-  // stylesheets. `existsSync` and `isPublished` have already run above.
-  if (!/\.tsx?$/.test(rawPath)) {
-    const consumerSpecifier = `${PACKAGE_NAME}${specifier.slice(1)}`;
-    try {
-      import.meta.resolve(consumerSpecifier);
-      console.log(`  ok ${specifier} (asset — resolves as ${consumerSpecifier})`);
-    } catch (err) {
-      console.error(`FAIL ${specifier}: published but unresolvable as ${consumerSpecifier} — ${err}`);
-      failed = true;
-    }
-    continue;
-  }
-
-  const { values, hasExportStar, hasTypeExports } = parseBarrelExports(filePath);
-
-  if (hasExportStar) {
-    console.error(
-      `FAIL ${specifier}: contains a banned star re-export (\`export *\`, \`export * as ns\`, or \`export type *\`) — use explicit named exports`,
-    );
-    failed = true;
-    continue;
-  }
-
-  if (values.length === 0) {
-    if (hasTypeExports) {
-      console.log(`  ok ${specifier} (type-only barrel — no runtime exports)`);
-      continue;
-    }
-    if (BROWSER_ONLY.has(specifier)) {
-      console.log(`  ok ${specifier} (browser-only side-effect — no exports)`);
-      continue;
-    }
-    if (SIDE_EFFECT_ONLY.has(specifier)) {
-      console.log(`  ok ${specifier} (side-effect-only — no exports)`);
-      continue;
-    }
-    console.error(`FAIL ${specifier}: no value exports found in barrel`);
-    failed = true;
-    continue;
-  }
-
-  if (BROWSER_ONLY.has(specifier) || SIDE_EFFECT_ONLY.has(specifier)) {
-    console.log(`  ok ${specifier} (browser-only — ${values.length} exports parsed)`);
-    continue;
-  }
-
-  try {
-    const consumerSpecifier = specifier === "." ? PACKAGE_NAME : `${PACKAGE_NAME}${specifier.slice(1)}`;
-    const mod = await import(consumerSpecifier);
-    const missing = values.filter((name) => !(name in mod));
-    if (missing.length > 0) {
-      console.error(`FAIL ${specifier}: missing from runtime: ${missing.join(", ")}`);
+    if (missing.size > 0) {
+      console.error(`FAIL ${specifier}: @public symbols missing from barrel: ${[...missing].sort().join(", ")}`);
       failed = true;
     } else {
-      console.log(`  ok ${specifier} (${values.length} exports verified)`);
-    }
-  } catch (err) {
-    console.error(`FAIL ${specifier}: import failed — ${err}`);
-    failed = true;
-  }
-}
-
-// Source → barrel: every `@public`-tagged symbol in a namespace's source must be re-exported by
-// that namespace's barrel. Catches a public symbol that was never added to the barrel — the
-// inverse of the barrel→runtime check above, which only sees symbols already in the barrel.
-console.log("\nChecking @public source symbols are exported from their barrel...");
-for (const [specifier, entry] of Object.entries(pkgExports)) {
-  const rawPath = typeof entry === "string" ? entry : (entry.import ?? entry.types);
-  if (!rawPath?.endsWith("/mod.ts")) continue; // single-file modules are their own barrel
-
-  const barrelFile = resolve(ROOT, rawPath);
-  const ownerDir = dirname(barrelFile);
-  if (!existsSync(barrelFile)) continue; // already reported by the loop above
-
-  const barrelNames = parseBarrelExportNames(barrelFile);
-  const sourceFiles = collectOwnedSourceFiles(ownerDir, barrelDirs, barrelFile, ownExportTargetFiles);
-
-  const missing = new Set<string>();
-  for (const file of sourceFiles) {
-    for (const symbol of findPublicSymbols(file)) {
-      if (!barrelNames.has(symbol)) missing.add(symbol);
+      console.log(`  ok ${specifier} (@public symbols all exported)`);
     }
   }
 
-  if (missing.size > 0) {
-    console.error(`FAIL ${specifier}: @public symbols missing from barrel: ${[...missing].sort().join(", ")}`);
-    failed = true;
-  } else {
-    console.log(`  ok ${specifier} (@public symbols all exported)`);
+  // Reverse pass A (src → map): every `src/**/mod.ts` barrel must be an export target or be on the
+  // sealed-internal allowlist. The forward loop above only ever sees barrels already in the exports
+  // map, so a namespace shipped in files[] but never wired into `exports` (e.g. an unpublished
+  // `storage/r2`) would slip through — this catches that whole drift class by construction.
+  console.log("\nChecking every src `mod.ts` barrel is exported (or sealed-internal)...");
+
+  function collectModFiles(dir: string): string[] {
+    const out: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        out.push(...collectModFiles(full));
+      } else if (entry.isFile() && entry.name === "mod.ts") {
+        out.push(relative(ROOT, full));
+      }
+    }
+    return out;
   }
-}
 
-// Reverse pass A (src → map): every `src/**/mod.ts` barrel must be an export target or be on the
-// sealed-internal allowlist. The forward loop above only ever sees barrels already in the exports
-// map, so a namespace shipped in files[] but never wired into `exports` (e.g. an unpublished
-// `storage/r2`) would slip through — this catches that whole drift class by construction.
-console.log("\nChecking every src `mod.ts` barrel is exported (or sealed-internal)...");
-
-function collectModFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = resolve(dir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...collectModFiles(full));
-    } else if (entry.isFile() && entry.name === "mod.ts") {
-      out.push(relative(ROOT, full));
+  for (const modFile of collectModFiles(resolve(ROOT, "src"))) {
+    if (exportedTargets.has(modFile) || patternCovering(modFile) || SEALED_INTERNAL.has(modFile)) {
+      console.log(`  ok ${modFile}`);
+    } else {
+      console.error(`FAIL ${modFile}: barrel is not a package.json exports target and not on the sealed-internal allowlist`);
+      failed = true;
     }
   }
-  return out;
-}
 
-for (const modFile of collectModFiles(resolve(ROOT, "src"))) {
-  if (exportedTargets.has(modFile) || patternCovering(modFile) || SEALED_INTERNAL.has(modFile)) {
-    console.log(`  ok ${modFile}`);
-  } else {
-    console.error(`FAIL ${modFile}: barrel is not a package.json exports target and not on the sealed-internal allowlist`);
-    failed = true;
-  }
-}
-
-// Reverse pass B (files[] → disk): every non-negated `files[]` entry must exist on disk. A dangling
-// entry (e.g. a `templates/` that was removed) silently ships nothing on `npm pack`; this flags it.
-console.log("\nChecking every package.json files[] entry exists on disk...");
-for (const entry of PUBLISHED_FILES) {
-  if (entry.startsWith("!")) continue;
-  if (existsSync(resolve(ROOT, entry))) {
-    console.log(`  ok ${entry}`);
-  } else {
-    console.error(`FAIL files[]: ${entry} does not exist on disk`);
-    failed = true;
-  }
-}
-
-// Reverse pass C (stylesheets → consumer): every stylesheet on disk must actually **resolve** for a
-// consumer. `files[]` ships the whole of `src/ui/`, so a new `theme-forest.css` is inside the tarball
-// the moment it is written — and an `exports` map makes every subpath it does not cover unreachable,
-// so the file would ship and be unnameable with nothing to say so.
-//
-// The assertion is reachability, not declaration, and that distinction is the point. Whether a
-// stylesheet is named by an exact key or swept up by a subpath pattern is forge's business; whether a
-// consumer's `@import` finds it is the consumer's, and it is the only thing that ever went wrong
-// here. So this pass derives each file's consumer specifier from the map and then *resolves* it —
-// which also catches a file that is covered by a key but excluded by a `files[]` negation, a case the
-// old declaration-only check passed.
-console.log("\nChecking every stylesheet resolves for a consumer...");
-const CSS_DIR = "src/ui/assets/css";
-for (const entry of readdirSync(resolve(ROOT, CSS_DIR)).sort()) {
-  if (!entry.endsWith(".css")) continue;
-  const relPath = `${CSS_DIR}/${entry}`;
-
-  let consumerSpecifier: string | undefined;
-  if (exportedTargets.has(relPath)) {
-    const key = Object.entries(pkgExports).find(([spec, value]) => {
-      if (spec.includes("*")) return false;
-      const target = typeof value === "string" ? value : (value.import ?? value.types);
-      return target && (target.startsWith("./") ? target.slice(2) : target) === relPath;
-    })?.[0];
-    if (key) consumerSpecifier = `${PACKAGE_NAME}${key.slice(1)}`;
-  } else {
-    const pattern = patternCovering(relPath);
-    if (pattern) consumerSpecifier = specifierForMember(pattern, relPath);
+  // Reverse pass B (files[] → disk): every non-negated `files[]` entry must exist on disk. A dangling
+  // entry (e.g. a `templates/` that was removed) silently ships nothing on `npm pack`; this flags it.
+  console.log("\nChecking every package.json files[] entry exists on disk...");
+  for (const entry of PUBLISHED_FILES) {
+    if (entry.startsWith("!")) continue;
+    if (existsSync(resolve(ROOT, entry))) {
+      console.log(`  ok ${entry}`);
+    } else {
+      console.error(`FAIL files[]: ${entry} does not exist on disk`);
+      failed = true;
+    }
   }
 
-  if (!consumerSpecifier) {
-    console.error(`FAIL ${relPath}: no exports key or pattern covers it — consumers cannot @import it`);
-    failed = true;
-    continue;
+  // Reverse pass C (stylesheets → consumer): every stylesheet on disk must actually **resolve** for a
+  // consumer. `files[]` ships the whole of `src/ui/`, so a new `theme-forest.css` is inside the tarball
+  // the moment it is written — and an `exports` map makes every subpath it does not cover unreachable,
+  // so the file would ship and be unnameable with nothing to say so.
+  //
+  // The assertion is reachability, not declaration, and that distinction is the point. Whether a
+  // stylesheet is named by an exact key or swept up by a subpath pattern is forge's business; whether a
+  // consumer's `@import` finds it is the consumer's, and it is the only thing that ever went wrong
+  // here. So this pass derives each file's consumer specifier from the map and then *resolves* it —
+  // which also catches a file that is covered by a key but excluded by a `files[]` negation, a case the
+  // old declaration-only check passed.
+  console.log("\nChecking every stylesheet resolves for a consumer...");
+  const CSS_DIR = "src/ui/assets/css";
+  for (const entry of readdirSync(resolve(ROOT, CSS_DIR)).sort()) {
+    if (!entry.endsWith(".css")) continue;
+    const relPath = `${CSS_DIR}/${entry}`;
+
+    let consumerSpecifier: string | undefined;
+    if (exportedTargets.has(relPath)) {
+      const key = Object.entries(pkgExports).find(([spec, value]) => {
+        if (spec.includes("*")) return false;
+        const target = typeof value === "string" ? value : (value.import ?? value.types);
+        return target && (target.startsWith("./") ? target.slice(2) : target) === relPath;
+      })?.[0];
+      if (key) consumerSpecifier = `${PACKAGE_NAME}${key.slice(1)}`;
+    } else {
+      const pattern = patternCovering(relPath);
+      if (pattern) consumerSpecifier = specifierForMember(pattern, relPath);
+    }
+
+    if (!consumerSpecifier) {
+      console.error(`FAIL ${relPath}: no exports key or pattern covers it — consumers cannot @import it`);
+      failed = true;
+      continue;
+    }
+
+    try {
+      import.meta.resolve(consumerSpecifier);
+      console.log(`  ok ${relPath} → ${consumerSpecifier}`);
+    } catch (err) {
+      console.error(`FAIL ${relPath}: covered by the exports map but unresolvable as ${consumerSpecifier} — ${err}`);
+      failed = true;
+    }
   }
 
-  try {
-    import.meta.resolve(consumerSpecifier);
-    console.log(`  ok ${relPath} → ${consumerSpecifier}`);
-  } catch (err) {
-    console.error(`FAIL ${relPath}: covered by the exports map but unresolvable as ${consumerSpecifier} — ${err}`);
-    failed = true;
+  if (failed) {
+    return 1;
   }
+  console.log("\nAll exports verified.");
+  return 0;
 }
 
-if (failed) {
-  process.exit(1);
-}
-console.log("\nAll exports verified.");
+if (import.meta.main) process.exit(await main());

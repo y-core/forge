@@ -41,3 +41,25 @@ describe("cva", () => {
     expect(styles({ class: "my-class" })).toBe("my-class");
   });
 });
+
+describe("cva conflict merging", () => {
+  it("lets the class prop override a conflicting base utility", () => {
+    const styles = cva({ base: "h-full" });
+    expect(styles({ class: "h-5" })).toBe("h-5");
+  });
+
+  it("lets the class prop override a conflicting default-variant utility", () => {
+    const styles = cva({ base: "p-2", variants: { size: { lg: "p-8" } }, defaultVariants: { size: "lg" } });
+    expect(styles({ class: "p-0" })).toBe("p-0");
+  });
+
+  it("lets a variant override a conflicting base utility", () => {
+    const styles = cva({ base: "p-2", variants: { size: { lg: "p-8" } } });
+    expect(styles({ size: "lg" })).toBe("p-8");
+  });
+
+  it("merges base, variants and class in that order", () => {
+    const styles = cva({ base: "rounded-sm p-2 text-xs", variants: { size: { lg: "p-8" } }, defaultVariants: { size: "lg" } });
+    expect(styles({ class: "text-sm" })).toBe("rounded-sm p-8 text-sm");
+  });
+});

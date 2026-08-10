@@ -167,6 +167,37 @@ describe("Form — method=get", () => {
   });
 });
 
+/**
+ * `class` is composed through `cn` rather than riding to the element inside the rest spread.
+ *
+ * **Only half of that contract is observable here.** `Form` declares no base classes, so a caller's
+ * class has nothing to conflict with and nothing for `cn` to resolve — the precedence half that
+ * `src/ui/README.md` advertises ("a caller's `class` overrides a component's base rather than racing
+ * it in the stylesheet") cannot be asserted through `Form`'s public surface as committed. It becomes
+ * observable, and must be covered here, the moment `Form` gains a base class.
+ *
+ * What is observable is that the prop passes through `cn` **at all** — `cn` resolves a conflict
+ * inside a single argument, and emits nothing for an absent one. The conflict case is the one
+ * carrying that weight: a case that merely passes a `class` and asserts it appeared passes with
+ * `cn` deleted too, which is exactly how the bypass stayed invisible (TESTING.md §3d). Nothing else
+ * in the render path collapses `p-4 p-8` to `p-8`.
+ */
+describe("Form — class composition", () => {
+  it("emits no class attribute at all when no class is passed", async () => {
+    // `cn()` resolves to `""` with no base classes to fall back on; the attribute is dropped rather
+    // than emitted as `class=""`, keeping the output byte-identical to before the prop was composed.
+    expect(await render(<Form />)).toBe('<form data-slot="form" method="post"></form>');
+  });
+
+  it("emits a caller's class verbatim when it holds no conflict", async () => {
+    expect(await render(<Form class='p-8' />)).toBe('<form data-slot="form" method="post" class="p-8"></form>');
+  });
+
+  it("resolves a conflict within the caller's own class, proving the prop passes through cn", async () => {
+    expect(await render(<Form class='p-4 p-8' />)).toBe('<form data-slot="form" method="post" class="p-8"></form>');
+  });
+});
+
 describe("Form — composed with Honeypot", () => {
   it("places the honeypot exactly where the caller puts it", async () => {
     expect(

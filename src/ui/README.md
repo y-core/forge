@@ -177,7 +177,9 @@ own — but every app using both forge components and its own `dark:` utilities 
   JavaScript.
 - Compound components (`Card.Header`, `Alert.Title`, `Select.Option`, `Toast.Description`) for explicit
   composition.
-- Variant-driven styling through `cva`, conditional class merging through `cn`.
+- Variant-driven styling through `cva`, conditional class merging through `cn` — with Tailwind
+  conflict resolution, so a caller's `class` overrides a component's base rather than racing it in
+  the stylesheet.
 - An accessible field system: controls inside a `FormField` inherit `id`, `name`, `aria-invalid`, and
   `aria-describedby`.
 - Sprite-backed icons via `createIcon`; icon-consuming components accept an `icon` prop directly.
@@ -289,7 +291,17 @@ label class string.
 **`description` declares that a description element actually renders**, and defaults to `false`.
 `aria-describedby` is emitted **only** when something really describes the field: naming an element
 that does not exist is a dangling IDREF, which assistive technology treats as an error rather than
-ignoring.
+ignoring. An empty or whitespace-only `name` is likewise treated as **no name** — no `id`, no `for`
+and no `aria-describedby` is derived from it, matching HTML's own reading of such a value, so a
+control and its compound members never disagree about whether an element exists.
+
+**A field `name`, and any non-blank `scope`, must be a single id token** — no spaces, tabs or
+newlines. One containing any of those derives no `id`, no `for` and no `aria-describedby`, because an
+id may not contain whitespace and the browser splits `for` and `aria-describedby` on it, so the
+reference could never resolve. The `name` **attribute** is unaffected and still renders exactly as
+given; only the wiring is withheld. Other characters need no escaping on your part: the renderer
+escapes the id and the reference identically, so they still match. A blank `scope` is simply no
+scope, and falls back to the unscoped id.
 
 `fieldDescribedBy(name, { scope?, description?, invalid?, existing? })` is that computation on its
 own, returning `undefined` when nothing to point at renders. `fieldControlProps` uses it, and so do
@@ -374,11 +386,17 @@ it into a labelled graphic — the `<svg>` then emits `role="img"` with that lab
 #### `cn`, `asClass`, and `cva` — class utilities
 
 `cn`, `asClass`, and `cva` are ratified `@public` utilities. `cn(...classes)` is variadic over
-`string | false | null | undefined` — it drops falsy entries and joins the rest with a space (use
-short-circuit expressions for conditionals; it does not interpret arrays or objects). `asClass(cls)`
-narrows an untyped JSX `class` prop to `string | undefined`. `cva(config)` is the class-variance
-authority — build a variant function once from a `{ base?, variants?, defaultVariants? }` object, then
-call it with a variant map (plus an optional `class` override) to resolve a class string:
+`string | false | null | undefined` — it drops falsy entries, resolves conflicting Tailwind
+utilities in favour of the later argument, and joins what survives with a space (use short-circuit
+expressions for conditionals; it does not interpret arrays or objects). So `cn("h-full", "h-5")` is
+`"h-5"`, while `cn("h-full", "hover:h-5")` keeps both — a modifier is part of the conflict key.
+Utilities outside forge's conflict table pass through untouched and stylesheet order still decides
+between them; see [`UI_SSR_COMPONENTS.md`](../../.decisions/UI_SSR_COMPONENTS.md) §3d for the
+coverage boundary. `asClass(cls)` narrows an untyped JSX `class` prop to `string | undefined` — a
+type guarantee only, independent of precedence. `cva(config)` is the class-variance authority —
+build a variant function once from a `{ base?, variants?, defaultVariants? }` object, then call it
+with a variant map (plus an optional `class` override, which composes last through `cn` and
+therefore genuinely overrides) to resolve a class string:
 
 ```tsx
 import { cn, asClass, cva } from "@y-core/forge/ui/core";

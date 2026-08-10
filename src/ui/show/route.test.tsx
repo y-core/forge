@@ -19,15 +19,12 @@ import {
   showcasePaths,
 } from "./route";
 
-// ─── Stub icon ────────────────────────────────────────────────────────────────
 // A minimal icon compatible with ForgeIcon<"spinner"|"chevron-down"|"sun"|"moon"|"monitor">
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
 const StubIcon = (_props: any) => null as any;
 StubIcon.sprite = "/icons.svg";
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
 const icon = StubIcon as any;
-
-// ─── loadShowcase ─────────────────────────────────────────────────────────────
 
 function makeApp() {
   const app = new Forge();
@@ -61,8 +58,6 @@ describe("loadShowcase", () => {
   });
 });
 
-// ─── loadPreview ─────────────────────────────────────────────────────────────
-
 describe("loadPreview", () => {
   function makePreviewApp() {
     const app = new Forge();
@@ -88,8 +83,6 @@ describe("loadPreview", () => {
   });
 });
 
-// ─── renderPreview ────────────────────────────────────────────────────────────
-
 describe("renderPreview", () => {
   it("returns 200 with text/html content-type", async () => {
     const res = await renderPreview({ variant: "primary", size: "md" }, icon);
@@ -105,8 +98,6 @@ describe("renderPreview", () => {
     );
   });
 });
-
-// ─── loadValidate ─────────────────────────────────────────────────────────────
 
 describe("loadValidate", () => {
   function makeValidateApp() {
@@ -130,8 +121,6 @@ describe("loadValidate", () => {
     expect(data.email).toBe("user@example.com");
   });
 });
-
-// ─── renderValidate ───────────────────────────────────────────────────────────
 
 describe("renderValidate", () => {
   it("returns 200 with text/html", async () => {
@@ -160,12 +149,10 @@ describe("renderValidate", () => {
     const res = await renderValidate({ email: "user@example.com" });
     const body = await res.text();
     expect(body).toBe(
-      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-red-600 flex-col [&amp;&gt;*]:w-full" id="show-validate-field"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email" name="email" placeholder="you@example.com" value="user@example.com" id="field-email" aria-describedby="field-email-description"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground text-emerald-600" id="field-email-description">Looks good!</p></fieldset>',
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-red-600 flex-col [&amp;&gt;*]:w-full" id="show-validate-field"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email" name="email" placeholder="you@example.com" value="user@example.com" id="field-email" aria-describedby="field-email-description"><p data-slot="field-description" class="text-sm leading-normal text-emerald-600" id="field-email-description">Looks good!</p></fieldset>',
     );
   });
 });
-
-// ─── loadSearch ───────────────────────────────────────────────────────────────
 
 describe("loadSearch", () => {
   function makeSearchApp() {
@@ -189,8 +176,6 @@ describe("loadSearch", () => {
     expect(data.q).toBe("Alert");
   });
 });
-
-// ─── renderSearch ─────────────────────────────────────────────────────────────
 
 describe("renderSearch", () => {
   it("returns 200 with text/html", async () => {
@@ -224,8 +209,6 @@ describe("renderSearch", () => {
   });
 });
 
-// ─── loadPaginate ─────────────────────────────────────────────────────────────
-
 describe("loadPaginate", () => {
   const paths = showcasePaths("/showcase");
 
@@ -257,8 +240,6 @@ describe("loadPaginate", () => {
     expect(data.page).toBe(1);
   });
 });
-
-// ─── renderPaginate ───────────────────────────────────────────────────────────
 
 describe("renderPaginate", () => {
   const paths = showcasePaths("/showcase");
@@ -294,8 +275,6 @@ describe("renderPaginate", () => {
   });
 });
 
-// ─── loadDependent ────────────────────────────────────────────────────────────
-
 describe("loadDependent", () => {
   function makeDependentApp() {
     const app = new Forge();
@@ -318,8 +297,6 @@ describe("loadDependent", () => {
     expect(data.category).toBe("vegetable");
   });
 });
-
-// ─── renderDependent ─────────────────────────────────────────────────────────
 
 describe("renderDependent", () => {
   it("returns 200 with text/html", async () => {
@@ -353,8 +330,6 @@ describe("renderDependent", () => {
   });
 });
 
-// ─── loadToast ────────────────────────────────────────────────────────────────
-
 describe("loadToast", () => {
   function makeToastApp() {
     const app = new Forge();
@@ -377,8 +352,6 @@ describe("loadToast", () => {
     expect(data.type).toBe("error");
   });
 });
-
-// ─── renderToast ─────────────────────────────────────────────────────────────
 
 describe("renderToast", () => {
   it("returns 200 with text/html", async () => {
