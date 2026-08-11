@@ -6,7 +6,7 @@ const DEFAULT_TOAST =
   '<div data-slot="toast" data-variant="default" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div></div>';
 
 const DISMISSIBLE_TOAST =
-  '<div data-slot="toast" data-variant="default" role="status" aria-atomic="true" data-scope="toast" data-state="{}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-border bg-background text-foreground pr-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>';
+  '<div data-slot="toast" data-variant="default" role="status" aria-atomic="true" data-scope="toast" data-state="{}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-border bg-background text-foreground pr-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>';
 
 describe("Toast", () => {
   it("renders with role=status and data-slot=toast", async () => {
@@ -21,25 +21,25 @@ describe("Toast", () => {
 
   it("renders success variant classes", async () => {
     expect(await render(<Toast variant='success'>Done</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="success" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-emerald-200 bg-emerald-50 text-emerald-900"><div data-slot="toast-body" class="flex-1 space-y-1">Done</div></div>',
+      '<div data-slot="toast" data-variant="success" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Done</div></div>',
     );
   });
 
   it("renders info variant classes", async () => {
     expect(await render(<Toast variant='info'>Info</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="info" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-blue-200 bg-blue-50 text-blue-900"><div data-slot="toast-body" class="flex-1 space-y-1">Info</div></div>',
+      '<div data-slot="toast" data-variant="info" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Info</div></div>',
     );
   });
 
   it("renders warning variant classes", async () => {
     expect(await render(<Toast variant='warning'>Alert</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="warning" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-yellow-200 bg-yellow-50 text-yellow-900"><div data-slot="toast-body" class="flex-1 space-y-1">Alert</div></div>',
+      '<div data-slot="toast" data-variant="warning" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Alert</div></div>',
     );
   });
 
   it("renders destructive variant classes", async () => {
     expect(await render(<Toast variant='destructive'>Error</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="destructive" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-red-200 bg-red-50 text-red-900"><div data-slot="toast-body" class="flex-1 space-y-1">Error</div></div>',
+      '<div data-slot="toast" data-variant="destructive" role="status" aria-atomic="true" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Error</div></div>',
     );
   });
 
@@ -95,7 +95,7 @@ describe("Toast", () => {
         </Toast>,
       ),
     ).toBe(
-      '<div data-slot="toast" data-variant="default" role="status" aria-atomic="true" data-scope="toast" data-state="{&quot;duration&quot;:0}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-border bg-background text-foreground pr-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>',
+      '<div data-slot="toast" data-variant="default" role="status" aria-atomic="true" data-scope="toast" data-state="{&quot;duration&quot;:0}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-border bg-background text-foreground pr-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>',
     );
   });
 

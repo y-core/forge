@@ -24,6 +24,15 @@ describe("Button", () => {
     );
   });
 
+  // The one filled variant whose foreground comes from a token added for it — before
+  // `--destructive-foreground` existed, a destructive button meant the caller picking and
+  // contrast-verifying a foreground utility at every call site.
+  it("renders destructive variant classes with its paired foreground", async () => {
+    expect(await render(<Button variant='destructive'>Delete</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${BASE} bg-destructive text-destructive-foreground hover:bg-destructive/90 h-10 px-4 text-sm">Delete</button>`,
+    );
+  });
+
   it("renders sm size classes", async () => {
     expect(await render(<Button size='sm'>Click</Button>)).toBe(
       `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-sm">Click</button>`,
@@ -50,7 +59,7 @@ describe("Button", () => {
 
   it("renders icon-sm size classes", async () => {
     expect(await render(<Button size='icon-sm'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 size-[34px] p-0">Click</button>`,
+      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 size-8 p-0">Click</button>`,
     );
   });
 

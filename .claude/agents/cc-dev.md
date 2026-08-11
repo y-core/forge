@@ -58,6 +58,12 @@ import a wrapped dependency (`valibot`, `@remix-run/*`) outside its facade names
 **Runtime portability** — Web APIs only in runtime namespaces. Build-time tooling (`pkg`, `cli`,
 `assets`, `ui/assets`, any `**/cli/**`) is exempt by design.
 
+**The UI Floor** — before any edit under `src/ui/`, read `src/ui/design/floor.md`. Forge ships that
+corpus to its consumers, so forge's own components are the first thing it is read against. The Floor
+is invariant: it is a constraint held while you write markup, not a pass made afterwards, and no
+plan step overrides it. Its rebuttable half — the Defaults — is `cc-plan`'s to weigh, not yours to
+reopen mid-implementation.
+
 ## Implementation Rules
 
 ### Before Writing Code
@@ -113,11 +119,11 @@ Report back:
 6. **Ledger changes** — the task id and its lane move, or "no ledger item"
 
 **Update the ledger yourself** once the work the task describes is green. It is reached over MCP,
-never by editing files. Fetch `get_protocol` or `get_process` when you need one — when a refusal
-cites a rule you do not hold, or before an operation you have not performed in this session — and
-work from what it answers rather than from a remembered copy. A refusal quotes the `rule` it applied
-and the `requires` it failed, and `check_transition` answers a hypothetical without touching the
-database, so the fetch can wait until there is something it would settle.
+never by editing files. There is no protocol document to fetch: the tool descriptions carry every
+rule a call must satisfy, and a refusal quotes the `rule` it applied, the `requires` that would
+satisfy it, and whether it is `retryable`. Act on that payload rather than guessing past it. Read
+before you write — a read carries the `revision` a later edit must cite — and record the resolution
+with, or before, the move to `done`.
 
 Anything found and deliberately left alone (per **When to Stop**) is reported
 with its evidence and routed by the fold-vs-file test — but whatever the ledger ends up carrying,

@@ -115,10 +115,14 @@ const PARTICIPANTS: Record<string, Participant> = {
   Progress: { slot: "progress", stateAttr: "data-orientation" },
   RadioGroup: { props: { name: "rg" }, slot: "radio-group", stateAttr: "data-orientation" },
   ScrollArea: { slot: "scroll-area", stateAttr: "data-orientation" },
-  // The designated inner element: the root is a presentational `<div data-slot='select-wrapper'>`
-  // that positions the chevron, and both the caller's props and the caller's class land on the
-  // `<select>` they are actually about (select.tsx).
-  Select: { props: { icon }, slot: "select" },
+  // Split target. Forwarded props still belong on the designated inner `<select>` — the root is a
+  // presentational `<div data-slot='select-wrapper'>`, and every native attribute, `data-*` hook and
+  // ARIA relation a caller sends is about the control, not the box around it. `class` is the one
+  // exception, and it is exactly the case the box exists for: the wrapper carries the width and the
+  // positioning context for the chevron, so `class='w-64'` sized the inner control and left the
+  // laid-out control untouched. Geometry is a wrapper's whole reason to be there, so the caller's
+  // `class` lands on the wrapper (select.tsx).
+  Select: { props: { icon }, slot: "select", classSlot: "select-wrapper" },
   Separator: { slot: "separator" },
   Skeleton: { slot: "skeleton" },
   Slider: { slot: "slider" },

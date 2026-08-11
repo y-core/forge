@@ -64,6 +64,12 @@ async function mountNavbar(page: Page, config: NavDefinition = CONFIG): Promise<
   await page.evaluate(() => window.forgeResume.resume());
 }
 
+async function mountRail(page: Page): Promise<void> {
+  const html = await render(Navbar({ config: CONFIG, resolveHref: (key: string) => `#${key}`, icon, collapsible: "always", placement: "left" }));
+  await mount(page, `${DETAILS_CONTENT_RULE}${html}`, EXPOSE);
+  await page.evaluate(() => window.forgeResume.resume());
+}
+
 function focusedText(page: Page): Promise<string | undefined> {
   return page.evaluate(() => document.activeElement?.textContent?.trim());
 }
@@ -230,5 +236,26 @@ test.describe("Navbar — hidden items stay out of the keyboard ring", () => {
     // `Admin` is server-seeded `hidden` because no active token matches it. A hidden row that stayed
     // in the ring would swallow the keystroke and focus would appear to stick.
     expect(await focusedText(page)).toBe("Quit");
+  });
+});
+
+test.describe("Navbar — the rail keeps its disclosure at desktop width", () => {
+  /**
+   * `collapsible="always"` is otherwise only assertable as SSR class strings: the browser harness
+   * serves CSS raw with no Tailwind build, so `md:hidden` and `md:flex` generate no rules and
+   * resizing the viewport would prove nothing. What *is* real here is the `<details>` — its open
+   * state is UA behaviour, not styling, so a rail that stopped toggling would fail this.
+   */
+  test("a rail's summary opens and closes it, with no controller of forge's own", async ({ page }) => {
+    await mountRail(page);
+    const isRailOpen = () => page.evaluate(() => document.querySelector<HTMLDetailsElement>("[data-slot~='navbar']")?.open ?? null);
+
+    expect(await isRailOpen()).toBe(false);
+
+    await page.click("[data-slot~='navbar-toggle']");
+    await expect.poll(isRailOpen).toBe(true);
+
+    await page.click("[data-slot~='navbar-toggle']");
+    await expect.poll(isRailOpen).toBe(false);
   });
 });

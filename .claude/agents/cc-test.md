@@ -122,12 +122,11 @@ Report back:
 5. Implementation defects found while testing — route these to `cc-dev`, do not fix them
 6. Ledger changes — the task id and its lane move, or "no ledger item"
 
-Once `cc-tester` is green, update the ledger yourself over MCP, never by editing files. Fetch
-`get_protocol` or `get_process` when you need one — when a refusal cites a rule you do not hold, or
-before an operation you have not performed in this session — and work from what it answers rather
-than from a remembered copy. A refusal quotes the `rule` it applied and the `requires` it failed, and
-`check_transition` answers a hypothetical without touching the database, so the fetch can wait until
-there is something it would settle.
+Once `cc-tester` is green, update the ledger yourself over MCP, never by editing files. There is no
+protocol document to fetch: the tool descriptions carry every rule a call must satisfy, and a refusal
+quotes the `rule` it applied, the `requires` that would satisfy it, and whether it is `retryable`.
+Act on that payload rather than guessing past it. Read before you write — a read carries the
+`revision` a later edit must cite — and record the resolution with, or before, the move to `done`.
 
 What you supply is the evidence: the verdict and the test files that now carry it, against the task's
 own `Done when:`.

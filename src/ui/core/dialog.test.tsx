@@ -7,7 +7,7 @@ import { Dialog } from "./dialog";
 describe("Dialog", () => {
   it("renders a <dialog> with the given id and data-slot=dialog", async () => {
     expect(await render(<Dialog id='confirm'>Body</Dialog>)).toBe(
-      '<dialog id="confirm" data-slot="dialog" data-scope="dialog" data-closed="" class="rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-lg">Body</dialog>',
+      '<dialog id="confirm" data-slot="dialog" data-scope="dialog" data-closed="" class="rounded-xl border border-border bg-popover text-popover-foreground shadow-lg">Body</dialog>',
     );
   });
 
@@ -19,7 +19,7 @@ describe("Dialog", () => {
         </Dialog>,
       ),
     ).toBe(
-      '<dialog id="confirm" data-slot="dialog" data-scope="dialog" data-closed="" class="rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-lg w-96">Body</dialog>',
+      '<dialog id="confirm" data-slot="dialog" data-scope="dialog" data-closed="" class="rounded-xl border border-border bg-popover text-popover-foreground shadow-lg w-96">Body</dialog>',
     );
   });
 });
@@ -60,6 +60,30 @@ describe("Dialog.Close", () => {
   });
 });
 
+describe("Dialog sections", () => {
+  it("renders Header with the gutter and a bottom rule", async () => {
+    expect(await render(<Dialog.Header>Delete project</Dialog.Header>)).toBe(
+      '<div data-slot="dialog-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5">Delete project</div>',
+    );
+  });
+
+  it("renders Body with the gutter", async () => {
+    expect(await render(<Dialog.Body>This cannot be undone.</Dialog.Body>)).toBe(
+      '<div data-slot="dialog-body" class="px-6 py-5">This cannot be undone.</div>',
+    );
+  });
+
+  it("renders Footer with the gutter and a top rule", async () => {
+    expect(await render(<Dialog.Footer>Actions</Dialog.Footer>)).toBe(
+      '<div data-slot="dialog-footer" class="flex items-center gap-2 border-t border-border px-6 py-4">Actions</div>',
+    );
+  });
+
+  it("lets a caller's padding evict the section default", async () => {
+    expect(await render(<Dialog.Body class='p-2'>Body</Dialog.Body>)).toBe('<div data-slot="dialog-body" class="p-2">Body</div>');
+  });
+});
+
 describe("Dialog composition", () => {
   it("renders trigger + dialog + close linked by a shared id", async () => {
     expect(
@@ -73,7 +97,7 @@ describe("Dialog composition", () => {
         </>,
       ),
     ).toBe(
-      '<button type="button" data-slot="dialog-trigger" command="show-modal" commandfor="confirm">Delete…</button><dialog id="confirm" data-slot="dialog" data-scope="dialog" data-closed="" class="rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-lg"><p>Are you sure?</p><button type="button" data-slot="dialog-close" command="close" commandfor="confirm">Cancel</button></dialog>',
+      '<button type="button" data-slot="dialog-trigger" command="show-modal" commandfor="confirm">Delete…</button><dialog id="confirm" data-slot="dialog" data-scope="dialog" data-closed="" class="rounded-xl border border-border bg-popover text-popover-foreground shadow-lg"><p>Are you sure?</p><button type="button" data-slot="dialog-close" command="close" commandfor="confirm">Cancel</button></dialog>',
     );
   });
 });

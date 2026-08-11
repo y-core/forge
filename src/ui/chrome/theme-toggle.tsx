@@ -17,7 +17,7 @@ export interface ThemeToggleProps {
   class?: string;
 }
 
-const TOGGLE_BASE = "rounded-lg p-2 text-foreground transition hover:bg-accent";
+const TOGGLE_BASE = "rounded-lg p-2 text-foreground transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * Theme toggle button — one button that cycles light → dark → system → light.

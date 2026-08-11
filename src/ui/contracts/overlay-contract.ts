@@ -25,7 +25,7 @@ export const POPOVER_SCOPE = "popover";
  * Marks a popup that is placed at a **coordinate** rather than against an invoker.
  *
  * Every other popup in forge is positioned by CSS Anchor Positioning against its trigger, through an
- * explicit `anchor-name` / `position-anchor` pair declared in `theme-base.css`. A context menu has no
+ * explicit `anchor-name` / `position-anchor` pair declared in `forge-ui.css`. A context menu has no
  * trigger: it opens where the pointer was, on an element that is not a button at all. Nothing carries
  * the anchor name, every `anchor()` in the placement rules resolves to nothing, and the UA's
  * `[popover]` default (`inset: 0; margin: auto`) centres it in the viewport — the one place a context

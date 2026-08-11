@@ -7,13 +7,17 @@
   },
   "type": "module",
   "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/y-core/forge.git"
+  },
+  "license": "MIT",
   "scripts": {
     "check": "bun run scripts/check.ts",
     "verify": "bun run scripts/verify.ts",
     "lint:fix": "bun run scripts/check.ts --fix",
     "test": "bun test",
     "test:browser": "playwright test",
-    "test:install": "playwright install chromium",
     "prepublishOnly": "bun run verify",
     "release": "bun run scripts/release.ts"
   },
@@ -195,6 +199,7 @@
       "types": "./src/ui/client/htmx.ts",
       "import": "./src/ui/client/htmx.ts"
     },
+    "./ui/design/*.md": "./src/ui/design/*.md",
     "./ui/server": {
       "types": "./src/ui/server/mod.ts",
       "import": "./src/ui/server/mod.ts"

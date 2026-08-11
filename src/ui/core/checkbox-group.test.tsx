@@ -47,7 +47,7 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
         </CheckboxGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-error" data-invalid="" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-red-600" id="field-toppings-error" role="alert">Pick at least one.</p></fieldset>',
+      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-error" data-invalid="" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-destructive" id="field-toppings-error" role="alert">Pick at least one.</p></fieldset>',
     );
   });
 

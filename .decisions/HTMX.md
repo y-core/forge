@@ -187,7 +187,12 @@ Defaults: `swap=innerHTML`, `trigger="input changed delay:300ms, search"`.
 
     <input {...inlineValidation({ get: "/validate/email", target: "#email-field" })} />
 
-Defaults: `swap=outerHTML`, `trigger="change delay:200ms, blur"`, `sync="closest form:abort"`.
+Defaults: `swap=outerHTML`, `trigger="change delay:200ms, blur"`, `sync="this:abort"`.
+
+The `sync` default is deliberately form-independent: htmx resolves the selector at request time and
+does not null-check the result, so a `closest form` default silently throws inside htmx's own
+trigger handler for any field with no enclosing `<form>` — no request, no `htmx:*` error event.
+A caller inside a form that wants cross-field aborting passes `sync: "closest form:abort"`.
 
 ### 6d. infiniteScroll
 

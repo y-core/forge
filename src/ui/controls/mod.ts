@@ -8,7 +8,7 @@
  * `@y-core/forge/ui/controls`). A module must import a given control name from exactly one of
  * the two barrels, never both. See `.decisions/NAMESPACE_DESIGN.md` §5b.
  */
-export type { ToggleGroupItemSize } from "../core/toggle-group";
+export type { ButtonSize } from "../core/button";
 export { Input } from "./input";
 export { Select } from "./select";
 export { Slider } from "./slider";

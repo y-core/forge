@@ -23,8 +23,52 @@ describe("Badge", () => {
 
   it("renders destructive variant classes", async () => {
     expect(await render(<Badge variant='destructive'>Error</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="destructive" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-red-100 text-red-800 border-red-200">Error</span>',
+      '<span data-slot="badge" data-variant="destructive" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-status-danger-strong text-status-danger-strong-foreground border-status-danger-border">Error</span>',
     );
+  });
+
+  it("renders info variant classes", async () => {
+    expect(await render(<Badge variant='info'>Info</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="info" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-status-info-strong text-status-info-strong-foreground border-status-info-border">Info</span>',
+    );
+  });
+
+  it("renders success variant classes", async () => {
+    expect(await render(<Badge variant='success'>Success</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="success" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-status-success-strong text-status-success-strong-foreground border-status-success-border">Success</span>',
+    );
+  });
+
+  it("renders warning variant classes — the same status intent every forge status surface uses", async () => {
+    expect(await render(<Badge variant='warning'>Warning</Badge>)).toBe(
+      '<span data-slot="badge" data-variant="warning" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-status-warning-strong text-status-warning-strong-foreground border-status-warning-border">Warning</span>',
+    );
+  });
+
+  it("expresses every status variant through `--status-*` tokens, with no raw palette or `dark:` utility", async () => {
+    // `forge-ui-color-theme-no-raw-utility` in a single assertion, restated for the token world: a
+    // status variant re-maps under `.dark` through the token, so a hand-written `dark:` pair is now
+    // itself the defect the rule catches, alongside the fixed-palette stop it used to catch.
+    // The token count is asserted beside the two violation lists: a variant whose colour utilities
+    // were deleted outright would leave both lists empty too, and would pass a check that only
+    // counted the failures.
+    const audit: Record<string, { tokens: number; palette: string[]; dark: string[] }> = {};
+    for (const variant of ["destructive", "info", "success", "warning"] as const) {
+      const html = await render(<Badge variant={variant}>x</Badge>);
+      const classes = (html.match(/class="([^"]*)"/)?.[1] ?? "").split(" ");
+      audit[variant] = {
+        tokens: classes.filter((c) => /^(?:bg|text|border)-status-[a-z]+-/.test(c)).length,
+        palette: classes.filter((c) => /^(?:bg|text|border)-[a-z]+-(?:50|[1-9]00|950)$/.test(c)),
+        dark: classes.filter((c) => c.startsWith("dark:")),
+      };
+    }
+
+    expect(audit).toEqual({
+      destructive: { tokens: 3, palette: [], dark: [] },
+      info: { tokens: 3, palette: [], dark: [] },
+      success: { tokens: 3, palette: [], dark: [] },
+      warning: { tokens: 3, palette: [], dark: [] },
+    });
   });
 
   it("renders outline variant classes", async () => {

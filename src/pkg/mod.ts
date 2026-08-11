@@ -1,3 +1,5 @@
+export type { ChangelogParse, PromoteOptions, UnreleasedSection, VersionHeading } from "./changelog";
+export { formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
 export {
   createTag,
   getCommitsSinceTag,
@@ -7,7 +9,7 @@ export {
   isWorkingTreeClean,
   tagExists,
 } from "./git";
-export { readPackageVersion, updatePackageVersion } from "./pkg";
+export { readChangelog, readPackageVersion, readRepositoryUrl, updatePackageVersion, writeChangelog } from "./pkg";
 export { createReleaseCommand } from "./release";
 export { bumpSemVer, compareSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
 export type { BumpKind, ReleaseCommandConfig, ReleaseErrorKind, SemVer, VersionResult } from "./types";

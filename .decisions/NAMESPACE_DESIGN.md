@@ -174,14 +174,14 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TESTING.md`](./TESTING.md) §7 |
 | `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
 | `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
-| `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. `forge-show.css` is that plus the showcase's classes, opt-in. Underneath: `theme-base.css` (semantic tokens over an eleven-stop `--palette-*` ramp, plus the layered component rules), `forge-ui.css` (the utility CSS specific components require), and seven ready-made ramps — `theme-slate.css` is the structural model for an app's own |
+| `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. `forge-show.css` is that plus the showcase's classes, opt-in. Underneath: `theme-base.css` (semantic tokens over an eleven-stop `--palette-*` ramp, plus the layered component rules), `forge-ui.css` (the utility CSS specific components require), and five ready-made ramps — `theme-slate.css` is the structural model for an app's own |
 | `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | the DOM contract as pure data — `STATE_ATTRS`, `stateAttrs`, `applyStateAttrs`, `SCOPE_EVENTS`, `scopeAttrs`, and the scope-name / selector constants each keyboard primitive shares between its SSR and client halves |
 | `@y-core/forge/ui/controls` | `src/ui/controls/mod.ts` | bound control variants that shadow the `ui/core` names — see §5b |
 | `@y-core/forge/ui/core` | `src/ui/core/mod.ts` | the SSR component set plus `cn`, `cva` — see [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) |
 | `@y-core/forge/ui/core/client` | `src/ui/core/client.ts` | ui/core browser controller registration |
 | `@y-core/forge/ui/chrome` | `src/ui/chrome/mod.ts` | `Navbar`, `Toolbar`, `ThemeToggle`, `FOUC_SCRIPT`, `THEME_ATTR` |
 | `@y-core/forge/ui/chrome/client` | `src/ui/chrome/client.ts` | theme/nav chrome controller registration |
-| `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | `mountNav`, `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `bindField`, `bindGroup`, `resume`, `registerScope` |
+| `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | `mountTurnstile`, `lazy`, `createSignal`, `computed`, `effect`, `bindField`, `bindGroup`, `resume`, `registerScope` |
 | `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | htmx bundle |
 | `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | `Flash`, `FlashContainer`, `FlashOob`, `Resumable`, `fieldAttr`, `commandAttrs` |
 | `@y-core/forge/ui/show` | `src/ui/show/mod.ts` | `ShowcaseContent`, `registerShowcase`, `showcaseRoutes` |

@@ -1,16 +1,71 @@
-/* Stone neutral ramp — maps --palette-* aliases onto Tailwind's stone scale.
-   Stone matches the base-default accent values, so no accent overrides are needed.
+/* Stone — the warm scheme.
+   ─────────────────────────────────────────────────────────────────────────────
+   **Tailwind's hue at Radix's lightness**, by the same construction as `theme-slate.css` and for the
+   same reason — the full argument is written out there rather than repeated here. In short: each
+   step's lightness is Radix's, so the role numbering and every contrast measurement hold; its chroma
+   and hue are Tailwind's `stone`, resampled at that lightness, because Radix's `sand` is 5 units off
+   neutral at step 11 where Tailwind's `stone-600` is 10, and a scheme with no accent behind it has to
+   carry its own identity.
+
+   Named `stone` rather than `sand` because that is what forge has always called its warm scheme, and
+   a rename would cost every consumer an import for no gain.
+
+   Steps 1 and 2 are swapped in the light block only, so cards stay raised.
+
    @import theme-base.css before this file. */
 :root {
-  --palette-50:  var(--color-stone-50);
-  --palette-100: var(--color-stone-100);
-  --palette-200: var(--color-stone-200);
-  --palette-300: var(--color-stone-300);
-  --palette-400: var(--color-stone-400);
-  --palette-500: var(--color-stone-500);
-  --palette-600: var(--color-stone-600);
-  --palette-700: var(--color-stone-700);
-  --palette-800: var(--color-stone-800);
-  --palette-900: var(--color-stone-900);
-  --palette-950: var(--color-stone-950);
+  --gray-1:  #f9f9f8;
+  --gray-2:  #fcfcfb;
+  --gray-3:  #f0f0ef;
+  --gray-4:  #e9e8e6;
+  --gray-5:  #e2dfde;
+  --gray-6:  #dcd8d6;
+  --gray-7:  #d1cdcb;
+  --gray-8:  #bfbab7;
+  --gray-9:  #938c87;
+  --gray-10: #89827c;
+  --gray-11: #69635d;
+  --gray-12: #231f1e;
+
+  /* Alpha steps — Radix `sandA`, kept as authored; see `theme-slate.css`. */
+  --gray-a1:  #55550003;
+  --gray-a2:  #25250007;
+  --gray-a3:  #20100010;
+  --gray-a4:  #1f150019;
+  --gray-a5:  #1f180021;
+  --gray-a6:  #19130029;
+  --gray-a7:  #19140035;
+  --gray-a8:  #1915014a;
+  --gray-a9:  #0f0f0079;
+  --gray-a10: #0c0c0083;
+  --gray-a11: #080800a1;
+  --gray-a12: #060500e3;
+}
+
+.dark {
+  --gray-1:  #13100f;
+  --gray-2:  #1b1816;
+  --gray-3:  #252120;
+  --gray-4:  #2e2927;
+  --gray-5:  #35302d;
+  --gray-6:  #3e3935;
+  --gray-7:  #4c4742;
+  --gray-8:  #655f59;
+  --gray-9:  #746d67;
+  --gray-10: #817974;
+  --gray-11: #b8b3af;
+  --gray-12: #efeeed;
+
+  --gray-a1:  #00000000;
+  --gray-a2:  #f4f4f309;
+  --gray-a3:  #f6f6f513;
+  --gray-a4:  #fefef31b;
+  --gray-a5:  #fbfbeb23;
+  --gray-a6:  #fffaed2d;
+  --gray-a7:  #fffbed3c;
+  --gray-a8:  #fff9eb57;
+  --gray-a9:  #fffae965;
+  --gray-a10: #fffdee73;
+  --gray-a11: #fffcf4b0;
+  --gray-a12: #fffffded;
 }

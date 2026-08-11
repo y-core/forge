@@ -10,7 +10,7 @@ manifest (`@y-core/forge/ui/assets`) and its browser-safe glyph parser
 configuration-driven app chrome — navbar, toolbar, theme toggle — (`@y-core/forge/ui/chrome`) with
 its client island (`@y-core/forge/ui/chrome/client`), the pinned HTMX bundle
 (`@y-core/forge/ui/client/htmx`), a ready-made component showcase (`@y-core/forge/ui/show`,
-`@y-core/forge/ui/show/client`), and the addressable stylesheets and theme ramps
+`@y-core/forge/ui/show/client`), and the addressable stylesheets and optional themes
 (`@y-core/forge/ui/assets/css/*.css`) — a subpath **pattern**, so it names a family rather than one
 file, and each real `.css` in that directory is reachable.
 
@@ -26,13 +26,14 @@ configuration.
 
 ## Table of Contents
 
+- [Design guidance](#design-guidance) — the shipped design corpus: which component to reach for, and what good looks like
 - [`@y-core/forge/ui/core`](#y-coreforgeuicore) — server-side JSX component library
 - [`@y-core/forge/ui/core/client`](#y-coreforgeuicoreclient) — toast + alert scopes island (side-effect import)
 - [`@y-core/forge/ui/controls`](#y-coreforgeuicontrols) — pre-bound signal-binding wrapper layer
 - [`@y-core/forge/ui/contracts`](#y-coreforgeuicontracts) — the shared DOM contract as pure data
 - [`@y-core/forge/ui/assets`](#y-coreforgeuiassets) — forge's self-owned icon asset manifest
 - [`@y-core/forge/ui/assets/glyphs`](#y-coreforgeuiassetsglyphs) — browser-safe sprite glyph parser
-- [`@y-core/forge/ui/assets/css/*.css`](#the-stylesheet--one-import-one-ramp) — the entry stylesheet and the theme ramps
+- [`@y-core/forge/ui/assets/css/*.css`](#the-stylesheet--one-import-no-theme-required) — the entry stylesheet and the optional themes
 - [`@y-core/forge/ui/client`](#y-coreforgeuiclient) — browser controllers + signals runtime
 - [`@y-core/forge/ui/server`](#y-coreforgeuiserver) — SSR-only Flash and Resumable
 - [`@y-core/forge/ui/chrome`](#y-coreforgeuichrome) — SSR Navbar, Toolbar, ThemeToggle + theme constants
@@ -63,7 +64,7 @@ Without `jsxImportSource: "@y-core/forge/jsx"`, JSX in component files compiles 
 runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
 `/** @jsxImportSource @y-core/forge/jsx */` pragma, so per-file overrides are unnecessary.
 
-### The stylesheet — one import, one ramp
+### The stylesheet — one import, no theme required
 
 forge's components are Tailwind utilities over semantic tokens, so an app needs **two** things from
 this package: the tokens, and the *generated rules* for the utility classes the components emit.
@@ -75,7 +76,7 @@ A single import supplies both:
 @import "@y-core/forge/ui/assets/css/forge.css";
 ```
 
-**Why one import rather than importing `theme-base.css` directly.** Tailwind v4's automatic content
+**Why one import rather than importing the token files directly.** Tailwind v4's automatic content
 scan **ignores `node_modules`**, so without help none of forge's classes are ever generated — the
 markup renders and every class on it has no rule. `forge.css` fixes that from inside the package: it
 carries an `@source` path for **every directory under `src/ui/` whose files declare a utility
@@ -87,9 +88,13 @@ itself**, which is the only form that survives pnpm, a workspace, a git dependen
 alike. Writing them consumer-side would mean hardcoding `../../node_modules/@y-core/forge/…`, which
 is wrong under most of those.
 
-Use `@y-core/forge/ui/assets/css/forge-show.css` instead if the app mounts
-[`@y-core/forge/ui/show`](#y-coreforgeuishow) — same file plus the showcase's own classes, kept
-opt-in so an app that does not mount it pays nothing.
+An app that mounts [`@y-core/forge/ui/show`](#y-coreforgeuishow) adds one more line of its own, the
+same way it does for the log viewer — the showcase is demo markup, so its utilities are opt-in and an
+app that does not mount it pays nothing:
+
+```css
+@source "../../node_modules/@y-core/forge/src/ui/show";
+```
 
 **`forge.css` scans `ui/` and nothing else.** Other namespaces ship server-rendered markup of their
 own, and whether an app mounts one is the app's decision rather than this package's — so their
@@ -97,37 +102,124 @@ classes are the app's to scan. If you import a forge surface outside `ui/` that 
 an `@source` for that namespace's directory to your own stylesheet. Each namespace's README says so
 where it applies.
 
-#### Supply a `--palette-*` ramp
+#### A theme is optional — a scheme is twelve steps
 
-`theme-base.css` maps every semantic token — `--background`, `--primary`, `--border`, `--sidebar`
-and the rest — onto **eleven stops, `--palette-50` through `--palette-950`**, overriding only where
-it diverges from that mapping. Supplying the ramp is how an app themes forge, and any
-`theme-*.css` in `src/ui/assets/css/` is a working example: an app's own ramp is structurally
-identical to `theme-slate.css`.
+**`theme-neutral.css` is the default scheme**, and `forge.css` imports it, so forge renders
+correctly with no theme file of your own. Three alternatives ship beside it — `theme-stone.css`
+(warm), `theme-gray.css` (cool) and `theme-slate.css` (strongly cool) — each imported *after*
+`forge.css`:
+
+```css
+@import "tailwindcss";
+@import "@y-core/forge/ui/assets/css/forge.css";
+@import "@y-core/forge/ui/assets/css/theme-stone.css";   /* optional — or theme-gray.css, or theme-slate.css */
+```
+
+**Tailwind's ramp named `gray` is blue-tinted, so `theme-gray.css` is the cool scheme and
+`theme-neutral.css` is the achromatic one.** The names invite the opposite reading.
+
+A theme file re-declares `--gray-1` … `--gray-12` and their translucent siblings `--gray-a1` …
+`--gray-a12`, in both `:root` and `.dark`, and **nothing else**. Every semantic token —
+`--background`, `--primary`, `--border` and the rest — resolves through those steps, so there is
+nothing else for a scheme to override, and an app's own scheme is structurally identical to
+`theme-slate.css`.
+
+The mapping is two hops, and knowing which hop you are looking at is what makes the rest of this
+section make sense:
+
+```css
+--muted-foreground: var(--gray-11);  /* semantic token — declared once, for both modes */
+--gray-11: #646464;                  /* scale step, :root */
+--gray-11: #b4b4b4;                  /* scale step, .dark */
+```
+
+The step numbering is Radix's twelve-step scale, and so is the lightness of every step forge ships: 1
+app background, 2 subtle background, 3 UI element background, 4 hovered UI element background, 5
+active/selected, 6 subtle borders and separators, 7 UI element border and focus rings, 8 hovered UI
+element border, 9 solid backgrounds, 10 hovered solid backgrounds, 11 low-contrast text, 12
+high-contrast text. The scheme file is where the literals live — `theme-neutral.css` for the default
+— along with the light-mode 1↔2 swap that keeps a `Card` raised above the page, which is a value
+rather than a mapping. `theme-base.css` owns the mapping, and the one place forge's *role mapping*
+deliberately differs from Radix's: the border tokens, where `--input` and `--ring` sit at steps 10
+and 11 rather than 7 and 8 so they clear WCAG 1.4.11's 3:1.
+
+**The four schemes share that one lightness ramp and differ only in hue.** `theme-neutral.css` is
+achromatic; `theme-stone.css`, `theme-gray.css` and `theme-slate.css` take their chroma and hue from
+Tailwind's `stone`, `gray` and `slate`, resampled at each Radix lightness. How far each leans is the
+whole difference between them — measured as max−min across R/G/B at step 11, the muted-text step:
+neutral 0, stone 12, gray 20, slate 42. Two consequences are worth knowing before you pick one:
+swapping schemes is a visible change of tint rather than a one-unit nudge, and every contrast ratio
+forge audits holds across all four to within 0.05 — widest at `--muted-foreground` in light, 5.17
+through 5.22 — so a scheme swap cannot drop a pair below its floor. That is the shared ramp rather
+than four measurements: `theme-gray.css` was added without re-pinning a single contract row, and it
+scales its chroma to 0.8 — a dial the same property makes free, since every audited ratio depends on
+lightness alone. A scheme *you* author is on its own ramp and carries no such guarantee — re-measure.
+The
+attribution and the reasoning are in
+[`ui/design/reference/04-color.md`](./design/reference/04-color.md); the values are in the theme
+files.
+
+**Author your own scheme** by declaring the same twelve steps in both blocks, after the forge
+imports. Write them in a space that carries lightness as its own coordinate, so a step can be moved
+lighter or darker without dragging its hue and chroma with it:
 
 ```css
 :root {
-  --palette-50:  oklch(0.98 0.003 250);
+  --gray-1:  oklch(0.99 0.003 250);
   /* … through … */
-  --palette-950: oklch(0.16 0.010 250);
+  --gray-12: oklch(0.18 0.010 250);
+}
+.dark {
+  --gray-1:  oklch(0.17 0.008 250);
+  /* … through … */
+  --gray-12: oklch(0.95 0.004 250);
 }
 ```
 
-**Override an individual token on top of the ramp** for the cases a ramp cannot express — a brand
+**Override an individual token on top of the scheme** for the cases a scale cannot express — a brand
 hue is one, and in forge's vocabulary a brand hue is `--primary`, not `--accent`:
 
 ```css
 :root { --primary: var(--color-brand-accent); }
 ```
 
-That is the supported extension point in both directions: the ramp is the general case, per-token
-override is the tail. There is no `unstyled` escape hatch, deliberately — see the note on layers
-below for why one would not solve the problem it looks like it solves.
+**Override a *step* for anything that must differ between the two modes.** Every semantic token is
+declared exactly once, in `:root`, and `.dark` carries scale steps and nothing else — so a
+`:root { --primary: … }` of your own applies in **both** modes, where a `.dark` twin of forge's would
+once have overridden it back. Re-point the step instead:
+
+```css
+/* after the forge imports */
+:root { --gray-6: #cccccc; }   /* a stronger hairline in light mode… */
+.dark { --gray-6: #454545; }   /* …and in dark */
+```
+
+Steps that carry text or a control boundary — 6 is neither — have measured contrast ratios behind
+them, so re-measure the pair in both modes before shipping a step override. `--muted-foreground` on
+`--muted` is the pair with the least headroom in the system.
+
+That is the supported extension point in three directions: the scheme is the general case, a
+per-token override is the tail, and a per-mode override is a step. There is no `unstyled` escape
+hatch, deliberately — see the note on layers below for why one would not solve the problem it looks
+like it solves.
+
+#### Status colours are tokens, not palette utilities
+
+`Alert`, `Toast`, `Badge` and the banners `@y-core/forge/http` renders take their colour from a
+`--status-*` family: four intents (`danger`, `warning`, `success`, `info`) by five roles
+(`-subtle`, `-subtle-foreground`, `-strong`, `-strong-foreground`, `-border`), each bridged to a
+Tailwind utility — `bg-status-danger-subtle`, `text-status-success-strong-foreground`.
+
+These are deliberately **not** `--destructive` / `--success` / `--warning`. Those three are fills
+your app owns and may re-point to its brand; the `--status-*` hues are forge's, so a failure panel
+keeps meaning "failed" whatever `--destructive` has been pointed at. Re-point a status hue only if
+you mean to change what "failed" looks like — and do it on the step (`--red-2`, `--red-12`, and
+their siblings), for the reason above.
 
 #### Component rules are in `@layer components`
 
-Everything below `theme-base.css`'s token blocks is layered, so **a utility you pass at the call
-site wins over a component default** — `<Dialog class="max-w-sm">` narrows the dialog, as it reads.
+Every rule in `forge-ui.css` is layered, so **a utility you pass at the call site wins over a
+component default** — `<Dialog class="max-w-sm">` narrows the dialog, as it reads.
 (These rules were unlayered before `v0.0.74`, and unlayered CSS outranks *all* layered CSS whatever
 its selector weight, so such a `max-w-sm` silently did nothing.)
 
@@ -146,24 +238,75 @@ specificity. Declare a layer of your own *after* `utilities` and put them there:
 
 #### Dark mode with Tailwind v4
 
-Forge's palette is a set of CSS custom properties that `.dark` on `<html>` re-maps, resolved at
-runtime through `@theme inline`. **So every forge component works in dark mode with no extra setup**
-— `bg-popover`, `text-muted-foreground` and the rest all follow the class the theme scope toggles.
+Forge's colours are CSS custom properties that `.dark` on `<html>` re-maps — the role steps, and
+through them every semantic token — resolved at runtime through `@theme inline`. **So every forge
+component works in dark mode with no extra setup**: `bg-popover`, `text-muted-foreground`,
+`bg-status-danger-subtle` and the rest all follow the class the theme scope toggles, and forge's own
+source contains no `dark:` utility at all.
 
-**Your own `dark:` utilities do not, and this is the one piece of setup that is easy to miss.**
-Tailwind v4 defaults the `dark:` variant to `prefers-color-scheme`, so a `dark:bg-slate-900` of
-your own would follow the *operating system* while every forge component follows the *user's
-choice* — and the two disagree the moment someone picks a theme that is not `system`. Point the
-variant at the class instead:
+**`forge.css` declares the `dark:` variant for you, and that is a takeover worth knowing about.**
+Tailwind v4 defaults `dark:` to `prefers-color-scheme`, so a `dark:` utility would follow the
+*operating system* while every forge token follows the *user's choice* — and the two disagree the
+moment someone picks a theme that is not `system`. `forge.css` therefore ships the class-driven
+definition:
 
 ```css
-/* your app's stylesheet, alongside the forge imports */
 @custom-variant dark (&:where(.dark, .dark *));
 ```
 
-One line, and `dark:` now means the same thing to your utilities as it does to forge's palette.
-Nothing in `ui/assets` declares it, because a consumer's variant configuration is a consumer's to
-own — but every app using both forge components and its own `dark:` utilities needs it.
+You no longer add that line. But it reconfigures **your** `dark:` utilities too, not only forge's:
+an app relying on `prefers-color-scheme` for its own dark styling loses the automatic switch here,
+with no error and nothing in any gate to catch it — forge has no Tailwind dependency, so nothing in
+this repository ever compiles CSS.
+
+The escape hatch is the cascade. `@custom-variant` is last-declaration-wins, so an app that wants
+the media query back re-declares the variant *after* the import:
+
+```css
+@import "@y-core/forge/ui/assets/css/forge.css";
+@custom-variant dark (@media (prefers-color-scheme: dark));
+```
+
+---
+
+## Design guidance
+
+A pure-markdown **design corpus** ships inside this package at `src/ui/design/`. It is the
+companion to this README, and the boundary between the two is one sentence: **this README says
+how to call a component; the corpus says which one to reach for, and what good looks like once
+it is composed.**
+
+Its rules occupy two tiers:
+
+- **Floor** — invariants. Never overridden, by any brief, and stated so a reviewer can check them
+  mechanically against a named forge component, token, or class.
+- **Defaults** — rebuttable aesthetic guidance, each opening with the literal token `Default:` and
+  ending with the condition under which departing is correct. Only an explicit written brief
+  rebuts one.
+
+Every normative sentence carries a stable `<!-- rule:forge-ui-… -->` identifier, so a review
+finding can cite the exact sentence that justifies it rather than a paragraph.
+
+### Loading it — no install, no dependency
+
+The corpus is plain markdown already sitting in `node_modules`, so there is nothing to add to your
+dependency tree. Two ways in:
+
+- **Claude Code** — point a skills directory at
+  `node_modules/@y-core/forge/src/ui/design`; `SKILL.md` is the entry and carries the routing
+  table.
+- **Any other agent, or a human** — read `src/ui/design/index.md`. It is harness-neutral markdown
+  with the same routing table, and every file it routes to is reachable through this package's
+  `./ui/design/*.md` export subpath.
+
+**Load `src/ui/design/floor.md` before any UI work.** It is the shortest file in the corpus and
+the only one that is unconditional; `src/ui/design/catalog.md` answers which component fits a
+given job, and `src/ui/design/reference/` holds one file per design dimension for the cases the
+catalog does not settle.
+
+The tier scheme, the identifier scheme, and the boundary between this README and the corpus are
+owned by [`UI_DESIGN_GUIDANCE.md`](../../.decisions/UI_DESIGN_GUIDANCE.md) — read it to change the
+corpus, not to use it.
 
 ---
 
@@ -238,9 +381,9 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `FormField` | `<fieldset>` | Accessible form field with `name` / `invalid` / `disabled`. Compounds: `FormField.Label`, `FormField.Description`, `FormField.Error`. |
 | `Field` | layout row | Lightweight label + control row — no form semantics. |
 | `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` prop (a `ForgeIcon`). |
-| `Button` | `<button>` | `variant`: `"primary" | "secondary" | "ghost"`; `size`: `"sm" | "md" | "lg" | "icon" | "icon-sm"`. `asChild` renders onto a single element child instead of a `<button>`. |
+| `Button` | `<button>` | `variant`: `"primary" | "secondary" | "ghost"`; `size`: `"sm" | "md" | "lg" | "icon" | "icon-sm" | "square"`. `asChild` renders onto a single element child instead of a `<button>`. |
 | `Alert` | `<div role="alert">` | `variant`: `AlertVariant`. Compounds: `Alert.Title`, `Alert.Description`. |
-| `Card` | bordered container | Compounds: `Card.Header`, `Card.Title`, `Card.Description`, `Card.Content`, `Card.Footer`. |
+| `Card` | bordered container | Compounds: `Card.Header`, `Card.Title`, `Card.Description`, `Card.Action`, `Card.Content`, `Card.Footer`. |
 | `Toast` | notification | `variant`: `ToastVariant`; `position`: `ToastPosition`. Compounds: `Toast.Title`, `Toast.Description`, `Toast.Container`. |
 | `Badge` | `<span>` | `variant`: `BadgeVariant`. |
 | `Avatar` | avatar | Compound: `Avatar.Fallback`. |
@@ -250,7 +393,7 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `Menu` | native popover, `role="menu"` | Trigger + popup on the Popover and Invoker Commands APIs — open, close, light-dismiss and Escape need no JavaScript. Compounds: `Menu.Trigger`, `Menu.Popup`, `Menu.Item`, `Menu.LinkItem`, `Menu.SubmenuTrigger`, `Menu.CheckboxItem`, `Menu.RadioItem`, `Menu.Group`, `Menu.GroupLabel`, `Menu.Separator`. |
 | `Tabs` | tablist + panels | `orientation`; `activation`: `"automatic" | "manual"`. Compounds: `Tabs.List`, `Tabs.Tab`, `Tabs.Panel`. An unselected panel is `hidden`, so the first render is correct with no JS. |
 | `Toggle` | `<button aria-pressed>` | A single two-state pressable button. `pressed` for initial state. |
-| `Collapsible` | native `<details>` | Compounds: `Collapsible.Trigger`, `Collapsible.Content`. `<details>` owns open and closed; the controller only publishes them. |
+| `Collapsible` | native `<details>` | Compounds: `Collapsible.Trigger`, `Collapsible.Panel`. `<details>` owns open and closed; the controller only publishes them. |
 | `Accordion` | stack of `<details>` | Compounds: `Accordion.Item`, `Accordion.Trigger`, `Accordion.Content`. Each item is its own disclosure and its own tab stop. |
 | `Tooltip` | `popover="hint"` | Compounds: `Tooltip.Trigger`, `Tooltip.Content`. A hint does not dismiss the `auto` popover beneath it. |
 | `CheckboxGroup`, `RadioGroup` | `<fieldset>` of native inputs | Real `<input type="checkbox">` / `<input type="radio">`. Radio grouping and its roving focus are the platform's. Compound: `.Item` on each. `description` and `scope` behave as on `FormField` — `scope` must be repeated on every `.Item`, since each item derives its own id. |
@@ -751,18 +894,19 @@ relying on a rejection.
 - A framework-free reactive signals runtime (`createSignal`, `computed`, `effect`).
 - The resumability-lite island runtime (`registerScope`, `resume`, `resumeScope`) — server-stamped
   state hydrated on first interaction, zero work at page load.
-- DOM controllers (`mountNav`, `mountTurnstile`) — each idempotent and returning a cleanup
-  function. `mountTurnstile()` is arg-less and drives the `<Turnstile>` ui/core mount point with a
-  resilient, engagement-gated lifecycle.
+- DOM controllers (`mountTurnstile`, `mountScrollSpy`, `mountViewportCollapse`) — each
+  idempotent and returning a cleanup function. `mountTurnstile()` is arg-less and drives the
+  `<Turnstile>` ui/core mount point with a resilient, engagement-gated lifecycle.
+- Navigation runtime for what the server cannot render — `mountScrollSpy` marks the section being
+  read on a fragment nav, `mountViewportCollapse` drives a `<details>` rail from a media query.
 - Generic control↔signal field binding (`bindField`, `bindGroup`, `parseControlValue`, `applyControlValue`).
 - Lazy resource loading (`lazy`, `loadScriptOnEvent`, `loadStylesheet`).
 
 ### Usage
 
 ```typescript
-import { mountNav, mountTurnstile, resume } from "@y-core/forge/ui/client";
+import { mountTurnstile, resume } from "@y-core/forge/ui/client";
 
-mountNav();
 mountTurnstile();         // resilient Cloudflare Turnstile (renders the <Turnstile> mount point)
 resume();                 // install the single delegated island listener
 ```
@@ -917,9 +1061,18 @@ import { openPopoverAt } from "@y-core/forge/ui/client";
 
 canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
-  openPopoverAt(menu, event.clientX, event.clientY);   // { margin } keeps a gap at each edge
-});
+  openPopoverAt(menu, event.clientX, event.clientY, { afterPointerUp: event.buttons !== 0 });
+});                                                    // { margin } keeps a gap at each edge
 ```
+
+**`afterPointerUp` is not optional on a `contextmenu` handler.** The event fires *between*
+`pointerdown` and `pointerup`, and the platform light-dismisses the menu on that trailing release —
+neither the pointerdown nor the pointerup target is inside a popup, so the dismiss pass sees no
+popover on either side of the gesture and hides the one that just opened. The menu flashes and
+vanishes. The option defers the show past the release, one shot, so the *next* click dismisses the
+menu exactly as it always did. Pass `event.buttons !== 0` rather than `true`: a `contextmenu` raised
+from the keyboard (the Menu key, `Shift+F10`) reports no buttons and is followed by no release, so an
+unconditional guard would wait for a `pointerup` that only an unrelated later click supplies.
 
 The popup opts in with `Menu.Popup`'s `coords` prop (or the `data-coords` attribute directly), which
 selects the coordinate rule; `openPopoverAt` also stamps it, so a popup that opens both ways needs no
@@ -929,10 +1082,7 @@ JSX renderer drops `style` outright. Calling it again with a new point **reposit
 rather than closing and reopening it. The position is clamped to the viewport, so a menu opened at any
 edge is fully on screen.
 
-#### Nav and Turnstile controllers
-
-`mountNav(options?)` wires the navigation toggle: open/close, outside-click and Escape to close, and
-auto-close on link click.
+#### Turnstile controller
 
 `mountTurnstile()` is **arg-less** and returns a cleanup function. It drives the `<Turnstile>` ui/core
 component (rendered inside a `<form>`), finding the `[data-ref='turnstile']` widget and its enclosing
@@ -946,6 +1096,52 @@ fail-closed enforcement point. The site key and size are read from the widget's 
 `data-size` attributes (injected server-side, never hardcoded); the theme follows the app's resolved
 theme (`.dark` on `<html>`) at render time. Pair it with the `<Turnstile siteKey=… />` component from
 `@y-core/forge/ui/core`.
+
+#### Scroll spy and viewport collapse
+
+```typescript
+import { mountScrollSpy, mountViewportCollapse } from "@y-core/forge/ui/client";
+
+// Mark the section being read on an in-page table of contents.
+const disposeSpy = mountScrollSpy({ root: document.querySelector("[data-slot~='navbar']") as Element });
+
+// Collapse a left rail while the viewport is narrow.
+const disposeRail = mountViewportCollapse({ selector: "#app-rail" });
+```
+
+`mountScrollSpy(options)` takes a `ScrollSpyOptions` object and returns a disposer.
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `root` | `Element` | — | Required. The nav subtree holding the fragment links. |
+| `linkSelector` | `string` | `"a[href^='#']"` | Which links to spy on. |
+| `rootMargin` | `string` | top-slice band | `IntersectionObserver` `rootMargin`; the default biases toward the section at the top of the viewport rather than one merely visible. |
+
+It stamps `aria-current="location"` — never `"page"`, since the page did not change — on exactly one
+link, and emits no `data-*` state, so the visible cue is the stylesheet's alone. **Entries are
+ordered by the targets' document position, not by link order**, because a nav may list its links in
+any order (a grouped table of contents is often alphabetical within a group) while "which section am
+I reading" is a question about the page. Ids resolve in the tree that declares them, so a nav inside
+a shadow root finds its own sections; a link resolving to nothing is skipped. No links, no resolvable
+targets, or no `IntersectionObserver` returns a no-op disposer — the links navigate on their own
+regardless. The disposer clears the attribute as well as disconnecting the observer.
+
+`mountViewportCollapse(options?)` takes a `ViewportCollapseOptions` object and returns a disposer.
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `element` | `Element \| null` | — | The disclosure to drive. Takes precedence over `selector`. |
+| `selector` | `string` | — | Resolved in `within`'s document when no `element` is given. |
+| `within` | `Node` | top-level document | Any node in the document to search. |
+| `query` | `string` | below the `md` breakpoint | While it matches, the disclosure stays collapsed. |
+
+Render the `<details>` **open** — with scripting unavailable the navigation is visible, which is the
+safe state, and the controller only ever takes something away. It collapses while `query` matches and
+expands while it does not, and **stops driving the disclosure the moment the user toggles it
+themselves** — a rail that slams shut on every rotation is worse than no controller. That override is
+per mount and not persisted; a fresh load is a fresh question. The disposer restores the state it
+found, except when the user has taken over. Fails quiet when the element is absent, is not a
+disclosure, or the realm has no `matchMedia`.
 
 #### Lazy loading
 
@@ -981,7 +1177,7 @@ import throws at runtime.
 ### Types
 
 `Signal`, `ReadonlySignal`, `SignalRecord`, `ResumeContext`, `ScopeDefinition`, `LazyImportOptions`,
-`LazyLoadOptions`, `NavControllerOptions`.
+`LazyLoadOptions`, `ScrollSpyOptions`, `ViewportCollapseOptions`.
 
 ---
 
@@ -1041,7 +1237,7 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 | `Flash` | component | Renders an array of `FlashMessage` as dismissible toasts. |
 | `FlashContainer` | component | A `Toast.Container` wrapping `Flash` — use on full page render. |
 | `FlashOob` | component | Wraps each toast in an HTMX OOB-swap div targeting `#flash-container`. |
-| `Resumable` | component | Wraps children in a `data-scope` + serialized `data-state` island. |
+| `Resumable` | component | Wraps children in a `data-scope` + serialized `data-state` island. Optional `id` (a `commandfor` sink) and `class` — the scope root is a real box in its parent's layout, so width, `shrink` and border belong there rather than on a component nested inside it. |
 | `fieldAttr(name)` | helper | Stamps `data-field` so the client `bindField` action knows which signal to write. |
 
 `createFlash(options)` takes `FlashCookieOptions` (`secrets`, optional `name` / `path` / `maxAge` /
@@ -1083,6 +1279,10 @@ hydration — the scope resumes on the first interaction with any descendant car
 - `Navbar` — a configuration-driven responsive navbar/menubar built from a nested `NavDefinition`.
   Desktop renders a horizontal bar of native `Popover` dropdowns (top-layer, light-dismiss, zero JS);
   mobile collapses to a hamburger-toggled `<details>`. Items may carry auth `filters`.
+- `collapsible="always"` keeps that toggle and a vertical panel at every breakpoint — the rail shape,
+  which is why `placement` defaults to `"left"` under it and usually pairs with `defaultOpen`.
+- `NavGroup` — a heading over destinations that stay **visible**, for the case a `NavMenu` dropdown
+  would hide.
 - `Toolbar` — a configuration-driven icon rail with placement-aware flyouts, built from a
   `ToolbarDefinition` and generic over the app's action-name union.
 - `ThemeToggle` — a three-icon theme-cycle button wrapped in the `theme` resumable scope.
@@ -1118,11 +1318,40 @@ const tools: ToolbarDefinition<"selectTool" | "addLayer"> = {
 <ThemeToggle icon={AppIcon} />
 ```
 
+A left rail — collapsed behind its toggle at every width, open on first paint, with a headed group of
+destinations that stay visible. The layout classes go on the wrapping box the parent lays out, not on
+`Navbar`, and that box's parent is what supplies the rail's height:
+
+```tsx
+import { Resumable } from "@y-core/forge/ui/server";
+
+const rail: NavDefinition = {
+  sections: [
+    { items: [{ heading: "Workspace", group: [{ label: "Projects", href: "projects" }, { label: "Team", href: "team" }] }] },
+  ],
+};
+
+// `min-h-dvh` on the flex row stretches the rail item, which is the definite height the `h-full`
+// chain inside `Navbar` resolves against — the one link forge cannot supply itself.
+<div class="flex min-h-dvh">
+  <Resumable name="app-rail" class="w-64 shrink-0 border-r border-border has-[[data-slot~=navbar]:not([open])]:w-14">
+    <Navbar config={rail} resolveHref={routes.url} icon={AppIcon} collapsible="always" defaultOpen />
+  </Resumable>
+  <main class="flex-1 min-w-0">…</main>
+</div>
+```
+
+The collapsed `w-14` is written as an override on a `w-64` base rather than the reverse, so a browser
+without `:has()` keeps the full column instead of pinning a 56px strip that would clip the open
+panel. Design rationale for all three placements — the flex item, the height chain, and the collapsed
+width — is `forge-ui-nav-rail-flex-item`, `forge-ui-nav-rail-persists` and
+`forge-ui-nav-rail-collapsed-width` in [`ui/design/reference/08-navigation.md`](./design/reference/08-navigation.md).
+
 ### Core Components & APIs
 
 | Export | Kind | Description |
 |---|---|---|
-| `Navbar` | component | Renders `NavbarProps.config`. Required: `config`, `resolveHref`, `icon` (`ForgeIcon<"chevron-down" \| "hamburger" \| "close">`). Optional: `slots`, `activeFilters`, `placement` (default `"top"`), `id`, `class`, plus `<nav>` pass-through. |
+| `Navbar` | component | Renders `NavbarProps.config`. Required: `config`, `resolveHref`, `icon` (`ForgeIcon<"chevron-down" \| "hamburger" \| "close">`). Optional: `slots`, `activeFilters`, `placement` (defaults per collapse mode — `"top"` under `"mobile"`, `"left"` under `"always"`), `collapsible` (default `"mobile"`), `defaultOpen` (default `false`), `id`, `class`, plus `<nav>` pass-through. |
 | `Toolbar` | component | Renders `ToolbarProps.config`. Required: `config`, `icon` (`ForgeIcon<string>`). Optional: `placement` (default `"left"`), `commandTarget`, `id`, `class`, plus `<nav>` pass-through. |
 | `ThemeToggle` | component | Theme-cycle button. Required: `icon` (`ForgeIcon<"sun" \| "moon" \| "monitor">`). Optional: `size` (default `20`), `class`. |
 | `FOUC_SCRIPT` | `const` string | Inline script that applies the stored preference before first paint. |
@@ -1132,15 +1361,38 @@ const tools: ToolbarDefinition<"selectTool" | "addLayer"> = {
 | `DEFAULT_PREF` | `const` string | `"system"` — the server default, resolved against the OS preference client-side. |
 
 **`Navbar` config shape.** A `NavDefinition` is `{ sections: NavSection[] }`; a `NavSection` is
-`{ items: NavItem[] }`; a `NavItem` is a `NavLink` (`label`, `href`, `filters?`), a `NavMenu`
-(`label`, `items`, `filters?` — recurses for nested submenus), or a `NavSlot` (`slot`, `label?`,
-`filters?`). Sibling sections spread across the bar via `justify-between`. `NavPlacement` is
-`"top" | "bottom" | "left" | "right"`.
+`{ items: NavSectionItem[] }`; a `NavSectionItem` is a `NavItem` or a `NavGroup`; a `NavItem` is a
+`NavLink` (`label`, `href`, `filters?`), a `NavMenu` (`label`, `items`, `filters?` — recurses for
+nested submenus), or a `NavSlot` (`slot`, `label?`, `filters?`). Sibling sections spread across the
+bar via `justify-between`. `NavPlacement` is `"top" | "bottom" | "left" | "right"`.
 
-**`id` namespaces the generated menu ids** on both `Navbar` and `Toolbar`, falling back to
-`placement`. Supply a distinct value when two bars (or two rails) share the same `placement` —
-otherwise both mint `navbar-menu-top-0`, `commandfor` resolves to the first match in the document,
-and the second bar's trigger toggles the first bar's popup.
+**`NavGroup`** (`heading`, `group`, `filters?`) renders a heading over a set of destinations that
+stay visible — `<div data-slot="navbar-group" role="group" aria-labelledby=…>` wrapping a
+`<p data-slot="navbar-group-heading">` and the group's children as bar links, not menu rows. The
+heading is a `<p>` rather than an `<h2>` because `Navbar` cannot know which heading level it is
+nested under; `role="group"` plus `aria-labelledby` gives the association without asserting one.
+**Only `NavSection.items` widens to accept it — `NavItem` does not**, so a group nested inside a
+`NavMenu` is a compile error rather than a case the renderer degrades at runtime.
+
+**`collapsible`** (`NavCollapsible`) decides which breakpoints the bar hides behind its toggle.
+`"mobile"`, the default, expands the panel and hides the toggle from `md:` up. `"always"` keeps the
+toggle and the vertical panel at every breakpoint — the rail shape, which is what makes a vertical
+edge collapsible at desktop widths, and why `placement` defaults to `"left"` there rather than
+`"top"`: a full-width strip permanently behind a hamburger is nobody's intent. Pass `placement`
+explicitly for a right-hand rail, or for the rarer horizontal always-collapsed bar. `defaultOpen` renders the underlying
+`<details>` open on first paint; it is attribute-only, with no controller behind it. For a rail whose
+open state should follow viewport width, pair it with `mountViewportCollapse` from
+[`@y-core/forge/ui/client`](#y-coreforgeuiclient).
+
+A bar-level link styles `aria-current` itself, shifting background, foreground and weight together —
+so a current-destination cue set at runtime (by `mountScrollSpy`, say) never relies on colour alone.
+
+**`id` namespaces the generated menu ids** on both `Navbar` and `Toolbar`, falling back to the
+placement each one renders at — `Toolbar`'s given-or-default `placement`, and for `Navbar` the value
+its collapse mode resolves to, so an unnamed rail namespaces on `left`. Supply a distinct value when
+two bars (or two rails) end up at the same placement — otherwise both mint `navbar-menu-top-0`,
+`commandfor` resolves to the first match in the document, and the second bar's trigger toggles the
+first bar's popup.
 
 Two rules the type does not express: **`href` is a route-map key, never a URL** — it is always passed
 through the required `resolveHref`, so links cannot be hardcoded; and a `NavSlot.slot` that is a
@@ -1221,8 +1473,8 @@ The glyphs every chrome component needs (`chevron-down`, `hamburger`, `close`, `
 
 ### Types
 
-`NavbarProps`, `NavDefinition`, `NavSection`, `NavItem`, `NavLink`, `NavMenu`, `NavSlot`,
-`NavPlacement`, `ToolbarProps`, `ToolbarDefinition`, `ToolbarGroup`, `ToolbarItem`, `ToolbarAction`,
+`NavbarProps`, `NavDefinition`, `NavSection`, `NavSectionItem`, `NavItem`, `NavLink`, `NavMenu`,
+`NavSlot`, `NavGroup`, `NavPlacement`, `NavCollapsible`, `ToolbarProps`, `ToolbarDefinition`, `ToolbarGroup`, `ToolbarItem`, `ToolbarAction`,
 `ToolbarPopover`, `ToolbarSeparator`, `ToolbarSlot`, `ToolbarTitleAction`, `ToolbarPlacement`,
 `ThemeToggleProps`.
 
@@ -1319,8 +1571,27 @@ it, and never import htmx from a CDN — this entry pins the version through for
 
 - A drop-in, living reference page for every `@y-core/forge` UI component — static catalog, HTMX demos,
   theme toggle, and a resumability island.
+- A **theme customiser** at the `theme` route: generates a complete forge colour scheme from hue and
+  chroma over the fixed lightness ramp, previews it on four scale/surface pairs and on a real composed
+  UI, reports live WCAG ratios for every audited pair, and emits a paste-ready scheme file.
 - Route helpers (`load*` / `render*`) and a single path table (`showcasePaths`) so the page and its API
   endpoints never drift.
+
+### Routes
+
+`showcaseRoutes(base)` returns two pages and six HTMX fragment endpoints. Both pages are registered by
+`registerShowcase` and wrapped in your `layout`.
+
+| Route | Path (default base) | What it is |
+|---|---|---|
+| `ui.index` | `/showcase/ui` | The component catalog. |
+| `ui.theme` | `/showcase/ui/theme` | The theme customiser. Its whole state is the query string — five dials (`ah`, `ac`, `gh`, `gc`, `r`), each clamped to its own range — so a scheme is shareable as a link, with no `localStorage` and no FOUC script. |
+| `ui.api.*` | `/showcase/ui/api/…` | Six HTMX fragment endpoints (`preview`, `validate`, `search`, `paginate`, `dependent`, `toast`). |
+
+The customiser paints through CSSOM rather than server-rendering colour, because forge ships
+`style-src 'self'` with no style nonce and the JSX renderer drops `style` attributes accordingly. Every
+hex is server-rendered **as text**, so the page reads correctly with no JavaScript; only the paint waits
+for the eager `customise` scope.
 
 ### Usage
 
@@ -1343,6 +1614,8 @@ export function showcasePage(c, icon) {
 | Export | Kind | Description |
 |---|---|---|
 | `ShowcaseContent` | component | The full showcase page body. |
+| `CustomiseContent` | component | The theme customiser page body — levers, the 2×2 scale preview, live WCAG readouts, the composition band, and the generated scheme file. |
+| `loadCustomise` | loader | Builds `CustomiseData` (`{ dials, path }`) by reading the five dials off the query string, clamped and snapped to each dial's own range. |
 | `showcasePaths(basePath, apiPath?)` | helper | Returns all showcase URL paths derived from a base path. |
 | `loadShowcase` | loader | Builds `ShowcaseData` (`{ paths }`) for the page. |
 | `loadPreview` / `renderPreview` | loader / renderer | Variant + size preview demo. |
@@ -1399,6 +1672,8 @@ region with serialized `data-state`, and this script resumes it on first interac
 
 - [`UI_CLIENT_RUNTIME.md`](../../.decisions/UI_CLIENT_RUNTIME.md) — authoritative design doc for the SSR-vs-client
   split, the resumability island pattern, and field binding.
+- [`UI_DESIGN_GUIDANCE.md`](../../.decisions/UI_DESIGN_GUIDANCE.md) — the scheme the shipped design corpus is written
+  against: its two rule tiers, its rule identifiers, and the boundary it holds with this README.
 - [`@y-core/forge/jsx`](../../README.md) — `renderToString` / `renderPage` to serialize component trees.
 - [`@y-core/forge/http`](../../README.md) — `fragmentResponse` / `htmlResponse` / `rawHtml` to return rendered HTML.
 - [`@y-core/forge/security`](../../README.md) — CSP `script-src` for the `FOUC_SCRIPT` hash and inline-script nonces.

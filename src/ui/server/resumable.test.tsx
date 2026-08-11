@@ -38,4 +38,13 @@ describe("Resumable", () => {
     );
     expect(out).toBe('<div data-scope="s" id="root">z</div>');
   });
+
+  it("emits the class attribute on the scope root when passed", async () => {
+    const out = await render(
+      <Resumable name='s' class='w-64 shrink-0'>
+        z
+      </Resumable>,
+    );
+    expect(out).toBe('<div data-scope="s" class="w-64 shrink-0">z</div>');
+  });
 });

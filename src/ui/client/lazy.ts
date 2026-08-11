@@ -62,11 +62,20 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
 
   // The retry timer belongs to the element's own realm, not the top-level page.
   const win = ownerWindow(el);
+
+  // The observer comes from that same realm, which is also what answers "does this browser have one
+  // at all". Not for a geometric reason — intersection geometry is realm-insensitive, so a top-level
+  // constructor handed a framed element fires just as one from the frame's own realm does. What the
+  // resolved read buys is the realm that lacks the constructor: off the bare global that throws, and
+  // here it degrades to a no-op disposer. See `UI_CLIENT_RUNTIME.md` §6a.
+  const observerCtor = (win as Window & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver;
+  if (typeof observerCtor !== "function") return () => {};
+
   let disposed = false;
   let attempts = 0;
   let retryId = 0;
 
-  const observer = new IntersectionObserver((entries) => {
+  const observer = new observerCtor((entries) => {
     if (!entries[0]?.isIntersecting) return;
     observer.disconnect();
     attempts += 1;

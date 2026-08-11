@@ -111,6 +111,12 @@ which `Grep` under-reports on re-exported or aliased symbols.
 1. **Namespace?** Leaf or integration — `NAMESPACE_DESIGN.md` §4.
 2. **Already exists?** Search the barrels before proposing a new symbol.
 3. **Minimum change?** No abstraction, helper, or namespace the task does not require.
+4. **Under `src/ui/`?** Then the design corpus forge ships at `src/ui/design/` is planning input,
+   not implementation detail. Read `src/ui/design/floor.md` — the invariants `cc-dev` will hold —
+   and `src/ui/design/catalog.md`, which answers which component fits the job you are about to
+   specify; the `src/ui/design/reference/` dimension files settle what the catalog does not. Name
+   the composition your plan assumes, so `cc-dev` is not choosing it. A Default the plan departs
+   from is a decision the plan states and justifies, since only a written brief rebuts one.
 
 ### Feature Development Sequence
 
@@ -170,10 +176,9 @@ everything; an unstated ambiguity becomes `cc-dev` guessing.
 
 ### Ledger Moves
 
-**Ledger writes are yours to make** — over MCP, never by editing files: the claim on the task the plan
-serves, the record of what the analysis uncovers, the move to `waiting` with the question stated
-concretely. Fetch `get_protocol` or `get_process` when one would settle the move in front of you —
-when a refusal cites a rule you do not hold, or before an operation you have not performed in this
-session — and work from what it answers rather than from a remembered copy. A refusal quotes the
-`rule` it applied and the `requires` it failed, and `check_transition` answers a hypothetical
-without touching the database, so the fetch can wait until there is something it would settle.
+**Ledger writes are yours to make** — over MCP, never by editing files: the move to `doing` on the
+task the plan serves, the record of what the analysis uncovers, the move to `waiting` with the
+question stated concretely. There is no protocol document to fetch: the tool descriptions carry every
+rule a call must satisfy, and a refusal quotes the `rule` it applied, the `requires` that would
+satisfy it, and whether it is `retryable`. Act on that payload rather than guessing past it. Read
+before you write — a read carries the `revision` a later edit must cite.

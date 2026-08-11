@@ -11,13 +11,13 @@ describe("Alert", () => {
 
   it("renders the destructive variant classes", async () => {
     expect(await render(<Alert variant='destructive'>Error</Alert>)).toBe(
-      '<div data-slot="alert" data-variant="destructive" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-red-200 bg-red-50 text-red-900">Error</div>',
+      '<div data-slot="alert" data-variant="destructive" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground">Error</div>',
     );
   });
 
   it("renders the success variant classes", async () => {
     expect(await render(<Alert variant='success'>Done</Alert>)).toBe(
-      '<div data-slot="alert" data-variant="success" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-emerald-200 bg-emerald-50 text-emerald-900">Done</div>',
+      '<div data-slot="alert" data-variant="success" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground">Done</div>',
     );
   });
 
@@ -48,19 +48,19 @@ describe("Alert", () => {
 
   it("renders the warning variant classes", async () => {
     expect(await render(<Alert variant='warning'>Warning</Alert>)).toBe(
-      '<div data-slot="alert" data-variant="warning" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-yellow-200 bg-yellow-50 text-yellow-900">Warning</div>',
+      '<div data-slot="alert" data-variant="warning" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground">Warning</div>',
     );
   });
 
   it("renders the info variant classes", async () => {
     expect(await render(<Alert variant='info'>Info</Alert>)).toBe(
-      '<div data-slot="alert" data-variant="info" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-blue-200 bg-blue-50 text-blue-900">Info</div>',
+      '<div data-slot="alert" data-variant="info" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground">Info</div>',
     );
   });
 
   it("renders dismiss button when dismissible=true", async () => {
     expect(await render(<Alert dismissible>Message</Alert>)).toBe(
-      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
+      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
     );
   });
 
@@ -72,13 +72,13 @@ describe("Alert", () => {
 
   it("stamps data-scope=alert on root when dismissible", async () => {
     expect(await render(<Alert dismissible>Message</Alert>)).toBe(
-      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
+      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
     );
   });
 
   it("stamps data-on-click=dismiss on the dismiss button when dismissible", async () => {
     expect(await render(<Alert dismissible>Message</Alert>)).toBe(
-      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
+      '<div data-slot="alert" data-variant="default" data-scope="alert" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-border bg-muted text-foreground pr-8">Message<button type="button" data-slot="alert-dismiss" aria-label="Dismiss" data-on-click="dismiss" class="absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-base leading-none">×</span></button></div>',
     );
   });
 

@@ -271,6 +271,7 @@ Facts owned by a file, never restated in `.decisions/` or `CLAUDE.md`:
 | That graph as *enforced* | `scripts/validate-namespace-graph.ts` + `scripts/namespace-graph-parse.ts` |
 | Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
 | `@source` coverage as *enforced* | `scripts/validate-css-sources.ts` |
+| Token contrast mappings and their measured ratios, as *enforced* | `scripts/validate-contrast.ts` + `scripts/contrast-parse.ts` |
 
 The barrel row names two files because the rule genuinely spans two. `validate-exports.ts` remains
 the entry point and retains every policy decision — what fails, in what order, with what message —

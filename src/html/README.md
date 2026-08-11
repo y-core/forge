@@ -216,7 +216,7 @@ Each pattern returns an `HxAttrs` map (spread directly onto the triggering eleme
 |---|---|---|---|
 | `formSubmit` | `post`, `target` | `swap=outerHTML`, `disabledElt=this` | Optional `encoding`, `pushUrl` |
 | `liveSearch` | `get`, `target` | `swap=innerHTML`, `trigger="input changed delay:300ms, search"` | Optional `pushUrl` |
-| `inlineValidation` | `get`, `target` | `swap=outerHTML`, `trigger="change delay:200ms, blur"`, `sync="closest form:abort"` | |
+| `inlineValidation` | `get`, `target` | `swap=outerHTML`, `trigger="change delay:200ms, blur"`, `sync="this:abort"` | `sync` default is form-independent; pass `sync="closest form:abort"` for cross-field aborting |
 | `infiniteScroll` | `get`, `target` | `swap=beforeend`, `trigger="revealed"` | `trigger` always `revealed`; optional `select` |
 | `paginatedTableLink` | `get`, `target`, `page` | `swap=outerHTML` | Builds `?page=N`; optional `pageParam`, `query` |
 | `dependentSelect` | `get`, `target` | `swap=outerHTML`, `trigger="change"` | |

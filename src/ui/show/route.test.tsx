@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
 import { mapHandler } from "../../testing/route";
+import { createIcon } from "../core/icon";
 import {
   loadDependent,
   loadPaginate,
@@ -100,9 +101,11 @@ describe("renderPreview", () => {
 });
 
 describe("loadValidate", () => {
+  const paths = showcasePaths("/showcase");
+
   function makeValidateApp() {
     const app = new Forge();
-    const handler = definePage({ loader: (c) => loadValidate(c), view: (_c, _config, state) => Response.json(state.data) });
+    const handler = definePage({ loader: (c) => loadValidate(c, paths), view: (_c, _config, state) => Response.json(state.data) });
     mapHandler(app, "GET", "/validate", handler);
     return app;
   }
@@ -123,33 +126,38 @@ describe("loadValidate", () => {
 });
 
 describe("renderValidate", () => {
+  const paths = showcasePaths("/showcase");
+  // A real sprite binding rather than the null stub: the glyph is half of what an invalid field has
+  // to render, and a stub that renders nothing cannot tell whether it was there.
+  const errorIcon = createIcon("/sprite.svg", { "icon-close": "0 0 24 24" });
+
   it("returns 200 with text/html", async () => {
-    const res = await renderValidate({ email: "" });
+    const res = await renderValidate({ email: "", paths }, errorIcon);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
   });
 
   it("body contains the validate field id", async () => {
-    const res = await renderValidate({ email: "" });
+    const res = await renderValidate({ email: "", paths }, errorIcon);
     const body = await res.text();
     expect(body).toBe(
-      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-red-600 flex-col [&amp;&gt;*]:w-full" id="show-validate-field"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email" name="email" placeholder="you@example.com" value="" id="field-email"></fieldset>',
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full" id="show-validate-field"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email" name="email" placeholder="you@example.com" value="" hx-get="/showcase/validate" hx-target="#show-validate-field" hx-swap="outerHTML" hx-trigger="change delay:200ms, blur" hx-sync="this:abort" id="field-email"></fieldset>',
     );
   });
 
   it("shows error message for invalid email", async () => {
-    const res = await renderValidate({ email: "not-valid" });
+    const res = await renderValidate({ email: "not-valid", paths }, errorIcon);
     const body = await res.text();
     expect(body).toBe(
-      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-red-600 flex-col [&amp;&gt;*]:w-full" id="show-validate-field"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email" name="email" placeholder="you@example.com" value="not-valid" id="field-email" aria-describedby="field-email-error" aria-invalid="true"><p data-slot="field-error" class="text-sm font-normal text-red-600" id="field-email-error" role="alert">Please enter a valid email address.</p></fieldset>',
+      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full" id="show-validate-field"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email" name="email" placeholder="you@example.com" value="not-valid" hx-get="/showcase/validate" hx-target="#show-validate-field" hx-swap="outerHTML" hx-trigger="change delay:200ms, blur" hx-sync="this:abort" id="field-email" aria-describedby="field-email-error" aria-invalid="true"><p data-slot="field-error" class="text-sm font-normal text-destructive" id="field-email-error" role="alert"><svg data-slot="icon" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg>Please enter a valid email address.</p></fieldset>',
     );
   });
 
   it("shows success message for valid email", async () => {
-    const res = await renderValidate({ email: "user@example.com" });
+    const res = await renderValidate({ email: "user@example.com", paths }, errorIcon);
     const body = await res.text();
     expect(body).toBe(
-      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-red-600 flex-col [&amp;&gt;*]:w-full" id="show-validate-field"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email" name="email" placeholder="you@example.com" value="user@example.com" id="field-email" aria-describedby="field-email-description"><p data-slot="field-description" class="text-sm leading-normal text-emerald-600" id="field-email-description">Looks good!</p></fieldset>',
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full" id="show-validate-field"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" type="email" name="email" placeholder="you@example.com" value="user@example.com" hx-get="/showcase/validate" hx-target="#show-validate-field" hx-swap="outerHTML" hx-trigger="change delay:200ms, blur" hx-sync="this:abort" id="field-email" aria-describedby="field-email-description"><p data-slot="field-description" class="text-sm leading-normal text-success" id="field-email-description">Looks good!</p></fieldset>',
     );
   });
 });
@@ -305,19 +313,11 @@ describe("renderDependent", () => {
     expect(res.headers.get("content-type")).toContain("text/html");
   });
 
-  it("body contains the dependent id", async () => {
-    const res = await renderDependent({ category: "fruit" }, icon);
-    const body = await res.text();
-    expect(body).toBe(
-      '<div id="show-dependent-select" class="flex flex-col gap-1.5"><label class="text-sm font-medium text-foreground" for="dependent-item">Item</label><div class="relative w-full"><select id="dependent-item" name="item" class="w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"><option value="apple">Apple</option><option value="banana">Banana</option><option value="cherry">Cherry</option><option value="mango">Mango</option><option value="papaya">Papaya</option></select><span aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground"></span></div></div>',
-    );
-  });
-
   it("renders fruit options for fruit category", async () => {
     const res = await renderDependent({ category: "fruit" }, icon);
     const body = await res.text();
     expect(body).toBe(
-      '<div id="show-dependent-select" class="flex flex-col gap-1.5"><label class="text-sm font-medium text-foreground" for="dependent-item">Item</label><div class="relative w-full"><select id="dependent-item" name="item" class="w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"><option value="apple">Apple</option><option value="banana">Banana</option><option value="cherry">Cherry</option><option value="mango">Mango</option><option value="papaya">Papaya</option></select><span aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground"></span></div></div>',
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full gap-1.5" id="show-dependent-select"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="dependent-item">Item</label><div data-slot="select-wrapper" class="group/select relative w-full has-[select:disabled]:opacity-50"><select data-slot="select" class="w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:pointer-events-none" id="dependent-item" name="item"><option data-slot="select-option" value="apple">Apple</option><option data-slot="select-option" value="banana">Banana</option><option data-slot="select-option" value="cherry">Cherry</option><option data-slot="select-option" value="mango">Mango</option><option data-slot="select-option" value="papaya">Papaya</option></select><span aria-hidden="true" data-slot="select-icon" class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground"></span></div></fieldset>',
     );
   });
 
@@ -325,7 +325,7 @@ describe("renderDependent", () => {
     const res = await renderDependent({ category: "vegetable" }, icon);
     const body = await res.text();
     expect(body).toBe(
-      '<div id="show-dependent-select" class="flex flex-col gap-1.5"><label class="text-sm font-medium text-foreground" for="dependent-item">Item</label><div class="relative w-full"><select id="dependent-item" name="item" class="w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"><option value="broccoli">Broccoli</option><option value="carrot">Carrot</option><option value="celery">Celery</option><option value="kale">Kale</option><option value="spinach">Spinach</option></select><span aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground"></span></div></div>',
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full gap-1.5" id="show-dependent-select"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="dependent-item">Item</label><div data-slot="select-wrapper" class="group/select relative w-full has-[select:disabled]:opacity-50"><select data-slot="select" class="w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:pointer-events-none" id="dependent-item" name="item"><option data-slot="select-option" value="broccoli">Broccoli</option><option data-slot="select-option" value="carrot">Carrot</option><option data-slot="select-option" value="celery">Celery</option><option data-slot="select-option" value="kale">Kale</option><option data-slot="select-option" value="spinach">Spinach</option></select><span aria-hidden="true" data-slot="select-icon" class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground"></span></div></fieldset>',
     );
   });
 });
@@ -364,7 +364,7 @@ describe("renderToast", () => {
     const res = await renderToast({ type: "success" });
     const body = await res.text();
     expect(body).toBe(
-      '<div hx-swap-oob="beforeend:#flash-container"><div data-slot="toast" data-variant="success" role="status" aria-atomic="true" data-scope="toast" data-state="{&quot;duration&quot;:5000}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-emerald-200 bg-emerald-50 text-emerald-900 pr-10"><div data-slot="toast-body" class="flex-1 space-y-1"><div data-slot="toast-title" class="text-sm font-semibold leading-none">Success</div><div data-slot="toast-description" class="text-sm opacity-90">This is a success toast notification.</div></div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div></div>',
+      '<div hx-swap-oob="beforeend:#flash-container"><div data-slot="toast" data-variant="success" role="status" aria-atomic="true" data-scope="toast" data-state="{&quot;duration&quot;:5000}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground pr-10"><div data-slot="toast-body" class="flex-1 space-y-1"><div data-slot="toast-title" class="text-sm font-semibold leading-none">Success</div><div data-slot="toast-description" class="text-sm opacity-90">This is a success toast notification.</div></div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div></div>',
     );
   });
 
@@ -372,7 +372,7 @@ describe("renderToast", () => {
     const res = await renderToast({ type: "error" });
     const body = await res.text();
     expect(body).toBe(
-      '<div hx-swap-oob="beforeend:#flash-container"><div data-slot="toast" data-variant="destructive" role="status" aria-atomic="true" data-scope="toast" data-state="{&quot;duration&quot;:5000}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-red-200 bg-red-50 text-red-900 pr-10"><div data-slot="toast-body" class="flex-1 space-y-1"><div data-slot="toast-title" class="text-sm font-semibold leading-none">Error</div><div data-slot="toast-description" class="text-sm opacity-90">This is a error toast notification.</div></div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div></div>',
+      '<div hx-swap-oob="beforeend:#flash-container"><div data-slot="toast" data-variant="destructive" role="status" aria-atomic="true" data-scope="toast" data-state="{&quot;duration&quot;:5000}" class="relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground pr-10"><div data-slot="toast-body" class="flex-1 space-y-1"><div data-slot="toast-title" class="text-sm font-semibold leading-none">Error</div><div data-slot="toast-description" class="text-sm opacity-90">This is a error toast notification.</div></div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div></div>',
     );
   });
 });

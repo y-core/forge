@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findPublicSymbols, parseBarrelExports } from "./barrel-parse";
+import { findPublicSymbols, parseBarrelExportNames, parseBarrelExports, parseConsumerExportNames } from "./barrel-parse";
 
 // The parsers read from disk, so every fixture is a real file. Written under tmpdir rather than
 // `src/` so a deliberately-invalid barrel can never be picked up by the gate it is testing.
@@ -13,6 +13,11 @@ function fixture(source: string): string {
   const path = join(FIXTURE_DIR, `fixture-${counter++}.ts`);
   writeFileSync(path, source, "utf-8");
   return path;
+}
+
+/** A set compares exactly only as an ordered list, so an extra name fails as loudly as a missing one. */
+function sorted(names: Set<string>): string[] {
+  return [...names].sort();
 }
 
 beforeAll(() => {
@@ -178,5 +183,82 @@ describe("findPublicSymbols() — TSDoc block extent", () => {
     const path = fixture(["/**", " * A module of constants. @public", " */", "", "const INTERNAL = 1;", ""].join("\n"));
 
     expect(findPublicSymbols(path)).toEqual([]);
+  });
+});
+
+describe("parseConsumerExportNames() — the exported side of a re-export", () => {
+  // The pair is asserted in one case on purpose: the divergence is the reason both functions
+  // exist, and split across two tests each half reads as an arbitrary choice rather than a
+  // contract. `validate-exports` matches a `@public` symbol as declared, so it needs both sides;
+  // `validate-design` matches what a corpus `import { … }` may name, so it needs only the right.
+  it("registers only the aliased name, where parseBarrelExportNames registers both sides", () => {
+    const path = fixture(['export { Skeleton as SkeletonRenamed } from "./skeleton";', ""].join("\n"));
+
+    expect(sorted(parseBarrelExportNames(path))).toEqual(["Skeleton", "SkeletonRenamed"]);
+    expect(sorted(parseConsumerExportNames(path))).toEqual(["SkeletonRenamed"]);
+  });
+
+  it("yields the same single name from both for a plain re-export", () => {
+    const path = fixture(['export { Card } from "./card";', ""].join("\n"));
+
+    expect(sorted(parseBarrelExportNames(path))).toEqual(["Card"]);
+    expect(sorted(parseConsumerExportNames(path))).toEqual(["Card"]);
+  });
+
+  it("collects a type re-export in the block form", () => {
+    const path = fixture(['export type { AlertVariant } from "./alert";', ""].join("\n"));
+
+    expect(sorted(parseBarrelExportNames(path))).toEqual(["AlertVariant"]);
+    expect(sorted(parseConsumerExportNames(path))).toEqual(["AlertVariant"]);
+  });
+
+  it("collects a type re-export in the inline form alongside its value sibling", () => {
+    const path = fixture(['export { Alert, type AlertVariant } from "./alert";', ""].join("\n"));
+
+    expect(sorted(parseBarrelExportNames(path))).toEqual(["Alert", "AlertVariant"]);
+    expect(sorted(parseConsumerExportNames(path))).toEqual(["Alert", "AlertVariant"]);
+  });
+
+  it("registers only the aliased name for an inline type specifier with `as`", () => {
+    const path = fixture(['export { type ToggleGroupType as TGType } from "./toggle-group";', ""].join("\n"));
+
+    expect(sorted(parseBarrelExportNames(path))).toEqual(["TGType", "ToggleGroupType"]);
+    expect(sorted(parseConsumerExportNames(path))).toEqual(["TGType"]);
+  });
+
+  // No alias is possible in a declaration position, so the two functions cannot diverge here.
+  it("collects inline declarations identically from both", () => {
+    const path = fixture(
+      ["export const cn = (value: string): string => value;", "export function foo(): void {}", "export interface Bar {}", ""].join("\n"),
+    );
+
+    expect(sorted(parseBarrelExportNames(path))).toEqual(["Bar", "cn", "foo"]);
+    expect(sorted(parseConsumerExportNames(path))).toEqual(["Bar", "cn", "foo"]);
+  });
+
+  it("collects a multi-line brace group mixing plain, aliased and type specifiers", () => {
+    const path = fixture(
+      [
+        "export {",
+        "  Button,",
+        "  Skeleton as SkeletonRenamed,",
+        "  type CardProps,",
+        "  type ToggleGroupType as TGType,",
+        '} from "./ui";',
+        "",
+      ].join("\n"),
+    );
+
+    expect(sorted(parseBarrelExportNames(path))).toEqual(["Button", "CardProps", "Skeleton", "SkeletonRenamed", "TGType", "ToggleGroupType"]);
+    expect(sorted(parseConsumerExportNames(path))).toEqual(["Button", "CardProps", "SkeletonRenamed", "TGType"]);
+  });
+
+  it("ignores an export that appears only inside a line comment", () => {
+    const path = fixture(
+      ['// export { Ghost } from "./ghost";', "// export const ghostConst = 1;", 'export { Card } from "./card";', ""].join("\n"),
+    );
+
+    expect(sorted(parseBarrelExportNames(path))).toEqual(["Card"]);
+    expect(sorted(parseConsumerExportNames(path))).toEqual(["Card"]);
   });
 });

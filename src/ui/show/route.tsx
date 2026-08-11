@@ -79,16 +79,17 @@ export async function renderPreview(
 /** @public */
 export interface ValidateData {
   email: string;
+  paths: ShowcasePaths;
 }
 
 /** @public */
-export function loadValidate<Bindings = Record<string, unknown>>(c: AppContext<Bindings>): ValidateData {
-  return { email: c.url.searchParams.get("email") ?? "" };
+export function loadValidate<Bindings = Record<string, unknown>>(c: AppContext<Bindings>, paths: ShowcasePaths): ValidateData {
+  return { email: c.url.searchParams.get("email") ?? "", paths };
 }
 
 /** @public */
-export async function renderValidate(data: ValidateData): Promise<Response> {
-  const body = await renderToString(<ValidateFragment data={data} />);
+export async function renderValidate(data: ValidateData, icon: ForgeIcon<"close">): Promise<Response> {
+  const body = await renderToString(<ValidateFragment data={data} icon={icon} />);
   return fragmentResponse(body);
 }
 

@@ -130,6 +130,17 @@ a Worker, and are exempt by design ([`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHIT
 **Without those globs the command returns dozens of legitimate hits and will be ignored.** A hit
 in any other namespace is a genuine runtime-portability break.
 
+**Timer handle not cleared by its disposer**
+
+```bash
+rg -n 'setTimeout\(|setInterval\(' src/ui/client/
+```
+
+*Triage:* a hit is only a defect if the handle it returns is not cleared in the module's disposer
+— **read the disposer, not the call site**
+([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2d). A timer paired with a poll must also be
+cleared when the poll **succeeds**, not only when it times out.
+
 **Substring assertion on rendered HTML**
 
 ```bash
@@ -162,6 +173,12 @@ introduce a cross-namespace edge that the classification does not declare?*
 **Guard placement.** Read the controller, not the handler. *Is the guard in the action's
 `middleware` array, or inline inside the handler?* Inline guards are invisible to a reader
 auditing the route map ([`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §1b).
+
+**Async lifetime.** Read every function whose returned promise reaches `executionCtx.waitUntil()`
+or `Logger.flush()`. *Does the returned promise cover every piece of work the function started, or
+only the headline one?* A `void work().catch(…)` branch is untracked, so the isolate may suspend
+before it settles — as a probabilistic purge detached from the write promise did in
+`src/logging/kv-channel.ts` ([`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §6).
 
 ---
 
@@ -214,6 +231,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`](./TESTING.md) §2a |
 | `node:fs` / `node:path` in `pkg`, `cli`, `assets`, `ui/assets` | Build-time tooling, exempt from Web-APIs-only — §3b |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1c |
+| A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §4a |
 | `sideEffects` entries in `package.json` | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §4 |
 | A non-null assertion in a test file | Permitted by the `**/*.test.ts` biome override, which sets `noNonNullAssertion: off`; the rule is `error` in production source |

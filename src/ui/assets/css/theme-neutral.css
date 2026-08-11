@@ -1,16 +1,188 @@
-/* Neutral ramp — maps --palette-* aliases onto Tailwind's neutral scale.
-   Neutral matches the base-default accent values, so no accent overrides are needed.
-   @import theme-base.css before this file. */
+/* Neutral — the default colour scheme, and the only one `forge.css` imports.
+   ─────────────────────────────────────────────────────────────────────────────
+   **What a scheme file is.** Exactly this: `--gray-1` … `--gray-12` and `--gray-a1` … `--gray-a12`,
+   declared in a `:root` block and a `.dark` block, and nothing else. Every semantic token in
+   `theme-base.css` resolves through these twelve steps, so re-declaring them is the whole of
+   re-theming. `theme-slate.css` and `theme-stone.css` are the same file with different hues, and an
+   application's own scheme is structurally identical to any of the three.
+
+   **The 12 steps are Radix's, and so are their roles:**
+
+     1  App background                        7  UI element border and focus rings
+     2  Subtle background                     8  Hovered UI element border
+     3  UI element background                 9  Solid backgrounds
+     4  Hovered UI element background        10  Hovered solid backgrounds
+     5  Active / Selected UI element bg      11  Low-contrast text
+     6  Subtle borders and separators        12  High-contrast text
+
+   Forge does not use 7 and 8 for its own borders — see the note beside `--border` / `--input` /
+   `--ring` in `theme-base.css`, which is where the role mapping lives and where that departure is
+   argued. The steps are declared regardless, because a scale is a complete artifact: a consumer's
+   own scheme has to know what the contract is, and a gap in the middle of a ramp is an anomaly
+   rather than a saving.
+
+   **Values.** This scheme is achromatic, so its steps are Radix Colors' `gray` unchanged — copied
+   rather than depended on; see `## Sources` in `src/ui/design/reference/04-color.md`. Every tinted
+   scheme keeps these same lightnesses and takes chroma and hue from Tailwind, so they all share one
+   lightness ramp: every audited contrast ratio holds across them to within 0.05, and a scheme swap
+   cannot move a pair across its floor. That is also why a scheme can be *added* without re-pinning a
+   single contract row — `theme-gray.css` was, and the audit did not move.
+
+   **This is the achromatic one, and it is the only one.** The three that lean are `theme-stone.css`
+   (warm), `theme-gray.css` (cool) and `theme-slate.css` (strongly cool). Tailwind's ramp named `gray`
+   is blue-tinted despite the name, which is why the grey scheme is this file rather than that one.
+
+   **The `.dark` block must stay after `:root`.** Both selectors weigh 0-1-0, so source order is what
+   decides — and a scheme file imported after this one wins for the same reason.
+   ────────────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --palette-50:  var(--color-neutral-50);
-  --palette-100: var(--color-neutral-100);
-  --palette-200: var(--color-neutral-200);
-  --palette-300: var(--color-neutral-300);
-  --palette-400: var(--color-neutral-400);
-  --palette-500: var(--color-neutral-500);
-  --palette-600: var(--color-neutral-600);
-  --palette-700: var(--color-neutral-700);
-  --palette-800: var(--color-neutral-800);
-  --palette-900: var(--color-neutral-900);
-  --palette-950: var(--color-neutral-950);
+  /* Radix Colors `gray`, verbatim, **except steps 1 and 2, which are swapped here**.
+     Radix reads step 2 as one shade *toward* the foreground, so a light-mode panel recedes. Forge's
+     cards are raised — `--card` has always been lighter than `--background` — and the swap is what
+     lets that stay true without the semantic layer needing a `.dark` twin. Putting the asymmetry in
+     the scale is the point: the scale is the layer where a mode-specific value belongs, and
+     `--background: var(--gray-1)` stays one declaration for both modes. In dark, "toward the
+     foreground" already means lighter, so no swap is needed and none is applied. */
+  --gray-1:  #f9f9f9;
+  --gray-2:  #fcfcfc;
+  --gray-3:  #f0f0f0;
+  --gray-4:  #e8e8e8;
+  --gray-5:  #e0e0e0;
+  --gray-6:  #d9d9d9;
+  --gray-7:  #cecece;
+  --gray-8:  #bbbbbb;
+  --gray-9:  #8d8d8d;
+  --gray-10: #838383;
+  --gray-11: #646464;
+  --gray-12: #202020;
+
+  /* The same twelve positions as translucent overlays, and **hand-authored upstream rather than
+     derived** — Radix tunes each one so that it "appears visually the same when placed over the page
+     background", which no `color-mix` formula reproduces. Radix Colors 2.0.1 shipped a correction for
+     dark `a2` being too opaque; a computed ramp would have carried that error with no way to notice.
+
+     Nothing consumes these yet. They are declared because they are the other half of the same scale:
+     a variant that tints a surface without knowing what it sits on needs alpha, and `soft`, `ghost`,
+     `outline` and `surface` are all built that way. */
+  --gray-a1:  #00000003;
+  --gray-a2:  #00000006;
+  --gray-a3:  #0000000f;
+  --gray-a4:  #00000017;
+  --gray-a5:  #0000001f;
+  --gray-a6:  #00000026;
+  --gray-a7:  #00000031;
+  --gray-a8:  #00000044;
+  --gray-a9:  #00000072;
+  --gray-a10: #0000007c;
+  --gray-a11: #0000009b;
+  --gray-a12: #000000df;
+
+  /* ── The accent ─────────────────────────────────────────────────────────────
+     The brand scale `--primary` resolves through, generated at Radix indigo's hue (267°) and
+     chroma. It is part of the *scheme* rather than of `theme-colors.css`'s fixed hues, because "what
+     is this application's brand colour" is exactly the question a scheme answers — where "what
+     colour does a failure panel use" is not.
+
+     **The accent sits on its own lightness ramp, not the grey one.** Step 9 is the solid a brand
+     colour is actually seen as, and at grey-9's lightness (0.64) a saturated hue reads washed out;
+     indigo's own 9 is at 0.54. See `ACCENT_RAMP` in `src/ui/contracts/color.ts`, which is where the
+     ramp lives and where the one departure from indigo — step 9 at lightness 0.52 rather than
+     0.5438 — is argued.
+
+     **Step 9 is the same colour in both blocks, and that is not an oversight.** A neutral inverts
+     between modes; a brand colour must not, or it stops being the brand. That is what makes
+     `--accent-contrast` near-white in *both* modes, which is the one place it differs from
+     `--red-contrast` below. */
+  --accent-1:  #fdfdfe;
+  --accent-2:  #f7f9ff;
+  --accent-3:  #edf2fe;
+  --accent-4:  #e0e9ff;
+  --accent-5:  #d1dfff;
+  --accent-6:  #bed1ff;
+  --accent-7:  #a6bff9;
+  --accent-8:  #88a6ef;
+  --accent-9:  #375bd7;
+  --accent-10: #2f50cc;
+  --accent-11: #3a5bc7;
+  --accent-12: #1d2d5c;
+
+  --accent-a1:  #00000000;
+  --accent-a2:  #0053ff06;
+  --accent-a3:  #004efe10;
+  --accent-a4:  #004dff1d;
+  --accent-a5:  #004fff2c;
+  --accent-a6:  #004bff3f;
+  --accent-a7:  #0149f058;
+  --accent-a8:  #0041de76;
+  --accent-a9:  #012eccc8;
+  --accent-a10: #0029c1d0;
+  --accent-a11: #012bb7c5;
+  --accent-a12: #001247e2;
+
+  /* The foreground that sits on step 9. Near-white in both modes, because step 9 is the same
+     colour in both — `--gray-1` is near-white in light, and `--gray-12` is near-white in dark, so
+     one role is named from either end of the ramp. Measured 5.48:1 in light and 4.97:1 in dark. */
+  --accent-contrast: var(--gray-1);
+}
+
+.dark {
+  /* Radix Colors `grayDark`, verbatim — no swap here, unlike `:root`. */
+  --gray-1:  #111111;
+  --gray-2:  #191919;
+  --gray-3:  #222222;
+  --gray-4:  #2a2a2a;
+  --gray-5:  #313131;
+  --gray-6:  #3a3a3a;
+  --gray-7:  #484848;
+  --gray-8:  #606060;
+  --gray-9:  #6e6e6e;
+  --gray-10: #7b7b7b;
+  --gray-11: #b4b4b4;
+  --gray-12: #eeeeee;
+
+  /* Light-based rather than dark-based: in dark mode a tint is applied by lightening, so these are
+     white at low alpha where `:root`'s are black. `a1` is fully transparent by design — the darkest
+     surface has nothing to tint toward. */
+  --gray-a1:  #00000000;
+  --gray-a2:  #ffffff09;
+  --gray-a3:  #ffffff12;
+  --gray-a4:  #ffffff1b;
+  --gray-a5:  #ffffff22;
+  --gray-a6:  #ffffff2c;
+  --gray-a7:  #ffffff3b;
+  --gray-a8:  #ffffff55;
+  --gray-a9:  #ffffff64;
+  --gray-a10: #ffffff72;
+  --gray-a11: #ffffffaf;
+  --gray-a12: #ffffffed;
+
+  /* The accent, dark. Step 9 is identical to `:root`'s — see the note above. */
+  --accent-1:  #0f141f;
+  --accent-2:  #121826;
+  --accent-3:  #17244a;
+  --accent-4:  #1c2e63;
+  --accent-5:  #243975;
+  --accent-6:  #2d4385;
+  --accent-7:  #365098;
+  --accent-8:  #405db3;
+  --accent-9:  #375bd7;
+  --accent-10: #476cde;
+  --accent-11: #96b4ff;
+  --accent-12: #d5e1ff;
+
+  --accent-a1:  #00000000;
+  --accent-a2:  #6f93fe08;
+  --accent-a3:  #3967ff31;
+  --accent-a4:  #3a6aff4d;
+  --accent-a5:  #4674ff62;
+  --accent-a6:  #517bff74;
+  --accent-a7:  #5783ff8a;
+  --accent-a8:  #5983ffa8;
+  --accent-a9:  #406bffd1;
+  --accent-a10: #517bffd9;
+  --accent-a11: #96b4ffff;
+  --accent-a12: #d5e1ffff;
+
+  --accent-contrast: var(--gray-12);
 }

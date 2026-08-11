@@ -1,6 +1,18 @@
 /** SSR barrel for `@y-core/forge/ui/chrome`. @public */
 
-export type { NavbarProps, NavDefinition, NavItem, NavLink, NavMenu, NavPlacement, NavSection, NavSlot } from "./navbar";
+export type {
+  NavbarProps,
+  NavCollapsible,
+  NavDefinition,
+  NavGroup,
+  NavItem,
+  NavLink,
+  NavMenu,
+  NavPlacement,
+  NavSection,
+  NavSectionItem,
+  NavSlot,
+} from "./navbar";
 export { Navbar } from "./navbar";
 export { DARK_CLASS, DEFAULT_PREF, FOUC_SCRIPT, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 export type { ThemeToggleProps } from "./theme-toggle";

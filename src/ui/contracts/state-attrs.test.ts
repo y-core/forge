@@ -64,6 +64,36 @@ const STRUCTURAL_ATTRS = new Set([
   // coordinate rather than against an invoker, which is a fact about how the panel is used and not
   // about what it is currently doing. Sibling to `data-placement`, not to `data-side`.
   "data-coords",
+
+  // ── The theme customiser's wiring ──────────────────────────────────────────────────────────────
+  //
+  // Every one of these is a **handle the customiser's own effect writes into**, not a state a
+  // stylesheet reacts to — which is the distinction this table exists to hold. The page cannot ship
+  // colour in a `style` attribute (forge sends `style-src 'self'` with no nonce, and the renderer
+  // drops `style` outright), so the browser scope finds each target by attribute and writes through
+  // CSSOM. They are named in `contracts/theme-contract.ts` where both sides can see them, for the
+  // same reason `data-coords` is: an attribute shared across the SSR/client boundary is a contract.
+  //
+  // `data-scale-row` and `data-swatch` address the preview table — which generated scale a row
+  // draws, and which step a swatch is. `data-hex` marks the printed hex under a swatch, valued with
+  // the same step index: a *second* handle on the same column, because the effect writes paint on
+  // one and text on the other, and it exists at all because a hex the effect never rewrote sat
+  // under a swatch it no longer described. `data-readout` marks the `<output>` beside each slider,
+  // which is an effect's job here because `Slider` ships no client controller.
+  "data-scale-row",
+  "data-swatch",
+  "data-hex",
+  "data-readout",
+  // The WCAG table. `data-pair` names the audited token a row reports on and `data-ratio` the cell
+  // for one mode. `data-live` is *configuration*, not state: whether a pair is computable from a
+  // generated scheme is fixed by which side sits on a Tailwind stop, decided at render and never
+  // changing in response to anything.
+  "data-pair",
+  "data-ratio",
+  "data-live",
+  // The copyable scheme block and the shareable URL, both rewritten as the dials move.
+  "data-scheme-output",
+  "data-share-url",
 ]);
 
 const STRUCTURAL_PREFIXES = ["data-on-"];

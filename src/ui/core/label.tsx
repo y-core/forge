@@ -14,7 +14,7 @@ export const Label: FC<LabelProps> = ({ required, class: cls, for: htmlFor, chil
   <label data-slot={slotToken("label", inherited)} for={htmlFor} class={cn(FIELD_LABEL_CLASSES, asClass(cls))} {...props}>
     {children}
     {required ? (
-      <span data-slot='label-required' aria-hidden='true' class='ml-0.5 text-red-500'>
+      <span data-slot='label-required' aria-hidden='true' class='ml-0.5 text-destructive'>
         *
       </span>
     ) : null}

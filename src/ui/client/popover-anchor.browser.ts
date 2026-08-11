@@ -21,7 +21,7 @@ declare global {
 
 const EXPOSE = { expose: { forgePopoverAnchor: "./ui/client/popover-anchor" } };
 
-/** The coordinate rule, verbatim from `assets/css/theme-base.css`. Inlined rather than loading the
+/** The coordinate rule, verbatim from `assets/css/forge-ui.css`. Inlined rather than loading the
  * built sheet: the harness serves no CSS, and what is under test is this rule and the UA default
  * fighting over the same box. */
 const COORD_RULE = `

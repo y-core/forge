@@ -9,7 +9,6 @@
 
 bin/
 coverage/
-docker/
 node_modules/
 tmp/
 

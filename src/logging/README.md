@@ -25,7 +25,7 @@ log.info("server started", { port: 8787 });
 - **Async-safe flushing** — pending KV writes are tracked and awaited via `flush()`; `requestLogger` flushes them through `executionCtx.waitUntil` so the response is not blocked. `flush()` never rejects, so a failed write is reported through `onChannelError` instead — by default one `console.error` line, visible in `wrangler tail` without configuration.
 - **Request logging middleware** — one record per request with method, path, status, and duration, with the level derived from the response status code.
 - **KV persistence** — time-ordered keys, per-entry metadata for zero-cost listing, TTL retention, and a probabilistic soft-cap purge.
-- **SSR log viewer** — a single auth-gated `loadLogViewer` loader from `@y-core/forge/logging/show` that returns a fully rendered `Response` (full page, HTMX `<tbody>` partial, or record-detail fragment) for browsing persisted logs; the JSX components are internal so records cannot render without passing the access check.
+- **SSR log viewer** — a single auth-gated `loadLogViewer` loader from `@y-core/forge/logging/show` that returns a fully rendered `Response` (viewer content inside your `layout`, HTMX `<tbody>` partial, append fragment, or record-detail row) for browsing persisted logs; built from `ui/core` primitives and semantic tokens, so it themes with the rest of your app. The JSX components are internal so records cannot render without passing the access check.
 
 ## Usage
 
@@ -375,12 +375,12 @@ import { loadLogViewer } from "@y-core/forge/logging/show";
 import type { LogViewerAccess, LogViewerOptions } from "@y-core/forge/logging/show";
 ```
 
-The HTMX-driven JSX components (viewer page, table body, filter bar, level badges, detail cell)
+The HTMX-driven JSX components (viewer content, table body, filter bar, level badges, detail row)
 and the fragment renderers are **internal**: records can only be rendered by going through
 `loadLogViewer`, which enforces the access check first — so an unguarded viewer is impossible by
 construction.
 
-### `loadLogViewer(context, options)`
+### `loadLogViewer(context, config, options)`
 
 A route loader returning `Promise<Response>` for **every** path. It renders inside the loader,
 so there is no view branch in app code. In order:
@@ -389,23 +389,29 @@ so there is no view branch in app code. In order:
    the channel is touched; a throwing predicate propagates to the error boundary (fail closed).
    A deliberately public mount opts out with the greppable literal
    `access: "allow-unauthenticated"`.
-2. For `?detail=<key>` (a row's message-cell toggle), reads the full stored record via
-   `channel.readEntry?.(key)` and returns the expanded detail `<td>` fragment — including fields
+2. For `?detail=<key>` (a row's message toggle), reads the full stored record via
+   `channel.readEntry?.(key)` and returns the expanded detail `<tr>` fragment — including fields
    like `data.stack` that never fit in list metadata. A missing entry (expired TTL, purged, or a
-   channel without `readEntry`) renders a not-found cell, not an error.
-3. For an HTMX request (`HX-Request: true`) carrying a `?cursor=`, returns the next page as a bare
-   `<tr>` sequence. The "Load more" control swaps its own row (`hx-target="closest tr"`,
-   `hx-swap="outerHTML"`), so the page lands where the control stood and the rows already loaded
-   survive; the control's URL carries the active `?level=` and `?q=` so page two is drawn from the
-   same filtered set.
+   channel without `readEntry`) renders a not-found row, not an error.
+3. For an HTMX request (`HX-Request: true`) carrying a `?cursor=`, returns the next page of `<tr>`s
+   for a `beforeend` append into `#log-tbody`, **followed by a replacement load-more row carrying
+   the new cursor out of band**. The control lives in the table's `<tfoot>`, outside the region it
+   appends into, so the swap never destroys the button that triggered it; its URL carries the active
+   `?level=` and `?q=` so page two is drawn from the same filtered set.
 4. For any other HTMX request — a filter submit — returns the whole `<tbody>` partial, filtered
    via `?level=` and `?q=`. An unrecognised `?level=` is dropped and the view renders unfiltered;
    the filter only narrows rows `access` already permits, so falling back cannot widen exposure.
-5. Otherwise returns the full HTML-document viewer page.
+5. Otherwise resolves `context(c, config)` and returns the viewer content rendered inside your
+   `layout`.
 
-If the channel has no `read` method, the table renders empty rather than erroring. Logs expose
-request paths, request ids, and error messages, so `access` is required at the type level —
-forgetting a guard is a compile error.
+If the channel has no `read` method, the table renders empty rather than erroring. A `read` that
+**rejects** is caught and rendered in place as a `destructive` `Alert` with a retry, with the table's
+shape preserved around it — it is deliberately not allowed to reach the error boundary, because for a
+fragment request that boundary answers with a page and HTMX would swap that page's body into the
+table. The reason is not shown to the reader: a channel error can name a binding or a key prefix.
+
+Logs expose request paths, request ids, and error messages, so `access` is required at the type
+level — forgetting a guard is a compile error.
 
 `LogViewerOptions`:
 
@@ -414,7 +420,18 @@ forgetting a guard is a compile error.
 | `channel` | `(c) => LogChannel` | Per-request factory for the channel to read from. |
 | `access` | `((c) => boolean \| Promise<boolean>) \| "allow-unauthenticated"` | **Required.** Access decision, run before the channel is touched; `false` → `403 Forbidden`. A throwing predicate propagates to the error boundary (fail closed). |
 | `icon` | `ForgeIcon<"chevron-down">` | **Required.** App-bound icon rendered in the filter bar's level select. The app injects its own icon so `logging/show` need not own an icon set. |
+| `context` | `(c, config) => Promise<Ctx>` | **Required.** Per-request factory whose resolved value is forwarded to `layout` as `ctx`. Same shape as `ShowcaseOptions.context`. |
+| `layout` | `FC<{ ctx: Ctx }>` | **Required.** Your app's page shell. The viewer builds no document of its own — see below. |
 | `basePath` | `string` | URL prefix the viewer is mounted at, used for HTMX targets. Defaults to `/admin/logs`. |
+
+#### Why `layout` is required
+
+The document is where the theme lives: `<html>` carries the dark class, the head carries the script
+that sets it before first paint, and `<body>` carries `bg-background`. The viewer used to build its
+own bare `<html>`/`<head>`/`<body>` with none of those, so **dark mode was unreachable** no matter
+what classes its components carried. Handing the shell to the consumer is the move `registerShowcase`
+has always made, and it is what lets the viewer render inside your chrome, with your nav and your
+theme toggle, rather than as an unstyled island.
 
 ### Mounting the viewer
 
@@ -426,14 +443,17 @@ import { definePage } from "@y-core/forge/app";
 import { kvLogChannel } from "@y-core/forge/logging";
 import { loadLogViewer } from "@y-core/forge/logging/show";
 import { sessionCtx } from "@y-core/forge/session";
+import { Layout, renderContext } from "./ui/layout";
 import { chevronDownIcon } from "./ui/icons";
 
 export const logsPage = definePage<AppEnv, AppConfig>({
-  loader: (c) =>
-    loadLogViewer(c, {
+  loader: (c, config) =>
+    loadLogViewer(c, config, {
       channel: (cc) => kvLogChannel(cc.env.LOGS_KV!),
       access: (cc) => isAdmin(sessionCtx.getOptional(cc)), // required — 403 when false
       icon: chevronDownIcon, // required — app-bound ForgeIcon<"chevron-down">
+      context: renderContext, // required — resolves the value handed to `layout`
+      layout: Layout, // required — your shell; the viewer builds no document
       basePath: "/admin/logs",
     }),
   // Unreachable: the loader always returns a Response, which short-circuits rendering.
@@ -442,9 +462,10 @@ export const logsPage = definePage<AppEnv, AppConfig>({
 ```
 
 The rendered viewer wires the HTMX interactions itself: the filter bar issues an `hx-get` to
-`basePath` and swaps the table body; the load-more control appends `?cursor=`; each row's
-message cell issues `?detail=<key>` and swaps itself for the expanded detail cell the loader
-returns.
+`basePath` and swaps the table body; the load-more control in the `<tfoot>` appends `?cursor=` into
+the tbody and replaces itself out of band; each row's message control issues `?detail=<key>` and
+swaps the sibling detail `<tr>` that shipped with the initial render — never a region containing
+itself, so keyboard focus survives every swap.
 
 The viewer's markup is Tailwind-classed and `forge.css` does not scan it, so an app that mounts the
 viewer must add `@source "…/@y-core/forge/src/logging";` to its own stylesheet.

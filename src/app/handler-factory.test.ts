@@ -64,7 +64,7 @@ describe("createHandlerFactory — defineAction", () => {
     const html = await res.text();
     expect(res.status).toBe(422);
     expect(html).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
     );
   });
 });

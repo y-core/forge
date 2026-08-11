@@ -36,7 +36,7 @@ describe("show fragments", () => {
   });
 
   it("ValidateFragment renders the validate field target", async () => {
-    const out = await render(<ValidateFragment data={{ email: "" }} />);
+    const out = await render(<ValidateFragment data={{ email: "", paths }} icon={icon} />);
     expect(out).toContain('id="show-validate-field"');
   });
 
@@ -70,7 +70,7 @@ describe("show sections", () => {
   });
 
   it("ValidateSection renders its demo section", async () => {
-    const out = await render(<ValidateSection paths={paths} />);
+    const out = await render(<ValidateSection paths={paths} icon={icon} />);
     expect(out).toContain('id="demo-validate"');
     expect(out).toContain("Inline Validation");
   });

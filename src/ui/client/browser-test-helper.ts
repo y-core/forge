@@ -54,14 +54,22 @@ export interface MountOptions {
   expose?: Record<string, string>;
   /**
    * Stylesheets to load into the page, as paths resolved from `src/` — the same convention `expose`
-   * uses, so `"./ui/assets/css/theme-base.css"` names the shipped file rather than a copy.
+   * uses, so `"./ui/assets/css/forge-ui.css"` names the shipped file rather than a copy.
    *
-   * **The file is served to the browser raw: no Tailwind build runs.** Two consequences decide how a
-   * fixture using this must be written:
+   * **The file is served to the browser raw: no Tailwind build runs.** Three consequences decide how
+   * a fixture using this must be written:
    *
+   * - **Name each sheet a spec actually needs, in `forge.css`'s import order.** `forge.css` itself is
+   *   only a list of `@import`s, and a relative `@import` inside a stylesheet injected by
+   *   `addStyleTag` is not something to rely on resolving — so pointing at it is how a spec gets no
+   *   CSS at all while appearing to ask for everything. Component rules are in
+   *   `forge-ui.css`; a token that has to resolve to a colour needs `theme-neutral.css` (the
+   *   scale) *and* `theme-base.css` (the mapping onto it), because the two are separate hops in
+   *   separate files.
    * - `@theme inline` is an unknown at-rule, so the CSS parser discards the whole block. `@layer
-   *   components` is a real at-rule and is honoured. What survives is therefore exactly the component
-   *   rules under test, which is what a placement spec wants to measure.
+   *   components` is a real at-rule and is honoured. What survives of `forge-ui.css` is
+   *   therefore exactly the component rules under test, which is what a placement spec wants to
+   *   measure.
    * - **No Tailwind utility resolves.** `class="w-40"` styles nothing. Size a fixture by its content
    *   or by an inline `<style>` in the markup string, never by a utility class.
    */

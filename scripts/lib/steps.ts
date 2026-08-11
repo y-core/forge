@@ -63,6 +63,11 @@ export const STEPS: readonly Step[] = [
   { label: "validate-namespace-graph", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-namespace-graph.ts"] },
   { label: "validate-jsx", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-jsx.ts"] },
   { label: "validate-docs", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-docs.ts"] },
+  // `verify` only, matching `test:browser`: the invariants are release-shaped, and requiring a
+  // written `[Unreleased]` entry on every inner `check` loop would fail every WIP commit.
+  { label: "validate-changelog", gates: ["verify"], tail: 30, cmd: ["bun", "run", "scripts/validate-changelog.ts"] },
+  { label: "validate-design", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-design.ts"] },
+  { label: "validate-contrast", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-contrast.ts"] },
   { label: "validate-css-sources", gates: CHECK_AND_VERIFY, tail: 30, cmd: ["bun", "run", "scripts/validate-css-sources.ts"] },
   {
     // The prerequisite is the downloaded browser, not the `playwright` CLI: the CLI is a

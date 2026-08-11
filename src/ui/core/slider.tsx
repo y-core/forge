@@ -78,8 +78,15 @@ export function sanitizeRangeValue(attrs: Pick<JSX.IntrinsicElements["input"], "
   return String(snapped);
 }
 
-const SLIDER_BASE = "h-2 w-full cursor-pointer appearance-none rounded-full bg-input accent-primary disabled:opacity-50";
-const SLIDER_VERTICAL = "[writing-mode:vertical-lr] [direction:rtl] h-22 w-5";
+/** The input's box is the hit target, not the track. It stays transparent and at least as large as
+ *  the `Button` `sm` box in both axes; the 8px track and the thumb are painted by the authored
+ *  `::-webkit-slider-runnable-track` / `::-moz-range-track` rules in `forge-ui.css`, which are
+ *  written in logical properties so one declaration serves both orientations. Sizing the input to
+ *  the track instead is what made the two orientations disagree — a horizontal `h-2` gave the thumb
+ *  no room while a vertical `w-5` did. */
+const SLIDER_BASE =
+  "h-8 w-full cursor-pointer appearance-none rounded-full bg-transparent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const SLIDER_VERTICAL = "[writing-mode:vertical-lr] [direction:rtl] h-22 w-8";
 
 export const Slider: FC<SliderProps> = ({ class: cls, field, output, orientation = "horizontal", "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;

@@ -1,12 +1,39 @@
-import { getCommitsSinceTag, getLastCommitMessage, getLatestTag } from "./git";
+import { getCommitsSinceTag, getLatestTag } from "./git";
 import { readPackageVersion } from "./pkg";
 import { bumpSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
-import type { ResolveVersionOptions, VersionDeps, VersionResult } from "./types";
+import type { BumpKind, ResolveVersionOptions, VersionDeps, VersionResult } from "./types";
 import { ReleaseError } from "./types";
+
+/**
+ * The subject of a `git log --oneline` entry — the abbreviated sha and its single separating
+ * space removed. `--oneline` is exactly `%h %s`, so this consumes one token and no more: a
+ * subject that itself opens with a hex word survives intact.
+ * @internal
+ */
+function subjectOf(entry: string): string {
+  return entry.replace(/^[0-9a-f]+ /, "");
+}
+
+/**
+ * The highest bump any commit in the range asks for — `major` beats `minor` beats `patch`.
+ *
+ * Scanning the whole range rather than the tip is the point: a cycle holding `major: …` followed
+ * by `fix typo` used to ship as a patch, because only the tip subject was ever read.
+ * @internal
+ */
+function highestBump(entries: readonly string[]): BumpKind {
+  let kind: BumpKind = "patch";
+  for (const entry of entries) {
+    const subject = subjectOf(entry);
+    if (subject.startsWith("major:")) return "major";
+    if (subject.startsWith("minor:")) kind = "minor";
+  }
+  return kind;
+}
 
 export function resolveVersion(
   { explicit, cwd, tagPrefix }: ResolveVersionOptions,
-  deps: VersionDeps = { getLatestTag, getCommitsSinceTag, getLastCommitMessage, readPackageVersion },
+  deps: VersionDeps = { getLatestTag, getCommitsSinceTag, readPackageVersion },
 ): VersionResult {
   const latestTag = deps.getLatestTag(cwd, tagPrefix);
 
@@ -49,18 +76,7 @@ export function resolveVersion(
     throw new ReleaseError("invalid-version", `Cannot parse version from tag: ${latestTag}`);
   }
 
-  const lastMsg = deps.getLastCommitMessage(cwd);
-  let bumpKind: "major" | "minor" | "patch" = "patch";
-  let reason: VersionResult["reason"] = "auto-patch";
-
-  if (lastMsg.startsWith("major:")) {
-    bumpKind = "major";
-    reason = "auto-major";
-  } else if (lastMsg.startsWith("minor:")) {
-    bumpKind = "minor";
-    reason = "auto-minor";
-  }
-
+  const bumpKind = highestBump(commits);
   const bumped = bumpSemVer(prev, bumpKind);
-  return { version: formatSemVer(bumped), reason, previous: latestTag };
+  return { version: formatSemVer(bumped), reason: `auto-${bumpKind}`, previous: latestTag };
 }

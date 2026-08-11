@@ -34,7 +34,7 @@ const NameSchema = strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name 
  */
 function refusal(...fields: readonly string[]): string {
   const items = fields.map((field) => `<li>${field}</li>`).join("");
-  return `<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5">${items}</ul></div>`;
+  return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5">${items}</ul></div>`;
 }
 
 /**
@@ -46,7 +46,7 @@ const APP_BOUNDARY_500 = "<!DOCTYPE html><html><body><h1>500 Internal Server Err
 
 /** What `defineAction`'s own recovery arm answers. `definePage` deliberately does not have this arm. */
 const ACTION_500_FRAGMENT =
-  '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Something went wrong. Please try again.</p></div>';
+  '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>';
 
 /** Captures the structured log lines written while `run` executes. */
 async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {
@@ -288,7 +288,7 @@ describe("definePage", () => {
 describe("definePage — the schema pipeline", () => {
   it("renders exactly this refusal, which is the literal every other case here is asserted against", () => {
     expect(refusal("name")).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
     );
   });
 
@@ -488,7 +488,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
 
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
     );
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("x-page")).toBe("value");
@@ -505,7 +505,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
 
     expect(res.status).toBe(400);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Unable to process the form data. Please try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Unable to process the form data. Please try again.</p></div>',
     );
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("x-page")).toBe("value");
@@ -681,7 +681,7 @@ describe("definePage — the submission sequence's options are the page's own", 
     const res = await post(app, `name=${"x".repeat(2000)}`);
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
     );
     expect(calls).toEqual([]);
   });

@@ -67,7 +67,7 @@ const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, cla
 
 const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, children, "data-slot": inherited, ...rest }) => (
   <div data-slot={slotToken("accordion-content", inherited)} class={cn("px-1 pb-3 pt-1", asClass(cls))} {...rest}>
-    {hint ? <p class='mb-2 text-[11px] text-muted-foreground'>{hint}</p> : null}
+    {hint ? <p class='mb-2 text-xs text-muted-foreground'>{hint}</p> : null}
     {children}
   </div>
 );

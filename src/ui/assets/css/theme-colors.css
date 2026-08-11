@@ -1,0 +1,142 @@
+/* Colours that are not the scheme — the four status hues, and the two absolute alpha ramps.
+   ─────────────────────────────────────────────────────────────────────────────
+   **Why these are separate from `theme-neutral.css`.** A scheme file answers "what does this
+   application's grey look like", and swapping it is an ordinary thing for an app to do. Nothing in
+   this file is that. A failure panel has to keep meaning *failed* whichever scheme is loaded and
+   whatever the application has pointed `--destructive` at, so these hues are forge's rather than the
+   scheme's, and they are the same four in every scheme.
+
+   That is also why they are not part of the twelve-step system in the way the greys are: only the
+   steps that back a real token are declared, because a hue with no consumer is a declaration nobody
+   checks. Steps 2, 3, 6, 11 and 12 back the `--status-*` roles in `theme-base.css`; step 9 and
+   `-contrast` back the `--destructive` / `--success` / `--warning` semantic tokens.
+
+   **`--<hue>-contrast` is Radix's name for the foreground that sits on step 9.** A functional token
+   rather than a step, and being mode-varying is its whole job — near-white on a light mode's
+   saturated fill, near-black on a dark mode's lighter one.
+
+   **The values are Tailwind's**, not Radix's. These are the four hues `Alert`, `Toast` and `Badge`
+   already rendered before the scale existed, and holding them still is what kept this a structural
+   change rather than a repaint. `var(--color-red-50)` resolves against the *consuming app's*
+   Tailwind, which is where forge's palette has always come from — forge has no Tailwind dependency
+   of its own.
+   ────────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── danger ─────────────────────────────────────────────────────────────── */
+  --red-2:  var(--color-red-50);
+  --red-3:  var(--color-red-100);
+  --red-6:  var(--color-red-200);
+  /* `red-700` in light and `red-300` in dark. The dark stop before this one was the literal
+     `oklch(0.704 0.191 22.216)` — Tailwind's `red-400` to fifteen significant figures, i.e. a ramp
+     reference in disguise — and it measured 3.55 against `--muted`, under the 4.5 text floor. */
+  --red-9:  var(--color-red-700);
+  --red-11: var(--color-red-800);
+  --red-12: var(--color-red-900);
+  /* `--gray-1`, and mode-free for a reason worth stating: step 1 is the page, which is near-white in
+     light and near-black in dark — exactly the two answers this token needs. It used to be a
+     hand-written pair. */
+  --red-contrast: var(--gray-1);
+
+  /* ── info ───────────────────────────────────────────────────────────────── */
+  /* No step 9 and no `-contrast`: forge has no `--info` semantic token, because no component renders
+     a solid informational fill. The five steps below are exactly what `--status-info-*` consumes. */
+  --blue-2:  var(--color-blue-50);
+  --blue-3:  var(--color-blue-100);
+  --blue-6:  var(--color-blue-200);
+  --blue-11: var(--color-blue-800);
+  --blue-12: var(--color-blue-900);
+
+  /* ── success ────────────────────────────────────────────────────────────── */
+  /* Two green ramps, and that is a known inconsistency rather than a subtlety: the `--status-*`
+     panels and chips render **emerald** while the `--success` fill resolves to Tailwind's **green**.
+     Both shipped that way before the scale existed and both are held here rather than silently
+     unified, because collapsing them is a visible colour change and belongs in its own commit. */
+  --emerald-2:  var(--color-emerald-50);
+  --emerald-3:  var(--color-emerald-100);
+  --emerald-6:  var(--color-emerald-200);
+  --emerald-11: var(--color-emerald-800);
+  --emerald-12: var(--color-emerald-900);
+
+  --green-9: var(--color-green-700);
+  --green-contrast: var(--gray-1);
+
+  /* ── warning ────────────────────────────────────────────────────────────── */
+  /* **Yellow, not amber**, so that the four status hues are the same four everywhere in forge — the
+     log viewer's old amber map was the outlier that made a fourth palette possible. */
+  --yellow-2:  var(--color-yellow-50);
+  --yellow-3:  var(--color-yellow-100);
+  --yellow-6:  var(--color-yellow-200);
+  --yellow-9:  var(--color-yellow-500);
+  --yellow-11: var(--color-yellow-800);
+  --yellow-12: var(--color-yellow-900);
+  /* The one contrast token that does **not** invert: near-white on `yellow-500` measures 1.83, so the
+     foreground stays near-black in *both* modes. No single step is near-black in both, so this is the
+     one place the `.dark` block below carries a different *step* rather than a different value —
+     `--gray-12` in light, `--gray-1` in dark, which are the same colour seen from either mode. */
+  --yellow-contrast: var(--gray-12);
+
+  /* ── absolute alpha ─────────────────────────────────────────────────────── */
+  /* Not part of any hue, and identical in both modes — which is the point. A modal scrim has to
+     darken whatever is behind it in light and dark alike, so it cannot be a gray step and it cannot
+     be re-declared under `.dark`. `--overlay` in `theme-base.css` is the one consumer today. */
+  --black-a1:  rgba(0, 0, 0, 0.05);
+  --black-a2:  rgba(0, 0, 0, 0.1);
+  --black-a3:  rgba(0, 0, 0, 0.15);
+  --black-a4:  rgba(0, 0, 0, 0.2);
+  --black-a5:  rgba(0, 0, 0, 0.3);
+  --black-a6:  rgba(0, 0, 0, 0.4);
+  --black-a7:  rgba(0, 0, 0, 0.5);
+  --black-a8:  rgba(0, 0, 0, 0.6);
+  --black-a9:  rgba(0, 0, 0, 0.7);
+  --black-a10: rgba(0, 0, 0, 0.8);
+  --black-a11: rgba(0, 0, 0, 0.9);
+  --black-a12: rgba(0, 0, 0, 0.95);
+
+  --white-a1:  rgba(255, 255, 255, 0.05);
+  --white-a2:  rgba(255, 255, 255, 0.1);
+  --white-a3:  rgba(255, 255, 255, 0.15);
+  --white-a4:  rgba(255, 255, 255, 0.2);
+  --white-a5:  rgba(255, 255, 255, 0.3);
+  --white-a6:  rgba(255, 255, 255, 0.4);
+  --white-a7:  rgba(255, 255, 255, 0.5);
+  --white-a8:  rgba(255, 255, 255, 0.6);
+  --white-a9:  rgba(255, 255, 255, 0.7);
+  --white-a10: rgba(255, 255, 255, 0.8);
+  --white-a11: rgba(255, 255, 255, 0.9);
+  --white-a12: rgba(255, 255, 255, 0.95);
+}
+
+/* Steps only, exactly as a scheme file's `.dark` is — and for the same reason: the mode difference
+   belongs in the scale, never in the semantic token that resolves through it. */
+.dark {
+  --red-2:  var(--color-red-950);
+  --red-3:  var(--color-red-900);
+  --red-6:  var(--color-red-800);
+  --red-9:  var(--color-red-300);
+  --red-11: var(--color-red-200);
+  --red-12: var(--color-red-200);
+
+  --blue-2:  var(--color-blue-950);
+  --blue-3:  var(--color-blue-900);
+  --blue-6:  var(--color-blue-800);
+  --blue-11: var(--color-blue-200);
+  --blue-12: var(--color-blue-200);
+
+  --emerald-2:  var(--color-emerald-950);
+  --emerald-3:  var(--color-emerald-900);
+  --emerald-6:  var(--color-emerald-800);
+  --emerald-11: var(--color-emerald-200);
+  --emerald-12: var(--color-emerald-200);
+
+  --green-9: var(--color-green-500);
+
+  --yellow-2:  var(--color-yellow-950);
+  --yellow-3:  var(--color-yellow-900);
+  --yellow-6:  var(--color-yellow-800);
+  --yellow-9:  var(--color-yellow-400);
+  --yellow-11: var(--color-yellow-200);
+  --yellow-12: var(--color-yellow-200);
+  /* Near-black in dark too — see the note in `:root`. The step differs, the colour does not. */
+  --yellow-contrast: var(--gray-1);
+}

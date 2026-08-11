@@ -41,7 +41,7 @@ export { Tabs } from "./tabs";
 export { Textarea } from "./textarea";
 export { Toast, type ToastPosition, type ToastVariant } from "./toast";
 export { Toggle } from "./toggle";
-export { ToggleGroup, type ToggleGroupItemSize, type ToggleGroupType } from "./toggle-group";
+export { ToggleGroup, type ToggleGroupType } from "./toggle-group";
 export { Toolbar } from "./toolbar";
 export { Tooltip } from "./tooltip";
 export { Turnstile, type TurnstileProps } from "./turnstile";

@@ -14,8 +14,33 @@ const CSS_DIR = resolve(UI, "assets/css");
 const CLASS_FREE = new Map([
   ["assets", "sprite and glyph data — no markup, no class strings"],
   ["client", "mount controllers; the markup they operate on is the consumer's"],
+  // The design corpus is markdown, so nothing here is scanned in the ordinary sense. It is on this
+  // list rather than given an `@source` path for a stronger reason than "it is documentation":
+  // roughly half its TSX samples are *counter*-examples, quoting the exact classes the corpus
+  // forbids — `bg-[#0f172a]`, `p-[7px]`, `h-screen`. Scanning it would compile forge's own
+  // anti-patterns into every consumer's stylesheet, which is the one outcome the corpus exists to
+  // prevent. Pass B still walks it for `.ts`/`.tsx`, so the opt-out stops covering it the moment it
+  // stops being prose.
+  ["design", "design corpus — markdown only, and its samples deliberately quote forbidden classes"],
   ["server", "SSR helpers that delegate to core/ components for all markup"],
 ]);
+
+/**
+ * Directories under `src/ui/` that **do** declare utility classes and are still not `@source`-scanned
+ * — because they are opt-in surfaces the consuming app mounts explicitly, and an app that does not
+ * mount one should not pay for its utilities.
+ *
+ * This is a third answer, distinct from both of the others, and it needs to be: `CLASS_FREE` is a
+ * claim that a directory carries no classes, which pass B re-checks and which would simply be false
+ * here. Filing `show` there to quiet the gate would have been a lie the gate itself would catch.
+ *
+ * The risk this category carries is the opposite of `CLASS_FREE`'s. There, the danger is a directory
+ * quietly acquiring classes; here, the classes are expected and the danger is that **nobody tells the
+ * consumer to scan them** — the failure is silent and total, since the markup renders with every
+ * class unstyled. So an entry names the exact `@source` line an app must add, and pass A checks that
+ * line is published verbatim in the README. An opt-in nobody is told about is just a gap.
+ */
+const CONSUMER_SCANNED = new Map([["show", '@source "../../node_modules/@y-core/forge/src/ui/show";']]);
 
 const SKIP_FILE = (name: string) => name.endsWith(".test.ts") || name.endsWith(".test.tsx") || name.endsWith(".browser.ts");
 
@@ -112,6 +137,9 @@ export function main(): number {
   }
 
   const isScanned = (dir: string) => scanned.some((s) => dir === s || dir.startsWith(s + sep));
+  // Read once: a `CONSUMER_SCANNED` entry is only honoured if the README actually tells an app to
+  // add the line, so the doc is part of this check's input rather than a courtesy.
+  const readme = readFileSync(resolve(UI, "README.md"), "utf-8");
 
   for (const entry of readdirSync(UI, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory()) continue;
@@ -120,10 +148,21 @@ export function main(): number {
       console.log(`  ok src/ui/${entry.name} (@source-scanned)`);
     } else if (CLASS_FREE.has(entry.name)) {
       console.log(`  ok src/ui/${entry.name} (class-free: ${CLASS_FREE.get(entry.name)})`);
+    } else if (CONSUMER_SCANNED.has(entry.name)) {
+      const line = CONSUMER_SCANNED.get(entry.name) ?? "";
+      if (readme.includes(line)) {
+        console.log(`  ok src/ui/${entry.name} (opt-in; README publishes \`${line}\`)`);
+      } else {
+        console.error(`FAIL src/ui/${entry.name} is opt-in, but src/ui/README.md does not publish the line an app must add`);
+        console.error(`  Expected verbatim: ${line}`);
+        console.error(`  Without it the directory's markup renders with every class unstyled, and nothing else would say so.`);
+        failed = true;
+      }
     } else {
-      console.error(`FAIL src/ui/${entry.name}: no @source path in src/ui/assets/css/ covers it, and it is not registered in CLASS_FREE`);
-      console.error(`  Add \`@source "../../${entry.name}";\` to forge.css if its files declare utility classes,`);
-      console.error(`  or add it to CLASS_FREE in scripts/validate-css-sources.ts with the reason it cannot.`);
+      console.error(`FAIL src/ui/${entry.name}: no @source path in src/ui/assets/css/ covers it, and it is registered nowhere`);
+      console.error(`  Add \`@source "../../${entry.name}";\` to forge.css if its files declare utility classes and every app needs them,`);
+      console.error(`  or add it to CLASS_FREE in scripts/validate-css-sources.ts with the reason it declares none,`);
+      console.error(`  or add it to CONSUMER_SCANNED there if it is an opt-in surface the app scans itself.`);
       failed = true;
     }
   }

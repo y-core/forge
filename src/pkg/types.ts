@@ -6,7 +6,15 @@ export interface SemVer {
 
 export type BumpKind = "major" | "minor" | "patch";
 
-export type ReleaseErrorKind = "invalid-version" | "version-not-greater" | "version-mismatch" | "git-error" | "pkg-update";
+export type ReleaseErrorKind =
+  | "invalid-version"
+  | "version-not-greater"
+  | "version-mismatch"
+  | "git-error"
+  | "pkg-update"
+  | "working-tree-dirty"
+  | "changelog-empty"
+  | "changelog-malformed";
 
 export class ReleaseError extends Error {
   readonly kind: ReleaseErrorKind;
@@ -28,6 +36,9 @@ export interface ReleaseCommandConfig {
   cwd: string;
   tagPrefix?: string;
   stageFiles?: string[];
+  /** Changelog to promote, relative to `cwd`. Defaults to `"CHANGELOG.md"`. A repository without
+   *  one is not an error — the promotion step is skipped and the release proceeds. */
+  changelogFile?: string;
 }
 
 export interface ReleaseDeps {
@@ -38,6 +49,13 @@ export interface ReleaseDeps {
   commit: (cwd: string, message: string, files: string[]) => boolean;
   tagExists: (cwd: string, tag: string) => boolean;
   createTag: (cwd: string, tag: string) => void;
+  /** Reads the changelog, or `null` when the file does not exist. */
+  readChangelog: (cwd: string, file: string) => string | null;
+  writeChangelog: (cwd: string, file: string, source: string) => void;
+  /** The repository's normalised base URL for compare links, or `null` when unknown. */
+  readRepositoryUrl: (cwd: string) => string | null;
+  /** The release moment. Injected so a test needs no clock. */
+  now: () => Date;
 }
 
 export interface ResolveVersionOptions {
@@ -49,6 +67,5 @@ export interface ResolveVersionOptions {
 export interface VersionDeps {
   getLatestTag: (cwd: string, prefix: string) => string | null;
   getCommitsSinceTag: (cwd: string, tag: string) => string[];
-  getLastCommitMessage: (cwd: string) => string;
   readPackageVersion: (cwd: string) => string;
 }

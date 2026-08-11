@@ -89,6 +89,10 @@ interface InlineValidationProps {
  * `target`, `trigger`, and `sync` selectors are forwarded verbatim to {@link hxAttrs} and must be
  * TRUSTED, developer-supplied — never raw user input. See {@link hxAttrs}.
  *
+ * `sync` defaults to `"this:abort"`, which resolves on any field whether or not it sits inside a
+ * `<form>`; a caller inside one that wants in-flight requests from sibling fields aborted passes
+ * `sync: "closest form:abort"` explicitly.
+ *
  * @public
  */
 export function inlineValidation(p: InlineValidationProps): HxAttrs {
@@ -97,7 +101,7 @@ export function inlineValidation(p: InlineValidationProps): HxAttrs {
     target: p.target,
     swap: p.swap ?? SWAP.outerHtml,
     trigger: p.trigger ?? "change delay:200ms, blur",
-    sync: p.sync ?? "closest form:abort",
+    sync: p.sync ?? "this:abort",
   });
 }
 

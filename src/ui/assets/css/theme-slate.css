@@ -1,16 +1,82 @@
-/* Slate neutral ramp — maps --palette-* aliases onto Tailwind's slate scale.
-   Slate matches the base-default accent values, so no accent overrides are needed.
+/* Slate — the cool scheme.
+   ─────────────────────────────────────────────────────────────────────────────
+   **Tailwind's hue at Radix's lightness.** Neither source alone was right. Radix's own tinted
+   neutrals are calibrated to sit *under* a saturated accent and only lean toward it — measured at
+   step 11, Radix `slate` is 12 units off neutral where Tailwind's `slate-600` is 39 — and forge has
+   no accent (`--accent-12` aliases `--gray-12`, near-black), so the scheme itself has to carry the
+   identity. Tailwind's ramp carries it, but its eleven stops are not spaced for the twelve roles.
+
+   So each step takes its **lightness** from Radix's scale, which is what the role numbering and every
+   contrast measurement depend on, and its **chroma and hue** from Tailwind's `slate` resampled at
+   that lightness. The step spacing is Radix's; the colour is Tailwind's.
+
+   One property falls out of this that neither source has: every scheme shares a single lightness
+   ramp and differ only in hue, so every audited contrast ratio is the same across them to within
+   0.05 — the widest gap at any audited step is `--muted-foreground` in light: 5.17 gray, 5.19
+   neutral, 5.20 stone, 5.22 slate. Switching scheme cannot move a pair across its floor.
+
+   Steps 1 and 2 are swapped in the light block only, so cards stay raised — see the note beside the
+   scale in theme-base.css.
+
+   A theme file re-declares `--gray-1` … `--gray-12` and `--gray-a1` … `--gray-a12` in both blocks,
+   and nothing else. Every semantic token resolves through those.
+
    @import theme-base.css before this file. */
 :root {
-  --palette-50:  var(--color-slate-50);
-  --palette-100: var(--color-slate-100);
-  --palette-200: var(--color-slate-200);
-  --palette-300: var(--color-slate-300);
-  --palette-400: var(--color-slate-400);
-  --palette-500: var(--color-slate-500);
-  --palette-600: var(--color-slate-600);
-  --palette-700: var(--color-slate-700);
-  --palette-800: var(--color-slate-800);
-  --palette-900: var(--color-slate-900);
-  --palette-950: var(--color-slate-950);
+  --gray-1:  #f7f9fb;
+  --gray-2:  #fbfcfe;
+  --gray-3:  #ecf1f6;
+  --gray-4:  #e3e9f1;
+  --gray-5:  #d9e1eb;
+  --gray-6:  #d1dae6;
+  --gray-7:  #c4d0de;
+  --gray-8:  #aebdcf;
+  --gray-9:  #7d8fa7;
+  --gray-10: #73859e;
+  --gray-11: #54657e;
+  --gray-12: #152034;
+
+  /* Alpha steps — Radix `slateA`, kept as authored. These are low-opacity overlays whose job is to
+     tint whatever is behind them, so the hue only has to be in the right family; see the note beside
+     the alpha scale in theme-base.css for why they are not derived. */
+  --gray-a1:  #00005503;
+  --gray-a2:  #00005506;
+  --gray-a3:  #0000330f;
+  --gray-a4:  #00002d17;
+  --gray-a5:  #0009321f;
+  --gray-a6:  #00002f26;
+  --gray-a7:  #00062e32;
+  --gray-a8:  #00083046;
+  --gray-a9:  #00051d74;
+  --gray-a10: #00071b7f;
+  --gray-a11: #0007149f;
+  --gray-a12: #000509e3;
+}
+
+.dark {
+  --gray-1:  #081023;
+  --gray-2:  #10182c;
+  --gray-3:  #172236;
+  --gray-4:  #1e2a3f;
+  --gray-5:  #243247;
+  --gray-6:  #2c3b51;
+  --gray-7:  #394960;
+  --gray-8:  #506179;
+  --gray-9:  #5e6f89;
+  --gray-10: #6b7c96;
+  --gray-11: #a7b6c9;
+  --gray-12: #e9eff5;
+
+  --gray-a1:  #00000000;
+  --gray-a2:  #d8f4f609;
+  --gray-a3:  #ddeaf814;
+  --gray-a4:  #d3edf81d;
+  --gray-a5:  #d9edfe25;
+  --gray-a6:  #d6ebfd30;
+  --gray-a7:  #d9edff40;
+  --gray-a8:  #d9edff5d;
+  --gray-a9:  #dfebfd6d;
+  --gray-a10: #e5edfd7b;
+  --gray-a11: #f1f7feb5;
+  --gray-a12: #fcfdffef;
 }

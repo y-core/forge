@@ -19,8 +19,7 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 
 - §1 Runtime Boundary: what `ui/client` is and where it may be imported
 - §2 Mount Controllers: the browser controllers and their contracts
-- §2a mountNav — Navigation Controller: menu toggle and active-link marking
-- §2b Theme Controller and FOUC Prevention: where the theme surface actually lives
+- §2b Theme Controller and FOUC Prevention: where the theme surface lives, and what earns a pre-paint script
 - §2c mountTurnstile — CAPTCHA Controller: engagement-gated, self-healing, fails visible
 - §2d The Disposer Contract: every controller returns one, and why
 - §2e mountMenu — Menu Keyboard Behaviour: arrow navigation, typeahead, focus, and the submenu arrows
@@ -29,6 +28,8 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §2h mountNumberField — Stepper Buttons: why its scope is eager
 - §2i openPopoverAt — Coordinate Placement: the popup with no invoker to anchor to
 - §2j mountAnchorBinding — Runtime Invoker Anchoring: the popup whose trigger is known only at runtime
+- §2k mountScrollSpy — Fragment Nav Current Marker: what orders the entries, and what it refuses to emit
+- §2l mountViewportCollapse — Width-Driven Disclosure: which state the server renders, and how the user takes it over
 - §3 Signals and Lazy Loading: client state without a framework
 - §3a Signals — Reactive State: `createSignal`, `computed`, `effect`
 - §3b Lazy Loading Utilities: deferred imports and event-triggered resources
@@ -36,7 +37,7 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §4 htmx Bundle Import: the side-effect entry point
 - §5 Never Use ui/client in an SSR Context: the hard boundary and how it is kept
 - §6 Controller Primitives: the shared internals every controller is built from
-- §6a Owner-Document Utilities: the global reflexes a controller may not reach for, and their node-resolved replacements
+- §6a Owner-Document Utilities: the global reflexes a controller may not reach for, their node-resolved replacements, and which realm hazard is the testable one
 - §6b mountRovingFocus — The Composite Controller: one function over a DOM subtree
 - §6c mountTransitionState — The Transition Protocol: one controller, never per-component
 - §6d mountPopupTriggerState — The Trigger's Own State: `data-popup-open` and its producer
@@ -59,19 +60,15 @@ Every mount controller is **idempotent per element and returns a disposer**, so 
 safe and a controller can be torn down. §2d states that contract as a rule; §6 covers the shared
 primitives the controllers below are built out of.
 
-### 2a. `mountNav` — Navigation Controller
-
-Wires the mobile hamburger toggle and applies active-link highlighting from
-`window.location.pathname`. **Call once per page** from the bundled client entry.
-
 ### 2b. Theme Controller and FOUC Prevention
 
 The theme surface is split across two subpaths, and the split matters:
 
 - **`@y-core/forge/ui/chrome`** (SSR) exports `FOUC_SCRIPT`, `THEME_ATTR`, `DARK_CLASS`,
   `THEME_STORAGE_KEY`, and the `ThemeToggle` component.
-- **`@y-core/forge/ui/chrome/client`** is a **side-effect module** that registers the theme and
-  nav chrome controllers and exports the `isDark` signal.
+- **`@y-core/forge/ui/chrome/client`** is a **side-effect module** that registers the `theme` and
+  `navbar` resumable scopes — the latter applies the bar's runtime auth filtering and drives its
+  viewport collapse (§2l) — and exports the `isDark` signal.
 
 **`FOUC_SCRIPT` is an inline script for `<head>` that reads storage and sets the dark class
 before first paint**, preventing a flash of unstyled content.
@@ -79,6 +76,25 @@ before first paint**, preventing a flash of unstyled content.
 **Its hash must be listed in the CSP `script-src`.** Any *other* server-rendered inline
 `<script>` must instead carry the per-request nonce from `getNonce(c)` — see
 [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §2a.
+
+**A pre-paint inline script is for state the server cannot know, and a second one is not minted for
+state it can.** This is the general rule the theme is the instance of, and it is stated here because
+this is where the precedent lives — any surface that renders one state and corrects it on the client
+is tested against it. The theme passes on every count: its correct value is in `localStorage`, which
+the server cannot read, and the wrong intermediate state is a full-page inversion. The
+viewport-driven disclosure (§2l) passes on none, and therefore gets no equivalent:
+
+- **Its input is knowable at render time in a way the theme's is not.** It needs a `matchMedia` read
+  of a width the stylesheet already responds to, not a storage read no server can perform.
+- **Every inline script is a CSP hash every consumer must carry.** Every page has a theme, so that
+  cost is universal and already paid; a disclosure default is opt-in and off unless asked for, so
+  most consumers would carry a hash for a case they do not have.
+- **Its wrong intermediate state is "navigation visible"** — which is the accessible state and the
+  deliberate no-JS fallback, not a defect.
+
+**The residual is real and is stated rather than hidden:** the correction lands when the app's
+client entry runs, so an app that defers that entry behind a large bundle widens the window in which
+the disclosure shows the state the server rendered.
 
 ### 2c. `mountTurnstile` — CAPTCHA Controller
 
@@ -208,7 +224,7 @@ anchored rule resolves to nothing, and the UA's `[popover]` default (`inset: 0; 
 the panel — the one place a context menu must never be.
 
 `openPopoverAt(el, x, y, options?)` shows the popup with its top-left corner on the point, clamped so
-the whole box stays on screen. Three properties are load-bearing:
+the whole box stays on screen. Four properties are load-bearing:
 
 - **The coordinates go through CSSOM** (`el.style.setProperty`), never a generated `style` attribute.
   Two independent reasons, either sufficient: forge's CSP carries no `style-src 'unsafe-inline'`, so
@@ -220,6 +236,19 @@ the whole box stays on screen. Three properties are load-bearing:
 - **Clamping needs the box, not the point**, so the coordinates are written twice: once before the
   popup is shown, while it still measures zero, and once after. Both in one task, so the browser
   paints the corrected position rather than the provisional one.
+- **A menu opened from `contextmenu` must be held back until the button is released**, or the
+  platform light-dismisses it on the very `pointerup` that ended the right-click. `contextmenu` fires
+  *between* `pointerdown` and `pointerup`, and the dismiss pass on that release compares the popover
+  ancestor of the pointerdown target with the ancestor of the pointerup target: neither is inside a
+  popup — nothing was open when the button went down, and the pointer is over the surface rather than
+  the panel beside it — so the two agree and everything is hidden one event after it was shown. The
+  reader sees a menu that flashes and vanishes. `afterPointerUp` defers the show to a one-shot
+  **capture-phase** `pointerup` on the owner document: the dismiss pass runs ahead of listeners for
+  the same event, so showing there is still inside that one event and before any paint, and the pass
+  finds nothing to dismiss. Callers pass `event.buttons !== 0`, never a flat `true` — a
+  keyboard-raised `contextmenu` (Menu key, `Shift+F10`) reports no buttons and is followed by no
+  release, so an unconditional guard arms a listener that the *next* unrelated click fires. `once`,
+  so a later click still light-dismisses normally.
 
 The popup opts in with `Menu.Popup`'s `coords` prop, which stamps `data-coords` and selects the
 coordinate rule; `openPopoverAt` stamps it too, so a popup that opens both ways needs no second
@@ -265,6 +294,61 @@ publishing `data-popup-open` on the invokers — and conflating the two would be
 They do differ in one visible way: with several invokers for one popup, `mountPopupTriggerState`
 stamps all of them, while `anchor()` resolves against a single element, so this picks the **first in
 document order**.
+
+### 2k. `mountScrollSpy` — Fragment Nav Current Marker
+
+**A fragment nav has no navigation to hang a current marker off.** An on-page table of contents or a
+docs sidebar does not change the URL as the reader scrolls, so nothing server-side can say which
+entry is current — which is the gap between forge's rule that the current destination is always
+indicated and a page whose destinations are all one document.
+
+**Entries are ordered by the *targets'* document position, never by link order.** The ordering is
+computed with `compareDocumentPosition` over the resolved sections. "Which section is being read" is
+a question about the page, and a nav is free to list its links in whatever order reads best — a
+grouped table of contents is very often alphabetical within each group, which is the exact shape
+where link order names the wrong section as current.
+
+**It emits `aria-current` and nothing else, with the value `location` rather than `page`.** The
+visible cue is selected from the attribute directly by the stylesheet, so there is no parallel
+`data-*` state to keep in step, and `page` would announce a navigation that never happened.
+
+**The marker is rewritten from the whole visible set on every callback**, rather than moved from the
+previous holder — so at most one link carries it, and none does while nothing intersects.
+
+**It fails quiet in every direction, and that is safe here specifically**: no links, no resolvable
+target, or a realm without `IntersectionObserver` yields a no-op disposer, and the links are real
+anchors that navigate on their own, so an unmarked nav is still a working one. The disposer clears
+the attribute as well as disconnecting, because a marker that outlived its observer would show two
+current sections until the re-mounted spy's first callback landed.
+
+### 2l. `mountViewportCollapse` — Width-Driven Disclosure
+
+**A `<details>` cannot make its own `open` state depend on viewport width** — no CSS writes that
+property — so the only question left is which state the server renders and which side JavaScript
+corrects. **The server renders open**: with scripting unavailable the navigation is visible, which is
+the accessible answer, so the controller only ever removes something rather than being required to
+add it back. §2b states why that trade-off does not earn a pre-paint script the way the theme does.
+The controller drives the property in both directions while it is in control — collapsed while its
+query matches, expanded while it does not.
+
+**It stops driving the disclosure the moment the user does, for the lifetime of the mount.** A rail
+that slams shut every time a phone rotates is worse than no controller at all. The decision is per
+mount and **deliberately not persisted** — a fresh page load is a fresh question, and a persisted
+override would outlive the situation that produced it.
+
+**The override is tracked by a counter of the controller's own writes, not by comparing state.**
+Every programmatic write fires exactly one `toggle`, in order, so a counter tells the controller's
+changes from the user's without inferring it from the resulting value. A state comparison cannot:
+the user toggling *back* to the value the controller last wrote is still the user deciding, and a
+comparison reads that as the controller's own echo.
+
+**The disposer restores the state it found — unless the user has taken over.** Once they have, what
+is on screen is theirs, and restoring the server's state at teardown would be a second override at
+the worst possible moment.
+
+It fails quiet when the element is absent, is not a disclosure, or the realm has no `matchMedia`, and
+the element is duck-typed on its `open` property rather than through `instanceof` for the
+cross-realm reason §6a gives.
 
 ---
 
@@ -405,7 +489,7 @@ that is invisible in the common case and total in the uncommon one:
 
 | Reflex | What breaks |
 |---|---|
-| bare `document` / `window` | they name the **top-level** realm — a controller mounted in an iframe installs its listeners on the wrong document and silently never fires |
+| bare `document` / `window` | they name the **top-level** realm — a controller mounted in an iframe installs its listeners on a document its element is not in, and reads its platform constructors off a realm that need not have them (below) |
 | `event.target` | retargeted at a shadow boundary: for an event that crossed one it reports the **host**, not the element hit |
 | `document.activeElement` | the same problem in reverse — it stops at the host and never reports the focused item inside an open shadow root |
 | `instanceof HTMLElement` | `false` for an element from another realm, because every realm has its own constructor. It compiles, it type-narrows, and it rejects a perfectly good element |
@@ -416,6 +500,34 @@ The replacements resolve everything **from a node**: the document and window a n
 *deeply* focused element, the real target via `composedPath()`, a duck-typed element narrowing on
 `nodeType`, the resolved writing direction, root-scoped id resolution, and shadow-crossing `closest`
 and `contains`. `src/ui/client/dom.ts` owns that inventory and the hazard each entry closes.
+
+**A platform constructor is read off the resolved window too — but not for the reason it looks
+like.** Intersection geometry is realm-*insensitive*: measured in Chromium, an implicit-root
+`IntersectionObserver` built in the top-level realm and handed an element inside a same-origin
+`srcdoc` iframe fires exactly as one built in the frame's own realm, both stop once the frame
+scrolls out of the **top-level** viewport — the inner realm's implicit root is that same viewport —
+and a `rootMargin` applies identically in either. Two other modes are what make the rule real:
+
+- **A realm may not have the constructor at all.** Off the bare global that is a `ReferenceError`;
+  off the resolved window the same expression doubles as the feature check, so the controller
+  degrades to a no-op disposer instead (§2k, §2l). `src/ui/client/lazy.ts` is the worked example.
+- **Cross-realm retention.** An observer, timer id or media-query list held past the teardown of the
+  realm that minted it outlives its own realm; resolving from the node keeps it in the realm of the
+  element it belongs to.
+
+**Which mode is true decides how the rule can be tested, which is why it is stated rather than left
+as tone.** The obvious regression test — mount into an iframe, assert the observer fires — **passes
+on a revert**, because the geometry does not discriminate. The lever that does is pruning the
+constructor from one realm (`Reflect.deleteProperty(window, "IntersectionObserver")`) and asserting
+which side notices: with the top-level realm pruned the framed element must still load, and with the
+framed realm pruned the mount must be a no-op with `load` never called.
+`src/ui/client/lazy.browser.ts` is that test.
+
+Every controller reaching for a platform constructor takes this shape — `mountScrollSpy`'s observer
+(§2k), the composite's `MutationObserver` (§6b), the `matchMedia` reads in `mountViewportCollapse`
+(§2l) and the theme controller (§2b). Two bare globals are deliberate and not counterexamples: code
+inside a `page.evaluate` fixture already runs in the page realm, and `FOUC_SCRIPT` is an inline
+script string whose subject is the top-level document by design.
 
 **Direction is resolved where it is consumed, never cached at mount.** Reading it forces a style
 recalculation, so a controller resolves it at the keystroke that actually depends on it (§6b) rather

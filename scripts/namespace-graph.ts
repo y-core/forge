@@ -80,6 +80,13 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     jsx: "value",
     "ui/chrome": "value",
     "ui/client": "value",
+    // The theme customiser's colour maths and its scale/dial vocabulary. `ui/contracts` is the one
+    // namespace both `ui/client` and `ui/show` may see, which is why the generator lives there
+    // rather than beside the page that drives it.
+    "ui/contracts": "value",
+    // The bound `Slider` — the customiser's levers are `data-on-input` + `data-field` controls, and
+    // re-deriving that binding here would duplicate `createBoundControl`'s whole purpose.
+    "ui/controls": "value",
     "ui/core": "value",
     "ui/server": "value",
   },

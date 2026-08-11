@@ -9,17 +9,10 @@ function makeDeps(
   overrides: {
     getLatestTag?: (cwd: string, prefix: string) => string | null;
     getCommitsSinceTag?: (cwd: string, tag: string) => string[];
-    getLastCommitMessage?: (cwd: string) => string;
     readPackageVersion?: (cwd: string) => string;
   } = {},
 ) {
-  return {
-    getLatestTag: () => null,
-    getCommitsSinceTag: () => [],
-    getLastCommitMessage: () => "chore: update deps",
-    readPackageVersion: () => "0.0.1",
-    ...overrides,
-  };
+  return { getLatestTag: () => null, getCommitsSinceTag: () => [], readPackageVersion: () => "0.0.1", ...overrides };
 }
 
 describe("resolveVersion() — explicit version", () => {
@@ -74,11 +67,7 @@ describe("resolveVersion() — auto bump", () => {
   it("defaults to patch bump for a plain commit message", () => {
     const result = resolveVersion(
       { cwd: CWD, tagPrefix: PREFIX },
-      makeDeps({
-        getLatestTag: () => "v0.2.0",
-        getCommitsSinceTag: () => ["abc1234 fix: something"],
-        getLastCommitMessage: () => "fix: something",
-      }),
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["abc1234 fix: something"] }),
     );
     expect(result).toEqual({ version: "0.2.1", reason: "auto-patch", previous: "v0.2.0" });
   });
@@ -86,11 +75,7 @@ describe("resolveVersion() — auto bump", () => {
   it("bumps minor for a commit message starting with 'minor:'", () => {
     const result = resolveVersion(
       { cwd: CWD, tagPrefix: PREFIX },
-      makeDeps({
-        getLatestTag: () => "v0.2.0",
-        getCommitsSinceTag: () => ["abc1234 minor: add feature"],
-        getLastCommitMessage: () => "minor: add feature",
-      }),
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["abc1234 minor: add feature"] }),
     );
     expect(result).toEqual({ version: "0.3.0", reason: "auto-minor", previous: "v0.2.0" });
   });
@@ -98,13 +83,59 @@ describe("resolveVersion() — auto bump", () => {
   it("bumps major for a commit message starting with 'major:'", () => {
     const result = resolveVersion(
       { cwd: CWD, tagPrefix: PREFIX },
-      makeDeps({
-        getLatestTag: () => "v0.2.0",
-        getCommitsSinceTag: () => ["abc1234 major: breaking change"],
-        getLastCommitMessage: () => "major: breaking change",
-      }),
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["abc1234 major: breaking change"] }),
     );
     expect(result).toEqual({ version: "1.0.0", reason: "auto-major", previous: "v0.2.0" });
+  });
+
+  // The regression this range scan exists for. Reading only the tip subject — `chore: c` — resolved
+  // a patch and silently discarded the major bump sitting one commit behind it.
+  it("bumps major when 'major:' is on a non-tip commit in the range", () => {
+    const result = resolveVersion(
+      { cwd: CWD, tagPrefix: PREFIX },
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["aaa1111 chore: c", "bbb2222 major: b", "ccc3333 fix: a"] }),
+    );
+    expect(result).toEqual({ version: "1.0.0", reason: "auto-major", previous: "v0.2.0" });
+  });
+
+  it("bumps minor when 'minor:' is on a non-tip commit in the range", () => {
+    const result = resolveVersion(
+      { cwd: CWD, tagPrefix: PREFIX },
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["aaa1111 fix typo", "bbb2222 minor: add feature"] }),
+    );
+    expect(result).toEqual({ version: "0.3.0", reason: "auto-minor", previous: "v0.2.0" });
+  });
+
+  it("takes the highest bump when the range holds both 'major:' and 'minor:'", () => {
+    const result = resolveVersion(
+      { cwd: CWD, tagPrefix: PREFIX },
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["aaa1111 minor: b", "bbb2222 major: a"] }),
+    );
+    expect(result).toEqual({ version: "1.0.0", reason: "auto-major", previous: "v0.2.0" });
+  });
+
+  it("strips exactly one sha token, so a subject opening with a hex word still scans", () => {
+    const result = resolveVersion(
+      { cwd: CWD, tagPrefix: PREFIX },
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["abc1234 deadbeef major: x"] }),
+    );
+    expect(result).toEqual({ version: "0.2.1", reason: "auto-patch", previous: "v0.2.0" });
+  });
+
+  it("stays a patch when the whole range carries no bump prefix", () => {
+    const result = resolveVersion(
+      { cwd: CWD, tagPrefix: PREFIX },
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["aaa1111 chore: c", "bbb2222 docs: b", "ccc3333 fix: a"] }),
+    );
+    expect(result).toEqual({ version: "0.2.1", reason: "auto-patch", previous: "v0.2.0" });
+  });
+
+  it("ignores a bump prefix that is not at the start of the subject", () => {
+    const result = resolveVersion(
+      { cwd: CWD, tagPrefix: PREFIX },
+      makeDeps({ getLatestTag: () => "v0.2.0", getCommitsSinceTag: () => ["aaa1111 revert major: breaking change"] }),
+    );
+    expect(result).toEqual({ version: "0.2.1", reason: "auto-patch", previous: "v0.2.0" });
   });
 
   it("throws invalid-version when the tag version can't be parsed", () => {

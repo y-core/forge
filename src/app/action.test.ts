@@ -33,7 +33,7 @@ function post(app: Requestable, body: string, path = "/test"): Promise<Response>
  */
 function refusal(...fields: readonly string[]): string {
   const items = fields.map((field) => `<li>${field}</li>`).join("");
-  return `<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5">${items}</ul></div>`;
+  return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5">${items}</ul></div>`;
 }
 
 let savedFetch: typeof globalThis.fetch | undefined;
@@ -79,7 +79,7 @@ describe("defineAction", () => {
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: "name=" });
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
     );
   });
 
@@ -201,7 +201,7 @@ describe("defineAction", () => {
 
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
     );
   });
 
@@ -273,7 +273,7 @@ describe("defineAction — a throwing schema or hook", () => {
     const res = await post(app, "payload=notjson");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Something went wrong. Please try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
     );
   });
 
@@ -311,7 +311,7 @@ describe("defineAction — a throwing schema or hook", () => {
     // The body, not just the status: the app-level error boundary also answers 500, so a
     // status-only assertion would pass whether or not the pipeline caught the throw at all.
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Something went wrong. Please try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
     );
   });
 
@@ -377,7 +377,7 @@ describe("defineAction — a throwing schema or hook", () => {
     const res = await post(app, "name=");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Something went wrong. Please try again.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
     );
   });
 
@@ -1017,7 +1017,7 @@ describe("defineAction — the one refusal", () => {
 
   it("renders exactly this markup, which is the literal every other case here is asserted against", () => {
     expect(refusal("name")).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>name</li></ul></div>',
     );
   });
 

@@ -41,7 +41,7 @@ function post(app: Requestable, body: string, path = "/test"): Promise<Response>
  * caught it" from "the framework caught it".
  */
 const ACTION_500_FRAGMENT =
-  '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Something went wrong. Please try again.</p></div>';
+  '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>';
 
 /** Captures the structured log lines written while `run` executes. */
 async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {

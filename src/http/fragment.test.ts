@@ -4,13 +4,13 @@ import { renderError, renderSuccess, renderValidationErrors } from "./fragment";
 describe("renderSuccess", () => {
   it("produces the expected default HTML", () => {
     expect(String(renderSuccess("Thanks for reaching out."))).toBe(
-      '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-success><p>Thanks for reaching out.</p></div>',
+      '<div class="rounded-2xl border border-status-success-border bg-status-success-subtle px-4 py-3 text-sm text-status-success-subtle-foreground" data-success><p>Thanks for reaching out.</p></div>',
     );
   });
 
   it("HTML-encodes the message", () => {
     expect(String(renderSuccess("It's done & <verified>"))).toBe(
-      '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-success><p>It&#39;s done &amp; &lt;verified&gt;</p></div>',
+      '<div class="rounded-2xl border border-status-success-border bg-status-success-subtle px-4 py-3 text-sm text-status-success-subtle-foreground" data-success><p>It&#39;s done &amp; &lt;verified&gt;</p></div>',
     );
   });
 
@@ -22,7 +22,7 @@ describe("renderSuccess", () => {
   it("accepts a custom successAttr", () => {
     const html = String(renderSuccess("OK", { successAttr: "data-status" }));
     expect(html).toBe(
-      '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-status><p>OK</p></div>',
+      '<div class="rounded-2xl border border-status-success-border bg-status-success-subtle px-4 py-3 text-sm text-status-success-subtle-foreground" data-status><p>OK</p></div>',
     );
   });
 
@@ -44,7 +44,7 @@ describe("renderSuccess", () => {
 
   it("matches exact output consumed by worker tests", () => {
     expect(String(renderSuccess("Thanks. We'll review your note and get back to you soon."))).toBe(
-      '<div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-success><p>Thanks. We&#39;ll review your note and get back to you soon.</p></div>',
+      '<div class="rounded-2xl border border-status-success-border bg-status-success-subtle px-4 py-3 text-sm text-status-success-subtle-foreground" data-success><p>Thanks. We&#39;ll review your note and get back to you soon.</p></div>',
     );
   });
 });
@@ -52,13 +52,13 @@ describe("renderSuccess", () => {
 describe("renderError", () => {
   it("produces the expected default HTML", () => {
     expect(String(renderError("Something went wrong."))).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Something went wrong.</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong.</p></div>',
     );
   });
 
   it("HTML-encodes the message", () => {
     expect(String(renderError("<b>Bad</b> input"))).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>&lt;b&gt;Bad&lt;/b&gt; input</p></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>&lt;b&gt;Bad&lt;/b&gt; input</p></div>',
     );
   });
 
@@ -71,7 +71,7 @@ describe("renderError", () => {
 describe("renderValidationErrors", () => {
   it("renders a list of errors", () => {
     expect(String(renderValidationErrors(["Name is required.", "Email is invalid."]))).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>Name is required.</li><li>Email is invalid.</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>Name is required.</li><li>Email is invalid.</li></ul></div>',
     );
   });
 
@@ -85,7 +85,7 @@ describe("renderValidationErrors", () => {
   it("renders an empty list when no errors are passed", () => {
     const html = String(renderValidationErrors([]));
     expect(html).toBe(
-      '<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"></ul></div>',
     );
   });
 

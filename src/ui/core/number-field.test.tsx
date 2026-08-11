@@ -14,7 +14,7 @@ import { NumberField } from "./number-field";
 
 const INPUT_BASE =
   "w-20 rounded-md border border-input bg-background px-2 py-1 text-sm tabular-nums text-foreground " +
-  "focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 const BUTTON_BASE =
   "inline-flex size-8 items-center justify-center rounded-md border border-input bg-background " +
@@ -107,7 +107,7 @@ describe("NumberField.Input", () => {
   it("merges a caller class and appends an inherited slot token", async () => {
     expect(await render(<NumberField.Input class='w-32' data-slot='quantity-input' />)).toBe(
       '<input type="number" data-slot="number-field-input quantity-input" class="rounded-md border border-input bg-background ' +
-        "px-2 py-1 text-sm tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-ring " +
+        "px-2 py-1 text-sm tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
         'disabled:cursor-not-allowed disabled:opacity-50 w-32">',
     );
   });

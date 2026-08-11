@@ -3,6 +3,7 @@
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { COLLAPSIBLE_SCOPE } from "../contracts/toggle-contract";
+import type { ForgeIcon } from "./icon";
 import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
@@ -12,6 +13,7 @@ interface CollapsibleRootProps extends Omit<JSX.IntrinsicElements["details"], "c
 }
 
 interface CollapsibleTriggerProps extends Omit<JSX.IntrinsicElements["summary"], "children"> {
+  icon: ForgeIcon;
   children?: JSXNode;
 }
 
@@ -36,13 +38,13 @@ const CollapsibleRoot: FC<CollapsibleRootProps> = ({ open = false, class: cls, c
     data-scope={COLLAPSIBLE_SCOPE}
     {...(open ? { open } : {})}
     {...stateAttrs({ open })}
-    class={cn("group/collapsible", asClass(cls))}
+    class={cn("group/collapsible-item", asClass(cls))}
     {...rest}>
     {children}
   </details>
 );
 
-const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ icon: Icon, class: cls, children, "data-slot": inherited, ...rest }) => (
   <summary
     data-slot={slotToken("collapsible-trigger", inherited)}
     class={cn(
@@ -51,7 +53,12 @@ const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ class: cls, children,
       asClass(cls),
     )}
     {...rest}>
-    {children}
+    <span class='flex-1 pl-1'>{children}</span>
+    <Icon
+      name='chevron-down'
+      viewBox='0 0 24 24'
+      class='size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open/collapsible-item:rotate-180'
+    />
   </summary>
 );
 
@@ -64,9 +71,12 @@ const CollapsiblePanel: FC<CollapsiblePanelProps> = ({ class: cls, children, "da
 /**
  * Compound disclosure on native `<details>`.
  *
+ * Icon-agnostic — inject the app's sprite-bound `ForgeIcon` via `Collapsible.Trigger`'s `icon`
+ * prop; the sprite URL never leaks into this component.
+ *
  * ```tsx
  * <Collapsible>
- *   <Collapsible.Trigger>Advanced</Collapsible.Trigger>
+ *   <Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>
  *   <Collapsible.Panel>…</Collapsible.Panel>
  * </Collapsible>
  * ```

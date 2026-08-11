@@ -20,7 +20,7 @@ describe("Popover", () => {
 
 /**
  * `data-slot` is a token list. `Popover.Trigger` composes an inherited token with its own rather than
- * letting `{...props}` replace it — the token `theme-base.css` keys `anchor-name: --forge-popover` and
+ * letting `{...props}` replace it — the token `forge-ui.css` keys `anchor-name: --forge-popover` and
  * the `[data-slot~="tooltip-trigger"][data-slot~="popover-trigger"]` pair rule on. The composed case
  * is in `utils/as-child.test.tsx`; this is the mechanism reached directly.
  */

@@ -6,7 +6,7 @@ import { asClass } from "./utils/cn";
 import { cva } from "./utils/cva";
 
 export interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "ghost" | "destructive";
   size?: "sm" | "md" | "lg" | "icon" | "icon-sm" | "square";
   asChild?: boolean;
   children?: JSXNode;
@@ -30,13 +30,14 @@ export const buttonVariants = cva({
       primary: "bg-primary text-primary-foreground hover:bg-primary/90",
       secondary: "border border-input text-foreground hover:bg-accent",
       ghost: "text-foreground hover:bg-accent",
+      destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
     },
     size: {
       sm: "h-8 px-3 text-sm",
       md: "h-10 px-4 text-sm",
       lg: "h-12 px-6 text-base",
       icon: "size-9 p-0",
-      "icon-sm": "size-[34px] p-0",
+      "icon-sm": "size-8 p-0",
       square: "w-full aspect-square p-0",
     },
   },

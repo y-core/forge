@@ -17,7 +17,7 @@
 - ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
 - ALWAYS run local verification after changes — **delegate every gate run to `cc-tester`** (see _Verification Delegation_)
 - ALWAYS report a command's exit status with the one canonical suffix — never a variant (see _Shell Exit Checks_)
-- ALWAYS reach the ledger over MCP, and never work from a remembered copy of the protocol — fetch `get_protocol` or `get_process` when one would settle the question in front of you (see _Ledger Maintenance_)
+- ALWAYS reach the ledger over MCP, and never work from a remembered copy of its rules — the tool descriptions and the refusals carry them, and a refusal is acted on rather than guessed past (see _Ledger Maintenance_)
 - Use `rg` for content search and `find` for file search
 
 ---
@@ -84,24 +84,29 @@ not an omission.
 ### Ledger Maintenance
 
 **Forge's work is tracked in the task-forge ledger, and the MCP tools are the only way in.**
-`.mcp.json` connects it as `ledger`, and this repository is the `forge` project inside it. `cc-plan`,
-`cc-dev`, `cc-test` and `cc-doc` each own the ledger entry for the work they carry, and every move
-goes through those tools — never through a text editor. `cc-tester` is the one exception: it runs
-gates and has **no ledger tools at all**, because a green gate is not by itself a decision that a
-task is done. A docs-only change runs no gate, so the doc edit is its own evidence.
+`.mcp.json` connects it as `ledger`, and **scope is a property of that url**: it points at
+`/mcp/forge`, so reads and the create tools file in this repository's ledger. No tool takes a
+`project` argument, and ids and epic names are globally unique — so a tool handed one reaches any
+ledger. `cc-plan`, `cc-dev`, `cc-test` and `cc-doc` each own the ledger entry for the work they
+carry, and every move goes through those tools — never through a text editor. `cc-tester` is the one
+exception: it runs gates and has **no ledger tools at all**, because a green gate is not by itself a
+decision that a task is done. A docs-only change runs no gate, so the doc edit is its own evidence.
 
-**Call `get_protocol` or `get_process` when there is something it would settle — when a refusal
-cites a rule you do not hold, or before an operation you have not performed in this session — and
-work from what it returns rather than from a remembered copy.** Neither is fetched up front. They
-are the two largest documents the ledger serves, and a lifecycle of isolated contexts pays for them
-once per agent whether or not the work ever needs them. Deferring costs nothing because the recovery
-path is already load-bearing: a refusal quotes the `rule` it applied and the `requires` it failed,
-and `check_transition` answers a hypothetical without touching the database — so no agent is ever
-stuck for want of a document it did not prefetch.
+**There is no protocol document to fetch.** Every rule the ledger enforces is carried by the tool
+descriptions and the refusals, and arrives at the moment it is needed rather than being prefetched
+against the chance it might be. A refusal names the `rule` it applied, the `requires` that would
+satisfy it, and whether it is `retryable`; a validation refusal also carries the `bounds` it held the
+argument to. So act on the payload rather than guessing past it — the refusal is the teaching
+channel, not merely a diagnosis.
 
-Nothing they return is restated here — the protocol is the one document where a
-second copy is indistinguishable from a rule change, because a stale paragraph and an amended rule
-read identically and the reader cannot tell which they are holding.
+The working rhythm the connection states: move a task to `doing` when you start it, then call again
+only when its state actually changed — never to narrate progress. A read carries the `revision` a
+later edit must cite, so read before you write. Record the resolution with, or before, the move to
+`done`.
+
+None of it is restated here. These rules are the case where a second copy is indistinguishable from a
+rule change, because a stale paragraph and an amended rule read identically and the reader cannot
+tell which they are holding.
 
 ---
 
@@ -142,6 +147,7 @@ doc via the **Guide Index** — never duplicate that detail here.
 - [`STORAGE_BINDINGS.md`](.decisions/STORAGE_BINDINGS.md): D1, KV, and R2 clients, the resolve/validate binding pattern, dev degradation
 - [`UI_SSR_COMPONENTS.md`](.decisions/UI_SSR_COMPONENTS.md): the `ui/core` component contract, `ui/controls` bound variants, the signal-binding seam, `cn`/`asClass`/`cva`
 - [`UI_CLIENT_RUNTIME.md`](.decisions/UI_CLIENT_RUNTIME.md): browser-only mount controllers, signals, lazy loading, the htmx side-effect import, and the hard SSR boundary
+- [`UI_DESIGN_GUIDANCE.md`](.decisions/UI_DESIGN_GUIDANCE.md): the `src/ui/design/` corpus — its Floor/Defaults tiers, the stable `forge-ui-` rule-id scheme, the anti-drift gate contract, the three-way doc boundary, and the dial defaults
 - [`ASSET_AND_BUILD_TOOLING.md`](.decisions/ASSET_AND_BUILD_TOOLING.md): the asset pipeline, the content-hash manifest, the CLI framework, release tooling
 - [`TESTING.md`](.decisions/TESTING.md): test placement, HTML-entity exact-match assertions, fakes over mocks, security-test requirements, the gate
 - [`CODE_REVIEW.md`](.decisions/CODE_REVIEW.md): blocking invariants, a detection command per rule, severity calibration, known false positives
@@ -161,3 +167,4 @@ never duplicate a capability that already exists.
 | Browser controller, signal, or lazy-loaded resource | `ui/client` — never imported from a Worker-executed file | `UI_CLIENT_RUNTIME.md` §5 |
 | Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | `NAMESPACE_DESIGN.md` §5c |
 | HTTP output concern (response builders, header classes, HTML escaping, streaming) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | `NAMESPACE_DESIGN.md` §5d |
+| Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `.decisions/` | `UI_DESIGN_GUIDANCE.md` §5a |

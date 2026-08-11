@@ -18,6 +18,17 @@ const mounted = new WeakMap<HTMLElement, () => void>();
 const ref = (name: string, doc: Document) => doc.querySelector<HTMLElement>(`[data-ref='${CSS.escape(name)}']`);
 
 /**
+ * Whether Cloudflare's API is actually present, asked as a capability rather than as truthiness.
+ *
+ * `window.turnstile` is not a name the page owns: the DOM exposes every element with `id="turnstile"`
+ * as a window property of that name, so a page holding an anchor or a section called `turnstile`
+ * answers a truthy `HTMLElement` here. Reading truthiness would then take the "already loaded" path,
+ * find no `render` on an element, and reveal the fallback on a widget whose script was never even
+ * requested.
+ */
+const hasApi = (win: Window): win is Window & { turnstile: TurnstileAPI } => typeof win.turnstile?.render === "function";
+
+/**
  * Mounts a resilient Cloudflare Turnstile controller for the `<Turnstile>` widget (`ui/core`) and
  * returns a cleanup function. Idempotent: a second call for the same widget returns the existing
  * cleanup. No-ops (returns a no-op cleanup) when no `[data-ref='turnstile']` widget, or its
@@ -91,7 +102,7 @@ export function mountTurnstile(within?: Node): () => void {
     // A capability check against a third-party global, NOT a realm check — Cloudflare's script may
     // simply not have defined `render` yet. `ownerWindow` has no bearing on it; the only thing that
     // changes is which realm's global is asked.
-    if (typeof win.turnstile?.render !== "function") {
+    if (!hasApi(win)) {
       showFallback();
       return;
     }
@@ -116,7 +127,7 @@ export function mountTurnstile(within?: Node): () => void {
     if (loadStarted) return;
     loadStarted = true;
 
-    if (win.turnstile) {
+    if (hasApi(win)) {
       renderWidget();
       return;
     }
@@ -124,7 +135,7 @@ export function mountTurnstile(within?: Node): () => void {
     if (doc.querySelector(`script[src="${CSS.escape(TURNSTILE_SCRIPT_SRC)}"]`)) {
       // Script already in flight from elsewhere — wait for the API, then render.
       pollId = win.setInterval(() => {
-        if (win.turnstile) {
+        if (hasApi(win)) {
           // Both handles: the giving-up timeout has no work left once the poll has succeeded, and
           // leaving it pending holds this closure alive for the rest of the timeout budget.
           clearTimers();

@@ -200,8 +200,11 @@ test.describe("chrome Toolbar — the scope on the rail is transparent to app ac
  *
  * The stylesheet loads raw, so no Tailwind utility resolves and the fixture sizes the rail and the
  * flyout with an explicit `<style>`.
+ *
+ * `forge-ui.css` is the only sheet needed: the toolbar's `anchor-name` / `position-anchor`
+ * pair and its four `data-placement` rules are all there, and every assertion below is a box.
  */
-const PLACEMENT_CSS = { css: ["./ui/assets/css/theme-base.css"], expose: EXPOSE.expose };
+const PLACEMENT_CSS = { css: ["./ui/assets/css/forge-ui.css"], expose: EXPOSE.expose };
 
 /** The rail sits well inside the viewport on every axis, so a flyout fits on **either** side of it.
  * Too close to an edge and `position-try-fallbacks: flip-inline` correctly moves the panel to the

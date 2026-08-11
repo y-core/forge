@@ -18,6 +18,74 @@ export function readPackageVersion(cwd: string): string {
   }
 }
 
+/**
+ * The repository's base URL for compare links, normalised — `git+` prefix and `.git` suffix
+ * stripped — or `null` when `package.json` carries no usable `repository` field.
+ *
+ * `null` rather than an error: a consumer whose package omits the field still gets a valid
+ * promotion, just without the link reference definition. Deriving the URL from
+ * `git remote get-url origin` was the alternative and was rejected — it breaks in a clone with a
+ * renamed remote, and it would put a subprocess call on a path that is otherwise pure metadata.
+ *
+ * @param cwd - Directory holding `package.json`.
+ * @public
+ */
+export function readRepositoryUrl(cwd: string): string | null {
+  const pkgPath = resolve(cwd, "package.json");
+  let parsed: { repository?: unknown };
+  try {
+    parsed = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { repository?: unknown };
+  } catch {
+    return null;
+  }
+  const repo = parsed.repository;
+  const raw = typeof repo === "string" ? repo : typeof repo === "object" && repo !== null ? (repo as { url?: unknown }).url : undefined;
+  if (typeof raw !== "string" || raw === "") return null;
+  return raw.replace(/^git\+/, "").replace(/\.git$/, "");
+}
+
+/**
+ * Reads the changelog, or returns `null` when it does not exist.
+ *
+ * Absence is a valid state — `createReleaseCommand` is library API and a consumer without a
+ * changelog must keep releasing — so only a genuine read failure raises.
+ *
+ * @param cwd - Repository root.
+ * @param file - Changelog path relative to `cwd`.
+ * @public
+ */
+export function readChangelog(cwd: string, file: string): string | null {
+  const path = resolve(cwd, file);
+  if (!fs.existsSync(path)) return null;
+  try {
+    return fs.readFileSync(path, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new ReleaseError("pkg-update", `Failed to read ${file}: ${msg}`);
+  }
+}
+
+/**
+ * Writes `source` to the changelog verbatim.
+ *
+ * No trailing-newline normalisation: `promoteUnreleased` round-trips the document byte-for-byte
+ * outside the lines it changes, and adding one here would put a spurious hunk in every release
+ * diff for a file that has never ended in a newline.
+ *
+ * @param cwd - Repository root.
+ * @param file - Changelog path relative to `cwd`.
+ * @param source - The promoted document.
+ * @public
+ */
+export function writeChangelog(cwd: string, file: string, source: string): void {
+  try {
+    fs.writeFileSync(resolve(cwd, file), source, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new ReleaseError("pkg-update", `Failed to write ${file}: ${msg}`);
+  }
+}
+
 export function updatePackageVersion(version: string, cwd: string): void {
   const pkgPath = resolve(cwd, "package.json");
   let raw: string;

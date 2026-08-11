@@ -4,6 +4,20 @@
  * No dependencies — implements the OKLab transform from Björn Ottosson's spec plus
  * CSS Color 4 chroma-reduction gamut mapping. Used by the cursor bake step to turn
  * design-token colour literals into concrete hex values embedded in cursor SVGs.
+ *
+ * ## The second copy, and why it is not this one
+ *
+ * `src/ui/contracts/color.ts` implements the same transform and the same gamut mapping, for the
+ * theme customiser. That is a deliberate exception to the never-duplicate-a-capability rule, taken
+ * because the namespace graph leaves no shared home: `EDGES` in `scripts/namespace-graph.ts` grants
+ * this namespace only a type-only edge to `assets`, and `ui/contracts` is reachable from
+ * `ui/client` and `ui/show` — so neither module can import the other without wiring the browser
+ * runtime to the build pipeline. Extending the maths here means extending it there too.
+ *
+ * The two are held together by `src/ui/contracts/color.test.ts`, which imports **both** and asserts
+ * they agree across a sample of the oklch space. Tests are outside the namespace-graph parse, so
+ * that test can cross the boundary this source cannot, and drift fails the gate rather than going
+ * unnoticed.
  */
 
 const GAMUT_EPSILON = 1e-4;

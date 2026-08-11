@@ -27,6 +27,44 @@ describe("ShowcaseContent", () => {
     expect(out).toContain("UI Component Showcase");
   });
 
+  it("renders the table of contents as a navbar rail, one group per band", async () => {
+    const out = await page();
+    const groups = out.split('data-slot="navbar-group"').length - 1;
+    const bands = new Set(SECTIONS.map((section) => section.group));
+    // The rail is one section holding one group per band; a band that stopped rendering would take
+    // its entries off the page with it while every other assertion here still passed.
+    expect(groups).toBe(bands.size);
+    expect(out).toContain('aria-label="Component catalog"');
+  });
+
+  it("links every catalog entry from the rail", async () => {
+    const out = await page();
+    const unlinked = SECTIONS.filter((section) => !out.includes(`href="#${section.id}"`)).map((section) => section.id);
+    // The completeness contract, on the navigation side: a section nothing links to is one nobody
+    // reaches, whatever the catalog below says.
+    expect(unlinked).toEqual([]);
+  });
+
+  it("sizes the rail on the flex item, not on the navbar inside it", async () => {
+    const out = await page();
+    // The scope root is the flex item, so the rail's width, shrink and border live on its open tag —
+    // and so does the collapsed shape, which is width, cross-axis alignment and border together: a
+    // closed rail is the toggle's own box and nothing else.
+    const scopeRoot = out.match(/<div data-scope="show-toc"[^>]*>/)?.[0];
+    expect(scopeRoot).toBe(
+      '<div data-scope="show-toc" class="w-64 shrink-0 border-r border-border has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-r-0">',
+    );
+
+    // …and not on the navbar, which is a descendant of the box being laid out and sizes nothing.
+    const navbarTag = out.match(/<[a-z]+[^>]*\sid="showcase-toc"[^>]*>/)?.[0];
+    // Without this the two assertions below would pass vacuously on an empty class list.
+    expect(navbarTag).toBeDefined();
+    const navbarClasses = navbarTag?.match(/\sclass="([^"]*)"/)?.[1]?.split(/\s+/) ?? [];
+    expect(navbarClasses.length).toBeGreaterThan(0);
+    expect(navbarClasses).not.toContain("w-64");
+    expect(navbarClasses).not.toContain("shrink-0");
+  });
+
   it("includes the static catalog, HTMX demos, theme and resumable sections", async () => {
     const out = await page();
     expect(out).toContain('id="button"');

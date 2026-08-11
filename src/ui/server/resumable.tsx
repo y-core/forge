@@ -12,6 +12,10 @@ export interface ResumableProps {
   id?: string;
   /** Serializable initial state, rehydrated into signals on first interaction. */
   state?: Record<string, unknown>;
+  /** Classes for the scope root, which is a real box in its parent's layout — in a flex row it is
+   * the flex item. Width, `shrink` and border belong here rather than on the component inside,
+   * which is only a descendant of the box being laid out. */
+  class?: string;
 }
 
 /**
@@ -20,8 +24,12 @@ export interface ResumableProps {
  * descendant carrying a `data-on-<event>` attribute, rebuilding `state` into signals.
  * @public
  */
-export const Resumable: FC<ResumableProps> = ({ name, id, state, children }) => (
-  <div data-scope={name} {...(id !== undefined ? { id } : {})} data-state={state ? JSON.stringify(state) : undefined}>
+export const Resumable: FC<ResumableProps> = ({ name, id, state, class: cls, children }) => (
+  <div
+    data-scope={name}
+    {...(id !== undefined ? { id } : {})}
+    data-state={state ? JSON.stringify(state) : undefined}
+    {...(cls !== undefined ? { class: cls } : {})}>
     {children}
   </div>
 );

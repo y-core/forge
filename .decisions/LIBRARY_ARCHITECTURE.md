@@ -83,8 +83,17 @@ exactly the transport hardening code and nothing else. Consumers assemble what t
 **Never `process.env`, `require()`, `Bun.*`, or a Node.js built-in** (`node:fs`, `node:path`,
 `node:crypto`) in a source file.
 
-Build-time tooling under `src/**/cli/**` and `scripts/` is exempt — it runs on the developer's
-machine, never in a Worker.
+**Build-time and release tooling is exempt** — it runs on a developer's machine or in CI, never
+inside a Worker.
+
+**The exemption is reachability, not a directory glob.** A module qualifies when no
+Worker-executed entry point reaches it; a path is evidence of that, never the rule itself.
+`scripts/` and `src/**/cli/**` are wholly build-time, and so are the asset pipeline and the
+release tooling — [`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) owns that surface
+and names the namespaces it covers. Where a namespace's surface is mixed, the exemption reaches
+the build-time modules alone and the burden sits on the **caller**: such a helper is imported
+from an `assets.config.ts` or a script, never from a Worker-executed path. A namespace a Worker
+does execute is never exempt, however tooling-shaped it looks.
 
 ---
 

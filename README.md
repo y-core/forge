@@ -145,6 +145,8 @@ Quick one-line orientation for each namespace — see the linked README for comp
 
 **[`@y-core/forge/ui/core`](src/ui/README.md)** — JSX component library (`Alert`, `Button`, `Card`, `Field`, `Form`, `Input`, …); `ui/controls`: pre-bound signal-binding wrappers (`Switch`, `Slider`, `Select`, `ToggleGroup`); `ui/assets`: `forgeUiSpriteSources()` manifest for forge's 7 icon glyphs; `ui/client`: signals + island hydration; `ui/chrome`: SSR Navbar/Toolbar/ThemeToggle; `ui/contracts`: the DOM contract (scopes, state attrs, selectors) shared by both halves; `ui/server`: SSR Flash/Resumable. Each is its own subpath; there is no aggregate `ui` barrel.
 
+**Design corpus** — `src/ui/design/` ships inside the package as plain markdown teaching which component to reach for and what good looks like, as distinct from how to call one; see [src/ui/README.md](src/ui/README.md) for how to load it and [UI_DESIGN_GUIDANCE.md](.decisions/UI_DESIGN_GUIDANCE.md) for its rule scheme.
+
 **[`@y-core/forge/validation`](src/validation/README.md)** — the `v` valibot namespace + `ValidationResult<T>`; `validation/cli` generates typed Cloudflare env declarations from `wrangler.jsonc` (`forge-cfgen` bin).
 
 ---
@@ -172,3 +174,9 @@ bun run check               # typecheck (tsgo) + lint (biome) + tests + validate
 ```
 
 Type checking uses `tsgo` (`@typescript/native-preview`). `validate-exports` verifies, in both directions, that every barrel export resolves at runtime **and** that every `@public`-tagged source symbol is re-exported from its namespace barrel.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE). This covers everything the package ships, including the design corpus in `src/ui/design/`.

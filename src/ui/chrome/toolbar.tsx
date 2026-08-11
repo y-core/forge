@@ -141,7 +141,7 @@ const railVariants = cva({
 });
 
 const FLYOUT_CLS = "min-w-52 p-2 pb-2.5 rounded-xl border border-border bg-popover text-popover-foreground shadow-md";
-const FLYOUT_TITLE_CLS = "text-[11px] font-semibold text-muted-foreground uppercase tracking-wider pt-0.5 pb-1.5 px-0.5";
+const FLYOUT_TITLE_CLS = "text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-0.5 pb-1.5 px-0.5";
 const FLYOUT_BODY_CLS = "flex flex-col items-stretch gap-3.5 pt-1 pb-0.5 px-0.5 max-h-[60vh] overflow-y-auto";
 
 function isVerticalPlacement(placement: ToolbarPlacement): boolean {

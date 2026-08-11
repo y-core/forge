@@ -53,19 +53,30 @@ describe("liveSearch", () => {
 });
 
 describe("inlineValidation", () => {
-  it("defaults: swap=outerHTML, trigger=change+blur, sync=closest form", () => {
+  it("defaults: swap=outerHTML, trigger=change+blur, sync=this", () => {
     const attrs = inlineValidation({ get: "/validate", target: "#field" });
     expect(attrs["hx-get"]).toBe("/validate");
     expect(attrs["hx-swap"]).toBe("outerHTML");
     expect(attrs["hx-trigger"]).toBe("change delay:200ms, blur");
-    expect(attrs["hx-sync"]).toBe("closest form:abort");
+    expect(attrs["hx-sync"]).toBe("this:abort");
+  });
+
+  it("keeps the default sync form-independent, so a field outside a form still resolves", () => {
+    const attrs = inlineValidation({ get: "/validate", target: "#field" });
+    expect(attrs).toEqual({
+      "hx-get": "/validate",
+      "hx-target": "#field",
+      "hx-swap": "outerHTML",
+      "hx-trigger": "change delay:200ms, blur",
+      "hx-sync": "this:abort",
+    });
   });
 
   it("overrides all defaults", () => {
-    const attrs = inlineValidation({ get: "/v", target: "#t", swap: "innerHTML", trigger: "input", sync: "this:abort" });
+    const attrs = inlineValidation({ get: "/v", target: "#t", swap: "innerHTML", trigger: "input", sync: "closest form:abort" });
     expect(attrs["hx-swap"]).toBe("innerHTML");
     expect(attrs["hx-trigger"]).toBe("input");
-    expect(attrs["hx-sync"]).toBe("this:abort");
+    expect(attrs["hx-sync"]).toBe("closest form:abort");
   });
 });
 

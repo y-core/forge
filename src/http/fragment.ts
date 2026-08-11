@@ -10,8 +10,20 @@ export interface FragmentOptions {
   ulClass?: string;
 }
 
-const SUCCESS_CLASSES = "rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900";
-const ERROR_CLASSES = "rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900";
+/* These two mirror `Alert`'s root classes plus its `success` and `destructive` variants, from
+   `src/ui/core/alert.tsx` — deliberately duplicated rather than imported. `http` is a declared leaf
+   namespace (`scripts/namespace-graph.ts:41`), so an `http → ui/core` edge would invert the graph
+   and fail `validate-namespace-graph`.
+
+   The duplication is now only of *utility names*, not of colour decisions: both files reach the same
+   `--status-*` tokens, so the two cannot disagree about what a success banner looks like even though
+   neither can import the other. Before this they each spelled out six palette stops, and keeping them
+   in step was a comment's job. Keep the two in step — when `alert.tsx`'s variant strings change,
+   these change with them — but a drift now costs a class name rather than a mismatched hue. */
+const SUCCESS_CLASSES =
+  "rounded-2xl border border-status-success-border bg-status-success-subtle px-4 py-3 text-sm text-status-success-subtle-foreground";
+const ERROR_CLASSES =
+  "rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground";
 
 /** Renders an HTML success banner with an escaped message and optional custom class. @public */
 export function renderSuccess(message: string, options?: FragmentOptions): SafeHtml {

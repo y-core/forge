@@ -13,8 +13,8 @@ import { Tooltip } from "./tooltip";
  * loads a stylesheet. Every other browser spec asserts markup, state and focus with no CSS at all,
  * and that is a deliberate property of theirs worth keeping: it is what makes them immune to a
  * restyle. It is also exactly why this class of defect survived — the anchored block in
- * `theme-base.css` was dead for every surface it named, and a suite that loads no CSS and asserts no
- * geometry structurally cannot see that.
+ * `forge-ui.css` was dead for every surface it named, and a suite that loads no CSS and
+ * asserts no geometry structurally cannot see that.
  *
  * Every assertion here is therefore a **box**, not a declaration. `getComputedStyle().positionAnchor`
  * reports the name a rule *declared*, which reads identically whether it resolved against the right
@@ -33,7 +33,10 @@ declare global {
   }
 }
 
-const CSS = { css: ["./ui/assets/css/theme-base.css"] };
+/** The component rules and nothing else: every case here measures a box, and the anchor bindings and
+ * the `side` × `align` placement rules are all in that one file. No case reads a colour, so neither
+ * token sheet is loaded. */
+const CSS = { css: ["./ui/assets/css/forge-ui.css"] };
 const CSS_AND_JS = { ...CSS, expose: { forgeResume: "./ui/client/resume", forgeCoreClient: "./ui/core/client" } };
 
 /** The trigger is put at a known place, and the panels given a size, without any utility class. */
@@ -154,6 +157,80 @@ test.describe("Menu — anchored to its trigger", () => {
 
     const { popup } = await boxes(page, { popup: "#ctx" });
     expect({ top: popup.top, left: popup.left }).toEqual({ top: 200, left: 300 });
+  });
+});
+
+/**
+ * **The light-dismiss guard, driven by a real right-click.**
+ *
+ * Here for the same reason the block above is: it only reproduces with the stylesheet loaded. Without
+ * it the coordinate rule never applies, the popup falls back to the UA's centred `[popover]` box —
+ * which lands *under* the pointer — and the release therefore hits the panel rather than the surface,
+ * so the dismiss pass finds a popover ancestor, declines to match, and the menu survives for a reason
+ * the shipped page does not have. Placed at the point, the panel is beside the cursor, the release
+ * lands on the surface, and the defect is visible.
+ *
+ * Both halves are asserted. The unguarded case is what makes the guarded one mean anything: if the
+ * platform ever stops dismissing here, the first case starts passing for free and only the second
+ * will say so.
+ */
+test.describe("a context menu against the platform's light-dismiss pass", () => {
+  /**
+   * A surface whose `contextmenu` opens a coordinate-placed menu, guarded or not.
+   *
+   * The corner radius is restated, because it is what decides the hit test. `Menu.Popup` ships
+   * `rounded-xl`, and no utility resolves under the harness — square corners would put the release
+   * point *on* the panel's top-left pixel, the dismiss pass would find a popover ancestor there and
+   * decline to match, and the unguarded case below would pass for a reason the real page does not
+   * have. Rounded, the point at the corner is outside the panel, exactly as it is for a reader.
+   */
+  async function contextFixture(page: Page, guard: boolean): Promise<void> {
+    const html = await render(Menu.Popup({ id: "ctx", coords: true, children: [Menu.Item({ id: "cut", for: false, children: "Cut" })] }));
+    const surface = '<div id="surface" style="position:fixed;top:0;left:0;width:400px;height:300px">surface</div>';
+    const radius = '<style>[data-slot~="menu-popup"] { border-radius: 0.75rem }</style>';
+    await mount(page, `${FIXTURE_STYLE}${radius}${surface}${html}`, { ...CSS, expose: { forgeAnchor: "./ui/client/popover-anchor" } });
+    await page.evaluate((guarded: boolean) => {
+      const popup = document.querySelector("#ctx") as HTMLElement;
+      document.querySelector("#surface")?.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        const { clientX, clientY, buttons } = event as MouseEvent;
+        (window as unknown as { forgeAnchor: typeof import("../client/popover-anchor") }).forgeAnchor.openPopoverAt(popup, clientX, clientY, {
+          afterPointerUp: guarded && buttons !== 0,
+        });
+      });
+    }, guard);
+  }
+
+  const isOpen = (page: Page) => page.evaluate(() => document.querySelector("#ctx")?.matches(":popover-open") === true);
+
+  test("stays open past the release of the button that opened it", async ({ page }) => {
+    await contextFixture(page, true);
+    await page.mouse.click(150, 120, { button: "right" });
+
+    expect(await isOpen(page)).toBe(true);
+    // Placed at the point, not merely open: a guard that opened the menu somewhere else would pass a
+    // bare open check while putting the panel nowhere near the cursor that asked for it.
+    const { popup } = await boxes(page, { popup: "#ctx" });
+    expect({ top: popup.top, left: popup.left }).toEqual({ top: 120, left: 150 });
+  });
+
+  test("without the guard, the same right-click dismisses it immediately", async ({ page }) => {
+    await contextFixture(page, false);
+    await page.mouse.click(150, 120, { button: "right" });
+
+    expect(await isOpen(page)).toBe(false);
+  });
+
+  test("a later click still light-dismisses the guarded menu", async ({ page }) => {
+    // The other side of `once`: the guard belongs to the gesture that armed it, and an ordinary
+    // dismissal afterwards has to keep working — a menu that cannot be clicked away is a worse bug
+    // than the one being fixed.
+    await contextFixture(page, true);
+    await page.mouse.click(150, 120, { button: "right" });
+    expect(await isOpen(page)).toBe(true);
+
+    await page.mouse.click(350, 260);
+    expect(await isOpen(page)).toBe(false);
   });
 });
 

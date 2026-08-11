@@ -7,6 +7,7 @@ import { Button } from "../core/button";
 import { FormField } from "../core/field-layout";
 import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
+import { Select } from "../core/select";
 import { FlashOob } from "../server/flash";
 import type { DependentData, PaginateData, PreviewData, SearchData, ShowcasePaths, ToastData, ValidateData } from "./route";
 
@@ -91,22 +92,38 @@ export const PreviewFragment: FC<{ data: PreviewData; icon: ForgeIcon<"spinner" 
 };
 
 /** Inline email validation field fragment. @public */
-export const ValidateFragment: FC<{ data: ValidateData }> = ({ data }) => {
+export const ValidateFragment: FC<{ data: ValidateData; icon: ForgeIcon<"close"> }> = ({ data, icon: Icon }) => {
   const isValid = data.email.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email);
   const showError = data.email.length > 0 && !isValid;
   return (
     <FormField id={SHOW_VALIDATE_ID} name='email' invalid={showError}>
       <FormField.Label name='email'>Email</FormField.Label>
+      {/* The attributes belong on the control, not on a wrapper: htmx sends the triggering element's
+          own value on a GET, so a wrapper would send no `email` at all. They live inside the fragment
+          because the swap replaces this whole field — a spread outside it survives the first swap and
+          is then gone from the markup that came back.
+          Blur is a legitimate trigger here rather than the first-blur-paints-it-red mistake: the
+          fragment renders neutral for an empty value, so tabbing through an untouched field shows
+          nothing.
+          `sync` is given rather than defaulted, too: the default resolves `closest form`, and this
+          standalone field has none — htmx then throws inside its own trigger handler and the request
+          is never sent, with nothing logged. */}
       <Input
         type='email'
         name='email'
         placeholder='you@example.com'
         value={data.email}
         field={{ name: "email", invalid: showError, description: isValid }}
+        {...inlineValidation({ get: data.paths.validate, target: `#${SHOW_VALIDATE_ID}`, trigger: "change delay:200ms, blur" })}
       />
-      {showError ? <FormField.Error name='email'>Please enter a valid email address.</FormField.Error> : null}
+      {showError ? (
+        <FormField.Error name='email'>
+          <Icon name='close' aria-hidden='true' />
+          Please enter a valid email address.
+        </FormField.Error>
+      ) : null}
       {isValid ? (
-        <FormField.Description name='email' class='text-emerald-600'>
+        <FormField.Description name='email' class='text-success'>
           Looks good!
         </FormField.Description>
       ) : null}
@@ -191,34 +208,16 @@ export const DependentFragment: FC<{ data: DependentData; icon: ForgeIcon<"spinn
 }) => {
   const items = CATEGORY_ITEMS[data.category] ?? CATEGORY_ITEMS.fruit ?? [];
   return (
-    <div id={SHOW_DEPENDENT_ID} class='flex flex-col gap-1.5'>
-      <label class='text-sm font-medium text-foreground' for='dependent-item'>
-        Item
-      </label>
-      <div class='relative w-full'>
-        <select
-          id='dependent-item'
-          name='item'
-          class='w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20'>
-          {items.map((item) => (
-            <option key={item} value={item.toLowerCase()}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <span aria-hidden='true' class='pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground'>
-          <Icon
-            name='chevron-down'
-            width={16}
-            height={16}
-            stroke='currentColor'
-            stroke-width={1.5}
-            stroke-linecap='round'
-            stroke-linejoin='round'
-          />
-        </span>
-      </div>
-    </div>
+    <FormField id={SHOW_DEPENDENT_ID} name='item' class='gap-1.5'>
+      <FormField.Label for='dependent-item'>Item</FormField.Label>
+      <Select id='dependent-item' name='item' icon={Icon}>
+        {items.map((item) => (
+          <Select.Option key={item} value={item.toLowerCase()}>
+            {item}
+          </Select.Option>
+        ))}
+      </Select>
+    </FormField>
   );
 };
 
@@ -259,73 +258,37 @@ export const PreviewSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner
 }) => (
   <Section id='demo-preview' title='Live Preview' description='Choose variant and size — the button updates live via HTMX GET.'>
     <form class='flex flex-wrap items-end gap-3' hx-get={paths.preview} hx-target={`#${SHOW_PREVIEW_ID}`} hx-swap='outerHTML' hx-trigger='change'>
-      <div class='flex flex-col gap-1.5'>
-        <label class='text-sm font-medium text-foreground' for='preview-variant'>
-          Variant
-        </label>
-        <div class='relative'>
-          <select
-            id='preview-variant'
-            name='variant'
-            class='appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring/20'>
-            <option value='primary'>primary</option>
-            <option value='secondary'>secondary</option>
-            <option value='ghost'>ghost</option>
-          </select>
-          <span aria-hidden='true' class='pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground'>
-            <Icon
-              name='chevron-down'
-              width={16}
-              height={16}
-              stroke='currentColor'
-              stroke-width={1.5}
-              stroke-linecap='round'
-              stroke-linejoin='round'
-            />
-          </span>
-        </div>
-      </div>
-      <div class='flex flex-col gap-1.5'>
-        <label class='text-sm font-medium text-foreground' for='preview-size'>
-          Size
-        </label>
-        <div class='relative'>
-          <select
-            id='preview-size'
-            name='size'
-            class='appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring/20'>
-            <option value='sm'>sm</option>
-            <option value='md' selected>
-              md
-            </option>
-            <option value='lg'>lg</option>
-          </select>
-          <span aria-hidden='true' class='pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground'>
-            <Icon
-              name='chevron-down'
-              width={16}
-              height={16}
-              stroke='currentColor'
-              stroke-width={1.5}
-              stroke-linecap='round'
-              stroke-linejoin='round'
-            />
-          </span>
-        </div>
-      </div>
+      <FormField name='variant' class='w-auto gap-1.5'>
+        <FormField.Label for='preview-variant'>Variant</FormField.Label>
+        <Select id='preview-variant' name='variant' icon={Icon}>
+          <Select.Option value='primary'>primary</Select.Option>
+          <Select.Option value='secondary'>secondary</Select.Option>
+          <Select.Option value='ghost'>ghost</Select.Option>
+        </Select>
+      </FormField>
+      <FormField name='size' class='w-auto gap-1.5'>
+        <FormField.Label for='preview-size'>Size</FormField.Label>
+        <Select id='preview-size' name='size' icon={Icon}>
+          <Select.Option value='sm'>sm</Select.Option>
+          <Select.Option value='md' selected>
+            md
+          </Select.Option>
+          <Select.Option value='lg'>lg</Select.Option>
+        </Select>
+      </FormField>
     </form>
     <PreviewFragment data={{ variant: "primary", size: "md" }} icon={Icon} />
   </Section>
 );
 
 /** Validate demo: inline email validation. @public */
-export const ValidateSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
+export const ValidateSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"close"> }> = ({ paths, icon }) => (
   <Section
     id='demo-validate'
     title='Inline Validation'
     description='Type an email — validation runs on blur via HTMX GET, swapping only the field.'>
-    <div {...inlineValidation({ get: paths.validate, target: `#${SHOW_VALIDATE_ID}`, trigger: "change delay:200ms, blur" })} class='max-w-sm'>
-      <ValidateFragment data={{ email: "" }} />
+    <div class='max-w-sm'>
+      <ValidateFragment data={{ email: "", paths }} icon={icon} />
     </div>
     <p class='text-xs text-muted-foreground'>
       Uses <code>inlineValidation()</code> from <code>@y-core/forge/html/htmx</code>.
@@ -337,13 +300,15 @@ export const ValidateSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
 export const SearchSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
   <Section id='demo-search' title='Live Search' description='Filter components by name — results update as you type via HTMX GET.'>
     <div class='space-y-4'>
-      <input
-        type='search'
-        name='q'
-        placeholder='Search components…'
-        class='w-full max-w-sm rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/20'
-        {...liveSearch({ get: paths.search, target: `#${SHOW_SEARCH_ID}` })}
-      />
+      <FormField name='q' class='max-w-sm gap-1.5'>
+        <FormField.Label name='q'>Search components</FormField.Label>
+        <Input
+          type='search'
+          placeholder='Search components…'
+          field={{ name: "q" }}
+          {...liveSearch({ get: paths.search, target: `#${SHOW_SEARCH_ID}` })}
+        />
+      </FormField>
       <SearchFragment data={{ q: "" }} />
     </div>
     <p class='text-xs text-muted-foreground'>
@@ -371,33 +336,14 @@ export const DependentSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinn
 }) => (
   <Section id='demo-dependent' title='Dependent Select' description='Choose a food category — the items select repopulates via HTMX GET.'>
     <div class='flex flex-wrap gap-6 max-w-sm'>
-      <div class='flex flex-col gap-1.5 flex-1 min-w-32'>
-        <label class='text-sm font-medium text-foreground' for='dependent-category'>
-          Category
-        </label>
-        <div class='relative'>
-          <select
-            id='dependent-category'
-            name='category'
-            class='w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-ring/20'
-            {...dependentSelect({ get: paths.dependent, target: `#${SHOW_DEPENDENT_ID}` })}>
-            <option value='fruit'>Fruit</option>
-            <option value='vegetable'>Vegetable</option>
-            <option value='grain'>Grain</option>
-          </select>
-          <span aria-hidden='true' class='pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground'>
-            <Icon
-              name='chevron-down'
-              width={16}
-              height={16}
-              stroke='currentColor'
-              stroke-width={1.5}
-              stroke-linecap='round'
-              stroke-linejoin='round'
-            />
-          </span>
-        </div>
-      </div>
+      <FormField name='category' class='flex-1 min-w-32 gap-1.5'>
+        <FormField.Label for='dependent-category'>Category</FormField.Label>
+        <Select id='dependent-category' name='category' icon={Icon} {...dependentSelect({ get: paths.dependent, target: `#${SHOW_DEPENDENT_ID}` })}>
+          <Select.Option value='fruit'>Fruit</Select.Option>
+          <Select.Option value='vegetable'>Vegetable</Select.Option>
+          <Select.Option value='grain'>Grain</Select.Option>
+        </Select>
+      </FormField>
       <div class='flex-1 min-w-32'>
         <DependentFragment data={{ category: "fruit" }} icon={Icon} />
       </div>

@@ -1,19 +1,32 @@
-/* ─────────────────────────────────────────────────────────────────────────────
-Bridge semantic CSS custom properties to Tailwind color utilities.
-   @theme inline defers resolution to runtime via CSS var(), so toggling .dark on <html> re-maps every bg-*, text-*, border-*
-   utility instantly without recompiling the stylesheet.
-  ──────────────────────────────────────────────────────────────────────────────
-To use a web font, prepend it:
-  --font-sans: var(--theme-font-sans);
-  --font-mono: var(--theme-font-mono);
-Tailwind v4 default font stacks, probed at build time.
-  --font-family-sans: "Inter", var(--theme-font-sans);
+/* The mapping layer — where a role becomes a colour.
+   ─────────────────────────────────────────────────────────────────────────────
+   Three files, three jobs, and this is the middle one:
 
-Each theme-*.css file must define --palette-50 through --palette-950 to connect
-its color ramp to these semantic tokens. Themes override only where they diverge
-from the base stop-mapping below.
-*/
-/* To use a web font, uncomment the tailwindcss v4 defaults:
+     theme-neutral.css   THE SCALE     --gray-1 … --gray-12, per mode      (swappable)
+     theme-colors.css    THE HUES      --red-*, --yellow-*, --black-a*     (fixed)
+       → this file       THE MAPPING   --background: var(--gray-1)         (mode-free)
+         → @theme inline THE BRIDGE    --color-background, so bg-* resolves at runtime
+
+   **This file declares no `.dark` block, and that is the invariant the whole system rests on.** A
+   step means the same thing in both modes — step 1 is the app background whether the app is light or
+   dark — so `--background: var(--gray-1)` is already the whole statement, and a `.dark` twin would
+   only be a second chance to disagree. Every mode-varying value lives one layer down, in a file that
+   declares nothing but scale steps.
+
+   It was not always so: all 24 semantic tokens used to be declared twice, with nothing stopping the
+   two copies drifting apart. `validate-contrast` now fails any audited token that appears under
+   `.dark` at all, even when the value there is correct.
+
+   **Which step a role reaches for is forge's decision, not Radix's.** The scale files own the values;
+   this file owns the mapping, and the seam between them is what lets the two disagree without either
+   being edited. The border tokens are where that matters — see the note beside `--border`.
+
+   Component rules are in `forge-ui.css`; the two state utilities in `forge-ui.css`.
+   This file is declarations only.
+  ────────────────────────────────────────────────────────────────────────────── */
+
+/* To use a web font, uncomment the Tailwind v4 defaults and prepend your own:
+     --font-sans: "Inter", var(--theme-font-sans);
 :root {
   --theme-font-sans:  ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --theme-font-mono:  ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -21,94 +34,131 @@ from the base stop-mapping below.
 }
 */
 
-/* Light -------------------------------------------------------------------- */
 :root {
   --radius: 0.625rem;
 
-  --background:           var(--palette-100);
-  --foreground:           var(--palette-950);
+  /* ── The brand seam ─────────────────────────────────────────────────────── */
+  /* Forge now ships a real accent, and `--accent-12: var(--gray-12)` is gone with the sentence that
+     explained it. That alias existed because there was no brand hue: `--primary` was step 12 of the
+     grey, so "theming" forge meant picking a grey and every `Button variant='primary'` was
+     near-black. `theme-neutral.css` declares a full `--accent-1…12` scale, so the seam moved from
+     one aliased step to a scale an application re-declares the same way it re-declares the grey.
 
-  --card:                 var(--palette-50);
-  --card-foreground:      var(--palette-950);
+     `--primary` is Radix's `solid` state — step 9, the solid background — with `-contrast` as its
+     foreground. Both are named positions in the Radix vocabulary rather than forge inventions. */
 
-  --popover:              var(--palette-50);
-  --popover-foreground:   var(--palette-950);
+  /* ── Semantic tokens — declared once, for both modes ───────────────────── */
+  --background:           var(--gray-1);
+  --foreground:           var(--gray-12);
 
-  --primary:              var(--palette-900);
-  --primary-foreground:   var(--palette-50);
+  --card:                 var(--gray-2);
+  --card-foreground:      var(--gray-12);
 
-  --secondary:            var(--palette-100);
-  --secondary-foreground: var(--palette-900);
+  --popover:              var(--gray-2);
+  --popover-foreground:   var(--gray-12);
 
-  --muted:                var(--palette-100);
-  --muted-foreground:     var(--palette-500);
+  --primary:              var(--accent-9);
+  --primary-foreground:   var(--accent-contrast);
 
-  --accent:               var(--palette-100);
-  --accent-foreground:    var(--palette-900);
+  --secondary:            var(--gray-3);
+  --secondary-foreground: var(--gray-12);
 
-  --destructive:          var(--color-red-500);
+  --muted:                var(--gray-3);
+  --muted-foreground:     var(--gray-11);
 
-  --success:              var(--color-green-700);
-  --success-foreground:   var(--palette-50);
-  --warning:              var(--color-yellow-500);
-  --warning-foreground:   var(--palette-50);
+  /* Step 3, not step 4, and that is the bug rather than the design: `--secondary`, `--muted` and
+     `--accent` all resolve to one value, so `hover:bg-accent` inside a `bg-muted` panel is a visual
+     no-op. Radix has a step for exactly this — 4 is "hovered UI element background" to 3's "UI
+     element background" — and it is `#e8e8e8` against 3's `#f0f0f0`, so moving this one reference is
+     the whole fix. It is deliberately not made here: it repaints 154 `bg-accent` sites, which is a
+     visible change and belongs in its own one-line commit rather than buried in a value migration.
 
-  --border:               var(--palette-400);
-  --input:                var(--palette-400);
-  --ring:                 color-mix(in oklch, var(--palette-500) 50%, transparent);
+     (`--background` used to be the fourth name in this collapse. It is not any more — step 1 is
+     `#f9f9f9` where step 3 is `#f0f0f0` — so adopting the scale fixed one quarter of this by
+     itself.) */
+  --accent:               var(--gray-3);
+  --accent-foreground:    var(--gray-12);
 
-  --sidebar:                       var(--palette-50);
-  --sidebar-foreground:            var(--palette-950);
-  --sidebar-primary:               var(--palette-900);
-  --sidebar-primary-foreground:    var(--palette-50);
-  --sidebar-accent:                var(--palette-200);
-  --sidebar-accent-foreground:     var(--palette-900);
-  --sidebar-border:                var(--palette-200);
-  --sidebar-ring:                  var(--palette-400);
-}
+  --destructive:            var(--red-9);
+  --destructive-foreground: var(--red-contrast);
 
-/* Dark --------------------------------------------------------------------- */
-.dark {
-  --background:           var(--palette-900);
-  --foreground:           var(--palette-50);
+  --success:              var(--green-9);
+  --success-foreground:   var(--green-contrast);
+  --warning:              var(--yellow-9);
+  --warning-foreground:   var(--yellow-contrast);
 
-  --card:                 var(--palette-800);
-  --card-foreground:      var(--palette-50);
+  /* **Not steps 6, 7 and 8**, and this is the sharpest place forge's mapping departs from Radix's
+     step names. Radix calls step 6 "subtle borders and separators", step 7 "UI element border and
+     focus rings" and step 8 "hovered UI element border" — but measured against the surfaces they sit
+     on, those three are **1.24, 1.38 and 1.68** to 1 in light. WCAG 1.4.11 asks 3:1 of anything that
+     identifies a control, and `--input` is the sole boundary a text field has. Radix's own contrast
+     guarantee is explicit about its scope — steps 11 and 12, to APCA Lc 60 and Lc 90 on a step 2
+     background — and says nothing about 7.
 
-  --popover:              var(--palette-800);
-  --popover-foreground:   var(--palette-50);
+     So the decorative token keeps Radix's step and the affordances move to the steps that clear the
+     floor. `--border` is step 6, which is what a hairline should be and where Radix puts it;
+     `--input` and `--track` are step 10 (3.33 light / 3.76 dark) and `--ring` is step 11 (5.19 /
+     7.67), preserving the one-step gap that keeps `focus:border-ring` from being a no-op.
 
-  --primary:              var(--palette-200);
-  --primary-foreground:   var(--palette-900);
+     This is exactly the defect the 0.0.83 audit found and fixed — `--input` shipped at roughly half
+     the required ratio for 82 versions — so adopting step 7 because it is *called* the UI element
+     border would have re-introduced it under a better name. Whether to instead author compliant
+     values at steps 7 and 8 is an open question, deliberately left to a second pass. */
+  --border:               var(--gray-6);
+  --input:                var(--gray-10);
+  /* Deliberately equal to `--input` rather than derived from it. `--input` is named for a
+     *boundary*, so an app re-pointing it to a brand outline colour is doing what the name invites —
+     and before this token existed that also repainted the `Switch` off state and the `Slider`
+     track, because one token was doing two jobs. Aliasing would re-create the coupling. */
+  --track:                var(--gray-10);
+  --ring:                 var(--gray-11);
 
-  --secondary:            var(--palette-700);
-  --secondary-foreground: var(--palette-50);
+  /* The modal scrim. `--black-a6` rather than the `rgb(0 0 0 / 0.5)` this used to be written as
+     inline on `[data-slot~="dialog"]::backdrop` — same job, but now an application can dim a dialog
+     to its own taste without overriding a component rule, and the value sits with the other colours
+     instead of 250 lines further down. */
+  --overlay:              var(--black-a6);
 
-  --muted:                var(--palette-700);
-  --muted-foreground:     var(--palette-400);
+  /* ── Status roles ──────────────────────────────────────────────────────── */
+  /* Five roles × four intents. Distinct from `--destructive` / `--success` / `--warning`, and the
+     split is the whole point: those three are **fills the application owns** and may re-point to a
+     brand — a warning that is orange rather than yellow is an ordinary thing for an app to want —
+     while these are **fixed status hues forge owns**, which no scheme or brand swap moves by
+     accident. The two were one token until recently, and the collision was not hypothetical: the
+     `theme-zinc.css` that used to ship here re-pointed `--warning` to orange, which repainted every
+     status panel with it.
 
-  --accent:               var(--palette-700);
-  --accent-foreground:    var(--palette-50);
+     `-subtle` is the panel (`Alert`, `Toast`, the `http` banners) and `-strong` the chip (`Badge`).
+     They are deliberately *not* unified: a badge is a small filled chip, so it starts one stop in
+     from a panel's surface. Two hand-written stop choices in two component files become two named
+     roles in one place, which is what stops them drifting.
 
-  --destructive:          oklch(0.704 0.191 22.216);
+     There is no solid `--status-info` pair. No forge component renders one, and a declaration with
+     no consumer inside forge is a declaration nobody checks — the failure that let a scheme file
+     alias a palette that did not exist and ship broken for 82 versions. */
+  --status-danger-subtle:             var(--red-2);
+  --status-danger-subtle-foreground:  var(--red-12);
+  --status-danger-strong:             var(--red-3);
+  --status-danger-strong-foreground:  var(--red-11);
+  --status-danger-border:             var(--red-6);
 
-  --success:              var(--color-green-500);
-  --success-foreground:   var(--palette-950);
-  --warning:              var(--color-yellow-400);
-  --warning-foreground:   var(--palette-950);
+  --status-warning-subtle:            var(--yellow-2);
+  --status-warning-subtle-foreground: var(--yellow-12);
+  --status-warning-strong:            var(--yellow-3);
+  --status-warning-strong-foreground: var(--yellow-11);
+  --status-warning-border:            var(--yellow-6);
 
-  --border:               var(--palette-700);
-  --input:                var(--palette-700);
-  --ring:                 var(--palette-500);
+  --status-success-subtle:            var(--emerald-2);
+  --status-success-subtle-foreground: var(--emerald-12);
+  --status-success-strong:            var(--emerald-3);
+  --status-success-strong-foreground: var(--emerald-11);
+  --status-success-border:            var(--emerald-6);
 
-  --sidebar:                       var(--palette-800);
-  --sidebar-foreground:            var(--palette-50);
-  --sidebar-primary:               oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground:    var(--palette-50);
-  --sidebar-accent:                var(--palette-700);
-  --sidebar-accent-foreground:     var(--palette-50);
-  --sidebar-border:                var(--palette-700);
-  --sidebar-ring:                  var(--palette-500);
+  --status-info-subtle:               var(--blue-2);
+  --status-info-subtle-foreground:    var(--blue-12);
+  --status-info-strong:               var(--blue-3);
+  --status-info-strong-foreground:    var(--blue-11);
+  --status-info-border:               var(--blue-6);
 }
 
 @theme inline {
@@ -134,6 +184,7 @@ from the base stop-mapping below.
   --color-accent-foreground:           var(--accent-foreground);
 
   --color-destructive:                 var(--destructive);
+  --color-destructive-foreground:      var(--destructive-foreground);
 
   --color-success:                     var(--success);
   --color-success-foreground:          var(--success-foreground);
@@ -142,286 +193,39 @@ from the base stop-mapping below.
 
   --color-border:                      var(--border);
   --color-input:                       var(--input);
+  --color-track:                       var(--track);
   --color-ring:                        var(--ring);
 
-  --color-sidebar:                     var(--sidebar);
-  --color-sidebar-foreground:          var(--sidebar-foreground);
-  --color-sidebar-primary:             var(--sidebar-primary);
-  --color-sidebar-primary-foreground:  var(--sidebar-primary-foreground);
-  --color-sidebar-accent:              var(--sidebar-accent);
-  --color-sidebar-accent-foreground:   var(--sidebar-accent-foreground);
-  --color-sidebar-border:              var(--sidebar-border);
-  --color-sidebar-ring:                var(--sidebar-ring);
+  /* The status family, so `bg-status-danger-subtle` and `text-status-danger-subtle-foreground` are
+     ordinary utilities. Only the `--status-*` roles are bridged — the scale steps behind them are
+     not, deliberately: a `bg-red-3` utility would be a second, unaudited way to reach a colour, and
+     `forge-ui-color-token-only` exists to say there is one way. */
+  --color-status-danger-subtle:             var(--status-danger-subtle);
+  --color-status-danger-subtle-foreground:  var(--status-danger-subtle-foreground);
+  --color-status-danger-strong:             var(--status-danger-strong);
+  --color-status-danger-strong-foreground:  var(--status-danger-strong-foreground);
+  --color-status-danger-border:             var(--status-danger-border);
+
+  --color-status-warning-subtle:            var(--status-warning-subtle);
+  --color-status-warning-subtle-foreground: var(--status-warning-subtle-foreground);
+  --color-status-warning-strong:            var(--status-warning-strong);
+  --color-status-warning-strong-foreground: var(--status-warning-strong-foreground);
+  --color-status-warning-border:            var(--status-warning-border);
+
+  --color-status-success-subtle:            var(--status-success-subtle);
+  --color-status-success-subtle-foreground: var(--status-success-subtle-foreground);
+  --color-status-success-strong:            var(--status-success-strong);
+  --color-status-success-strong-foreground: var(--status-success-strong-foreground);
+  --color-status-success-border:            var(--status-success-border);
+
+  --color-status-info-subtle:               var(--status-info-subtle);
+  --color-status-info-subtle-foreground:    var(--status-info-subtle-foreground);
+  --color-status-info-strong:               var(--status-info-strong);
+  --color-status-info-strong-foreground:    var(--status-info-strong-foreground);
+  --color-status-info-border:               var(--status-info-border);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-}
-
-/* ── Component rules ──────────────────────────────────────────────────────
-   Everything below is inside `@layer components`, and that is load-bearing rather than tidy.
-
-   Unlayered CSS outranks *all* layered CSS, whatever the selector weight, so these rules used to
-   beat every Tailwind utility unconditionally — including the ones forge's own components and its
-   showcase set on the very elements these select. `@layer components` puts them where a caller's
-   utility can win, which is the relationship a component default is supposed to have.
-
-   The `:root`, `.dark` and `@theme inline` blocks above deliberately stay outside any layer: a
-   custom-property declaration is not a cascade participant in this sense, and `@theme` is a Tailwind
-   at-rule that has to be seen at the top level. */
-@layer components {
-
-/* ── Invoker-anchored placement ───────────────────────────────────────────
-   These panels render in the top layer, so normal-flow positioning cannot reach their trigger, and
-   CSS Anchor Positioning is what places them. The binding is **explicit** — `anchor-name` on the
-   trigger, `anchor-scope` on the compound root, `position-anchor` on the panel — because the
-   implicit anchor a UA supplies comes from `popovertarget`, and forge invokes with
-   `command`/`commandfor` throughout. Measured on Chrome 151: an invoker-opened popup computes
-   `position-anchor: normal` and every `anchor()` resolves to nothing, leaving the UA's `[popover]`
-   default in charge. An earlier revision of this block relied on that implicit anchor and was dead
-   for every surface it named.
-
-   `anchor-scope` on each compound root is what keeps one shared name per surface honest: many menus
-   on a page all use `--forge-menu`, and an open panel is in the **top layer**, where the resolution
-   algorithm treats every candidate as laid out before it and returns the last one in tree order.
-   Scoping to the root leaves exactly one trigger in view, so each pair is independent. */
-
-[data-slot~="popover"]         { anchor-scope: --forge-popover; }
-[data-slot~="popover-trigger"] { anchor-name: --forge-popover; }
-
-[data-slot~="toolbar-popover"] { anchor-scope: --forge-toolbar; }
-[data-slot~="toolbar-trigger"] { anchor-name: --forge-toolbar; }
-
-[data-slot~="menu"]            { anchor-scope: --forge-menu; }
-[data-slot~="menu-trigger"]    { anchor-name: --forge-menu; }
-
-/* The submenu names the **parent panel**, never the row, and takes no `anchor-scope`. Both halves
-   were measured, because both are counter-intuitive:
-
-   - **Row-named fails.** An open submenu is in the top layer, so every trigger in the panel is an
-     acceptable anchor and the algorithm returns "the last element in tree order" — the wrong row for
-     every submenu but the last. (csswg-drafts #11602 closed this as intentional.) Naming the panel
-     puts the lookup on the *ancestor* branch instead, where the nearest match wins deterministically.
-   - **No `anchor-scope` here.** This selector matches the nested popup too, and an element inside a
-     scope "will only be able to see anchors with those names that are in this element's subtree" —
-     its parent panel is not, so scoping it resolves to nothing. The ancestor branch needs no scope to
-     be deterministic: with two menus open on one page each submenu still finds its own panel.
-
-   Cost of the panel over the row: the submenu pins to the panel's edge, top-aligned, rather than
-   beside the row that opened it. `mountAnchorBinding` upgrades that to row-accurate at runtime; this
-   is the correct-without-JavaScript floor. */
-[data-slot~="menu-popup"]      { anchor-name: --forge-menu-sub; }
-
-/* `:not([data-coords])` rather than source order. `Menu.Popup` emits `data-side` even when `coords`
-   is set, so these selectors really do match a context menu, and the coordinate rule below used to
-   win only by tying on specificity and coming later. */
-[data-slot~="menu-popup"]:not([data-coords]),
-[data-slot~="popover-content"],
-[data-slot~="toolbar-flyout"] {
-  position: fixed;
-  margin: 0;
-  inset: auto;
-  /* Anchored placement - flip rather than run off-screen. */
-  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
-}
-
-[data-slot~="menu-popup"]:not([data-coords])                           { position-anchor: --forge-menu; }
-[data-slot~="menu-popup"] [data-slot~="menu-popup"]:not([data-coords]) { position-anchor: --forge-menu-sub; }
-[data-slot~="popover-content"]                                         { position-anchor: --forge-popover; }
-[data-slot~="toolbar-flyout"]                                          { position-anchor: --forge-toolbar; }
-
-/* The menu gets the full side × align matrix rather than `popover-content`'s split model, because
-   a submenu's side is an inline-axis one and a model that reads `data-side` as block-axis-only cannot
-   express those at all. */
-[data-slot~="menu-popup"]:not([data-coords])[data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
-
-/* The block-axis logical sides carry no `:dir()`: direction mirrors the *inline* axis only, and
-   `horizontal-tb` is the sole writing mode forge ships, so these are exactly the physical
-   `top` / `bottom` declarations under a second name. */
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"] { bottom: anchor(top); margin-bottom: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"]   { top: anchor(bottom); margin-top: 0.375rem; }
-
-/* The inline-axis logical sides, spelled physically and selected by `:dir()`. Two shorter-looking spellings are
-   both wrong: `anchor(inline-end)` is not a valid `<anchor-side>` at all, and `inset-inline-start:
-   anchor(start)` resolves against the *containing block's* writing mode — which for a top-layer
-   `position: fixed` popup is the viewport, i.e. the root element's direction. A `dir="rtl"` subtree
-   inside an LTR document would then get the LTR answer, which is the bug these rules exist to fix.
-   `:dir()` matches on the element's own inherited directionality, so the tree decides. */
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"]:dir(ltr)   { left: anchor(right); margin-left: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"]:dir(rtl)   { right: anchor(left); margin-right: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"]:dir(ltr) { right: anchor(left); margin-right: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"]:dir(rtl) { left: anchor(right); margin-left: 0.375rem; }
-
-/* Align runs on the axis perpendicular to the side, and is read in whichever vocabulary the side
-   used. A physical block-axis side therefore aligns physically along the inline axis — no mirroring,
-   because the caller asked for `left`/`right` and got it. */
-[data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="start"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="start"] { left: anchor(left); }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="center"] { left: anchor(center); translate: -50% 0; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="end"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="end"] { right: anchor(right); }
-
-/* An inline-axis side aligns along the *block* axis, which does not mirror — so the logical sides
-   join the physical rows verbatim rather than needing `:dir()` variants of their own. */
-[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="start"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="start"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="start"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="start"] { top: anchor(top); }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="end"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="end"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="end"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="end"] { bottom: anchor(bottom); }
-
-/* A logical block-axis side aligns along the *inline* axis, which does mirror — and the side was
-   asked for logically, so the align must answer logically too: `start` is the edge the text starts
-   at. `center` needs no variant and joins the physical center row above. */
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="start"]:dir(ltr),
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="start"]:dir(ltr) { left: anchor(left); }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="start"]:dir(rtl),
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="start"]:dir(rtl) { right: anchor(right); }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="end"]:dir(ltr),
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="end"]:dir(ltr) { right: anchor(right); }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="end"]:dir(rtl),
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="end"]:dir(rtl) { left: anchor(left); }
-
-[data-slot~="popover-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
-[data-slot~="popover-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
-[data-slot~="popover-content"][data-align="start"]  { left: anchor(left); }
-[data-slot~="popover-content"][data-align="end"]    { right: anchor(right); }
-[data-slot~="popover-content"][data-align="center"] { left: anchor(center); translate: -50% 0; }
-
-/* `data-placement` names the **rail's** edge, not the flyout's, so the inversion below is correct
-   rather than a transcription slip: a rail on the `left` opens its flyout to the right of itself
-   (`left: anchor(right)`). `toolbar.tsx` is where the value is set, from the same `placement` prop
-   that puts the rail on that edge. */
-[data-slot~="toolbar-flyout"][data-placement="left"]   { left: anchor(right); top: anchor(top); margin-left: 0.5rem; }
-[data-slot~="toolbar-flyout"][data-placement="right"]  { right: anchor(left); top: anchor(top); margin-right: 0.5rem; }
-[data-slot~="toolbar-flyout"][data-placement="top"]    { top: anchor(bottom); left: anchor(left); margin-top: 0.5rem; }
-[data-slot~="toolbar-flyout"][data-placement="bottom"] { bottom: anchor(top); left: anchor(left); margin-bottom: 0.5rem; }
-
-/* ── Tooltip placement ────────────────────────────────────────────────────
-   The same explicit binding as the block above, for the same reason — no popup forge ships gets an
-   implicit anchor — and this is the section that had it right first. A tooltip's content is
-   `popover="manual"`, shown by a controller rather than invoked by a button, so it does not even have
-   the `commandfor` that an earlier revision above mistook for an anchor source.
-
-   That failure is **unfixable from a consuming app**: the anchor name does not exist to bind to, so
-   no consumer rule can create the relationship. Hence the binding is declared here, on the trigger,
-   beside the placement it enables.
-
-   `anchor-scope` keeps the name from leaking: many tooltips on one page all use `--forge-tooltip`,
-   and without scoping each content box would resolve against whichever trigger the engine reached
-   first. Scoping it to the `[data-slot~="tooltip"]` root makes every pair independent. */
-[data-slot~="tooltip"] {
-  anchor-scope: --forge-tooltip;
-}
-
-[data-slot~="tooltip-trigger"] {
-  anchor-name: --forge-tooltip;
-}
-
-/* A composed trigger is **two** triggers — `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>`
-   renders one button carrying both slot tokens — and `anchor-name` is a single declaration rather
-   than a set that unions across rules. Two rules each naming the element would leave the cascade to
-   pick one, and the menu would lose to whichever came later. The pairs are therefore spelled out.
-   The set is **not** closed — `Button`, `Toolbar.Button` and `Toolbar.Link` offer `asChild` too, so
-   either side of a pair can be the outer wrapper and further combinations are expressible. These
-   three are the ones with an `anchor-name` on both halves; add a pair here when a new one arises. */
-[data-slot~="tooltip-trigger"][data-slot~="menu-trigger"]    { anchor-name: --forge-tooltip, --forge-menu; }
-[data-slot~="tooltip-trigger"][data-slot~="popover-trigger"] { anchor-name: --forge-tooltip, --forge-popover; }
-[data-slot~="tooltip-trigger"][data-slot~="toolbar-trigger"] { anchor-name: --forge-tooltip, --forge-toolbar; }
-
-[data-slot~="tooltip-content"] {
-  position: fixed;
-  margin: 0;
-  inset: auto;
-  position-anchor: --forge-tooltip;
-  /* A hint that runs off the edge is worse than one on the other side of its trigger — and unlike a
-     context menu, a tooltip has no pointer position to stay near, so flipping costs nothing. */
-  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
-}
-
-[data-slot~="tooltip-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
-[data-slot~="tooltip-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
-[data-slot~="tooltip-content"][data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
-[data-slot~="tooltip-content"][data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
-
-[data-slot~="tooltip-content"][data-side="top"][data-align="center"],
-[data-slot~="tooltip-content"][data-side="bottom"][data-align="center"] { left: anchor(center); translate: -50% 0; }
-[data-slot~="tooltip-content"][data-side="top"][data-align="start"],
-[data-slot~="tooltip-content"][data-side="bottom"][data-align="start"] { left: anchor(left); }
-[data-slot~="tooltip-content"][data-side="top"][data-align="end"],
-[data-slot~="tooltip-content"][data-side="bottom"][data-align="end"] { right: anchor(right); }
-
-[data-slot~="tooltip-content"][data-side="left"][data-align="center"],
-[data-slot~="tooltip-content"][data-side="right"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
-[data-slot~="tooltip-content"][data-side="left"][data-align="start"],
-[data-slot~="tooltip-content"][data-side="right"][data-align="start"] { top: anchor(top); }
-[data-slot~="tooltip-content"][data-side="left"][data-align="end"],
-[data-slot~="tooltip-content"][data-side="right"][data-align="end"] { bottom: anchor(bottom); }
-
-/* ── Coordinate placement ─────────────────────────────────────────────────
-   A popup with no invoker — a context menu opened where a right-click landed — has no anchor for
-   `anchor()` to resolve against, so every rule above evaluates to nothing and the UA's `[popover]`
-   default (`inset: 0; margin: auto`) centres it. Resetting `inset` and `margin` here is therefore
-   not tidying: without it the UA centring survives and the two custom properties do nothing.
-
-   `openPopoverAt` writes `--anchor-x` / `--anchor-y` through CSSOM and clamps them to the viewport,
-   so no `position-try` fallback is wanted — the clamp already did that job, and letting CSS flip the
-   box afterwards would move it away from the point the user clicked.
-
-   Against the menu — the one surface with a `coords` prop in its markup — this rule does not compete
-   at all: every anchored menu selector is guarded by `:not([data-coords])`, so exactly one of the two
-   ever matches. It stays last as a backstop for a caller who stamps `data-coords` on some other
-   popup by hand, where the tie on specificity does still leave it to source order. */
-[popover][data-coords] {
-  position: fixed;
-  margin: 0;
-  inset: auto;
-  left: var(--anchor-x, 0px);
-  top: var(--anchor-y, 0px);
-  position-try-fallbacks: none;
-}
-
-/* Trigger stays highlighted while its popover is open (replaces the old <details open> group state). */
-[data-slot~="popover"]:has(> [data-slot~="popover-content"]:popover-open) > [data-slot~="popover-trigger"] {
-  background-color: var(--accent);
-  color: var(--accent-foreground);
-}
-[data-slot~="toolbar-popover"]:has(> [data-slot~="toolbar-flyout"]:popover-open) > [data-slot~="toolbar-trigger"] {
-  background-color: var(--primary);
-  color: var(--primary-foreground);
-}
-
-/* Fallback for engines without anchor positioning: keep panels usable (a JS positioner can refine
-   placement per-browser if needed). */
-@supports not (top: anchor(bottom)) {
-  [data-slot~="menu-popup"]:not([data-coords]),
-  [data-slot~="popover-content"],
-  [data-slot~="toolbar-flyout"] { inset: auto auto 1rem 1rem; }
-}
-
-/* Modal dialogs center in the viewport; the platform provides the ::backdrop.
-   These are *defaults*: now that this block is layered, a caller's `max-w-sm` on the same
-   `<dialog>` wins, which is what it always read as and never did. */
-[data-slot~="dialog"] {
-  margin: auto;
-  max-width: calc(100vw - 2rem);
-  max-height: calc(100dvh - 2rem);
-}
-[data-slot~="dialog"]::backdrop {
-  background-color: rgb(0 0 0 / 0.5);
-}
-
 }

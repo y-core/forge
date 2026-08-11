@@ -161,7 +161,7 @@ const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, "data-slot": inherite
     {...itemAttrs(undefined)}
     class={cn(
       "rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground",
-      "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring",
+      "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       asClass(cls),
     )}
     {...rest}

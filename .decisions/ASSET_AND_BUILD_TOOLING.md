@@ -33,9 +33,11 @@ description: "The asset pipeline, the content-hash manifest system, the CLI fram
 - §4b Flags Are a Typed Record: two types, inference instead of casts
 - §4c Errors Carry a Kind, Not an Exit Code: why failure is always exit 1
 - §5 pkg Namespace — Release Tooling: the blessed release path
-- §5a createReleaseCommand — Automated Release Workflow: what the command does
+- §5a createReleaseCommand — Automated Release Workflow: the ordered steps and the refusals
 - §5b SemVer Utilities: parse, bump, format, compare
 - §5c Git Release Utilities: tag and working-tree helpers
+- §5d Changelog Promotion — the Unreleased Contract: what release does to `CHANGELOG.md`
+- §5e Changelog Gate Invariants: what is checked before a release, and what deliberately is not
 
 ---
 
@@ -231,33 +233,58 @@ parameter is the injected dependency set, present so the command is testable —
 callers pass one argument.
 
 It builds a `release` subcommand that, in order: refuses a dirty working tree, resolves the
-next version, prints the previous version, the next one and the tag, refuses to re-tag,
-updates `package.json`, commits, and creates the tag. **It is the only blessed way to cut a
-forge release.**
+next version, reaches a verdict on the changelog and promotes it in memory (§5d), prints the
+previous version, the next one, the tag and what the promotion would write, refuses to re-tag,
+updates `package.json`, writes the promoted changelog, commits, and creates the tag. **It is
+the only blessed way to cut a forge release.**
+
+**All three places a version lives are computed by this command** — the git tag, the
+`package.json` field, and the changelog's version heading. A hand-typed version anywhere is a
+defect, and §5e is the gate that says so.
 
 **It never pushes.** The last thing it prints is the push command for a human to run — so
-the irreversible step, publishing a tag to a remote, stays a deliberate act.
+the irreversible step, publishing a tag to a remote, stays a deliberate act. Bringing the
+changelog inside the governed path does not change that.
 
-Three refusals matter, and each is a guard rather than a convenience:
+**The commit is atomic.** `stageFiles` decides what the release commit carries; forge's own
+binding under `scripts/` adds the changelog to the default, so the bump, the promoted section
+and the tag are one commit rather than a bump commit chasing a prose commit. The library
+default stays `["package.json"]` — a changelog is this repository's policy, not every
+consumer's, and a consumer without one releases unchanged (`changelogFile` is skipped when the
+file is absent).
+
+Four refusals matter, and each is a guard rather than a convenience:
 
 - **A dirty tree aborts** — `isWorkingTreeClean` is checked before anything is resolved, so a
   half-finished change cannot ship. `--allow-dirty` overrides it; using that flag for a real
-  release defeats the guard's only purpose. The abort prints to stderr and exits non-zero.
+  release defeats the guard's only purpose.
 - **An existing tag aborts** — `tagExists` is checked after the version is resolved, so a
   botched release cannot be quietly re-cut over its own tag.
 - **Nothing to release aborts** — when no commits exist since the latest tag, the command
   reports "already at" that version and stops. `package.json` disagreeing with the tag at that
   point is an error, not a bump.
+- **An empty `[Unreleased]` aborts** when commits exist since the tag — shipping a release
+  nobody wrote a line for is the drift the changelog is meant to prevent.
+  `--allow-empty-changelog` is the narrow escape, and §5d states what it does and does not
+  license. A *malformed* changelog is a separate refusal that no flag reaches.
 
-**`--dry` prints the resolved version and stops before any write.** It skips the clean-tree
-check as well, so it is safe to run at any time — but note that it resolves from
-`<latest-tag>..HEAD`, so running it *before* committing reports "nothing to release" rather
-than the version that release would produce. Commit first, then dry-run.
+**A refusal `throw`s a `ReleaseError`; it does not call `exit`.** `execute` renders any `Error`
+as `Error: <message>` and exits 1 (§4c), so the operator sees the same output while the guard
+stays reachable from a test that mocks no process. **The changelog verdict is reached after the
+version is resolved** — it has to know whether commits exist — **and before `package.json` is
+written**, so no mutation can precede a refusal.
 
-**The bump is inferred from the last commit's subject line**: a `major:` prefix bumps major, a
-`minor:` prefix bumps minor, anything else is a patch. Passing an explicit version as the
-command's single positional argument overrides the inference, and is rejected if it is not
-greater than the current tag.
+**`--dry` prints the resolved version and what would be promoted, then stops before any
+write.** It skips the clean-tree check as well, so it is safe to run at any time — but note
+that it resolves from `<latest-tag>..HEAD`, so running it *before* committing reports "nothing
+to release" rather than the version that release would produce. Commit first, then dry-run.
+
+**The bump is the highest one any commit in `<latest-tag>..HEAD` asks for**: a `major:` subject
+prefix bumps major, a `minor:` prefix bumps minor, and a range with neither is a patch. Scanning
+the whole range rather than the tip is the point — a cycle holding a `major:` commit followed by
+`fix typo` must not ship as a patch. Passing an explicit version as the command's single
+positional argument overrides the scan, and is rejected if it is not greater than the current
+tag.
 
 ### 5b. SemVer Utilities
 
@@ -289,10 +316,94 @@ the caller states it rather than inheriting it.
 |---|---|
 | `getLatestTag(cwd, prefix)` | Highest tag matching `prefix*` by version sort, or `null` when there are none |
 | `getCommitsSinceTag(cwd, tag)` | `string[]` — one `git log --oneline` line per commit, **not** parsed objects |
-| `getLastCommitMessage(cwd)` | The last commit's subject line, which is what the bump is inferred from (§5a) |
+| `getLastCommitMessage(cwd)` | The last commit's subject line — a standalone helper, not part of version resolution (§5a scans the whole range) |
 | `createTag(cwd, tag)` | Creates a **lightweight** tag — `git tag <tag>`, no annotation, no message |
 | `tagExists(cwd, tag)` | `true` when that tag is already present |
 | `isWorkingTreeClean(cwd)` | `true` when there are no uncommitted changes |
 
 `createReleaseCommand` calls `isWorkingTreeClean(cwd)` before anything else and exits non-zero
 if the tree is dirty (§5a). **Never tag a dirty tree.**
+
+**`getCommitsSinceTag` stays on `--oneline` rather than a bare subject format**, and the bump
+scan strips the abbreviated sha itself. The helper answers two questions at once — what the
+subjects are, and whether the range holds anything at all — and a subject-only format would emit
+an empty line for a commit with an empty subject, which the emptiness filter drops. A range of
+such commits would then read as "nothing to release", which is the worse failure of the two.
+
+### 5d. Changelog Promotion — the Unreleased Contract
+
+**`[Unreleased]` is the staging area, and the only section a human edits.** Release promotes it:
+the heading is retitled in place, a fresh empty `[Unreleased]` is inserted above it, and a link
+reference definition is appended. Everything below the insertion point is byte-for-byte
+unchanged, which is why a document that has never ended in a newline round-trips exactly — and
+why `writeChangelog` normalises nothing.
+
+**The version heading grammar is exact, and the separator is an em dash (U+2014).** An en dash
+or a hyphen is a parse error, not a near miss, because the two are indistinguishable in review
+and only one of them a machine can promote against:
+
+    ## [0.0.83] — 2026-08-11
+
+**The date is the releaser's local calendar day.** `toISOString()` reads UTC and would stamp
+tomorrow for an evening release in a positive-offset zone; a changelog reader means the day the
+release happened where it happened.
+
+**An `[Unreleased]` section is empty when it holds nothing but whitespace, `---` separators, or
+the literal `_Nothing yet._` placeholder** — the placeholder promotion itself writes. Empty plus
+commits since the tag is the refusal in §5a.
+
+`--allow-empty-changelog` is for a genuinely entry-free tooling release, not for getting past a
+prompt, and two properties keep it from becoming routine:
+
+- **It does not license a malformed document.** An unparseable changelog is a separate refusal
+  with no escape, because promotion has nothing to act on.
+- **It still promotes.** The section ships as a permanent `_Nothing yet._` entry in the released
+  record, which is the deterrent. Skipping promotion would be worse than useless: it would leave
+  the topmost released heading behind `package.json` and fail §5e on the next `verify`.
+
+**The link reference definition is best-effort.** Its base URL comes from `package.json`'s
+`repository` field, normalised by stripping a `git+` prefix and a `.git` suffix. Absent or
+unusable, the definition is omitted and the promotion still succeeds — a consumer with no known
+remote must still be able to release. A first release omits it too: there is no previous version
+to compare against, and a compare link to nothing is worse than none. Reading the URL from
+`git remote get-url` was rejected — it breaks in a clone with a renamed remote, and it would put
+a subprocess on a path that is otherwise pure metadata.
+
+**`src/pkg/changelog.ts` returns its failures instead of throwing, diverging from the
+`ReleaseError` style of the rest of the namespace.** The divergence is the gate's doing: §5e must
+report every malformed heading in one run, and an exception stops at the first. The module is
+also import-free — no clock, no filesystem, no git — so `release.ts` converts a returned failure
+into a `ReleaseError` at its own boundary and the file I/O lives with the other readers in
+`pkg.ts`.
+
+### 5e. Changelog Gate Invariants
+
+**`CHANGELOG.md` is checked by a gate step of `bun run verify` only.** Requiring a written
+`[Unreleased]` entry on every `check` would fail every work-in-progress commit; `verify` runs
+exactly where the invariant bites — before `prepublishOnly`, and before a tag exists.
+`scripts/lib/steps.ts` owns the step table (see [`TESTING.md`](./TESTING.md) §6).
+
+**It imports the parser from `src/pkg/mod` rather than adding a fourth `scripts/*-parse.ts`.**
+Release needs the same grammar to promote with, and two parsers for one document is precisely
+the drift the gate exists to catch. One parser, two callers.
+
+Failing invariants:
+
+- The grammar parses — one `[Unreleased]`, first, and every other entry heading well-formed.
+- No version appears twice, and versions run strictly descending.
+- Dates are non-increasing downward; equal dates are allowed and do occur.
+- **The topmost released heading equals `package.json`'s version.** This is the drift detector,
+  and the reason the gate exists: it catches a heading hand-written for a version no tag was ever
+  cut for.
+- Every link reference definition names a heading that exists.
+
+A heading with *no* link definition is a warning only — promotion writes the definition, and
+entries predating it legitimately lack one.
+
+Three things are deliberately not checked, each because the file disproves them:
+
+- **`---` separators between sections** — not a per-section invariant; consecutive released
+  versions in the real file carry none.
+- **Version contiguity** — gaps are legitimate, since a resolved version that never shipped
+  leaves a hole the next compare link simply spans.
+- **A trailing newline** — the file has none, and promotion round-trips that exactly (§5d).

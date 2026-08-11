@@ -197,8 +197,12 @@ test.describe("Tooltip — inside a shadow root", () => {
  *
  * Loading the raw stylesheet means no Tailwind utility resolves, so the fixture sizes its trigger and
  * its hint with an explicit `<style>` rather than with classes.
+ *
+ * `forge-ui.css` alone, and that is the whole list rather than an abbreviation of one: every
+ * assertion below is a box, the twelve `side` × `align` rules are all in that file, and none of them
+ * reads a custom property. Adding the token sheets would resolve colours nothing here measures.
  */
-const PLACEMENT_CSS = { css: ["./ui/assets/css/theme-base.css"], expose: EXPOSE.expose };
+const PLACEMENT_CSS = { css: ["./ui/assets/css/forge-ui.css"], expose: EXPOSE.expose };
 
 const PLACEMENT_STYLE = `<style>
   body { margin: 0; }

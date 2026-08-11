@@ -1,5 +1,5 @@
 import { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
-import { ownerWindow } from "./dom";
+import { ownerDocument, ownerWindow } from "./dom";
 import { triggersFor } from "./transition";
 
 /**
@@ -7,7 +7,7 @@ import { triggersFor } from "./transition";
  * argument they share.
  *
  * forge positions every popup with CSS Anchor Positioning against an explicit `anchor-name` /
- * `position-anchor` pair declared in `theme-base.css` — there is no implicit anchor to lean on, since
+ * `position-anchor` pair declared in `forge-ui.css` — there is no implicit anchor to lean on, since
  * the one a UA supplies comes from `popovertarget` and forge invokes with `command`/`commandfor`.
  * That static binding covers every surface whose trigger is a *fixed* element of the compound.
  * {@link openPopoverAt} serves the popup with **no** trigger, and {@link mountAnchorBinding} the
@@ -42,6 +42,35 @@ export interface OpenPopoverAtOptions {
    * @default false
    */
   flip?: boolean;
+  /**
+   * Hold the show back until the pointer button currently held down is released.
+   *
+   * **This is what makes a context menu opened from `contextmenu` survive its own gesture.** The
+   * event fires *between* `pointerdown` and `pointerup`, and the platform's light-dismiss pass runs
+   * on that trailing `pointerup`: it compares the popover ancestor of the pointerdown target with the
+   * ancestor of the pointerup target, and hides everything up to the match. Neither is inside a popup
+   * — nothing was open when the button went down, and the pointer is over the surface, not over the
+   * panel that has just appeared beside it — so the two agree on "no popover" and the menu is hidden
+   * one event after it was shown. What the reader sees is a menu that flashes and vanishes.
+   *
+   * Deferring past the release leaves that pass nothing to dismiss, and the *next* click dismisses
+   * the menu exactly as it always did — the guard is one-shot and belongs to the opening gesture
+   * alone.
+   *
+   * Pass `event.buttons !== 0` rather than `true`: a `contextmenu` raised from the keyboard (the Menu
+   * key, `Shift+F10`) reports no buttons and is followed by no `pointerup` at all, so an
+   * unconditional guard would arm a listener that the *next* unrelated click fires — opening the menu
+   * at a stale point, long after the keypress that asked for it.
+   *
+   * ```ts
+   * surface.addEventListener("contextmenu", (event) => {
+   *   event.preventDefault();
+   *   openPopoverAt(menu, event.clientX, event.clientY, { afterPointerUp: event.buttons !== 0 });
+   * });
+   * ```
+   * @default false
+   */
+  afterPointerUp?: boolean;
 }
 
 function clamp(value: number, low: number, high: number): number {
@@ -81,9 +110,13 @@ function place(el: HTMLElement, win: Window, x: number, y: number, margin: numbe
  * ```ts
  * canvas.addEventListener("contextmenu", (event) => {
  *   event.preventDefault();
- *   openPopoverAt(menu, event.clientX, event.clientY);
+ *   openPopoverAt(menu, event.clientX, event.clientY, { afterPointerUp: event.buttons !== 0 });
  * });
  * ```
+ *
+ * {@link OpenPopoverAtOptions.afterPointerUp} is not decoration on that example: without it the
+ * platform light-dismisses the menu on the very `pointerup` that ends the right-click which opened
+ * it. See the option's own note for why the dismiss pass matches.
  *
  * The element must opt into coordinate placement in its markup (`Menu.Popup`'s `coords` prop, or
  * the `data-coords` attribute directly) so the coordinate rule wins over the anchored ones.
@@ -94,18 +127,32 @@ export function openPopoverAt(el: HTMLElement, x: number, y: number, options: Op
   const margin = options.margin ?? 0;
   const flip = options.flip ?? false;
 
-  // Stamped rather than assumed: calling this on an element is the act that makes it
-  // coordinate-placed, so a popup that opens both ways does not need two markup variants.
-  el.setAttribute(POPOVER_COORDS_ATTR, "");
-  place(el, win, x, y, margin, flip);
+  const show = () => {
+    // Stamped rather than assumed: calling this on an element is the act that makes it
+    // coordinate-placed, so a popup that opens both ways does not need two markup variants.
+    el.setAttribute(POPOVER_COORDS_ATTR, "");
+    place(el, win, x, y, margin, flip);
 
-  if (el.hasAttribute("popover") && !el.matches(":popover-open")) el.showPopover();
+    if (el.hasAttribute("popover") && !el.matches(":popover-open")) el.showPopover();
 
-  // Show, measure, re-place — all in one task, so the browser paints the corrected position rather
-  // than the provisional one. **The second call is the one that does the real work**: before showing,
-  // the popup is `display: none` and measures zero, so neither the flip nor the clamp has a box to
-  // reason about.
-  place(el, win, x, y, margin, flip);
+    // Show, measure, re-place — all in one task, so the browser paints the corrected position rather
+    // than the provisional one. **The second call is the one that does the real work**: before
+    // showing, the popup is `display: none` and measures zero, so neither the flip nor the clamp has
+    // a box to reason about.
+    place(el, win, x, y, margin, flip);
+  };
+
+  if (!options.afterPointerUp) {
+    show();
+    return;
+  }
+
+  // Capture on the document, which is where the guard has to sit: the light-dismiss pass runs ahead
+  // of the listeners for the same `pointerup`, so by the time this fires the dismissal it exists to
+  // survive is already over — and showing here is still inside that one event, before any paint, so
+  // there is no frame in which the menu is missing. `once`, because the guard belongs to the single
+  // gesture that armed it; every later release is an ordinary dismissal and must stay one.
+  ownerDocument(el).addEventListener("pointerup", show, { once: true, capture: true });
 }
 
 /**
@@ -142,7 +189,7 @@ function declaredAnchorNames(trigger: HTMLElement, win: Window): string[] {
 /**
  * Bind a native popup to the invoker that opens it, at the moment it opens, and return a disposer.
  *
- * The static rules in `theme-base.css` bind every popup whose trigger is a *fixed* part of its
+ * The static rules in `forge-ui.css` bind every popup whose trigger is a *fixed* part of its
  * compound — one `Popover.Trigger` per `Popover`, one `Menu.Trigger` per `Menu`. A **submenu** is the
  * case they cannot express: `Menu.SubmenuTrigger` and its nested `Menu.Popup` are siblings among the
  * rows of the parent panel with no wrapper between them (a wrapper inside a `role="menu"` would break

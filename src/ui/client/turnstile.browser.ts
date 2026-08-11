@@ -178,6 +178,26 @@ test.describe("mountTurnstile — engagement-gated load", () => {
     expect(await scriptCount(page)).toBe(1);
     expect(await page.evaluate(() => document.querySelector<HTMLScriptElement>(`script[src*="turnstile"]`)?.async)).toBe(true);
   });
+
+  test("still loads the script on a page holding an element whose id is `turnstile`", async ({ page }) => {
+    await serveScript(page);
+    // The DOM exposes every element with an `id` as a window property of that name, so this section
+    // *is* `window.turnstile` until Cloudflare's script overwrites it — and a page with a section per
+    // component is not an exotic page. Reading the global for truthiness answers an `HTMLElement`
+    // here, which has no `render`, so the controller would report a failure it never attempted.
+    await mount(page, `<section id="turnstile"></section>${await formMarkup()}`, EXPOSE);
+    await mountController(page);
+    await engage(page);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          renders: window.turnstileCalls?.renders.length ?? 0,
+          fallbackHidden: document.querySelector<HTMLElement>("[data-ref='turnstile-fallback']")?.hidden ?? null,
+        })),
+      )
+      .toEqual({ renders: 1, fallbackHidden: true });
+  });
 });
 
 test.describe("mountTurnstile — rendering", () => {

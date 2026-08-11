@@ -1,4 +1,6 @@
 export { ShowcaseContent } from "./components";
+export { CollectionSurface, CompositionsSection, FeedbackSurface, SettingsSurface } from "./compositions";
+export { CustomiseContent, type CustomiseData, type CustomiseIcon, loadCustomise } from "./customise";
 export type { ShowcaseIcon, ShowcaseOptions, ShowcaseUiRoutes } from "./register";
 export { registerShowcase, showcaseRoutes } from "./register";
 export type {

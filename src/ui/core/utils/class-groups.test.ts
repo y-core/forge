@@ -103,7 +103,7 @@ describe("classGroup prefix families", () => {
 describe("classGroup text dispatcher", () => {
   const cases: { utility: string; expected: string }[] = [
     { utility: "text-sm", expected: "font-size" },
-    { utility: "text-red-500", expected: "text-color" },
+    { utility: "text-destructive", expected: "text-color" },
     { utility: "text-left", expected: "text-align" },
     { utility: "text-ellipsis", expected: "text-overflow" },
     { utility: "text-[11px]", expected: "font-size" },

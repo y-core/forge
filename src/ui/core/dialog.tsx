@@ -12,6 +12,8 @@ interface DialogProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> 
   children?: JSXNode;
 }
 
+type DialogSectionProps = JSX.IntrinsicElements["div"];
+
 interface DialogTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   /** id of the `Dialog` this button opens as a modal — its `commandfor` target. */
   for: string;
@@ -33,7 +35,7 @@ const DialogRoot: FC<DialogProps> = ({ id, open, class: cls, children, "data-slo
     data-scope={DIALOG_SCOPE}
     {...(open ? { open } : {})}
     {...stateAttrs({ open: open === true })}
-    class={cn("rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-lg", asClass(cls))}
+    class={cn("rounded-xl border border-border bg-popover text-popover-foreground shadow-lg", asClass(cls))}
     {...props}>
     {children}
   </dialog>
@@ -69,22 +71,55 @@ const DialogClose: FC<DialogCloseProps> = ({ for: target, request = false, class
   );
 };
 
+const DialogHeader: FC<DialogSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div
+    data-slot={slotToken("dialog-header", inherited)}
+    class={cn("grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5", cls)}
+    {...rest}>
+    {children}
+  </div>
+);
+
+const DialogBody: FC<DialogSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("dialog-body", inherited)} class={cn("px-6 py-5", cls)} {...rest}>
+    {children}
+  </div>
+);
+
+const DialogFooter: FC<DialogSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div data-slot={slotToken("dialog-footer", inherited)} class={cn("flex items-center gap-2 border-t border-border px-6 py-4", cls)} {...rest}>
+    {children}
+  </div>
+);
+
 /**
  * Compound modal dialog built on the native `<dialog>` + Invoker Commands APIs. `Dialog.Trigger`
  * emits `command="show-modal"` and `Dialog.Close` emits `command="close"` (or `"request-close"`
  * with `request`); the shared id links each button's `commandfor` to the dialog. Top-layer
  * rendering, the `::backdrop`, focus trapping, and Esc-to-cancel are handled by the platform.
  *
+ * The root draws only the surface; `Dialog.Header`, `Dialog.Body` and `Dialog.Footer` carry the
+ * gutter, so content never sits flush against the dialog's edge.
+ *
  * ```tsx
  * <>
  *   <Dialog.Trigger for="confirm">Delete…</Dialog.Trigger>
  *   <Dialog id="confirm">
- *     …
- *     <Dialog.Close for="confirm">Cancel</Dialog.Close>
+ *     <Dialog.Header>Delete project</Dialog.Header>
+ *     <Dialog.Body>This cannot be undone.</Dialog.Body>
+ *     <Dialog.Footer>
+ *       <Dialog.Close for="confirm">Cancel</Dialog.Close>
+ *     </Dialog.Footer>
  *   </Dialog>
  * </>
  * ```
  *
  * @public
  */
-export const Dialog = Object.assign(DialogRoot, { Trigger: DialogTrigger, Close: DialogClose });
+export const Dialog = Object.assign(DialogRoot, {
+  Trigger: DialogTrigger,
+  Close: DialogClose,
+  Header: DialogHeader,
+  Body: DialogBody,
+  Footer: DialogFooter,
+});

@@ -46,7 +46,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
         </RadioGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="radio-group" aria-describedby="field-plan-error" data-invalid="" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-red-600" id="field-plan-error" role="alert">Choose a plan.</p></fieldset>',
+      '<fieldset data-slot="radio-group" aria-describedby="field-plan-error" data-invalid="" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-destructive" id="field-plan-error" role="alert">Choose a plan.</p></fieldset>',
     );
   });
 

@@ -215,7 +215,7 @@ describe("slotToken", () => {
  * component element instead, so the token has to survive being injected into the inner compound's
  * props and re-emitted by it. Every assertion below must go through that path or it pins nothing.
  *
- * These are the compositions `theme-base.css` writes `[data-slot~="tooltip-trigger"][data-slot~="…"]`
+ * These are the compositions `forge-ui.css` writes `[data-slot~="tooltip-trigger"][data-slot~="…"]`
  * rules for; a dropped token makes all three rules unmatchable and the popup falls back to the UA's
  * `[popover]` centring.
  */
@@ -351,7 +351,7 @@ describe("a caller's own data-slot on an asChild compound", () => {
           <a href='/x'>Go</a>
         </Button>,
       ),
-    ).toBe(`<a href="/x" class="${BUTTON_BASE} text-foreground hover:bg-accent size-[34px] p-0" data-slot="button toolbar-title-action">Go</a>`);
+    ).toBe(`<a href="/x" class="${BUTTON_BASE} text-foreground hover:bg-accent size-8 p-0" data-slot="button toolbar-title-action">Go</a>`);
   });
 
   it("stacks behind the child's own token when the child declares one too", async () => {

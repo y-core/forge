@@ -10,6 +10,7 @@ import { renderPage } from "../../jsx/render-to-string";
 import type { FC } from "../../jsx/types";
 import type { ForgeIcon } from "../core/icon";
 import { ShowcaseContent } from "./components";
+import { CustomiseContent, type CustomiseData, loadCustomise } from "./customise";
 import type { ShowcaseData } from "./route";
 import {
   loadDependent,
@@ -42,6 +43,9 @@ export function showcaseRoutes(base = "/showcase/ui") {
   return {
     ui: {
       index: get(base),
+      /** The theme customiser. A sibling of `index` rather than a child of `api`: it is a page a
+       *  person navigates to and shares a link to, not an HTMX fragment endpoint. */
+      theme: get(`${base}/theme`),
       api: {
         preview: get(`${api}/preview`),
         validate: get(`${api}/validate`),
@@ -123,7 +127,7 @@ export function registerShowcase<Bindings extends object, Config, Ctx>(
 
   const preview = definePage({ loader: loadPreview, view: (_c, _cfg, state) => renderPreview(state.data, opts.icon) });
 
-  const validate = definePage({ loader: loadValidate, view: (_c, _cfg, state) => renderValidate(state.data) });
+  const validate = definePage({ loader: (c) => loadValidate(c, paths), view: (_c, _cfg, state) => renderValidate(state.data, opts.icon) });
 
   const search = definePage({ loader: loadSearch, view: (_c, _cfg, state) => renderSearch(state.data) });
 
@@ -133,6 +137,21 @@ export function registerShowcase<Bindings extends object, Config, Ctx>(
 
   const toast = definePage({ loader: loadToast, view: (_c, _cfg, state) => renderToast(state.data) });
 
-  app.map(uiRoutes, createController(uiRoutes, { actions: { index } }));
+  const themePath = uiRoutes.theme.href();
+  const theme = definePage<Bindings, Config, CustomiseData>({
+    loader: (c) => loadCustomise(c, { path: themePath }),
+    view: async (c, config, state) => {
+      const ctx = await opts.context(c, config);
+      return renderPage(
+        <LayoutComponent ctx={ctx}>
+          <CustomiseContent data={state.data} icon={opts.icon} />
+        </LayoutComponent>,
+      );
+    },
+  });
+
+  // Both pages go in the same `actions` object: `createController` keys actions by the route map's
+  // own property names, so `theme` here is the `theme` declared in `showcaseRoutes`.
+  app.map(uiRoutes, createController(uiRoutes, { actions: { index, theme } }));
   app.map(uiRoutes.api, createController(uiRoutes.api, { actions: { preview, validate, search, paginate, dependent, toast } }));
 }

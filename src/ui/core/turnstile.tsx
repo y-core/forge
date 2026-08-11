@@ -33,7 +33,7 @@ export const Turnstile: FC<TurnstileProps> = ({ siteKey, size = "normal", class:
     data-size={size}
     class={cn(asClass(cls))}
     {...rest}>
-    <p data-ref={TURNSTILE.fallback} role='alert' hidden={true} class='text-sm text-red-600'>
+    <p data-ref={TURNSTILE.fallback} role='alert' hidden={true} class='text-sm text-destructive'>
       {children ?? DEFAULT_FALLBACK}
     </p>
   </div>

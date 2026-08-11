@@ -12,12 +12,17 @@ type ToastContainerProps = JSX.IntrinsicElements["section"] & { position?: Toast
 
 type ToastProps = JSX.IntrinsicElements["div"] & { variant?: ToastVariant; dismissible?: boolean; duration?: number };
 
+/** The same four status intents as `alert.tsx`, on the same `-subtle` panel tier and for the same
+ *  reason — see the block comment on `variantClasses` there for the argument and the measured
+ *  ratios. A toast and an alert are the same surface at different urgencies, so sharing the tier is
+ *  what keeps them from drifting apart, which is exactly what happened while both were spelling the
+ *  stops out by hand. `default` goes through tokens and re-maps on its own. */
 const toastVariantClasses: Record<ToastVariant, string> = {
   default: "border-border bg-background text-foreground",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-900",
-  info: "border-blue-200 bg-blue-50 text-blue-900",
-  warning: "border-yellow-200 bg-yellow-50 text-yellow-900",
-  destructive: "border-red-200 bg-red-50 text-red-900",
+  success: "border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground",
+  info: "border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground",
+  warning: "border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground",
+  destructive: "border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground",
 };
 
 const positionClasses: Record<ToastPosition, string> = {
@@ -75,7 +80,7 @@ const ToastRoot: FC<ToastProps> = ({
           data-slot='toast-close'
           aria-label='Dismiss notification'
           {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-          class='absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring'>
+          class='absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
           <span aria-hidden='true' class='text-sm leading-none'>
             ×
           </span>

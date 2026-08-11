@@ -11,16 +11,19 @@ type SelectProps = JSX.IntrinsicElements["select"] & { field?: FieldDescriptor; 
 type SelectOptionProps = JSX.IntrinsicElements["option"];
 type SelectOptGroupProps = JSX.IntrinsicElements["optgroup"];
 
+const SELECT_WRAPPER = "group/select relative w-full has-[select:disabled]:opacity-50";
 const SELECT_BASE = "w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground";
-const SELECT_FOCUS = "focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20";
+const SELECT_FOCUS = "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20";
 const SELECT_DISABLED = "disabled:cursor-not-allowed disabled:pointer-events-none";
 
 const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({ class: cls, field, icon: Icon, children, "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 
   return (
-    <div data-slot='select-wrapper' class='group/select relative w-full has-[select:disabled]:opacity-50'>
-      <select data-slot={slotToken("select", inherited)} class={cn(SELECT_BASE, SELECT_FOCUS, SELECT_DISABLED, asClass(cls))} {...resolved}>
+    // The wrapper is the element with the geometry — width, position, the chevron's containing
+    // block — so a caller's `class` has to land here to size the control as laid out.
+    <div data-slot='select-wrapper' class={cn(SELECT_WRAPPER, asClass(cls))}>
+      <select data-slot={slotToken("select", inherited)} class={`${SELECT_BASE} ${SELECT_FOCUS} ${SELECT_DISABLED}`} {...resolved}>
         {children}
       </select>
       <span

@@ -15,6 +15,7 @@ import { ownerDocument, ownerWindow } from "../client/dom";
 import { registerScope } from "../client/resume";
 import type { ReadonlySignal } from "../client/signal";
 import { computed, createSignal, effect } from "../client/signal";
+import { mountViewportCollapse } from "../client/viewport-collapse";
 import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 // ---------------------------------------------------------------------------
@@ -117,7 +118,27 @@ registerScope("navbar", {
     const doc = ownerDocument(root);
     doc.addEventListener("navbar:filters", onFiltersEvent);
 
+    // 3. Collapse the bar's disclosure while the viewport is narrow.
+    //
+    // `~=` rather than `=`: `data-slot` is a token list, and `slotToken` appends an inherited token
+    // when a `Navbar` is composed under another compound — an exact match would silently skip every
+    // one of those bars. `querySelector`, because a scope root wraps exactly one bar.
+    //
+    // Every bar is driven, closed ones included, because the controller cannot open a disclosure it
+    // did not itself close: its expand branch is an undo of its own close, never an opinion about
+    // what the wide state should be. So a bar the server rendered closed — the `collapsible="mobile"`
+    // default, and every existing consumer — is inert here rather than forced open on a wide screen.
+    // Guarding on `bar.open` at mount would be the same behaviour by a second mechanism, and the
+    // weaker one: it reads the state once, while the invariant has to hold across every resize.
+    //
+    // The controller's default breakpoint (`47.99rem`) has to agree with the `md:` classes the
+    // markup emits (Tailwind's `48rem`). Markup cannot state a width to a controller, so the two are
+    // held together by convention alone.
+    const bar = root.querySelector<HTMLDetailsElement>("[data-slot~='navbar']");
+    const disposeCollapse = bar ? mountViewportCollapse({ element: bar }) : null;
+
     return () => {
+      disposeCollapse?.();
       doc.removeEventListener("navbar:filters", onFiltersEvent);
     };
   },

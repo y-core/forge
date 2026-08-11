@@ -171,7 +171,7 @@ describe("Toolbar.Link", () => {
 describe("Toolbar.Input", () => {
   it("is a focus stop like any other item", async () => {
     expect(await render(<Toolbar.Input placeholder='Search' />)).toBe(
-      '<input data-slot="toolbar-input" data-toolbar-item="" class="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" placeholder="Search">',
+      '<input data-slot="toolbar-input" data-toolbar-item="" class="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" placeholder="Search">',
     );
   });
 });

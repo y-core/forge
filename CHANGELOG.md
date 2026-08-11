@@ -3,10 +3,1099 @@
 All notable changes to `@y-core/forge` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+> **`[Unreleased]` is the only section humans edit.** `bun run release` promotes it into a dated
+> version section, with the version and the date computed — never typed. Editing a released
+> heading by hand puts it out of step with the tag and `package.json`, which
+> `bun run verify --only validate-changelog` refuses.
+
 > **Pre-1.0 versioning.** Per the project's architectural policy, breaking changes ship
 > **without deprecation shims** and consuming apps are updated in the same window. A `0.0.x`
 > bump can therefore contain breaking changes — always read the **Breaking Changes** section
 > before upgrading.
+
+---
+
+## [Unreleased]
+
+**The semantic layer conflated a decorative hairline with a control affordance under one stop
+mapping.** `--border`, `--input` and `--ring` were documented as a single concern — *"separation,
+control outlines, and the focus ring"* — and mapped accordingly: `--border` and `--input` were both
+`--palette-400` in light and both `--palette-700` in dark. That is the correct value for a `Card`
+edge and roughly **half** of what WCAG 1.4.11 requires of the only boundary a text field has. Every
+control outline forge shipped sat at 2.36:1 in light and **1.70:1** in dark, against a 3:1 floor.
+The light focus ring was worse: a 50%-alpha `color-mix` that composited to **1.63:1**, below the
+border it was meant to replace, so focusing a field made its outline *fainter*.
+
+The audit that followed — oklch → oklab → linear sRGB → WCAG relative luminance, worst case across
+all five ramps in both modes — found the failures were systematic rather than local, and turned up
+one **Level A** defect: `Slider` had no focus indicator at all. `appearance-none` removed the
+platform's, and nothing replaced it.
+
+**The corpus had a clause wide enough to permit all of it.** `forge-ui-color-scale-adjacent-stops`
+forbade adjacent-stop pairs *"unless the pair is a border against its own surface, where low contrast
+is the point"* — an exemption written for hairlines that read as covering control outlines too. The
+rule keeps its id and gets the distinction it was missing: **decoration versus affordance**.
+
+Remediation is scoped to that distinction. Tokens WCAG actually binds moved to a step that clears
+their floor; decorative lines kept the step a hairline belongs on. `--border` is a subtle border and
+stays one, so `Card`, `Dialog`, `Popover`, `Menu`, `Alert`, `Toast` and every `bg-border` separator
+keep the quiet edge they had. Their *shade* moves with everything else — see **Every colour changes**
+below, which is a separate change with a separate cause.
+
+**`theme-mist.css` and `theme-olive.css` are deleted.** They aliased `--color-mist-*` and
+`--color-olive-*`. Tailwind has no such palettes and nothing declared them, so every `--palette-*`
+stop was invalid at computed-value time and every semantic token built on it unset. Anyone importing
+either was rendering against an undefined ramp. They shipped that way for 82 versions.
+
+**The same defect had a second home, and the log viewer is it.** The dark pass over `Alert`, `Toast`,
+`Badge` and the `@y-core/forge/http` banners deliberately skipped `logging/show`: a correctly-tinted
+chip inside a light-only table would look worse than leaving both alone. Going back for it turned up
+something the deferral had not suspected. The viewer's status map was `brand-*` and `amber-*`, and
+`brand` is **not a forge palette** — there is no `--color-brand-*` in `src/ui/assets/css/`, and no
+Tailwind config in the repo; `src/ui/README.md` treats a brand hue as a value the *consumer* maps
+onto `--primary`. So in any app that does not happen to declare a `brand` scale of its own, those
+thirteen utilities never compiled at all, and the viewer rendered with invisible borders and
+unreadable text **in light mode too**. This is `theme-mist.css` again, one namespace over: a ramp
+that was never declared, shipping for as long as anyone looked at it. Giving a phantom palette a dark
+half would have preserved the larger defect.
+
+So the map is deleted rather than paired, and the viewer is rebuilt on `ui/core` primitives and
+semantic tokens — against the same corpus every consumer is handed. Five text colours become two, the
+hand-built container becomes a `Card` bounded by a `ScrollArea`, the raw `<button>` with no focus
+ring becomes a `Button`, and both HTMX swaps stop targeting a region that contains their own trigger.
+
+**Two independent gate holes let it ship, and both are closed.** `scripts/validate-design.ts` walked
+`src/ui` only, so `src/logging` was never scanned; and the colour matcher in
+`scripts/design-parse.ts` recognised hex, `rgb()` and `oklch()` literals, which a bare palette
+utility is not — its own header recorded that blind spot in as many words. The Floor's "permitted
+**only** paired with its own `dark:` counterpart" therefore had no matcher behind it. The walk now
+covers every non-test `.tsx` under `src/`, and a new `forge-ui-color-theme-no-raw-utility` matcher
+fails a palette utility carrying no `dark:` counterpart beside it. Across the whole tree that gate
+found hits in exactly one file — the one rebuilt here.
+
+**A second change ships alongside the audit: a 12-step role scale replaces the eleven-stop
+`--palette-*` ramp as the layer under the semantic tokens.** The mapping used to be one hop, written
+twice — `--muted-foreground: var(--palette-600)` in `:root` and
+`--muted-foreground: var(--palette-300)` in `.dark`. It is now two hops written once:
+`--muted-foreground: var(--gray-11)` in `:root` only, with `--gray-11` declared per mode. The payoff
+is not the line count. A step means the same thing in both modes — step 1 is the app background
+whether the app is light or dark — so the number of independently mode-varying decisions at the
+semantic layer is now **zero**, and light and dark cannot diverge there. Before this, all 24 semantic
+tokens were declared twice with nothing at all stopping the two copies drifting apart. `.dark` now
+carries role steps and nothing else, and `validate-contrast` enforces that rather than trusting it.
+
+**`--palette-*` is deleted rather than renamed.** The ramp existed only because the old semantic
+layer needed something mode-agnostic to point at, and the step layer does that job — keeping both
+would have left two indirections answering one question. Every declaration is gone from every
+stylesheet forge ships.
+
+**The steps carry literal values, and every scheme takes its lightness from `@radix-ui/colors` 3.0.0
+(MIT) and its hue from Tailwind.** Neither library is a dependency: there are sixty numbers per
+scheme, they never change without a release, and a dependency would have to resolve through
+`node_modules` — the exact fragility `forge.css`'s `@source` comment already documents. That the
+choice was free at all is the return on staging the work this way. The scale layer was introduced
+first as a pure indirection over the old ramp, so re-pointing it touched one layer and left the
+semantic tokens, the `@theme inline` bridge and every component untouched.
+
+**Radix's tinted neutrals could not carry a scheme on their own, and that is a design-intent
+difference rather than a defect in them.** They are calibrated to sit *under* a saturated accent and
+only lean toward it; the accent carries the identity. Forge has no accent — `--accent-12` aliases
+`--gray-12`, near-black — so the scheme itself has to. Measured as max−min across R/G/B at step 11,
+the muted-text step: Radix `gray` 0, Radix `sand` 5, Radix `slate` 12, against Tailwind's `stone` 10
+and `slate` **39**. Switching from the default scheme to `theme-stone.css` moved `--gray-1` from
+`#f9f9f9` to `#f9f9f8` — one unit on one channel, invisible. So each step keeps its Radix lightness,
+which the role numbering and every contrast measurement depend on, and takes its chroma and hue from
+the matching Tailwind ramp resampled at that lightness: `theme-neutral.css` → `neutral`,
+`theme-stone.css` → `stone`, `theme-gray.css` → `gray`, `theme-slate.css` → `slate`. Tailwind's
+eleven stops are not spaced for twelve roles, so neither source alone was right. The default scheme
+is achromatic, so its steps are unchanged and still literally Radix `gray`; only the three tinted
+files moved, and step 11's tint now runs 0 / 12 / 20 / 42 across neutral, stone, gray and slate. The
+alpha steps stay Radix's as authored — `sandA` under stone, `slateA` under both slate and gray, since
+these are low-opacity overlays whose hue only has to be in the right family and a second, weaker blue
+would be a distinction no eye could resolve at `a3`. Attribution for both sources is under
+`## Sources` in `src/ui/design/reference/04-color.md`.
+
+**`theme-gray.css` is the fourth scheme, and it exists because the other three clustered.**
+`theme-neutral.css` and `theme-stone.css` sit twelve units apart at step 11 and read as almost the
+same scheme, which left the only real alternative to achromatic being slate at 42. Adding a fourth
+does not close that gap; it means the ladder has a rung at every strength, and an app wanting "grey
+but not *literally* grey" has an answer that is not slate. **Tailwind's ramp named `gray` is
+blue-tinted** — worth stating wherever the schemes are listed, because the names invite the opposite
+reading: `theme-gray.css` is the cool scheme and `theme-neutral.css` is the achromatic one.
+
+**It is also the first scheme to scale its chroma, and that turned out to be free.** Tailwind's
+`gray` at full strength lands at 26 here, which read as more blue than a scheme called grey should
+be, so its chroma is scaled to **0.8** and it lands at 20. Across the whole dial from full chroma
+down to 0.5, no audited ratio moves by more than 0.05 — hue and chroma are free parameters in this
+construction, because every contrast measurement depends on lightness alone and the lightness ramp is
+shared. Re-tuning a scheme's character costs no re-measurement, and adding one costs no contract row.
+
+**One property falls out of that which neither source has on its own: all four schemes share a
+single lightness ramp and differ only in hue.** Every audited contrast ratio is therefore the same
+across them to within **0.05** — the widest gap at any audited step is `--muted-foreground` in
+light, at 5.17 gray, 5.19 neutral, 5.20 stone and 5.22 slate — by construction rather than
+coincidence, which is what lets one set of pinned numbers describe all four, and means a scheme swap
+cannot move a pair across its floor. Adding `theme-gray.css` re-pinned **zero** contract rows, which
+is the difference between having measured three schemes and having one measurement that describes
+any scheme built this way.
+
+**Forge takes Radix's architecture, not its appearance.** The step numbering and the semantics
+attached to each position are Radix's, adopted verbatim. Which role reaches for which step is
+forge's, and the two disagree in one place that matters: Radix's steps 7 and 8 do not meet WCAG
+1.4.11, so forge does not use them for control borders. See **The border steps** below.
+
+**Every colour changes, and that is the largest visual change in the release.** The greys move from
+the old Tailwind ramps to the new scale end to end — every surface, every border, every line of text.
+It is not a re-tint of a few tokens.
+
+### Breaking Changes
+
+- **`--primary` is a brand colour now, not a near-black. Forge ships a real accent.** `--primary`
+  resolved through `--accent-12`, which was aliased to `--gray-12` — so `Button variant='primary'`,
+  the one control nearly every forge app renders, was near-black, and "theming" forge meant picking
+  a shade of grey. `theme-neutral.css` declares a full `--accent-1…12` scale plus its alpha steps,
+  and the semantic layer re-points:
+
+  ```diff
+  - --accent-12: var(--gray-12);          /* the alias is gone */
+  - --primary:            var(--accent-12);
+  - --primary-foreground: var(--gray-1);
+  + --primary:            var(--accent-9);        /* Radix's `solid` step */
+  + --primary-foreground: var(--accent-contrast);
+  ```
+
+  **Nothing will fail to compile. Every primary button changes colour.** If your app re-declared
+  `--accent-12` to supply its own brand — the extension point the old comment named — that
+  declaration now does nothing, because `--primary` no longer resolves through step 12. Re-declare
+  `--accent-9` and `--accent-contrast`, or the whole `--accent-*` scale, which is what a scheme file
+  is for. See `MIGRATION.md`.
+
+  The accent is generated at Radix indigo's hue, and **step 9 departs from indigo on purpose**:
+  lightness 0.52 rather than 0.5438. Accents do not invert their solid between modes — a brand colour
+  that changed in dark mode would stop being the brand — so `--accent-contrast` has to be near-white
+  in *both*, and forge's only near-white dark step is `--gray-12` at `#eeeeee`. On indigo's own step
+  9 that measures **4.49:1**, under 1.4.3's floor, reaching 4.51 only on a one-byte rounding
+  difference. A pair astride its floor by a rounding artifact is not a pair to pin, so the solid
+  moved to where the margin is real: **5.48:1 in light and 4.97:1 in dark**.
+
+  `TOKEN_CONTRACT` gains a `--primary-foreground` row, and it audits a pair that existed unaudited
+  for 83 versions. `Button variant='primary'` has always been text on a filled surface, so 1.4.3 has
+  always bound it; it escaped notice because near-white on near-black is so far clear of the floor
+  that nobody thought to check. Pointing `--primary` at a saturated step is what makes the
+  measurement matter, so the pair gets a row at the same moment it gets a colour.
+
+> **Every consumer's rendering changes, and this time every colour does.** Five things in this
+> release a compiler will tell you about: `mountNav` is removed, `Collapsible.Trigger` gains a
+> required `icon`, `ToggleGroupItemSize` is removed, `ui/show`'s validate exports change shape, and
+> `loadLogViewer` changes both its signature and its required options. One thing your **CSS build**
+> will tell you about: `theme-zinc.css` no longer exists, so an `@import` of it fails to resolve.
+> `theme-gray.css` and `theme-neutral.css` keep their filenames and are **entirely different files** —
+> scheme files now, not `--palette-*` ramps — so an import of either still resolves and quietly means
+> something else. Everything else is tokens and
+> rendering — nothing else fails to compile and nothing throws, and four of those silent changes are
+> behavioural rather than cosmetic. One further silent change is neither tokens nor rendering:
+> `inlineValidation()`'s `sync` default moves from `"closest form:abort"` to `"this:abort"`, listed
+> under **Fixed** because the old default threw. Read the table, then look at a dark-mode form, then
+> read [`MIGRATION.md`](MIGRATION.md).
+
+- **`forge.css` now declares `@custom-variant dark (&:where(.dark, .dark *));` itself, and that is a
+  takeover rather than a convenience.** The line was going to be this release's one required action;
+  it is now forge's to declare, after the theme imports. An app that has already added it is
+  unaffected — the declaration is identical and `@custom-variant` is last-declaration-wins, so the
+  consumer's copy restates forge's. **The reconfiguration is not scoped to forge's utilities.** A
+  custom variant is global, so this redefines `dark:` across the *consuming app's* stylesheet too,
+  and an app deliberately keyed to `prefers-color-scheme` loses its automatic dark theme with no
+  error and no unmatched class. The escape hatch is the same cascade rule that makes a consumer's
+  own copy harmless — re-declare the variant *after* the import:
+
+  ```css
+  @import "@y-core/forge/ui/assets/css/forge.css";
+  @custom-variant dark (@media (prefers-color-scheme: dark));
+  ```
+
+  Why forge takes it over at all is unchanged from what the line was always for. Forge's own colours
+  are class-driven end to end — the `.dark` block re-declares the role steps and every semantic token
+  resolves through them, so **forge itself now emits no `dark:` utility at all**; the status variants
+  that briefly carried hand-written `dark:` halves resolve through `--status-*` instead. A consuming
+  app's `dark:` utilities, though, sit on the same page as forge's tokens, and keyed off the OS
+  rather than the theme class the two disagree the moment a dark-OS machine sets the toggle to
+  `light`. A requirement forge holds its own half of is one fewer requirement with no diagnostic
+  behind it. Forge cannot warn you in either
+  direction: it has no Tailwind dependency, so nothing in its gate compiles CSS. The variant is
+  written in **statement** form and in `forge.css` rather than `theme-base.css`, because
+  `validate-contrast` parses the semantic layer by brace-counting `.dark { … }` and the block
+  spelling would put a second thing that looks exactly like a mode block into the file that gate
+  walks. See [`MIGRATION.md`](MIGRATION.md).
+- **The per-mode override point moved from the semantic token to the role scale.** Every semantic
+  token is now declared once and means the same thing in both modes, so an app that wrote
+  `:root { --primary: … }` and relied on forge's `.dark` twin to flip it back gets that value in
+  **both** modes — the twin it was overriding no longer exists. Nothing errors and nothing goes
+  unset; the light value simply carries into dark. The replacement is to re-point the **step**,
+  which is the layer that is still per-mode: `--accent-12` behind `--primary`, `--gray-11` behind
+  both `--muted-foreground` and `--ring`, `--gray-10` behind `--input`. An override that was always
+  meant to hold in
+  both modes needs no change at all. This is the genuine breaking change of the sub-stage and the
+  one no compiler will ever mention; `validate-contrast` refuses an audited token declared in
+  `.dark` at all, so forge's own theme files cannot re-introduce the old shape, but a consumer's
+  stylesheet is outside that gate. See [`MIGRATION.md`](MIGRATION.md).
+- **The border steps — Radix's 7 and 8 are not WCAG-conformant, and forge does not use them for
+  control borders.** This is the sharpest place forge's role mapping departs from Radix's step names,
+  and it is a deliberate refusal rather than an oversight. Radix calls step 6 "subtle borders and
+  separators", step 7 "UI element border and focus rings" and step 8 "hovered UI element border";
+  measured against the surfaces they sit on, those three are **1.24 / 1.38 / 1.68** to 1 in light,
+  against WCAG 1.4.11's 3:1 floor for anything that identifies a control. Radix's own contrast
+  guarantee is explicit about its scope — steps 11 and 12, to APCA Lc 60 and Lc 90 on a step-2
+  background — and claims nothing for step 7. So `--border` keeps step 6, which is where Radix puts a
+  hairline and what a hairline should be, and the affordances move off the border steps entirely:
+  `--input` and `--track` take **step 10** (`--gray-10`, 3.33 light / 3.76 dark) and `--ring` takes
+  **step 11** (`--gray-11`, 5.19 / 7.67). Adopting step 7 because it is *called* the UI element
+  border would have re-introduced, under a better name, exactly the defect this release fixes —
+  `--input` shipped at roughly half the required ratio for 82 versions. Whether to instead author
+  compliant values at steps 7 and 8 is **open and deferred to a later pass**; nothing here settles
+  it.
+- **`--input` and `--ring` are *lighter* than the values this release's audit first landed on.**
+  `--input` goes 4.34 → 3.33 in light and `--ring` 6.87 → 5.19, both still clear of the 3:1 floor
+  1.4.11 binds them by, and both now measured as a single exact value rather than a worst case. The
+  affordance fix is not weakened; the numbers move because the whole neutral scale moved under them.
+  Against 0.0.82 a dark control still goes from a barely visible outline to a clearly visible one —
+  the shipped dark `--input` measured **1.70:1**, which was not a near-miss.
+- **`--muted-foreground` is the change that will be felt most widely** — 154 call sites, and where
+  most text on a forge surface lands. Text has no decorative exemption, so 4.5:1 binds and the only
+  lever is the foreground stop; moving the surface instead would collapse `--background` = `--card` =
+  `--popover` and destroy the surface hierarchy. The cost is a narrower perceptual gap between
+  `text-foreground` and `text-muted-foreground`, which slightly weakens the two-colour hierarchy
+  `forge-ui-text-color-budget` relies on. Accepted, because the alternative is shipping failing body
+  text.
+- **`--ring` must sit one stop beyond `--input`,** and that invariant is now what fixes its value. A
+  ring at the same stop as the input would make `focus:border-ring` a no-op in light; in dark it
+  would make a focused control *recede*.
+- **There is no longer a `--palette-*` ramp to supply, and an app that supplied one is now
+  supplying nothing.** This supersedes the previous instruction that a consumer must declare
+  `--palette-50` … `--palette-950`. The eleven stops are deleted, not renamed: nothing in forge
+  reads them, so a stylesheet still declaring a ramp compiles, renders forge's own scale, and gives
+  no sign that the ramp is inert. The extension point moved down one layer and shrank — a theme now
+  re-declares `--gray-1` … `--gray-12` (and their `--gray-a*` twins) in both blocks and nothing else,
+  and `theme-slate.css` is the worked example of exactly that shape. A brand *hue* is a different
+  extension point again: re-declare `--accent-12`, which `--primary` resolves through.
+- **The ratios below are single exact values, not worst cases.** Forge ships four neutral scales now
+  rather than five, and all four sit on one lightness ramp, so a row measured against
+  `theme-neutral.css` — the default — describes `theme-stone.css`, `theme-gray.css` and
+  `theme-slate.css` too, to within **0.05** at every audited step. That is a property of the
+  construction, not a coincidence to re-check per scheme: `theme-gray.css` was added after the table
+  below was pinned and moved none of it. An app that re-declares the steps to its own values is on
+  its own ramp, lands somewhere else, and nothing checks that for you.
+- **`LogViewerOptions` gains required `layout` and `context`, and `loadLogViewer` takes three
+  arguments.** `renderLogViewerPage` used to build its own `<html>`/`<head>`/`<body>` — with no FOUC
+  script, no dark class, and no `bg-background` on `<body>`. Dark mode was therefore unreachable
+  there no matter what classes the components carried, which is the deeper half of the log-viewer
+  defect above: the `@custom-variant dark` line this release requires could not have saved it. The
+  shell is now the consumer's, exactly as `registerShowcase` has always taken it. `config` becomes
+  the second argument, matching `definePage`'s own `(c, config, …)` shape, which `context` needs.
+  See [`MIGRATION.md`](MIGRATION.md).
+- **The log viewer's markup changes end to end**, which for a mounted viewer is the largest single
+  rendering change in the release. Level chips are `Badge` variants (`error`→`destructive`,
+  `warn`→`warning`, `info`→`info`, `debug`→`outline` — a neutral label, not a status signal). The
+  table sits in `Card` + `Card.Content class='p-0'` inside a `ScrollArea`; the timestamp column
+  carries `tabular-nums`; the filter submit moves to `size='sm'` `variant='primary'`; gaps move to
+  the density-8 row; and the empty state now distinguishes its two causes — no entries recorded
+  versus nothing matching the active filters — with a control that clears them in the second case.
+
+Token by token. The **Was** column is 0.0.82's mapping and its worst case across the five ramps that
+release shipped; the **Now** column is a role step and a single exact ratio against
+`theme-neutral.css`, measured on the backdrop named beside it in `scripts/contrast-parse.ts`:
+
+| Token | Mode | Was | Now | Ratio | Floor | Criterion |
+|---|---|---|---|---|---|---|
+| `--muted-foreground` | `:root` | `--palette-500` | `--gray-11` | 4.34 → **5.19** | 4.5 | 1.4.3 |
+| `--muted-foreground` | `.dark` | `--palette-400` | `--gray-11` | 3.94 → **7.67** | 4.5 | 1.4.3 |
+| `--input` | `:root` | `--palette-400` | `--gray-10` | 2.36 → **3.33** | 3 | 1.4.11 |
+| `--input` | `.dark` | `--palette-700` | `--gray-10` | 1.70 → **3.76** | 3 | 1.4.11 |
+| `--ring` | `:root` | 50% `color-mix` | `--gray-11` | 1.63 → **5.19** | 3 | 1.4.11 |
+| `--ring` | `.dark` | `--palette-500` | `--gray-11` | 3.04 → **7.67** | 3 | 1.4.11 |
+| `--track` | `:root` | *(was `--input`)* | `--gray-10` | **3.60** | 3 | 1.4.11 |
+| `--track` | `.dark` | *(was `--input`)* | `--gray-10` | **4.46** | 3 | 1.4.11 |
+| `--destructive` | `:root` | `--color-red-500` | `--red-9` = `red-700` | 4.33 → **5.63** | 4.5 | 1.4.3 |
+| `--destructive` | `.dark` | `oklch(…)` = `red-400` | `--red-9` = `red-300` | 3.55 → **8.28** | 4.5 | 1.4.3 |
+| `--destructive-foreground` | `:root` | *(did not exist)* | `--red-contrast` = `--gray-1` | **6.10** | 4.5 | 1.4.3 |
+| `--destructive-foreground` | `.dark` | *(did not exist)* | `--red-contrast` = `--gray-1` | **9.83** | 4.5 | 1.4.3 |
+| `--warning-foreground` | `:root` | `--palette-50` | `--yellow-contrast` = `--gray-12` | 1.83 → **8.51** | 4.5 | 1.4.3 |
+| `--warning-foreground` | `.dark` | `--palette-950` | `--yellow-contrast` = `--gray-1` | **12.04** | 4.5 | 1.4.3 |
+
+`--track` is measured thumb-on-track rather than track-on-page: the thumb is what distinguishes a
+`Switch`'s off state from its on state, and it is the sole indicator of it.
+
+**`--foreground` gets slightly stronger** — `--gray-12` measures **14.30** against `--muted`, above
+what the old `--palette-950` mapping reached. It carries no contract row because no floor was ever
+in question for it; it is noted because body text on a forge surface is the thing a reader will
+compare first.
+
+**The dark `--destructive` was a disguised palette reference.** It was written as the literal
+`oklch(0.704 0.191 22.216)`, which is Tailwind's `red-400` to fifteen significant figures — so it
+read as a bespoke colour nobody thought to check against the ramp it silently belonged to. It
+measured **3.55** on `--muted`, and `text-destructive` inside a `bg-muted` panel is ordinary markup:
+a recessed panel holding a validation error. `red-300` clears the worst backdrop forge puts error
+text on at **8.28**, and naming it removes the last raw colour literal from the semantic layer —
+which `forge-ui-color-scale-ramp-only` argues against.
+
+Deliberately **not** moved, because 1.4.11 does not bind a line that identifies no control and
+reports no state: `--border` measures **1.24** against `--background`, `--card` and `--muted` in
+light and **1.40** in dark. That is a quieter hairline than the ramp used to draw, and it is the
+Radix step-6 value doing what step 6 is for. It is recorded in `ACCEPTED` in
+`scripts/contrast-parse.ts` with its measured ratios and re-checked on every gate run rather than
+trusted. The four `--status-*-border` tokens sit in `ACCEPTED` on the same argument, at 1.08–1.33 in
+light and 1.18–2.12 in dark.
+
+- **The theme files are re-cut, and no theme file is the consumer's to import any more.**
+  `forge.css` imports `theme-neutral.css` (the default scale), `theme-colors.css` (the fixed status
+  hues) and `theme-base.css` (the mapping) for you, so forge renders correctly with **no theme file
+  imported at all** — a setup step is deleted rather than changed. `theme-base.css` no longer
+  declares a scale at all; it is the mapping layer and nothing else, which is what lets it hold no
+  `.dark` block. The scheme files — `theme-neutral.css`, `theme-stone.css`, `theme-gray.css` and
+  `theme-slate.css` — each declare the twelve steps and their alpha twins and nothing else.
+  **`theme-zinc.css` is deleted, and that is the breaking half** — an app importing it gets a build
+  error rather than a silent fallback, which is the outcome worth having. `theme-mist.css` and
+  `theme-olive.css` were already removed above for a different reason: they never resolved at all.
+  **`theme-gray.css` and `theme-neutral.css` keep their filenames and are different files** — scheme
+  files rather than `--palette-*` ramps — so those two imports still resolve and quietly mean
+  something else, which is the one move in this table a build will not flag.
+  `package.json` exports `./ui/assets/css/*.css` by wildcard, so no export path changes shape and the
+  export map needed no edit. The moves:
+
+  | You imported | Do |
+  |---|---|
+  | `theme-neutral.css` | Drop the import — `forge.css` already imports it. Keeping it restates the default and changes nothing |
+  | `theme-gray.css` | Keep it for the **cool** scheme, or drop it for the achromatic default. Same filename, entirely new values |
+  | `theme-zinc.css` | Import `theme-stone.css`, or drop the import; zinc has no successor |
+  | `theme-slate.css`, `theme-stone.css` | Keep the import; the values change |
+
+- **`theme-zinc.css` carried a live WCAG failure to its grave, and it is the sharpest argument for
+  the whole change.** Its dark `--warning-foreground` rendered near-white on `orange-500` at
+  **2.77:1**, while the comment on the very next line claimed 6.83. The cause is not a bad value; it
+  is a cascade race. `:root` and `.dark` both weigh 0-1-0, so source order decides between them —
+  and `theme-zinc.css` was imported *after* `theme-base.css`, so zinc's `:root { --warning-foreground:
+  var(--palette-50); }` won in **both** modes and the base's `.dark` twin was never reached. Zinc's
+  own `.dark` block said it "keeps the base's `--palette-950` foreground", which was true of the
+  block and false of the page. This shipped on every release that had the file. It is what a
+  mode-specific value at the semantic layer costs: correctness that depends on which stylesheet
+  imported last. The step layer removes the class of bug rather than this instance of it — there is
+  no per-mode declaration left at the semantic layer to race.
+- **`theme-zinc.css`'s `--destructive` override goes with it.** It pinned
+  `oklch(0.577 0.245 27.325)` — `red-600`, 4.33 on the page background, worse than the base value it
+  was overriding.
+- **The eight `--sidebar*` tokens and their eight `--color-sidebar*` bridge aliases are removed.**
+  No forge component ever read one; they arrived with the inherited token set and were wired to
+  nothing. The `@theme inline` bridge run is what makes Tailwind generate the utilities, so deleting
+  it stops `bg-sidebar`, `text-sidebar-foreground`, `border-sidebar-border` and the rest of that
+  family being generated at all — an app that used them loses the styling **silently**, with no
+  build error and no unknown-class warning, because an unmatched utility is simply an unstyled
+  class. Re-declare the eight tokens and the bridge aliases in your own stylesheet;
+  [`MIGRATION.md`](MIGRATION.md) carries the block to paste.
+- **`mountNav` and `NavControllerOptions` are removed from `@y-core/forge/ui/client`.** The
+  controller drove `data-ref="nav-toggle" | "nav-menu" | "nav-link"` markup **no forge component
+  emits**, so it could only ever have run against a consumer's hand-written nav. Its claims are all
+  held elsewhere now: `Navbar`'s collapse is a pure-CSS `<details>`, `mountScrollSpy` owns
+  active-link tracking, and `mountViewportCollapse` owns viewport-driven open/close. This is the
+  **loud** break in the release — the import stops resolving, so the compiler names every call site.
+  An app that genuinely ran it against its own markup can vendor the ~90 lines out of git history;
+  there is no shim.
+- **`collapsible="always"` with no explicit `placement` now renders the left rail.** It previously
+  resolved to `"top"` and rendered a full-width top strip that stayed permanently behind a hamburger,
+  which is not a shape anyone asked for; it resolves to `"left"` and takes the rail classes. Two
+  halves move, and **both are silent** — no compile error either way. The class string is one. The
+  other is the generated ids: `idBase` falls back to the *resolved* placement, so `navbar-menu-top-*`
+  becomes `navbar-menu-left-*` and `navbar-group-top-*` becomes `navbar-group-left-*`, which breaks
+  any selector, test or fragment target pinned to the old names. Pass `placement="top"` to keep the
+  old rendering, or an explicit `id` to pin the old ids. `collapsible !== "always"` still defaults to
+  `"top"`, and `Toolbar` is untouched.
+- **`Collapsible.Trigger` now requires an `icon`.** A compile error at every call site, and that is
+  the point: `list-none` on the `<summary>` deletes the UA disclosure triangle, and until now nothing
+  was drawn back — a disclosure with no marker for whether it is open. The trigger now wraps its
+  label in a `<span class='flex-1 pl-1'>` beside a `chevron-down` `Icon` that rotates when open.
+  Forge stays icon-agnostic, so the sprite-bound `ForgeIcon` is injected rather than imported; a
+  required prop is what makes the replacement unforgettable. The root's group name also changes,
+  `group/collapsible` → `group/collapsible-item`, and *that* half is silent: a consumer writing
+  `group-open/collapsible:` inside a panel now matches nothing.
+- **`ToggleGroupItemSize` is removed — use `ButtonSize`,** exported from both `@y-core/forge/ui/core`
+  and `@y-core/forge/ui/controls`. `ToggleGroup.Item` had its own three-entry `ITEM_SIZE` map, which
+  is exactly the second base string `buttonVariants` is exported to prevent; the item now resolves
+  through `buttonVariants({ variant: 'ghost', size })` and takes the full six-name size scale. The
+  removed type is the loud half. **The default is the silent one:** `sm` used to mean a 34px square
+  and now means the button `sm` pill, `h-8 px-3 text-sm`. An icon-only item must pass
+  `size='icon-sm'` to keep its box. The `[&_svg]` descendant sizing goes with the map, so an icon
+  inside an item renders at its own size rather than being resized by its parent — and `Icon`
+  declares no size of its own, so an icon that leaned on the item needs one at the call site.
+- **`Select` routes the caller's `class` to the wrapper, not the inner `<select>`.** The wrapper owns
+  the geometry — the width, and the containing block the chevron is positioned against — so
+  `class='w-64'` sized the inner control and left the box that is actually laid out untouched.
+  Forwarded *props* still land on the `<select>`, which is what a caller means by every native
+  attribute, `data-*` hook and ARIA relation; `class` is the one split, and `conformance.test.tsx`
+  records it as a `classSlot`. A caller passing a text or padding utility now sets it on the wrapper
+  and inherits it into the control; one passing a border or background utility styles the wrapper's
+  box instead of the control's.
+- **`Slider` no longer paints a filled-progress portion.** It dropped `accent-primary`, which is what
+  Chromium and Firefox read to tint the track up to the thumb, and the authored replacement is one
+  uniform `--track` bar. Silent — nothing about the markup or the type changes. A surface that used
+  the fill to read the value at a glance now has only thumb position, which is what a range input
+  affords natively; a fill is a component forge does not currently ship.
+- **A rail's width, `shrink-0` and border move off `<Navbar>` onto the `Resumable` scope root.**
+  `Navbar`'s own `class` lands on the `<details>`, two boxes inside the element the parent flex row
+  lays out, so a width set there only ever looked right — every box between happened to size to its
+  content — and a `shrink-0` set there guarded an element the flex algorithm was never going to
+  shrink. `Resumable` takes a `class` for exactly this. Silent, and it compounds with the rail's
+  height chain below: `src/ui/README.md` carries the current shape, and
+  `forge-ui-nav-rail-flex-item` is the rule.
+- **`@y-core/forge/ui/show`'s validate exports change shape**, so the demo's htmx round trip can
+  reach the endpoint from inside the swapped fragment: `ValidateData` gains a required `paths`,
+  `loadValidate(c, paths)` takes a second argument, `renderValidate(data, icon)` takes an `icon`, and
+  `ValidateFragment` and `ValidateSection` both take an `icon` prop. All compile errors. The showcase
+  is a reference surface rather than application infrastructure, so this is expected to reach few
+  consumers.
+- **`buttonVariants`' `icon-sm` is `size-8`, not `size-[34px]`.** Silent — the name and its place in
+  the size scale are unchanged, and every call site keeps compiling; only the emitted class and the
+  rendered box move, by two pixels. 34px was an arbitrary value wedged between `size-8` and `size-9`
+  and carried a `forge-ui-spacing-scale-only` suppression to stay there. At 32px an
+  icon button is exactly as tall as the `sm` text row it is meant to sit beside, which is the
+  relationship `icon-sm` exists to express, and the suppression is deleted with it. Anything pinned
+  to the literal `size-[34px]` string — a test assertion, a CSS selector — needs updating.
+- **`Toolbar`'s flyout title and `Accordion.Content`'s `hint` are `text-xs`, not `text-[11px]`.**
+  Both carried a `forge-ui-spacing-scale-only` suppression arguing the label had to read as
+  subordinate to the 12px body beside it. The rule exists because scale steps differ by at least
+  25%, which is what makes two sizes read as deliberate; 11px against 12px is 8%, so the pixel was
+  buying no perceptible subordination and only an off-scale value. Subordination is carried by the
+  channels that were always doing the work — `uppercase tracking-wider text-muted-foreground` on the
+  flyout title, `text-muted-foreground` on the hint. Both suppressions are deleted, and `src/` now
+  carries **zero** suppressions of `forge-ui-spacing-scale-only`. Anything pinned to the literal
+  `text-[11px]` string needs updating.
+
+### Fixed
+
+- **`Slider` had no focus indicator — WCAG 2.4.7, Level A.** The most severe item in the audit, and
+  the only Level A one. `<input type=range>` carries a UA focus ring; `appearance-none` removes it,
+  and nothing put one back, so the control was completely unreachable-looking under keyboard
+  navigation. It now carries `focus-visible:ring-2 focus-visible:ring-ring`.
+- **`FieldError` and `Field`'s invalid state used a hardcoded `text-red-600`,** which fails in
+  **both** modes — 4.33 light, 3.08 dark — and does not re-map with the theme. Both now use
+  `text-destructive`. Same fix for `Label`'s required marker (`text-red-500`, 3.47) and `Turnstile`'s
+  fallback message.
+- **`Input`, `Textarea` and `Select` drew their focus ring with bare `focus:`,** which fires on
+  mouse clicks too — the exact thing `forge-ui-interaction-focus-visible` forbids. All three now use
+  `focus-visible:`. `ring-ring/20` is kept: with a solid `--ring` behind it, it finally delivers the
+  20% halo the class always claimed, and compliance rests on `border-ring` rather than on the halo.
+- **`Navbar` carried a dead `border-border` class** with no border-width utility beside it, so it had
+  never painted anything. Removed.
+
+- **`Alert`, `Toast` and `Badge` status variants now adapt to dark mode.** Previously a `bg-red-50`
+  alert stayed a near-white rectangle on a `--palette-900` page. Nothing was illegible, but the
+  surface hierarchy inverted — the status panel became the brightest thing on screen regardless of
+  its importance, which is the opposite of what an `info` variant should do. Each variant now
+  resolves through the `--status-*` family instead of a fixed palette utility, and the family carries
+  the dark half at the `-950` surface with `-200` text (`Badge` reads the `-strong` tier, which
+  starts one stop in at `-900`/`-200`). The **hue** stays fixed on purpose: a status colour has to
+  stay red, blue,
+  emerald or yellow whatever the app points `--destructive` at, and there is no blue, emerald or
+  yellow token to reach for. Only the lightness moves. `SUCCESS_CLASSES` / `ERROR_CLASSES` in
+  `@y-core/forge/http` move with them — they render on the same page in the same flow, and scoping
+  the change to `ui/core` would have put an adaptive `Alert` beside a stark white banner.
+
+  Measured in dark: text on surface is 11.14 (red), 10.35 (blue), 11.82 (emerald), 12.52 (yellow).
+  No neutral ramp participates — both stops of every pair come from the status hue itself — so each
+  is a single exact value rather than a worst case.
+
+  **These pairs are gated, which the first draft of this entry said they could never be.** That
+  conclusion was read off the wrong constraint: `TOKEN_CONTRACT` audits custom properties, and
+  whether a colour is a custom property is a choice about the component rather than a fact about the
+  gate. Once the variants resolved through `--status-*` they came inside a boundary that never moved,
+  and eight `TOKEN_CONTRACT` foreground rows plus four `ACCEPTED` border rows are them. What is
+  genuinely still outside stays outside: forge has no Tailwind dependency, so no gate, unit test or
+  browser spec here compiles CSS, and no check proves a utility name generates a rule. The header of
+  `scripts/contrast-parse.ts` records where that line now runs.
+
+- **The rail's documented sticky behaviour was inert — it had zero travel.** `max-h-dvh` and
+  `overflow-y-auto` only bite once the `<details>` has a height to cap, and a percentage height
+  resolves to `auto` the moment one ancestor is `auto` — so the whole chain collapsed and the rail
+  scrolled away with the page. In rail mode the scope root and the `<nav>` landmark now both carry
+  `h-full`, which is the two links forge owns; the consumer owns exactly one, a definite height on
+  the box the scope root is laid out in, and a stretched flex item in a `flex` row is one. The rail's
+  toggle also goes `sticky top-0` with `bg-background/95`, so it stays reachable while a long rail
+  scrolls its own overflow, and sits at the leading edge while collapsed (`justify-start`) and at the
+  trailing edge once open (`group-open:justify-end`). Rail-scoped: `collapsible="mobile"` has nothing
+  to cap and its markup is unchanged.
+- **A `Dialog`'s content sat flush against its own edge, and the dialog could sit flush against the
+  viewport's.** The root carried `p-0` with nothing put back, so every caller re-invented a gutter.
+  It now draws only the surface, and the new `Dialog.Header` / `.Body` / `.Footer` carry the padding.
+  The viewport gutter changes with it: the sheet's `max-width` / `max-height` pair becomes
+  `inset: 1rem; margin: auto`, because a caller's own width — `max-w-sm`, or any later-layer rule —
+  replaces a `max-*` default outright and takes the gutter with it, whereas `inset` is a different
+  property and survives. Measured in a browser spec rather than asserted on markup, which cannot see
+  a box.
+- **`Slider`'s box breached `forge-ui-hit-target`, and its thumb failed 1.4.11 in dark mode.** The
+  input was `h-2` — 8px, against a floor of the `Button` `sm` box — because it was sized to the track
+  it painted. It no longer paints: the input is a transparent hit target at least 32px across in both
+  orientations, and the 8px track and 16px thumb are authored `::-webkit-slider-runnable-track` /
+  `::-moz-range-track` and thumb rules in `theme-base.css`, written in **logical** properties so one
+  declaration serves both orientations. Sizing the input to the track is what made the two disagree —
+  a horizontal `h-2` left the thumb no box while a vertical `w-5` did. The thumb gains a
+  `box-shadow: 0 0 0 2px var(--background)` halo, which is forced rather than decorative: `--primary`
+  on `--track` measures 3.64:1 in light but **2.06:1** in dark against a 3:1 floor, while the
+  `--background` ring around it measures 4.34:1 and 6.74:1 — the same pair `Switch`'s thumb is
+  already read against. Widening the fill instead would mean moving a ramp stop and repainting every
+  surface that shares it.
+- **`ToggleGroup.Item` had no focus indicator** — a live `forge-ui-focus-ring` breach in shipped
+  code, and one a `design-allow` comment sat beside without covering. Its old base string declared no
+  `focus-visible:` anything, so the only keyboard affordance was the UA outline on a button that
+  styled everything else. Resolving the item through `buttonVariants` gives it the one button base's
+  ring, and the `design-allow` suppression is removed rather than re-justified.
+- **`mountTurnstile` reported a failure it never attempted, on any page holding an element with
+  `id="turnstile"`.** The loader tested `window.turnstile` for truthiness, but the DOM exposes every
+  element with an `id` as a window property of that name — so a page with a `<section
+  id="turnstile">`, which is not an exotic page, answered a truthy `HTMLElement`. The loader took the
+  "API already present" branch, found no `render` on an element, and revealed the fallback for a
+  widget whose script had never been requested. It now asks the capability
+  (`typeof win.turnstile?.render === "function"`) at all three sites, through one `hasApi` predicate.
+- **`inlineValidation()` defaulted `sync` to `"closest form:abort"`, which broke every field outside
+  a `<form>`.** htmx resolves the selector at request time and passes the result straight to
+  `getInternalData` with no null check, so a field with no enclosing form threw
+  `TypeError: Cannot read properties of null` inside htmx's own trigger handler — the trigger fired,
+  no request was issued, no `htmx:*` error event was raised, and nothing reached the console. The
+  caller just saw a control that did nothing. The default is now `"this:abort"`, which resolves on
+  any element. **Silent behaviour change, and the one thing in this release that is neither a token,
+  a rendering change, nor a compile error:** a caller inside a `<form>` that relied on the old
+  default for cross-field aborting now passes `sync: "closest form:abort"` explicitly.
+- **The showcase's inline-validation demo sent no field value.** The `inlineValidation()` spread sat
+  on a wrapper `<div>` outside the fragment. htmx sends the *triggering element's* own value on a
+  GET, so the request carried no `email` at all — and a spread outside the swap target survives the
+  first swap and is then gone from the markup that came back. It now sits on the `<Input>` inside
+  `ValidateFragment`. This is the surface the `sync` default above was found on: the standalone field
+  has no enclosing form, so the old default threw inside htmx with nothing logged. The error state
+  gains the `Icon` that `forge-ui-form-invalid-triple` requires, and the success line moves from a
+  raw `text-emerald-600` to `text-success`.
+- **The showcase's Turnstile demo rendered an empty box.** The controller resolves the enclosing
+  `<form>` and gates Cloudflare's script on the first `focusin` within it, so a bare widget with no
+  form and no focusable field could never load the script. The demo is now a real form — `Honeypot`,
+  an email field, the widget, a submit — with an eager `show-turnstile` scope registered, because the
+  form carries no `data-on-*` action and a lazy scope would never resume.
+- **The browser harness never loaded htmx, so every `hx-*` attribute was inert under test.** htmx
+  boots once off `DOMContentLoaded` and the harness injects its bundle after the document has
+  finished loading. The showcase spec now exposes `forgeHtmx` and calls `htmx.process` after setting
+  content, which is what let the inline-validation defect above be reproduced rather than reasoned
+  about.
+- **A context menu opened from `contextmenu` was light-dismissed by the platform on its own
+  right-click** — it flashed and vanished. `contextmenu` fires *between* `pointerdown` and
+  `pointerup`, and the dismiss pass on that trailing release compares the popover ancestor of the
+  pointerdown target with the ancestor of the pointerup target. Neither is inside a popup: nothing was
+  open when the button went down, and the pointer is over the surface rather than over the panel that
+  has just appeared beside it — the panel's rounded corner means even the point itself is outside the
+  box. The two agree, so everything is hidden one event after it was shown. `openPopoverAt` gains
+  `afterPointerUp` (default `false`), which defers the show to a one-shot **capture-phase**
+  `pointerup` on the owner document: the dismiss pass runs ahead of listeners for the same event, so
+  showing there is still inside that one event and before any paint, and the pass finds nothing to
+  dismiss. Callers pass `event.buttons !== 0` rather than a flat `true` — a keyboard-raised
+  `contextmenu` (the Menu key, `Shift+F10`) reports no buttons and is followed by no release, so an
+  unconditional guard would arm a listener that the *next* unrelated click fires. `once`, so a later
+  click still light-dismisses the menu exactly as it always did.
+
+  **No existing test caught it because the fixture had no stylesheet.** `showcase.browser.ts` mounted
+  the context-menu demo without `theme-base.css`, so the coordinate rule never applied, the popup fell
+  back to the UA's centred `[popover]` box — which lands *under* the pointer — and the release hit the
+  panel, making the dismiss pass decline to match. That mount now loads the theme, and three cases in
+  `src/ui/core/menu-anchor.browser.ts` ("a context menu against the platform's light-dismiss pass")
+  cover the guarded open, the unguarded control, and that a later click still dismisses.
+- **The showcase's closed rail column stretched to the full page height,** leaving a border running
+  the length of the page beside a collapsed hamburger. The column is a flex item in a `min-h-dvh`
+  row, and the closed-state override only narrowed it (`w-14`), so it still stretched and still drew
+  its right rule. The closed state now takes `w-auto` — the width is the toggle's own box rather than
+  a second fixed track — plus `self-start` to stop the stretch and `border-r-0` to drop the rule that
+  would otherwise hang beside it. The open state is unchanged.
+- **A rejected `channel.read` no longer escapes the log viewer to the error boundary.** For a fragment
+  request that boundary answers with a *page*, and HTMX swapped that page's body into the log table.
+  The failure is now caught and rendered in place as a `destructive` `Alert` with a retry, the table's
+  own shape preserved around it. On the append path the cursor the read never consumed is kept, so the
+  load-more control stays and becomes its own retry — reporting the stream complete there would have
+  deleted the control on a transient failure, the one outcome the reader has no way back from. The
+  reason is deliberately not shown: a channel error can name a binding or a key prefix, and
+  `STRUCTURED_LOGGING.md`'s no-PII rule governs a log surface.
+- **Neither of the log viewer's HTMX swaps drops keyboard focus.** Both controls sat inside their own
+  swap target, so every expand and every "load more" sent focus to `<body>` and a screen reader lost
+  its place. The message trigger now targets a sibling detail `<tr>` shipped with the initial render
+  — which is also the placeholder that stops the region jumping — and carries `aria-expanded` /
+  `aria-controls`; the load-more control sits outside `#log-tbody` in the table's `<tfoot>` and is
+  replaced out of band at a stable id with exactly one writer. It is a `<tr>` rather than a footer
+  `<div>` for a mechanical reason: HTMX picks a fragment wrapper from the response's first tag, so a
+  `<div>` sibling of `<tr>`s is hoisted out by the HTML parser and the out-of-band swap never arrives.
+- **The log viewer's message trigger has a focus ring and a real hit target.** It was a raw
+  `<button class='cursor-pointer text-left hover:underline'>` — `forge-ui-focus-ring` and
+  `forge-ui-hit-target`, two Floor failures on one element.
+- **Two browser specs were racing their own subjects** and failed under load. Both waited on a value
+  that is already correct *before* the event they actually depend on. `showcase.browser.ts`'s
+  post-swap revalidation case counted requests, which the interceptor records when the request reaches
+  the route handler — before the response is fulfilled and long before htmx has swapped — so the
+  second `fill` could land on an input about to be replaced, taking its pending `change` with it.
+  `viewport-collapse.browser.ts`'s user-override case waited on `<details>.open`, which moves
+  synchronously, while `mountViewportCollapse` tells its own writes from the user's by counting
+  `toggle` events — and the HTML spec *coalesces* a pending toggle task, so a click landing before the
+  controller's event was dispatched produced one event where the controller expected two, and the
+  override never registered. Both now wait on the thing they depend on. No product code changed.
+
+### Added
+
+- **A theme customiser, at `showcaseRoutes().ui.theme` (`/showcase/ui/theme`).** Generates a
+  complete forge colour scheme from hue and chroma, previews each generated scale against a single
+  shared header of step numbers and on a real composed UI, reports live WCAG ratios beside it, and
+  emits a paste-ready scheme file.
+
+  **It can promise conformance, and the page it is modelled on cannot.** Every scheme forge ships
+  sits on one lightness ramp and differs only in chroma and hue — the property that let
+  `theme-gray.css` be added, and then rescaled, without re-pinning a single contract row. So
+  lightness is not offered as a lever, and contrast is decidable *before* a dial moves.
+  <https://www.radix-ui.com/colors/custom> offers three free colour pickers over a transposable
+  ramp: more expressive, and correspondingly unable to tell you in advance that your choice holds.
+  The claim is executable rather than argued — `color.test.ts` sweeps every hue at every chroma
+  across all four fully-scale audited pairs, and the tightest point in the whole space is `--input`
+  at **3.19:1** against a 3:1 floor.
+
+  Five dials — accent hue, accent chroma, gray hue, gray tint, corner radius — laid out a family to
+  a row, since hue and chroma are one family's two free parameters and lightness is not among them.
+  Every control id is derived through `fieldId`, so no `for=`/`id=` pair on the page agrees by
+  coincidence.
+
+  **The query string is the whole of the page's state.** No `localStorage`, no FOUC script; a scheme
+  is a shareable link, and each parameter is clamped and snapped to its own dial's range so a
+  hand-edited URL cannot render a scheme the sliders could not have produced. Gray chroma defaults
+  to `0`, which makes the generated scale achromatic — so a bare URL renders `theme-neutral.css`
+  exactly, and the shipped default is a point in the space rather than a special case outside it.
+
+  **The preview shows two rows, not four.** An earlier draft drew every scale/surface combination,
+  including a light scale on a dark surface. That was wrong rather than merely redundant: forge's
+  `.dark` class swaps the scale **and** the surface together, so a light step never lands on a dark
+  page, and the crossed rows invited a judgement about a state the cascade cannot produce. The two
+  that remain share one header of step numbers 1…12, which is what lets a step be compared down the
+  column — and is why the preview is a `table-fixed` table rather than a grid: a header grid above
+  padded row boxes drifts by exactly that padding.
+
+  Each scale sits in a rounded, bordered box painted with **that scale's own page colour**, so the
+  container is the label and no caption says "dark scale, dark surface" over a visibly dark box.
+
+  The box is drawn by the cells on its edge rather than by the `<tbody>`, because **no arrangement
+  lets a row group be both bordered and rounded**: `border-radius` is defined not to apply to table
+  elements in the collapsing border model, and in the separated model a row group may not carry a
+  border at all. A `<td>` can do both, so the four corner cells carry one radius each and the edge
+  cells carry the sides. Verified at the pixel level rather than through computed style, which
+  reports a radius on a `<tbody>` that the browser never paints.
+
+- **A finding about the token layer, worth recording because it looks like it should work.** A
+  nested `.dark` does **not** flip forge's semantic tokens. `--background: var(--gray-1)` is declared
+  once on `:root`, so it *computes there* — to a literal — and inherits as that literal; a descendant
+  carrying `.dark` re-declares `--gray-1` and never reaches the token above it. `.dark` works on
+  `<html>` because both declarations compute on the same element, in order.
+
+  Nothing shipped depended on this, and the customiser's preview briefly did: it carried a `dark`
+  class on a row that quietly painted nothing. The row is painted from the generated scale instead,
+  which is the better answer anyway — the box demonstrates the scale **using the scale**, drawing its
+  page from step 1, its muted text from step 11 and its chip edges from step 6, which are the three
+  steps `--background`, `--muted-foreground` and `--border` resolve through. A browser case asserts
+  the computed colours, so a future attempt to express a nested dark surface with a class fails
+  rather than looking right in the markup.
+
+  **Colour is not server-rendered, and that is a CSP consequence rather than an oversight.** Forge
+  ships `style-src 'self'` with no `'unsafe-inline'` and no style nonce, and `render-to-string.ts`
+  drops `style` attributes for exactly that reason — so neither an inline `<style>` block nor a
+  `style=` attribute can carry a generated colour to the browser. Every hex is server-rendered **as
+  text**, so the page reads correctly with no JavaScript at all; the paint is done by an eager
+  `customise` scope through CSSOM, which CSP does not police, and this one route accepts a single
+  frame of the default scheme before it resumes. The alternative was relaxing the CSP library-wide
+  for one demo page.
+
+- **`ui/contracts/color.ts` — the scale generator, and a knowing duplication that pays for itself.**
+  `oklchToHex` / `hexToOklch` / `relativeLuminance` / `contrastRatio`, plus `buildScale` and
+  `buildAlphaScale`. `GRAY_RAMP` is `theme-neutral.css` measured step for step, and at chroma 0 the
+  generator reproduces that file **byte for byte, all twenty-four steps, both modes**.
+
+  `src/assets/build/color.ts` already implements the same OKLab transform and the same CSS Color 4
+  gamut mapping, and duplicating a capability is against a standing rule. It is duplicated anyway,
+  because the namespace graph leaves no shared home: `assets/build` has only a type-only edge to
+  `assets`, and `ui/contracts` is the one namespace both `ui/client` and `ui/show` may see. The
+  mitigation is that `color.test.ts` imports **both** modules and asserts they agree across a grid
+  of the oklch space — tests are excluded from the namespace-graph parse, so the test crosses the
+  boundary the source cannot, and drift becomes a red gate rather than a divergence nobody watches.
+  Both files carry a header naming the other.
+
+  `ACCENT_RAMP` is a **separate** lightness ramp, taken from Radix `indigo`. Not a refinement: step
+  9 — the solid a brand colour is actually seen as — sits at lightness 0.5438 against the gray
+  ramp's 0.6434, and a saturated hue held up at gray-9's lightness reads washed out. Asserted, so
+  the two ramps cannot quietly be collapsed into one.
+
+- **`ui/contracts/contrast-pairs.ts` — the audited pairs, extracted so the gate and the customiser
+  cannot disagree about what is being measured.** `scripts/contrast-parse.ts` keeps the pinned
+  values and measured ratios, which describe the scheme currently on disk; the pair definitions —
+  which token, which step, what it is read against, which criterion binds it — moved to `src/`,
+  because those hold for any scheme. Behaviour-neutral: `validate-contrast`'s output is
+  byte-identical.
+
+  Each side of a pair is classified `scale` or `fixed`, which turns a limitation into a result:
+  eleven of the fifteen have a side on a Tailwind stop forge does not depend on, so nothing here can
+  resolve them — and nothing the customiser offers can move them either. The four that remain are
+  the exact scope of what the dials touch, and the customiser shows the other eleven greyed rather
+  than hiding them.
+
+- **A 12-step role scale, and it is now the bottom layer rather than the middle one.** The step
+  numbering is Radix UI's, adopted verbatim rather than invented — 1 app background, 2 subtle
+  background, 3 UI element background, 4 hovered, 5 active/selected, 6 subtle borders, 7 UI element
+  border and focus rings, 8 hovered border, 9 solid backgrounds, 10 hovered solid, 11 low-contrast
+  text, 12 high-contrast text. Three namespaces: `--gray-*` for the neutral scale, `--accent-12`,
+  and the fixed status hues `--red-*`, `--blue-*`, `--emerald-*`, `--green-9` and `--yellow-*` — plus
+  the functional `--<hue>-contrast`, Radix's name for the foreground that sits on step 9.
+
+  **All twelve gray steps are declared, even the ones forge does not consume.** A scale is a
+  complete artifact: a consumer re-declaring it has to be told what the contract is, and a gap in the
+  middle of a ramp is an anomaly rather than a saving. The status hues keep the opposite rule and
+  declare only the steps forge reaches for — 2, 3, 6, 11 and 12 behind the `--status-*` family, 9 and
+  `-contrast` behind `--destructive` / `--success` / `--warning` — because a status ramp with no
+  consumer is `theme-mist.css`'s failure exactly.
+
+- **The step values are literals: Radix's lightness, Tailwind's hue.** `@radix-ui/colors` 3.0.0 is
+  MIT, React-free and ships plain CSS, and forge takes the sixty numbers rather than the package:
+  they never change without a release, and a dependency would resolve through `node_modules` — the
+  fragility `forge.css`'s `@source` comment already documents. Tailwind is likewise read rather than
+  depended on; it is the consuming app's dependency, not forge's. `theme-neutral.css` is achromatic
+  and so is Radix's `gray` outright; the three tinted schemes resample Tailwind's `stone`, `gray` and
+  `slate` at each Radix lightness, for the reason above. Attribution for both lives under
+  `## Sources` in
+  `src/ui/design/reference/04-color.md`.
+
+- **Steps 1 and 2 are swapped in the light block, and only there.** Radix reads step 2 as one shade
+  *toward* the foreground, which makes a light-mode panel recede; forge's cards are raised and stay
+  raised. The swap lives in the scale layer because that is where a mode-specific value belongs, and
+  putting it there is what lets `--background: var(--gray-1)` stay one declaration serving both
+  modes. In dark, "toward the foreground" already means lighter, so no swap is needed and none is
+  applied.
+
+- **Alpha steps.** `--gray-a1` … `--gray-a12` per theme per mode, plus `--black-a1` … `--black-a12`
+  and `--white-a1` … `--white-a12`, which are absolute and therefore declared once for both modes.
+  They are copied rather than computed for a specific reason: Radix hand-authors each one so it
+  "appears visually the same when placed over the page background", which no `color-mix` derivation
+  reproduces — Radix Colors 2.0.1 shipped a correction for dark `a2` being too opaque, and a derived
+  ramp would have carried that error with nothing to notice it by.
+
+- **`--overlay`, the modal scrim, and the family's one consumer today.** The dialog backdrop was the
+  literal `rgb(0 0 0 / 0.5)` written inline on `[data-slot~="dialog"]::backdrop`; it is now
+  `var(--overlay)`, which is `var(--black-a6)`. An application can dim a dialog to its own taste
+  without overriding a component rule, and the value sits with the other colours instead of 250 lines
+  further down. The alpha moves from 0.5 to 0.4, so a scrim is marginally lighter than it was.
+
+- **`--accent-12` is the extension point for a brand colour.** It aliases `--gray-12`, because forge
+  ships no brand hue — `--primary` is Radix's `solid` + `highContrast` state
+  (`background: var(--accent-12); color: var(--gray-1)`), a named position in that vocabulary rather
+  than a deviation from it. An app supplies a real accent by re-declaring `--accent-12` per mode, and
+  the alias exists precisely so that `--primary` does not name a gray step directly.
+
+- **`--<hue>-contrast` is mode-free, and that is the point of it.** It resolves to `var(--gray-1)` —
+  step 1 is the page, near-white in light and near-black in dark, which are exactly the two answers
+  a foreground on a saturated fill needs. It replaces a hand-written pair. `--yellow-contrast` is the
+  one exception and is near-black in *both* modes: near-white on `yellow-500` measures 1.83, so it
+  takes `--gray-12` in light and `--gray-1` in dark — the same colour reached from either side, and
+  the one place a `.dark` entry names a different step rather than a different value.
+
+- **The two parked steps are vacated.** `--gray-5` and `--gray-10` were holding
+  `--primary-foreground`, `--secondary-foreground` and `--accent-foreground` at values that did not
+  fit a shared Radix step. On the Radix scale they do: `--primary-foreground` is `--gray-1` and both
+  of the others are `--gray-12`, and `--gray-10` is now a real role again, backing `--input` and
+  `--track`.
+- **A `--status-*` family — 20 tokens, five roles across four intents** (`danger`, `warning`,
+  `success`, `info`), each with a `--color-status-*` bridge in `@theme inline`, so
+  `bg-status-danger-subtle` is an ordinary utility. `-subtle` / `-subtle-foreground` is the panel —
+  what `Alert`, `Toast` and the `http` banners are — `-strong` / `-strong-foreground` is the chip,
+  which is `Badge`, and `-border` is the edge of either. **The split from `--destructive` /
+  `--success` / `--warning` is the point, and those three keep their names:** they are fills the
+  *application* owns and may re-point to its brand — the deleted `theme-zinc.css` re-pointed
+  `--warning` to orange, and an app may still do the same — while `--status-*` are fixed status hues
+  *forge* owns, which no scale or brand swap moves by accident. That is the conflict that made the
+  family necessary: an orange-warning app's status panel still has to stay yellow. `-subtle` and `-strong` are deliberately not unified, because a badge is
+  a small filled chip and starts one stop in from a panel's surface; two hand-written stop choices
+  in two component files become two named roles in one place. There is no solid `--status-info`
+  pair — no forge component renders one, and minting a token with no consumer is the `theme-mist.css`
+  failure again. **`Alert`, `Toast`, `Badge` and `src/http/fragment.ts` consume the family**, and
+  their hardcoded fixed-hue pairs are gone with the block comments that were their only audit — see
+  the **Fixed** entry above, and `TOKEN_CONTRACT` for the rows that now cover them. Only the scale
+  steps behind the
+  roles are left unbridged, deliberately: a `bg-red-3` utility would be a second, unaudited way to
+  reach a colour, and `forge-ui-color-token-only` exists to say there is one.
+- **`validate-contrast` pins both hops of the mapping.** A `TOKEN_CONTRACT` and `ACCEPTED` row now
+  names the `step` its token resolves through and pins that step's value per mode, which adds two
+  failure modes to the three the gate already had. One is a token re-pointed at a different step —
+  the recorded ratio then describes a colour the token no longer reaches. The other carries the
+  architecture: **an audited token declared in `.dark` at all fails, even when the value there is
+  correct**, because a mode-specific answer at a layer that is supposed to have none is the
+  beginning of the drift whether or not it is wrong today. A step declared only in `:root` is read
+  as holding in both modes, which is what the cascade actually does rather than a leniency — most of
+  the status ramp is written that way. The theme-file override sweep now watches steps alongside
+  tokens, and that half is the more dangerous one: overriding `--warning-foreground` in a theme file
+  is at least legible as a colour decision, where overriding `--gray-11` silently re-points every
+  token resolving through step 11 at once. `theme-zinc.css` is the cautionary case, and it is a
+  cautionary case the sweep would have caught.
+- **`--destructive-foreground`, closing the last token-pair asymmetry.** `--success` and `--warning`
+  both had paired foregrounds; `--destructive` did not, so a filled destructive surface meant the
+  caller choosing and contrast-verifying a foreground by hand at every call site — exactly the
+  per-call-site verification tokens exist to remove. It resolves through `--red-contrast`, which is
+  `--gray-1` in both modes: 6.10 on `red-700` in light, 9.83 on `red-300` in dark.
+- **`Button variant="destructive"`**, now that a pair exists to build it from:
+  `bg-destructive text-destructive-foreground hover:bg-destructive/90`.
+- **`Badge` gains `info`, `success` and `warning` variants**, alongside the existing `destructive`,
+  so the log viewer's level chips — and any consumer's — consume a variant rather than copying fixed
+  palette utilities into application markup, which is what `forge-ui-color-semantic-variant-fixed`
+  asks for. Same four hues `Alert` and `Toast` use — red, blue, emerald, **yellow** — each reached
+  through the `--status-*-strong` tier rather than a hand-written pair, and each measured in both
+  modes: 6.86/6.94 red, 7.25/7.31 blue, 6.68/7.56 emerald, 6.40/7.47 yellow, every cell clear of the
+  4.5 floor for the `text-xs` a chip renders at. Those four rows live in `TOKEN_CONTRACT` rather than
+  in a comment beside the variant map. Yellow rather than amber on purpose — amber appeared nowhere
+  else in forge and was half of what made a fourth palette possible. `BadgeVariant` is already
+  exported, so this is additive.
+- **`forge-ui-color-theme-no-raw-utility` is a gated rule.** The id was already defined by the corpus
+  at `reference/04-color.md`; it now has a matcher behind it, which is what the RuleId table's own
+  self-assertion requires. Pairing is scoped to the line and position is deliberately not consulted —
+  the same trade `findBareFocus` makes, and what lets it see a status-variant map, since that is
+  where fixed hues are actually written. It inherits `isSuppressed` like every other rule.
+- **`validate-design` walks every non-test `.tsx` under `src/`**, not `src/ui/` alone.
+  `.decisions/UI_DESIGN_GUIDANCE.md` §4a is amended to match: its claim that "forge's own `src/ui/`
+  source is checked against the corpus" was, until now, wider than the check behind it. Rules that
+  are genuinely `ui/`-local still scope themselves in the finder, as `findRawControls` does.
+- **`--track`, split out of `--input`.** `Switch` and `Slider` filled their tracks with `bg-input`,
+  but `--input` is *named* for a control's boundary — so a consumer re-pointing it to give text
+  fields a brand-coloured outline, which is what the name invites, silently repainted the `Switch`
+  off state too. One token was doing two jobs. `--track` defaults to `--input`'s existing values in
+  both modes, so **this is visually a no-op**; what changed is the coupling. It is audited in its own
+  right because thumb-on-track is the *sole* off-state indicator for `Switch`: 4.34 light, 6.74 dark,
+  against a 3:1 floor.
+- **`LICENSE` — MIT, © 2026 Y Core**, with `"license": "MIT"` in `package.json`. The package had no
+  licence declaration anywhere for 82 versions, which left every consumer without a grant. The design
+  corpus's `SKILL.md` frontmatter said `license: UNLICENSED`, which was the accurate reading at the
+  time and is now wrong; it reads `MIT`. No third-party *code* is vendored. The one third-party
+  artifact forge carries is the set of colour values behind the neutral scale — lightnesses from
+  `@radix-ui/colors` 3.0.0, hues resampled from Tailwind CSS's `slate` and `stone` ramps, both MIT
+  and both credited under `## Sources` in `src/ui/design/reference/04-color.md`.
+- **`src/ui/design/` — the UI design corpus, and a new `./ui/design/*.md` export subpath.** New
+  public surface: the eighteen rule files an agent or a person reads before composing a forge
+  surface — `floor.md` (invariants, non-overridable), `catalog.md` (job → primitive), `tells.md`,
+  `preflight.md`, and fourteen routed `reference/` files from `01-hierarchy.md` to `14-review.md` —
+  entered through `index.md`, with `SKILL.md` as the Claude Code wrapper around the same corpus. It
+  is judgement, not API reference; props and signatures stay in `src/ui/README.md`, and every rule
+  carries a stable `forge-ui-` id so it can be cited. Consumers reach a file as
+  `@y-core/forge/ui/design/floor.md`. `.decisions/UI_DESIGN_GUIDANCE.md` governs the corpus's own
+  shape and is registered in the Guide Index; `cc-plan`, `cc-dev`, `cc-test` and `cc-doc` route
+  through it for UI work.
+- **`validate-design` — a new gate step**, and the corpus's anti-drift contract: every subpath the
+  corpus cites resolves through the exports map, every symbol it imports is exported by that barrel,
+  every CSS custom property it names is declared, and every rule id is well formed, unique, and
+  defined where it is cited. Prose that goes stale against the code fails the gate rather than
+  quietly misleading its next reader.
+- **`validate-contrast` — a new gate step**, between `validate-design` and `validate-css-sources`.
+  It pins the mapping every recorded ratio was measured against — both hops of it — and fails when a
+  value moves until the measurement is re-derived. It deliberately builds **no** colour-resolution
+  machinery: every colour forge resolves is now either a literal in a scheme file or a Tailwind
+  stop it names, so nothing upstream can move a ratio without this repository changing, which makes
+  pinning the mapping the complete check with no colour arithmetic at run time. What it does *not*
+  do is re-measure; the
+  manual procedure for that is written beside `TOKEN_CONTRACT` in `scripts/contrast-parse.ts`. It
+  also reports any theme file that overrides an audited token, which is how zinc's `--warning`
+  divergence stays visible.
+- **`Dialog.Header`, `Dialog.Body` and `Dialog.Footer`.** The root draws only the surface; these
+  three carry the gutter, so content never sits flush against the dialog's edge. `Header` is a
+  `grid-cols-[1fr_auto]` row closed by a `border-b` — title on the left, a close control on the
+  right — `Body` is the padded middle, and `Footer` is a `flex` action row opened by a `border-t`.
+  Each is a plain `div` with a `data-slot`, so a caller composes them or ignores them.
+- **`Resumable` takes a `class`, emitted on the scope root.** The scope root is a real box in its
+  parent's layout — in a flex row it *is* the flex item — so width, `shrink` and border belong there
+  rather than on a component nested two boxes further in. This is what makes the rail's layout
+  expressible at all; see the Breaking entry and `forge-ui-nav-rail-flex-item`.
+- **The composition band moved off the showcase catalog and onto the theme customiser.** The catalog
+  proves each component exists; a generated scheme has to be judged against a *composed* UI, and the
+  customiser is the one page where that judgement is the point rather than a side effect. The
+  `compositions` row left `SECTIONS` with it — the rail and the catalog are both derived from that
+  list, so leaving the row would have published a navigation link to an element no longer on the
+  page. Its browser cases moved too, re-anchored to the neighbours the band actually has now.
+
+### Documentation
+
+- **`forge-ui-color-scale-adjacent-stops` now states the affordance-versus-decoration
+  distinction** that its old carve-out was missing, and says plainly that the earlier wording is what
+  let the defect through. The rule **id is unchanged** — `UI_DESIGN_GUIDANCE.md` §3b forbids renaming
+  an id when only the sentence changes, because every citation of it would break.
+- **`04-color.md`'s token table splits `--border` / `--input` / `--ring` into three rows,** which is
+  precisely the conflation this release undoes. The `.dark` re-mapping table gains `--border`,
+  `--input` and `--ring` rows and carries the corrected `--muted-foreground` stops, and
+  `forge-ui-color-theme-muted-pair` no longer quotes the old mapping as live fact.
+- **`09-interaction.md` records why `--ring` is a solid stop** rather than a tint: a focus indicator
+  has a 3:1 floor of its own under 1.4.11, and an alpha value composites against whatever is behind
+  it, so it cannot be expressed as one.
+- **`AGENT_GUIDE.md` §8** registers `scripts/validate-contrast.ts` + `scripts/contrast-parse.ts` as
+  the home of token contrast mappings and their measured ratios.
+- **A new Floor rule — `forge-ui-affordance-replacement`, "replace every affordance you suppress"**
+  — in `src/ui/design/floor.md`, with `preflight.md` item 21 as its check (Block 1 is now
+  twenty-one items and Block 2 renumbers to 22–66). It generalises what `forge-ui-focus-ring`
+  already said about `outline-none` to every suppression utility forge writes: `appearance-none` on
+  a range input and on a `<select>`, `list-none` on a `<summary>` and on a list, `p-0`, `border-0`.
+  Each names what forge draws back. `forge-ui-focus-ring` keeps its own id and now reads as this
+  rule's `outline-none` case, which is `UI_DESIGN_GUIDANCE.md` §3b applied literally: the half that
+  inherits the original meaning keeps the original id, and the generalisation mints a new one.
+  Two of the defects in this release are the new rule's own clauses: `Slider`'s deleted track and
+  `Collapsible.Trigger`'s deleted disclosure marker.
+- **Three new Defaults in `reference/08-navigation.md`** covering the rail's layout, each with a
+  wrong/right pair: `forge-ui-nav-rail-flex-item` (width and `shrink-0` go on the `Resumable` scope
+  root, which is the box the flex row lays out), `forge-ui-nav-rail-persists` (a vertical rail pins
+  to the viewport and scrolls its own overflow, which needs a definite height on the scope root's
+  parent — forge supplies the two links above the `<details>`), and
+  `forge-ui-nav-rail-collapsed-width` (collapsed the rail is one button wide, `w-14` / 56px, with
+  the toggle leading; state it as an **override over a wide base** so a browser without `:has()`
+  degrades to the full column rather than pinning a strip that clips the open panel).
+- **`src/ui/README.md`'s rail example is rewritten around the box the parent lays out** — the
+  `Resumable` wrapper, the collapsed-width override, and the `min-h-dvh` flex row that supplies the
+  height link forge cannot — and it cites the three rules above. Its component table also corrects
+  `Collapsible`'s compounds, which read `Collapsible.Content` for a component that has only ever
+  exported `Collapsible.Panel`, and records `Resumable`'s new `class`.
+
+### Known gaps, filed rather than fixed
+
+- **Radix's steps 7 and 8 are declared and unused for borders, and no decision has been made about
+  them.** Forge routes `--input`, `--track` and `--ring` past them to steps 10 and 11 because 7 and 8
+  measure 1.38 and 1.68 against their own surfaces. Authoring forge's own compliant values at 7 and 8
+  — keeping Radix's role names and departing from its numbers instead — is the other available
+  answer, and it is genuinely open. It is not attempted here because it would mean forge authoring
+  two lightnesses per scheme per mode that no longer come off the shared ramp — a different
+  maintenance contract, and the ramp is what makes one measured ratio describe all four schemes.
+- **`--secondary`, `--muted` and `--accent` all resolve to `--gray-3`**, so `hover:bg-accent` inside
+  a `bg-muted` panel is a visual no-op. Step 4 is what `--accent` should be, and moving it is a
+  one-line change deliberately not made here: it repaints 154 `bg-accent` sites, which belongs in its
+  own commit rather than inside a change that is already repainting everything else. The note sits
+  beside the declaration in `theme-base.css`.
+- **Nothing consumes `--gray-a*`, `--black-a*` or `--white-a*` except `--overlay`.** Seventy-two
+  declarations for one consumer is the shape the `--status-info` omission argues against, and the
+  distinction held is the same one: these are the other half of a scale that is published as a whole
+  artifact, not tokens minted speculatively. `soft`, `ghost`, `outline` and `surface` variants are
+  all built on alpha, and none of them exists yet.
+- **The corpus was rewritten after all, and the gate would not have noticed if it had not been.**
+  Two entries stood here for most of this release's development, deferring `reference/04-color.md`'s
+  one-hop mapping table, its instruction to declare `@custom-variant dark`, and four files describing
+  `--destructive` as the status token with no paired foreground. All are now corrected. The gap worth
+  recording is not that they were stale but that **nothing could have told us**: `validate-design`
+  enforces that a named custom property is declared, and every property named in those passages still
+  was. A sentence can name only live tokens and still describe a system that no longer exists, and
+  the only detector for that is a person re-reading it.
+- Every colour in this release rests on the measured ratios plus a human eye in a consuming app, and
+  that eye has not yet been put on them — the rebuilt log viewer included. Forge has no Tailwind
+  dependency, so no gate here compiles CSS, and no check proves that a utility name generates a rule;
+  `scripts/contrast-parse.ts`'s header states why that boundary is where it is.
+- The log viewer's `aria-expanded` is emitted on the detail trigger but never flips to `true`; the
+  detail row's presence is the real state. Making the attribute honest needs a second out-of-band
+  writer, which is more machinery than the wiring is worth until someone asks for it.
+- Two Block-2 preflight items on the rebuilt viewer are reported rather than repaired.
+  `forge-ui-layout-separator-over-border` wants a `Separator` between list rows and counts 8
+  `border-b`: a `<tr>`'s sibling cannot be a `<div>`, so the rule is not expressible in a `<table>`,
+  and the in-repo reference twin `PaginateFragment` uses `border-b border-border` for the same
+  reason. `forge-ui-a11y-one-live-region` counts 0 where it expects 1: the surface has no flash
+  container of its own, and a `role='status'` on the per-row detail placeholder would have been N
+  live regions against a budget of one, so `forge-ui-a11y-spinner-announces` takes its own stated
+  override instead — a single record read, with the trigger disabled for its duration.
+- `--emerald-*` and `--green-*` are both declared, because forge ships both today: `Alert`, `Badge`
+  and `Toast` render emerald while `--success` resolves to Tailwind's green. One of the two is wrong.
+  They are recorded as two ramps rather than smoothed over, and collapsing them onto a single hue is
+  a later pass.
+
+---
+
+## [0.0.82] — 2026-08-10
+
+**Every component's `class` prop advertised an override it could not perform.** `cn` was
+`classes.filter(Boolean).join(" ")` — it concatenated. So `cn("h-full", cls)` with a caller passing
+`h-5` emitted `"h-full h-5"`, two utilities in the same conflict group, and which one won was
+decided by their order in the generated stylesheet rather than by the caller. The prop was real, the
+merge was not, and the failure is silent in exactly the way that survives review: the class *is*
+present in the output, so an assertion that greps for it passes.
+
+`cn` now resolves conflicts, and `cva` composes base → variants → `class` through it, so the later
+part genuinely displaces the earlier one on any utility they both set.
+
+**Separately, the component contracts turned out to be upheld by coincidence rather than by
+anything.** `src/ui/README.md` commits every `ui/core` root to five of them — arbitrary `data-*` /
+`aria-*` reach the element, a caller's `class` wins, `style` is dropped, a `data-slot` token is
+emitted and an inherited one composes, and a caller's explicit state attribute beats the computed
+one. Nothing checked any of it. The last held only as an accident of where each component happened
+to put `{...stateAttrs(…)}` relative to `{...props}`: correct everywhere, pinned nowhere, and a
+spread reordered during unrelated work would have flipped it silently.
+
+`conformance.test.tsx` now holds every root to all five, and **derives its participant list from the
+barrel** — so adding a component to `mod.ts` fails the suite until it declares how it participates,
+including declaring that it does not. The sweep found one live gap (`Avatar`, below); the value of
+the rest is that they stop being coincidences.
+
+### Fixed
+
+- **A vertical `Separator` rendered invisible in its commonest host.** It sized itself with
+  `h-full`, which resolves against an ancestor with a definite height; a `flex items-center` row —
+  the usual place a vertical divider goes — is auto-height, so the rule computed to zero. It now
+  uses `self-stretch` and takes its height from the flex line.
+- **`Slider`'s readout could disagree with its own thumb.** The thumb is positioned by the browser
+  from the value it settles on after HTML's sanitization algorithm, while the readout was a string
+  forge wrote on the Worker from the raw prop — and `Slider` ships no client controller, so nothing
+  reconciled them afterwards. An out-of-range or unsnapped `value` therefore rendered a number the
+  thumb was not pointing at. `sanitizeRangeValue` now applies the same algorithm the browser does —
+  validity check with the midpoint default, clamp, then snap from the step base — reading the
+  *serialized attributes* rather than the props, so it parses byte-for-byte what the browser parses.
+- **`Field` derived ids from values that cannot be ids.** HTML forbids ASCII whitespace in an `id`
+  and splits every IDREF list on it, so a `name` containing a space produced an `id` no IDREF could
+  name and an `aria-describedby` that silently pointed at nothing. Every derivation now routes
+  through one predicate: a blank `scope` is no scope, and a `name` or `scope` that is not a single
+  id token derives no id and no `aria-describedby` at all. The `name` attribute is still passed
+  through as given. The whitespace set is HTML's ASCII one rather than JS `\s`, because U+00A0 and
+  the Unicode spaces are legal id characters that no parser treats as separators.
+- **`Avatar` accepted no native props.** `Avatar` and `Avatar.Fallback` declared closed prop types
+  and hard-coded their `data-slot`, so neither forwarded attributes nor composed an inherited slot
+  token. Both now extend the intrinsic `span` props and go through `slotToken`.
+- **`Form` emitted `class=""`** when a caller passed no class.
+
+### Added
+
+- **`src/ui/core/utils/class-groups.ts`** — the Tailwind conflict-group table `cn` decides on,
+  mapping a utility to the CSS concern it sets. Three properties are worth knowing before relying on
+  it:
+  - **It is deliberately not a complete map of Tailwind.** It covers the families forge's own
+    primitives emit plus those a consumer override plausibly targets.
+  - **It fails open.** An unrecognised utility is always kept, which inverts `ERROR_HANDLING.md`'s
+    fail-closed posture on purpose — the gap here is incomplete knowledge of a third-party
+    vocabulary, not untrusted input, and failing closed would silently delete a consumer's custom
+    class or a utility from a newer Tailwind, with no error and no fix available from outside forge.
+    The worst case of failing open is the behaviour that existed before conflict resolution did.
+  - **Closed value spaces get exact whole-utility entries; only open ones get prefix matching.** A
+    `select-` prefix entry would let a consumer's `select-wrapper` claim the user-select group and
+    delete a real `select-none`.
+- **`conformance.test.tsx`** — the shared sweep over `ui/core` described above. Roots only, and that
+  is a decision rather than an omission: covering compound members means roughly eighty hand-written
+  fixture rows guarding a table whose whole worth is that every row is identical, and the trade
+  inverts at the root level where the fixture cost is ten entries and the failure it catches is a
+  whole component wired up without the contracts. Compound members keep their exact-HTML pins in
+  their own co-located files.
+- **`.types/import-meta.d.ts`** — declares `import.meta.main` by interface merging, because
+  `lib.dom.d.ts` gives `ImportMeta` only `url` and `resolve` and `"types": []` keeps any runtime's
+  own declarations out.
+
+### Changed
+
+- **Five gate scripts became importable.** `validate-exports`, `validate-docs`, `validate-jsx`,
+  `validate-namespace-graph` and `validate-css-sources` now `export function main()` returning an
+  exit code, guarded by `if (import.meta.main) process.exit(main())`, rather than calling
+  `process.exit` inline. A test can import a validator and read its verdict without the runner
+  dying — which is what the new `validate-*.test.ts` files rest on, and what the checks added in
+  0.0.83 were written against.
+- **Test coverage across `ui/core` roughly tripled**, adding co-located suites for `Collapsible`,
+  `Meter`, `NumberField`, `ScrollArea`, `Tabs`, `Toggle`, `cn`, `class-groups` and `cva`, plus a new
+  `separator.browser.ts` covering the vertical-height fix in a real engine.
+
+### Documentation
+
+- **`UI_SSR_COMPONENTS.md` gains §3d, "Conflict Resolution and the Fail-Open Boundary"** — what the
+  resolver decides, the two things that scope a conflict beyond the concern itself (a utility's
+  modifier prefix and its importance marker), and where the table stops.
+- `AGENT_GUIDE.md` registers `class-groups.ts` as the source of truth for the conflict-group table;
+  `NAMESPACE_DESIGN.md`, `TESTING.md`, `ERROR_HANDLING.md`, `CLAUDE.md`, the root `README.md` and
+  `src/ui/README.md` were updated alongside.
 
 ---
 
@@ -1647,6 +2736,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.0.82]: https://github.com/y-core/forge/compare/v0.0.81...v0.0.82
 [0.0.81]: https://github.com/y-core/forge/compare/v0.0.80...v0.0.81
 [0.0.80]: https://github.com/y-core/forge/compare/v0.0.79...v0.0.80
 [0.0.79]: https://github.com/y-core/forge/compare/v0.0.78...v0.0.79

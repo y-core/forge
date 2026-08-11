@@ -52,7 +52,7 @@ interface FieldControlProps {
 }
 
 const fieldVariants = cva({
-  base: "group/field flex w-full gap-3 data-[invalid]:text-red-600",
+  base: "group/field flex w-full gap-3 data-[invalid]:text-destructive",
   variants: {
     orientation: {
       horizontal: "flex-row items-start [&>[data-slot~=field-label]]:flex-auto [&>[data-slot~=field-content]]:flex-1",
@@ -259,7 +259,7 @@ export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
   return (
     <p
       data-slot={slotToken("field-error", inherited)}
-      class={cn("text-sm font-normal text-red-600", asClass(cls))}
+      class={cn("text-sm font-normal text-destructive", asClass(cls))}
       {...(resolvedId !== undefined ? { id: resolvedId } : {})}
       role={role ?? "alert"}
       {...props}>

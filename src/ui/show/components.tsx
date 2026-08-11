@@ -2,6 +2,8 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import type { FC } from "../../jsx/types";
+import type { NavDefinition } from "../chrome/navbar";
+import { Navbar } from "../chrome/navbar";
 import { ThemeToggle } from "../chrome/theme-toggle";
 import { Accordion } from "../core/accordion";
 import { Alert } from "../core/alert";
@@ -41,6 +43,7 @@ import { Toolbar } from "../core/toolbar";
 import { Tooltip } from "../core/tooltip";
 import { Turnstile } from "../core/turnstile";
 import { FlashContainer } from "../server/flash";
+import { Resumable } from "../server/resumable";
 import type { ShowcaseData } from "./route";
 import { DependentSection, PaginateSection, PreviewSection, SearchSection, ToastSection, ValidateSection } from "./sections";
 
@@ -48,6 +51,9 @@ import { DependentSection, PaginateSection, PreviewSection, SearchSection, Toast
 type ShowIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close">;
 
 // ─── TOC ─────────────────────────────────────────────────────────────────────
+
+/** The bands the table of contents reads in — a catalog entry names one, and nothing else groups. */
+type ShowcaseGroup = "Primitives" | "Forms & Controls" | "Interaction & Overlay" | "Feedback" | "Chrome" | "Behaviour";
 
 /**
  * The catalog, and the showcase's completeness contract.
@@ -57,61 +63,78 @@ type ShowIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor
  * is one nobody can look at, and — after the cross-cutting corpus — one nobody drives, so the
  * property is checked rather than remembered.
  */
-export const SECTIONS = [
-  { id: "accordion", label: "Accordion" },
-  { id: "alert", label: "Alert" },
-  { id: "avatar", label: "Avatar" },
-  { id: "badge", label: "Badge" },
-  { id: "button", label: "Button" },
-  { id: "card", label: "Card" },
-  { id: "dialog", label: "Dialog" },
-  { id: "field", label: "Field" },
-  { id: "form", label: "Form" },
-  { id: "form-field", label: "FormField" },
-  { id: "honeypot", label: "Honeypot" },
-  { id: "icon", label: "Icon" },
-  { id: "input", label: "Input" },
-  { id: "label", label: "Label" },
-  { id: "popover", label: "Popover" },
-  { id: "progress", label: "Progress" },
-  { id: "select", label: "Select" },
-  { id: "separator", label: "Separator" },
-  { id: "skeleton", label: "Skeleton" },
-  { id: "slider", label: "Slider" },
-  { id: "spinner", label: "Spinner" },
-  { id: "switch", label: "Switch" },
-  { id: "textarea", label: "Textarea" },
-  { id: "toast", label: "Toast" },
-  { id: "toggle", label: "Toggle" },
-  { id: "toggle-group", label: "ToggleGroup" },
-  { id: "toolbar", label: "Toolbar" },
-  { id: "menu", label: "Menu" },
-  { id: "tabs", label: "Tabs" },
-  { id: "collapsible", label: "Collapsible" },
-  { id: "tooltip", label: "Tooltip" },
-  { id: "checkbox-group", label: "CheckboxGroup" },
-  { id: "radio-group", label: "RadioGroup" },
-  { id: "meter", label: "Meter" },
-  { id: "number-field", label: "NumberField" },
-  { id: "scroll-area", label: "ScrollArea" },
-  { id: "turnstile", label: "Turnstile" },
-  { id: "htmx-demos", label: "HTMX Demos" },
-  { id: "theme", label: "Theme" },
-  { id: "resumable", label: "Resumable" },
+export const SECTIONS: { id: string; label: string; group: ShowcaseGroup }[] = [
+  { id: "accordion", label: "Accordion", group: "Behaviour" },
+  { id: "alert", label: "Alert", group: "Feedback" },
+  { id: "avatar", label: "Avatar", group: "Primitives" },
+  { id: "badge", label: "Badge", group: "Primitives" },
+  { id: "button", label: "Button", group: "Primitives" },
+  { id: "card", label: "Card", group: "Primitives" },
+  { id: "dialog", label: "Dialog", group: "Interaction & Overlay" },
+  { id: "field", label: "Field", group: "Forms & Controls" },
+  { id: "form", label: "Form", group: "Forms & Controls" },
+  { id: "form-field", label: "FormField", group: "Forms & Controls" },
+  { id: "honeypot", label: "Honeypot", group: "Forms & Controls" },
+  { id: "icon", label: "Icon", group: "Primitives" },
+  { id: "input", label: "Input", group: "Forms & Controls" },
+  { id: "label", label: "Label", group: "Forms & Controls" },
+  { id: "popover", label: "Popover", group: "Interaction & Overlay" },
+  { id: "progress", label: "Progress", group: "Primitives" },
+  { id: "select", label: "Select", group: "Forms & Controls" },
+  { id: "separator", label: "Separator", group: "Primitives" },
+  { id: "skeleton", label: "Skeleton", group: "Primitives" },
+  { id: "slider", label: "Slider", group: "Forms & Controls" },
+  { id: "spinner", label: "Spinner", group: "Primitives" },
+  { id: "switch", label: "Switch", group: "Forms & Controls" },
+  { id: "textarea", label: "Textarea", group: "Forms & Controls" },
+  { id: "toast", label: "Toast", group: "Feedback" },
+  { id: "toggle", label: "Toggle", group: "Forms & Controls" },
+  { id: "toggle-group", label: "ToggleGroup", group: "Forms & Controls" },
+  { id: "toolbar", label: "Toolbar", group: "Chrome" },
+  { id: "menu", label: "Menu", group: "Interaction & Overlay" },
+  { id: "tabs", label: "Tabs", group: "Behaviour" },
+  { id: "collapsible", label: "Collapsible", group: "Behaviour" },
+  { id: "tooltip", label: "Tooltip", group: "Interaction & Overlay" },
+  { id: "checkbox-group", label: "CheckboxGroup", group: "Forms & Controls" },
+  { id: "radio-group", label: "RadioGroup", group: "Forms & Controls" },
+  { id: "meter", label: "Meter", group: "Primitives" },
+  { id: "number-field", label: "NumberField", group: "Forms & Controls" },
+  { id: "scroll-area", label: "ScrollArea", group: "Behaviour" },
+  { id: "turnstile", label: "Turnstile", group: "Forms & Controls" },
+  // `compositions` is deliberately absent: the composition band moved to the theme customiser at
+  // `showcaseRoutes().ui.theme`, where a real UI is what the generated scheme is judged against.
+  // The catalog and the rail are derived from this list, so the row had to go with the component —
+  // leaving it would have produced a rail link to an element that is no longer on the page.
+  { id: "htmx-demos", label: "HTMX Demos", group: "Behaviour" },
+  { id: "theme", label: "Theme", group: "Chrome" },
+  { id: "resumable", label: "Resumable", group: "Behaviour" },
 ];
 
-const ShowcaseToc: FC = () => (
-  <nav aria-label='Component catalog' class='mb-10 flex flex-wrap gap-2'>
-    {SECTIONS.map(({ id, label }) => (
-      <a
-        key={id}
-        href={`#${id}`}
-        class='rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-foreground transition hover:bg-accent'>
-        {label}
-      </a>
-    ))}
-  </nav>
-);
+/** The order the groups are read in — plainest primitives first, page-level behaviour last. */
+const GROUP_ORDER: ShowcaseGroup[] = ["Primitives", "Forms & Controls", "Interaction & Overlay", "Feedback", "Chrome", "Behaviour"];
+
+/**
+ * The catalog as a navbar configuration: one section holding one group per band.
+ *
+ * A group is the shape a vertical rail wants — a heading over visible destinations — so the whole
+ * table of contents is a single section, and the bands are its groups rather than sibling sections
+ * (siblings would be spread across the bar's ends, which is the wrong reading for a list).
+ */
+const TOC_CONFIG: NavDefinition = {
+  sections: [
+    {
+      items: GROUP_ORDER.map((heading) => ({
+        heading,
+        group: SECTIONS.filter((section) => section.group === heading)
+          .sort((a, b) => a.label.localeCompare(b.label))
+          .map(({ id, label }) => ({ label, href: id })),
+      })),
+    },
+  ],
+};
+
+/** The rail's `href`s are page fragments: `resolveHref` takes a key, and nothing says it is a route. */
+const tocHref = (key: string) => `#${key}`;
 
 // ─── Catalog section wrapper ──────────────────────────────────────────────────
 
@@ -542,9 +565,23 @@ const FieldStackSection: FC = () => (
  */
 const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
 
+/**
+ * The widget inside a form, because the controller has no other shape to run in: it resolves the
+ * enclosing `<form>` and gives up when there is none, and it gates Cloudflare's script on the first
+ * `focusin` within that form — so a form holding the widget alone would never load the script and
+ * the box would stay empty forever. The field is what makes the demo reachable.
+ *
+ * Immediately above the submit control, which is where a challenge belongs: appearing there does not
+ * push the button the reader is already reaching for.
+ */
 const TurnstileSection: FC = () => (
   <CatalogSection id='turnstile' title='Turnstile'>
-    <Turnstile siteKey={TURNSTILE_TEST_KEY} size='normal' />
+    <Form action='#' method='post' data-scope='show-turnstile' class='w-full max-w-xs space-y-3'>
+      <Honeypot />
+      <Input type='email' name='turnstile-email' placeholder='you@example.com' />
+      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='normal' />
+      <Button type='submit'>Submit</Button>
+    </Form>
   </CatalogSection>
 );
 
@@ -633,20 +670,25 @@ const TabsSection: FC = () => (
   </CatalogSection>
 );
 
-const CollapsibleSection: FC = () => (
-  <CatalogSection id='collapsible' title='Collapsible'>
-    <div class='w-full max-w-md space-y-2'>
-      <Collapsible>
-        <Collapsible.Trigger>Advanced options</Collapsible.Trigger>
-        <Collapsible.Panel>Native &lt;details&gt;: open and closed belong to the platform.</Collapsible.Panel>
-      </Collapsible>
-      <Collapsible open>
-        <Collapsible.Trigger>Already open</Collapsible.Trigger>
-        <Collapsible.Panel>Rendered open by the server, with no client work at all.</Collapsible.Panel>
-      </Collapsible>
-    </div>
-  </CatalogSection>
-);
+const CollapsibleSection: FC<{ icon: ShowIcon }> = ({ icon }) => {
+  // `Collapsible.Trigger` takes `ForgeIcon<string>`, and a narrower name set is not assignable to a
+  // wider one. The trigger only ever draws `chevron-down`, which this binding supplies.
+  const wide = icon as unknown as ForgeIcon<string>;
+  return (
+    <CatalogSection id='collapsible' title='Collapsible'>
+      <div class='w-full max-w-md space-y-2'>
+        <Collapsible>
+          <Collapsible.Trigger icon={wide}>Advanced options</Collapsible.Trigger>
+          <Collapsible.Panel>Native &lt;details&gt;: open and closed belong to the platform.</Collapsible.Panel>
+        </Collapsible>
+        <Collapsible open>
+          <Collapsible.Trigger icon={wide}>Already open</Collapsible.Trigger>
+          <Collapsible.Panel>Rendered open by the server, with no client work at all.</Collapsible.Panel>
+        </Collapsible>
+      </div>
+    </CatalogSection>
+  );
+};
 
 const TooltipSection: FC = () => (
   <CatalogSection id='tooltip' title='Tooltip'>
@@ -766,76 +808,101 @@ export const ShowcaseContent: FC<{
 }> = ({ data, icon }) => {
   const { paths } = data;
   return (
-    <main id='main-content' class='mx-auto max-w-4xl px-6 py-10 lg:px-10 space-y-12'>
-      <div>
-        <h1 class='text-3xl font-bold text-foreground'>UI Component Showcase</h1>
-        <p class='mt-2 text-muted-foreground'>
-          Living reference for every <code>@y-core/forge</code> UI component — static catalog, HTMX demos, theme toggle, and resumability island.
-        </p>
-      </div>
+    <div class='flex min-h-dvh'>
+      {/* The rail is DOM-first, matching where it is drawn. That puts every catalog entry in the tab
+          order ahead of the content, which is what the app's skip link exists for — reversing it with
+          flex `order` would trade the tab stops for a DOM/visual mismatch, a worse outcome. */}
+      {/* The collapsed shape is the override, never the base: a browser without `:has()` keeps the
+          16rem full-height column rather than pinning a shrunken one that would clip the open panel.
 
-      <ShowcaseToc />
+          Closed, the column is only the toggle. Three utilities, each undoing one thing the open
+          column needs: `w-auto` drops the 16rem track so the width is the hamburger's own box,
+          `self-start` stops the flex stretch that otherwise runs the item to the full `min-h-dvh`
+          page height, and `border-r-0` removes the rule that would be left hanging beside it — a
+          46px vertical stub reads as an artefact, not as the edge of a panel that is no longer
+          there. */}
+      <Resumable
+        name='show-toc'
+        class='w-64 shrink-0 border-r border-border has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-r-0'>
+        <Navbar
+          config={TOC_CONFIG}
+          resolveHref={tocHref}
+          icon={icon}
+          collapsible='always'
+          defaultOpen
+          id='showcase-toc'
+          aria-label='Component catalog'
+        />
+      </Resumable>
+      <main id='main-content' class='flex-1 min-w-0 mx-auto max-w-4xl px-6 py-10 lg:px-10 space-y-12'>
+        <div>
+          <h1 class='text-3xl font-bold text-foreground'>UI Component Showcase</h1>
+          <p class='mt-2 text-muted-foreground'>
+            Living reference for every <code>@y-core/forge</code> UI component — static catalog, HTMX demos, theme toggle, and resumability island.
+          </p>
+        </div>
 
-      {/* Static catalog */}
-      <div class='space-y-10'>
-        <AccordionSection icon={icon} />
-        <AlertSection />
-        <AvatarSection />
-        <BadgeSection />
-        <ButtonSection />
-        <CardSection />
-        <DialogSection />
-        <FieldStackSection />
-        <FormSection />
-        <HoneypotSection />
-        <FormFieldSection icon={icon} />
-        <IconSection icon={icon} />
-        <InputSection />
-        <LabelSection />
-        <PopoverSection />
-        <ProgressSection />
-        <SelectSection icon={icon} />
-        <SeparatorSection />
-        <SkeletonSection />
-        <SliderSection />
-        <SpinnerSection icon={icon} />
-        <SwitchSection />
-        <TextareaSection />
-        <ToastCatalog />
-        <ToggleSection />
-        <ToggleGroupSection />
-        <ToolbarSection />
-        <MenuSection />
-        <TabsSection />
-        <CollapsibleSection />
-        <TooltipSection />
-        <CheckboxGroupSection />
-        <RadioGroupSection />
-        <MeterSection />
-        <NumberFieldSection />
-        <ScrollAreaSection />
-        <TurnstileSection />
-      </div>
+        {/* Static catalog */}
+        <div class='space-y-10'>
+          <AccordionSection icon={icon} />
+          <AlertSection />
+          <AvatarSection />
+          <BadgeSection />
+          <ButtonSection />
+          <CardSection />
+          <DialogSection />
+          <FieldStackSection />
+          <FormSection />
+          <HoneypotSection />
+          <FormFieldSection icon={icon} />
+          <IconSection icon={icon} />
+          <InputSection />
+          <LabelSection />
+          <PopoverSection />
+          <ProgressSection />
+          <SelectSection icon={icon} />
+          <SeparatorSection />
+          <SkeletonSection />
+          <SliderSection />
+          <SpinnerSection icon={icon} />
+          <SwitchSection />
+          <TextareaSection />
+          <ToastCatalog />
+          <ToggleSection />
+          <ToggleGroupSection />
+          <ToolbarSection />
+          <MenuSection />
+          <TabsSection />
+          <CollapsibleSection icon={icon} />
+          <TooltipSection />
+          <CheckboxGroupSection />
+          <RadioGroupSection />
+          <MeterSection />
+          <NumberFieldSection />
+          <ScrollAreaSection />
+          <TurnstileSection />
+        </div>
 
-      {/* HTMX demos */}
-      <section id='htmx-demos' class='scroll-mt-24 space-y-6'>
-        <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>HTMX Demos</h2>
-        <PreviewSection paths={paths} icon={icon} />
-        <ValidateSection paths={paths} />
-        <SearchSection paths={paths} />
-        <PaginateSection paths={paths} />
-        <DependentSection paths={paths} icon={icon} />
-        <ToastSection paths={paths} />
-      </section>
+        {/* HTMX demos */}
+        <section id='htmx-demos' class='scroll-mt-24 space-y-6'>
+          <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>HTMX Demos</h2>
+          <PreviewSection paths={paths} icon={icon} />
+          <ValidateSection paths={paths} icon={icon} />
+          <SearchSection paths={paths} />
+          <PaginateSection paths={paths} />
+          <DependentSection paths={paths} icon={icon} />
+          <ToastSection paths={paths} />
+        </section>
 
-      {/* Theme toggle */}
-      <ThemeSection icon={icon} />
+        {/* Theme toggle */}
+        <ThemeSection icon={icon} />
 
-      {/* Resumability island */}
-      <ResumableSection />
+        {/* Resumability island */}
+        <ResumableSection />
 
-      {/* OOB flash target */}
-      <FlashContainer />
-    </main>
+        {/* OOB flash target */}
+        <FlashContainer />
+      </main>
+    </div>
   );
 };

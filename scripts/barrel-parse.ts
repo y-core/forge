@@ -93,6 +93,51 @@ export function parseBarrelExportNames(filePath: string): Set<string> {
   return names;
 }
 
+/**
+ * Collects only the identifiers a **consumer** can name in an `import { … }` — i.e. the *exported*
+ * side of every re-export, with an `as` alias resolved to its right-hand name alone.
+ *
+ * This is the same walk as {@link parseBarrelExportNames} with one deliberate difference, and the
+ * difference is the whole reason both exist. That function answers "does the barrel carry this
+ * source symbol, under any name?", so it registers both sides of an alias — correct for
+ * `validate-exports`, whose input is a `@public` symbol as *declared*. This one answers "may a
+ * consumer write this name?", and for `export { Skeleton as SkeletonRenamed }` the answer is
+ * `SkeletonRenamed` and not `Skeleton`.
+ *
+ * Collapsing the two would silently weaken `validate-design`: a barrel export renamed rather than
+ * deleted would keep satisfying every corpus `import` that still named the old identifier, so the
+ * corpus would go on teaching an import that throws at runtime — which is precisely the drift the
+ * design gate exists to catch, and the one shape of it that a both-sides match cannot see.
+ */
+export function parseConsumerExportNames(filePath: string): Set<string> {
+  const source = readFileSync(filePath, "utf-8").replace(/\/\/.*$/gm, "");
+  const names = new Set<string>();
+
+  const blockRe = /export\s+(?:type\s+)?\{([^}]+)\}/gs;
+  for (const match of source.matchAll(blockRe)) {
+    const body = match[1]; // the brace group is a mandatory group, so a match implies it
+    if (body === undefined) continue;
+    for (const part of body.split(",")) {
+      let trimmed = part.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("type ")) trimmed = trimmed.slice(5).trim();
+      const asIdx = trimmed.indexOf(" as ");
+      names.add(asIdx >= 0 ? trimmed.slice(asIdx + 4).trim() : trimmed);
+    }
+  }
+
+  // An inline declaration is its own export name — no alias is possible in this position, so this
+  // half is identical to `parseBarrelExportNames` rather than merely similar.
+  const defRe = /export\s+(?:async\s+)?(?:function|const|class|interface|type|enum)\s+([A-Za-z_$]\w*)/g;
+  for (const match of source.matchAll(defRe)) {
+    const name = match[1]; // the identifier is a mandatory group, so a match implies it
+    if (name === undefined) continue;
+    names.add(name);
+  }
+
+  return names;
+}
+
 /** Extracts the exported identifier(s) declared on a single line, or `null` if none. */
 export function exportNamesFromLine(line: string): string[] | null {
   const decl = line.match(/export\s+(?:async\s+)?(?:function|const|class|interface|type|enum)\s+([A-Za-z_$]\w*)/);

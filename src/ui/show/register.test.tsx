@@ -20,9 +20,12 @@ const Layout: FC<{ ctx: { title: string } }> = ({ ctx, children }) => (
 );
 
 describe("showcaseRoutes", () => {
-  it("derives the index href and six API hrefs from the default base", () => {
+  it("derives the index href, the theme href and six API hrefs from the default base", () => {
     const r = showcaseRoutes();
     expect(r.ui.index.href()).toBe("/showcase/ui");
+    // A sibling of `index`, not a child of `api` — a page someone shares a link to rather than an
+    // HTMX fragment endpoint.
+    expect(r.ui.theme.href()).toBe("/showcase/ui/theme");
     expect(r.ui.api.preview.href()).toBe("/showcase/ui/api/preview");
     expect(r.ui.api.validate.href()).toBe("/showcase/ui/api/validate");
     expect(r.ui.api.search.href()).toBe("/showcase/ui/api/search");
@@ -33,6 +36,7 @@ describe("showcaseRoutes", () => {
 
   it("honours a custom base path", () => {
     expect(showcaseRoutes("/demo").ui.index.href()).toBe("/demo");
+    expect(showcaseRoutes("/demo").ui.theme.href()).toBe("/demo/theme");
     expect(showcaseRoutes("/demo").ui.api.search.href()).toBe("/demo/api/search");
   });
 });
@@ -51,6 +55,36 @@ describe("registerShowcase", () => {
     const body = await res.text();
     expect(body).toContain('data-ctx="chrome"');
     expect(body).toContain("UI Component Showcase");
+  });
+
+  it("wires the theme customiser in the same layout, defaulting every dial", async () => {
+    const res = await makeApp().request("/showcase/ui/theme");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('data-ctx="chrome"');
+    expect(body).toContain("Theme customiser");
+    // Gray chroma falls back to 0, which is `theme-neutral.css` exactly — so a bare URL renders the
+    // shipped scheme rather than an arbitrary starting point.
+    expect(body).toContain("#646464");
+  });
+
+  it("reads every dial off the query string", async () => {
+    const res = await makeApp().request("/showcase/ui/theme?gh=256&gc=45&ah=267&ac=195&r=4");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    // The slate-ish scheme's step 11, generated — proof the loader reached the generator rather
+    // than defaulting silently.
+    expect(body).toContain("#53667e");
+    expect(body).toContain("4px");
+  });
+
+  it("clamps an out-of-range dial rather than rendering a scheme the sliders could not make", async () => {
+    const res = await makeApp().request("/showcase/ui/theme?gc=99999&gh=abc");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    // `gc` clamps to the dial's max of 100; `gh` is unparseable and falls back to 0.
+    expect(body).toContain(">100</output>");
+    expect(body).toContain("0°");
   });
 
   it("wires each of the six HTMX API sub-routes", async () => {
