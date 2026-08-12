@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.0.83] — 2026-08-12
+
 **The semantic layer conflated a decorative hairline with a control affordance under one stop
 mapping.** `--border`, `--input` and `--ring` were documented as a single concern — *"separation,
 control outlines, and the focus ring"* — and mapped accordingly: `--border` and `--input` were both
@@ -2736,6 +2742,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.0.83]: https://github.com/y-core/forge/compare/v0.0.82...v0.0.83
 [0.0.82]: https://github.com/y-core/forge/compare/v0.0.81...v0.0.82
 [0.0.81]: https://github.com/y-core/forge/compare/v0.0.80...v0.0.81
 [0.0.80]: https://github.com/y-core/forge/compare/v0.0.79...v0.0.80
