@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fs from "node:fs";
-import { readPackageVersion, updatePackageVersion } from "./pkg";
-import { ReleaseError } from "./types";
+import { ReleaseError } from "../types";
+import { readPackageVersion, updatePackageVersion } from "./pkg-json";
 
 type FsSpy = ReturnType<typeof spyOn> & {
   mockReturnValue: (v: unknown) => void;

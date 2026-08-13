@@ -1,17 +1,13 @@
-export type { ChangelogParse, PromoteOptions, UnreleasedSection, VersionHeading } from "./changelog";
-export { formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
-export {
-  createTag,
-  getCommitsSinceTag,
-  getLastCommitMessage,
-  getLatestTag,
-  gitExec,
-  isWorkingTreeClean,
-  tagExists,
-} from "./git";
-export { readChangelog, readPackageVersion, readRepositoryUrl, updatePackageVersion, writeChangelog } from "./pkg";
-export { createReleaseCommand } from "./release";
-export { bumpSemVer, compareSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
+export type { GateCommandConfig } from "./gate/command";
+export { createGateCommand } from "./gate/command";
+export type { CloudflareWorkerStepOptions } from "./gate/presets";
+export { cloudflareWorkerSteps } from "./gate/presets";
+export type { Gate, Selection, Step, StepRequirement } from "./gate/steps";
+export { selectSteps } from "./gate/steps";
+export type { ChangelogParse, PromoteOptions, UnreleasedSection, VersionHeading } from "./release/changelog";
+export { formatReleaseDate, parseChangelog, promoteUnreleased } from "./release/changelog";
+export { createReleaseCommand } from "./release/release";
+export { bumpSemVer, compareSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./release/semver";
+export { resolveVersion } from "./release/version";
 export type { BumpKind, ReleaseCommandConfig, ReleaseErrorKind, SemVer, VersionResult } from "./types";
 export { ReleaseError } from "./types";
-export { resolveVersion } from "./version";

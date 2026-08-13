@@ -1,8 +1,8 @@
-import { getCommitsSinceTag, getLatestTag } from "./git";
-import { readPackageVersion } from "./pkg";
+import { getCommitsSinceTag, getLatestTag } from "../internal/git";
+import { readPackageVersion } from "../internal/pkg-json";
+import type { BumpKind, ResolveVersionOptions, VersionDeps, VersionResult } from "../types";
+import { ReleaseError } from "../types";
 import { bumpSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
-import type { BumpKind, ResolveVersionOptions, VersionDeps, VersionResult } from "./types";
-import { ReleaseError } from "./types";
 
 /**
  * The subject of a `git log --oneline` entry — the abbreviated sha and its single separating

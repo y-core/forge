@@ -1,4 +1,4 @@
-import type { BumpKind, SemVer } from "./types";
+import type { BumpKind, SemVer } from "../types";
 
 export function parseSemVer(str: string): SemVer | null {
   const normalized = str.startsWith("v") ? str.slice(1) : str;

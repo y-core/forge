@@ -1,10 +1,10 @@
-import { createCommand } from "../cli/command";
-import type { Command } from "../cli/types";
+import { createCommand } from "../../cli/command";
+import type { Command } from "../../cli/types";
+import { commit, createTag, isWorkingTreeClean, tagExists } from "../internal/git";
+import { readChangelog, readRepositoryUrl, updatePackageVersion, writeChangelog } from "../internal/pkg-json";
+import type { ReleaseCommandConfig, ReleaseDeps } from "../types";
+import { ReleaseError } from "../types";
 import { formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
-import { commit, createTag, isWorkingTreeClean, tagExists } from "./git";
-import { readChangelog, readRepositoryUrl, updatePackageVersion, writeChangelog } from "./pkg";
-import type { ReleaseCommandConfig, ReleaseDeps } from "./types";
-import { ReleaseError } from "./types";
 import { resolveVersion } from "./version";
 
 const releaseFlags = {

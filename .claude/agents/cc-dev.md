@@ -72,14 +72,16 @@ reopen mid-implementation.
 - Find every caller of any function whose signature you are changing, and update all of them.
 - Confirm no equivalent already exists before adding a symbol.
 
-### Comments Are Self-Describing
+### Code Style
 
-A comment explains the non-obvious **why**, derivable from the code in front of you. **No
-`.decisions/` section references (`§N`), no task or ticket IDs, no changelog notes** ("renamed
-from…", "previously…"). External pointers belong in the PR and in `.decisions/`, not in source.
-
-If a comment would only make sense to someone who read a specific document, either the code needs
-restructuring or the comment needs rewriting.
+- Verb-first function names: `claimTask`, `validateInput`, `registerRoute`, `makeHandler`
+- Early returns over nested `if` blocks
+- Named exports only — no default exports except Worker entries
+- `_` prefix for private fields
+- code should be self-describing and self-documenting with accurate and concise naming
+- comments need to earn it's place in the codebase.
+- a comment explains the non-obvious **why**; a decision not plainly clear from the code. 
+— don't include verbose comments unless the code does something non-obvious, or unexpected.
 
 ## Build Verification
 

@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import { resolve } from "node:path";
-import { ReleaseError } from "./types";
+import { ReleaseError } from "../types";
 
 export function readPackageVersion(cwd: string): string {
   const pkgPath = resolve(cwd, "package.json");
@@ -28,7 +28,7 @@ export function readPackageVersion(cwd: string): string {
  * renamed remote, and it would put a subprocess call on a path that is otherwise pure metadata.
  *
  * @param cwd - Directory holding `package.json`.
- * @public
+ * @internal
  */
 export function readRepositoryUrl(cwd: string): string | null {
   const pkgPath = resolve(cwd, "package.json");
@@ -52,7 +52,7 @@ export function readRepositoryUrl(cwd: string): string | null {
  *
  * @param cwd - Repository root.
  * @param file - Changelog path relative to `cwd`.
- * @public
+ * @internal
  */
 export function readChangelog(cwd: string, file: string): string | null {
   const path = resolve(cwd, file);
@@ -75,7 +75,7 @@ export function readChangelog(cwd: string, file: string): string | null {
  * @param cwd - Repository root.
  * @param file - Changelog path relative to `cwd`.
  * @param source - The promoted document.
- * @public
+ * @internal
  */
 export function writeChangelog(cwd: string, file: string, source: string): void {
   try {

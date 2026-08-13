@@ -22,6 +22,34 @@
 
 ---
 
+## Code Intelligence
+
+When tracing where a symbol is defined or finding all references to
+it, use LSP (goToDefinition, findReferences, hover) instead of Grep.
+LSP gives exact results; Grep gives text matches.
+
+Use Grep/Glob for discovery (finding files, searching patterns). Use
+LSP for understanding (definitions, references, type info).
+
+After locating a file with Grep/Glob, use LSP to navigate within it
+rather than reading the whole file.
+
+---
+
+## Ledger
+
+ledger tasks are tracked in the task-forge ledger via the `ledger` MCP tools.
+Scope is a property of the URL, so no tool takes a `project` argument.
+
+- Move a task to `doing` when you start it; call again only when its state
+  actually changes, never to narrate progress.
+- A read carries the `revision` a later edit must cite — read before you write.
+- Record the resolution with, or before, the move to `done`.
+- On a refusal, act on the payload: `rule` names what was applied, `requires`
+  names the arguments to add, `retryable` says whether the call could succeed.
+
+---
+
 ## Toolchain
 
 | Tool | Role |
@@ -80,33 +108,6 @@ that owns the fix, and `cc-tester` never edits the code it judges.
 guaranteed**. Treat the whole split as convention: every agent obeys its stated boundaries because
 it is told to, not because a mechanism stops it. No hook enforces the routing either — a decision,
 not an omission.
-
-### Ledger Maintenance
-
-**Forge's work is tracked in the task-forge ledger, and the MCP tools are the only way in.**
-`.mcp.json` connects it as `ledger`, and **scope is a property of that url**: it points at
-`/mcp/forge`, so reads and the create tools file in this repository's ledger. No tool takes a
-`project` argument, and ids and epic names are globally unique — so a tool handed one reaches any
-ledger. `cc-plan`, `cc-dev`, `cc-test` and `cc-doc` each own the ledger entry for the work they
-carry, and every move goes through those tools — never through a text editor. `cc-tester` is the one
-exception: it runs gates and has **no ledger tools at all**, because a green gate is not by itself a
-decision that a task is done. A docs-only change runs no gate, so the doc edit is its own evidence.
-
-**There is no protocol document to fetch.** Every rule the ledger enforces is carried by the tool
-descriptions and the refusals, and arrives at the moment it is needed rather than being prefetched
-against the chance it might be. A refusal names the `rule` it applied, the `requires` that would
-satisfy it, and whether it is `retryable`; a validation refusal also carries the `bounds` it held the
-argument to. So act on the payload rather than guessing past it — the refusal is the teaching
-channel, not merely a diagnosis.
-
-The working rhythm the connection states: move a task to `doing` when you start it, then call again
-only when its state actually changed — never to narrate progress. A read carries the `revision` a
-later edit must cite, so read before you write. Record the resolution with, or before, the move to
-`done`.
-
-None of it is restated here. These rules are the case where a second copy is indistinguishable from a
-rule change, because a stale paragraph and an amended rule read identically and the reader cannot
-tell which they are holding.
 
 ---
 

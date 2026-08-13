@@ -428,6 +428,12 @@ guard middleware to test — see [`HTMX.md`](./HTMX.md) §2.
 over one table, and **`scripts/lib/steps.ts` owns the step list** — every step, its command, and
 which gates it belongs to. Read it there rather than trusting any prose copy.
 
+**The runner behind both is `createGateCommand` from `@y-core/forge/pkg`**
+([`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) §5f), not a script under `scripts/`.
+The table stays forge's; the runner is shared with every app that consumes forge. `scripts/check.ts`
+and `scripts/verify.ts` are bindings that pass `STEPS` in — which is why "where do the steps live"
+and "where does the gate live" now have different answers.
+
 **Every step must pass with zero errors before a task is declared complete.** A partial pass —
 "types pass, lint has one warning" — is a failure, and skipping a step is not permitted.
 
@@ -481,6 +487,13 @@ prerequisite. It adds the browser set, whose Chromium binary comes from `bun run
 `test:browser` before running any test, with the install command in the failure line.
 
 A step needing a prerequisite belongs in `verify` only. A step needing nothing belongs in both.
+
+**The closed `Gate` union is what carries this.** `"check" | "verify"` admits no third verb, so
+every step in every project's table faces exactly one question — may it require a machine
+prerequisite? — with a defined answer. A gate named freely would have no answer at all, and the
+invariant would survive only as prose. That is why the published type stays closed even though
+widening it would cost one character — see
+[`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) §5f for the runner it belongs to.
 
 ---
 

@@ -32,12 +32,14 @@ description: "The asset pipeline, the content-hash manifest system, the CLI fram
 - §4a Commands Are Values: a tree built from data, not registered by side effect
 - §4b Flags Are a Typed Record: two types, inference instead of casts
 - §4c Errors Carry a Kind, Not an Exit Code: why failure is always exit 1
-- §5 pkg Namespace — Release Tooling: the blessed release path
+- §5 pkg Namespace — Project Tooling: the blessed release path and the published gate
 - §5a createReleaseCommand — Automated Release Workflow: the ordered steps and the refusals
 - §5b SemVer Utilities: parse, bump, format, compare
-- §5c Git Release Utilities: tag and working-tree helpers
+- §5c Git and Manifest Internals: the unpublished helpers the two factories are built from
 - §5d Changelog Promotion — the Unreleased Contract: what release does to `CHANGELOG.md`
 - §5e Changelog Gate Invariants: what is checked before a release, and what deliberately is not
+- §5f createGateCommand — the Published Verification Gate: one runner, one table per project
+- §5g cloudflareWorkerSteps — the Fleet Preset: a step-table factory, not new machinery
 
 ---
 
@@ -186,9 +188,11 @@ inspected, and driven to completion without a process. `execute` accepts an expl
 injectable `CliIO`, which is why forge's own CLIs are covered by ordinary unit tests rather than by
 spawning themselves.
 
-**A gate or build verb is therefore a factory, not a script.** `createReleaseCommand` (§5a) and the
-verification gate's `createGateCommand` both return a command from a config whose first field is
-`cwd`; the file under `scripts/` is a two-line binding that resolves `cwd` and calls `execute`.
+**A gate or build verb is therefore a factory, not a script.** `createReleaseCommand` (§5a) and
+`createGateCommand` (§5f) both return a command from a config whose first field is `cwd`; the file
+under `scripts/` is a short binding that resolves `cwd` and calls `execute`. Both ship from
+`@y-core/forge/pkg`, which is what makes the shape reusable rather than a forge-local habit — a
+factory reachable only from `scripts/` is a script wearing a factory's clothes.
 
 ### 4b. Flags Are a Typed Record
 
@@ -219,7 +223,14 @@ line is the last thing printed.
 
 ---
 
-## 5. pkg Namespace — Release Tooling
+## 5. pkg Namespace — Project Tooling
+
+**`pkg` owns both project verbs — release *and* verification.** The charter widened when the gate
+folded in: the namespace is what a project's `scripts/` directory is built from, not release
+automation alone. Its layout follows the split — `release/` and `gate/` hold the two factories,
+`internal/` holds what only serves them, and `mod.ts` is the one barrel over all three
+(`NAMESPACE_DESIGN.md` §1a forbids a barrel importing a barrel, so the subdirectories are plain
+directories of concrete files).
 
 ### 5a. createReleaseCommand — Automated Release Workflow
 
@@ -298,15 +309,17 @@ tag.
 `parseSemVer` throws if the string is not a valid semver. `bumpSemVer` accepts
 `"major"` | `"minor"` | `"patch"` and resets lower components to zero per semver spec.
 
-### 5c. Git Release Utilities
+### 5c. Git and Manifest Internals
 
-    import {
-      getLatestTag,
-      getCommitsSinceTag,
-      createTag,
-      tagExists,
-      isWorkingTreeClean,
-    } from "@y-core/forge/pkg"
+    // src/pkg/internal/git.ts, src/pkg/internal/pkg-json.ts — NOT exported from the barrel
+
+**These are unpublished.** `getLatestTag`, `getCommitsSinceTag`, `getLastCommitMessage`,
+`createTag`, `tagExists`, `isWorkingTreeClean`, `gitExec`, `readPackageVersion`,
+`updatePackageVersion`, `readRepositoryUrl`, `readChangelog` and `writeChangelog` exist to serve
+the two command factories and nothing else. A consumer that needs `git tag` has `git`; what forge
+publishes is the *policy* over it — the ordered, refusing release command — not a thin `execFileSync`
+wrapper it would have to reimplement the policy around. `validate-exports` enforces the line: an
+`@public` tag on any of them fails the gate until it is either exported or retagged.
 
 **Every one of them takes `cwd` first.** These shell out to `git`, and a git command with no
 working directory is a command against whatever directory the process happens to be in — so
@@ -369,12 +382,12 @@ to compare against, and a compare link to nothing is worse than none. Reading th
 `git remote get-url` was rejected — it breaks in a clone with a renamed remote, and it would put
 a subprocess on a path that is otherwise pure metadata.
 
-**`src/pkg/changelog.ts` returns its failures instead of throwing, diverging from the
+**`src/pkg/release/changelog.ts` returns its failures instead of throwing, diverging from the
 `ReleaseError` style of the rest of the namespace.** The divergence is the gate's doing: §5e must
 report every malformed heading in one run, and an exception stops at the first. The module is
 also import-free — no clock, no filesystem, no git — so `release.ts` converts a returned failure
 into a `ReleaseError` at its own boundary and the file I/O lives with the other readers in
-`pkg.ts`.
+`internal/pkg-json.ts`.
 
 ### 5e. Changelog Gate Invariants
 
@@ -407,3 +420,67 @@ Three things are deliberately not checked, each because the file disproves them:
 - **Version contiguity** — gaps are legitimate, since a resolved version that never shipped
   leaves a hole the next compare link simply spans.
 - **A trailing newline** — the file has none, and promotion round-trips that exactly (§5d).
+
+### 5f. createGateCommand — the Published Verification Gate
+
+    import { createGateCommand } from "@y-core/forge/pkg"
+
+    await execute(createGateCommand({ cwd, gate: "check", steps: STEPS }))
+
+**One runner, one table per project.** The runner is published; the table is not. That split is the
+whole design: five repositories share the selection logic, the fail-fast ordering, the `requires`
+probe and the full-log file, while each keeps its own steps as its own source of truth — forge's in
+`scripts/lib/steps.ts` (see [`TESTING.md`](./TESTING.md) §6a).
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `cwd` | `string` | — | Repository root. Every step is spawned here, so a step's relative paths resolve. |
+| `gate` | `Gate` | — | Which gate's membership to run. |
+| `steps` | `readonly Step[]` | — | The table to resolve against. |
+| `binDir` | `string` | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve. |
+
+**`Gate` is a closed `"check" | "verify"` union, and that is what carries the prerequisite
+invariant.** A third verb would have no defined answer to "may this step require a browser?" — the
+one question [`TESTING.md`](./TESTING.md) §6c exists to settle. Widening the names would dissolve
+the invariant to buy an app a synonym.
+
+**`binDir` is a de-hardcoding, not a feature.** The runner previously hardcoded
+`${cwd}/node_modules/.bin`; the apps that invoke tools as `bun x biome` need a different prefix, and
+one config field is cheaper than five forks. The temp-directory prefix behind the full-log file
+stays hardcoded — configuring it would be surface for nothing.
+
+**The formatters stay unpublished.** `src/pkg/gate/report.ts` is nine pure functions and none of
+them is exported from the barrel. Publishing them would freeze the exact glyphs and wording of
+every gate line across five repositories, and would hand the next repository the parts to build an
+alternate runner from — which is the fork this consolidation removed.
+
+**`selectSteps` *is* published**, because it is pure. An app unit-tests its own table against it at
+zero step cost — the same argument that makes forge's `steps.test.ts` worth having.
+
+**What is deliberately absent:** step sets, an `--inspect`/streaming mode, and a preconditions
+phase. The published surface is exactly `--only`, `--list`, `--fix`, fail-fast, the `requires`
+probe and the full-log file. Narrowing a run means enumerating labels; the workaround for a
+streamed run is `--list` and then the step's own command.
+
+### 5g. cloudflareWorkerSteps — the Fleet Preset
+
+    import { cloudflareWorkerSteps } from "@y-core/forge/pkg"
+
+    export const STEPS = [...cloudflareWorkerSteps({ assetConfig: "assets.config.ts" }), ...appSteps]
+
+**A preset is a factory returning ordinary `Step` rows, not a second kind of table.** It is spread
+into the app's own array and appended to; an app that outgrows it writes the rows out by hand and
+loses nothing. Nothing in the runner knows a preset exists.
+
+The order is `cf:typecheck` → `types:assets` → `typecheck` → `lint` → `test`. **Generation leads
+judgement**: `wrangler types` and the asset-types emitter both write files `typecheck` then reads,
+so a stale binding type surfaces as a type error rather than as a green run over yesterday's
+bindings.
+
+**Every preset step is prerequisite-free**, so the whole preset is legal in `check`
+([`TESTING.md`](./TESTING.md) §6c). A
+`requires` added to any of them would break that for every app at once, which is why
+`presets.test.ts` asserts the absence as a property rather than trusting the reading.
+
+`assetConfig` is optional and omitting it drops the `types:assets` step entirely — an app with no
+asset pipeline gets a four-step table, not a step that succeeds vacuously.

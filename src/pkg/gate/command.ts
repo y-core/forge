@@ -1,16 +1,21 @@
-/** gate-command.ts — the `check` / `verify` verbs built over the `STEPS` table.
+/** command.ts — the `check` / `verify` verbs built over a project's step table.
  *
  *  Both gates are the same runner with a different membership filter, so there is one factory.
  *  Everything decidable is decided by `selectSteps` (pure) and rendered by `report` (pure);
  *  what remains here is the untestable rim — spawning, printing, and exiting.
+ *
+ *  The table is config rather than an import, which is what lets five repos share one runner
+ *  while each keeps its own steps as its own source of truth. `report` stays unpublished on
+ *  purpose: freezing nine formatters across five repos is how an alternate runner gets built.
  */
 
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exit } from "node:process";
-import type { Command } from "../../src/cli/mod";
-import { capture, createCommand, insertPath, probeOk } from "../../src/cli/mod";
+import { createCommand } from "../../cli/command";
+import { capture, insertPath, probeOk } from "../../cli/proc";
+import type { Command } from "../../cli/types";
 import {
   formatFailureExcerpt,
   formatFixSummary,
@@ -20,7 +25,7 @@ import {
   formatStepLine,
   formatSummary,
 } from "./report";
-import { type Gate, STEPS, selectSteps } from "./steps";
+import { type Gate, type Step, selectSteps } from "./steps";
 
 const gateFlags = {
   only: { type: "string" as const, description: "Run only these steps (comma-separated labels)" },
@@ -28,11 +33,19 @@ const gateFlags = {
   fix: { type: "boolean" as const, description: "Run each selected step's fixer instead of the step" },
 };
 
+/** What the runner needs to know about the project it is gating.
+ *
+ * @public
+ */
 export interface GateCommandConfig {
   /** Repository root. Every step is spawned here, so a step's relative paths resolve. */
   cwd: string;
   /** Which gate's membership to run. */
   gate: Gate;
+  /** The table to resolve against — the project's own steps. */
+  steps: readonly Step[];
+  /** Prepended to `PATH` so bare tool names resolve. Defaults to `${cwd}/node_modules/.bin`. */
+  binDir?: string;
 }
 
 const DESCRIPTIONS: Record<Gate, string> = {
@@ -70,9 +83,12 @@ function reportFailure(label: string, output: string, tail: number): void {
 }
 
 /** Build the command for one gate. Mirrors `createReleaseCommand(config)`: config first,
- *  `cwd` inside it, so the thin `scripts/*.ts` binding stays a single `execute` call. */
+ *  `cwd` inside it, so the thin `scripts/*.ts` binding stays a single `execute` call.
+ *
+ * @public
+ */
 export function createGateCommand(config: GateCommandConfig): Command<typeof gateFlags> {
-  const { cwd, gate } = config;
+  const { cwd, gate, steps: table, binDir = `${cwd}/node_modules/.bin` } = config;
 
   return createCommand({
     name: gate,
@@ -80,7 +96,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
     flags: gateFlags,
     args: { kind: "none" },
     run(_args, flags) {
-      const selection = selectSteps(STEPS, { gate, ...(flags.only !== undefined ? { only: flags.only } : {}) });
+      const selection = selectSteps(table, { gate, ...(flags.only !== undefined ? { only: flags.only } : {}) });
       if (!selection.ok) {
         console.error(selection.error);
         exit(1);
@@ -99,8 +115,8 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         return;
       }
 
-      // Steps invoke `tsgo`, `biome`, and `playwright` by bare name; the repo's copies live here.
-      insertPath(`${cwd}/node_modules/.bin`);
+      // Steps invoke `tsgo`, `biome`, and `playwright` by bare name; the project's copies live here.
+      insertPath(binDir);
 
       if (flags.fix) {
         let fixed = 0;

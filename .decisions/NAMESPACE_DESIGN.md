@@ -163,7 +163,7 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/http` | `src/http/mod.ts` | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `htmlResponse`, `fragmentResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
 | `@y-core/forge/logging` | `src/logging/mod.ts` | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withRedaction`, `requestLogger`, `requestLog` |
 | `@y-core/forge/logging/show` | `src/logging/show/mod.ts` | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
-| `@y-core/forge/pkg` | `src/pkg/mod.ts` | `createReleaseCommand`, `parseSemVer`, `bumpSemVer`, `formatSemVer` |
+| `@y-core/forge/pkg` | `src/pkg/mod.ts` | project tooling — both verbs: `createReleaseCommand`, `resolveVersion`, the SemVer and changelog transforms; `createGateCommand`, `cloudflareWorkerSteps`, `selectSteps`. The git/manifest helpers and the gate's formatters are `@internal` (`ASSET_AND_BUILD_TOOLING.md` §5c, §5f) |
 | `@y-core/forge/result` | `src/result/mod.ts` | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
 | `@y-core/forge/router` | `src/router/mod.ts` | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
 | `@y-core/forge/security` | `src/security/mod.ts` | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |

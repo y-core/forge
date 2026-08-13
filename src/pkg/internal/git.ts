@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { ReleaseError } from "./types";
+import { ReleaseError } from "../types";
 
 /**
  * Extract the most informative text from a failed `execFileSync` error.

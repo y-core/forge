@@ -17,7 +17,35 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`@y-core/forge/pkg` now publishes the verification gate.** `createGateCommand({ cwd, gate,
+  steps, binDir? })` builds the `check` / `verify` verbs over a step table the consuming project
+  owns — fail-fast execution, `--only` / `--list` / `--fix`, the zero-selection refusal, machine
+  prerequisite probes, and the full-log file. The runner was previously `scripts/lib/gate-command.ts`,
+  unreachable from the exports map.
+- **`cloudflareWorkerSteps(options?)`** — the step table this fleet's Worker apps share:
+  `cf:typecheck` → `types:assets` → `typecheck` → `lint` → `test`. A factory returning ordinary
+  `Step` rows, spread into an app's own array. Every step is prerequisite-free, so the whole preset
+  is legal in `check`.
+- **`selectSteps`** plus the `Gate`, `Step`, `StepRequirement`, `Selection`, `GateCommandConfig` and
+  `CloudflareWorkerStepOptions` types — an app can unit-test its own step table with no process
+  spawned.
+
+### Changed
+
+- **`pkg`'s charter widened from release automation to project tooling** — both verbs. The
+  namespace is reorganised into `gate/`, `release/` and `internal/`, still behind the single
+  `src/pkg/mod.ts` barrel.
+
+### Breaking Changes
+
+- **Twelve plumbing symbols were removed from `@y-core/forge/pkg`**: `gitExec`,
+  `isWorkingTreeClean`, `getLatestTag`, `getCommitsSinceTag`, `getLastCommitMessage`, `tagExists`,
+  `createTag`, `readPackageVersion`, `updatePackageVersion`, `readRepositoryUrl`, `readChangelog`
+  and `writeChangelog`. They exist only to serve the two command factories and are now `@internal`.
+  What forge publishes is the policy over `git`, not a wrapper around it. `createReleaseCommand`,
+  `resolveVersion`, the SemVer set and the changelog transforms are unchanged.
 
 ---
 

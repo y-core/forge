@@ -1,57 +1,171 @@
 # `@y-core/forge/pkg`
 
-Release automation utilities for `package.json`-based projects: semantic-version
-parsing, git tag/commit inspection, Keep a Changelog promotion, and a ready-made
-`release` CLI command that bumps the version, updates `package.json`, promotes
-`CHANGELOG.md`, commits, and tags — driven by commit message conventions.
+**Project tooling — the two verbs a repository's `scripts/` directory is built from.**
 
-> **Node.js / Bun only.** This namespace shells out to `git` via
-> `node:child_process` and reads/writes files via `node:fs`. It is intended for
-> release scripts and local tooling. **Do not import it into Cloudflare Workers
-> or any client bundle** — it depends on Node built-ins that do not exist there.
+- **Verification** — `createGateCommand`, a `check`/`verify` runner over a step table you own,
+  plus `cloudflareWorkerSteps` for the table this fleet's Worker apps share.
+- **Release** — `createReleaseCommand`, which resolves the next version from git history, promotes
+  `CHANGELOG.md`, updates `package.json`, commits and tags.
+
+> **Node.js / Bun only.** This namespace shells out to `git` and to your build tools via
+> `node:child_process`, and reads/writes files via `node:fs`. It is intended for release scripts
+> and local tooling. **Do not import it into Cloudflare Workers or any client bundle** — it depends
+> on Node built-ins that do not exist there.
 
 ```ts
-import { createReleaseCommand, resolveVersion } from "@y-core/forge/pkg";
+import { cloudflareWorkerSteps, createGateCommand, createReleaseCommand } from "@y-core/forge/pkg";
 ```
+
+---
+
+## Layout
+
+```
+src/pkg/
+  mod.ts       ← the only barrel; every public symbol, named
+  types.ts     ← shared error and config types
+  gate/        steps.ts  report.ts  command.ts  presets.ts
+  release/     changelog.ts  release.ts  semver.ts  version.ts
+  internal/    git.ts  pkg-json.ts
+```
+
+There is exactly **one barrel**. The subdirectories are plain directories of concrete files, not
+sub-namespaces: `NAMESPACE_DESIGN.md` §1a forbids a barrel importing another barrel, and §2 forbids
+sibling-barrel imports, so `mod.ts` reaches each file directly.
+
+**External vs internal is one question:** would a consuming app plausibly call this itself? If not,
+it exists to serve the two command factories and stays out of the barrel. That is why `internal/`
+holds the git and `package.json` helpers, and why `gate/report.ts`'s nine formatters are
+unpublished — publishing them would freeze the exact wording of every gate line across every
+repository that consumes forge.
 
 ---
 
 ## Features
 
-- **Automatic version resolution** (`resolveVersion`) — derives the next version
-  from the latest git tag plus commit history. Every commit subject in
-  `<latest-tag>..HEAD` is scanned and the highest bump wins: `major:` → major,
-  `minor:` → minor, otherwise patch.
-- **Drop-in `release` command** (`createReleaseCommand`) — a complete CLI command
-  that checks the working tree, resolves the next version, promotes the changelog,
-  updates `package.json`, commits the change, and creates the git tag. Supports
-  `--dry`/`-n`, `--allow-dirty`, and `--allow-empty-changelog`.
-- **Changelog promotion** (`parseChangelog`, `promoteUnreleased`,
-  `formatReleaseDate`) — a zero-dependency Keep a Changelog parser and transform.
-  `[Unreleased]` becomes a dated version section, a fresh empty `[Unreleased]`
-  takes its place, and a compare-link definition is appended.
-- **SemVer primitives** — parse, format, compare, and bump strict
-  `major.minor.patch` versions (leading zeros and `v` prefixes handled).
-- **Git helpers** — list tags, list commits since a tag, read the last commit
-  message, create tags, and check whether the working tree is clean.
-- **`package.json` and changelog IO** — read and write the `version` field while
-  preserving the file's existing indentation, read the `repository` URL, and read
-  and write the changelog verbatim.
-- **Structured errors** (`ReleaseError`) — every failure carries a discriminated
-  `kind` so callers can react programmatically.
+### Verification
+
+- **Drop-in `check` / `verify` commands** (`createGateCommand`) — fail-fast execution over your
+  step table, a per-step result line, the failing step named in the summary, the failure's tail
+  plus a path to the untruncated log, and `--only` / `--list` / `--fix`.
+- **A zero-selection refusal** — a run that resolves to no steps is refused rather than reported
+  green, and a narrowed run brands every summary line `⚠ scoped run — not the gate`.
+- **Prerequisite probes** (`StepRequirement`) — a step can declare a machine prerequisite and the
+  command that answers whether it is present. It fires only when that step is selected.
+- **Pure selection** (`selectSteps`) — no disk, no spawning, no clock, so you can unit-test your
+  own table at zero step cost.
+- **A Cloudflare Worker preset** (`cloudflareWorkerSteps`) — the five-step table this fleet shares.
+
+### Release
+
+- **Automatic version resolution** (`resolveVersion`) — derives the next version from the latest
+  git tag plus commit history. Every commit subject in `<latest-tag>..HEAD` is scanned and the
+  highest bump wins: `major:` → major, `minor:` → minor, otherwise patch.
+- **Drop-in `release` command** (`createReleaseCommand`) — checks the working tree, resolves the
+  next version, promotes the changelog, updates `package.json`, commits, and creates the git tag.
+  Supports `--dry`/`-n`, `--allow-dirty`, and `--allow-empty-changelog`.
+- **Changelog promotion** (`parseChangelog`, `promoteUnreleased`, `formatReleaseDate`) — a
+  zero-dependency Keep a Changelog parser and transform. `[Unreleased]` becomes a dated version
+  section, a fresh empty `[Unreleased]` takes its place, and a compare-link definition is appended.
+- **SemVer primitives** — parse, format, compare, and bump strict `major.minor.patch` versions
+  (leading zeros and `v` prefixes handled).
+- **Structured errors** (`ReleaseError`) — every failure carries a discriminated `kind` so callers
+  can react programmatically.
 
 ---
 
 ## Usage
 
-### Wire up a `release` command
+### Wire up `check` and `verify`
 
-`createReleaseCommand` returns a forge `Command` you can register with your CLI.
-It only needs the project's working directory.
+Two files. `scripts/lib/steps.ts` holds your table — it is the single source of truth for what your
+gate runs, and `package.json` holds only the verbs that invoke it:
 
 ```ts
-import { createReleaseCommand } from "@y-core/forge/pkg";
+// scripts/lib/steps.ts
+import { cloudflareWorkerSteps, type Step } from "@y-core/forge/pkg";
+
+export const STEPS: readonly Step[] = [
+  ...cloudflareWorkerSteps({ assetConfig: "assets.config.ts" }),
+  { label: "check:bindings", gates: ["check", "verify"], tail: 30, cmd: ["bun", "run", "scripts/check-bindings.ts"] },
+  {
+    label: "test:browser",
+    gates: ["verify"],
+    tail: 120,
+    cmd: ["playwright", "test"],
+    requires: { tool: "chromium", probe: ["test", "-x", "/usr/local/bin/chromium"], hint: "bun run test:install" },
+  },
+];
+```
+
+```ts
+// scripts/check.ts  —  scripts/verify.ts is the same with gate: "verify"
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execute } from "@y-core/forge/cli";
+import { createGateCommand } from "@y-core/forge/pkg";
+import { STEPS } from "./lib/steps";
+
+const cwd = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+await execute(createGateCommand({ cwd, gate: "check", steps: STEPS }));
+```
+
+```json
+{
+  "scripts": {
+    "check": "bun run scripts/check.ts",
+    "verify": "bun run scripts/verify.ts",
+    "fix": "bun run scripts/check.ts --fix"
+  }
+}
+```
+
+Running it:
+
+```bash
+bun run check                      # every check step, fail-fast
+bun run check --list               # print the resolved selection, run nothing
+bun run check --only lint,test     # narrow the run (branded as scoped)
+bun run check --fix                # run each selected step's fixer instead
+bun run verify                     # the release gate — check plus its extra steps
+```
+
+Output is one line per step, then one verdict line:
+
+```
+✓ typecheck (0.9s)
+✗ lint (0.8s)
+    src/app/routes.ts:14:3 lint/style/useConst ...
+    full log at /tmp/forge-gate-a1b2c3/lint.log
+✗ check — failed at `lint` (2 of 5 steps run, 1.7s)
+```
+
+**The verdict is the summary line**, not the raw tool output beneath it. A failing step exits 1, so
+`prepublishOnly: "bun run verify"` blocks a red gate.
+
+### Test your own step table
+
+`selectSteps` is pure, so the whole selection surface is assertable without spawning anything:
+
+```ts
+import { selectSteps } from "@y-core/forge/pkg";
+import { STEPS } from "./steps";
+
+const result = selectSteps(STEPS, { gate: "check" });
+if (result.ok) expect(result.steps.map((s) => s.label)).toEqual(["cf:typecheck", "typecheck", "lint", "test"]);
+
+// The §6c property: no check step may carry a machine prerequisite.
+expect(STEPS.filter((s) => s.gates.includes("check") && s.requires)).toEqual([]);
+```
+
+### Wire up a `release` command
+
+`createReleaseCommand` returns a forge `Command` you can register with your CLI. It only needs the
+project's working directory.
+
+```ts
 import { runCli } from "@y-core/forge/cli";
+import { createReleaseCommand } from "@y-core/forge/pkg";
 
 const release = createReleaseCommand({ cwd: process.cwd() });
 
@@ -62,23 +176,23 @@ Running the command:
 
 ```bash
 # Auto-resolve the next version from git history, then commit + tag
-node ./scripts/release.js release
+bun run ./scripts/release.ts release
 
 # Preview without writing anything
-node ./scripts/release.js release --dry
+bun run ./scripts/release.ts release --dry
 
 # Force an explicit version (must be greater than the latest tag)
-node ./scripts/release.js release 2.1.0
+bun run ./scripts/release.ts release 2.1.0
 
 # Bypass the clean-working-tree check
-node ./scripts/release.js release --allow-dirty
+bun run ./scripts/release.ts release --allow-dirty
 
 # Release even though [Unreleased] carries no entry
-node ./scripts/release.js release --allow-empty-changelog
+bun run ./scripts/release.ts release --allow-empty-changelog
 ```
 
-The command derives the bump from the commit subjects since the latest tag, taking
-the highest one it finds:
+The command derives the bump from the commit subjects since the latest tag, taking the highest one
+it finds:
 
 ```bash
 git commit -m "minor: add export panel"   # → next minor release
@@ -86,48 +200,47 @@ git commit -m "major: rewrite kernel ABI" # → next major release
 git commit -m "fix snapping tolerance"    # → next patch release (default)
 ```
 
-A range holding both `major:` and `fix …` releases as a **major** — the scan reads
-every subject in the range, not just the tip.
+A range holding both `major:` and `fix …` releases as a **major** — the scan reads every subject in
+the range, not just the tip.
 
 ### Promote the changelog on release
 
-Given a `CHANGELOG.md` whose `[Unreleased]` section carries entries, the command
-retitles that heading with the resolved version and today's local date, inserts a
-fresh empty `[Unreleased]` above it, and appends a compare-link definition built
-from `package.json`'s `repository` URL. Both files land in one commit when the
-changelog is staged:
+Given a `CHANGELOG.md` whose `[Unreleased]` section carries entries, the command retitles that
+heading with the resolved version and today's local date, inserts a fresh empty `[Unreleased]`
+above it, and appends a compare-link definition built from `package.json`'s `repository` URL. Both
+files land in one commit when the changelog is staged:
 
 ```ts
 createReleaseCommand({ cwd, stageFiles: ["package.json", "CHANGELOG.md"] });
 ```
 
-`changelogFile` defaults to `"CHANGELOG.md"`; a project without one releases
-unchanged — the promotion step is skipped, not failed.
+`changelogFile` defaults to `"CHANGELOG.md"`; a project without one releases unchanged — the
+promotion step is skipped, not failed.
 
-The command refuses to release when `[Unreleased]` is empty (whitespace only,
-`---` separators only, or just the `_Nothing yet._` placeholder) while commits
-exist since the tag. `--allow-empty-changelog` overrides that, and still promotes —
-the released section ships carrying `_Nothing yet._`. It does **not** override a
-changelog that fails to parse; that refusal has no escape.
+The command refuses to release when `[Unreleased]` is empty (whitespace only, `---` separators
+only, or just the `_Nothing yet._` placeholder) while commits exist since the tag.
+`--allow-empty-changelog` overrides that, and still promotes — the released section ships carrying
+`_Nothing yet._`. It does **not** override a changelog that fails to parse; that refusal has no
+escape.
 
 ### Transform a changelog directly
 
 ```ts
-import { formatReleaseDate, parseChangelog, promoteUnreleased, writeChangelog } from "@y-core/forge/pkg";
+import { formatReleaseDate, parseChangelog, promoteUnreleased } from "@y-core/forge/pkg";
 
 const parsed = parseChangelog(source);
 if (parsed.ok) {
   console.log(parsed.unreleased.empty);        // false
-  console.log(parsed.versions[0]?.version);    // "0.0.82"
+  console.log(parsed.versions[0]?.version);    // "0.0.83"
 }
 
 const result = promoteUnreleased(source, {
-  version: "0.0.83",
+  version: "0.0.84",
   date: formatReleaseDate(new Date()),
   tagPrefix: "v",
   compareUrlBase: "https://github.com/y-core/forge",
 });
-if (result.ok) writeChangelog(cwd, "CHANGELOG.md", result.source);
+if (result.ok) console.log(result.source);
 ```
 
 ### Resolve a version programmatically
@@ -146,7 +259,7 @@ console.log(result.previous); // "v1.2.4" | null
 ```ts
 import { bumpSemVer, formatSemVer, parseSemVer } from "@y-core/forge/pkg";
 
-const v = parseSemVer("v1.2.3");     // { major: 1, minor: 2, patch: 3 }
+const v = parseSemVer("v1.2.3");      // { major: 1, minor: 2, patch: 3 }
 const next = bumpSemVer(v!, "minor"); // { major: 1, minor: 3, patch: 0 }
 formatSemVer(next);                   // "1.3.0"
 ```
@@ -171,13 +284,90 @@ try {
 
 ## Core Components & APIs
 
+### Gate command
+
+#### `createGateCommand(config)`
+
+Builds a `check` or `verify` CLI `Command`. The returned command takes no positional argument and
+supports `--only`, `--list` and `--fix`.
+
+`GateCommandConfig`:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `cwd` | `string` | — | Repository root. Every step is spawned here, so a step's relative paths resolve. Required. |
+| `gate` | `Gate` | — | Which gate's membership to run. Required. |
+| `steps` | `readonly Step[]` | — | The table to resolve against — the project's own steps. Required. |
+| `binDir` | `string` | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve. |
+
+Flags:
+
+| Flag | Effect |
+|---|---|
+| `--only <a,b>` | Run only those steps, in table order. An unknown label is refused with the known ones listed. |
+| `--list` | Print the resolved selection and exit, running nothing. |
+| `--fix` | Run each selected step's fixer instead of the step. Steps without one are counted as skipped. |
+
+Behaviour worth relying on:
+
+- **Fail-fast.** The run stops at the first failing step; the summary reports `N of M steps run`.
+- **The full log outlives the run.** A failing step's untruncated output is written to a temp file
+  and its path printed under the excerpt, so a signal outside the `tail` window is recoverable.
+  A filesystem refusal is swallowed — the verdict must always be reported.
+- **A prerequisite is probed only when its step is selected**, so a static-only run never fails on
+  a machine that lacks a browser.
+- **A zero-step selection is refused**, and a narrowed run brands every summary line as scoped.
+- **Exit is direct, not thrown**, so the summary line is the last thing printed and
+  `prepublishOnly` still blocks on a red gate.
+
+### Step table
+
+| Type | Shape |
+|---|---|
+| `Gate` | `"check" \| "verify"` — closed. `check` carries no machine prerequisite; `verify` may. |
+| `Step` | `{ label; gates; tail; cmd; fix?; requires? }` |
+| `StepRequirement` | `{ tool; probe?; hint }` — `probe` defaults to `[tool, "--version"]` |
+| `Selection` | `{ ok: true; steps; total; scoped } \| { ok: false; error }` |
+
+| Field | Type | Description |
+|---|---|---|
+| `label` | `string` | Stable identifier — the `--only` token, and the name reported on failure. |
+| `gates` | `readonly Gate[]` | Gates this step belongs to. A step in no gate is unreachable. |
+| `tail` | `number` | Lines of captured output shown when the step fails. |
+| `cmd` | `readonly [string, ...string[]]` | Executable followed by its arguments. |
+| `fix` | `readonly [string, ...string[]]?` | Auto-fixing counterpart invoked by `--fix`. |
+| `requires` | `StepRequirement?` | Machine prerequisite checked before the step runs. |
+
+#### `selectSteps(steps, { gate, only? })`
+
+Resolves which steps to run. **Pure** — no disk, no spawning, no clock. Three refusals, all
+returned rather than thrown: an unknown `--only` label, a label outside the requested gate, and a
+selection of zero steps. The last is checked on the *outcome*, so it still holds when the selection
+logic itself is wrong.
+
+#### `cloudflareWorkerSteps(options?)`
+
+The step table every Cloudflare Worker app in this fleet shares, in execution order:
+`cf:typecheck` → `types:assets` → `typecheck` → `lint` → `test`. Generation leads judgement, so a
+stale generated type surfaces as a type error. Every step is prerequisite-free, so the whole preset
+is legal in `check`.
+
+`CloudflareWorkerStepOptions`:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `sources` | `readonly string[]` | `["src/", "tests/"]` | Directories linted and type-checked. |
+| `tests` | `readonly string[]` | `["tests/"]` | Test paths passed to `bun test`. |
+| `assetConfig` | `string?` | — | Asset config path. Omit to skip the `types:assets` step entirely. |
+| `workerConfig` | `string?` | — | Extra `--config` for `wrangler types`, for a second wrangler config. |
+
 ### Release command
 
 #### `createReleaseCommand(config, deps?)`
 
-Builds the `release` CLI `Command`. The returned command supports a single
-optional positional argument (an explicit version) plus the `--dry`/`-n`,
-`--allow-dirty` and `--allow-empty-changelog` flags.
+Builds the `release` CLI `Command`. The returned command supports a single optional positional
+argument (an explicit version) plus the `--dry`/`-n`, `--allow-dirty` and
+`--allow-empty-changelog` flags.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -205,8 +395,8 @@ Flags:
 
 #### `resolveVersion(options, deps?)`
 
-Computes the next version from git state and returns a `VersionResult`. Throws
-`ReleaseError` on invalid or non-monotonic versions.
+Computes the next version from git state and returns a `VersionResult`. Throws `ReleaseError` on
+invalid or non-monotonic versions.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -227,10 +417,10 @@ Resolution rules:
 
 - **No tags** → `0.0.1` (`first-release`).
 - **Explicit version** → used as-is after a greater-than check (`explicit`).
-- **No commits since the latest tag** → returns the current version; throws
-  `version-mismatch` if `package.json` and the tag disagree (`in-sync`).
-- **Commits since the latest tag** → bumps from the tag by the highest bump any
-  subject in the range asks for (`auto-major` / `auto-minor` / `auto-patch`).
+- **No commits since the latest tag** → returns the current version; throws `version-mismatch` if
+  `package.json` and the tag disagree (`in-sync`).
+- **Commits since the latest tag** → bumps from the tag by the highest bump any subject in the
+  range asks for (`auto-major` / `auto-minor` / `auto-patch`).
 
 ### SemVer
 
@@ -247,8 +437,8 @@ Resolution rules:
 
 ### Changelog
 
-Pure string transforms — no filesystem, no clock, no git. Failures are **returned,
-not thrown**, so a caller can report every malformed heading in one pass.
+Pure string transforms — no filesystem, no clock, no git. Failures are **returned, not thrown**, so
+a caller can report every malformed heading in one pass.
 
 | Function | Signature | Description |
 |---|---|---|
@@ -273,40 +463,14 @@ or `{ ok: false; errors: readonly string[] }`.
 | `VersionHeading` | `{ version: string; date: string; line: number }` — bare semver, ISO date, zero-indexed line. |
 | `UnreleasedSection` | `{ line: number; body: readonly string[]; empty: boolean }` — verbatim body up to the next `## ` heading. |
 
-A parse fails on: no `[Unreleased]` section, more than one, an entry heading above
-it, an entry heading not matching `[X.Y.Z]` followed by an **em dash** (U+2014) and
-an ISO date, or a date whose shape is right but whose calendar day does not exist.
-`empty` is `true` when the body holds only blank lines, `---` separators, or the
-`_Nothing yet._` placeholder.
+A parse fails on: no `[Unreleased]` section, more than one, an entry heading above it, an entry
+heading not matching `[X.Y.Z]` followed by an **em dash** (U+2014) and an ISO date, or a date whose
+shape is right but whose calendar day does not exist. `empty` is `true` when the body holds only
+blank lines, `---` separators, or the `_Nothing yet._` placeholder.
 
-`promoteUnreleased` leaves every byte below the insertion point untouched, so a
-document with no trailing newline round-trips exactly. The compare link is omitted
-when `compareUrlBase` is absent or there is no earlier released version.
-
-### Git helpers
-
-Each helper takes the repository `cwd` as its first argument and throws
-`ReleaseError` (`kind: "git-error"`) when the underlying `git` invocation fails.
-
-| Function | Signature | Description |
-|---|---|---|
-| `gitExec` | `(args: string[], cwd: string) => string` | Runs `git <args>` and returns trimmed stdout. |
-| `isWorkingTreeClean` | `(cwd: string) => boolean` | `true` when `git status --porcelain` is empty. |
-| `getLatestTag` | `(cwd: string, prefix: string) => string \| null` | Highest version tag matching `prefix*`, or `null`. |
-| `getCommitsSinceTag` | `(cwd: string, tag: string) => string[]` | One-line commit summaries in `tag..HEAD`. |
-| `getLastCommitMessage` | `(cwd: string) => string` | Subject (`%s`) of the most recent commit. |
-| `tagExists` | `(cwd: string, tag: string) => boolean` | `true` when `tag` already exists. |
-| `createTag` | `(cwd: string, tag: string) => void` | Creates a lightweight git tag. |
-
-### File IO
-
-| Function | Signature | Description |
-|---|---|---|
-| `readPackageVersion` | `(cwd: string) => string` | Reads the `version` field from `<cwd>/package.json`. Throws `ReleaseError` (`kind: "invalid-version"`) when missing or unreadable. |
-| `updatePackageVersion` | `(version: string, cwd: string) => void` | Writes `version` into `<cwd>/package.json`, preserving existing indentation. Throws `ReleaseError` (`kind: "pkg-update"`) on IO failure. |
-| `readRepositoryUrl` | `(cwd: string) => string \| null` | The `repository` URL with any `git+` prefix and `.git` suffix stripped, or `null` when the field is absent or unusable. |
-| `readChangelog` | `(cwd: string, file: string) => string \| null` | Reads `<cwd>/<file>`, or `null` when it does not exist. Throws `ReleaseError` (`kind: "pkg-update"`) on a genuine read failure. |
-| `writeChangelog` | `(cwd: string, file: string, source: string) => void` | Writes `source` verbatim — no trailing-newline normalisation. Throws `ReleaseError` (`kind: "pkg-update"`) on IO failure. |
+`promoteUnreleased` leaves every byte below the insertion point untouched, so a document with no
+trailing newline round-trips exactly. The compare link is omitted when `compareUrlBase` is absent
+or there is no earlier released version.
 
 ### Errors
 
@@ -324,3 +488,16 @@ Extends `Error` with a discriminated `kind` field for programmatic handling.
 | `working-tree-dirty` | The working tree has uncommitted changes and `--allow-dirty` was not passed. |
 | `changelog-empty` | `[Unreleased]` carries no entry while commits exist since the tag, and `--allow-empty-changelog` was not passed. |
 | `changelog-malformed` | The changelog does not parse. No flag overrides this. |
+
+---
+
+## Not Published
+
+Deliberately absent from the barrel, and from this namespace's contract:
+
+| What | Why |
+|---|---|
+| The gate's formatters (`gate/report.ts`) | Publishing nine formatters freezes the exact glyphs and wording of every gate line across every consuming repository — and hands the next one the parts to build an alternate runner from. |
+| Git helpers (`internal/git.ts`) | A consumer that needs `git tag` has `git`. What forge publishes is the *policy* over it — the ordered, refusing release command. |
+| `package.json` and changelog IO (`internal/pkg-json.ts`) | Same reason: `readFileSync` is not a contract worth freezing. |
+| Step sets, an `--inspect` mode, a preconditions phase | The published surface is exactly `--only`, `--list`, `--fix`, fail-fast, the `requires` probe and the full-log file. Narrowing a run means enumerating labels; a streamed run means `--list` then the step's own command. |

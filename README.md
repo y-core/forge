@@ -46,7 +46,7 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/jsx` | JSX runtime (`jsxImportSource`); JSX → `HtmlResponse` (`renderPage`) | [src/jsx/README.md](src/jsx/README.md) |
 | `@y-core/forge/logging` | Structured logging | [src/logging/README.md](src/logging/README.md) |
 | `@y-core/forge/logging/show` | Log viewer UI & reader | [src/logging/README.md](src/logging/README.md) |
-| `@y-core/forge/pkg` | Release & versioning (Node/Bun only) | [src/pkg/README.md](src/pkg/README.md) |
+| `@y-core/forge/pkg` | Project tooling — verification gate & release (Node/Bun only) | [src/pkg/README.md](src/pkg/README.md) |
 | `@y-core/forge/result` | Result monad | [src/result/README.md](src/result/README.md) |
 | `@y-core/forge/router` | Declarative route config | [src/router/README.md](src/router/README.md) |
 | `@y-core/forge/security` | Transport-layer hardening | [src/security/README.md](src/security/README.md) |
@@ -131,7 +131,7 @@ Quick one-line orientation for each namespace — see the linked README for comp
 
 **[`@y-core/forge/logging`](src/logging/README.md)** — `createLogger` fans out structured records to pluggable channels (`consoleChannel`, `kvLogChannel`); `logging/show` adds an admin log-viewer UI.
 
-**[`@y-core/forge/pkg`](src/pkg/README.md)** — Node/Bun-only release tooling: semver parsing, git tag management, `package.json` version updates, and `createReleaseCommand` for automated releases.
+**[`@y-core/forge/pkg`](src/pkg/README.md)** — Node/Bun-only project tooling, both verbs: `createGateCommand` runs a `check`/`verify` gate over your own step table (`cloudflareWorkerSteps` supplies the shared Worker one), and `createReleaseCommand` resolves the next version from git history, promotes the changelog, commits and tags.
 
 **[`@y-core/forge/result`](src/result/README.md)** — `Result<T, E>` discriminated union; `result.ok(data)` / `result.err(error)` constructors; `ValidationResult<T>` for form/schema results.
 

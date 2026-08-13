@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { ReleaseError } from "./types";
+import { ReleaseError } from "../types";
 import { resolveVersion } from "./version";
 
 const CWD = "/repo";
