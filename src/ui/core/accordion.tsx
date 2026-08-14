@@ -32,9 +32,6 @@ const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children, "data-slo
   </div>
 );
 
-/** One disclosure. `data-open` / `data-closed` start at the server's value and are then reconciled
- * from the `<details>` element's own `open` by the eager `accordion` scope — without that client
- * half a stylesheet keyed on the pair would match the initial state forever. */
 const AccordionItem: FC<AccordionItemProps> = ({ open, class: cls, children, "data-slot": inherited, ...props }) => (
   <details
     data-slot={slotToken("accordion-item", inherited)}
@@ -72,10 +69,5 @@ const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, childre
   </div>
 );
 
-/**
- * A native `<details>`-based disclosure group. Exclusive-open by giving sibling
- * `Accordion.Item`s the same `name`; independent if each `name` is omitted/unique.
- * Icon-agnostic — inject the app's sprite-bound `ForgeIcon` via `Accordion.Trigger`'s
- * `icon` prop; the sprite URL never leaks into this component. @public
- */
+/** A native `<details>`-based disclosure group, exclusive-open when sibling items share a `name`. @public */
 export const Accordion = Object.assign(AccordionRoot, { Item: AccordionItem, Trigger: AccordionTrigger, Content: AccordionContent });

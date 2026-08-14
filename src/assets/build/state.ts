@@ -1,7 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
+/** A map from build key to the content hash last emitted for it. @public */
 export type BuildState = Record<string, string>;
 
+/** Reads the build state from `statePath`, returning an empty state when it is missing or unreadable. @public */
 export function loadState(statePath: string): BuildState {
   if (!existsSync(statePath)) return {};
   try {

@@ -32,19 +32,12 @@ import {
 /** Icon constraint covering all showcase sections — pass your app's icon component. @public */
 export type ShowcaseIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close">;
 
-/**
- * Builds the showcase route subtree under `base` (defaults to `"/showcase/ui"`).
- * Assign the return value to your `routes` object, then pass `routes.showcase.ui`
- * to `registerShowcase`.
- * @public
- */
+/** Builds the showcase route subtree under `base` (defaults to `"/showcase/ui"`). @public */
 export function showcaseRoutes(base = "/showcase/ui") {
   const api = `${base}/api`;
   return {
     ui: {
       index: get(base),
-      /** The theme customiser. A sibling of `index` rather than a child of `api`: it is a page a
-       *  person navigates to and shares a link to, not an HTMX fragment endpoint. */
       theme: get(`${base}/theme`),
       api: {
         preview: get(`${api}/preview`),
@@ -65,43 +58,13 @@ export type ShowcaseUiRoutes = ReturnType<typeof showcaseRoutes>["ui"];
 export interface ShowcaseOptions<Bindings extends object, Config, Ctx> {
   /** Icon component used across preview, dependent, and content sections. */
   icon: ShowcaseIcon;
-  /**
-   * Async context factory called per request. The resolved value is forwarded as the `ctx` prop
-   * to `layout`.
-   */
+  /** Async context factory called per request; its value is forwarded as `layout`'s `ctx` prop. */
   context: (c: AppContext<Bindings>, config: Config) => Promise<Ctx>;
-  /**
-   * Layout component that wraps the showcase page. Receives `ctx` from `context` and the
-   * showcase content as `children`.
-   * @example
-   * ```ts
-   * layout: Layout  // FC<{ ctx: MyRenderContext }>
-   * ```
-   */
+  /** Layout component that wraps the showcase page content as `children`. */
   layout: FC<{ ctx: Ctx }>;
 }
 
-/**
- * Registers all showcase routes on `app`.
- *
- * The six HTMX API sub-routes (preview, validate, search, paginate, dependent, toast) are wired
- * automatically. Provide `context` (a per-request async factory) and `layout` (a component that
- * wraps the page content as children) to render the main showcase page inside your app's chrome.
- *
- * @example
- * ```ts
- * // routes.ts
- * showcase: showcaseRoutes("/showcase/ui"),
- *
- * // router.ts
- * registerShowcase(app, routes.showcase.ui, {
- *   icon: MyIcon,
- *   context: renderContext,
- *   layout: Layout,
- * });
- * ```
- * @public
- */
+/** Registers every showcase route, including the six HTMX fragment endpoints, on `app`. @public */
 export function registerShowcase<Bindings extends object, Config, Ctx>(
   app: Forge<Bindings>,
   uiRoutes: ShowcaseUiRoutes,
@@ -150,8 +113,6 @@ export function registerShowcase<Bindings extends object, Config, Ctx>(
     },
   });
 
-  // Both pages go in the same `actions` object: `createController` keys actions by the route map's
-  // own property names, so `theme` here is the `theme` declared in `showcaseRoutes`.
   app.map(uiRoutes, createController(uiRoutes, { actions: { index, theme } }));
   app.map(uiRoutes.api, createController(uiRoutes.api, { actions: { preview, validate, search, paginate, dependent, toast } }));
 }

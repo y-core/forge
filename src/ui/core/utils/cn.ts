@@ -1,17 +1,11 @@
 import { classGroup, GROUP_OVERRIDES } from "./class-groups";
 
 interface TokenParts {
-  /** Modifier segments in source order, e.g. `["dark", "md"]` for `dark:md:h-4`. */
   readonly prefix: readonly string[];
   readonly utility: string;
   readonly important: boolean;
 }
 
-/**
- * Splits a token into its modifier segments and its utility, tracking bracket and paren depth so
- * a `:` inside an arbitrary variant is not mistaken for a modifier separator — forge emits
- * `has-[select:disabled]:opacity-50` and `[[data-slot~=x]:checked_&]:translate-x-4`.
- */
 function splitModifiers(token: string): TokenParts {
   const prefix: string[] = [];
   let depth = 0;
@@ -41,10 +35,6 @@ function splitModifiers(token: string): TokenParts {
   return { prefix, utility, important };
 }
 
-/**
- * Drops a trailing modifier value (`bg-primary/90` → `bg-primary`), ignoring slashes nested in an
- * arbitrary value such as `w-[calc(100%/3)]`.
- */
 function stripValueSlash(utility: string): string {
   let depth = 0;
   let cut = -1;
@@ -60,21 +50,11 @@ function stripValueSlash(utility: string): string {
 }
 
 interface TokenGroup {
-  /** Everything the group is qualified by: importance marker plus sorted modifiers. */
   readonly scope: string;
   readonly group: string;
 }
 
-/**
- * Resolves a token to the conflict group it occupies, scoped by its modifiers and importance.
- *
- * The modifier prefix is part of the scope, so `hover:h-5` never displaces `h-full`. Stacked
- * modifiers are sorted in the scope only — never in the emitted output — so `dark:md:h-4` and
- * `md:dark:h-4` are recognised as the same declaration.
- *
- * Importance is re-attached rather than discarded: `!important` wins the cascade regardless of
- * source order, so a later normal utility cannot displace an earlier important one.
- */
+// `!important` wins the cascade regardless of source order, so it is part of the scope key.
 function resolveToken(token: string): TokenGroup | undefined {
   const { prefix, utility, important } = splitModifiers(token);
   const group = classGroup(stripValueSlash(utility));
@@ -86,16 +66,7 @@ function resolveToken(token: string): TokenGroup | undefined {
   return { scope: `${bang}${[...prefix].sort().join(":")}:`, group };
 }
 
-/**
- * Joins class-name fragments into a single space-separated string, dropping any falsy entries
- * (`false`/`null`/`undefined`) and resolving conflicting Tailwind utilities in favour of the
- * later argument — so a caller's `class` genuinely overrides a component's base. Utilities
- * outside the conflict table are always kept. See `UI_SSR_COMPONENTS.md` §3d. @public
- *
- * @example
- * cn("h-full", "h-5"); // "h-5"
- * cn("h-full", "hover:h-5"); // "h-full hover:h-5"
- */
+/** Joins class-name fragments into one string, dropping falsy entries and resolving Tailwind conflicts in favour of the later argument. @public */
 export function cn(...classes: (string | false | null | undefined)[]): string {
   const tokens = classes.filter(Boolean).join(" ").split(/\s+/).filter(Boolean);
 

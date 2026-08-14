@@ -68,7 +68,6 @@ describe("validateBindings", () => {
     app.use("*", validateBindings(simpleSchema));
     let hasBindingsKey = false;
     mapHandler(app, "GET", "/", (c) => {
-      // validateBindings must not install a "bindings" property — env is accessed directly
       // biome-ignore lint/suspicious/noExplicitAny: intentional — verifying no extra property
       hasBindingsKey = "bindings" in (c as any);
       return new Response("ok");

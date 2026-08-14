@@ -10,6 +10,7 @@ interface LabelProps extends Omit<JSX.IntrinsicElements["label"], "children"> {
   children?: JSXNode;
 }
 
+/** A standalone `<label>`, appending a decorative required marker when `required` is set. @public */
 export const Label: FC<LabelProps> = ({ required, class: cls, for: htmlFor, children, "data-slot": inherited, ...props }) => (
   <label data-slot={slotToken("label", inherited)} for={htmlFor} class={cn(FIELD_LABEL_CLASSES, asClass(cls))} {...props}>
     {children}

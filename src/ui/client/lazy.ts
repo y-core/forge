@@ -4,8 +4,7 @@ import { ownerDocument, ownerWindow } from "./dom";
 const LAZY_MAX_ATTEMPTS = 3;
 
 /** Wait between retries. `observe()` re-fires on the next frame for an element already on screen,
- *  so an immediate re-observe spends the whole attempt budget inside a few frames — three `load()`
- *  calls in ~32ms recover from a failure that is already over, never from one in progress. */
+ *  so an immediate re-observe spends the whole attempt budget inside a few frames. */
 const LAZY_RETRY_DELAY_MS = 500;
 
 export interface LazyImportOptions<T> {
@@ -16,9 +15,7 @@ export interface LazyImportOptions<T> {
   threshold?: number | number[];
   /** Any node in the document to search. Omit for the top-level page. */
   within?: Node;
-  /** Invoked when `load()` rejects — the element is re-observed after a short delay so a later
-   *  intersection retries, up to a small attempt cap — and when `init` throws, which is reported
-   *  without a retry. */
+  /** Invoked when `load()` rejects and when `init` throws. */
   onError?: (error: unknown) => void;
 }
 
@@ -33,25 +30,7 @@ export interface LazyLoadOptions {
   within?: Node;
 }
 
-/**
- * Defers loading a module until its anchor element enters the viewport via IntersectionObserver.
- *
- * A rejected `load()` is reported to `onError` and then retried: after `LAZY_RETRY_DELAY_MS` the
- * element is re-observed, so the next intersection tries again, up to `LAZY_MAX_ATTEMPTS` calls in
- * total. Both bounds carry weight. The cap keeps a retry from spinning — `observe()` invokes its
- * callback immediately for an element that is already intersecting, so an unbounded re-observe on a
- * visible element is a tight loop, not a retry. The delay is what makes the retry a retry: without
- * it the whole attempt budget is spent within a few frames of the first failure. Re-observing rather
- * than calling `load()` again preserves the lazy contract, since an element scrolled out of view in
- * the meantime waits for re-entry instead of loading off-screen.
- *
- * A throw from `init` is reported to `onError` and stops there — the load itself succeeded, so
- * re-running it would only re-run the same failing `init`.
- *
- * The disposer sets `disposed` and clears a pending retry timer, so a load still in flight when the
- * scope tears down never touches the element again: it neither re-observes nor runs `init`.
- * @public
- */
+/** Defers loading a module until its anchor element enters the viewport, retrying a rejected load up to `LAZY_MAX_ATTEMPTS` times. @public */
 export function lazy<T>(options: LazyImportOptions<T>): () => void {
   const el = ownerDocument(options.within).querySelector(`[data-ref='${CSS.escape(options.ref)}']`);
   if (!el) return () => {};
@@ -60,14 +39,10 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
   if (options.rootMargin !== undefined) init.rootMargin = options.rootMargin;
   if (options.threshold !== undefined) init.threshold = options.threshold;
 
-  // The retry timer belongs to the element's own realm, not the top-level page.
   const win = ownerWindow(el);
 
-  // The observer comes from that same realm, which is also what answers "does this browser have one
-  // at all". Not for a geometric reason — intersection geometry is realm-insensitive, so a top-level
-  // constructor handed a framed element fires just as one from the frame's own realm does. What the
-  // resolved read buys is the realm that lacks the constructor: off the bare global that throws, and
-  // here it degrades to a no-op disposer. See `UI_CLIENT_RUNTIME.md` §6a.
+  // Resolved off the element's realm so a realm lacking the constructor degrades to a no-op disposer
+  // rather than throwing off the bare global. See `UI_CLIENT_RUNTIME.md` §6a.
   const observerCtor = (win as Window & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver;
   if (typeof observerCtor !== "function") return () => {};
 
@@ -81,17 +56,12 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
     attempts += 1;
     options.load().then(
       (mod) => {
-        // A load that settles after the scope tore down must not mount onto an element the app has
-        // already swapped out; whatever `init` sets up would hand its disposer to nobody and leak.
         if (disposed) return;
         try {
           options.init(mod, el);
         } catch (error) {
-          // The load succeeded, so there is nothing to retry — re-running it would only re-run the
-          // same failing `init`. Reported and stopped, which is the difference between this and the
-          // rejection handler below. Catching it here also keeps the fulfilment path from rejecting
-          // with no handler attached: `onRejected` below is a sibling of this callback, not
-          // downstream of it, so a throw here would land nowhere.
+          // Caught here rather than left to the rejection handler below, which is a sibling of this
+          // callback and not downstream of it — a throw here would land nowhere.
           options.onError?.(error);
         }
       },
@@ -100,7 +70,6 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
         if (disposed || attempts >= LAZY_MAX_ATTEMPTS) return;
         retryId = win.setTimeout(() => {
           retryId = 0;
-          // Re-checked on fire: the scope may have torn down while the delay was elapsing.
           if (!disposed) observer.observe(el);
         }, LAZY_RETRY_DELAY_MS);
       },
@@ -142,28 +111,12 @@ export function loadScriptOnEvent(options: LazyLoadOptions): void {
   );
 }
 
-/**
- * The promise for every link {@link loadStylesheet} is still waiting on, per document. Without it a
- * second caller sees the first caller's `<link>` the instant it is appended — before its `load`
- * event — and the duplicate check would report it as already loaded. Keyed on `Document` so a widget
- * in an iframe caches against its own realm, and so a test with a fresh fake document starts empty.
- */
+/** The promise for every link {@link loadStylesheet} is still waiting on, per document. A second
+ * caller sees the first caller's `<link>` the instant it is appended — before its `load` event — so
+ * the duplicate check alone would report it as already loaded. */
 const inFlightStylesheets = new WeakMap<Document, Map<string, Promise<void>>>();
 
-/**
- * Dynamically loads a stylesheet by appending a `<link rel="stylesheet">` to `document.head`.
- * Resolves once the stylesheet's `load` event fires; rejects with
- * `Error("Failed to load stylesheet: <href>")` on the `error` event (bad URL, network
- * failure, or integrity mismatch). Pass `integrity: false` to skip subresource-integrity
- * attributes (e.g. same-origin assets).
- *
- * Idempotent, and concurrency-safe with it. A caller that arrives while an earlier call is still
- * loading joins that call's promise, so it settles on the real `load`/`error` rather than
- * immediately; a caller that finds a `<link>` this function did not create (SSR markup, third-party
- * code) still resolves at once, since there is no event left to wait for. A failed load removes its
- * `<link>` as well as its cache entry, so a later call retries with a fresh `<link>` rather than
- * finding the dead one and resolving against a stylesheet that never loaded.
- */
+/** Loads a stylesheet by appending a `<link rel="stylesheet">`, resolving on its `load` event and rejecting on `error`. */
 export function loadStylesheet(href: string, integrity: string | false, within?: Node): Promise<void> {
   const doc = ownerDocument(within);
   const map = inFlightStylesheets.get(doc) ?? new Map<string, Promise<void>>();
@@ -186,12 +139,8 @@ export function loadStylesheet(href: string, integrity: string | false, within?:
     }
     link.addEventListener("load", () => resolve());
     link.addEventListener("error", () => {
-      // Evicting the cache entry is not enough on its own: the next call misses the map and falls
-      // through to the duplicate check above, which would find this dead `<link>` and resolve for a
-      // stylesheet that never loaded. Removal is synchronous, so by the time any later call runs
-      // that check there is nothing stale left to find — and per-link, so it needs none of the
-      // identity guarding the cache eviction below does. Only the failed link goes; a loaded one
-      // must stay.
+      // Removed as well as evicted: the next call would otherwise miss the map, find this dead
+      // `<link>` in the duplicate check above, and resolve for a stylesheet that never loaded.
       link.remove();
       reject(new Error(`Failed to load stylesheet: ${href}`));
     });
@@ -199,9 +148,7 @@ export function loadStylesheet(href: string, integrity: string | false, within?:
   });
 
   map.set(href, promise);
-  // The identity check keeps a slow failure from evicting a newer entry for the same href. The
-  // derived promise is handled by this very `catch`, so eviction adds no unhandled rejection — and
-  // the caller still receives `promise` itself.
+  // The identity check keeps a slow failure from evicting a newer entry for the same href.
   promise.catch(() => {
     if (map.get(href) === promise) map.delete(href);
   });

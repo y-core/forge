@@ -12,21 +12,13 @@ export function levelAtLeast(level: LogLevel, min: LogLevel): boolean {
   return LEVEL_ORDER[level] >= LEVEL_ORDER[min];
 }
 
-/**
- * Parses a level string (e.g. a `LOG_LEVEL` env var) case-insensitively; returns `fallback`
- * when the value is unset or not a known level. @public
- */
+/** Parses a level string case-insensitively; returns `fallback` when unset or unknown. @public */
 export function parseLogLevel(value: string | undefined, fallback: LogLevel): LogLevel {
   const normalized = value?.trim().toLowerCase();
   return (LOG_LEVELS as readonly string[]).includes(normalized ?? "") ? (normalized as LogLevel) : fallback;
 }
 
-/**
- * Parses a comma-separated level list (e.g. a `LOG_LEVEL` env var) case-insensitively, dropping
- * unknown entries; returns `fallback` when the value is unset or names no known level, so a typo
- * degrades to the configured default rather than to silence. The literal `"none"` parses to an
- * empty array — the explicit spelling for "log nothing". @public
- */
+/** Parses a comma-separated level list case-insensitively; `"none"` yields an empty array. @public */
 export function parseLogLevels(value: string | undefined, fallback: readonly LogLevel[]): readonly LogLevel[] {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return fallback;
@@ -38,6 +30,7 @@ export function parseLogLevels(value: string | undefined, fallback: readonly Log
   return known.length > 0 ? known : fallback;
 }
 
+/** One log event in the shape passed to a channel's `write`. @public */
 export interface LogRecord {
   level: LogLevel;
   prefix: string;
@@ -71,35 +64,26 @@ export interface LogReadResult {
   complete: boolean;
 }
 
+/** A log sink; only a channel that persists its records implements the optional `read` and `readEntry`. @public */
 export interface LogChannel {
-  /**
-   * Persists one record. A returned promise must cover **every** operation the write initiates,
-   * including best-effort maintenance work — `kvLogChannel`'s probabilistic purge is inside its
-   * promise for this reason. `Logger.flush()` awaits what is returned and nothing else, so work
-   * left outside it can be cancelled when the isolate is suspended. A best-effort operation still
-   * swallows its own rejection: only a failure of the record write itself may reject. @public
-   */
+  /** Persists one record; the returned promise must cover every operation the write starts. @public */
   write(record: LogRecord): void | Promise<void>;
+  /** Lists stored rows matching `query`, returning a cursor when more remain. @public */
   read?(query?: LogQuery): Promise<LogReadResult>;
   /** Reads back the full stored record for one row key (e.g. for a viewer detail view). @public */
   readEntry?(key: string): Promise<LogRecord | null>;
 }
 
+/** Options for `createLogger`. @public */
 export interface LoggerOptions {
   channels?: LogChannel[];
   bindings?: Record<string, unknown>;
-  /** Records below this level are dropped before reaching any channel. Children inherit it. */
   minLevel?: LogLevel;
-  /**
-   * Called when a channel write fails, with the rejection reason or the thrown value — a write that
-   * throws synchronously is reported exactly like one that rejects — including writes `flush()` never
-   * sees. Defaults to one structured `console.error` line, so a persistence outage is visible
-   * without configuration. Never reaches the request path: a hook that throws is swallowed, and the
-   * failure it reports is not propagated to the caller either. Children inherit it.
-   */
+  /** Called when a channel write fails, with the rejection reason or thrown value. */
   onChannelError?: (error: unknown) => void;
 }
 
+/** Structured logger with one method per level, whose `flush` settles the channel writes it has already started. @public */
 export interface Logger {
   debug(message: string, data?: Record<string, unknown>): void;
   info(message: string, data?: Record<string, unknown>): void;
@@ -113,18 +97,12 @@ export interface Logger {
 /** Bare variable record set by `requestLogger`. @public */
 export type LoggerContext = { logger: Logger };
 
-/**
- * Note: middleware that sets values consumed by `bindings` (e.g. `requestId`) must run
- * **before** `requestLogger` so those values are available when the callbacks execute. @public
- */
+/** Options for the `requestLogger` middleware. @public */
 export interface RequestLoggerOptions<Bindings = Record<string, unknown>> {
   prefix?: string;
-  /** Factory called once per request; return the channels to write log records to. */
   channels: (c: AppContext<Bindings>) => LogChannel[];
   bindings?: (c: AppContext<Bindings>) => Record<string, unknown>;
-  /** Static level, or a per-request resolver (e.g. from an env var); `undefined` means no filtering. */
   minLevel?: LogLevel | ((c: AppContext<Bindings>) => LogLevel | undefined);
-  /** Passed through to the per-request logger; see `LoggerOptions.onChannelError`. */
   onChannelError?: (error: unknown) => void;
 }
 
@@ -135,11 +113,7 @@ export interface KvLogChannelOptions {
   maxLogs?: number;
   highWater?: number;
   purgeProbability?: number;
-  /**
-   * When `false` (the default), any `stack` property is recursively stripped from `record.data`
-   * before the record is persisted to KV, keeping error stacks out of the 7-day retention window.
-   * They remain visible in `consoleChannel` for local debugging. Set `true` to persist stacks.
-   */
+  /** When `false` (the default), `stack` properties are stripped from `record.data` before persisting. */
   persistStack?: boolean;
 }
 

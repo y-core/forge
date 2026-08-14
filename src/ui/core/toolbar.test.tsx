@@ -4,14 +4,6 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { Toolbar } from "./toolbar";
 
-/**
- * `core/Toolbar`'s SSR markup, pinned exactly.
- *
- * The item classes come from `core/Button`'s `buttonVariants` rather than a base string of the
- * toolbar's own, which is the whole point of the unification: exact strings are what make a second
- * base reappearing here a failing test instead of a slow divergence.
- */
-
 const ITEM_BASE =
   "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none " +
   "focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent";
@@ -50,8 +42,6 @@ describe("Toolbar.Button", () => {
   });
 
   it("sizes to its container with `square`, and still merges a caller class", async () => {
-    // The size an icon rail actually wants: width from the parent, height from the width. No fixed
-    // box can express it, which is why an app was previously forced to override what it asked for.
     expect(
       await render(
         <Toolbar.Button size='square' class='my-item'>
@@ -64,8 +54,6 @@ describe("Toolbar.Button", () => {
   });
 
   it("stamps aria-pressed, data-pressed and the composite marker together when pressed", async () => {
-    // All three or none: ARIA for the screen reader, `data-pressed` for CSS, and the composite
-    // marker so the rail's boot tab stop lands on the active tool rather than on the first button.
     expect(await render(<Toolbar.Button pressed>Bold</Toolbar.Button>)).toBe(
       `<button type="button" data-slot="toolbar-button" class="${ITEM_BASE} h-8 px-3 text-sm" data-toolbar-item="" aria-pressed="true" data-pressed="" data-composite-item-active="">Bold</button>`,
     );
@@ -77,9 +65,6 @@ describe("Toolbar.Button", () => {
     );
   });
 
-  // Exact markup, not `.not.toContain("aria-pressed")`: a `not.toContain` over this markup passes
-  // just as happily if `Toolbar.Button` renders nothing at all, so it never distinguished "the
-  // pressed pair was omitted" from "there was no button".
   it("omits the pressed pair entirely for a one-state item", async () => {
     expect(await render(<Toolbar.Button>Bold</Toolbar.Button>)).toBe(
       `<button type="button" data-slot="toolbar-button" class="${ITEM_BASE} h-8 px-3 text-sm" data-toolbar-item="">Bold</button>`,
@@ -103,12 +88,6 @@ describe("Toolbar.Button", () => {
   });
 });
 
-/**
- * `data-slot` is a token list, and this is the compound where that matters most in practice:
- * `chrome/Toolbar` passes `toolbar-trigger`, `toolbar-action` and `toolbar-title-action` *through* the
- * primitives' rest spread, which used to replace the primitive's own token and unmake the item.
- * Composed-with-a-tooltip cases live with the rule, in `utils/as-child.test.tsx`.
- */
 describe("Toolbar.Button — data-slot", () => {
   it("keeps its own token ahead of one handed down through props", async () => {
     expect(await render(<Toolbar.Button data-slot='toolbar-action'>B</Toolbar.Button>)).toBe(
@@ -123,8 +102,6 @@ describe("Toolbar.Button — data-slot", () => {
   });
 
   it("carries an inherited token onto the caller's element with asChild", async () => {
-    // The reverse of the composition bug: `cloneAsChild` writes `data-slot` last, so a token arriving
-    // through the prop bag used to be spread in and then overwritten by the compound's own literal.
     expect(
       await render(
         <Toolbar.Button asChild data-slot='toolbar-action'>

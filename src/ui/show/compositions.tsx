@@ -21,13 +21,7 @@ import { Toast } from "../core/toast";
 /** The two glyphs this band draws: `Spinner` spins one and `Select` points with the other. */
 type CompositionIcon = ForgeIcon<"spinner" | "chevron-down">;
 
-/**
- * Forge's own feedback components, as the corpus every surface below renders.
- *
- * A composition needs rows to be a collection, and any invented ones would be the fabricated data
- * the Floor refuses. These are real components at real subpaths, which also keeps the surface about
- * the library it demonstrates.
- */
+/** Forge's own feedback components, as the corpus every surface below renders. */
 const FEEDBACK_ROWS = [
   { name: "Alert", subpath: "ui/core" },
   { name: "FlashOob", subpath: "ui/server" },
@@ -57,13 +51,7 @@ const RowTable: FC = () => (
   </table>
 );
 
-/**
- * One collection, in the four states it actually has — populated, empty, loading and failed — shown
- * as siblings so the reader compares them rather than imagining the three they cannot see. @public
- *
- * The loading card mirrors the row grid instead of centring a `Spinner`: the shape is already known
- * here, so a skeleton in that shape holds the layout and the load ends without a reflow.
- */
+/** One collection in its four states — populated, empty, loading and failed — shown as siblings. @public */
 export const CollectionSurface: FC = () => (
   <section id='composition-collection' class='scroll-mt-24 space-y-4'>
     <div>
@@ -99,8 +87,6 @@ export const CollectionSurface: FC = () => (
           <Card.Description>Shaped to the rows it will become.</Card.Description>
         </Card.Header>
         <Card.Content>
-          {/* One skeleton pair per real row, so the placeholder occupies exactly the box the table
-              will occupy — the reason this is a skeleton and not a centred spinner. */}
           <div class='space-y-3'>
             {FEEDBACK_ROWS.map((row) => (
               <div key={row.name} class='grid grid-cols-2 gap-4'>
@@ -131,14 +117,7 @@ export const CollectionSurface: FC = () => (
   </section>
 );
 
-/**
- * A settings form built the way forge means them to be built: `FormField` where a value is
- * validated, `Field` where a row is only laid out, and one primary action. @public
- *
- * The action row is the pyramid — a single `primary` for the one thing this surface exists to do,
- * with its supporting action `secondary` beside it. A second `primary` would assert two first
- * actions, and the reader would take neither as first.
- */
+/** A settings form: `FormField` where a value is validated, `Field` where a row is only laid out. @public */
 export const SettingsSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
   <section id='composition-form' class='scroll-mt-24 space-y-4'>
     <div>
@@ -186,13 +165,7 @@ export const SettingsSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
   </section>
 );
 
-/**
- * The two choices the catalog is most often asked to settle, made side by side: `Alert` against
- * `Toast`, and `Spinner` against `Skeleton`. @public
- *
- * Each pair carries the line that decides it, because a surface that renders both without saying
- * which is right when has demonstrated nothing.
- */
+/** Two near-neighbour choices made side by side: `Alert` against `Toast`, `Spinner` against `Skeleton`. @public */
 export const FeedbackSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
   <section id='composition-feedback' class='scroll-mt-24 space-y-4'>
     <div>
@@ -240,14 +213,7 @@ export const FeedbackSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
   </section>
 );
 
-/**
- * The composition band: the same primitives the catalog lists, assembled into the surfaces an
- * application actually ships. @public
- *
- * The catalog below it proves each component exists. This proves they compose — which states a
- * collection has to render, which action is the first one, and which of two near neighbours is
- * right for a given job.
- */
+/** The composition band: the catalog's primitives assembled into the surfaces an application ships. @public */
 export const CompositionsSection: FC<{ icon: CompositionIcon }> = ({ icon }) => (
   <section id='compositions' class='scroll-mt-24 space-y-6'>
     <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>Compositions</h2>

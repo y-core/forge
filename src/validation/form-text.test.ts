@@ -17,12 +17,7 @@ function issuesFor(schema: v.GenericSchema<string, string>, input: unknown): v.B
   return [...result.issues];
 }
 
-/**
- * A prototype-less body bag, which is what `formToObject` hands a schema.
- *
- * Built by assignment rather than as an object literal so the shape under test is the reader's own
- * output — no prototype, own keys only, values exactly as submitted.
- */
+/** A prototype-less body bag, which is what `formToObject` hands a schema. */
 function body(entries: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const bag: Record<string, unknown> = Object.create(null);
   for (const key of Object.keys(entries)) bag[key] = entries[key];
@@ -61,11 +56,6 @@ describe("formText", () => {
     });
   }
 
-  /**
-   * The defect this primitive was filed on: with the reader lossless and no trim in the schema,
-   * `v.pipe(v.string(), v.minLength(1))` accepts `"   "`, so every required-field check in every
-   * consuming app is bypassable with spaces. The trim runs first, so the length check sees `""`.
-   */
   it("makes a composed minLength refuse a whitespace-only value, which is the required-field bypass", () => {
     const RequiredName = v.pipe(formText(), v.minLength(1));
     expect(parsed(formText(), "   ")).toBe("");
@@ -79,11 +69,6 @@ describe("formText", () => {
     expect(parsed(v.pipe(formText(), v.minLength(1)), "  Jane  ")).toBe("Jane");
   });
 
-  /**
-   * `formText` is the `<input>` variant, and an `<input>` value carries no line breaks the browser
-   * inserted — so folding here would rewrite content the caller actually submitted. These cases must
-   * fail if a fold is ever added to `formText`.
-   */
   const preserved: { name: string; input: string; expected: string }[] = [
     { name: "an interior CRLF pair", input: "a\r\nb", expected: "a\r\nb" },
     { name: "an interior lone carriage return", input: "a\rb", expected: "a\rb" },
@@ -135,15 +120,6 @@ describe("formMultilineText", () => {
     expect(issues.map((issue) => issue.received)).toEqual(["0"]);
   });
 
-  /**
-   * The fold's observable consequence, and the reason it belongs inside the primitive rather than
-   * being left to the caller: a length check appended by the caller counts each line break once, so a
-   * limit means the same thing whether the break arrived as LF or CRLF. `formText` on the same input
-   * spends two characters on the one break, which is the budget silently halved.
-   *
-   * This is a fold-versus-no-fold claim, not a claim that folding before trimming changes the output.
-   * `String.prototype.trim` treats `\r` and `\n` both as whitespace, so those two steps commute.
-   */
   it("lets a composed maxLength count a folded break as one character", () => {
     expect(parsed(v.pipe(formMultilineText(), v.maxLength(3)), "a\r\nb")).toBe("a\nb");
   });
@@ -169,8 +145,6 @@ describe("form text primitives — composition", () => {
     const ContactSchema = strictObject({ name: formText(), message: formMultilineText() });
     const result = v.safeParse(ContactSchema, body({ name: "  Jane  ", message: "  first\r\nsecond  " }));
     if (!result.success) throw new Error("expected the contact schema to accept this body");
-    // Typed as `string`, not as a pipe: the annotation on the primitives is what keeps the pipe shape
-    // out of a consuming signature, and these two assignments are what would fail if it were dropped.
     const name: string = result.output.name;
     const message: string = result.output.message;
     expect(name).toBe("Jane");
@@ -213,13 +187,6 @@ describe("form text primitives — composition", () => {
   });
 });
 
-/**
- * Why the reader stays lossless, in cases rather than prose: the value on a key is not always a
- * string, so trimming in `formToObject` would need a type branch per shape. Each pair below shows the
- * text primitive refusing the non-string outright — never coercing it, never collapsing it to `""` —
- * beside a schema on the *same key* that accepts that shape, which is the decision the reader cannot
- * make for the schema.
- */
 describe("form text primitives — the shapes the reader hands through", () => {
   const file = new File(["  resume  "], "cv.txt", { type: "text/plain" });
 

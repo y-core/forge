@@ -24,13 +24,10 @@ export function applyPendingHeaders(context: RequestContext<any, any>, response:
   const pending = pendingHeadersCtx.getOptional(context);
   if (!pending) return response;
   const headers = new Headers(response.headers);
-  // `set-cookie` is multi-valued: append each distinct cookie so none clobbers another.
-  // `getSetCookie()` returns them individually (unlike `entries()`, which may comma-join).
+  // `getSetCookie()` yields each cookie individually; `entries()` may comma-join them into one value.
   for (const cookie of pending.getSetCookie()) {
     headers.append("set-cookie", cookie);
   }
-  // All other queued headers replace any existing value so single-valued headers
-  // (e.g. content-security-policy) cannot be duplicated when applied.
   for (const [name, value] of pending.entries()) {
     if (name === "set-cookie") continue;
     headers.set(name, value);

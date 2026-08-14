@@ -24,9 +24,6 @@ describe("Button", () => {
     );
   });
 
-  // The one filled variant whose foreground comes from a token added for it — before
-  // `--destructive-foreground` existed, a destructive button meant the caller picking and
-  // contrast-verifying a foreground utility at every call site.
   it("renders destructive variant classes with its paired foreground", async () => {
     expect(await render(<Button variant='destructive'>Delete</Button>)).toBe(
       `<button type="button" data-slot="button" class="${BASE} bg-destructive text-destructive-foreground hover:bg-destructive/90 h-10 px-4 text-sm">Delete</button>`,
@@ -115,9 +112,6 @@ describe("Button", () => {
     await expect(render(<Button asChild>just text</Button>)).rejects.toThrow("Button with asChild requires exactly one JSX element child");
   });
 
-  // `data-slot` is a token list, so `Button` composes an inherited token with its own rather than
-  // letting `{...rest}` replace it. `chrome/Toolbar`'s flyout title action is the live caller: it
-  // passes `data-slot='toolbar-title-action'`, which used to erase `button`.
   it("keeps its own data-slot token ahead of one handed down through props", async () => {
     expect(await render(<Button data-slot='toolbar-title-action'>Go</Button>)).toBe(
       '<button type="button" data-slot="button toolbar-title-action" ' +
@@ -132,8 +126,6 @@ describe("Button", () => {
   });
 
   it("carries an inherited data-slot onto the caller's element with asChild", async () => {
-    // The reverse of the composition bug: `cloneAsChild` writes `data-slot` last, so a token arriving
-    // through the prop bag used to be spread in and then overwritten by the compound's own literal.
     expect(
       await render(
         <Button asChild data-slot='toolbar-title-action'>

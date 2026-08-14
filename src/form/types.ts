@@ -1,12 +1,13 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 import type { GuardResult } from "../result/result";
 
+/** Options for `createCsrfToken`. @public */
 export interface CsrfTokenOptions {
   kid?: string;
-  /** Session or user identifier to bind to the token. */
   subject?: string;
 }
 
+/** Options for `verifyCsrfToken`. @public */
 export interface CsrfVerifyOptions {
   maxAgeMs?: number;
   subject?: string;
@@ -14,20 +15,15 @@ export interface CsrfVerifyOptions {
 
 /** Options for `formToObject`. @public */
 export interface FormToObjectOptions {
-  /**
-   * Field names to leave out of the result. A form carries entries the schema has no reason to
-   * declare — a CSRF token already consumed by the guard, a honeypot decoy — and an undeclared
-   * leftover is what a strict object schema refuses.
-   */
   drop?: ReadonlySet<string>;
 }
 
-/** Maximum allowed form body size in bytes. Default: 100 KB. */
+/** Options for `parseFormData`. @public */
 export interface ParseFormDataOptions {
-  /** Maximum allowed Content-Length in bytes. Requests exceeding this are rejected with a 413 Response. Defaults to 100 KB. */
   maxBytes?: number;
 }
 
+/** The read-only `FormData` view that `parseFormData` resolves to. @public */
 export interface ReadonlyFormData {
   get(name: string): FormDataEntryValue | null;
   getAll(name: string): FormDataEntryValue[];
@@ -39,10 +35,7 @@ export interface ReadonlyFormData {
   [Symbol.iterator](): IterableIterator<[string, FormDataEntryValue]>;
 }
 
-/**
- * Why a Turnstile verification did not pass. `network-error` and `timeout` describe the siteverify
- * call rather than the caller, so they are the two reasons that do not imply a bot. @public
- */
+/** Why a Turnstile verification did not pass. @public */
 export type TurnstileFailure =
   | "action-mismatch"
   | "cdata-mismatch"
@@ -56,13 +49,12 @@ export type TurnstileFailure =
 /** Result of a Cloudflare Turnstile verification. @public */
 export type TurnstileResult = GuardResult<TurnstileFailure>;
 
+/** Constraints a Turnstile token must satisfy to pass `verifyTurnstile`. @public */
 export interface TurnstileVerifyOptions {
   expectedAction?: string;
   expectedCData?: string;
-  expectedHostname: string /** cross-site token replay prevention */;
-  /** Form field holding the Turnstile token. Defaults to `TURNSTILE_FIELD_DEFAULT`. */
+  expectedHostname: string;
   tokenField?: string;
-  /** Client IP forwarded to the siteverify API as `remoteip`. */
   remoteIp?: string;
   timeoutMs?: number;
 }
@@ -74,9 +66,7 @@ export type CsrfResult = GuardResult<
 
 /** A key ring for CSRF secret rotation — one active signing key plus all keys valid for verification. @public */
 export interface CsrfKeyRing {
-  /** kid of the key used to SIGN new tokens; must be a key in `keys`. */
   activeKeyId: string;
-  /** All keys valid for VERIFICATION, indexed by kid (O(1) lookup). */
   keys: Record<string, CryptoKey>;
 }
 
@@ -92,11 +82,5 @@ export interface CsrfProtectionOptions {
   headerName?: string;
   // biome-ignore lint/suspicious/noExplicitAny: context shape varies
   subject: ((context: RequestContext<any, any>) => string | undefined) | false;
-  /**
-   * Body-size cap for the token lookup's form parse. The guard runs before the route handler, so
-   * it is the first — and on a rejection the only — parse of the body; a route that raises its own
-   * cap must raise this one to match, or the guard rejects the request before the handler is
-   * reached. Defaults to `FORM_MAX_BYTES_DEFAULT`.
-   */
   maxBytes?: number;
 }

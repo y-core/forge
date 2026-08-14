@@ -26,9 +26,7 @@ describe("FOUC_SCRIPT", () => {
   });
 
   it("cannot break out of a <script> tag", () => {
-    // The only breakout vector inside a raw <script> element is a literal closing tag.
     expect(FOUC_SCRIPT.toLowerCase()).not.toContain("</script");
-    // Every quote is a balanced string delimiter — no dangling/unescaped quote.
     expect((FOUC_SCRIPT.match(/"/g) ?? []).length % 2).toBe(0);
     expect(FOUC_SCRIPT).not.toContain("'");
   });

@@ -1,14 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mount } from "./browser-test-helper";
 
-/**
- * `mountScrollSpy` against a real `IntersectionObserver` in real Chromium.
- *
- * The unit set proves the bookkeeping over a fake observer; only the browser can answer whether the
- * default `rootMargin` actually picks the section at the top of the viewport, and whether the
- * handoff happens at the moment the reader would expect it.
- */
-
 declare global {
   interface Window {
     forgeScrollSpy: typeof import("./scroll-spy");
@@ -16,11 +8,8 @@ declare global {
   }
 }
 
-/**
- * The fixture ships its own sizes. `browser-test-helper` serves CSS raw with no Tailwind build, so
- * no utility class resolves — a spec that needs a section to be 800px tall has to say so in a rule
- * of its own or measure nothing at all.
- */
+/** The fixture ships its own sizes: CSS is served raw with no Tailwind build, so no utility class
+ * resolves. */
 const FIXTURE = `
 <style>
   body { margin: 0 }
@@ -45,7 +34,7 @@ async function mountSpy(page: Page): Promise<void> {
   });
 }
 
-/** Every link currently carrying the marker, by href — so "exactly one, and which" is one assertion. */
+/** Every link currently carrying the marker, by href. */
 function marked(page: Page): Promise<string[]> {
   return page.evaluate(() => [...document.querySelectorAll("#toc a[aria-current='location']")].map((el) => el.getAttribute("href") ?? ""));
 }
@@ -62,8 +51,6 @@ test.describe("mountScrollSpy", () => {
 
     await scrollTo(page, 850);
 
-    // Both directions of the handoff in one assertion: the previous link is gone from the list and
-    // the new one is in it. A marker that moved without being removed would read as two entries.
     await expect.poll(() => marked(page)).toEqual(["#two"]);
 
     await scrollTo(page, 1650);
@@ -90,7 +77,6 @@ test.describe("mountScrollSpy", () => {
 
     await expect.poll(() => marked(page)).toEqual([]);
 
-    // And it stays gone: a disconnected observer must not deliver one last record.
     await scrollTo(page, 1650);
     await expect.poll(() => marked(page)).toEqual([]);
   });

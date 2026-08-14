@@ -15,11 +15,8 @@ function tooLarge(maxBytes: number): Error & { status: number } {
   return Object.assign(new Error(`Form body exceeds ${maxBytes} byte limit`), { status: 413 });
 }
 
-/**
- * Pipes the body through a counting transform that errors once the running total exceeds
- * `maxBytes`, then parses via `Response.formData()`. This enforces the budget even when the
- * `Content-Length` header is absent or lies (chunked transfer), closing the header-only bypass.
- */
+/** Parses the body through a counting transform that errors once the running total exceeds `maxBytes`. */
+// The streaming count, not `Content-Length`, is what caps a chunked body whose header is absent or lying.
 async function parseWithByteLimit(req: Request, maxBytes: number): Promise<ParsedBody> {
   const contentLength = req.headers.get("content-length");
   if (contentLength !== null) {
@@ -27,7 +24,6 @@ async function parseWithByteLimit(req: Request, maxBytes: number): Promise<Parse
     if (Number.isFinite(length) && length > maxBytes) throw tooLarge(maxBytes);
   }
 
-  // No body to meter (e.g. GET) — parse directly.
   if (!req.body) return { formData: await req.formData(), size: 0 };
 
   let seen = 0;
@@ -41,22 +37,12 @@ async function parseWithByteLimit(req: Request, maxBytes: number): Promise<Parse
       controller.enqueue(chunk);
     },
   });
-  // A `Response` (not a `Request`) wraps the metered stream so no `duplex` option is needed; it
-  // inherits the original content-type so multipart and urlencoded bodies both parse correctly.
+  // A `Response`, not a `Request`, wraps the metered stream: no `duplex` option is needed.
   const formData = await new Response(req.body.pipeThrough(counter), { headers: req.headers }).formData();
   return { formData, size: seen };
 }
 
-/**
- * Memoized form-data parsing. The WeakMap cache lets CSRF validation and
- * action handling share a single body parse without double-consuming the stream.
- * Rejects oversized bodies via a Content-Length fast-path AND a streaming byte cap.
- *
- * Only the first call for a request reads the stream — a body can be consumed once — so its
- * `maxBytes` is what meters the read. Every later call re-checks the bytes actually read against
- * its own `maxBytes`, so a caller with a stricter cap still gets its 413 off the shared parse
- * instead of silently inheriting the first caller's budget. @public
- */
+/** Reads the request body as form data once per request, capped at `maxBytes` and memoized so later callers share the parse. @public */
 export function parseFormData(
   // biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for form-data parsing
   context: RequestContext<any, any>,
@@ -67,8 +53,7 @@ export function parseFormData(
   let cached = cache.get(req);
   if (!cached) {
     cached = parseWithByteLimit(req, maxBytes);
-    // Pre-attach a no-op catch so the rejection can never surface as an unhandled rejection
-    // if a caller reads the cache entry without awaiting it.
+    // Pre-attached so a cache entry nobody awaits cannot surface as an unhandled rejection.
     cached.catch(() => {});
     cache.set(req, cached);
   }

@@ -1,9 +1,3 @@
-/**
- * Extract CSS custom-property (design token) maps per theme from compiled CSS text,
- * and resolve token `var()` chains to their terminal colour literal. Used by the cursor
- * bake step to look up theme-specific colours for each cursor.
- */
-
 const MAX_RESOLVE_HOPS = 20;
 
 function extractSelectorBlocks(cssText: string, selector: string): string[] {
@@ -15,7 +9,6 @@ function extractSelectorBlocks(cssText: string, selector: string): string[] {
     if (idx === -1) break;
     const braceStart = cssText.indexOf("{", idx);
     if (braceStart === -1) break;
-    // Ensure the selector token is not a substring of a larger selector (e.g. ".dark-x").
     const between = cssText.slice(idx + needle.length, braceStart).trim();
     const prevChar = idx > 0 ? (cssText[idx - 1] ?? "") : "";
     const boundaryBefore = prevChar === "" || /[\s,}{]/.test(prevChar);
@@ -27,7 +20,6 @@ function extractSelectorBlocks(cssText: string, selector: string): string[] {
       searchFrom = braceStart + 1;
       continue;
     }
-    // Find the matching close brace.
     let depth = 1;
     let i = braceStart + 1;
     for (; i < cssText.length && depth > 0; i++) {
@@ -41,8 +33,7 @@ function extractSelectorBlocks(cssText: string, selector: string): string[] {
 }
 
 function parseDeclarations(block: string, into: Map<string, string>): void {
-  // The terminating `;` is optional on the final declaration of a block, and minifiers always
-  // omit it — so `$` (end of the block interior) is an accepted terminator.
+  // Minifiers omit the final declaration's `;`, so `$` must also terminate a declaration.
   const declRegex = /--([a-zA-Z0-9-]+)\s*:\s*([^;}{]+?)\s*(?:;|$)/g;
   let match = declRegex.exec(block);
   while (match !== null) {
@@ -53,11 +44,7 @@ function parseDeclarations(block: string, into: Map<string, string>): void {
   }
 }
 
-/**
- * Parse compiled CSS text and extract a per-theme token map. Each theme inherits the
- * `:root` declarations then overlays its own selector's declarations. `selectors` maps a
- * theme key to a CSS selector, e.g. `{ light: ":root", dark: ".dark" }`. @public
- */
+/** Extracts a per-theme CSS custom-property map from compiled CSS text. @public */
 export function readThemeTokens(cssText: string, selectors: Record<string, string>): Record<string, Map<string, string>> {
   const base = new Map<string, string>();
   for (const block of extractSelectorBlocks(cssText, ":root")) {
@@ -83,10 +70,7 @@ function stripVar(value: string): { token: string; fallback: string | null } | n
   return { token: match[1], fallback: match[2] !== undefined ? match[2].trim() : null };
 }
 
-/**
- * Recursively resolve a CSS custom-property name through `var()` chains to a terminal
- * colour literal. Returns null if the token is missing or the chain exceeds 20 hops. @public
- */
+/** Resolves a CSS custom-property through `var()` chains to its terminal literal. @public */
 export function resolveToken(token: string, map: Map<string, string>): string | null {
   let current: string | undefined = map.get(token);
   if (current === undefined) return null;

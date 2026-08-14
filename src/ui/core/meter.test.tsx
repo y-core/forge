@@ -2,15 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { Meter } from "./meter";
 
-/**
- * `core/Meter`'s SSR markup, pinned exactly.
- *
- * The measurement is a native `<meter>`, so nothing here asserts clamping, `low`/`high`/`optimum`
- * arithmetic or how the bar is drawn — the UA owns all three, and a test of them would be a test of
- * the browser. What forge owns is the element chosen, the slot tokens, the base classes and the
- * pass-through, and that is what is pinned.
- */
-
 const ROOT_BASE = "flex w-full max-w-sm flex-col gap-1";
 
 describe("Meter", () => {

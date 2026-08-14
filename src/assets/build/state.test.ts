@@ -92,16 +92,13 @@ describe("full change-tracking cycle", () => {
       const statePath = join(dir, "state.json");
       const state = loadState(statePath);
 
-      // First build: nothing recorded yet.
       expect(hasChanged(state, "app.css", "v1")).toBe(true);
       markBuilt(state, "app.css", "v1");
       saveState(statePath, state);
 
-      // Reload from disk: same hash is now unchanged.
       const reloaded = loadState(statePath);
       expect(hasChanged(reloaded, "app.css", "v1")).toBe(false);
 
-      // A new hash is detected as changed.
       expect(hasChanged(reloaded, "app.css", "v2")).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });

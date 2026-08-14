@@ -69,10 +69,6 @@ describe("Switch", () => {
     );
   });
 
-  // A negative contract. The second render is what makes the first mean anything (TESTING.md §3d):
-  // it shows `value` is expressible on this control, so its absence by default is a decision and
-  // not an inability. An unrequested `value="on"` would submit a string for an unchecked box on
-  // some form paths, which is precisely the bug a default-valued switch causes.
   it("emits no value attribute by default, and the caller's when one is given", async () => {
     expect(await render(<Switch />)).toBe(
       '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-track transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform [[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&amp;]:translate-x-4"></span></span></label>',

@@ -12,11 +12,6 @@ type ToastContainerProps = JSX.IntrinsicElements["section"] & { position?: Toast
 
 type ToastProps = JSX.IntrinsicElements["div"] & { variant?: ToastVariant; dismissible?: boolean; duration?: number };
 
-/** The same four status intents as `alert.tsx`, on the same `-subtle` panel tier and for the same
- *  reason — see the block comment on `variantClasses` there for the argument and the measured
- *  ratios. A toast and an alert are the same surface at different urgencies, so sharing the tier is
- *  what keeps them from drifting apart, which is exactly what happened while both were spelling the
- *  stops out by hand. `default` goes through tokens and re-maps on its own. */
 const toastVariantClasses: Record<ToastVariant, string> = {
   default: "border-border bg-background text-foreground",
   success: "border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground",
@@ -102,4 +97,5 @@ const ToastDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, childr
   </div>
 );
 
+/** A transient notification, with `Container`, `Title`, and `Description` subcomponents. @public */
 export const Toast = Object.assign(ToastRoot, { Container: ToastContainer, Title: ToastTitle, Description: ToastDescription });

@@ -7,8 +7,6 @@ import { Input, Select, Slider, Switch, Textarea, ToggleGroup } from "./mod";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
-/** Mirrors `core/slider.test.tsx` — the bound variant adds delegation attributes and nothing else,
- *  so the class list is the core component's verbatim. */
 const SLIDER_CLASS =
   "h-8 w-full cursor-pointer appearance-none rounded-full bg-transparent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -253,9 +251,6 @@ describe("controls/ToggleGroup.Item", () => {
   });
 });
 
-// Contract: unrecognized props — any data-*/aria-* attribute — forward to the underlying
-// element with HTML-escaped values. Consumers (e.g. cad-forge's chrome binding convention)
-// rely on this instead of re-wrapping controls.
 describe("controls — arbitrary attribute pass-through", () => {
   it("Switch forwards an arbitrary data-* attribute", async () => {
     const out = await render(<Switch bind='b' data-test-hook='sw' />);

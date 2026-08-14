@@ -1,17 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser-test-helper";
+import { classesOf, escapeClass, mount } from "../client/browser-test-helper";
 import { Switch } from "./switch";
-
-/**
- * `Switch` is a CSS-only control: no scope, no controller, no client JavaScript. Whether it *works*
- * is therefore entirely whether its selectors reach the elements they name — and a selector that
- * reaches nothing fails silently, leaving a switch that flips its checkbox and never moves.
- *
- * Each case compiles the component's own class the way Tailwind would and injects that rule, rather
- * than hand-writing a selector, so the fixture cannot accidentally agree with a class the component
- * does not emit.
- */
 
 const TRACK = "[data-slot~='switch-track']";
 const THUMB = "[data-slot~='switch-thumb']";
@@ -19,33 +9,11 @@ const INPUT = "[data-slot~='switch-input']";
 
 const markup = (): Promise<string> => render(Switch({ children: "Snap to grid" }));
 
-/** The rendered class list of one slot, un-escaped back from HTML.
- *
- * `data-slot` is a **token list**, so the token is matched at its own boundaries rather than as the
- * whole attribute value: the moment the element carries a second token an exact-value pattern stops
- * matching and this helper throws its "no class attribute" error, which reads as a mount failure
- * rather than the composition change it actually is. The leading group demands whitespace before the
- * token and the trailing one whitespace after, so `x-switch-thumb` and `switch-thumb-2` still miss. */
-function classesOf(html: string, slot: string): string[] {
-  const match = new RegExp(`data-slot="(?:[^"]*\\s)?${slot}(?:\\s[^"]*)?"[^>]*?class="([^"]*)"`).exec(html);
-  if (!match?.[1]) throw new Error(`no class attribute on [data-slot~='${slot}']`);
-  return match[1].replaceAll("&amp;", "&").split(" ");
-}
-
-/** CSS.escape, which the page has and Node does not. */
-function escapeClass(cls: string): string {
-  return cls.replace(/[[\]:&~=.*>+,()#%'"^$|{}/\\?!@`\s]/g, (ch) => `\\${ch}`);
-}
-
-/** Compile a Tailwind arbitrary variant — `[selector_&]:utility` — into the selector it generates:
- * underscores become spaces, and `&` becomes the utility class itself. */
 function compileArbitraryVariant(cls: string): string {
   const variant = cls.slice(1, cls.lastIndexOf("]:"));
   return variant.replaceAll("_", " ").replace("&", `.${escapeClass(cls)}`);
 }
 
-/** Add a stylesheet to the page and read one declared property off an element before and after the
- * checkbox is clicked — the whole question being whether the paint follows the checked state. */
 async function acrossToggle(page: Page, css: string, selector: string, property: string): Promise<{ before: string; after: string }> {
   return page.evaluate(
     ([rule, target, prop, input]) => {
@@ -85,8 +53,6 @@ test.describe("Switch — the checked paint reaches both halves of the control",
         [THUMB, TRACK, INPUT] as const,
       );
 
-    // `peer-checked:` compiles to `.peer:checked ~ *`, so it stops at the track. The thumb needs one
-    // more step, and without it the rule matched nothing at all.
     expect(await reach()).toEqual({ asSibling: false, asDescendant: false });
     await page.evaluate((input) => document.querySelector<HTMLInputElement>(input)?.click(), INPUT);
     expect(await reach()).toEqual({ asSibling: false, asDescendant: true });
@@ -97,7 +63,6 @@ test.describe("Switch — the checked paint reaches both halves of the control",
     await mount(page, html);
 
     const cls = classesOf(html, "switch-track").find((name) => name === "peer-checked:bg-primary") as string;
-    // Tailwind's own compilation of `peer-checked:`, which the track satisfies and the thumb cannot.
     const css = `.${escapeClass(cls)}:is(:where(.peer):checked ~ *) { background-color: rgb(0, 0, 255) }`;
 
     const colours = await acrossToggle(page, css, TRACK, "background-color");

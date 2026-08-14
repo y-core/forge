@@ -5,11 +5,7 @@ export interface SerializedError {
   stack?: string;
 }
 
-/**
- * Converts any thrown value into a JSON-safe `{ name, message, stack? }` object.
- * Never throws — hostile values (throwing `toString`, cyclic objects) degrade to a
- * placeholder rather than breaking the log path. @public
- */
+/** Converts any thrown value into a JSON-safe `{ name, message, stack? }` object, never throwing. @public */
 export function serializeError(err: unknown): SerializedError {
   if (err instanceof Error) {
     return { name: err.name || "Error", message: err.message, ...(err.stack ? { stack: err.stack } : {}) };

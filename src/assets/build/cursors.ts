@@ -5,11 +5,6 @@ import { parseColor, toHex } from "./color";
 import { readThemeTokens, resolveToken } from "./css-tokens";
 import { extractRootAttrs, propagateRootAttrs, sanitizeSVG } from "./sprites";
 
-/**
- * Per-cursor metadata extracted from a cursor SVG root. `viewBox` and `markup` (the
- * sanitized inner geometry) are always present; each `data-cursor-*` attribute is stored
- * under its suffix (e.g. `data-cursor-token` → `token`).
- */
 interface CursorMeta {
   viewBox: string;
   markup: string;
@@ -56,11 +51,7 @@ function resolveCssVars(svg: string, tokens: Map<string, string>, key: string): 
   });
 }
 
-/**
- * Build all cursor bakes: for each cursor × theme, substitute the template SVG with the
- * cursor's geometry and theme-resolved colours, then emit a CSS `cursor` value with hotspot.
- * Returns `{ [cursorName]: { [themeKey]: 'url("data:image/svg+xml,...") hx hy, auto' } }`. @public
- */
+/** Bakes each cursor × theme into a CSS `cursor` value with an inline data-URI SVG. @public */
 export function buildCursors(config: CursorsConfig, cssText: string): Record<string, Record<string, string>> {
   const themeTokens = readThemeTokens(cssText, config.themes);
 
@@ -114,9 +105,7 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
         }
 
         const svg = substitute(templateContent, { viewBox: meta.viewBox, markup: meta.markup, signal }, meta);
-        // Comments are authoring aids, not payload: they pad every data URI, a commented-out
-        // cssvar() would still resolve (and throw on a missing token), and any `--` inside a
-        // comment makes the whole SVG ill-formed XML — browsers then silently drop the cursor.
+        // A `--` inside an SVG comment is ill-formed XML and browsers silently drop the cursor.
         const uncommented = svg.replace(/<!--[\s\S]*?-->/g, "");
         const resolved = resolveCssVars(uncommented, tokens, entry.key);
         const encoded = encodeURIComponent(resolved);

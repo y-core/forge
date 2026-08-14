@@ -5,35 +5,17 @@ import { htmlResponse } from "../http/response";
 
 /** Options for `createErrorPage`. @public */
 export interface ErrorPageOptions<Bindings = Record<string, unknown>> {
-  /** Show the real error message when it returns `true`. A throw is treated as `false`.
-   *  @defaultValue `() => false` — never leak error detail */
+  /** Show the real error message when it returns `true`. */
   isDebug?: (c: AppContext<Bindings>) => boolean;
-  /** Page `<title>` and heading. @defaultValue "Something went wrong" */
+  /** Page `<title>` and heading. */
   title?: string;
-  /** Optional stylesheet `<link>` href — static, or resolved per request (e.g. hashed asset path). */
+  /** Stylesheet `<link>` href, static or resolved per request. */
   stylesheetHref?: string | ((c: AppContext<Bindings>) => string);
-  /** Optional "back to safety" link rendered under the error banner. */
+  /** "Back to safety" link rendered under the error banner. */
   homeHref?: string;
 }
 
-/**
- * Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` and
- * `definePage({ onError })`. Preserves the default boundary's guarantees: the real error
- * message is shown only when `isDebug(c)` returns `true` (a throwing `isDebug` counts as
- * `false`), and all interpolated content is HTML-escaped. Because the boundary is the
- * innermost middleware, the response still flows out through the security-header pass.
- *
- * @example
- * ```typescript
- * const onError = createErrorPage<Bindings>({
- *   isDebug: (c) => configStore.get(c.env).site.debug,
- *   stylesheetHref: "/assets/css/main.css",
- *   homeHref: "/",
- * });
- * export default createApp<Bindings>({ config: configStore, onError, isDebug });
- * ```
- * @public
- */
+/** Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` and `definePage({ onError })`. @public */
 export function createErrorPage<Bindings = Record<string, unknown>>(
   options: ErrorPageOptions<Bindings> = {},
 ): (error: Error, c: AppContext<Bindings>) => Response {

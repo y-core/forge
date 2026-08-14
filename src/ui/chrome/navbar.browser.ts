@@ -4,14 +4,6 @@ import { mount } from "../client/browser-test-helper";
 import { createIcon } from "../core/icon";
 import { Navbar, type NavDefinition } from "./navbar";
 
-/**
- * `Navbar` driven as a consumer gets it: the real SSR markup, the real scopes, real keys.
- *
- * The SSR tests next door prove the server emitted the markup it promised. These prove the markup
- * *behaves* — that a bar menu is a real menu with arrow navigation and focus restoration, that a
- * submenu opens without taking its parent down with it, and that a nested leaf is still a link.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
@@ -47,15 +39,8 @@ const CONFIG: NavDefinition = {
   ],
 };
 
-/**
- * The one rule from `ui/assets/css/forge-ui.css` this component cannot work without.
- *
- * The navbar renders its desktop bar from a *closed* `<details>`, and Chromium wraps a closed
- * details' content in `::details-content { content-visibility: hidden }` — an ancestor-level gate
- * that suppresses the bar no matter what its own `display` says. Stating the rule here rather than
- * loading the whole stylesheet keeps the dependency visible: without it every case below fails on
- * "element is not visible", which is a fact about the UA, not about the navbar.
- */
+// Chromium wraps a closed `<details>`'s content in `::details-content { content-visibility: hidden }`,
+// an ancestor gate that suppresses the desktop bar whatever its own `display` says.
 const DETAILS_CONTENT_RULE = '<style>[data-slot~="navbar"]::details-content { content-visibility: visible }</style>';
 
 async function mountNavbar(page: Page, config: NavDefinition = CONFIG): Promise<void> {
@@ -88,8 +73,6 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
       barLink: document.querySelector("[data-slot~='navbar-link']")?.getAttribute("role"),
     }));
 
-    // A bar link is a link, not a menu item; announcing a menubar without roving focus among its
-    // triggers would promise a keyboard interface that is not there.
     expect(roles).toEqual({ menubar: 0, menus: 2, barLink: null });
   });
 
@@ -106,8 +89,6 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
       return { open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
     });
 
-    // Before the rebuild the popup carried a `data-closed` that nothing ever updated, because
-    // nothing mounted transition state for it — the attribute was decoration, not state.
     expect(before).toEqual({ open: false, closed: true });
     expect(after).toEqual({ open: true, closed: false });
   });
@@ -143,7 +124,6 @@ test.describe("Navbar — keyboard", () => {
     await page.keyboard.press("ArrowDown");
     expect(await focusedText(page)).toBe("Recent");
     await page.keyboard.press("ArrowDown");
-    // The closed submenu's own rows are not in this ring — the visibility filter keeps them out.
     expect(await focusedText(page)).toBe("Quit");
   });
 
@@ -191,9 +171,6 @@ test.describe("Navbar — light dismiss", () => {
 
     await page.click("#before");
 
-    // The Popover API's own light-dismiss. The scope installs no document click listener to do
-    // this, which is a claim only expressible against real behaviour — an absent listener asserted
-    // against a stub proves nothing about the browser.
     await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(false);
   });
 
@@ -233,19 +210,11 @@ test.describe("Navbar — hidden items stay out of the keyboard ring", () => {
     await expect.poll(() => focusedText(page)).toBe("New");
     await page.keyboard.press("ArrowDown");
 
-    // `Admin` is server-seeded `hidden` because no active token matches it. A hidden row that stayed
-    // in the ring would swallow the keystroke and focus would appear to stick.
     expect(await focusedText(page)).toBe("Quit");
   });
 });
 
 test.describe("Navbar — the rail keeps its disclosure at desktop width", () => {
-  /**
-   * `collapsible="always"` is otherwise only assertable as SSR class strings: the browser harness
-   * serves CSS raw with no Tailwind build, so `md:hidden` and `md:flex` generate no rules and
-   * resizing the viewport would prove nothing. What *is* real here is the `<details>` — its open
-   * state is UA behaviour, not styling, so a rail that stopped toggling would fail this.
-   */
   test("a rail's summary opens and closes it, with no controller of forge's own", async ({ page }) => {
     await mountRail(page);
     const isRailOpen = () => page.evaluate(() => document.querySelector<HTMLDetailsElement>("[data-slot~='navbar']")?.open ?? null);

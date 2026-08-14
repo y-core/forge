@@ -28,17 +28,7 @@ export function verifyOrigin(request: Request, allowedOrigins: string[]): Origin
   return err("missing");
 }
 
-/**
- * Middleware that rejects requests from disallowed or missing origins (403). Safe methods are exempt.
- *
- * @remarks
- * Tier: **Origin/Referer only** — verifies the `Origin`/`Referer` allowlist with no Fetch-Metadata
- * (`Sec-Fetch-Site`) inspection. Safe methods (GET/HEAD/OPTIONS/TRACE) are exempt first. Prefer
- * `originProtection` as the recommended combined default (Sec-Fetch-Site + this Origin/Referer
- * fallback); use `crossOriginProtection` for the stricter Sec-Fetch-Site-only tier.
- *
- * @public
- */
+/** Middleware that rejects requests from disallowed or missing origins with a 403; safe methods are exempt. @public */
 export function originGuard(allowedOrigins: string[]): Middleware {
   return async (context, next) => {
     if (SAFE_METHODS.has(context.method.toUpperCase())) return next();

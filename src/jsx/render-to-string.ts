@@ -37,10 +37,7 @@ const BOOLEAN_ATTRS = new Set([
 /** Attributes whose values are URLs — scheme-sanitized to block `javascript:`-style injection. */
 const URL_ATTRS = new Set(["href", "src", "action", "formaction", "poster", "cite", "background", "xlink:href", "xml:base"]);
 
-/**
- * Enumerated attributes: a boolean value renders as the string `="true"`/`="false"` rather than a
- * bare attribute name (unlike {@link BOOLEAN_ATTRS}), matching HTML's enumerated-attribute semantics.
- */
+/** Attributes whose boolean value renders as `="true"`/`="false"`, per HTML's enumerated semantics. */
 const ENUMERATED_ATTRS = new Set(["draggable", "spellcheck", "contenteditable"]);
 
 /** Valid HTML attribute name: starts with a letter/`_`/`:`, then letters, digits, `_`, `.`, `:`, `-`. */
@@ -50,7 +47,6 @@ const VALID_ATTR_NAME = /^[A-Za-z_:][\w.:-]*$/;
 function renderAttributes(props: Record<string, unknown>, tag: string): string {
   let attrs = "";
   for (const [key, value] of Object.entries(props)) {
-    // Skip non-attribute fields
     if (key === "children" || key === "key") {
       continue;
     }
@@ -59,17 +55,14 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
 
     const attrName = key;
 
-    // Reject unsafe attribute names: values are escaped, but the name is emitted verbatim, so a
-    // derived/untrusted spread key (e.g. ` onmouseover=…`) could otherwise inject attributes.
+    // Values are escaped but the name is emitted verbatim, so an untrusted spread key
+    // (e.g. ` onmouseover=…`) would otherwise inject attributes.
     if (!VALID_ATTR_NAME.test(attrName)) continue;
 
-    // Inline styles are dropped: the shipped CSP uses `style-src 'self'` (no `'unsafe-inline'`),
-    // so any `style="…"` attribute would be blocked by the browser. Keep it out of the HTML
-    // entirely rather than ship a silently-blocked attribute. See security/headers.ts (F15).
+    // The shipped CSP is `style-src 'self'` with no `'unsafe-inline'`, so a `style="…"` attribute
+    // would be blocked by the browser anyway.
     if (attrName === "style") continue;
 
-    // Enumerated attributes: a boolean value renders as ="true"/"false" (string values fall through
-    // to the regular attribute path below).
     if (ENUMERATED_ATTRS.has(attrName.toLowerCase())) {
       if (value === true) {
         attrs += ` ${attrName}="true"`;
@@ -81,9 +74,8 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
       }
     }
 
-    // aria-* attributes are string-valued per WAI-ARIA, so a `false` is serialized rather than
-    // dropped: `aria-expanded="false"` means "expandable, currently collapsed", while an absent
-    // `aria-expanded` means "not expandable at all"
+    // WAI-ARIA is string-valued, so `false` is serialized rather than dropped: an absent
+    // `aria-expanded` means "not expandable at all", not "collapsed".
     if (typeof value === "boolean" && attrName.startsWith("aria-")) {
       attrs += ` ${attrName}="${value ? "true" : "false"}"`;
       continue;
@@ -91,38 +83,31 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
 
     if (value === false) continue;
 
-    // Boolean attributes: emit only the attribute name when truthy
     if (BOOLEAN_ATTRS.has(attrName.toLowerCase())) {
       if (value) attrs += ` ${attrName}`;
       continue;
     }
 
-    // true without a boolean entry: emit as a bare attribute name (e.g. data-active={true})
     if (value === true) {
       attrs += ` ${attrName}`;
       continue;
     }
 
-    // Regular attribute — URL attributes are scheme-sanitized first, then HTML-escaped.
     const raw = String(value);
     const out = URL_ATTRS.has(attrName.toLowerCase()) ? safeUrl(raw) : raw;
     attrs += ` ${attrName}="${escapeHtml(out)}"`;
   }
 
-  // Void elements never have id="" or similar empty overrides — handled by value checks above.
   void tag;
   return attrs;
 }
 
-/** Duck-type thenable check — avoids `instanceof Promise` so custom thenables (e.g. deferred islands) are also awaited. */
+/** Duck-type thenable check, so custom thenables are awaited too. */
 function isAsync(value: unknown): value is PromiseLike<unknown> {
   return value != null && typeof (value as Record<string, unknown>).then === "function";
 }
 
-/**
- * Renders a node synchronously when possible; returns a Promise only when async components or
- * async children are encountered. Avoids microtask overhead on fully-synchronous subtrees.
- */
+/** Renders a node synchronously, returning a Promise only when an async component is encountered. */
 function renderNodeSync(node: unknown): string | Promise<string> {
   if (node === null || node === undefined || node === false || node === true) return "";
   if (typeof node === "string") return escapeHtml(node);
@@ -130,7 +115,6 @@ function renderNodeSync(node: unknown): string | Promise<string> {
 
   if (Array.isArray(node)) {
     const parts = node.map(renderNodeSync);
-    // Fast path: all children rendered synchronously — join without entering the microtask queue.
     if (parts.every((p): p is string => typeof p === "string")) {
       return parts.join("");
     }
@@ -145,12 +129,10 @@ function renderNodeSync(node: unknown): string | Promise<string> {
 
   const element = node as JSXElement;
 
-  // Fragment: render children without a wrapper
   if (element.type === Fragment) {
     return renderNodeSync(element.props.children);
   }
 
-  // Function component: await only when the result is thenable
   if (typeof element.type === "function") {
     const fnResult = element.type(element.props);
     if (isAsync(fnResult)) {
@@ -159,7 +141,6 @@ function renderNodeSync(node: unknown): string | Promise<string> {
     return renderNodeSync(fnResult);
   }
 
-  // Intrinsic HTML/SVG element
   const tag = element.type as string;
   const attrs = renderAttributes(element.props, tag);
 
@@ -179,12 +160,7 @@ export async function renderToString(node: unknown): Promise<SafeHtml> {
   return rawHtml(await renderNodeSync(node));
 }
 
-/**
- * Renders a JSX tree to a full-page HTML `Response`, prepending the HTML5 doctype.
- * Equivalent to `htmlResponse("<!DOCTYPE html>" + await renderToString(node), ...)`.
- * Use this in page handlers (`definePage` view functions, 404 handlers, etc.).
- * @public
- */
+/** Renders a JSX tree to a full-page HTML `Response`, prepending the HTML5 doctype. @public */
 export async function renderPage(node: JSXNode, init?: { status?: number; headers?: Record<string, string> }): Promise<Response> {
   return htmlResponse(`<!DOCTYPE html>${await renderToString(node)}`, init?.status ?? 200, init?.headers);
 }

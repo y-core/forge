@@ -8,8 +8,6 @@ import { renderToString } from "../../jsx/render-to-string";
 import type { ForgeIcon } from "../core/icon";
 import { DependentFragment, PaginateFragment, PreviewFragment, SearchFragment, ToastFragment, ValidateFragment } from "./sections";
 
-// ─── ShowcasePaths ────────────────────────────────────────────────────────────
-
 /** URL paths for the showcase module — single source of truth so page and controller never drift. @public */
 export interface ShowcasePaths {
   page: string;
@@ -37,8 +35,6 @@ export function showcasePaths(basePath: string, apiPath?: string): ShowcasePaths
   };
 }
 
-// ─── ShowcaseData ────────────────────────────────────────────────────────────
-
 /** Data returned by `loadShowcase`. @public */
 export interface ShowcaseData {
   paths: ShowcasePaths;
@@ -52,15 +48,13 @@ export function loadShowcase<Bindings = Record<string, unknown>>(
   return { paths: showcasePaths(opts.basePath ?? "/showcase", opts.apiPath) };
 }
 
-// ─── Preview ─────────────────────────────────────────────────────────────────
-
 /** @public */
 export interface PreviewData {
   variant: string;
   size: string;
 }
 
-/** @public */
+/** Reads the preview fragment's variant and size from the query string. @public */
 export function loadPreview<Bindings = Record<string, unknown>>(c: AppContext<Bindings>): PreviewData {
   return { variant: c.url.searchParams.get("variant") ?? "primary", size: c.url.searchParams.get("size") ?? "md" };
 }
@@ -74,15 +68,13 @@ export async function renderPreview(
   return fragmentResponse(body);
 }
 
-// ─── Validate ────────────────────────────────────────────────────────────────
-
 /** @public */
 export interface ValidateData {
   email: string;
   paths: ShowcasePaths;
 }
 
-/** @public */
+/** Reads the email under validation from the query string. @public */
 export function loadValidate<Bindings = Record<string, unknown>>(c: AppContext<Bindings>, paths: ShowcasePaths): ValidateData {
   return { email: c.url.searchParams.get("email") ?? "", paths };
 }
@@ -93,14 +85,12 @@ export async function renderValidate(data: ValidateData, icon: ForgeIcon<"close"
   return fragmentResponse(body);
 }
 
-// ─── Search ──────────────────────────────────────────────────────────────────
-
 /** @public */
 export interface SearchData {
   q: string;
 }
 
-/** @public */
+/** Reads the search term from the query string. @public */
 export function loadSearch<Bindings = Record<string, unknown>>(c: AppContext<Bindings>): SearchData {
   return { q: c.url.searchParams.get("q") ?? "" };
 }
@@ -111,15 +101,13 @@ export async function renderSearch(data: SearchData): Promise<Response> {
   return fragmentResponse(body);
 }
 
-// ─── Paginate ────────────────────────────────────────────────────────────────
-
 /** @public */
 export interface PaginateData {
   page: number;
   paths: ShowcasePaths;
 }
 
-/** @public */
+/** Reads the requested page number from the query string, clamped to at least 1. @public */
 export function loadPaginate<Bindings = Record<string, unknown>>(c: AppContext<Bindings>, paths: ShowcasePaths): PaginateData {
   const raw = c.url.searchParams.get("page");
   const page = raw ? Math.max(1, Number.parseInt(raw, 10)) : 1;
@@ -132,14 +120,12 @@ export async function renderPaginate(data: PaginateData): Promise<Response> {
   return fragmentResponse(body);
 }
 
-// ─── Dependent ───────────────────────────────────────────────────────────────
-
 /** @public */
 export interface DependentData {
   category: string;
 }
 
-/** @public */
+/** Reads the selected category from the query string. @public */
 export function loadDependent<Bindings = Record<string, unknown>>(c: AppContext<Bindings>): DependentData {
   return { category: c.url.searchParams.get("category") ?? "fruit" };
 }
@@ -153,14 +139,12 @@ export async function renderDependent(
   return fragmentResponse(body);
 }
 
-// ─── Toast ───────────────────────────────────────────────────────────────────
-
 /** @public */
 export interface ToastData {
   type: string;
 }
 
-/** @public */
+/** Reads the toast variant to demonstrate from the query string. @public */
 export function loadToast<Bindings = Record<string, unknown>>(c: AppContext<Bindings>): ToastData {
   return { type: c.url.searchParams.get("type") ?? "success" };
 }

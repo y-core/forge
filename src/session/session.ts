@@ -7,14 +7,7 @@ import { setPendingHeader } from "../context/pending-headers";
 /** Typed accessor for the session variable set by `sessionMiddleware`. @public */
 export const sessionCtx = contextVar<Session>("session");
 
-/**
- * Reads the session cookie on the way in and persists it on the way out.
- *
- * Persistence is skipped entirely for a session that was neither modified nor destroyed
- * (`dirty`/`destroyed`), so unchanged requests emit no `Set-Cookie` — this avoids a
- * cache-defeating cookie write per request for server-side stores. Callers that rely on
- * sliding expiry must touch the session (e.g. `session.set`) to mark it dirty. @public
- */
+/** Reads the session cookie on the way in and persists it on the way out when dirty or destroyed. @public */
 export function sessionMiddleware(storage: SessionStorage, cookie: Cookie): Middleware {
   return async (context, next) => {
     const cookieHeader = context.request.headers.get("cookie") ?? null;
@@ -32,7 +25,6 @@ export function sessionMiddleware(storage: SessionStorage, cookie: Cookie): Midd
       return res;
     }
     const serializedCookie = await cookie.serialize(serialized);
-    // Queue on the pending channel; the single `applyHeaders` pass flushes it onto the response.
     setPendingHeader(context, "set-cookie", serializedCookie, { append: true });
     return res;
   };

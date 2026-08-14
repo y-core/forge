@@ -1,13 +1,3 @@
-/** cf-env-gen.test.ts — the portable Cloudflare-binding env-schema generator.
- *
- *  Exercises the pure core (`cf-env-gen.ts`): `stripJsonc`, the `REGISTRY`-driven
- *  `collectBindings` (multi-kind config, dotted/single-object paths, name-field
- *  extraction, registry ordering, `v.optional` policy), `collectVars` (typed
- *  `wrangler.jsonc` vars + `.dev.vars` secrets, refinements, dedupe precedence),
- *  and `emit` (header + single `v` import) — plus the command surface
- *  (`cf-env-command.ts`): `createGenEnv` flag defaults and `loadOptions` merge.
- */
-
 import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -65,7 +55,6 @@ describe("collectBindings", () => {
     const byName = new Map(collectBindings(cfg, OPTIONS).map((e) => [e.name, e.expr]));
     expect(byName.get("DB")).toBe(`v.custom<D1Database>(${CHECK}, "DB must be a D1 database binding")`);
     expect(byName.get("QUEUE")).toBe(`v.custom<Queue>(${CHECK}, "QUEUE must be a Queue binding")`);
-    // ratelimits/durable_objects identify by `name`; services by `binding`.
     expect(byName.get("COUNTER")).toBe(`v.custom<DurableObjectNamespace>(${CHECK}, "COUNTER must be a Durable Object binding")`);
     expect(byName.get("AUTH")).toBe(`v.custom<Service>(${CHECK}, "AUTH must be a service binding")`);
     expect(byName.get("ASSETS")).toBe(`v.custom<Fetcher>(${CHECK}, "ASSETS must be a Fetcher binding")`);
@@ -153,6 +142,6 @@ describe("loadOptions", () => {
     const opts = await loadOptions(path);
     expect([...opts.optional]).toEqual(["RATE_LIMITER"]);
     expect(opts.refinements).toEqual({ SESSION_SECRET: { minLength: 32 } });
-    expect(opts.bindingCheck).toBe(DEFAULT_OPTIONS.bindingCheck); // inherited
+    expect(opts.bindingCheck).toBe(DEFAULT_OPTIONS.bindingCheck);
   });
 });

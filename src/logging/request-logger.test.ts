@@ -19,16 +19,6 @@ function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
   };
 }
 
-/**
- * A channel that records a write only once it **settles**, the shape a real `kvLogChannel` has.
- *
- * The synchronous `makeCapture` above cannot see a dropped record: it appends before returning, so
- * a write whose promise nobody awaits still shows up. Only a channel that defers the append can
- * distinguish "persisted" from "started and abandoned".
- *
- * Delays escalate per write so the distinction is deterministic rather than a race: with the second
- * write far slower than the first, awaiting only the first flush window provably excludes it.
- */
 function makeAsyncCapture(delaysMs: number[] = [1, 30]): { records: LogRecord[]; channel: LogChannel } {
   const records: LogRecord[] = [];
   let writes = 0;
@@ -73,7 +63,6 @@ describe("requestLogger", () => {
 
     await app.request("/test");
 
-    // handler record + per-request summary record, both through the bound child logger
     expect(records).toHaveLength(2);
     expect(records[0]!.data?.requestId).toBe("test-req-1");
     expect(records[0]!.message).toBe("handler ran");
@@ -155,11 +144,9 @@ describe("requestLogger", () => {
       return new Response("ok");
     });
 
-    // No executionCtx — flush falls through to await
     await app.request("/test");
     order.push("after-request");
 
-    // one async write for the handler record, one for the summary record
     expect(order).toStrictEqual(["async-done", "async-done", "after-request"]);
   });
 });
@@ -241,7 +228,6 @@ describe("requestLogger — per-request summary record", () => {
     expect(res.status).toBe(500);
     expect(records).toHaveLength(2);
 
-    // The error boundary runs below requestLogger, so its detail record lands first.
     const detail = records[0]!;
     expect(detail.level).toBe("error");
     expect(detail.message).toBe("unhandled error");
@@ -273,7 +259,6 @@ describe("requestLogger — per-request summary record", () => {
     const { records, channel } = makeCapture();
     const app = new Forge();
     app.use("*", requestLogger({ channels: () => [channel] }));
-    // Below requestLogger but above the route error boundary — the throw escapes next().
     app.use("*", () => {
       throw new Error("middleware exploded");
     });
@@ -281,8 +266,6 @@ describe("requestLogger — per-request summary record", () => {
 
     await app.request("/boom").catch(() => undefined);
 
-    // This middleware's own record comes first, inside its flush window; the outer boundary then
-    // catches the rethrow and appends its own detail record.
     expect(records.map((r) => r.message)).toStrictEqual(["GET /boom", "unhandled error"]);
     const rec = records[0]!;
     expect(rec.level).toBe("error");
@@ -298,7 +281,6 @@ describe("requestLogger — flush windows under an asynchronous channel", () => 
   function makeGuardThrowApp(channel: LogChannel) {
     const app = new Forge();
     app.use("*", requestLogger({ channels: () => [channel], bindings: () => ({ requestId: "req-async-1" }) }));
-    // Below requestLogger but above the route error boundary — the throw escapes next().
     app.use("*", () => {
       throw new Error("middleware exploded");
     });
@@ -311,10 +293,6 @@ describe("requestLogger — flush windows under an asynchronous channel", () => 
 
     const res = await makeGuardThrowApp(channel).request("/boom");
 
-    // `requestLogger`'s `finally` splices the pending buffer, so the boundary's later record was
-    // left in a buffer nobody awaited — with a real KV channel it could be lost to isolate
-    // teardown. A *dropped* error record is strictly worse than the duplicate this path is known
-    // to produce, and only an async channel can observe it.
     expect(res.status).toBe(500);
     expect(records.map((r) => r.message)).toStrictEqual(["GET /boom", "unhandled error"]);
   });
@@ -338,20 +316,13 @@ describe("requestLogger — flush windows under an asynchronous channel", () => 
     const res = await app.request("/boom");
 
     expect(res.status).toBe(500);
-    // The boundary runs below requestLogger here, so its record is written — and now flushed —
-    // first; the summary follows in requestLogger's own window.
     expect(records.map((r) => r.message)).toStrictEqual(["unhandled error", "GET /boom"]);
   });
 });
 
 describe("requestLogger — a failing channel never changes the request outcome", () => {
-  /** The shape a real channel takes when its backing store is unavailable: the write starts and
-   *  rejects. Nothing about it is recoverable at the request level, which is the point. */
   const failingChannel: LogChannel = { write: () => Promise.reject(new Error("channel down")) };
 
-  // Every case here drives a rejecting write, so the default channel-error reporter fires on each
-  // one. Captured rather than printed: the no-executionCtx case asserts them below, and left
-  // unstubbed they bury the rest of the run's output.
   let reports: string[] = [];
   let originalError: typeof console.error;
 
@@ -388,21 +359,15 @@ describe("requestLogger — a failing channel never changes the request outcome"
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
-    // The promise handed to `waitUntil` resolves even though every write failed: `flush` absorbs the
-    // failures, and `requestLogger` wraps it in a `.catch` besides. Nothing about the request changes.
     expect(flushed.length).toBeGreaterThan(0);
     await expect(Promise.all(flushed)).resolves.toBeDefined();
   });
 
   it("returns the response unchanged on the no-executionCtx fallback branch", async () => {
-    // The dangerous branch: `await flush` runs inside a `finally`, and a `finally` that throws
-    // replaces whatever was propagating — here, a perfectly good 200.
     const res = await makeFailingChannelApp().request("/test");
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
-    // The failure is not silent — it surfaces on the default reporter instead of on the response:
-    // one report for the handler record, one for the per-request summary.
     expect(reports).toHaveLength(2);
     expect(JSON.parse(reports[0]!).message).toBe("log channel write failed");
   });
@@ -419,9 +384,6 @@ describe("requestLogger — a failing channel never changes the request outcome"
     const res = await app.request("/boom");
 
     expect(res.status).toBe(500);
-    // The boundary's record is written after `requestLogger`'s `finally` has run, so it carries
-    // whichever error actually came out of it — the middleware's, or the flush's had the `finally`
-    // replaced it. That substitution is the whole failure mode, and it is silent without this.
     const detail = records.find((r) => r.message === "unhandled error");
     expect((detail?.data?.error as { message: string } | undefined)?.message).toBe("middleware exploded");
   });
@@ -471,7 +433,6 @@ describe("requestLogger — minLevel", () => {
 
     await app.request("/test");
 
-    // "dropped" and the info-level 200 summary are filtered; only the explicit warn survives
     expect(records).toHaveLength(1);
     expect(records[0]!.message).toBe("kept");
   });
@@ -489,7 +450,6 @@ describe("requestLogger — minLevel", () => {
     expect(records).toHaveLength(0);
 
     await app.request("/test");
-    // resolver returned undefined → no filtering: handler record + summary
     expect(records).toHaveLength(2);
   });
 });
@@ -554,7 +514,6 @@ describe("requestLogger — onChannelError", () => {
     console.error = originalError;
   });
 
-  /** A channel whose write always rejects — a `kvLogChannel` whose binding is unavailable. */
   function failingChannel(error: unknown): LogChannel {
     return { write: () => Promise.reject(error) };
   }
@@ -580,9 +539,7 @@ describe("requestLogger — onChannelError", () => {
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
-    // the handler record and the per-request summary record, each a failed write
     expect(errors).toStrictEqual([boom, boom]);
-    // the supplied hook replaces the default reporter outright
     expect(capturedErrors).toStrictEqual([]);
   });
 
@@ -639,14 +596,13 @@ describe("requestLogger — the real consoleChannel on a cyclic data payload", (
     console.error = originalError;
   });
 
-  /** An object graph with a back-reference — the ordinary shape that makes `JSON.stringify` throw. */
+  // An object graph with a back-reference — the shape that makes `JSON.stringify` throw.
   function makeCyclic(): Record<string, unknown> {
     const node: Record<string, unknown> = { name: "loop" };
     node.self = node;
     return node;
   }
 
-  /** What `JSON.stringify` actually throws here, derived rather than hardcoded to an engine string. */
   function stringifyFailure(value: unknown): { name: string; message: string } {
     try {
       JSON.stringify(value);
@@ -659,8 +615,6 @@ describe("requestLogger — the real consoleChannel on a cyclic data payload", (
 
   function makeCyclicApp(cyclic: Record<string, unknown>) {
     const app = new Forge();
-    // The real channel, not a fake: the defect is reachable through the *default* channel, and a
-    // fake that throws on demand would prove only that a hand-written throw is absorbed.
     app.use("*", requestLogger({ channels: () => [consoleChannel()] }));
     mapHandler(app, "GET", "/cyclic", (c) => {
       requestLog.get(c).info("x", { cyclic });
@@ -678,8 +632,6 @@ describe("requestLogger — the real consoleChannel on a cyclic data payload", (
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
 
-    // Exactly one report: the handler's record could not be serialized, the per-request summary
-    // carries no cyclic data and wrote normally.
     expect(capturedErrors).toHaveLength(1);
     const report = JSON.parse(capturedErrors[0]!);
     expect(Object.keys(report)).toStrictEqual(["error", "level", "prefix", "message", "timestamp"]);

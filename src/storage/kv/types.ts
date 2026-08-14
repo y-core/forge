@@ -12,13 +12,7 @@ export interface KvCodec<T> {
   decode(raw: string | ArrayBuffer): T;
 }
 
-/**
- * Structural contract — the consumed surface of a KV namespace binding. Typed loosely enough
- * (overloaded `get`/`getWithMetadata`, `unknown` put-options sidestepped via `KVPutOptions`) that
- * both forge's neutral `KVNamespace` and Cloudflare's runtime `KVNamespace` satisfy it. Constraining
- * a resolver to `NS extends KVNamespaceLike` proves any platform namespace meets the contract
- * cast-free. @public
- */
+/** Structural contract — the consumed surface of a KV namespace binding. @public */
 export interface KVNamespaceLike {
   delete(key: string): Promise<void>;
   get(key: string, options: { type: "text" }): Promise<string | null>;
@@ -53,13 +47,10 @@ export interface KVListResult<M = unknown> {
   cursor?: string;
 }
 
-/** @public */
+/** Options for `createKVStore`. @public */
 export interface KVStoreOptions<T = unknown> {
-  /** Key prefix, joined with `||`; keys themselves must not contain `||`. */
   prefix?: string;
-  /** Value codec. @defaultValue `jsonCodec()` — JSON.stringify/parse */
   codec?: KvCodec<T>;
-  /** Default TTL in seconds applied to `set` when no per-call `ttl` is given. */
   defaultTtl?: number;
   logger?: Logger;
 }
@@ -84,7 +75,7 @@ export interface KVListEntry<M = unknown> {
   metadata?: M;
 }
 
-/** @public */
+/** A prefixed, codec-typed view over one KV namespace where every operation returns a `Result`. @public */
 export interface KVStore<T = unknown> {
   delete(key: string): Promise<Result<void>>;
   get(key: string): Promise<Result<T | null>>;
@@ -94,12 +85,9 @@ export interface KVStore<T = unknown> {
   list<M = unknown>(options?: KVListOptions): Promise<Result<{ keys: KVListEntry<M>[]; cursor?: string; complete: boolean }>>;
 }
 
-/** Options for resolving a KV binding from context. The binding return is constrained to the
- *  structural contract `NS extends KVNamespaceLike` so any platform namespace (forge's neutral type
- *  or Cloudflare's runtime type) is accepted cast-free. @public */
+/** Options for resolving a KV binding from context. @public */
 export interface KVBindingOptions<Bindings = Record<string, unknown>, T = unknown, NS extends KVNamespaceLike = KVNamespace> {
   binding: (c: AppContext<Bindings>) => NS | undefined;
-  /** When true (default), throws if the binding is absent. Set false to return null instead. */
   required?: boolean;
   store?: KVStoreOptions<T>;
 }

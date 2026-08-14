@@ -57,8 +57,6 @@ describe("Accordion", () => {
   });
 
   it("emits the native open attribute and data-open together for an open item", async () => {
-    // Both, never one: `open` is what the platform reads and `data-open` is what a stylesheet reads,
-    // and a rule keyed on the pair has to match from first paint, not from first interaction.
     expect(await render(<Accordion.Item open>Body</Accordion.Item>)).toBe(
       '<details data-slot="accordion-item" data-scope="accordion" open data-open="" class="group/accordion-item border-b border-border last:border-b-0">Body</details>',
     );

@@ -18,17 +18,10 @@ export interface IconProps {
   "stroke-linejoin"?: string;
 }
 
-/**
- * Shape of a sprite-bound icon component — i.e. the value returned by {@link createIcon}.
- * Forge components that render an icon accept a `ForgeIcon` so the consuming app injects
- * its own bound icon (the sprite URL lives only in the app's generated assets module).
- *
- * `Name` is the set of icon names the component requires. Because function parameters are
- * contravariant, an app icon bound to a wider name set is assignable to a narrower `ForgeIcon`,
- * but the app's sprite must actually contain every required name or assignment fails to compile.
- */
+/** Shape of a sprite-bound icon component, as returned by `createIcon`. @public */
 export type ForgeIcon<Name extends string = string> = (props: Omit<IconProps, "symbol" | "sprite"> & { name: Name }) => ReturnType<FC>;
 
+/** Renders an SVG `<use>` reference to one symbol in a sprite sheet. @public */
 export const Icon: FC<IconProps> = ({
   symbol,
   sprite,
@@ -60,23 +53,9 @@ export const Icon: FC<IconProps> = ({
   </svg>
 );
 
-/** Icon-name set derived from a sprite meta map's `${P}*` keys. */
 type SpriteIconName<M, P extends string = "icon-"> = keyof M extends `${P}${infer N}` ? N : never;
 
-/**
- * Factory that binds a sprite URL to produce a typed Icon component.
- *
- * With a `meta` map, the returned component's `name` prop is narrowed to the sprite's
- * prefixed keys and the viewBox is resolved from `meta`. Without `meta`, the component
- * accepts any `name: string` — for apps whose icon set is dynamic (e.g. tool names not
- * known at compile time) — and the viewBox comes from the `viewBox` prop (or the
- * symbol's own). A meta-less `ForgeIcon<string>` is assignable to any narrower
- * `ForgeIcon<Name>` by contravariance, so it can still satisfy components that require a
- * specific icon (e.g. `Select`'s `chevron-down`).
- *
- * The optional `prefix` (default `"icon-"`) must match the prefix used when building the
- * sprite so that `${prefix}${name}` resolves to a valid symbol id.
- */
+/** Binds a sprite URL to produce a typed Icon component. @public */
 export function createIcon(sprite: string): ForgeIcon<string>;
 export function createIcon<M extends Record<string, string>>(sprite: string, meta: M): ForgeIcon<SpriteIconName<M>>;
 export function createIcon<M extends Record<string, string>, P extends string>(sprite: string, meta: M, prefix: P): ForgeIcon<SpriteIconName<M, P>>;

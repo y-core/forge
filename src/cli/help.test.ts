@@ -118,7 +118,6 @@ describe("formatHelp()", () => {
     });
     const help = formatHelp(cmd);
     const lines = help.split("\n").filter((l) => l.includes("--"));
-    // All description columns should start at the same index
     const descCols = lines.map((l) => {
       const match = l.match(/--\S+(\s+)/);
       return match ? l.indexOf(match[0]) + match[0].length : -1;

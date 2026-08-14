@@ -21,17 +21,6 @@ interface CollapsiblePanelProps extends Omit<JSX.IntrinsicElements["div"], "chil
   children?: JSXNode;
 }
 
-/**
- * A disclosure, on native `<details>` / `<summary>`.
- *
- * Open and closed are the element's own — there is no state machine here, no `hidden` toggling and
- * no height animation in JavaScript. The `data-open` / `data-closed` pair is maintained by A5's
- * `mountTransitionState`, which observes the `toggle` event `<details>` already fires, so an exit
- * animation is a stylesheet's business rather than this component's.
- *
- * `core/accordion.tsx` makes the same platform bet at multi-item granularity and shares this markup;
- * the two are deliberately the same shape rather than two disclosure implementations.
- */
 const CollapsibleRoot: FC<CollapsibleRootProps> = ({ open = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <details
     data-slot={slotToken("collapsible", inherited)}
@@ -68,18 +57,5 @@ const CollapsiblePanel: FC<CollapsiblePanelProps> = ({ class: cls, children, "da
   </div>
 );
 
-/**
- * Compound disclosure on native `<details>`.
- *
- * Icon-agnostic — inject the app's sprite-bound `ForgeIcon` via `Collapsible.Trigger`'s `icon`
- * prop; the sprite URL never leaks into this component.
- *
- * ```tsx
- * <Collapsible>
- *   <Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>
- *   <Collapsible.Panel>…</Collapsible.Panel>
- * </Collapsible>
- * ```
- * @public
- */
+/** Compound disclosure on native `<details>`. @public */
 export const Collapsible = Object.assign(CollapsibleRoot, { Trigger: CollapsibleTrigger, Panel: CollapsiblePanel });

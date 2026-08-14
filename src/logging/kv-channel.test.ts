@@ -35,7 +35,7 @@ function makeKvStub(): KVNamespace & { _store: Map<string, StubEntry> } {
       const pfx = opts?.prefix ?? "";
       const keys = [..._store.keys()]
         .filter((k) => k.startsWith(pfx))
-        .sort() // lexicographic — same as real KV
+        .sort()
         .map((name) => ({ name, metadata: _store.get(name)?.metadata as M }));
       return Promise.resolve({ keys, list_complete: true });
     },
@@ -45,13 +45,7 @@ function makeKvStub(): KVNamespace & { _store: Map<string, StubEntry> } {
   return ns;
 }
 
-/**
- * A stub whose `delete` never settles until `releaseDeletes()` is called, plus an ordered log of the
- * operations it received. `makeKvStub` cannot tell an awaited purge from a detached one — its
- * `delete` resolves in the same microtask that starts it, so a fire-and-forget purge finishes inside
- * the ticks an `await channel.write(...)` already consumes. Parking the deletes is what makes
- * "the write promise covers the purge" an assertable claim rather than a timing coincidence.
- */
+// Deletes stay parked until `releaseDeletes()`, so "the write promise covers the purge" is assertable.
 function makeDeferredDeleteKvStub(): KVNamespace & { _store: Map<string, StubEntry>; calls: string[]; releaseDeletes: () => void } {
   const base = makeKvStub();
   const calls: string[] = [];
@@ -83,7 +77,6 @@ function makeDeferredDeleteKvStub(): KVNamespace & { _store: Map<string, StubEnt
   } as unknown as KVNamespace & { _store: Map<string, StubEntry>; calls: string[]; releaseDeletes: () => void };
 }
 
-/** Drain the microtask queue so every promise chain that can settle has settled. */
 function flushMicrotasks(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
@@ -174,20 +167,17 @@ describe("kvLogChannel — write", () => {
 describe("kvLogChannel — purge", () => {
   it("deletes oldest entries beyond maxLogs when above highWater (purgeProbability:1)", async () => {
     const stub = makeKvStub();
-    // Pre-populate 6 entries with sortable timestamps
     for (let i = 1; i <= 6; i++) {
       const ts = `2026-05-31T0${i}:00:00.000Z`;
       stub._store.set(`logs||${ts}||aaa`, { value: "{}", expirationTtl: 300 });
     }
 
-    // maxLogs=3, highWater=4 → 6 entries is above highWater, should purge down to maxLogs=3
     const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 3, highWater: 4, purgeProbability: 1 });
 
     await channel.write(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" }));
 
-    // Should have at most maxLogs=3 entries (the newest)
     const remaining = [...stub._store.keys()].filter((k) => k.startsWith("logs||")).sort();
-    expect(remaining.length).toBeLessThanOrEqual(3 + 1); // +1 for the newly written entry
+    expect(remaining.length).toBeLessThanOrEqual(3 + 1);
   });
 
   it("does not purge when entry count is at or below highWater", async () => {
@@ -198,7 +188,6 @@ describe("kvLogChannel — purge", () => {
 
     await channel.write(makeRecord());
 
-    // Only 2 total — no purge
     expect(stub._store.size).toBe(2);
   });
 
@@ -240,8 +229,6 @@ describe("kvLogChannel — purge", () => {
       settled = true;
     });
 
-    // The put has resolved and the purge has listed and issued its deletes — but the deletes are
-    // parked, so a write promise that covered only the put would already be settled here.
     await flushMicrotasks();
     expect(stub.calls).toStrictEqual(["put", "list", "delete", "delete", "delete", "delete"]);
     expect(settled).toBe(false);
@@ -250,8 +237,6 @@ describe("kvLogChannel — purge", () => {
     await write;
 
     expect(settled).toBe(true);
-    // 7 stored keys less maxLogs=3 is 4 deletions, oldest first; the random key suffix is the only
-    // part that cannot be spelled out exactly.
     const remaining = [...stub._store.keys()].sort();
     expect(remaining).toHaveLength(3);
     expect(remaining[0]).toBe("logs||2026-05-31T05:00:00.000Z||aaa");
@@ -274,7 +259,6 @@ describe("kvLogChannel — purge", () => {
 
     const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 3, highWater: 4, purgeProbability: 1 });
 
-    // `write` is declared `void | Promise<void>`; `Promise.resolve` adopts either, rejection included.
     const write = Promise.resolve(channel.write(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" })));
     let settled = false;
     const watched = write.then(
@@ -286,9 +270,6 @@ describe("kvLogChannel — purge", () => {
       },
     );
 
-    // The mirror of "write does not settle until a selected purge settles", on the failing-put path:
-    // the put has already rejected, but the sweep it started is still parked mid-pass. A promise
-    // that stopped covering the purge the instant the put failed would be settled here.
     await flushMicrotasks();
     expect(stub.calls).toStrictEqual(["put", "list", "delete", "delete", "delete"]);
     expect(settled).toBe(false);
@@ -296,7 +277,6 @@ describe("kvLogChannel — purge", () => {
     stub.releaseDeletes();
     await watched;
 
-    // Covered everything, and still rejects — but only for the record write itself.
     expect(settled).toBe(true);
     await expect(write).rejects.toThrow("kv down");
     expect([...stub._store.keys()].sort()).toStrictEqual([
@@ -316,7 +296,6 @@ describe("kvLogChannel — purge", () => {
 
     await channel.write(makeRecord());
 
-    // All original plus the new one; nothing purged
     expect(stub._store.size).toBe(11);
   });
 });
@@ -538,7 +517,6 @@ describe("kvLogChannel — purge error isolation", () => {
 
     const channel = kvLogChannel(throwingKv, { prefix: "logs", purgeProbability: 1 });
 
-    // Must resolve — purge error must be swallowed, not propagated to caller
     await expect(channel.write(makeRecord())).resolves.toBeUndefined();
   });
 });

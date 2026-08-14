@@ -3,11 +3,6 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { Toolbar } from "./toolbar";
 
-/**
- * `Toolbar` driven through the scope `ui/core/client` registers — the whole path a consumer gets,
- * from SSR markup to keyboard behaviour, with no test-only wiring in between.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
@@ -16,7 +11,6 @@ declare global {
 
 const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeCoreClient: "./ui/core/client" } };
 
-/** Real SSR markup, flanked by plain buttons so "one Tab stop" is falsifiable. */
 async function pageMarkup(orientation?: "horizontal" | "vertical"): Promise<string> {
   const toolbar = await render(
     Toolbar({
@@ -74,7 +68,6 @@ test.describe("Toolbar — one Tab stop", () => {
     await page.keyboard.press("Tab");
     expect(await focusedId(page)).toBe("bold");
     await page.keyboard.press("Tab");
-    // Four focusable items inside; without roving tabindex this would be `search`.
     expect(await focusedId(page)).toBe("after");
   });
 
@@ -94,8 +87,6 @@ test.describe("Toolbar — arrow navigation", () => {
     await start(page);
 
     await page.focus("#bold");
-    // End is pressed from a button, not from `#search`: inside a text field End belongs to the
-    // caret, which the `Toolbar.Input` cases below pin separately.
     await page.keyboard.press("End");
     expect(await focusedId(page)).toBe("docs");
     await page.keyboard.press("ArrowRight");

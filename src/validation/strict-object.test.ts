@@ -2,20 +2,13 @@ import { describe, expect, it } from "bun:test";
 import { strictObject } from "./strict-object";
 import { v } from "./validation";
 
-/**
- * A prototype-less bag with `keys` as own properties.
- *
- * Built by assignment rather than as an object literal, deliberately: `{ __proto__: "x" }` is the
- * literal's prototype-setter syntax and produces no own key at all, so a test written that way would
- * pass while asserting nothing.
- */
+// Built by assignment, not a literal: `{ __proto__: "x" }` is prototype-setter syntax and produces no own key at all.
 function bag(keys: Readonly<Record<string, unknown>>): Record<string, unknown> {
   const body: Record<string, unknown> = Object.create(null);
   for (const key of Object.keys(keys)) body[key] = keys[key];
   return body;
 }
 
-/** A bag carrying `name` plus one extra own key, which is the shape every undeclared-key case needs. */
 function bagWithExtra(extra: string): Record<string, unknown> {
   const body: Record<string, unknown> = Object.create(null);
   body.name = "Jane";
@@ -31,7 +24,6 @@ function issuesFor(schema: v.GenericSchema, input: unknown): v.BaseIssue<unknown
 
 const NameSchema = strictObject({ name: v.string() });
 
-/** Every `Object.prototype` member reachable as a form field name. */
 const INHERITED_NAMES = [
   "__proto__",
   "constructor",
@@ -76,8 +68,6 @@ describe("strictObject", () => {
     });
 
     it(`lets v.strictObject silently drop an undeclared ${inherited}, which is what this wrapper exists to fix`, () => {
-      // The contrast, stated once per name: `key in schema.entries` walks `Object.prototype`, so raw
-      // valibot reads every inherited name as declared and strips it rather than refusing it.
       const result = v.safeParse(v.strictObject({ name: v.string() }), bagWithExtra(inherited));
       expect(result.success).toBe(true);
       expect(result.success && Object.keys(result.output)).toEqual(["name"]);
@@ -100,18 +90,11 @@ describe("strictObject", () => {
     const Schema = strictObject({ name: v.string(), constructor: v.optional(v.string()) });
     const result = v.safeParse(Schema, bag({ name: "Jane" }));
     expect(result.success).toBe(true);
-    // Ownership, not `=== undefined`: valibot's output object is `Object.prototype`-backed, so
-    // reading `.constructor` off it resolves to the inherited function whether the optional fired or
-    // not, and an assertion phrased that way could not fail.
     expect(result.success && Object.hasOwn(result.output, "constructor")).toBe(false);
     expect(result.success && Object.keys(result.output)).toEqual(["name"]);
   });
 });
 
-/**
- * The bag is replaced at construction rather than patched afterwards, and these are the cases that
- * buys: a finished-schema patch would be lost the moment the schema was composed into anything.
- */
 describe("strictObject — survives composition", () => {
   it("refuses an inherited name while nested inside v.object", () => {
     const Schema = v.object({ inner: strictObject({ name: v.string() }) });
@@ -138,8 +121,6 @@ describe("strictObject — survives composition", () => {
 
   it("refuses an inherited name as a v.union option", () => {
     const Schema = v.union([strictObject({ name: v.string() }), strictObject({ email: v.string() })]);
-    // A union reports its own refusal rather than the option's, so the assertion is that no option
-    // accepted the bag — which is exactly what raw `v.strictObject` gets wrong below.
     expect(issuesFor(Schema, bagWithExtra("valueOf")).map((issue) => issue.type)).toEqual(["union"]);
   });
 

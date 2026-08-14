@@ -62,8 +62,6 @@ describe("createApp", () => {
       expect(logs.length).toBeGreaterThan(0);
       const parsed = JSON.parse(logs[0]!) as Record<string, unknown>;
       expect(parsed.prefix).toBe("app");
-      // The console sink gets the full serialized error, not just the message: the stack is what
-      // makes a 500 diagnosable, and this channel is the worker log stream, never the HTTP client.
       const error = parsed.error as SerializedError;
       expect(error.message).toBe("secret db error");
       expect(error.name).toBe("Error");
@@ -267,7 +265,6 @@ describe("a throwing app.use guard stays inside the chain", () => {
     const res = await app.request("/");
     expect(res.status).toBe(500);
     expect(await res.text()).toContain("An unexpected error occurred.");
-    // Proves `applyHeaders` ran: the guard's queued header only reaches the response through it.
     expect(res.headers.get("x-request-id")).not.toBeNull();
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");

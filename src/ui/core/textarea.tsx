@@ -12,6 +12,7 @@ const TEXTAREA_BASE = "w-full rounded-lg border border-input bg-background px-3 
 const TEXTAREA_FOCUS = "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20";
 const TEXTAREA_DISABLED = "disabled:cursor-not-allowed disabled:opacity-50 resize-y";
 
+/** A styled multi-line `<textarea>`, wired to a `FieldDescriptor` when one is passed. @public */
 export const Textarea: FC<PropsWithChildren<TextareaProps>> = ({ class: cls, field, children, "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 

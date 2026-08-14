@@ -4,10 +4,6 @@ import { mount } from "../client/browser-test-helper";
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { Tabs } from "./tabs";
 
-/**
- * `Tabs` driven through the scope `ui/core/client` registers.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
@@ -55,8 +51,6 @@ function tabsMarkup({ activation, orientation, selected = "a" }: Fixture = {}): 
   );
 }
 
-/** Which panels are visible, and which tab claims selection — checked together so ARIA and the DOM
- * can never be asserted apart. */
 function tabsState(page: Page) {
   return page.evaluate(() => ({
     selected: [...document.querySelectorAll("[role='tab']")].filter((el) => el.getAttribute("aria-selected") === "true").map((el) => el.id),
@@ -81,7 +75,6 @@ test.describe("Tabs", () => {
     await page.keyboard.press("Tab");
     expect(await focusedId(page)).toBe("t-a");
     await page.keyboard.press("Tab");
-    // Next stop is the selected panel, not the second tab.
     expect(await focusedId(page)).toBe("p-a");
   });
 
@@ -134,11 +127,6 @@ test.describe("Tabs", () => {
   });
 });
 
-/**
- * The roving tab stop has to boot onto the *selected* tab. With the selected tab first, a controller
- * that always starts at index 0 looks correct, which is how the marker went missing; every case here
- * therefore selects a tab that is not the first.
- */
 test.describe("Tabs — the boot tab stop follows the selection", () => {
   test("only the selected tab carries the composite marker", async ({ page }) => {
     await mount(page, await tabsMarkup({ selected: "b" }), EXPOSE);
@@ -165,28 +153,13 @@ test.describe("Tabs — the boot tab stop follows the selection", () => {
     await page.keyboard.press("Tab");
     await page.keyboard.press("ArrowRight");
 
-    // Relative to B, the next enabled tab is D (C is disabled). Booting at index 0 would land on B
-    // here and reselect the tab the user was already on.
     expect(await focusedId(page)).toBe("t-d");
     expect(await tabsState(page)).toEqual({ selected: ["t-d"], dataSelected: ["t-d"], visiblePanels: ["p-d"] });
   });
 });
 
-// ─── Tabs across a shadow boundary ───────────────────────────────────────────
-
-/** Which tree a case reads its markup out of — the light document, or the host's open shadow root. */
 type Tree = "light" | "shadow";
 
-/**
- * Tab strip **and** panel state, read out of whichever tree the case mounted into.
- *
- * The panel half is the whole point of this pair and is why the file's own `tabsState` is not reused.
- * A document-scoped `getElementById` cannot see a panel id that lives in a shadow tree, so `panelFor`
- * answered `null` and `select`'s `if (!panel) continue` fired — **after** the tab-side writes. The tab
- * strip therefore kept updating perfectly while every panel stayed frozen at its server-rendered
- * `hidden` and `data-selected`. Asserting only "the selected tab moved" passes against exactly the
- * defect these two cases exist to catch.
- */
 function tabsStateIn(page: Page, tree: Tree) {
   return page.evaluate((where) => {
     const root: ParentNode | null | undefined = where === "shadow" ? document.querySelector("#host")?.shadowRoot : document;
@@ -202,8 +175,6 @@ function tabsStateIn(page: Page, tree: Tree) {
 }
 
 test.describe("Tabs — panels follow the selection inside a shadow root", () => {
-  /** Attach the template's contents to a shadow root, then resume — whose eager pass descends into
-   * open roots at any depth, so a tabs scope inside one is discovered like any other. */
   async function attachAndResume(page: Page, hostSelector: string): Promise<void> {
     await page.evaluate((selector) => {
       const host = document.querySelector(selector);
@@ -219,8 +190,6 @@ test.describe("Tabs — panels follow the selection inside a shadow root", () =>
     await mount(page, `<div id="host"></div><template id="source">${html}</template>`, EXPOSE);
     await attachAndResume(page, "#host");
 
-    // Asserted, not assumed: it is the precondition that makes this case about a shadow boundary at
-    // all. With the panel ids visible to the document, a document-scoped lookup would pass too.
     expect(await page.evaluate(() => document.getElementById("p-b") === null)).toBe(true);
     expect(await tabsStateIn(page, "shadow")).toEqual({
       selected: ["t-a"],
@@ -229,7 +198,6 @@ test.describe("Tabs — panels follow the selection inside a shadow root", () =>
       selectedPanels: ["p-a"],
     });
 
-    // Automatic activation, so reaching the tab is what selects it — the same path an arrow key takes.
     await page.focus("#t-b");
 
     expect(await tabsStateIn(page, "shadow")).toEqual({
@@ -241,8 +209,6 @@ test.describe("Tabs — panels follow the selection inside a shadow root", () =>
   });
 
   test("the identical markup in the light DOM shows the panel its selection names", async ({ page }) => {
-    // The parity half. Without it a regression that broke the ordinary document path could hide
-    // behind a green shadow case, because the shadow lookup and the document lookup are one call.
     await mount(page, await tabsMarkup(), EXPOSE);
     await start(page);
 

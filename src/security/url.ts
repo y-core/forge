@@ -1,7 +1,7 @@
 import { v } from "../validation/mod";
 import type { BaseUrlConfig, DeriveAllowedOriginsOptions, ParsedUrl } from "./types";
 
-/** Valibot schema: validates a URL string and transforms it into a BaseUrlConfig with allowedOrigins. Rejects non-https URLs (http://localhost is allowed for local development). @public */
+/** Valibot schema transforming an https URL string (or `http://localhost`) into a `BaseUrlConfig`. @public */
 export const BaseUrlConfigSchema = v.pipe(
   v.string(),
   v.url(),
@@ -19,12 +19,7 @@ export const BaseUrlConfigSchema = v.pipe(
   }),
 );
 
-/**
- * Derives the list of allowed origins for a given parsed URL.
- * Always includes the base origin. Pass `{ includeWww: true }` to also add the www-prefixed
- * variant for non-www hostnames.
- * @public
- */
+/** Derives the allowed origins for a parsed URL, optionally adding the www-prefixed variant. @public */
 export function deriveAllowedOrigins(parsed: ParsedUrl, options: DeriveAllowedOriginsOptions = {}): string[] {
   const origins = [parsed.origin];
   if (options.includeWww && !parsed.hostname.startsWith("www.")) {

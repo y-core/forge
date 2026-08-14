@@ -15,7 +15,6 @@ describe("fetchURL()", () => {
     if (dest) {
       const file = Bun.file(dest);
       if (await file.exists()) {
-        // Use existsSync via the non-mocked path — just attempt unlink via shell
         try {
           await Bun.write(dest, ""); // truncate to allow collection
         } catch {
@@ -28,7 +27,7 @@ describe("fetchURL()", () => {
 
   it("does not call fetch when file already exists", async () => {
     dest = join(tmpdir(), `forge-assets-skip-${Date.now()}`);
-    // Use Bun.write to bypass any node:fs.writeFileSync mock from other test files
+    // Bun.write bypasses any node:fs.writeFileSync mock left installed by another test file.
     await Bun.write(dest, "existing content");
 
     savedFetch = globalThis.fetch;
@@ -46,7 +45,6 @@ describe("fetchURL()", () => {
     dest = join(tmpdir(), `forge-assets-force-${Date.now()}`);
     await Bun.write(dest, "stale");
 
-    // Force re-download — will throw because URL is unreachable
     await expect(fetchURL("https://this.url.does.not.exist.invalid/file", dest, { force: true })).rejects.toThrow();
   });
 });

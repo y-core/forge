@@ -314,8 +314,8 @@ vacuously because the CLI is installed but the thing it needs is not. Such a pre
 command of its own to answer for it.
 
 ```ts
-if (!probeOk("bun", ["run", "scripts/probe-browser.ts"])) {
-  throw new Error("chromium not found — bun run test:install");
+if (!probeOk("docker", ["compose", "ps", "--status=running", "--quiet"])) {
+  throw new Error("no running container — docker compose up -d");
 }
 ```
 

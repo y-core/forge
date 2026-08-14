@@ -10,8 +10,6 @@ import type {
   StorePutOptions,
 } from "./types";
 
-// ── Shared in-memory backend factory ──────────────────────────────────────────
-
 function makeMemoryBackend(name = "memory"): ObjectStorageBackend & { _store: Map<string, StoredObject & { _body?: string }> } {
   const _store = new Map<string, StoredObject & { _body?: string }>();
 
@@ -63,8 +61,6 @@ function makeMemoryBackend(name = "memory"): ObjectStorageBackend & { _store: Ma
 
   return Object.assign(backend, { _store });
 }
-
-// ── Backend-swap equivalence proof ────────────────────────────────────────────
 
 function runStoreContract(backendA: ObjectStorageBackend, backendB: ObjectStorageBackend) {
   it("put returns a StoredObject", async () => {
@@ -124,8 +120,6 @@ describe("createObjectStore — memoryBackend B (backend-swap equivalence)", () 
   runStoreContract(makeMemoryBackend("memory-b"), makeMemoryBackend("memory-b"));
 });
 
-// ── Prefix namespacing ─────────────────────────────────────────────────────────
-
 describe("createObjectStore — prefix namespacing", () => {
   it("prepends prefix to stored keys", async () => {
     const backend = makeMemoryBackend();
@@ -148,8 +142,6 @@ describe("createObjectStore — prefix namespacing", () => {
     expect(store.backend).toBe(backend);
   });
 });
-
-// ── Path traversal rejection ───────────────────────────────────────────────────
 
 describe("createObjectStore — key normalization (traversal prevention)", () => {
   it("rejects get with a leading slash", async () => {
@@ -204,8 +196,6 @@ describe("createObjectStore — key normalization (traversal prevention)", () =>
   });
 });
 
-// ── serveObject HTTP boundary ──────────────────────────────────────────────────
-
 describe("createObjectStore — serveObject", () => {
   it("returns 400 for a key with a leading slash (before touching the backend)", async () => {
     let backendCalled = false;
@@ -248,8 +238,6 @@ describe("createObjectStore — serveObject", () => {
     expect(res.status).toBe(200);
   });
 });
-
-// ── Content-type auto-inference ────────────────────────────────────────────────
 
 describe("createObjectStore — content-type inference on put", () => {
   it("infers content-type from key extension when not provided", async () => {

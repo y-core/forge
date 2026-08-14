@@ -54,13 +54,7 @@ describe("routePaths", () => {
   });
 });
 
-/**
- * The other half of the `routePaths` pattern. `app.use` is **path**-scoped only — dispatch never
- * consults the method — so a `routePaths(routes, { method: "POST" })` loop attaches middleware to
- * those paths for *every* method they serve.
- */
 describe("forMethod", () => {
-  /** A guard with a visible effect, so "did it run" is a status code rather than a spy. */
   const deny: Middleware = () => new Response("denied", { status: 403 });
 
   function bothMethodsApp(): Forge {
@@ -85,7 +79,6 @@ describe("forMethod", () => {
     const app = bothMethodsApp();
     app.use("/api/thing", deny);
 
-    // Pinned as the contrast case: without the wrapper the GET is guarded too.
     expect((await app.request("/api/thing")).status).toBe(403);
     expect((await app.request("/api/thing", { method: "POST" })).status).toBe(403);
   });
@@ -117,11 +110,6 @@ describe("forMethod", () => {
     expect(ran).toBe(1);
   });
 
-  /**
-   * The motivating case. `routePaths` includes an `ANY` route under a concrete method filter — by
-   * design, since `ANY` really does serve POST — so the documented `csrfGuard` loop used to guard
-   * `/health` on GET.
-   */
   it("keeps a routePaths(POST) loop off the GET half of an ANY route", async () => {
     const routes = route({ health: new Route("ANY", "/health"), save: post("/api/save") });
     expect(routePaths(routes, { method: "POST" })).toEqual(["/health", "/api/save"]);

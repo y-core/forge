@@ -6,17 +6,12 @@ export function importSigningKey(hexSecret: string): Promise<CryptoKey> {
   return importHmacKeyFromHex(hexSecret, "Signing secret");
 }
 
-/** Length-prefixes the key so the `key`/`exp` boundary is unambiguous (defense-in-depth against
- *  a key crafted to contain the `|` delimiter). Both signing and verification use this form. */
+/** Length-prefixes the key so the `key`/`exp` boundary is unambiguous against a key crafted to contain the `|` delimiter. */
 function signingPayload(objectKey: string, exp: number): string {
   return `${objectKey.length}:${objectKey}|${exp}`;
 }
 
-/**
- * Creates a signed URL for GET access to an object.
- * HMAC-SHA-256 over `${key.length}:${key}|${exp}`.
- * Appends `?key=`, `?exp=`, and `?sig=` to `baseUrl`. @public
- */
+/** Creates a signed URL for GET access to an object. @public */
 export async function createSignedObjectUrl(
   signingKey: CryptoKey,
   baseUrl: string,
@@ -34,10 +29,7 @@ export async function createSignedObjectUrl(
   return url.toString();
 }
 
-/**
- * Verifies a signed object URL.
- * Checks expiry first, then constant-time HMAC comparison. @public
- */
+/** Verifies a signed object URL, checking expiry then comparing the HMAC in constant time. @public */
 export async function verifySignedObjectUrl(signingKey: CryptoKey, url: string): Promise<SignedUrlOk | SignedUrlError> {
   let parsed: URL;
   try {

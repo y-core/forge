@@ -1,3 +1,4 @@
+export type { LoadConfigOptions } from "./config";
 export { defineAssetsConfig, env, flag, loadConfig } from "./config";
 export type {
   AssetsConfig,

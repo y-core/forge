@@ -167,7 +167,6 @@ describe("utf8Encode / utf8Decode", () => {
   });
 
   it("produces correct byte length for multi-byte input", () => {
-    // "日本語" encodes to 9 bytes in UTF-8 (3 bytes per CJK character)
     expect(utf8Encode("日本語").byteLength).toBe(9);
   });
 });

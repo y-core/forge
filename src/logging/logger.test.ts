@@ -124,8 +124,6 @@ describe("createLogger", () => {
     const log = createLogger("flush-failure", { channels: [failing, working] });
     log.info("trigger");
 
-    // `allSettled`, so the failing channel neither reaches the caller nor short-circuits the wait on
-    // the working one — logging must not fail the work it is describing.
     await expect(log.flush()).resolves.toBeUndefined();
     expect(records.map((r) => r.message)).toStrictEqual(["trigger"]);
   });
@@ -269,7 +267,7 @@ describe("createLogger — child()", () => {
 
     child.info("from child");
     order.push("before-flush");
-    await log.flush(); // flush on parent drains child writes too
+    await log.flush();
     order.push("after-flush");
 
     expect(order).toStrictEqual(["before-flush", "async", "after-flush"]);
@@ -362,13 +360,9 @@ describe("createLogger — child()", () => {
   });
 });
 
-/**
- * The pending-buffer cap in `logger.ts`. Mirrored here because it is module-private; the eviction
- * case below is the only test that needs to cross it.
- */
+// Mirrors the module-private pending-buffer cap in `logger.ts`.
 const PENDING_CAP = 1000;
 
-/** A channel whose write always rejects — the shape `kvLogChannel` takes when its binding is gone. */
 function failingChannel(error: unknown): LogChannel {
   return { write: () => Promise.reject(error) };
 }
@@ -383,23 +377,10 @@ function collector(): { errors: unknown[]; onChannelError: (error: unknown) => v
   };
 }
 
-/**
- * A `Promise` that counts the handlers attached to *this* instance.
- *
- * `dispatch` observes a failing write with a **sibling** `.catch` and keeps the original promise in
- * `pending`. Replacing that with a chain — pushing `result.catch(...)` in place of `result` — leaves
- * every value and every wall-clock timing identical, so no ordering assertion can separate the two
- * forms. The one externally visible difference is *which promise `flush` ends up awaiting*, and
- * counting attachments on the original is how that becomes observable: the sibling form has `flush`
- * attach a second handler to the write itself, the chained form attaches it to the derived promise.
- *
- * `noThenProperty` is suppressed below. That rule guards against an object accidentally becoming
- * thenable; this is a real `Promise` subclass that is already thenable, whose `then` delegates to
- * `super` unchanged and only increments a counter on the way through.
- */
+/** A `Promise` that counts the handlers attached to this instance. */
 class TrackedPromise<T> extends Promise<T> {
   attachments = 0;
-  // biome-ignore lint/suspicious/noThenProperty: deliberate override on a Promise subclass — see above.
+  // biome-ignore lint/suspicious/noThenProperty: deliberate override on a real Promise subclass.
   override then<TResult1 = T, TResult2 = never>(
     onFulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | null | undefined,
     onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null | undefined,
@@ -508,13 +489,10 @@ describe("createLogger — onChannelError and the flush contract", () => {
 
     log.info("trigger");
 
-    // One attachment so far: the sibling observer `dispatch` added to the write.
     expect(write.attachments).toBe(1);
 
     await log.flush();
 
-    // Two: `flush` awaited the original write. A chained `.catch` would leave this at 1, because
-    // `pending` would hold the derived promise and `flush` would await that instead.
     expect(write.attachments).toBe(2);
     expect(errors).toStrictEqual([boom]);
   });
@@ -524,8 +502,6 @@ describe("createLogger — onChannelError and the flush contract", () => {
     const { errors, onChannelError } = collector();
     let writes = 0;
     const channel: LogChannel = {
-      // The first write is deliberately slow; every later one rejects at once. That makes the
-      // eviction observable: `flush` returns without it, because it is no longer in `pending`.
       write: () => {
         const index = writes++;
         const error = new Error(`write ${index} failed`);
@@ -538,16 +514,13 @@ describe("createLogger — onChannelError and the flush contract", () => {
     };
     const log = createLogger("svc", { channels: [channel], onChannelError });
 
-    // One past the cap, so the oldest entry — the slow first write — is spliced out of `pending`.
     for (let i = 0; i <= PENDING_CAP; i++) log.info(`record ${i}`);
 
     await log.flush();
 
-    // `flush` did not wait for the evicted write: it reported only the writes still tracked.
     expect(errors).toHaveLength(PENDING_CAP);
     expect(errors.includes(raised[0])).toBe(false);
 
-    // The hook is the only thing left watching it — before this surface existed, it failed silently.
     await new Promise<void>((resolve) => setTimeout(resolve, 120));
 
     expect(errors).toHaveLength(PENDING_CAP + 1);
@@ -570,7 +543,6 @@ describe("createLogger — a throwing onChannelError", () => {
     await expect(log.flush()).resolves.toBeUndefined();
     expect(calls).toBe(1);
 
-    // The broken reporter is not latched — a later record still reaches it.
     log.error("again");
     await expect(log.flush()).resolves.toBeUndefined();
     expect(calls).toBe(2);
@@ -587,8 +559,6 @@ describe("createLogger — a throwing onChannelError", () => {
     log.info("trigger");
     await log.flush();
 
-    // A caller-supplied hook replaces the default reporter outright; its failure is absorbed, not
-    // re-reported, so nothing reaches either console stream.
     expect(capturedErrors).toStrictEqual([]);
     expect(captured).toStrictEqual([]);
   });
@@ -603,7 +573,6 @@ describe("createLogger — the default channel-error reporter", () => {
     await log.flush();
 
     expect(capturedErrors).toHaveLength(1);
-    // console.error, not console.log — the report stays distinguishable from the log stream.
     expect(captured).toStrictEqual([]);
 
     const report = JSON.parse(capturedErrors[0]!);
@@ -612,7 +581,6 @@ describe("createLogger — the default channel-error reporter", () => {
     expect(report.prefix).toBe("logger");
     expect(report.message).toBe("log channel write failed");
     expect(new Date(report.timestamp).toISOString()).toBe(report.timestamp);
-    // An Error is serialized rather than collapsing to `{}` the way JSON.stringify leaves it.
     expect(report.error).toStrictEqual({ name: "Error", message: "kv down", stack: boom.stack });
     expect(JSON.stringify(report.error)).not.toBe("{}");
   });
@@ -680,14 +648,7 @@ describe("createLogger — child() inherits the error surface", () => {
   });
 });
 
-/**
- * A channel whose write throws **synchronously** — the shape `consoleChannel` takes when `data`
- * holds a cyclic structure, because `JSON.stringify` throws rather than rejecting.
- *
- * The distinction from `failingChannel` above is the whole point of this group: a rejection hands
- * `dispatch` a promise it can attach an observer to, a throw hands it nothing at all. Absorbing the
- * first says nothing about the second.
- */
+// Throws *synchronously*, as `consoleChannel` does on cyclic `data` — no promise to observe.
 function throwingChannel(error: unknown): LogChannel {
   return {
     write: () => {
@@ -704,7 +665,6 @@ describe("createLogger — a synchronously throwing channel", () => {
 
     expect(() => log.info("persisted?")).not.toThrow();
 
-    // Reported during `dispatch`, not on settle — there is no promise, so nothing defers it.
     expect(errors).toStrictEqual([boom]);
     await expect(log.flush()).resolves.toBeUndefined();
     expect(errors).toStrictEqual([boom]);
@@ -725,8 +685,6 @@ describe("createLogger — a synchronously throwing channel", () => {
     expect(() => log.warn("fan out")).not.toThrow();
     await log.flush();
 
-    // The `try` sits inside the per-channel loop, so the first throw neither abandons the fan-out nor
-    // reorders it: both throws are reported in channel order and the middle channel still wrote.
     expect(errors).toStrictEqual([first, second]);
     expect(records.map((r) => r.message)).toStrictEqual(["fan out"]);
   });
@@ -740,10 +698,6 @@ describe("createLogger — a synchronously throwing channel", () => {
     expect(() => log.error("nothing to track")).not.toThrow();
     expect(errors).toStrictEqual([first, second]);
 
-    // The `push` stays on the far side of the throw: a synchronous failure produces no promise, so
-    // `pending` gains no entry and `flush` keeps the "no pending promises resolves immediately"
-    // property — it settles within the microtask queue, before any macrotask can run. A bogus entry
-    // would be a real pending write, and this race would lose it.
     const raced = await Promise.race([
       log.flush().then(() => "flush"),
       new Promise<string>((resolve) => {
@@ -773,14 +727,12 @@ describe("createLogger — a synchronously throwing channel", () => {
 
     log.info("both modes");
 
-    // The throw is already reported; the rejection is not, because its write has not settled.
     expect(errors).toStrictEqual([thrown]);
 
     order.push("before-flush");
     await expect(log.flush()).resolves.toBeUndefined();
     order.push("after-flush");
 
-    // `flush` waited for the rejecting write only — the throw contributed nothing to wait on.
     expect(order).toStrictEqual(["before-flush", "write-settled", "after-flush"]);
     expect(errors).toStrictEqual([thrown, rejected]);
   });
@@ -795,8 +747,6 @@ describe("createLogger — a synchronously throwing channel", () => {
       },
     });
 
-    // Two throws in sequence on one synchronous call stack — the channel's and the hook's. Neither
-    // reaches the caller, and neither disables the hook for the next record.
     expect(() => log.info("trigger")).not.toThrow();
     await expect(log.flush()).resolves.toBeUndefined();
     expect(calls).toBe(1);
@@ -805,8 +755,6 @@ describe("createLogger — a synchronously throwing channel", () => {
     await expect(log.flush()).resolves.toBeUndefined();
     expect(calls).toBe(2);
 
-    // A caller-supplied hook replaces the default reporter outright, so its own failure is absorbed
-    // rather than re-reported on either console stream.
     expect(capturedErrors).toStrictEqual([]);
     expect(captured).toStrictEqual([]);
   });

@@ -1,5 +1,7 @@
+/** A flat map of `HX-*` response headers. @public */
 export type HxResponseHeaders = Record<string, string>;
 
+/** The htmx response directives `hxHeaders` can emit. @public */
 export interface HxResponseProps {
   redirect?: string;
   refresh?: boolean;
@@ -12,6 +14,7 @@ export interface HxResponseProps {
   reswap?: string;
 }
 
+/** Converts typed htmx response directives into an `HX-*` header map, omitting unset values. @public */
 export function hxHeaders(p: HxResponseProps): HxResponseHeaders {
   const out: HxResponseHeaders = {};
   const add = (key: string, val: string | undefined) => {

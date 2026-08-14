@@ -1,10 +1,3 @@
-/** cf-env-registry.test.ts — the binding-kind data table + default policy.
- *
- *  Exercises the pure data (`cf-env-registry.ts`): `REGISTRY` coverage of the key
- *  wrangler binding kinds (valid name-field/shape per row, wrangler emission order)
- *  and `DEFAULT_OPTIONS` (an empty, generic policy carrying the presence/shape floor).
- */
-
 import { describe, expect, it } from "bun:test";
 import { DEFAULT_OPTIONS, REGISTRY } from "./cf-env-registry";
 

@@ -1,15 +1,4 @@
-/**
- * Builds a `Request` for handler tests, replacing hand-rolled `new Request("http://test/…", {…})`
- * boilerplate. A relative `path` resolves against `baseUrl` (default `http://test`). Supply exactly
- * one body helper: `formData` (url-encoded record or a `FormData`), `json` (JSON body), or raw `body`.
- * The method defaults to `POST` when a body is supplied, else `GET`.
- *
- * @example
- * ```typescript
- * const req = buildRequest("/settings", { method: "POST", formData: { theme: "dark" } });
- * ```
- * @public
- */
+/** Builds a `Request` for handler tests from a path plus one of `formData`, `json`, or raw `body`. @public */
 export function buildRequest(
   path: string,
   opts?: {

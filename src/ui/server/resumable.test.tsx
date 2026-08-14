@@ -20,7 +20,6 @@ describe("Resumable", () => {
     );
     expect(out).toBe('<div data-scope="s" data-state="{&quot;query&quot;:&quot;a&quot;,&quot;n&quot;:2}">y</div>');
 
-    // Round-trip: the attribute value (HTML-entity-decoded) parses back to the original state.
     const decoded = '{"query":"a","n":2}';
     expect(JSON.parse(decoded)).toEqual(state);
   });

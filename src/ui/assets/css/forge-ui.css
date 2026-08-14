@@ -28,7 +28,12 @@
    - a **CSS Anchor Positioning binding**, where the `anchor-name` on a trigger and the
      `position-anchor` on a panel are two halves of one relationship declared together;
    - a **state selector spanning two elements** — `:has(> …:popover-open)`;
-   - a **`@supports` fallback**, which no utility has a syntax for.
+   - a **`@supports` fallback**, which no utility has a syntax for;
+   - a **`forced-colors` restoration** — the obligation a component takes on the moment it paints a
+     control the UA used to draw. Tailwind has a `forced-colors:` variant, so this one is a judgement
+     rather than an impossibility: the block is six declarations of system colour keywords across two
+     components and two states, and split across two `class` attributes it would be unreadable and
+     silently half-applied the first time one of them changed.
 
    Everything else forge draws is a Tailwind utility in the component's own `class`, where a reader
    looks first and a caller can override it.
@@ -49,6 +54,8 @@
        6. Dialog ................ Dialog               — src/ui/core/dialog.tsx
        7. Slider ................ Slider               — src/ui/core/slider.tsx
        8. Navbar ................ Navbar               — src/ui/chrome/navbar.tsx
+       9. Forced colors ......... CheckboxGroup, RadioGroup — src/ui/core/checkbox-group.tsx,
+                                                              src/ui/core/radio-group.tsx
 
    **Do not put general-purpose utilities here.** Tailwind supplies those. Every block is tied to one
    named consumer, and a block whose consumer is gone should be deleted with it.
@@ -434,6 +441,49 @@
    the rule rather than a second rule. See src/ui/chrome/navbar.tsx. */
 [data-slot~="navbar"]::details-content {
   content-visibility: visible;
+}
+
+/* ══ 9. Forced colors — CheckboxGroup, RadioGroup ═════════════════════════
+   `CheckboxGroup.Item` and `RadioGroup.Item` set `appearance-none` and paint their own box, which
+   **forfeits WCAG 1.4.11's carve-out** for a component "determined by the user agent and not
+   modified by the author". This block is what forge owes in exchange, and it is not a formality: in
+   forced-colors mode the UA overrides author colours with the user's palette, so `--input` and
+   `--primary` both collapse to the same forced value and a checked box becomes indistinguishable
+   from an empty one. Windows High Contrast users would get two identical squares.
+
+   `forced-color-adjust: none` opts these two elements out of that override, and every value below is
+   a **system colour keyword** rather than a token — which is the point. Opting out is safe only
+   while the replacement still comes from the user's own palette; a `--primary` here would be forge
+   overruling a preference the whole mode exists to honour.
+
+   `Highlight` is the checked fill because it is the palette's "selected" colour, which is what a
+   checked control is. The focus outline is restated because a `ring` is a `box-shadow`, and shadows
+   do not render in forced-colors mode at all — so `focus-visible:ring-2` alone leaves a focused
+   control with no visible indicator here.
+
+   Both controls take the same rules: their difference is `border-radius`, which forced colors does
+   not touch. */
+@media (forced-colors: active) {
+  [data-slot~="checkbox-group-input"],
+  [data-slot~="radio-group-input"] {
+    forced-color-adjust: none;
+    background-color: Canvas;
+    border-color: CanvasText;
+  }
+  [data-slot~="checkbox-group-input"]:checked,
+  [data-slot~="radio-group-input"]:checked {
+    background-color: Highlight;
+    border-color: Highlight;
+  }
+  [data-slot~="checkbox-group-input"]:disabled,
+  [data-slot~="radio-group-input"]:disabled {
+    border-color: GrayText;
+  }
+  [data-slot~="checkbox-group-input"]:focus-visible,
+  [data-slot~="radio-group-input"]:focus-visible {
+    outline: 2px solid CanvasText;
+    outline-offset: 2px;
+  }
 }
 
 }

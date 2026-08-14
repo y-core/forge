@@ -44,9 +44,6 @@ describe("matchOrigin", () => {
     expect(matchOrigin("https://sub.api.example.com", ["https://*.example.com"])).toBe(false);
   });
 
-  // W1-2/W1-3: the wildcard expanded to `[^.]+`, which matches `/`, `:` and `@`. An attacker
-  // origin only needs one of those delimiters before the trusted suffix to satisfy the pattern
-  // and get reflected into Access-Control-Allow-Origin.
   describe("wildcard delimiter confusion", () => {
     it("returns false when a path separator precedes the trusted suffix", () => {
       expect(matchOrigin("https://a/b.example.com", ["https://*.example.com"])).toBe(false);
@@ -73,9 +70,7 @@ describe("matchOrigin", () => {
     });
 
     it("escapes `?` rather than making the previous character optional", () => {
-      // The pattern must contain `*` to reach the regex branch at all. Unescaped, the `?` makes
-      // the preceding `b` optional, so `https://x.a.example.com` would match a pattern that only
-      // ever named `ab.example.com`.
+      // The `*` is what reaches the regex branch; the `?` is the adversarial part of the pattern.
       expect(matchOrigin("https://x.a.example.com", ["https://*.ab?.example.com"])).toBe(false);
       expect(matchOrigin("https://x.ab.example.com", ["https://*.ab?.example.com"])).toBe(false);
     });
@@ -215,7 +210,6 @@ describe("appendVary (via cors middleware)", () => {
     app.use("*", cors({ origins: ["https://example.com"] }));
     mapHandler(app, "GET", "/disallowed", () => new Response("ok", { headers: { Vary: "Accept-Encoding" } }));
     const res = await app.request("/disallowed", { method: "GET", headers: { Origin: "https://evil.com" } });
-    // cors() passes the response through unmodified for disallowed origins
     expect(res.headers.get("Vary")).toBe("Accept-Encoding");
   });
 });

@@ -5,28 +5,6 @@ import { scopeAttrs } from "../contracts/scope-attrs";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
-/**
- * Every variant goes through semantic tokens and re-maps under `.dark` for free — the status four by
- * way of the `--status-*` family, which exists because of the constraint they used to state in
- * hand-written `dark:` pairs.
- *
- * That constraint has not gone away, it has moved into the token names. A status hue must stay
- * red / blue / emerald / yellow whatever the application has pointed `--destructive` at, so the
- * obvious-looking `bg-destructive text-destructive-foreground` is still wrong: `--destructive` is the
- * *app's* destructive colour and an app may legitimately re-point it to its brand — a warning that is
- * orange rather than yellow is an ordinary thing to want — and a failure panel that follows it stops
- * meaning "failed". `--status-danger-*` is forge's, and no scheme or brand swap moves it.
- *
- * `-subtle` is the panel tier: `Alert`, `Toast` and the two banner strings in `src/http/fragment.ts`
- * all render it. `Badge` takes `-strong` instead, one stop in, because a filled chip starts from a
- * tinted surface rather than from a panel's.
- *
- * **The measured ratios are not here.** They are `TOKEN_CONTRACT` rows in `scripts/contrast-parse.ts`,
- * beside the values they describe and re-checked on every gate run. This comment used to carry them,
- * and carrying them is what let them go wrong: the four numbers it recorded as the light tier were
- * in fact the dark one, and the light tier had never been measured at all. A measurement kept next
- * to prose is a measurement nothing re-reads.
- */
 const variantClasses = {
   default: "border-border bg-muted text-foreground",
   destructive: "border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground",
@@ -74,4 +52,5 @@ const AlertDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, childr
   </div>
 );
 
+/** A callout for a status message, with `Title` and `Description` subcomponents and an optional dismiss button. @public */
 export const Alert = Object.assign(AlertRoot, { Title: AlertTitle, Description: AlertDescription });

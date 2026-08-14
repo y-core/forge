@@ -10,7 +10,6 @@ describe("setPendingHeader / applyPendingHeaders", () => {
 
     const res = applyPendingHeaders(c, new Response("body"));
 
-    // getSetCookie() returns each cookie individually — they must not be comma-joined.
     expect(res.headers.getSetCookie()).toEqual(["session=abc; Path=/; HttpOnly", "theme=dark; Path=/; SameSite=Lax"]);
   });
 
@@ -18,7 +17,6 @@ describe("setPendingHeader / applyPendingHeaders", () => {
     const c = createTestContext(new Request("http://test/"));
     setPendingHeader(c, "content-security-policy", "default-src 'self'");
 
-    // Response already carries a CSP; the pending one must replace it, not stack/comma-join.
     const res = applyPendingHeaders(c, new Response("body", { headers: { "content-security-policy": "default-src 'none'" } }));
 
     expect(res.headers.get("content-security-policy")).toBe("default-src 'self'");

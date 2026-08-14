@@ -1,25 +1,4 @@
 /* Slate — the cool scheme.
-   ─────────────────────────────────────────────────────────────────────────────
-   **Tailwind's hue at Radix's lightness.** Neither source alone was right. Radix's own tinted
-   neutrals are calibrated to sit *under* a saturated accent and only lean toward it — measured at
-   step 11, Radix `slate` is 12 units off neutral where Tailwind's `slate-600` is 39 — and forge has
-   no accent (`--accent-12` aliases `--gray-12`, near-black), so the scheme itself has to carry the
-   identity. Tailwind's ramp carries it, but its eleven stops are not spaced for the twelve roles.
-
-   So each step takes its **lightness** from Radix's scale, which is what the role numbering and every
-   contrast measurement depend on, and its **chroma and hue** from Tailwind's `slate` resampled at
-   that lightness. The step spacing is Radix's; the colour is Tailwind's.
-
-   One property falls out of this that neither source has: every scheme shares a single lightness
-   ramp and differ only in hue, so every audited contrast ratio is the same across them to within
-   0.05 — the widest gap at any audited step is `--muted-foreground` in light: 5.17 gray, 5.19
-   neutral, 5.20 stone, 5.22 slate. Switching scheme cannot move a pair across its floor.
-
-   Steps 1 and 2 are swapped in the light block only, so cards stay raised — see the note beside the
-   scale in theme-base.css.
-
-   A theme file re-declares `--gray-1` … `--gray-12` and `--gray-a1` … `--gray-a12` in both blocks,
-   and nothing else. Every semantic token resolves through those.
 
    @import theme-base.css before this file. */
 :root {
@@ -36,9 +15,6 @@
   --gray-11: #54657e;
   --gray-12: #152034;
 
-  /* Alpha steps — Radix `slateA`, kept as authored. These are low-opacity overlays whose job is to
-     tint whatever is behind them, so the hue only has to be in the right family; see the note beside
-     the alpha scale in theme-base.css for why they are not derived. */
   --gray-a1:  #00005503;
   --gray-a2:  #00005506;
   --gray-a3:  #0000330f;

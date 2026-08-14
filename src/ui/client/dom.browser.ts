@@ -1,15 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { mount } from "./browser-test-helper";
 
-/**
- * The owner-document utilities against the platform that defines them.
- *
- * Every case below pairs the utility with the bare global it replaces and asserts they **disagree**.
- * That pairing is the point: a test that only checked `activeElement(host)` returns the inner button
- * would pass against an implementation that forgot shadow DOM entirely. Asserting that
- * `document.activeElement` reports the *host* at the same moment is what makes the case falsifiable.
- */
-
 declare global {
   interface Window {
     forgeDom: typeof import("./dom");
@@ -38,7 +29,6 @@ test.describe("activeElement", () => {
       return { utility: window.forgeDom.activeElement(document)?.id ?? null, bareGlobal: document.activeElement?.id ?? null };
     });
 
-    // The disagreement IS the assertion: the bare global names the host, the utility names the item.
     expect(result).toEqual({ utility: "inner", bareGlobal: "host" });
   });
 
@@ -93,11 +83,8 @@ test.describe("eventTarget", () => {
   });
 });
 
-/**
- * A `[data-scope]` wrapper whose shadow root holds a button and an `<a href>` pointing at a real
- * origin, so `link.host` is the non-empty string `"example.com"` — an anchor is the one element in
- * the platform whose `host` property is a URL component rather than a shadow host.
- */
+/** A `[data-scope]` wrapper whose shadow root holds a button and an `<a href>` whose `host` is the
+ * non-empty string `"example.com"` — an anchor's `host` is a URL component, not a shadow host. */
 const ANCHOR_SHADOW_FIXTURE = `
   <div data-scope="demo" id="scope"><div id="widget"></div></div>
   <script>
@@ -132,8 +119,6 @@ test.describe("closestAcross", () => {
       });
     });
 
-    // `anchorHost` is asserted, not incidental: it is the truthy value that made the climb step off
-    // the tree onto a string and throw on the next hop.
     expect(result).toEqual({ scope: "scope", anchorHost: "example.com", error: null });
   });
 
@@ -157,9 +142,6 @@ test.describe("closestAcross", () => {
     expect(isNull).toBe(true);
   });
 
-  // The three cases above all climb from an **attached** node, so the `getRootNode()` fallback is
-  // never reached with anything but a Document. Detached is where it bites: the root is the topmost
-  // ancestor *element*, and on an anchor with an absolute URL its `host` is a non-empty string.
   test("terminates on a detached subtree rooted at an <a href> with an absolute URL", async ({ page }) => {
     await mount(page, "<div></div>", EXPOSE);
 
@@ -176,14 +158,11 @@ test.describe("closestAcross", () => {
       }
     });
 
-    // `rootHost` is asserted for the same reason as above: it is the truthy string the unguarded
-    // read stepped onto, throwing `TypeError: current.getRootNode is not a function` next hop.
     expect(result).toEqual({ hit: null, rootHost: "example.com", connected: false, error: null });
   });
 
-  // A *relative* href is no safer here, which is the non-obvious half. An attached anchor's `host`
-  // is `""` only when the URL fails to parse; a detached anchor resolves the relative href against
-  // the document base and reports the page's own origin — truthy, and equally fatal unguarded.
+  // A detached anchor resolves a relative href against the document base and reports the page's own
+  // origin, so a relative href is no safer here than an absolute one.
   test("terminates on a detached subtree rooted at an <a href> with a relative URL", async ({ page }) => {
     await mount(page, "<div></div>", EXPOSE);
 
@@ -230,8 +209,6 @@ test.describe("contains", () => {
     expect(result).toBe(false);
   });
 
-  // `contains` carried the identical unguarded `.host` read, and unlike `closestAcross` it was
-  // recorded nowhere. Same fixture, same failure: a detached subtree under an absolute-URL anchor.
   test("answers no for a detached subtree rooted at an <a href> rather than throwing", async ({ page }) => {
     await mount(page, '<div id="parent"></div>', EXPOSE);
 
@@ -345,7 +322,6 @@ test.describe("asElement", () => {
       return { utility: window.forgeDom.asElement(framed)?.id ?? null, bareGlobal: framed instanceof HTMLElement };
     });
 
-    // The cross-realm constructor check says "not an element" about an element.
     expect(result).toEqual({ utility: "framed", bareGlobal: false });
   });
 
@@ -372,9 +348,6 @@ test.describe("elementById", () => {
       return { utility: window.forgeDom.elementById(wrap, "inner")?.id ?? null, bareGlobal: document.getElementById("inner")?.id ?? null };
     });
 
-    // The disagreement IS the assertion, exactly as for the utilities above. Ids do not cross a shadow
-    // boundary, so a `commandfor` naming a sibling in the same shadow tree resolves to nothing through
-    // the document — and the caller reads that silence as "no such element".
     expect(result).toEqual({ utility: "inner", bareGlobal: null });
   });
 
@@ -387,13 +360,11 @@ test.describe("elementById", () => {
       return { utility: window.forgeDom.elementById(wrap, "target")?.id ?? null, bareGlobal: document.getElementById("target")?.id ?? null };
     });
 
-    // The widening half: nothing about the ordinary case changes, so no existing caller moves.
     expect(result).toEqual({ utility: "target", bareGlobal: "target" });
   });
 
-  // A **detached** subtree is where the duck-typed method test earns its place: `getRootNode()` there
-  // returns the topmost ancestor *element*, which has no `getElementById` at all. A root-type check —
-  // or no check — reaches for a method that is not there and throws.
+  // A detached subtree's `getRootNode()` is its topmost ancestor element, which has no
+  // `getElementById` at all.
   test("falls back to the owner document for a detached subtree, whose root is an Element", async ({ page }) => {
     await mount(page, '<div id="wrap"><button id="target">go</button></div>', EXPOSE);
 
@@ -410,16 +381,12 @@ test.describe("elementById", () => {
       }
     });
 
-    // `rootHasLookup` is asserted, not incidental: it is the whole reason the `typeof` guard exists,
-    // and without it here the case reads as an ordinary fallback rather than as the guard it pins.
-    // Delete the guard and this becomes `TypeError: root.getElementById is not a function`.
     expect(result).toEqual({ rootIsElement: true, rootHasLookup: "undefined", connected: false, found: "target", error: null });
   });
 
   test("answers null for an empty id rather than asking the tree for one", async ({ page }) => {
     await mount(page, '<div id="wrap"><button id="target">go</button></div>', EXPOSE);
 
-    // The shape a caller hands in when the attribute is absent: `el.getAttribute("commandfor") ?? ""`.
     const result = await page.evaluate(() => {
       const wrap = document.querySelector("#wrap");
       return wrap ? window.forgeDom.elementById(wrap, "") : "no wrap";
@@ -456,8 +423,6 @@ test.describe("resume — shadow delegation", () => {
       return seen;
     });
 
-    // Before A3 this was empty: `event.target` reported the scope root, which carries no
-    // `data-on-click`, so the delegated dispatcher found nothing to run.
     expect(calls).toEqual(["act"]);
   });
 });

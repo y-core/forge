@@ -1,22 +1,10 @@
-/**
- * Resumability-lite client runtime.
- *
- * Instead of an eager load-time mount loop, the server marks interactive elements with
- * a `data-on-<event>` action and an enclosing `[data-scope]` carrying serialized state.
- * A single delegated listener resumes a scope on the FIRST interaction with any descendant:
- * it rebuilds `data-state` into signals, runs the scope's `setup` once to bind effects, and
- * dispatches the named action. Zero work runs at page load; cost is O(1) in page size.
- *
- * @public
- */
+/** Resumability-lite client runtime: one delegated listener resumes a `[data-scope]` on the first interaction with any descendant. @public */
 
 import { SCOPE_EVENTS } from "../contracts/scope-events";
 import { closestAcross, eventTarget, ownerDocument } from "./dom";
 import { createSignal, effect, type Signal } from "./signal";
 
-/** Context handed to a scope's `setup` and action handlers.
- * @public
- **/
+/** Context handed to a scope's `setup` and action handlers. @public */
 export interface ResumeContext {
   /** The `[data-scope]` element enclosing the interaction. */
   root: HTMLElement;
@@ -26,52 +14,33 @@ export interface ResumeContext {
   state: Record<string, Signal<unknown>>;
 }
 
-/** A registered scope: one-time setup plus a map of named action handlers. Generic over the
- * action-name union `A` (defaults to `string`, so existing callers infer it from their `on`
- * object literal with no change).
- * @public
- **/
+/** A registered scope: one-time setup plus a map of named action handlers. @public */
 export interface ScopeDefinition<A extends string = string> {
   /** Resume at `resume()` time instead of waiting for the first interaction. */
   eager?: boolean;
-  /** Bind DOM-mutating effects ONCE on first resume (no `el` — not tied to one event).
-   * May return a disposer; if it does, the disposer is called when `resume()`'s teardown runs. */
+  /** Binds DOM-mutating effects once on first resume, optionally returning a disposer. */
   // biome-ignore lint/suspicious/noConfusingVoidType: void in union is intentional — allows implicit-return setups
   setup?: (ctx: Omit<ResumeContext, "el">) => void | (() => void);
-  /** Action handlers keyed by the `data-on-<event>` value. Optional: a `setup`-only scope may omit
-   * it, in which case `registerScope` defaults it to an empty table. */
+  /** Action handlers keyed by the `data-on-<event>` value. */
   on?: Record<A, (ctx: ResumeContext, event: Event) => void>;
 }
 
 const scopes = new Map<string, ScopeDefinition>();
 const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();
-/** Every currently-resumed scope root, mapped to the disposer its `setup` returned (`null` when it
- * returned none). Keyed by root rather than kept as a flat list so one scope can be torn down on its
- * own, which is what an htmx swap needs: the markup it replaces takes its scope with it. */
+/** Every currently-resumed scope root, mapped to the disposer its `setup` returned. Keyed by root so
+ * one scope can be torn down alone, which is what an htmx swap needs. */
 const active = new Map<HTMLElement, (() => void) | null>();
 
-/** Registers a scope's setup + action handlers, keyed to a `data-scope` name. Generic over the
- * action-name union `A`, inferred from the `on` object literal.
- * @public
- **/
+/** Registers a scope's setup and action handlers, keyed to a `data-scope` name. @public */
 export function registerScope<A extends string = string>(name: string, def: ScopeDefinition<A>): void {
   scopes.set(name, { ...def, on: def.on ?? {} } as ScopeDefinition);
 }
 
 let teardown: (() => void) | null = null;
 
-/** Installs one delegated listener per supported event. Idempotent: a second call is a no-op
- *  and returns the same teardown. Returns a disposer that removes all listeners.
- *
- *  `within` names any node in the document to mount on; omit it for the top-level page. It exists so
- *  an app rendered inside an iframe mounts on **its own** document — a bare `document` here would
- *  install the listeners on the wrong realm and every scope would go dead without an error.
- *
- *  Pass a `ShadowRoot` to scan only that subtree, which is what a web component wants when it
- *  resumes its own markup. The delegated listeners still go on the containing document either way:
- *  the events they wait for are composed, so they cross the boundary on their own. @public */
+/** Installs one delegated listener per supported event and returns a disposer; idempotent. @public */
 export function resume(within?: Node): () => void {
-  if (teardown) return teardown; // already mounted — no duplicate listeners
+  if (teardown) return teardown;
   const doc = ownerDocument(within);
   const handlers: Array<[string, EventListener, boolean]> = [];
   for (const type of SCOPE_EVENTS) {
@@ -79,10 +48,7 @@ export function resume(within?: Node): () => void {
     doc.addEventListener(type, handler);
     handlers.push([type, handler, false]);
   }
-  // Native Invoker Commands bridge: one delegated `command` listener routes custom `--action`
-  // commands into the same scope handler table the `data-on-*` events feed. Built-in commands
-  // (no `--` prefix) are left to the platform. Companion to the SCOPE_EVENTS listeners above.
-  // The platform dispatches `command` with `bubbles:false`, so this listener runs in the capture
+  // The platform dispatches `command` with `bubbles:false`, so this must listen in the capture
   // phase — a bubble-phase delegated listener never sees it and every custom action goes dead.
   const commandHandler: EventListener = (event) => dispatchCommand(event);
   doc.addEventListener("command", commandHandler, { capture: true });
@@ -92,9 +58,6 @@ export function resume(within?: Node): () => void {
     for (const root of [...active.keys()]) disposeScope(root);
     teardown = null;
   };
-  // Eager pass: scopes that opt out of lazy resume are hydrated immediately. An element whose
-  // `data-scope` names no registered definition is always a bug — the app forgot to
-  // side-effect-import the client module that registers it. Warn once per unknown name.
   const warnedUnknown = new Set<string>();
   for (const el of findScopes(scanRoot(within, doc))) {
     const name = el.dataset.scope ?? "";
@@ -113,30 +76,13 @@ export function resume(within?: Node): () => void {
   return teardown;
 }
 
-/** The tree the eager pass scans. A `ShadowRoot` (or any document fragment) is honoured as the walk
- * root so a web component can resume only its own markup; anything else scans the whole document,
- * which is what `within` has always meant for the listeners. */
+/** The tree the eager pass scans: a document fragment or document is honoured as the walk root, anything else scans the whole document. */
 function scanRoot(within: Node | undefined, doc: Document): ParentNode {
   const nodeType = within?.nodeType;
   return nodeType === 11 || nodeType === 9 ? (within as unknown as ParentNode) : doc;
 }
 
-/**
- * Every `[data-scope]` at or below `root`, descending into open shadow roots.
- *
- * A flat `querySelectorAll` stops at a shadow boundary, so a scope rendered inside a web component
- * was never discovered: the markup was there, its definition was registered, and nothing forge adds
- * to it ever ran — no arrow navigation, no typeahead, no focus restoration, and no warning either,
- * because the element was never visited. The delegated half never had this problem, because
- * `closestAcross` climbs out through `host`.
- *
- * Shadow hosts are not addressable by a selector, so each tree has to be looked at element by
- * element. A closed root reports `shadowRoot === null` and is stepped over, which is the same answer
- * the platform gives everywhere else.
- *
- * Private on purpose: only discovery needs it, and a second exported traversal helper would be
- * public surface with one caller.
- */
+/** Every `[data-scope]` at or below `root`, descending into open shadow roots. */
 function findScopes(root: ParentNode): HTMLElement[] {
   const found: HTMLElement[] = [];
   // Breadth-first over a growing list rather than recursion — a shadow root nested inside a shadow
@@ -145,8 +91,8 @@ function findScopes(root: ParentNode): HTMLElement[] {
   for (let i = 0; i < trees.length; i += 1) {
     const tree = trees[i];
     if (!tree) continue;
-    // A `ShadowRoot` handed in as the walk root can itself be a host's scope element's parent, but
-    // the host's own subtree root may carry `data-scope`; `querySelectorAll` reports descendants only.
+    // `querySelectorAll` reports descendants only, so a walk root carrying `data-scope` itself has
+    // to be checked separately.
     const self = tree as Partial<HTMLElement>;
     if (self.dataset?.scope !== undefined) found.push(tree as HTMLElement);
     for (const el of tree.querySelectorAll<HTMLElement>("*")) {
@@ -157,35 +103,25 @@ function findScopes(root: ParentNode): HTMLElement[] {
   return found;
 }
 
-/**
- * Runs a scope's disposer and forgets that it was ever resumed.
- *
- * Forgetting is half the job: leaving the root in `resumed` after its disposer has run means a later
- * resume of that same root is skipped as already-resumed, so `setup` never re-binds and the scope
- * comes back inert.
- */
+/** Runs a scope's disposer and forgets that it was ever resumed. */
 function disposeScope(root: HTMLElement): void {
   active.get(root)?.();
   active.delete(root);
+  // Forgetting is half the job: a root left in `resumed` is skipped as already-resumed on a later
+  // resume, and comes back inert.
   resumed.delete(root);
 }
 
-/**
- * Disposes every scope whose root has left its document.
- *
- * An htmx swap detaches a scope's markup with no notice to this module. Nothing else would ever run
- * those disposers, so each swap would strand one more detached tree, its `MutationObserver`s and its
- * listeners for the life of the page — and the entry pinning them would keep the tree itself alive.
- * Sweeping as the replacement scope resumes is what bounds the collection to the live scopes.
- */
+/** Disposes every scope whose root has left its document. */
 function sweepDetached(): void {
+  // An htmx swap detaches a scope's markup with no notice, so nothing else would ever run those
+  // disposers; sweeping as the replacement resumes bounds the collection to live scopes.
   for (const root of [...active.keys()]) {
     if (!root.isConnected) disposeScope(root);
   }
 }
 
-/** Hydrates a scope's state into signals and runs its `setup` exactly once. Idempotent: a
- * second call returns the already-built state without re-running `setup`. */
+/** Hydrates a scope's state into signals and runs its `setup` exactly once. */
 function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, Signal<unknown>> {
   sweepDetached();
   let state = resumed.get(root);
@@ -198,18 +134,16 @@ function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, 
   return state;
 }
 
-/** Resume a single scope now (idempotent); returns its signal state, or `undefined` if the
- * element's `data-scope` names no registered scope. @public */
+/** Resumes a single scope now and returns its signal state, or `undefined` when its `data-scope` names no registered scope. @public */
 export function resumeScope(root: HTMLElement): Record<string, Signal<unknown>> | undefined {
   const def = scopes.get(root.dataset.scope ?? "");
   return def ? ensureResumed(root, def) : undefined;
 }
 
-/** Walk up from `el` through `[data-scope]` ancestors and invoke the first scope whose `on` table
- * owns `action`, resuming it on the way. Shared by the `data-on-*` and `command` dispatchers. */
+/** Walks up from `el` through `[data-scope]` ancestors and invokes the first scope whose `on` table owns `action`, resuming it on the way. */
 function runAction(action: string, el: HTMLElement, event: Event): void {
   // `closestAcross`, not `closest`: a trigger inside a shadow root would otherwise never find the
-  // scope root that encloses its host, and the action would silently do nothing.
+  // scope root that encloses its host.
   let scopeEl = closestAcross<HTMLElement>(el, "[data-scope]");
   while (scopeEl) {
     const def = scopes.get(scopeEl.dataset.scope ?? "");
@@ -226,8 +160,7 @@ function runAction(action: string, el: HTMLElement, event: Event): void {
 }
 
 function dispatch(type: string, event: Event): void {
-  // `eventTarget`, not `event.target`: an event that crossed a shadow boundary reports the host,
-  // so a `data-on-*` element inside a web component would never be found.
+  // `eventTarget`, not `event.target`: an event that crossed a shadow boundary reports the host.
   const el = closestAcross<HTMLElement>(eventTarget(event) as Node | null, `[data-on-${type}]`);
   if (!el) return;
   const action = el.getAttribute(`data-on-${type}`);
@@ -235,13 +168,10 @@ function dispatch(type: string, event: Event): void {
   runAction(action, el, event);
 }
 
-/** Bridge a native `CommandEvent` to the scope handler table. Only custom `--action` commands are
- * routed; built-in commands (`toggle-popover`, `show-modal`, …) carry no `--` prefix and are left
- * to the platform. The invoker (`event.source`) stands in for the `data-on-*` element. */
+/** Bridges a native `CommandEvent` to the scope handler table, routing only custom `--action` commands. */
 function dispatchCommand(event: Event): void {
   const command = (event as CommandEvent).command;
   if (command?.slice(0, 2) !== "--") return;
-  // `source` is the invoker button (an HTMLElement) — stands in for the `data-on-*` element.
   const source = (event as CommandEvent).source as HTMLElement | null;
   if (!source) return;
   runAction(command.slice(2), source, event);
@@ -260,5 +190,4 @@ function hydrateState(raw: string | undefined): Record<string, Signal<unknown>> 
   return out;
 }
 
-// Re-export so scope authors bind effects without a second import.
 export { effect };

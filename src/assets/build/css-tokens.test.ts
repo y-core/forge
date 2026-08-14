@@ -42,10 +42,7 @@ describe("readThemeTokens() + resolveToken()", () => {
   });
 });
 
-// Minified output as a CSS minifier actually emits it: no whitespace, leading zeros stripped,
-// and — the part that matters — no `;` after the last declaration of a block. The palette
-// indirection is deliberate: the terminal literal of the light chain sits last in its block,
-// which is the exact shape that used to break the cursor bake.
+// Minified shape: no whitespace and no `;` after a block's last declaration.
 const MINIFIED_CSS = [
   ":root,:host{--color-gray-50:oklch(98.5% .002 247.839);--color-gray-950:oklch(13% .028 261.692)}",
   ":root{--radius:.625rem;--background:var(--palette-100);--foreground:var(--palette-950)}",

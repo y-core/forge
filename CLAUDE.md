@@ -12,6 +12,13 @@
 - NEVER use Bun-specific or Node.js APIs in runtime source files (standard Web APIs only)
 - NEVER hardcode API keys, secrets, or credentials in source files
 - NEVER provide deprecation shims or backward-compatible paths before v1.0.0
+- NEVER write a comment outside the budget in `PRODUCTION_TS_RULES.md` §5 — one line of TSDoc per
+  export, the `@public`/`@internal` tags, and the rare inline *why*. Nothing else. No `@example`
+  blocks, no multi-paragraph rationale, no restating the code, no section banners, no TODOs. Code
+  is the documentation; prose is a cost paid on every read. Fix an unclear line with a better
+  name, not a comment
+- ALWAYS delete unbudgeted comments from any file you touch — there is no grandfathering, and
+  rationale worth keeping is routed to its single home (see `PRODUCTION_TS_RULES.md` §5c)
 - ALWAYS add new public symbols to the namespace's `mod.ts` as a named export
 - ALWAYS co-locate tests (`*.test.ts` / `*.test.tsx`) with the source they test
 - ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
@@ -59,16 +66,18 @@ Scope is a property of the URL, so no tool takes a `project` argument.
 | `biome` | Linter and formatter (use instead of `eslint`/`prettier`) |
 
 ```bash
-bun run check                  # the gate — every step must pass
-bun run check --only lint      # one step, for the dev loop (any step label)
-bun run check --list           # print the steps, run none
-bun run check --fix            # every step's fixer (aliased as `bun run lint:fix`)
-bun run verify                 # the release gate — check plus the browser set
+bun run verify                 # the gate — every step must pass
+bun run verify --only lint     # one step, for the dev loop (any step label)
+bun run verify --list          # print the steps, run none
+bun run verify:full            # the release gate — adds the steps needing a machine prerequisite
+bun run lint                   # check only, never write (`verify --only lint`)
+bun run fix                    # every step's fixer (`verify --fix`) — lint is the only one today
 ```
 
-`scripts/lib/steps.ts` is the single source of truth for the gate's steps and their gate
-membership. Gate philosophy, the two verbs, and the flags:
-[`TESTING.md`](.decisions/TESTING.md) §6.
+**One command, two modes**, not two commands. `config/steps.ts` is the single source of truth for
+the gate's steps and which of them are `fullOnly`; the `forge-verify` bin loads it through its
+default export, so there is no binding file to keep in step. Gate philosophy, the modes, and the
+flags: [`TESTING.md`](.decisions/TESTING.md) §6.
 
 **Avoid:** `tsc` (use `tsgo`), `bun-types` (use the custom stub), `eslint`/`prettier` (use `biome`).
 
@@ -83,9 +92,9 @@ spelling, same casing, same quoting, every time:
 
 - Use `;`, never `&&` — with `&&` the echo is skipped precisely when the command fails, which is
   the only case worth checking.
-- Never pipe within the same statement: `bun run check | tail -20; echo "EXIT:$?"` reports `tail`'s
+- Never pipe within the same statement: `bun run verify | tail -20; echo "EXIT:$?"` reports `tail`'s
   status, not the gate's. Redirect first, then inspect the file:
-  `bun run check > /tmp/check.log 2>&1; echo "EXIT:$?"`.
+  `bun run verify > /tmp/verify.log 2>&1; echo "EXIT:$?"`.
 - Never invent a variant — `exit=$?`, `RC=$?`, `---EXIT CODE $?---`, or a re-quoted spelling all
   miss the allowlist and cost a fresh permission prompt each time.
 - Omit the suffix when the exit code is not actually in question; a bare failing command already
@@ -96,7 +105,7 @@ The matching allow rule is an **exact-string** entry (no `:*` prefix wildcard) i
 
 ### Verification Delegation
 
-**`cc-tester` is the sole runner** of `bun run check` and any cross-cutting suite. It returns a
+**`cc-tester` is the sole runner** of `bun run verify` and any cross-cutting suite. It returns a
 terse verdict — `✓ green`, or `✗` with the failing step and a minimal excerpt — **never the full
 stream**. `cc-plan`, `cc-dev`, and `cc-doc` delegate every gate run to it; `cc-test` may smoke-run
 only the single test file it just wrote.
@@ -138,7 +147,7 @@ doc via the **Guide Index** — never duplicate that detail here.
 - [`AGENT_GUIDE.md`](.decisions/AGENT_GUIDE.md): how `.decisions/` docs are structured, numbered, sized, and cross-referenced; the single-home rule and source-of-truth register
 - [`LIBRARY_ARCHITECTURE.md`](.decisions/LIBRARY_ARCHITECTURE.md): the dependency facade, the runtime-only no-build-step constraint, demand composition, Web-APIs-only, the `tsconfig` type-system constraints
 - [`NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md): barrel rules and the `export *` ban, the no-sibling-barrel guard, the authoritative subpath catalog, leaf/integration classification, naming conventions
-- [`PRODUCTION_TS_RULES.md`](.decisions/PRODUCTION_TS_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, TSDoc, declarative style
+- [`PRODUCTION_TS_RULES.md`](.decisions/PRODUCTION_TS_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, **the comment budget (§5 — the ceiling on prose)**, declarative style
 - [`ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md): declarative route maps and controllers, `definePage`/`defineAction`, middleware ordering, the `context` namespace
 - [`HTMX.md`](.decisions/HTMX.md): request detection, `HX-*` header readers and setters, `hxAttrs`, the pattern helpers, and the selector trust posture
 - [`SECURITY_HARDENING.md`](.decisions/SECURITY_HARDENING.md): CSP nonce headers, CORS, origin-guard tiering, rate limiting, the `trustCfHeaders` trust boundary, the transport-layer boundary

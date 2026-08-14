@@ -93,11 +93,6 @@ describe("Form component", () => {
     ).toBe('<form data-slot="form" method="post"><input name="message" id="msg"></form>');
   });
 
-  /**
-   * The name is interpolated from `form/constants.ts` rather than written as a literal. Renaming the
-   * constant is then a failing test instead of a silently mismatched field: the component and the
-   * parser that validates the submission have to keep naming the same one.
-   */
   it("names the CSRF input after the constant the form parser validates", async () => {
     expect(
       await render(
@@ -133,12 +128,6 @@ describe("Form component", () => {
   });
 });
 
-/**
- * `method="get"` is half of the public `method?: "get" | "post"` union and had **no** coverage —
- * every assertion above and before it used the default. That gap is why an unconditional honeypot
- * survived: on GET the browser serialises every field into the query string, so `?__surname=` ended
- * up in the address bar, in bookmarks and shared links, in history, and in the outbound `Referer`.
- */
 describe("Form — method=get", () => {
   it("emits method=get verbatim and injects no fields of its own", async () => {
     expect(
@@ -151,8 +140,6 @@ describe("Form — method=get", () => {
   });
 
   it("renders nothing at all beyond the children when given none", async () => {
-    // The strongest form of the assertion: no hidden input can reach the query string because the
-    // component contributes no markup between the tags.
     expect(await render(<Form method='get' />)).toBe('<form data-slot="form" method="get"></form>');
   });
 
@@ -167,25 +154,8 @@ describe("Form — method=get", () => {
   });
 });
 
-/**
- * `class` is composed through `cn` rather than riding to the element inside the rest spread.
- *
- * **Only half of that contract is observable here.** `Form` declares no base classes, so a caller's
- * class has nothing to conflict with and nothing for `cn` to resolve — the precedence half that
- * `src/ui/README.md` advertises ("a caller's `class` overrides a component's base rather than racing
- * it in the stylesheet") cannot be asserted through `Form`'s public surface as committed. It becomes
- * observable, and must be covered here, the moment `Form` gains a base class.
- *
- * What is observable is that the prop passes through `cn` **at all** — `cn` resolves a conflict
- * inside a single argument, and emits nothing for an absent one. The conflict case is the one
- * carrying that weight: a case that merely passes a `class` and asserts it appeared passes with
- * `cn` deleted too, which is exactly how the bypass stayed invisible (TESTING.md §3d). Nothing else
- * in the render path collapses `p-4 p-8` to `p-8`.
- */
 describe("Form — class composition", () => {
   it("emits no class attribute at all when no class is passed", async () => {
-    // `cn()` resolves to `""` with no base classes to fall back on; the attribute is dropped rather
-    // than emitted as `class=""`, keeping the output byte-identical to before the prop was composed.
     expect(await render(<Form />)).toBe('<form data-slot="form" method="post"></form>');
   });
 

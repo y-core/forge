@@ -6,8 +6,10 @@ import type { FC } from "../../jsx/types";
 import type { ToastPosition, ToastVariant } from "../core/toast";
 import { Toast } from "../core/toast";
 
+/** The severity of a flash message. @public */
 export type FlashType = "success" | "info" | "warning" | "error";
 
+/** One flash message carried across a redirect. @public */
 export interface FlashMessage {
   type: FlashType;
   text: string;
@@ -28,6 +30,7 @@ const FlashToast: FC<{ message: FlashMessage }> = ({ message }) => (
   </Toast>
 );
 
+/** Renders each flash message as a dismissible toast. @public */
 export const Flash: FC<{ messages?: FlashMessage[] }> = ({ messages }) => {
   if (!messages || messages.length === 0) return null;
   return (
@@ -39,6 +42,7 @@ export const Flash: FC<{ messages?: FlashMessage[] }> = ({ messages }) => {
   );
 };
 
+/** Renders flash messages as htmx out-of-band swaps into an existing container. @public */
 export const FlashOob: FC<{ messages?: FlashMessage[]; selector?: string; strategy?: string }> = ({ messages, selector, strategy }) => {
   if (!messages || messages.length === 0) return null;
   const oobAttrs = oobSwap({ strategy: strategy ?? "beforeend", selector: selector ?? "#flash-container" });
@@ -53,6 +57,7 @@ export const FlashOob: FC<{ messages?: FlashMessage[]; selector?: string; strate
   );
 };
 
+/** The toast container flash messages are rendered and swapped into. @public */
 export const FlashContainer: FC<{ messages?: FlashMessage[]; position?: ToastPosition }> = ({ messages, position }) => {
   const pos: ToastPosition = position ?? "bottom-right";
   return (

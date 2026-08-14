@@ -78,7 +78,7 @@ design works, stop and put the uncertainty in the plan instead.
 
 - After the plan is approved, hand off to `cc-dev` with the full plan as context.
 - After `cc-dev`, hand off to `cc-test` with the Test Plan section and the changed signatures.
-- **Every verification-gate run goes to `cc-tester`** — never run `bun run check` yourself; request
+- **Every verification-gate run goes to `cc-tester`** — never run `bun run verify` yourself; request
   it and act on the compact verdict.
 - If testing reveals an architecture problem, be available to re-plan rather than letting `cc-dev`
   improvise.
@@ -117,6 +117,19 @@ which `Grep` under-reports on re-exported or aliased symbols.
    specify; the `src/ui/design/reference/` dimension files settle what the catalog does not. Name
    the composition your plan assumes, so `cc-dev` is not choosing it. A Default the plan departs
    from is a decision the plan states and justifies, since only a written brief rebuts one.
+
+### The Comment Budget — Binding
+
+**`PRODUCTION_TS_RULES.md` §5 is binding on what a plan may instruct.** It is a ceiling, not a
+floor.
+
+**A plan never says "document X inline", "add an explanatory comment", or "note the reasoning in
+a TSDoc block".** Rationale a plan carries is routed per §5c — `.decisions/` for architecture, the
+namespace `README.md` for usage, a *test* for a behavioural claim, a ledger task for undone work.
+A plan step is the right place to name that destination.
+
+Reasoning belongs in the plan's `## Context`, where it is read once. Instructing `cc-dev` to
+transcribe it into the source is how it becomes permanent.
 
 ### Feature Development Sequence
 

@@ -16,24 +16,7 @@ const TOGGLE_BASE =
   "aria-pressed:bg-primary aria-pressed:text-primary-foreground " +
   "disabled:pointer-events-none disabled:opacity-50";
 
-/**
- * A two-state button.
- *
- * **Three superficially similar controls now exist, and they are not interchangeable.** `Switch` is a
- * form control: it has a `name`, submits a value, and announces as `role="switch"` on a real
- * `<input type="checkbox">`. `ToggleGroup` is a set whose items are reconciled against each other.
- * `Toggle` is neither — a lone button whose pressed state is its own, announced with `aria-pressed`,
- * submitting nothing. Reaching for a Switch when you mean a Toggle puts a checkbox in a form that
- * was never meant to have one.
- *
- * The pressed state flips client-side through the scope registered by `ui/core/client`; without that
- * side-effect import the markup is a static, still-accessible button.
- *
- * The `data-on-click` is emitted by the component, not left to the caller. That scope is lazy, and a
- * lazy scope resumes only on a `data-on-*` interaction — a Toggle without one carries a scope name
- * nothing can ever act on, which is a button that looks wired and is not.
- * @public
- */
+/** A lone two-state button whose pressed state is announced with `aria-pressed` and submits nothing. @public */
 export const Toggle: FC<ToggleProps> = ({ pressed = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'

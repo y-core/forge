@@ -18,19 +18,12 @@ function makeApp(action: ReturnType<typeof defineAction>) {
 const VALID_FORM = new URLSearchParams({ name: "Jane" });
 const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
 
-/** Structural, so it accepts a `Forge` at any binding type without restating its generics. */
 type Requestable = { request(path: string, init: RequestInit): Promise<Response> };
 
 function post(app: Requestable, body: string, path = "/test"): Promise<Response> {
   return app.request(path, { method: "POST", headers: FORM_HEADERS, body });
 }
 
-/**
- * The refusal fragment, built from one template because a dozen cases assert it and the whole point
- * of those cases is that the *same* bytes come back. The anchor case in
- * `defineAction — the one refusal` spells the literal out in full and pins this helper against it,
- * so a change in the fragment renderer fails there rather than being absorbed here.
- */
 function refusal(...fields: readonly string[]): string {
   const items = fields.map((field) => `<li>${field}</li>`).join("");
   return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5">${items}</ul></div>`;
@@ -45,13 +38,11 @@ afterEach(() => {
   }
 });
 
-/** Replaces `fetch` for the siteverify call only; restored by the `afterEach` above. */
 function fakeSiteverify(respond: (init: RequestInit | undefined) => Promise<Response>): void {
   savedFetch = globalThis.fetch;
   globalThis.fetch = ((_url: URL | RequestInfo, init?: RequestInit) => respond(init)) as typeof globalThis.fetch;
 }
 
-/** Captures the structured log lines written while `run` executes. */
 async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {
   const lines: string[] = [];
   const originalLog = console.log;
@@ -185,8 +176,6 @@ describe("defineAction", () => {
   });
 
   it("rejects an oversized streaming body (no Content-Length) with the exact 413 fragment", async () => {
-    // A ReadableStream body carries no Content-Length, so only parseFormData's streaming
-    // byte counter can catch it — this pins the chunked-transfer bypass defense end-to-end.
     const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
     const big = `name=${"x".repeat(200_000)}`;
     const bytes = new TextEncoder().encode(big);
@@ -241,16 +230,6 @@ describe("defineAction", () => {
   });
 });
 
-/**
- * Valibot does not catch what a pipe action throws, so validation runs inside the same `try` as
- * `handle`. Every case here would otherwise escape the returned handler entirely — no status, no
- * `onError`, no log.
- *
- * The status is **500, not 400**: `v.transform` is documented as non-failing and `v.rawTransform` is
- * the primitive for a transform that can reject, so a throw escaping one is a schema written with the
- * wrong primitive — a route defect. A 400 would present it as a successful rejection of bad input and
- * the broken transform would never surface.
- */
 describe("defineAction — a throwing schema or hook", () => {
   const ThrowingTransform = strictObject({
     payload: v.pipe(
@@ -308,8 +287,6 @@ describe("defineAction — a throwing schema or hook", () => {
 
     const res = await post(app, "name=Jane");
     expect(res.status).toBe(500);
-    // The body, not just the status: the app-level error boundary also answers 500, so a
-    // status-only assertion would pass whether or not the pipeline caught the throw at all.
     expect(await res.text()).toBe(
       '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
     );
@@ -340,8 +317,6 @@ describe("defineAction — a throwing schema or hook", () => {
   });
 
   it("absorbs a throwing onValidationError into the same 500 path, deliberately and symmetrically", async () => {
-    // A hook that throws is the same class of route defect as a schema that throws, and answering it
-    // differently would let an app crash the Worker from the arm meant to render a refusal.
     let captured: Error | undefined;
     const app = makeApp(
       defineAction({
@@ -382,7 +357,6 @@ describe("defineAction — a throwing schema or hook", () => {
   });
 
   it("still reaches handle through a transform that does not throw", async () => {
-    // The paired positive case: widening the `try` must not turn a working transform into a 500.
     const app = makeApp(defineAction({ schema: ThrowingTransform, handle: (data) => new Response(JSON.stringify(data.payload)) }));
 
     const res = await post(app, `payload=${encodeURIComponent('{"ok":true}')}`);
@@ -391,12 +365,7 @@ describe("defineAction — a throwing schema or hook", () => {
   });
 });
 
-/**
- * The schema is the whole contract, so what reaches it is the thing worth pinning: a field nobody
- * declared reaches it and is refused, and an absent field stays absent rather than arriving as `""`.
- */
 describe("defineAction — what reaches the schema", () => {
-  /** Raw valibot, kept for the one case whose subject is what raw valibot does. */
   const RawNameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 
   it("refuses a field nobody declared", async () => {
@@ -414,8 +383,6 @@ describe("defineAction — what reaches the schema", () => {
   });
 
   it("lets an absent optional field reach the schema as absent rather than as an empty string", async () => {
-    // The property the deleted named-field readers could not hold: they wrote `""` for a missing
-    // field, so `v.optional` was unreachable and every consumer needed a transform to undo it.
     const Schema = v.strictObject({ name: v.string(), phone: v.optional(v.string()) });
     const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(String(data.phone)) }));
 
@@ -457,12 +424,6 @@ describe("defineAction — what reaches the schema", () => {
   });
 
   it("does not let a caller-sent __proto__ mutate a prototype or reach the handler", async () => {
-    // Deliberately on **raw `v.strictObject`**, which is the schema whose behaviour this pins:
-    // `"__proto__" in schema.entries` is true through `Object.prototype`, so valibot reads the key as
-    // declared and drops it rather than refusing it. What holds regardless is that the pipeline
-    // accumulates into a prototype-less bag, so the key lands as data and no prototype is touched —
-    // this is not a prototype-pollution defect, and these assertions must not be weakened to make a
-    // refusal fit. The refusal is `strictObject`'s to give, and the case below asserts it.
     const app = makeApp(defineAction({ schema: RawNameSchema, handle: (data) => new Response(Object.keys(data).join(",")) }));
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: "name=Jane&__proto__=polluted" });
@@ -474,9 +435,6 @@ describe("defineAction — what reaches the schema", () => {
 
   for (const inherited of ["__proto__", "constructor", "toString", "valueOf"]) {
     it(`refuses an undeclared ${inherited} as the undeclared key it is`, async () => {
-      // Asserted through the issue types rather than the rendered fragment: what is being pinned is
-      // that the key took the *ordinary undeclared-key path*, and the fragment names a field without
-      // saying which rule refused it.
       const app = makeApp(
         defineAction({
           schema: NameSchema,
@@ -494,8 +452,6 @@ describe("defineAction — what reaches the schema", () => {
   }
 
   it("reads a schema field named constructor as absent when the caller did not send it", async () => {
-    // The input side of the same prototype problem: an `Object.prototype`-backed body would resolve
-    // `constructor` to the inherited function and validate it as if it were user data.
     const Schema = strictObject({ name: v.string(), constructor: v.string() });
     const app = makeApp(
       defineAction({
@@ -520,8 +476,6 @@ describe("defineAction — what reaches the schema", () => {
   });
 
   it("carries a submitted field named constructor through to handle as the submitted value", async () => {
-    // `constructor` is a real field name on a construction or contracting form, which is why the
-    // inherited-function reading was never merely theoretical.
     const Schema = strictObject({ name: v.string(), constructor: v.string() });
     const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(data.constructor) }));
 
@@ -589,8 +543,6 @@ describe("defineAction behind csrfProtection — body size cap", () => {
     });
     mapHandler(app, "POST", "/small", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
 
-    // Exercise the generous route first, then the strict one, then the generous one again: a cap
-    // that leaked across requests would show up as the wrong verdict on the second or third call.
     const first = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", key, 200_000) });
     expect(first.status).toBe(200);
 
@@ -602,14 +554,6 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   });
 });
 
-/**
- * The honeypot and the Turnstile token live in the pipeline because *the guard that consumes a field
- * is the one that removes it*. Before this, `defineAction` stripped the honeypot without ever checking
- * it — bot detection did not degrade on migration, it disappeared, with no compile error.
- *
- * The decoy's name is app-owned and free-form on purpose: forge is open source, so any name forge
- * could supply — or any prefix it could reserve — is a one-line bypass for every deployment at once.
- */
 describe("defineAction — bot guards", () => {
   const DECOY = "company";
 
@@ -662,8 +606,6 @@ describe("defineAction — bot guards", () => {
   });
 
   it("strips no field merely for matching a forge-shaped pattern when no guard consumes it", async () => {
-    // The retracted reserved-prefix option, pinned as refused: a published pattern would defeat every
-    // forge honeypot in every deployment at once, so nothing is dropped on a guess.
     const app = makeApp(
       defineAction({
         schema: NameSchema,
@@ -796,8 +738,6 @@ describe("defineAction — bot guards", () => {
   });
 
   it("refuses with the ordinary fragment on a network error when no onBotDetected is supplied", async () => {
-    // An unverifiable CAPTCHA fails closed: the caller is refused even though nothing about the
-    // request says they are a bot.
     fakeSiteverify(async () => {
       throw new Error("connection refused");
     });
@@ -902,15 +842,6 @@ describe("defineAction — bot guards", () => {
   });
 });
 
-/**
- * `injectedFields` is gone: a route no longer re-declares the names its own middleware consumes. CSRF
- * is the one name that cannot be settled when the route is defined, because only the middleware that
- * ran knows which field it took the token from — so it joins per request, from context.
- *
- * **Absent context var means derive only, with no fallback**, and both directions are pinned here. A
- * form posting `_csrf` to a route with no CSRF middleware is refused, naming the missing middleware
- * rather than quietly absorbing its absence.
- */
 describe("defineAction — injected field derivation", () => {
   const SECRET = "a".repeat(64);
 
@@ -953,7 +884,6 @@ describe("defineAction — injected field derivation", () => {
   });
 
   it("strips only the name the guard actually consumed, so a stray default field is still refused", async () => {
-    // The renamed guard consumed `xsrf`; nothing consumed `_csrf`, so nothing drops it.
     const key = await importCsrfKey(SECRET);
     const app = new Forge();
     mapHandler(app, "POST", "/guarded", {
@@ -989,8 +919,6 @@ describe("defineAction — injected field derivation", () => {
   });
 
   it("keeps the CSRF drop per request rather than per route, across two apps in one isolate", async () => {
-    // The derived name comes off the request's own context, so a guarded route and an unguarded one
-    // must not leak a drop into each other however the module-level state is shared.
     const { app: guarded, token } = await guardedApp();
     const unguarded = makeApp(issueTypesAction());
 
@@ -1000,15 +928,6 @@ describe("defineAction — injected field derivation", () => {
   });
 });
 
-/**
- * One refusal, and it names the failing field and nothing else.
- *
- * The default path is what every route gets unless it writes `onValidationError`, and it used to echo
- * caller-controlled content of caller-chosen length: a 50,000-character value produced a
- * 50,045-character message, a `v.regex` failure returned the user's plaintext alongside the server's
- * own complexity rule, and `abortEarly` was not passed, so extra field names multiplied the response.
- * Escaping was never the problem — this was disclosure and amplification.
- */
 describe("defineAction — the one refusal", () => {
   const DECOY = "company";
   const EmailSchema = strictObject({ email: v.pipe(v.string(), v.email()) });
@@ -1055,9 +974,6 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("answers a 50,000-character value and a 5-character one with byte-identical refusals", async () => {
-    // The disclosure and amplification invariant, with the **declared field** as what fails: both
-    // bodies carry an oversized undeclared key as well, so neither the value's length nor the key's
-    // can steer the answer.
     const app = makeApp(defineAction({ schema: EmailSchema, handle: () => new Response("success") }));
 
     const huge = await post(app, `email=${"z".repeat(50_000)}&${LONG_KEY}=1`);
@@ -1073,9 +989,6 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("bounds the answer identically when the long value passes and the undeclared key is what fails", async () => {
-    // The other half of the same invariant. With `name` satisfied, the only issue is the undeclared-key
-    // sweep, so the refusal legitimately names the key — truncated, so a 30,000-character key and a
-    // short value still produce the same bytes as a 50,000-character value alongside it.
     const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
 
     const huge = await post(app, `name=${"z".repeat(50_000)}&${LONG_KEY}=1`);
@@ -1131,8 +1044,6 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("still escapes what it does render", async () => {
-    // The bound replaced the value, not the escaping: a refused key carrying HTML metacharacters comes
-    // back entity-escaped, exactly as before.
     const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
 
     const res = await post(app, `name=Jane&${encodeURIComponent("a&b'c\"d<e>f")}=1`);
@@ -1141,8 +1052,6 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("answers a filled honeypot and a mistyped field with byte-identical refusals", async () => {
-    // A bot cannot tell a guard from a schema failure by comparing answers — which is the whole reason
-    // the guard reuses the wording a schema refusal would have produced.
     const guarded = makeApp(defineAction({ schema: NameSchema, honeypot: DECOY, handle: () => new Response("success") }));
     const plain = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
 
@@ -1177,8 +1086,6 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("falls back to the same generic wording for a schema with no entries to name", async () => {
-    // A union has no entries bag, so the guard has no field to name — and a union's own refusal has no
-    // path either. Both answer with the fallback, which keeps them indistinguishable in that case too.
     const app = makeApp(defineAction({ schema: UnionSchema, honeypot: DECOY, handle: () => new Response("success") }));
 
     const bot = await post(app, `name=Jane&${DECOY}=spam`);
@@ -1216,8 +1123,6 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("never names the decoy when the decoy is itself the only undeclared field left", async () => {
-    // A route that names no honeypot drops nothing, so the decoy *would* be named — pinning the
-    // contrast makes it clear the silence above comes from the guard consuming the field.
     const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
 
     const res = await post(app, `name=Jane&${DECOY}=spam`);

@@ -55,8 +55,25 @@ Two corollaries you will need constantly:
      ASCII, no mermaid
    - Scale depth to complexity: a simple utility needs Features + Usage and nothing else
 
-4. **TSDoc on exports** — one-line summary per exported symbol; `@internal` for non-public;
-   `@example` where usage is non-obvious.
+4. **TSDoc on exports** — one line per exported symbol, plus `@internal` where non-public. That is
+   the whole of it; see the next section.
+
+## The Comment Budget — Binding
+
+**`PRODUCTION_TS_RULES.md` §5 is binding on every source comment you write or leave standing.**
+It is a ceiling, not a floor; §5a is the entire permitted budget.
+
+**Rationale you write goes to `.decisions/` or a namespace `README.md` — never into a source
+comment.** §5c is your placement authority: architecture to the governing doc, usage and examples
+to the README, a behavioural claim to a test, undone work to a ledger task, history to the commit
+message.
+
+**You do not add `@example` blocks to source.** Examples are the README's job — that is the whole
+reason the README exists. An `@example` in `src/` is a defect, and you delete it rather than
+improve it whenever you touch the file.
+
+Documenting a namespace is the moment long TSDoc gets written. Write the prose in the README
+instead and leave the source at one line per export.
 
 ## Verify, Do Not Assume
 
@@ -81,7 +98,7 @@ done.
 3. Skim a neighbouring doc's `## 0.` block for tone and grain.
 4. Draft: frontmatter, the opening blockquote with its **Defers to** list, `## 0. Quick
    Reference` with one line per `##` and `###`, then the body.
-5. Run `bun run check --only validate-docs` — or delegate the gate to `cc-tester`.
+5. Run `bun run verify --only validate-docs` — or delegate the gate to `cc-tester`.
 6. Register in the `CLAUDE.md` Guide Index if the doc is new.
 
 **For READMEs:** inventory the public API via `mod.ts`, match the established style of the

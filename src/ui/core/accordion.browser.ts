@@ -4,15 +4,6 @@ import { mount } from "../client/browser-test-helper";
 import { Accordion } from "./accordion";
 import { createIcon } from "./icon";
 
-/**
- * `Accordion` after render.
- *
- * `Accordion.Item` used to emit no state attribute at all, which is a worse failure than a stale
- * one: a stylesheet keyed on `data-open` / `data-closed` matched nothing at any point in the
- * component's life, and there was no wrong value to notice. Opening one item and reading the other
- * is the only assertion that can tell the fix from the defect.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
@@ -26,8 +17,6 @@ async function start(page: Page): Promise<void> {
   await page.evaluate(() => window.forgeResume.resume());
 }
 
-/** Two exclusive items — a shared `name` makes the platform close one as the other opens, which is
- * the case a per-item controller has to survive without being told. */
 function markup(openFirst = false): Promise<string> {
   return render(
     Accordion({
@@ -88,8 +77,6 @@ test.describe("Accordion", () => {
     await expect.poll(async () => (await state(page)).one.open).toBe(true);
     await page.click("#two-trigger");
 
-    // Nothing told item one it was closing — the platform closed it because the two share a `name`.
-    // Its own `toggle` listener is what keeps its attributes honest.
     await expect
       .poll(() => state(page))
       .toEqual({ one: { nativeOpen: false, open: false, closed: true }, two: { nativeOpen: true, open: true, closed: false } });

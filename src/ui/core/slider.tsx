@@ -13,10 +13,9 @@ type SliderProps = Omit<JSX.IntrinsicElements["input"], "type" | "children"> & {
 };
 
 /** HTML's "valid floating-point number": no leading `+`, no surrounding whitespace, no bare
- *  trailing `.` — but a leading `.` is fine. `"10."` is invalid where `".5"` is valid. */
+ *  trailing `.` — but a leading `.` is fine. */
 const VALID_FLOAT = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
-/** Parses an attribute exactly as the browser would, from the same string the renderer emits. */
 function toNumber(raw: string | number | readonly string[] | undefined): number | undefined {
   if (raw === undefined) return undefined;
   const s = String(raw);
@@ -30,41 +29,19 @@ function scrub(n: number): number {
   return Number(n.toPrecision(15));
 }
 
-/**
- * Applies the HTML value-sanitization algorithm for `input[type=range]`, returning the value the
- * browser will itself settle on: validity check with the midpoint default, clamp to `[min, max]`,
- * then snap to the nearest step from the step base.
- *
- * The readout and the thumb must agree, and only this function can make them agree. The thumb is
- * positioned by the browser from the sanitized value, while the readout is a string forge writes
- * on the Worker; `Slider` ships no client controller, so nothing reconciles the two afterwards.
- *
- * The input is the *serialized attribute set* rather than the props, so this parses byte-for-byte
- * what the browser parses — `render-to-string.ts` stringifies every attribute with `String`, and
- * anything that does not survive that round trip (an array, an object, a padded numeric string)
- * is invalid to the browser too and falls back to the range default.
- *
- * Values around 1e21 and beyond leave the range where a 15-significant-digit scrub round-trips
- * cleanly; that boundary is accepted rather than guarded, since a range control that far out is
- * not a shape the component is meant to serve.
- *
- * @internal Exported for tests only — never add this to a barrel.
- * @example
- * sanitizeRangeValue({ min: 0, max: 100, value: 150 }); // "100"
- */
+/** Applies the HTML value-sanitization algorithm for `input[type=range]`, returning the value the browser will itself settle on. @internal */
 export function sanitizeRangeValue(attrs: Pick<JSX.IntrinsicElements["input"], "min" | "max" | "step" | "value">): string {
   const min = toNumber(attrs.min) ?? 0;
   const maxRaw = toNumber(attrs.max) ?? 100;
-  const max = maxRaw < min ? min : maxRaw; // a max below min collapses the range to a point
+  const max = maxRaw < min ? min : maxRaw;
 
   const stepAny = attrs.step !== undefined && String(attrs.step).toLowerCase() === "any";
   const stepNum = toNumber(attrs.step);
-  // An invalid or non-positive `step` falls back to 1 — it does not disable snapping.
   const step = stepAny ? undefined : stepNum !== undefined && stepNum > 0 ? stepNum : 1;
 
   const value = toNumber(attrs.value) ?? min + (max - min) / 2;
-  // Step base: the `min` attribute, else the `value` attribute, else zero. The middle term is
-  // load-bearing — with no `min`, a value is aligned to itself and never snaps away.
+  // The `value` term is load-bearing: with no `min`, HTML aligns a value to itself and never snaps
+  // it away.
   const base = toNumber(attrs.min) ?? toNumber(attrs.value) ?? 0;
 
   const clamped = Math.min(Math.max(value, min), max);
@@ -78,16 +55,13 @@ export function sanitizeRangeValue(attrs: Pick<JSX.IntrinsicElements["input"], "
   return String(snapped);
 }
 
-/** The input's box is the hit target, not the track. It stays transparent and at least as large as
- *  the `Button` `sm` box in both axes; the 8px track and the thumb are painted by the authored
- *  `::-webkit-slider-runnable-track` / `::-moz-range-track` rules in `forge-ui.css`, which are
- *  written in logical properties so one declaration serves both orientations. Sizing the input to
- *  the track instead is what made the two orientations disagree — a horizontal `h-2` gave the thumb
- *  no room while a vertical `w-5` did. */
+// The input's box is the hit target, not the track: the track and thumb are painted by the
+// `::-webkit-slider-runnable-track` / `::-moz-range-track` rules in `forge-ui.css`.
 const SLIDER_BASE =
   "h-8 w-full cursor-pointer appearance-none rounded-full bg-transparent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const SLIDER_VERTICAL = "[writing-mode:vertical-lr] [direction:rtl] h-22 w-8";
 
+/** A range `<input>`, optionally paired with an `<output>` readout of its value. @public */
 export const Slider: FC<SliderProps> = ({ class: cls, field, output, orientation = "horizontal", "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
   const isVertical = orientation === "vertical";

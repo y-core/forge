@@ -2,9 +2,6 @@ import { describe, expect, it } from "bun:test";
 import "./register";
 import { renderToString } from "./render-to-string";
 
-// Proves that globalThis.React shim resolves to forge's runtime,
-// covering the esbuild classic-fallback path: React.createElement / React.Fragment.
-
 type ReactShim = { createElement: (...args: unknown[]) => unknown; Fragment: unknown };
 const R = (globalThis as unknown as { React: ReactShim }).React;
 

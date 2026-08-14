@@ -20,16 +20,7 @@ function buildPermissionsPolicy(o?: PermissionsPolicyOptions): string {
 
 const secureHeadersNonce = contextVar<string>("secureHeadersNonce");
 
-/**
- * Returns the CSP nonce that `createSecurityHeaders` set for the current request.
- *
- * @remarks
- * Never throws. When the middleware has not run (out-of-band responses, misordered chains,
- * bare test contexts) it returns `""` — an empty `nonce` attribute the CSP will not honor,
- * so scripts relying on it fail closed rather than executing unnonced. Register
- * `createSecurityHeaders` before any nonce consumer. For responses built entirely outside
- * the chain, mint the nonce yourself and pass it via `applySecurityHeaders(response, { nonce })`. @public
- */
+/** Returns the CSP nonce `createSecurityHeaders` set for the current request, or `""` when it has not run. @public */
 // biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for nonce access
 export function getNonce(c: RequestContext<any, any>): string {
   return secureHeadersNonce.getOptional(c) ?? "";
@@ -76,9 +67,7 @@ function buildCsp(nonce: string, options?: SecurityHeadersOptions): string {
   const parts: string[] = [
     `default-src 'self'`,
     `script-src ${renderCspValues(scriptSrc, nonce)}`,
-    // Deliberately strict: no `'unsafe-inline'`. Forge components emit zero inline `style=`
-    // attributes (the JSX renderer drops the `style` prop under this policy — see
-    // render-to-string.ts), so inline styles would be blocked by the browser and must not ship.
+    // No `'unsafe-inline'`: the JSX renderer drops the `style` prop to match this policy.
     `style-src 'self'`,
     `img-src ${renderCspValues(imgSrc, nonce)}`,
     `font-src 'self'`,
@@ -95,7 +84,6 @@ function buildCsp(nonce: string, options?: SecurityHeadersOptions): string {
   return parts.join("; ");
 }
 
-/** Computes the full set of forge security headers for `nonce` and `options`. */
 function securityHeaderEntries(nonce: string, options?: SecurityHeadersOptions): [string, string][] {
   const hstsMaxAge = options?.hstsMaxAge ?? 63072000;
   const entries: [string, string][] = [
@@ -115,12 +103,7 @@ function securityHeaderEntries(nonce: string, options?: SecurityHeadersOptions):
   return entries;
 }
 
-/**
- * Applies forge's security headers directly to `response`, returning a new Response.
- * Used for out-of-band responses that never pass through the middleware chain (e.g. an
- * error page produced before the chain runs). A fresh nonce is minted when `options.nonce`
- * is omitted. @public
- */
+/** Applies forge's security headers to `response`, minting a nonce when `options.nonce` is omitted. @public */
 export function applySecurityHeaders(response: Response, options?: ApplySecurityHeadersOptions): Response {
   const { nonce = generateNonce(), ...headerOptions } = options ?? {};
   const headers = new Headers(response.headers);
@@ -130,10 +113,7 @@ export function applySecurityHeaders(response: Response, options?: ApplySecurity
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-/**
- * Middleware factory that applies CSP with a per-request nonce, HSTS, referrer-policy,
- * x-content-type-options, and permissions-policy to every response. @public
- */
+/** Middleware applying CSP with a per-request nonce, HSTS, and the rest of forge's security headers. @public */
 export function createSecurityHeaders(options?: SecurityHeadersOptions): Middleware {
   const scriptSrc = options?.scriptSrc ?? ["'self'", NONCE];
   const connectSrc = options?.connectSrc ?? ["'self'"];
@@ -151,15 +131,7 @@ export function createSecurityHeaders(options?: SecurityHeadersOptions): Middlew
     const nonce = generateNonce();
     secureHeadersNonce.set(context, nonce);
 
-    // Queued on the pending channel *before* `next()`, alongside the nonce, so the single
-    // `applyHeaders` pass rebuilds the response body once instead of each middleware constructing
-    // its own Response. Queuing before rather than after has two consequences worth stating:
-    //
-    // - The headers are already queued when anything deeper throws, so they reach the error page
-    //   regardless of which error boundary catches — they no longer depend on the response
-    //   unwinding back out through this middleware.
-    // - Conflicts resolve **inner-wins**: `setPendingHeader` is last-writer-wins per name, and a
-    //   middleware registered deeper queues after this one. See `SECURITY_HARDENING.md` §2a.
+    // Queued before `next()` so the headers still reach the error page when anything deeper throws.
     for (const [name, value] of securityHeaderEntries(nonce, options)) {
       setPendingHeader(context, name, value);
     }

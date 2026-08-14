@@ -15,15 +15,10 @@ import type { Logger } from "../logging/types";
 import { toError } from "../result/result";
 import type { GlobalMiddlewareEntry, RequestState } from "./types";
 
-/** Mock ExecutionContext for use in tests and non-Workers environments. */
 // biome-ignore lint/suspicious/noExplicitAny: mock context for testing only
 const MOCK_CTX: ExecutionContext = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
 
-/**
- * Compiles a `use()` path convention into a route-pattern matcher.
- * `"*"` matches every request; `"/admin/*"` becomes `"/admin(/*)"` so it matches the bare
- * `/admin` as well as `/admin/x` (but not `/administrator`). Returns `null` for the catch-all.
- */
+/** Compiles a `use()` path convention into a route-pattern matcher, or `null` for the catch-all. */
 function compileGuardMatcher(path: string): Matcher<string> | null {
   if (path === "*") return null;
   let source = path;
@@ -81,11 +76,6 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
   /** Builds the dispatching router once, with a static middleware stack. */
   private _buildRouter(): ReturnType<typeof createRouter> {
-    // Re-publish per-request state (set in `fetch`) onto the context as direct properties.
-    // A miss means the request object was replaced between `fetch` and routing (e.g. the router
-    // cloned it) — `env`/`config` would then be silently absent and surface later as opaque
-    // `undefined env` errors. Fail loudly here so the cause is unambiguous and the version
-    // contract with the underlying router is pinned.
     const provideRequestState: Middleware = (context, next) => {
       const state = this._requestState.get(context.request);
       if (!state) {
@@ -99,13 +89,11 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       return next();
     };
 
-    // Outermost response transform: flush all pending headers in a single rebuild.
     const applyHeaders: Middleware = async (context, next) => {
       const res = await next();
       return applyPendingHeaders(context, res);
     };
 
-    // Precompiled, path-scoped guards.
     const guarded: Middleware[] = this._globals.map(
       ({ matcher, handler }) =>
         (context, next) =>
@@ -120,19 +108,9 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       }
     };
 
-    // The boundary sits at two depths because the two failure sites need different guarantees.
-    // Innermost, it catches throws from route handlers and route-level middleware so the error
-    // response still flows back *out* through the guards. `createSecurityHeaders` no longer needs
-    // that — it queues before `next()` — but the guards that genuinely queue on the way out still
-    // do: `session.ts` and `flash-cookie.ts` both set their `set-cookie` after `await next()`, and
-    // an error response that skipped them would drop a rotated session or a pending flash.
-    // Wrapped around the guard stack, the boundary catches a throw from a guard itself, which would
-    // otherwise escape the router entirely and skip the `applyHeaders` flush along with every
-    // header already queued.
-    //
-    // Collapsing to a single depth is deliberately *not* done here: with only the outer boundary,
-    // `requestLogger`'s `catch` becomes the primary path for handler throws too, which widens the
-    // flush-window hazard `_handleError` now closes rather than narrowing it.
+    // `errorBoundary` appears twice deliberately: the inner one keeps an error response flowing back
+    // out through guards that queue `set-cookie` after `next()`; the outer one catches a guard's own
+    // throw, which would otherwise skip the `applyHeaders` flush entirely.
     return createRouter({ matcher: this._matcher, middleware: [provideRequestState, applyHeaders, errorBoundary, ...guarded, errorBoundary] });
   }
 
@@ -142,9 +120,8 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     const req = isHead ? new Request(request.url, { method: "GET", headers: request.headers }) : request;
 
     try {
-      // Config resolution validates the env and throws on a deployment defect. It runs inside the
-      // try so that failure produces the app's own error page rather than escaping `fetch` as a
-      // raw throw — which the runtime would render as its own untouchable error page.
+      // Inside the try so a deployment defect produces the app's own error page rather than
+      // escaping `fetch` and letting the runtime render its own untouchable one.
       const config = resolveConfig(this.configStore, (env ?? {}) as object);
       this._requestState.set(req, { env, executionCtx, config });
       this._router ??= this._buildRouter();
@@ -155,9 +132,6 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       }
       return res;
     } catch (err) {
-      // Last resort: an error thrown outside the middleware chain — env/config resolution above,
-      // or router internals. Neither reaches the consumer's security middleware, so the response
-      // carries the baseline hardening `_handleError` applies itself.
       const res = await this._handleError(toError(err), makeErrorContext(request, env, executionCtx));
       if (isHead) {
         return new Response(null, { status: res.status, headers: res.headers });
@@ -174,22 +148,12 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
         // fall through to default error page
       }
     }
-    // This boundary converts the throw into a 500 *below* `requestLogger`, so that middleware's
-    // `await next()` resolves normally and its summary record sees only a status code. Publishing
-    // here is what puts the error detail on the per-request logger — the request's own channels
-    // and bindings, so a persisted 500 stays correlated with the request that caused it. Absent
-    // when the throw happened outside the middleware chain, hence the optional read.
     const reqLog = requestLog.getOptional(context);
     if (reqLog) {
       reqLog.error("unhandled error", { error: serializeError(err) });
-      // Flushed here rather than left to `requestLogger`. On the guard-throw path that middleware's
-      // `finally` has *already* run by the time this executes, and `flush()` splices the pending
-      // buffer (`logging/logger.ts`) — so a record appended afterwards sits in a buffer nobody
-      // awaits and, with a genuinely asynchronous channel such as `kvLogChannel`, may never reach
-      // storage before isolate teardown. Flushing at the point of write puts the boundary's record
-      // inside an awaited window on *both* throw paths. On the handler-throw path this simply
-      // flushes early and `requestLogger`'s own flush then covers the summary; a second flush of an
-      // empty buffer costs nothing.
+      // Flushed at the point of write, not left to `requestLogger`: on the guard-throw path its
+      // `finally` has already run, so a record appended afterwards would sit in a buffer nobody
+      // awaits and may never reach an async channel before isolate teardown.
       const flush = reqLog.flush();
       try {
         context.executionCtx.waitUntil(flush);
@@ -197,12 +161,6 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
         await flush;
       }
     }
-    // Same serialized shape as the line above, deliberately. `this._logger` is a `consoleChannel`
-    // (the worker log stream, not the HTTP client), and redaction in forge is a *channel*-level
-    // decision — `STRUCTURED_LOGGING.md` §6a puts stacks in `consoleChannel` only, and §2e has
-    // `kvLogChannel` strip them via `persistStack: false`. Dropping `name` and `stack` here made
-    // the console the *least* informative sink, which is backwards. What must not leak is the
-    // response body, and that is guarded separately below by `isDebug`.
     this._logger.error("Unhandled error", { error: serializeError(err) });
     let isDebug = false;
     try {
@@ -213,9 +171,8 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       /* ignore */
     }
     const detail = isDebug ? `<p>${escapeHtml(err.message)}</p>` : "<p>An unexpected error occurred.</p>";
-    // Baseline hardening for errors thrown outside the middleware chain (router internals), which
-    // never reach the consumer's security middleware. The in-chain path overlays the consumer CSP
-    // via `applyPendingHeaders` (which set-overwrites these). Self-contained — no new imports.
+    // Baseline hardening: an error thrown outside the middleware chain never reaches the consumer's
+    // security middleware, so these headers are the only ones such a response would carry.
     return new Response(`<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1>${detail}</body></html>`, {
       status: 500,
       headers: {

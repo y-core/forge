@@ -196,7 +196,9 @@ and cost nothing.
   adds only what ARIA's menu pattern asks for and the platform does not supply (§1g).
 - **`Collapsible`** — **`<details>` owns open and closed**; the controller only *publishes* them as
   state attributes for CSS to react to (§4).
-- **`Tooltip`** — a `popover="hint"` surface, so it does not close the menu or dialog beneath it.
+- **`Tooltip`** — a `popover="manual"` surface, shown and hidden by its controller. `auto` would
+  put it in the platform's exclusive-open stack and give it light-dismiss, so opening a tooltip
+  would close an open menu beneath it; `manual` keeps it out of that stack entirely.
 - **`Accordion`** — not a composite: each item is its own disclosure and its own tab stop, because
   that is what a native `<details>` list is.
 
@@ -266,8 +268,9 @@ such a value can be *declared* but never *named*: the browser tokenizes the refe
 that match nothing. Deriving the same unusable string on both halves does not redeem it — the harm
 is the platform's tokenization, not a disagreement between forge's two code paths. The field itself
 still renders, and its `name` attribute is still passed through as the caller wrote it; only the
-wiring is withheld. The predicates and the character set are `field.tsx`'s TSDoc to state, not this
-document's.
+wiring is withheld. `src/ui/core/field.tsx` owns the predicates and the character set — read the
+code, which is authoritative over any prose restating it here or in its TSDoc
+([`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a).
 
 **The hostile set is exactly HTML's ASCII whitespace, and JS `\s` is the wrong class for it.** `\s`
 also matches U+00A0 and the Unicode spaces, which are legal id characters that no parser treats as a
@@ -465,6 +468,11 @@ the `data-` hook beside it is that **CSS should not have to read ARIA**: a style
 `[aria-pressed="true"]` couples presentation to an accessibility contract, so the day the correct
 ARIA for a widget changes, the styling breaks with it. The two are reconciled together by one
 function, so a controller can never write one without the other.
+
+**`aria-orientation` is emitted on both axes, including the role's default.** `Tabs.List` and
+`Toolbar` write `horizontal` as readily as `vertical`, where base-ui omits the default value. The
+divergence is deliberate: an attribute present exactly when a caller passed a non-default is one a
+test has to assert two ways and a reader has to know a role table to interpret.
 
 ### 4c. The Caller Is Authoritative
 

@@ -1,13 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { mountScrollSpy } from "./scroll-spy";
 
-/**
- * `bun test` runs in a pristine Bun realm with no DOM, so the fixture below is a hand-built one —
- * just the surface `mountScrollSpy` touches. What is proven here is the bookkeeping: which link
- * carries the marker, that only one ever does, and that nothing throws on a fragment pointing
- * nowhere. Real intersection behaviour is the browser set's (`scroll-spy.browser.ts`).
- */
-
 interface Records {
   target: FakeElement;
   isIntersecting: boolean;
@@ -171,7 +164,6 @@ describe("mountScrollSpy", () => {
     const f = fixture(["#two", "#one"], ["one", "two"]);
     mountScrollSpy({ root: f.root });
 
-    // Both sections intersect: the answer must be the earlier *section*, not the earlier link.
     f.observer().emit([
       { target: f.sections[0] as FakeElement, isIntersecting: true },
       { target: f.sections[1] as FakeElement, isIntersecting: true },

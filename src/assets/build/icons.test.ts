@@ -5,8 +5,6 @@ import { join } from "node:path";
 import type { IconsConfig } from "../types";
 import { buildIcons } from "./icons";
 
-// sharp is an optional peer resolved via `await import("sharp")`; stub it with a
-// chainable no-op that returns a deterministic PNG buffer so no native binary is needed.
 async function stubSharp(): Promise<void> {
   await mock.module("sharp", () => ({
     default: () => ({ resize: () => ({ png: () => ({ toBuffer: async () => new TextEncoder().encode("PNG") }) }) }),
@@ -39,19 +37,15 @@ describe("buildIcons()", () => {
 
       await buildIcons(config);
 
-      // PNG outputs carry the stubbed buffer content, exactly.
       expect(readFileSync(join(outDir, "icon-16.png"), "utf-8")).toBe("PNG");
       expect(readFileSync(join(outDir, "icon-32.png"), "utf-8")).toBe("PNG");
 
-      // SVG favicon: style block injected before the first <path>.
       expect(readFileSync(join(outDir, "favicon.svg"), "utf-8")).toBe(
         `<svg viewBox="0 0 24 24"><style>path{fill:#163030}</style><path d="M12 12" fill="currentColor"/></svg>`,
       );
 
-      // ICO output written.
       expect(existsSync(join(outDir, "favicon.ico"))).toBe(true);
 
-      // Manifest reflects only the manifest-opted png (icon-32).
       const manifest = JSON.parse(readFileSync(join(outDir, "manifest.webmanifest"), "utf-8"));
       expect(manifest.name).toBe("Demo");
       expect(manifest.theme_color).toBe("#163030");

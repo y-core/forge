@@ -61,12 +61,6 @@ describe("resolveD1Client", () => {
   });
 });
 
-// ── Cloudflare-shaped contract proof (compile-time) ────────────────────────
-// Mirrors the divergent shape of Cloudflare's real D1 binding — an abstract class
-// with extra `withSession`/`dump` members, an overloaded `first`, a generic `run`,
-// and a richer `D1Result` whose `meta` has all-required fields plus an index
-// signature. The structural contract `D1DatabaseLike` must accept it cast-free.
-
 interface CfD1Meta {
   duration: number;
   size_after: number;

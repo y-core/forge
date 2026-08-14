@@ -7,23 +7,15 @@ import type { FC } from "../../jsx/types";
 export interface ResumableProps {
   /** The scope's registered name — must match the client-side `registerScope`. */
   name: string;
-  /** Optional element id on the scope root, so it can serve as a `commandfor` sink for custom
-   * Invoker commands (`commandAttrs`) that have no popover target. */
+  /** Optional element id on the scope root, so it can serve as a `commandfor` sink. */
   id?: string;
   /** Serializable initial state, rehydrated into signals on first interaction. */
   state?: Record<string, unknown>;
-  /** Classes for the scope root, which is a real box in its parent's layout — in a flex row it is
-   * the flex item. Width, `shrink` and border belong here rather than on the component inside,
-   * which is only a descendant of the box being laid out. */
+  /** Classes for the scope root, which is a real box in its parent's layout. */
   class?: string;
 }
 
-/**
- * Wraps SSR children in a resumable scope. No eager hydration: a single delegated
- * listener (see resume.ts) resumes this scope on the first interaction with any
- * descendant carrying a `data-on-<event>` attribute, rebuilding `state` into signals.
- * @public
- */
+/** Wraps SSR children in a resumable scope, resumed on first interaction with a descendant. @public */
 export const Resumable: FC<ResumableProps> = ({ name, id, state, class: cls, children }) => (
   <div
     data-scope={name}

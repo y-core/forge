@@ -3,18 +3,22 @@ import { v } from "../validation/mod";
 import type { AssetsConfig, DefineValue, EnvRef, FlagRef, ResolvedConfig, ResolvedJsBundle } from "./types";
 import { AssetsConfigSchema } from "./types";
 
+/** Types the default export of an `assets.config.ts`. @public */
 export function defineAssetsConfig(config: AssetsConfig): AssetsConfig {
   return config;
 }
 
+/** Defers a bundle define to the named build-environment variable. @public */
 export function env(name: string): EnvRef {
   return { __env: name };
 }
 
+/** Defers a bundle define to the named build-environment variable, coerced to a boolean. @public */
 export function flag(name: string): FlagRef {
   return { __flag: name };
 }
 
+/** Resolves a define against `source` into the JavaScript literal esbuild substitutes. @internal */
 export function resolveDefine(value: DefineValue, source: Record<string, string | undefined>): string {
   if (value !== null && typeof value === "object") {
     if ("__flag" in value) return JSON.stringify(source[value.__flag] === "true" || source[value.__flag] === "1");
@@ -26,9 +30,17 @@ export function resolveDefine(value: DefineValue, source: Record<string, string 
   return JSON.stringify(value);
 }
 
-export async function loadConfig(configPath?: string, env: Record<string, string | undefined> = {}): Promise<ResolvedConfig> {
-  const resolvedPath = resolve(configPath ?? "assets.config.ts");
-  // Dynamic import handles both .ts (Bun) and pre-compiled .js
+/** What `loadConfig` needs to find and normalise a config file. @public */
+export interface LoadConfigOptions {
+  root: string;
+  configPath?: string;
+  env?: Record<string, string | undefined>;
+}
+
+/** Imports, validates and normalises the asset config. @public */
+export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedConfig> {
+  const { root, configPath = "assets.config.ts", env = {} } = options;
+  const resolvedPath = resolve(root, configPath);
   // biome-ignore lint/suspicious/noExplicitAny: dynamic module has unknown shape
   const mod = (await import(resolvedPath)) as any;
   const raw: unknown = mod.default ?? mod;

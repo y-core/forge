@@ -1,7 +1,10 @@
 import { v } from "../validation/mod";
 
+/** A deferred read of a build-environment variable, resolved when a bundle's defines are resolved. @internal */
 export type EnvRef = { readonly __env: string };
+/** A deferred read of a build-environment variable coerced to a boolean. @internal */
 export type FlagRef = { readonly __flag: string };
+/** A constant substituted into a JS bundle at build time. @public */
 export type DefineValue = string | number | boolean | null | EnvRef | FlagRef;
 
 const DefineValueSchema = v.union([
@@ -76,9 +79,11 @@ export const AssetsConfigSchema = v.object({
 });
 
 export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
+/** A `JsBundle` whose defines have been resolved to JavaScript source literals. @public */
 export type ResolvedJsBundle = Omit<JsBundle, "define"> & { define?: Record<string, string> };
 export type CssBuild = v.InferOutput<typeof CssBuildSchema>;
 export type CopyEntry = v.InferOutput<typeof CopyEntrySchema>;
+/** One sprite source file, as a bare filename whose symbol key is its basename or an explicit key/file pair. @internal */
 export type SpriteFileEntry = v.InferOutput<typeof SpriteFileEntrySchema>;
 export type SpriteSource = v.InferOutput<typeof SpriteSourceSchema>;
 export type SpriteGroup = v.InferOutput<typeof SpriteGroupSchema>;

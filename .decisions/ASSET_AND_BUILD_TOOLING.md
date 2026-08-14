@@ -20,7 +20,7 @@ description: "The asset pipeline, the content-hash manifest system, the CLI fram
 - §1 Assets Namespace: declaring and discovering the pipeline config
 - §1a defineAssetsConfig — Schema and Validation: the canonical entry point
 - §1b AssetsConfig Type Shape: the config fields
-- §1c loadConfig — Config Discovery: walking up for `assets.config.ts`
+- §1c loadConfig — Config Resolution: resolving `assets.config.ts` against cwd, and why you should pass it
 - §2 assets/build Pipeline: the build functions and change detection
 - §2a Build Functions — Orchestration: `buildAll` and the individual steps
 - §2b Hash and Change Detection: content hashing and the state file
@@ -32,6 +32,7 @@ description: "The asset pipeline, the content-hash manifest system, the CLI fram
 - §4a Commands Are Values: a tree built from data, not registered by side effect
 - §4b Flags Are a Typed Record: two types, inference instead of casts
 - §4c Errors Carry a Kind, Not an Exit Code: why failure is always exit 1
+- §4d CommandBase and Command Are Not Mergeable: the variance that forces two interfaces
 - §5 pkg Namespace — Project Tooling: the blessed release path and the published gate
 - §5a createReleaseCommand — Automated Release Workflow: the ordered steps and the refusals
 - §5b SemVer Utilities: parse, bump, format, compare
@@ -40,6 +41,8 @@ description: "The asset pipeline, the content-hash manifest system, the CLI fram
 - §5e Changelog Gate Invariants: what is checked before a release, and what deliberately is not
 - §5f createGateCommand — the Published Verification Gate: one runner, one table per project
 - §5g cloudflareWorkerSteps — the Fleet Preset: a step-table factory, not new machinery
+- §5h Roots Are Stated or Derived, Never Discovered: no function walks the disk to find the project
+- §5i Checks Are Functions, Not Scripts: the published validators and the verb vocabulary
 
 ---
 
@@ -84,13 +87,22 @@ within `dist` for bundled JavaScript. All other outputs land directly under `dis
 Do not construct `AssetsConfig` directly — always go through `defineAssetsConfig` so
 validation runs at startup.
 
-### 1c. loadConfig — Config Discovery
+### 1c. loadConfig — Config Resolution
 
     import { loadConfig } from "@y-core/forge/assets"
-    const config = await loadConfig()  // discovers assets.config.ts from cwd
+    const config = await loadConfig("src/assets/config.ts")
 
-`loadConfig` walks up from `process.cwd()` looking for `assets.config.ts`. CLI
-commands call this automatically; call it explicitly only in programmatic build scripts.
+**`loadConfig` resolves its argument against `process.cwd()`; it does not search.** An omitted
+argument means `assets.config.ts` in the current directory and nothing more — there is no walk up
+the tree, and a run from a subdirectory does not find the root's config.
+
+> This section previously described a walk-up that the code has never performed. The correction is
+> recorded rather than quietly applied, because a documented search is the kind of thing a reader
+> builds a directory layout around.
+
+Every app in the fleet passes `--config` explicitly, so the fallback is effectively unused. **Prefer
+passing the path**: it is the difference between a build whose inputs are stated and one whose
+inputs depend on where the command was typed. §5h states the rule this is an instance of.
 
 ---
 
@@ -221,6 +233,14 @@ command needing a different code — or needing to exit *without* the `Error:` p
 would print — calls `process.exit` itself; the verification gate does exactly that so its summary
 line is the last thing printed.
 
+### 4d. CommandBase and Command Are Not Mergeable
+
+**`CommandBase` and `Command<F>` are near-identical on purpose and must stay separate.** `run` takes
+its flags as a parameter, so `F` is contravariant and `Command<F>` is invariant in it — a tree of
+differently-flagged commands has no common `Command<…>` to be typed as. Tree links are therefore
+`CommandBase`, which declares no `run`, and `execute` recovers the handler through the
+`CallableCommand` cast, the one place that invariance is discharged.
+
 ---
 
 ## 5. pkg Namespace — Project Tooling
@@ -239,9 +259,9 @@ directories of concrete files).
     const releaseCmd = createReleaseCommand({ cwd })
 
 **`createReleaseCommand(config, deps?)` takes a config object, not a program.** `cwd` is
-required; `tagPrefix` defaults to `"v"` and `stageFiles` to `["package.json"]`. The second
-parameter is the injected dependency set, present so the command is testable — production
-callers pass one argument.
+required; `tagPrefix` defaults to `"v"` and `stageFiles` to what the release wrote (see below).
+The second parameter is the injected dependency set, present so the command is testable —
+production callers pass one argument.
 
 It builds a `release` subcommand that, in order: refuses a dirty working tree, resolves the
 next version, reaches a verdict on the changelog and promotes it in memory (§5d), prints the
@@ -257,12 +277,23 @@ defect, and §5e is the gate that says so.
 the irreversible step, publishing a tag to a remote, stays a deliberate act. Bringing the
 changelog inside the governed path does not change that.
 
-**The commit is atomic.** `stageFiles` decides what the release commit carries; forge's own
-binding under `scripts/` adds the changelog to the default, so the bump, the promoted section
-and the tag are one commit rather than a bump commit chasing a prose commit. The library
-default stays `["package.json"]` — a changelog is this repository's policy, not every
-consumer's, and a consumer without one releases unchanged (`changelogFile` is skipped when the
-file is absent).
+**The commit is atomic, and the default is what makes it so.** `stageFiles` defaults to exactly
+what this command wrote — `package.json`, plus `changelogFile` when a changelog was promoted — so
+the bump, the promoted section and the tag are one commit rather than a bump commit chasing a
+prose commit. A project with no changelog stages `package.json` alone, because `commit` runs
+`git add` and naming a path that does not exist would fail the release outright.
+
+> This default was previously `["package.json"]`, on the reasoning that a changelog is one
+> repository's policy rather than every consumer's. That reasoning was wrong about which file it
+> described: `changelogFile` is not an opt-in the consumer declares, it is a file **this command
+> writes**. Writing it and not staging it left the release commit missing the promotion and the
+> working tree dirty afterwards — a defect every consumer inherited unless they knew to override
+> the field. Deriving the list from what was written removes the choice rather than re-defaulting
+> it.
+
+**`stageFiles` is an override, not an addition.** Naming it replaces the derived list. It exists
+for what a release touches *beyond* its own writes — a lockfile, a monorepo's sibling manifests,
+a version constant in source — and those callers state the full list deliberately.
 
 Four refusals matter, and each is a guard rather than a convenience:
 
@@ -372,7 +403,7 @@ prompt, and two properties keep it from becoming routine:
   with no escape, because promotion has nothing to act on.
 - **It still promotes.** The section ships as a permanent `_Nothing yet._` entry in the released
   record, which is the deterrent. Skipping promotion would be worse than useless: it would leave
-  the topmost released heading behind `package.json` and fail §5e on the next `verify`.
+  the topmost released heading behind `package.json` and fail §5e on the next `verify --full`.
 
 **The link reference definition is best-effort.** Its base URL comes from `package.json`'s
 `repository` field, normalised by stripping a `git+` prefix and a `.git` suffix. Absent or
@@ -391,10 +422,10 @@ into a `ReleaseError` at its own boundary and the file I/O lives with the other 
 
 ### 5e. Changelog Gate Invariants
 
-**`CHANGELOG.md` is checked by a gate step of `bun run verify` only.** Requiring a written
-`[Unreleased]` entry on every `check` would fail every work-in-progress commit; `verify` runs
+**`CHANGELOG.md` is checked by a `fullOnly` gate step.** Requiring a written
+`[Unreleased]` entry on every fast run would fail every work-in-progress commit; `verify --full` runs
 exactly where the invariant bites — before `prepublishOnly`, and before a tag exists.
-`scripts/lib/steps.ts` owns the step table (see [`TESTING.md`](./TESTING.md) §6).
+`config/steps.ts` owns the step table (see [`TESTING.md`](./TESTING.md) §6).
 
 **It imports the parser from `src/pkg/mod` rather than adding a fourth `scripts/*-parse.ts`.**
 Release needs the same grammar to promote with, and two parsers for one document is precisely
@@ -423,26 +454,37 @@ Three things are deliberately not checked, each because the file disproves them:
 
 ### 5f. createGateCommand — the Published Verification Gate
 
-    import { createGateCommand } from "@y-core/forge/pkg"
+    forge-verify --full                       # the bin, loading config/steps.ts
 
-    await execute(createGateCommand({ cwd, gate: "check", steps: STEPS }))
+    await execute(createGateCommand({ cwd, steps: STEPS }))   # the runner, handed a table
 
 **One runner, one table per project.** The runner is published; the table is not. That split is the
 whole design: five repositories share the selection logic, the fail-fast ordering, the `requires`
 probe and the full-log file, while each keeps its own steps as its own source of truth — forge's in
-`scripts/lib/steps.ts` (see [`TESTING.md`](./TESTING.md) §6a).
+`config/steps.ts` (see [`TESTING.md`](./TESTING.md) §6a).
+
+**The bin is the entry point; the factory is the escape hatch.** `forge-verify` resolves
+`config/steps.ts` (or `--config`) and delegates to `createGateCommand`, so a project needs no
+binding file of its own. `createGateCommand` stays published for the case the bin cannot serve —
+a table assembled at run time, or a gate embedded in a larger CLI.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `cwd` | `string` | — | Repository root. Every step is spawned here, so a step's relative paths resolve. |
-| `gate` | `Gate` | — | Which gate's membership to run. |
 | `steps` | `readonly Step[]` | — | The table to resolve against. |
 | `binDir` | `string` | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve. |
 
-**`Gate` is a closed `"check" | "verify"` union, and that is what carries the prerequisite
-invariant.** A third verb would have no defined answer to "may this step require a browser?" — the
-one question [`TESTING.md`](./TESTING.md) §6c exists to settle. Widening the names would dissolve
-the invariant to buy an app a synonym.
+**One command, two modes — not two commands.** `check` and `verify` were two verbs sharing every
+flag and every line of behaviour, differing only in a membership filter. That is a mode by
+definition, and modelling it as two verbs cost a duplicated binding file per repo, a `gate` config
+field, and a superset invariant that had to be *tested* rather than being true by construction.
+`verify` runs the fast set; `verify --full` adds the `fullOnly` steps.
+
+**`GateMode` is a closed `"fast" | "full"` union, and `Step.fullOnly` is a boolean.** Together they
+carry the prerequisite invariant [`TESTING.md`](./TESTING.md) §6c exists to settle: a third mode
+would have no defined answer to "may this step require a browser?", and a *list* of modes would let
+a table express a step that a fast run has and a full run does not. Neither is a restriction the
+runner enforces at runtime — both are shapes that make the wrong thing unsayable.
 
 **`binDir` is a de-hardcoding, not a feature.** The runner previously hardcoded
 `${cwd}/node_modules/.bin`; the apps that invoke tools as `bun x biome` need a different prefix, and
@@ -472,15 +514,124 @@ streamed run is `--list` and then the step's own command.
 into the app's own array and appended to; an app that outgrows it writes the rows out by hand and
 loses nothing. Nothing in the runner knows a preset exists.
 
-The order is `cf:typecheck` → `types:assets` → `typecheck` → `lint` → `test`. **Generation leads
-judgement**: `wrangler types` and the asset-types emitter both write files `typecheck` then reads,
-so a stale binding type surfaces as a type error rather than as a green run over yesterday's
-bindings.
+The order is `cf:types:runtime` → `cf:types:bindings` → `types:assets` → `typecheck` → `lint` →
+`test`. **Generation leads judgement**: `wrangler types` and the asset-types emitter both write
+files `typecheck` then reads, so a stale binding type surfaces as a type error rather than as a
+green run over yesterday's bindings.
 
-**Every preset step is prerequisite-free**, so the whole preset is legal in `check`
+**The two `wrangler types` invocations are two steps, not one.** Three of the four apps chain them
+with `&&` in a `cf:typecheck` script — `--no-include-env` for the runtime half, then
+`--no-include-runtime` for the bindings half — and `Step.cmd` is one executable, not a shell line.
+Splitting them is what the `&&` cost you back: a failure names which invocation broke. `--config`
+goes on the bindings invocation only, because runtime types do not depend on the wrangler config.
+
+**The options are the fleet's actual disagreements, and nothing else.** `assetOut` exists because
+the emitter writes nothing useful without `--out`; `wranglerTypes: false` exists because cad-forge
+declares its binding types by hand. The two `.types/` paths are baked in — every app uses them, and
+an option nobody varies is surface for nothing, the same argument that keeps the runner's temp-dir
+prefix hardcoded (§5f).
+
+> This section is the record of a defect, not just a description. The preset shipped in v0.0.84
+> with a single-invocation `cf:typecheck` and a `types:assets` that omitted `--out` — a table **no
+> app in the fleet could actually use**. It was caught by dry-running the first migration rather
+> than by any test, which is why `presets.test.ts` now pins each command verbatim: the preset's
+> contract is "these are the commands the fleet runs", and that is only assertable literally.
+
+**Every preset step is prerequisite-free**, so the whole preset is legal in a fast run
 ([`TESTING.md`](./TESTING.md) §6c). A
 `requires` added to any of them would break that for every app at once, which is why
 `presets.test.ts` asserts the absence as a property rather than trusting the reading.
 
 `assetConfig` is optional and omitting it drops the `types:assets` step entirely — an app with no
 asset pipeline gets a four-step table, not a step that succeeds vacuously.
+
+### 5h. Roots Are Stated or Derived, Never Discovered
+
+**No function in `pkg` walks the disk to find out where the project is.** Not upward, not by
+probing for a marker file, not at all. A root arrives one of exactly two ways:
+
+- **Stated.** The caller passes it. forge's own bindings do this, from `import.meta.url` — see
+  `ROOT` in `config/steps.ts`.
+- **Derived.** `installedAppRoot()` takes this module's own path and returns everything before its
+  first `node_modules` segment. Pure string arithmetic; it reads no directory. When forge is
+  installed at `<app>/node_modules/@y-core/forge/…`, that text *is* `<app>`.
+
+`resolveAppRoot(explicit?)` is the one entry point: stated wins, derived is the fallback, and when
+neither is available **it throws**.
+
+**Why the refusal rather than a `process.cwd()` default.** A cwd default makes the answer depend on
+which directory the command was typed in. The failure that produces is not a crash — it is a check
+that walks a tree containing nothing it recognises and reports the same green as a check that
+walked the right tree and found no problems. Every guard in this gate exists to separate those two
+outcomes; a discovered root quietly re-merges them.
+
+**Why not a walk-up.** An upward search for `package.json` or a config file finds *a* project, not
+necessarily *this* one — a monorepo package, a `node_modules` entry, or a parent checkout all
+answer. Worse, it succeeds, so nothing signals that the wrong tree was chosen. Deriving from the
+install path cannot pick a different project, because the path is the install.
+
+**The first `node_modules` segment, not the last.** A nested install
+(`<app>/node_modules/x/node_modules/@y-core/forge`) and a pnpm store path
+(`<app>/node_modules/.pnpm/…/node_modules/@y-core/forge`) both place the consuming application
+before the first occurrence; every later one names a dependency's own root. Splitting on the last
+would report the dependency as the app.
+
+The derivation is `findAppRoot(modulePath)` — a separate pure function precisely because
+`import.meta.url` cannot be varied from a test, so a derivation folded into `installedAppRoot`
+would be unassertable.
+
+**A linked install is the case the derivation cannot answer, and `--root` is how the caller
+states it.** `"@y-core/forge": "file:../forge"` installs as a tree of symlinks into the forge
+checkout, and every runtime resolves `import.meta.url` to the realpath — so this module reports
+itself at `<forge>/src/cli/app-root.ts` and there is no `node_modules` segment left to split on.
+The derivation returns `undefined`, correctly: the path has stopped naming the consumer. Every
+`forge-assets` command therefore carries `--root`, falling back to `FORGE_APP_ROOT`, and an empty
+value is treated as absent so an exported-but-unset variable cannot resolve every path against `/`.
+
+This is the *stated* branch, not a third one. The alternative — noticing the symlink and reading
+through it — is the walk this section rules out, and it would answer for a `file:` dependency of a
+dependency exactly as confidently as for the app.
+
+### 5i. Checks Are Functions, Not Scripts
+
+**Every validator the gate runs is a published `checkX(config)` returning findings.** They lived in
+`scripts/`, which the `exports` map cannot reach — so a consuming app got a step table and nothing
+to put in it. Publishing the runner while withholding the steps was the half-measure this corrects.
+
+A check is built from four layers, and the **prefix states which one a function is**:
+
+| Prefix | Purity | Shape |
+|---|---|---|
+| `parse*` / `find*` | pure | text → data. No disk, no root, no path. |
+| `validate*` | pure | data → `Finding[]`. Every policy decision lives here. |
+| `resolve*` | impure | config → files or contents. Walks disk, judges nothing. |
+| `check*` | impure | config → `CheckResult`. Orchestrates the three above. |
+| `format*` | pure | findings → strings. |
+
+`check*` is the only entry point a consumer needs; the rest are the seams that make one assertable
+without a filesystem or a subprocess.
+
+**`ok` is derived from the findings, never passed.** `checkResult(findings, summary)` computes it,
+so "a check that reports a failure and forgets to flip a flag" is not expressible. **`summary`
+always carries a count** — `0 .tsx files carry every pragma` is a *visible* nothing-happened, and a
+silent green is indistinguishable from a check that walked nothing.
+
+**Two levels, not a scale.** `fail` fails the check; `warn` is reported and does not. A third level
+invites "does `major` fail the gate?", which is the question a level should answer.
+
+The published set: `checkExports`, `checkNamespaceGraph`, `checkDocs`, `checkDesign`,
+`checkCssSources`, `checkChangelog`, `checkJsx`, and `hasChromium` for the browser probe. Each
+takes an explicit `root` (§5h) and every forge-specific allowlist as config, which is what keeps a
+check from being forge's script wearing a config parameter.
+
+**Configuration lives in the consuming repository's `config/steps.ts`**, beside the step table.
+That file already answers "what does this repository's gate do?", so the allowlists belong with it
+rather than in a second config concept; each `scripts/validate-*.ts` binding is then four lines —
+import the check, import its config, exit on the verdict.
+
+> The refactor paid for itself twice in testability. `validate-docs.test.ts` and
+> `validate-namespace-graph.test.ts` both **spawned subprocesses**, each with a comment explaining
+> that their `ROOT` came from `import.meta.url` and "can never be pointed at a fixture tree". With
+> `root` as config both became ordinary in-process tests. `barrel-parse`'s five `parse*` functions
+> likewise took a *file path* and read it themselves — a lie in the name, and the reason every case
+> in its suite wrote a real file to a temp directory. They take source strings now.

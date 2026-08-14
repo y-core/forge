@@ -55,13 +55,7 @@ function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfToken?: string
   return JSON.stringify({ "X-CSRF-Token": csrfToken });
 }
 
-/**
- * A `<form>` that wires CSRF for you and passes htmx attributes straight through.
- *
- * It renders **no honeypot**. One used to be emitted unconditionally, including on `method="get"`,
- * where the browser serialises it into the query string of every resulting URL. Compose
- * {@link Honeypot} yourself on the forms that submit mutations — see its TSDoc, and `form/README.md`.
- */
+/** A `<form>` that wires CSRF for you and passes htmx attributes straight through. @public */
 export const Form: FC<PropsWithChildren<FormProps>> = ({
   csrfToken,
   csrfField = CSRF_FIELD_DEFAULT,
@@ -74,15 +68,15 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
 }) => {
   const formProps = props as Record<string, unknown>;
   const resolvedHxHeaders = resolveHxHeaders(hxHeadersProp, csrfToken);
-  // No base classes yet, so `cn` can resolve to nothing — emit no attribute rather than `class=""`.
-  const classes = cn(cls);
+  const merged = cn(cls);
+  const classAttribute = merged ? { class: merged } : {};
 
   return (
     <form
       data-slot={slotToken("form", inherited)}
       method={method}
       {...(resolvedHxHeaders !== undefined ? { "hx-headers": resolvedHxHeaders } : {})}
-      {...(classes ? { class: classes } : {})}
+      {...classAttribute}
       {...formProps}>
       {csrfToken && <input data-slot='form-csrf' type='hidden' name={csrfField} value={csrfToken} />}
       {children}

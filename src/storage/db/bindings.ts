@@ -5,17 +5,13 @@ import { v } from "../../validation/mod";
 import { createD1Client } from "./client";
 import type { D1BindingOptions, D1Client, D1Database, D1DatabaseLike } from "./types";
 
-/**
- * Middleware that validates a D1 database binding exists on first request.
- * Pass the Wrangler binding name (e.g. "DB"). @public
- */
+/** Middleware that validates a D1 database binding exists on first request. @public */
 export function validateD1Binding(name: string): Middleware {
   return validateBindings(
     v.object({
       [name]: v.pipe(
         v.unknown(),
         v.check(
-          // Shape check, not mere presence: a string/number bound to this name must be rejected.
           (val) => typeof val === "object" && val !== null && typeof (val as { prepare?: unknown }).prepare === "function",
           `${name} must be a D1 database binding`,
         ),
@@ -24,16 +20,7 @@ export function validateD1Binding(name: string): Middleware {
   );
 }
 
-/**
- * Resolves a D1Client from the current request context.
- *
- * @remarks
- * A missing binding is a deployment defect (startup invariant), so this **throws**
- * `Error("D1 database binding not available")` rather than returning a `Result` —
- * fail closed, per ERROR_HANDLING.md §5e. Pass `required: false` to opt into a `null`
- * return for non-security-critical features. Queries on the resolved client return
- * `Result<T, E>`: resolution throws, operation failures do not. @public
- */
+/** Resolves a D1Client from the current request context. @public */
 export function resolveD1Client<Bindings = Record<string, unknown>, DB extends D1DatabaseLike = D1Database>(
   c: AppContext<Bindings>,
   opts: D1BindingOptions<Bindings, DB>,

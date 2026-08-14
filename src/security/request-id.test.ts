@@ -77,8 +77,7 @@ describe("requestId middleware", () => {
 
   it("generates a UUID when trustCfHeaders is true but CF-Ray is whitespace-only", async () => {
     const app = makeApp({ trustCfHeaders: true });
-    // `Headers` normalizes this to "" before the middleware sees it; the blank guard covers both
-    // spellings, so a request built without that normalization lands on the same answer.
+    // `Headers` normalizes this whitespace-only value to "" before the middleware sees it.
     const res = await app.request("/test", { headers: { "CF-Ray": " \t " } });
     const xReqId = res.headers.get("X-Request-Id");
     expect(xReqId).not.toBe(null);

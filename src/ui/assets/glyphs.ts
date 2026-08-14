@@ -7,13 +7,7 @@ export interface GlyphEntry {
 /** The parsed glyph map keyed by name (the part after the prefix). */
 export type GlyphSource = Record<string, GlyphEntry>;
 
-/** Parse the text content of a build-generated SVG sprite into a keyed glyph map.
- *
- *  The `prefix` (default `"icon-"`) must match the sprite's symbol id prefix so that
- *  callers look up by bare name (e.g. `"move"` for `id="icon-move"`).
- *
- *  Returns an empty record for empty or unparseable input — never throws. Only
- *  `<symbol>` elements whose `id` starts with `prefix` are included. */
+/** Parses a build-generated SVG sprite into a glyph map keyed by name without `prefix`. */
 export function parseSpriteGlyphs(svgText: string, prefix = "icon-"): GlyphSource {
   if (!svgText) return {};
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -30,10 +24,7 @@ export function parseSpriteGlyphs(svgText: string, prefix = "icon-"): GlyphSourc
   return result;
 }
 
-/** Fetch the sprite from `url` and parse it into a `GlyphSource`.
- *
- *  On any fetch or parse failure returns an empty source — callers degrade gracefully to
- *  the stylesheet default cursor. Never throws at boot. */
+/** Fetches the sprite from `url` and parses it into a `GlyphSource`, empty on any failure. */
 export async function loadSpriteGlyphs(url: string, prefix = "icon-"): Promise<GlyphSource> {
   try {
     const res = await fetch(url);

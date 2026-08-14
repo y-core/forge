@@ -19,7 +19,6 @@ import {
   ValidateSection,
 } from "./sections";
 
-// Minimal icon compatible with ForgeIcon<…>; renders nothing.
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
 const StubIcon = ((_props: any) => null) as any;
 StubIcon.sprite = "/icons.svg";

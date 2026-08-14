@@ -1,30 +1,14 @@
 import type { Page } from "@playwright/test";
 import { build } from "esbuild";
 
-/**
- * Harness for the browser set (`bun run test:browser`).
- *
- * A browser spec puts real SSR markup in a real page, loads the real module, dispatches a real
- * event, and asserts the DOM that resulted. Nothing here fakes a DOM API — the point of the set is
- * that the platform answers, not a model of it.
- *
- * Not published: covered by the `!**\/*-test-helper.ts` negation in `package.json` `files`.
- */
-
 /** Specifiers resolve from `src/`, not from this file or the calling spec — a spec in `ui/core/` and
  * one in `ui/client/` then name the same module the same way. */
 const SRC_ROOT = new URL("../../", import.meta.url).pathname;
 
 const bundles = new Map<string, Promise<string>>();
 
-/**
- * Bundle every requested module into **one** IIFE.
- *
- * One bundle rather than one per module, because esbuild gives each bundle its own copy of every
- * shared dependency. Two separately-bundled modules that both reach `signal.ts` get two subscriber
- * registries, so a signal written through one is invisible to an effect registered through the
- * other — a failure that looks like a bug in the code under test and is not.
- */
+/** Bundles every requested module into one IIFE — separate bundles would each get their own copy of
+ * `signal.ts`, so a signal written through one would be invisible to an effect in the other. */
 function bundleModules(expose: Record<string, string>): Promise<string> {
   const entries = Object.entries(expose).sort(([a], [b]) => a.localeCompare(b));
   const key = JSON.stringify(entries);
@@ -53,38 +37,16 @@ export interface MountOptions {
    * `src/` — e.g. `{ forgeResume: "./ui/client/resume" }`. */
   expose?: Record<string, string>;
   /**
-   * Stylesheets to load into the page, as paths resolved from `src/` — the same convention `expose`
-   * uses, so `"./ui/assets/css/forge-ui.css"` names the shipped file rather than a copy.
+   * Stylesheets to load into the page, as paths resolved from `src/`.
    *
-   * **The file is served to the browser raw: no Tailwind build runs.** Three consequences decide how
-   * a fixture using this must be written:
-   *
-   * - **Name each sheet a spec actually needs, in `forge.css`'s import order.** `forge.css` itself is
-   *   only a list of `@import`s, and a relative `@import` inside a stylesheet injected by
-   *   `addStyleTag` is not something to rely on resolving — so pointing at it is how a spec gets no
-   *   CSS at all while appearing to ask for everything. Component rules are in
-   *   `forge-ui.css`; a token that has to resolve to a colour needs `theme-neutral.css` (the
-   *   scale) *and* `theme-base.css` (the mapping onto it), because the two are separate hops in
-   *   separate files.
-   * - `@theme inline` is an unknown at-rule, so the CSS parser discards the whole block. `@layer
-   *   components` is a real at-rule and is honoured. What survives of `forge-ui.css` is
-   *   therefore exactly the component rules under test, which is what a placement spec wants to
-   *   measure.
-   * - **No Tailwind utility resolves.** `class="w-40"` styles nothing. Size a fixture by its content
-   *   or by an inline `<style>` in the markup string, never by a utility class.
+   * Served raw, with no Tailwind build: name each sheet the spec needs in `forge.css`'s import
+   * order (a relative `@import` will not resolve through `addStyleTag`), and size fixtures by
+   * content or inline `<style>` rather than by a utility class, which resolves to nothing.
    */
   css?: string[];
 }
 
-/**
- * Load `html` into the page, apply the requested stylesheets, and publish the requested modules on
- * `window`.
- *
- * Order is the contract: content, then CSS, then the bundle. The bundle goes last for the same
- * reason a real page defers it — the markup exists before any controller can see it — and the CSS
- * goes *before* it so a controller that runs on `beforetoggle` and reads or writes computed style
- * sees the real cascade rather than an unstyled document.
- */
+/** Loads `html` into the page, applies the requested stylesheets, then publishes the requested modules on `window`. */
 export async function mount(page: Page, html: string, options: MountOptions = {}): Promise<void> {
   await givePageAnOrigin(page);
   await page.setContent(html);
@@ -97,19 +59,23 @@ export async function mount(page: Page, html: string, options: MountOptions = {}
   }
 }
 
+/** The rendered class list of the element carrying `slot` in its `data-slot`, un-escaped back from HTML. */
+export function classesOf(html: string, slot: string): string[] {
+  const match = new RegExp(`data-slot="(?:[^"]*\\s)?${slot}(?:\\s[^"]*)?"[^>]*?class="([^"]*)"`).exec(html);
+  if (!match?.[1]) throw new Error(`no class attribute on [data-slot~='${slot}']`);
+  return match[1].replaceAll("&amp;", "&").split(" ");
+}
+
+/** `CSS.escape` for a utility class name, which the page has and the test runtime does not. */
+export function escapeClass(cls: string): string {
+  return cls.replace(/[[\]:&~=.*>+,()#%'"^$|{}/\\?!@`\s]/g, (ch) => `\\${ch}`);
+}
+
 /** A URL no request ever leaves the browser for — the route below answers it. */
 const ORIGIN = "http://forge.test/";
 
-/**
- * Put the page on a real origin before any markup lands.
- *
- * `page.setContent()` alone leaves the document on `about:blank`, whose origin is **opaque**, and
- * reading `localStorage` on an opaque origin throws `SecurityError` rather than returning null. No
- * real page behaves that way, so a controller that stores anything — the theme scope does — could
- * not run at all under the harness while working perfectly in production. One intercepted request
- * buys the storage the same semantics a served page has; `setContent` then replaces the document
- * without changing the origin.
- */
+/** Puts the page on a real origin before any markup lands: `setContent` alone leaves the document on
+ * `about:blank`, whose opaque origin makes any `localStorage` read throw `SecurityError`. */
 async function givePageAnOrigin(page: Page): Promise<void> {
   if (page.url().startsWith(ORIGIN)) return;
   await page.route(`${ORIGIN}**`, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><html><body></body></html>" }));

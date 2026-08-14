@@ -6,13 +6,6 @@ import { SCOPE_EVENTS } from "../contracts/scope-events";
 import { Resumable } from "../server/resumable";
 import { mount } from "./browser-test-helper";
 
-/**
- * `resume()` in a real browser. Every case here dispatches a genuine event and asserts what the
- * runtime *did* — the assertion the retired document-stub harness could not make, because nothing
- * in it dispatched. Markup comes from `Resumable` + `scopeAttrs`, so the delegation contract under
- * test is the one the server actually emits.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("./resume");
@@ -110,11 +103,8 @@ test.describe("resume — delegation", () => {
     expect(result).toEqual({ distinct: true, calls: ["act"] });
   });
 
-  // Derived from SCOPE_EVENTS rather than the hand-copied `EVENT_COUNT = 4` the old harness carried:
-  // adding an event to the vocabulary adds a case here automatically.
   for (const type of SCOPE_EVENTS) {
     test(`delegates the "${type}" event to its data-on-${type} action`, async ({ page }) => {
-      // Same key derivation `scopeAttrs` itself performs — never a hand-copied `onClick` table.
       const key = `on${type.charAt(0).toUpperCase()}${type.slice(1)}` as keyof ScopeAttrsProps;
       const attrs = scopeAttrs({ [key]: "act" } as ScopeAttrsProps);
       const html = await render(Resumable({ name: "demo", children: jsx("span", { id: "target", ...attrs, children: "x" }) }));
@@ -204,8 +194,6 @@ test.describe("resume — the disposer contract", () => {
       return { beforeTeardown, afterTeardown: disposed };
     });
 
-    // Every controller in `ui/client` returns one of these; without the teardown call reaching it,
-    // a re-resume leaks every listener the previous one installed.
     expect(result).toEqual({ beforeTeardown: false, afterTeardown: true });
   });
 
@@ -250,7 +238,6 @@ test.describe("resume — the disposer contract", () => {
       return { ...counts, seen };
     }, markup);
 
-    // Four of the five generations are gone, and only the live one's observer is still listening.
     expect(result).toEqual({ setups: 5, disposed: 4, seen: [0, 0, 0, 0, 1] });
   });
 
@@ -275,8 +262,6 @@ test.describe("resume — the disposer contract", () => {
       return { afterTeardown, afterRemount: { ...counts } };
     });
 
-    // The second resume has to re-run `setup`: its disposer already ran, so a scope skipped as
-    // "already resumed" would come back with nothing bound to it.
     expect(result).toEqual({ afterTeardown: { setups: 1, disposed: 1 }, afterRemount: { setups: 2, disposed: 1 } });
   });
 
@@ -385,12 +370,6 @@ test.describe("resume — hydration", () => {
   });
 });
 
-/**
- * Discovery, not delegation. The delegated half was always shadow-safe — `closestAcross` climbs out
- * through `host` — but the eager pass looked *down* with a plain `querySelectorAll`, which stops at
- * the boundary. A scope inside a web component therefore rendered and then sat inert, with no
- * warning, because nothing ever visited it.
- */
 test.describe("resume — shadow-root discovery", () => {
   /** Attach `html` inside a shadow root nested `depth` levels below `#host`. */
   async function nest(page: Page, html: string, depth: number, mode: ShadowRootMode = "open"): Promise<void> {
@@ -444,8 +423,6 @@ test.describe("resume — shadow-root discovery", () => {
       return setups;
     });
 
-    // A closed root reports `shadowRoot === null`, so it is stepped over rather than being an error:
-    // the same answer the platform gives to every other question about a closed root.
     expect(result).toBe(0);
   });
 
@@ -462,8 +439,6 @@ test.describe("resume — shadow-root discovery", () => {
       return seen;
     });
 
-    // One hit, and it is the one inside the root — a web component resuming its own markup must not
-    // reach back out and hydrate the page's scopes as a side effect.
     expect(roots).toEqual(["go"]);
   });
 });

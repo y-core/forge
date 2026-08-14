@@ -254,12 +254,14 @@ below, cite it and stop. Prefer deleting a duplicate over syncing it.
 **Never put in prose what drifts** — function signatures, constant values, step counts, file
 inventories. Name the file that owns them.
 
-Facts owned by a file, never restated in `.decisions/` or `CLAUDE.md`:
+Facts owned by a file, cited from everywhere else and restated nowhere. Every row but the last
+names a *source* file, which is authoritative over any prose in `.decisions/` or `CLAUDE.md`; the
+last names the governing doc that a source file must not restate:
 
 | Owns | File |
 |---|---|
 | Export subpath names | `package.json` `exports` |
-| Verification gate steps | `scripts/lib/steps.ts` |
+| Verification gate steps | `config/steps.ts` |
 | Side-effectful modules | `package.json` `sideEffects` |
 | CSRF and honeypot field names | `src/form/constants.ts` |
 | Per-namespace export lists | `src/{ns}/mod.ts` |
@@ -272,6 +274,7 @@ Facts owned by a file, never restated in `.decisions/` or `CLAUDE.md`:
 | Governing-doc format as *enforced* | `scripts/validate-docs.ts` |
 | `@source` coverage as *enforced* | `scripts/validate-css-sources.ts` |
 | Token contrast mappings and their measured ratios, as *enforced* | `scripts/validate-contrast.ts` + `scripts/contrast-parse.ts` |
+| What a source comment may contain, and where displaced rationale goes | [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5 |
 
 The barrel row names two files because the rule genuinely spans two. `validate-exports.ts` remains
 the entry point and retains every policy decision — what fails, in what order, with what message —

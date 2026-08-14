@@ -51,15 +51,6 @@ describe("resolveObjectStore", () => {
   });
 });
 
-// ── Cloudflare-shaped contract proof (compile-time) ────────────────────────
-// These interfaces mirror the divergent shape of Cloudflare's real R2 binding —
-// an abstract-class `R2Object` with extra required members and readonly fields,
-// overloaded `put`/`get` (one branch returns `… | null`), a discriminated-union
-// `list` return, and branded option types. Forge's neutral `R2Bucket` could not
-// accept this without an `as unknown as R2Bucket` double-cast; the structural
-// contract `R2BucketLike` is designed to. If a divergence ever broke the contract,
-// the typed initializers below would fail to compile.
-
 interface CfR2Object {
   readonly key: string;
   readonly version: string;
@@ -104,13 +95,9 @@ interface CfR2Bucket {
 
 describe("R2BucketLike structural contract", () => {
   it("accepts a Cloudflare-shaped R2 bucket without a cast", () => {
-    // Assignability proof: the platform-shaped bucket satisfies the contract.
     type Accepts = CfR2Bucket extends R2BucketLike ? true : false;
     const accepts: Accepts = true;
 
-    // Real-usage proof: the exact resolve-site call shape — `binding: (c) => c.env.X` —
-    // type-checks with the platform type as the binding's `B`, no cast. Constructing this
-    // options value violates the `B extends R2BucketLike` constraint if the contract fails.
     const opts: R2BindingOptions<{ DOCUMENTS: CfR2Bucket }, CfR2Bucket> = { binding: (c) => c.env.DOCUMENTS };
 
     expect(accepts).toBe(true);

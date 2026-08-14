@@ -80,6 +80,7 @@ const FieldSeparator: FC<PropsWithChildren<FieldSeparatorProps>> = ({ class: cls
   </div>
 );
 
+/** Compound form-field layout composing the field root with its label, description, error, and grouping subcomponents. @public */
 export const FormField = Object.assign(FieldRoot, {
   Label: FieldLabel,
   Description: FieldDescription,

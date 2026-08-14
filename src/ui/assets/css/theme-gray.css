@@ -1,38 +1,4 @@
 /* Gray — the cool scheme, at half slate's strength.
-   ─────────────────────────────────────────────────────────────────────────────
-   **Tailwind's hue at Radix's lightness**, by the same construction as `theme-slate.css` and for the
-   reason written out in full there: each step's lightness is Radix's, so the role numbering and every
-   contrast measurement hold, while its chroma and hue come from Tailwind's `gray` resampled at that
-   lightness.
-
-   **With one addition the other schemes do not have: the chroma is scaled to 0.8.** Tailwind's `gray`
-   at full strength lands 26 units off neutral here, which read as more blue than a scheme called grey
-   should be. Scaling chroma is the one adjustment this construction makes free — it moves a scheme
-   toward or away from neutral without touching lightness, and lightness is what every contrast
-   measurement depends on. Measured across the whole dial from 1.0 down to 0.5, no audited ratio moves
-   by more than 0.05, so re-tuning the character of a scheme costs no re-measurement at all.
-
-   If this still reads too cool, 0.65 is the next stop (tint 17); the only edit is the twenty-four
-   values below, regenerated at that factor.
-
-   **Why a fourth scheme.** The three that shipped first left a gap at the cool end, and the gap was
-   in the wrong place. Measured as max−min across R/G/B at step 11 — the muted-text step, where a
-   scheme's character is most visible — they run:
-
-     neutral   0   achromatic
-     stone    12   warm
-     gray     20   cool          ← this file
-     slate    42   strongly cool
-
-   `neutral` and `stone` sit twelve units apart, which reads as almost the same scheme. Adding a
-   fourth does not close that gap, but it does mean the ladder has a rung at every strength rather
-   than clustering at the bottom, and an app that wants "grey, but not *literally* grey" now has an
-   answer that is not slate.
-
-   Tailwind's `gray` is blue-tinted, which is worth saying plainly because the name suggests
-   otherwise: this scheme is cool, and `theme-neutral.css` is the achromatic one.
-
-   Steps 1 and 2 are swapped in the light block only, so cards stay raised — see `theme-neutral.css`.
 
    @import forge.css before this file. */
 :root {
@@ -49,10 +15,6 @@
   --gray-11: #5d6571;
   --gray-12: #19202d;
 
-  /* Alpha steps — Radix `slateA`, the same ramp `theme-slate.css` uses. These are low-opacity
-     overlays whose job is to tint whatever is behind them, so the hue only has to be in the right
-     family, and Tailwind's `gray` is in slate's. Sharing the ramp is honest here rather than lazy:
-     authoring a second, weaker blue alpha would be a distinction no eye could resolve at `a3`. */
   --gray-a1:  #00005503;
   --gray-a2:  #00005506;
   --gray-a3:  #0000330f;

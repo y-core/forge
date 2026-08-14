@@ -1,13 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
 
-/** The em dash the grammar requires, as an escape. Written this way throughout so an en dash
- *  cannot pass a review by looking identical in a diff. */
+/** The em dash the grammar requires, escaped so an en dash cannot pass unnoticed in a diff. */
 const EM = "—";
 
-/** A canonical document: prose preamble, `---` separators, a written `[Unreleased]` with a `###`
- *  subsection, two released versions, and a link definition block. Deliberately built with
- *  `join("\n")` so it carries **no trailing newline**, matching the real `CHANGELOG.md`. */
+/** A canonical document, deliberately carrying no trailing newline like the real `CHANGELOG.md`. */
 const DOC = [
   "# Changelog",
   "",
@@ -292,8 +289,7 @@ describe("formatReleaseDate()", () => {
   });
 
   it("reads the local calendar day, not UTC — a late-evening release stamps today", () => {
-    // 23:30 local on the 31st. `toISOString().slice(0, 10)` would stamp the 1st of the next
-    // month in any positive-offset zone; the local reading stamps the releaser's day everywhere.
+    // 23:30 local on the 31st: `toISOString()` would stamp the next month in a positive-offset zone.
     expect(formatReleaseDate(new Date(2026, 11, 31, 23, 30))).toBe("2026-12-31");
   });
 });

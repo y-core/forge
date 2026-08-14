@@ -1,8 +1,7 @@
 import { CliError } from "./errors";
 import type { CommandBase, FlagDef, FlagDefs, ResolvedFlags } from "./types";
 
-// Walks the ancestor chain and merges flags: own flags always included,
-// ancestor flags only when persistent. Child definitions override ancestors.
+/** Collects a command's own flags together with every `persistent` flag inherited from its ancestors. @public */
 export function collectFlags(command: CommandBase): FlagDefs {
   const chain: CommandBase[] = [];
   let current: CommandBase | undefined = command;
@@ -23,6 +22,7 @@ export function collectFlags(command: CommandBase): FlagDefs {
   return result;
 }
 
+/** Splits argv into positionals and flag values, applying defaults and rejecting unknown flags and missing values. @public */
 export function parseArgs<F extends FlagDefs>(argv: string[], flagDefs: F): { args: string[]; flags: ResolvedFlags<F> } {
   const byName = new Map<string, [string, FlagDef]>();
   const byShort = new Map<string, [string, FlagDef]>();
@@ -53,7 +53,6 @@ export function parseArgs<F extends FlagDefs>(argv: string[], flagDefs: F): { ar
       continue;
     }
 
-    // Split on first `=` for --flag=value / -f=value forms
     let flagToken = token;
     let inlineValue: string | undefined;
     const eqIdx = token.indexOf("=");
@@ -96,7 +95,6 @@ export function parseArgs<F extends FlagDefs>(argv: string[], flagDefs: F): { ar
     }
   }
 
-  // Apply defaults and validate required string flags
   for (const [name, def] of Object.entries(flagDefs)) {
     if (name in parsed) continue;
     if (def.type === "boolean") {

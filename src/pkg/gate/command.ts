@@ -1,23 +1,14 @@
-/** command.ts — the `check` / `verify` verbs built over a project's step table.
- *
- *  Both gates are the same runner with a different membership filter, so there is one factory.
- *  Everything decidable is decided by `selectSteps` (pure) and rendered by `report` (pure);
- *  what remains here is the untestable rim — spawning, printing, and exiting.
- *
- *  The table is config rather than an import, which is what lets five repos share one runner
- *  while each keeps its own steps as its own source of truth. `report` stays unpublished on
- *  purpose: freezing nine formatters across five repos is how an alternate runner gets built.
- */
-
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exit } from "node:process";
 import { createCommand } from "../../cli/command";
-import { capture, insertPath, probeOk } from "../../cli/proc";
+import { capture, hasTool, insertPath } from "../../cli/proc";
 import type { Command } from "../../cli/types";
+import { loadConfigModule } from "../internal/config-module";
 import {
   formatFailureExcerpt,
+  formatFindingBlock,
   formatFixSummary,
   formatFullLogPath,
   formatList,
@@ -25,44 +16,36 @@ import {
   formatStepLine,
   formatSummary,
 } from "./report";
-import { type Gate, type Step, selectSteps } from "./steps";
+import { type CheckStep, isCheckStep, type Step, selectSteps } from "./steps";
+
+/** Where `forge-verify` looks for a step table when `--config` names none. @public */
+export const DEFAULT_STEPS_CONFIG = "config/steps.ts";
 
 const gateFlags = {
+  full: { type: "boolean" as const, description: "Also run the steps that may require a machine prerequisite" },
   only: { type: "string" as const, description: "Run only these steps (comma-separated labels)" },
   list: { type: "boolean" as const, description: "Print the selected steps and exit, running none" },
   fix: { type: "boolean" as const, description: "Run each selected step's fixer instead of the step" },
 };
 
-/** What the runner needs to know about the project it is gating.
- *
- * @public
- */
+const binFlags = {
+  ...gateFlags,
+  config: { type: "string" as const, description: `Step table module, default-exporting readonly Step[] (default: ${DEFAULT_STEPS_CONFIG})` },
+  root: { type: "string" as const, description: "Repository root every step runs in (default: the working directory)" },
+};
+
+/** What the runner needs to know about the project it is gating. @public */
 export interface GateCommandConfig {
   /** Repository root. Every step is spawned here, so a step's relative paths resolve. */
   cwd: string;
-  /** Which gate's membership to run. */
-  gate: Gate;
   /** The table to resolve against — the project's own steps. */
   steps: readonly Step[];
   /** Prepended to `PATH` so bare tool names resolve. Defaults to `${cwd}/node_modules/.bin`. */
   binDir?: string;
 }
 
-const DESCRIPTIONS: Record<Gate, string> = {
-  check: "Run the post-development verification gate",
-  verify: "Run the pre-release verification gate (check plus the browser suite)",
-};
-
-/** Persist a failing step's untruncated output and return its path, or `undefined` when it could
- *  not be written.
- *
- *  `capture` buffers the whole stream through a temp file and then deletes it, handing back only
- *  the text in memory — so this is the one point where the full stream can be made to outlive the
- *  run. It is written here rather than by returning a path from `capture` because `capture` is
- *  published surface (`src/cli/mod`) and this is a runner-only concern.
- *
- *  A filesystem refusal is swallowed: the gate's verdict is the thing that must always be
- *  reported, and losing the log is the failure mode we already have today. */
+// A filesystem refusal is swallowed: the gate's verdict must be reported even when the log cannot
+// be written.
 function writeFullLog(label: string, output: string): string | undefined {
   try {
     const dir = mkdtempSync(join(tmpdir(), "forge-gate-"));
@@ -75,28 +58,39 @@ function writeFullLog(label: string, output: string): string | undefined {
   }
 }
 
-/** Print a failing step's tail, then the path to the untruncated stream behind it. */
 function reportFailure(label: string, output: string, tail: number): void {
   console.log(formatFailureExcerpt(output, tail));
   const path = writeFullLog(label, output);
   if (path !== undefined) console.log(formatFullLogPath(path));
 }
 
-/** Build the command for one gate. Mirrors `createReleaseCommand(config)`: config first,
- *  `cwd` inside it, so the thin `scripts/*.ts` binding stays a single `execute` call.
- *
- * @public
- */
+// A check that throws is a defect in the check, not a verdict — but the gate still owes a summary
+// line, so the throw is reported as that step's failure rather than unwinding the whole run.
+async function runCheck(step: CheckStep): Promise<{ ok: boolean; ms: number; report: string }> {
+  const started = Date.now();
+  try {
+    const result = await step.run();
+    return { ok: result.ok, ms: Date.now() - started, report: formatFindingBlock(result.findings) };
+  } catch (error) {
+    return { ok: false, ms: Date.now() - started, report: `    ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+/** Builds the `verify` command over a project's step table. @public */
 export function createGateCommand(config: GateCommandConfig): Command<typeof gateFlags> {
-  const { cwd, gate, steps: table, binDir = `${cwd}/node_modules/.bin` } = config;
+  const { cwd, steps: table, binDir = `${cwd}/node_modules/.bin` } = config;
 
   return createCommand({
-    name: gate,
-    description: DESCRIPTIONS[gate],
+    name: "verify",
+    description: "Run the verification gate (--full adds the steps needing a machine prerequisite)",
     flags: gateFlags,
     args: { kind: "none" },
-    run(_args, flags) {
-      const selection = selectSteps(table, { gate, ...(flags.only !== undefined ? { only: flags.only } : {}) });
+    async run(_args, flags) {
+      const mode = flags.full ? "full" : "fast";
+      // The mode belongs in the verdict: `✓ verify` and `✓ verify --full` are different assurances.
+      const banner = flags.full ? "verify --full" : "verify";
+
+      const selection = selectSteps(table, { mode, ...(flags.only !== undefined ? { only: flags.only } : {}) });
       if (!selection.ok) {
         console.error(selection.error);
         exit(1);
@@ -107,7 +101,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       if (flags.list) {
         console.log(
           formatList(
-            gate,
+            banner,
             steps.map((step) => step.label),
             total,
           ),
@@ -115,7 +109,6 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         return;
       }
 
-      // Steps invoke `tsgo`, `biome`, and `playwright` by bare name; the project's copies live here.
       insertPath(binDir);
 
       if (flags.fix) {
@@ -123,7 +116,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         let skipped = 0;
         let broke = false;
         for (const step of steps) {
-          if (!step.fix) {
+          if (isCheckStep(step) || step.fix === undefined) {
             skipped++;
             continue;
           }
@@ -137,7 +130,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
             broke = true;
           }
         }
-        console.log(formatFixSummary(gate, fixed, skipped));
+        console.log(formatFixSummary(banner, fixed, skipped));
         if (broke) exit(1);
         return;
       }
@@ -146,18 +139,29 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       let ran = 0;
       let failedAt: string | undefined;
 
-      // Fail-fast: a later step's output is rarely trustworthy once an earlier one has failed,
-      // and `typecheck` leads the table precisely because its failures cascade.
       for (const step of steps) {
         ran++;
         if (step.requires) {
-          const [probeBin, ...probeArgs] = step.requires.probe ?? [step.requires.tool, "--version"];
-          if (!probeOk(probeBin, probeArgs)) {
-            console.log(formatMissingRequirement(step.label, step.requires.tool, step.requires.hint));
+          const { tool, probe, hint } = step.requires;
+          if (!(probe === undefined ? hasTool(tool) : probe())) {
+            console.log(formatMissingRequirement(step.label, tool, hint));
             failedAt = step.label;
             break;
           }
         }
+
+        if (isCheckStep(step)) {
+          const { ok, ms, report } = await runCheck(step);
+          console.log(formatStepLine(step.label, ok, ms));
+          // Warnings are worth printing on a pass too — they are the check's only voice.
+          if (report !== "") console.log(report);
+          if (!ok) {
+            failedAt = step.label;
+            break;
+          }
+          continue;
+        }
+
         const [bin, ...args] = step.cmd;
         const result = capture(bin, args, { cwd });
         console.log(formatStepLine(step.label, result.code === 0, result.ms));
@@ -169,12 +173,41 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       }
 
       console.log(
-        formatSummary({ gate, ran, selected: steps.length, total, ms: Date.now() - started, ...(failedAt !== undefined ? { failedAt } : {}) }),
+        formatSummary({
+          gate: banner,
+          ran,
+          selected: steps.length,
+          total,
+          ms: Date.now() - started,
+          ...(failedAt !== undefined ? { failedAt } : {}),
+        }),
       );
 
-      // `execute` only ever exits via a thrown error, which would print a spurious `Error:` line
-      // after the summary. Exit directly so `prepublishOnly` still blocks on a red gate.
+      // `execute` only exits by throwing, which would print a spurious `Error:` after the summary.
       if (failedAt !== undefined) exit(1);
+    },
+  });
+}
+
+/** Builds the `forge-verify` CLI `Command`, which loads its table from a config module rather than
+ *  being handed one. Delegates to {@link createGateCommand} once the table is resolved. @public */
+export function createGateBinCommand(): Command<typeof binFlags> {
+  return createCommand({
+    name: "forge-verify",
+    description: "Run the verification gate over the step table a config module default-exports",
+    flags: binFlags,
+    args: { kind: "none" },
+    async run(args, flags) {
+      const root = flags.root ?? process.cwd();
+      const path = flags.config ?? DEFAULT_STEPS_CONFIG;
+      const steps = await loadConfigModule<readonly Step[]>({ root, path, explicit: flags.config !== undefined, what: "step table" });
+
+      if (steps === undefined) {
+        console.error(`No step table at \`${path}\` — create it, or pass --config to name one elsewhere.`);
+        exit(1);
+      }
+
+      await createGateCommand({ cwd: root, steps }).run?.(args, flags);
     },
   });
 }

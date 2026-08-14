@@ -4,11 +4,13 @@ interface EffectNode {
   lastEpoch: number;
 }
 
+/** A readable and writable reactive value; reading `.value` inside an effect subscribes to it. @public */
 export interface Signal<T> {
   get value(): T;
   set value(v: T);
 }
 
+/** A signal exposing only its read side, as returned by `computed`. @public */
 export interface ReadonlySignal<T> {
   get value(): T;
 }
@@ -40,8 +42,8 @@ export function createSignal<T>(initial: T): Signal<T> {
       _value = v;
       if (depth === 0) epoch++;
       depth++;
-      // a throwing subscriber must not strand `depth` above zero — that would
-      // freeze `epoch` and silently stop every later write from notifying
+      // A throwing subscriber must not strand `depth` above zero — that would freeze `epoch` and
+      // silently stop every later write from notifying.
       try {
         for (const sub of [...subs]) {
           if (sub.lastEpoch < epoch) {
@@ -56,18 +58,7 @@ export function createSignal<T>(initial: T): Signal<T> {
   };
 }
 
-/**
- * Runs `fn` immediately and re-runs it whenever any signal read inside it changes. Returns a
- * dispose function. @public
- *
- * @remarks
- * A `fn` that throws on its **first** run propagates the throw — callers may rely on that — but
- * leaves nothing subscribed. Without the unsubscribe there is no way to clean up: the disposer is
- * the return value, and a throw means the caller never receives it. Every signal read before the
- * throw would keep this node in its `subs` forever, so each later write to that signal re-enters
- * `run()` and rethrows out of the setter, at an unrelated call site. A throw on a *later* run is a
- * different case and is left alone: the caller already holds the disposer.
- */
+/** Runs `fn` immediately, re-runs it whenever any signal read inside it changes, and returns a dispose function. @public */
 export function effect(fn: () => void): () => void {
   const node: EffectNode = {
     lastEpoch: -1,
@@ -76,8 +67,8 @@ export function effect(fn: () => void): () => void {
       cleanup(node);
       const prev = activeEffect;
       activeEffect = node;
-      // a throwing `fn` must not leave this node installed as the tracking
-      // target — reads outside any effect would then subscribe a dead node
+      // A throwing `fn` must not leave this node installed as the tracking target — reads outside
+      // any effect would then subscribe a dead node.
       try {
         fn();
       } finally {
@@ -85,9 +76,8 @@ export function effect(fn: () => void): () => void {
       }
     },
   };
-  // The first run's own `cleanup` is a no-op — `deps` is still empty when it runs — so a read that
-  // happened before the throw has already registered this node with that signal. Undo it here,
-  // because the disposer that would otherwise do so never reaches the caller on this path.
+  // A throw on the first run means the caller never receives the disposer, so any signal read
+  // before it would keep this dead node subscribed and rethrow out of a later, unrelated write.
   try {
     node.run();
   } catch (err) {

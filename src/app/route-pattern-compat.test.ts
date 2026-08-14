@@ -2,13 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { mapHandler } from "../testing/route";
 import { createApp } from "./app";
 
-/**
- * Regression guard for the `@remix-run/route-pattern` 0.23.0 alignment.
- *
- * `createApp` wires a `createMultiMatcher()` from `@remix-run/route-pattern`, and `mapHandler`
- * registers through `app.map(routes, controller)` — the exact `map → mapController → registerRoute
- * → matcher.add → generateVariants` so future route-pattern shape change is caught by forge's own suite.
- */
 describe("route-pattern registration compatibility", () => {
   it("registers path-only routes through the matcher and dispatches them", async () => {
     const app = createApp();

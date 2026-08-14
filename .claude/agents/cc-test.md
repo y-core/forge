@@ -54,6 +54,19 @@ You author tests. You do not run the gate — see _Running Tests_.
    `{ input, expected }` array once a function has three or more input variations.
 5. **Smoke-run the one file you wrote**, then hand the full gate to `cc-tester`.
 
+## The Comment Budget — Binding
+
+**`PRODUCTION_TS_RULES.md` §5 is binding, and §5d says tests are not exempt.** It is a ceiling,
+not a floor.
+
+**The test name is the documentation, and it is the one description that runs.** A test whose
+intent needs a comment needs a better name — rewrite the name, do not annotate it.
+
+No scenario narration: no `// Arrange` / `// Act` / `// Assert`, no `// now the failure case`, no
+block comment above a `describe` explaining what it covers. One addition to the budget, and only
+one: a fixture holding a deliberately malformed or adversarial value may carry a one-line note
+saying what makes it malformed, when the literal does not show it.
+
 ## Coverage Expectations by Layer
 
 **Pure functions and utilities** — return-value shape; every `ok: false` branch; boundary values
@@ -92,7 +105,7 @@ bun test src/{namespace}/{file}.test.ts
 ```
 
 That confirms your new cases pass and your fakes typecheck. **Then delegate the full gate to
-`cc-tester`** and act on its verdict — never run `bun run check` yourself, and never stream gate
+`cc-tester`** and act on its verdict — never run `bun run verify` yourself, and never stream gate
 output through this context.
 
 **You never edit a test to make a failing gate go green.** If a test you wrote fails, decide
@@ -109,7 +122,8 @@ assertion.
 - Every exported function has at least one test
 - Every error path has a dedicated case
 - Every `Result` failure branch is asserted for shape
-- No skipped test without a comment saying when the skip is removed
+- No skipped test without a ledger task recording when the skip is removed — in the ledger, not
+  in a comment (`PRODUCTION_TS_RULES.md` §5c)
 
 ## Return Format
 

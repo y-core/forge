@@ -2,16 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { NumberField } from "./number-field";
 
-/**
- * `core/NumberField`'s SSR markup, pinned exactly.
- *
- * Stepping, clamping and `min`/`max` enforcement belong to `<input type="number">`, and
- * `number-field.browser.ts` drives the controller that calls into it — so nothing here asserts
- * arithmetic. What is pinned is what forge decides: the input's `type`, the scope the controller
- * resumes on, the two buttons' `aria-label`s and their default glyphs, and that every one of those
- * survives a caller's spread.
- */
-
 const INPUT_BASE =
   "w-20 rounded-md border border-input bg-background px-2 py-1 text-sm tabular-nums text-foreground " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
@@ -47,15 +37,6 @@ describe("NumberField", () => {
     );
   });
 
-  // `aria-readonly` is not a supported attribute of `role="button"`, so a stepper carrying one is
-  // invalid ARIA rather than merely redundant — assistive technology is entitled to ignore it or to
-  // announce something the button does not mean. The temptation is real: the input beside them is
-  // genuinely read-only here, and propagating that state onto its two steppers reads as
-  // thorough. It is the readonly input, not the buttons, that carries the state.
-  //
-  // Asserted as exact markup rather than `.not.toContain("aria-readonly")`: TESTING.md §3b bans the
-  // substring form, and §3d rules out a negative that would pass just as well if the buttons were
-  // deleted outright.
   it("keeps aria-readonly off the steppers even when the input beside them is readonly", async () => {
     expect(
       await render(
@@ -127,8 +108,6 @@ describe("NumberField.Decrement", () => {
   });
 
   it("lets a caller replace the default label in place, and override the conflicting size utility", async () => {
-    // The caller's `aria-label` overwrites the component's value without moving: the key already
-    // exists in the prop bag when the rest spread lands on it.
     expect(await render(<NumberField.Decrement aria-label={`Fewer R&D's`} class='size-6' data-slot='quantity-down' />)).toBe(
       '<button type="button" data-slot="number-field-decrement quantity-down" aria-label="Fewer R&amp;D&#39;s" ' +
         'class="inline-flex items-center justify-center rounded-md border border-input bg-background ' +

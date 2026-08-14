@@ -1,15 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mount } from "./browser-test-helper";
 
-/**
- * `mountActiveDescendant` — the combobox half of the ARIA composite model.
- *
- * **What these cases are really pinning is the difference from roving focus**, which is why several
- * of them assert about the *input* rather than about the list: focus must never leave the field, and
- * the caret must keep the keys that belong to it. A controller that moved focus would pass every
- * "which option is highlighted" assertion and still be the wrong widget.
- */
-
 declare global {
   interface Window {
     forgeAd: typeof import("./active-descendant");
@@ -52,8 +43,6 @@ function state(page: Page) {
     return {
       selected: options.map((o) => o.getAttribute("aria-selected")),
       activeName: active?.getAttribute("data-name") ?? null,
-      // The pointer and the announcement must agree: `aria-activedescendant` has to name the very
-      // element carrying `aria-selected="true"`, or a screen reader and the highlight disagree.
       pointsAtActive: input.getAttribute("aria-activedescendant") === (active?.id ?? null),
       focusIsInput: document.activeElement?.id === "q",
     };
@@ -87,9 +76,6 @@ test.describe("mountActiveDescendant", () => {
   });
 
   test("never takes focus out of the field, which is what makes it a combobox", async ({ page }) => {
-    // **The case that distinguishes this controller from `mountRovingFocus`.** That one calls
-    // `item.focus()`; doing so here would close the on-screen keyboard on touch, interrupt the screen
-    // reader's typing echo, and strand a query the user was in the middle of.
     await mount(page, MARKUP, EXPOSE);
     await start(page);
 
@@ -99,8 +85,6 @@ test.describe("mountActiveDescendant", () => {
   });
 
   test("leaves the caret keys to the caret", async ({ page }) => {
-    // Left and Right are never claimed, and a query mid-word is exactly when that matters. The
-    // assertion is on `selectionStart`, because "the caret moved" is the user-visible fact.
     await mount(page, MARKUP, EXPOSE);
     await start(page);
 
@@ -131,8 +115,6 @@ test.describe("mountActiveDescendant", () => {
   });
 
   test("claims no key at all when there are no options", async ({ page }) => {
-    // **Including Enter.** An empty result set must let Enter through to whatever the field is inside
-    // — a form, a dialog — and must never commit `items[-1]`.
     await mount(page, `<div id="box"><input id="q" type="text" /><div id="list" role="listbox"></div></div>`, EXPOSE);
     await start(page);
 
@@ -146,9 +128,6 @@ test.describe("mountActiveDescendant", () => {
   });
 
   test("resets to the first option rather than clamping when the list is replaced", async ({ page }) => {
-    // **Reset, never clamp.** Clamping keeps the highlight on whatever option now occupies the old
-    // index — after a new query that is a *different* command from the one the user was looking at,
-    // and Enter would run it.
     await mount(page, MARKUP, EXPOSE);
     await start(page);
 
@@ -171,8 +150,6 @@ test.describe("mountActiveDescendant", () => {
   });
 
   test("navigates a rebuilt list without being re-mounted", async ({ page }) => {
-    // Items are resolved live on every interaction, which is what a combobox over a live query needs:
-    // the list is replaced between keystrokes and nothing re-registers it.
     await mount(page, MARKUP, EXPOSE);
     await start(page);
 
@@ -181,10 +158,8 @@ test.describe("mountActiveDescendant", () => {
       list.innerHTML = `<div role="option" data-name="one">One</div><div role="option" data-name="two">Two</div>`;
     });
 
-    // **The replacement carried no active option**, because the consumer swapped the markup without
-    // calling `resetActiveDescendant`. The honest behaviour is to treat the ring as having no current
-    // item and start from the first — *not* to reuse the old index, which is precisely the clamping
-    // mistake the reset entry point exists to avoid.
+    // The replacement carried no active option, so the ring starts from the first rather than
+    // reusing the old index.
     await page.keyboard.press("ArrowDown");
     expect((await state(page)).activeName).toBe("one");
 
@@ -193,8 +168,6 @@ test.describe("mountActiveDescendant", () => {
   });
 
   test("the pointer and the keyboard agree on which option is current", async ({ page }) => {
-    // Without this, hovering highlights one row visually while the keyboard's idea of "current" stays
-    // elsewhere — so Enter runs a different option than the one under the pointer.
     await mount(page, MARKUP, EXPOSE);
     await start(page);
 

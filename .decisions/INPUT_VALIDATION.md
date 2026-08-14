@@ -35,6 +35,7 @@ description: "The valibot facade, form parsing and its byte cap, CSRF protection
 - §4 Bot Protection: honeypot and Turnstile
 - §4a isHoneypotFilled — Hidden Field Bot Detection: the decoy's name, its home in the pipeline, and where it is rendered
 - §4b verifyTurnstile — Cloudflare Turnstile CAPTCHA: options, `expectedHostname`, and failing closed
+- §4c Guard Refusal Shape and Its Residual Oracle: why a guard answers as a validation failure, and the residual that leaves
 - §5 Config Schemas: startup validation of credentials
 - §5a CsrfConfigSchema: hex secret validation
 - §5b TurnstileConfigSchema: site and secret key validation
@@ -371,6 +372,18 @@ tell the two apart.
 The options object also accepts `expectedAction`, `expectedCData`, and `timeoutMs`.
 **`secretKey` is server-side only and must never appear in a client bundle**; `siteKey` is the
 client-side half.
+
+### 4c. Guard Refusal Shape and Its Residual Oracle
+
+**A tripped guard answers in the shape of a validation refusal**, naming a field the schema
+declares and never the decoy, so a bot reading only the response cannot tell a honeypot or
+Turnstile rejection from a failed field (§1b bounds the same response to one issue).
+
+**The named field is the schema's *first declared* field, and that is an accepted residual, not a
+bug.** A caller who knows its own body would have validated can still infer that the refusal came
+from a guard. Closing it means synthesising a plausible per-submission field, which manufactures a
+second, richer signal; forge takes the narrower residual. An app that needs the distinction hidden
+from a knowledgeable caller supplies `onBotDetected` and renders its own response.
 
 ---
 

@@ -27,18 +27,12 @@ describe("ToggleGroup", () => {
     );
   });
 
-  // The item's box comes from `buttonVariants`, not from a size map of this component's own. That is
-  // what puts the focus ring on it — a hand-rolled box had none, so the control was reachable by Tab
-  // and invisible once reached. Pinned as its own case because the ring is the whole reason the item
-  // resolves through the shared variant, and a size map returning would take it away again.
   it("item takes core/Button's ghost box, focus ring included, at the size the caller names", async () => {
     expect(await render(<ToggleGroup.Item size='lg'>X</ToggleGroup.Item>)).toBe(
       '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-12 px-6 text-base bg-transparent border border-input border-l-0 cursor-pointer rounded-none first:border-l first:rounded-l-md last:rounded-r-md hover:text-accent-foreground [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md data-[pressed]:bg-primary data-[pressed]:text-primary-foreground data-[pressed]:hover:bg-primary">X</button>',
     );
   });
 
-  // The icon-only opt-in: `icon-sm` is the 32px square, so an item holding a glyph sits at exactly
-  // the `sm` row's height while gaining everything else the shared variant carries.
   it("item at size=icon-sm renders the 32px square box", async () => {
     expect(await render(<ToggleGroup.Item size='icon-sm'>X</ToggleGroup.Item>)).toBe(
       '<button type="button" data-slot="toggle-group-item" aria-pressed="false" class="inline-flex items-center justify-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent size-8 p-0 bg-transparent border border-input border-l-0 cursor-pointer rounded-none first:border-l first:rounded-l-md last:rounded-r-md hover:text-accent-foreground [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:border-l [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md data-[pressed]:bg-primary data-[pressed]:text-primary-foreground data-[pressed]:hover:bg-primary">X</button>',
@@ -58,8 +52,6 @@ describe("ToggleGroup", () => {
   });
 
   it("pressed and unpressed items carry an identical class list, differing only in the state attributes", async () => {
-    // The paint has to follow `data-pressed`, because that is all the client controller ever flips —
-    // a class chosen at render time would freeze the highlight on whichever item the server rendered.
     const pressed = await render(<ToggleGroup.Item pressed>X</ToggleGroup.Item>);
     const unpressed = await render(<ToggleGroup.Item>X</ToggleGroup.Item>);
 
@@ -111,12 +103,6 @@ describe("ToggleGroup", () => {
     );
   });
 
-  // Two absences, one rationale, and the vertical case is the one worth pinning because it is where
-  // adding them looks most reasonable. ARIA does not define `aria-orientation` for `group`, and a
-  // `<fieldset>` already *is* a group — so a `role` would be a restatement and an `aria-orientation`
-  // would be an undefined attribute on the role the element already has. The axis travels as
-  // `data-orientation`, which is what the stylesheet and `bindGroup` read; see the component's own
-  // TSDoc and the "No `role` — a `<fieldset>` is already a `group`" line in `src/ui/README.md`.
   it("gives the group neither a role nor an aria-orientation, on either axis", async () => {
     expect(await render(<ToggleGroup orientation='vertical' aria-label='Projection' />)).toBe(
       '<fieldset data-slot="toggle-group" data-orientation="vertical" class="flex justify-center min-w-0 border-0 m-0 p-0 flex-col" aria-label="Projection"></fieldset>',

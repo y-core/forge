@@ -4,13 +4,7 @@ import { bytesCodec, textCodec } from "./codec";
 import { createKVStore } from "./store";
 import type { KVListResult, KVNamespace } from "./types";
 
-/**
- * Hands out a copy of a stored `ArrayBuffer` so a caller mutating what it read cannot reach back
- * into the store. `bytesCodec().decode` wraps the buffer it is given in a `Uint8Array` **view**, so
- * returning the stored reference would make every retrieved value a writable window onto the stub.
- * The write side is already safe by accident — `encode` slices — which is why nothing caught this.
- * Strings are immutable and need no copy. Mirrors the guard `fakeKV` makes explicit.
- */
+/** Hands out a copy of a stored `ArrayBuffer` so a caller mutating what it read cannot reach back into the store. */
 function copyOut(value: string | ArrayBuffer): string | ArrayBuffer {
   return typeof value === "string" ? value : value.slice(0);
 }
@@ -161,13 +155,6 @@ describe("createKVStore — bytesCodec round-trip", () => {
     expect(Array.from(res.data ?? [])).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
-  /**
-   * A property of the *stub*, asserted because a leaky one silently invalidates every byte-level
-   * test written against it. `makeKVStub` was byte-faithful but reference-leaky: `put` kept the
-   * caller's `ArrayBuffer` and `get` handed the same object back, so the `Uint8Array` view that
-   * `bytesCodec().decode` builds was a writable window onto the store. Run against both fakes, so
-   * the two cannot drift.
-   */
   for (const [label, makeNs] of [
     ["makeKVStub", makeKVStub],
     ["fakeKV", fakeKV],

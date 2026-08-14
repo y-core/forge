@@ -34,9 +34,7 @@ describe("sanitizeSVG()", () => {
     expect(sanitizeSVG(input)).not.toContain("onload");
   });
 
-  // W1-7: the event-handler pass was the only regex in sanitizeSVG without `i`, so an
-  // uppercase or mixed-case handler survived — and HTML attribute names are case-insensitive,
-  // so the parser lowercased it straight back into a live handler.
+  // Adversarial fixture: a mixed-case handler, which HTML lowercases straight back into a live one.
   it("strips uppercase event handler attributes", () => {
     const input = `<svg><path d="M0 0" ONMOUSEOVER="alert(1)"/></svg>`;
     expect(sanitizeSVG(input)).toBe(`<svg><path d="M0 0"/></svg>`);
@@ -48,8 +46,6 @@ describe("sanitizeSVG()", () => {
   });
 
   it("strips an uppercase unquoted event handler attribute", () => {
-    // The unquoted-value class `[^\s"'>]+` also consumes the self-closing slash — pre-existing
-    // and identical for the lowercase form; the handler is gone either way.
     const input = `<circle ONLOAD=evil()/>`;
     expect(sanitizeSVG(input)).toBe(`<circle>`);
   });
@@ -254,7 +250,6 @@ describe("buildSprites()", () => {
         },
       };
       const result = await buildSprites(sprites, tmpDir);
-      // Only one symbol with key "select"; its viewBox comes from the second (overriding) source.
       expect(result.groups.icons!.meta["icon-select"]).toBe("0 0 32 32");
       const { readFileSync: readFile } = await import("node:fs");
       const spriteContent = readFile(join(tmpDir, "svg", "sprite.svg"), "utf-8");

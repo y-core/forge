@@ -5,14 +5,6 @@ import { mount } from "../client/browser-test-helper";
 import { createIcon } from "../core/icon";
 import { Toolbar, type ToolbarDefinition, type ToolbarPlacement } from "./toolbar";
 
-/**
- * The chrome icon rail as a consumer gets it.
- *
- * The rail adopts `core/Toolbar`'s contracts rather than its parts — `role="toolbar"`, the toolbar
- * scope, the item marker — because its flyout is anchored by CSS that the generic `Popover` cannot
- * express. These cases prove the contracts do their job on the markup that was kept.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
@@ -84,8 +76,6 @@ test.describe("chrome Toolbar — anatomy", () => {
       };
     });
 
-    // The client reads `data-orientation` to choose which arrows navigate, so a left rail saying
-    // `horizontal` would leave Up/Down dead on a vertical rail.
     expect(rail).toEqual({ role: "toolbar", scope: "toolbar", data: "vertical", aria: "vertical" });
   });
 
@@ -103,8 +93,6 @@ test.describe("chrome Toolbar — anatomy", () => {
       return { tag: el?.tagName, orientation: el?.getAttribute("aria-orientation") };
     });
 
-    // An `<hr>` carries the separator role implicitly. A left rail is divided by horizontal rules,
-    // so the separator's own axis is horizontal.
     expect(sep).toEqual({ tag: "HR", orientation: "horizontal" });
   });
 });
@@ -113,7 +101,6 @@ test.describe("chrome Toolbar — one tab stop", () => {
   test("every rail stop is a focus stop and only one is tabbable", async ({ page }) => {
     await mountRail(page);
 
-    // Three actions plus the popover trigger; the flyout's title action is deliberately not one.
     expect(await tabIndexes(page)).toEqual([0, -1, -1, -1]);
   });
 
@@ -136,7 +123,6 @@ test.describe("chrome Toolbar — one tab stop", () => {
     await page.keyboard.press("ArrowDown");
     expect(await focusedRef(page)).toBe("arc");
     await page.keyboard.press("ArrowDown");
-    // The popover trigger is a rail stop too — an unmarked trigger would be a keyboard hole.
     expect(await focusedRef(page)).toBe("layers");
   });
 
@@ -153,8 +139,6 @@ test.describe("chrome Toolbar — one tab stop", () => {
 
     const marked = await page.evaluate(() => document.querySelector("[data-slot~='toolbar-title-action']")?.hasAttribute("data-toolbar-item"));
 
-    // Roving focus queries the whole `<nav>` subtree and the flyout is inside it, so a marker here
-    // would splice flyout buttons into the rail's ring.
     expect(marked).toBe(false);
   });
 });
@@ -165,9 +149,6 @@ test.describe("chrome Toolbar — the scope on the rail is transparent to app ac
 
     await page.click("[data-ref='line']");
 
-    // The rail now carries `data-scope="toolbar"`, so every action fired inside it passes through a
-    // scope that does not own it. `runAction` continues to the enclosing scope, and this is the
-    // change most likely to silently break a consumer's tool buttons.
     expect(await page.evaluate(() => window.activations)).toEqual(["line"]);
   });
 
@@ -177,7 +158,6 @@ test.describe("chrome Toolbar — the scope on the rail is transparent to app ac
     await page.click("[data-ref='layers']");
     await page.click("#in-flyout");
 
-    // Two scopes deep now: the flyout sits inside the rail, which sits inside the app scope.
     expect(await page.evaluate(() => window.activations)).toEqual(["flyoutAction"]);
   });
 
@@ -191,25 +171,10 @@ test.describe("chrome Toolbar — the scope on the rail is transparent to app ac
   });
 });
 
-/**
- * **Flyout placement, measured** — the rail's first geometry coverage.
- *
- * `data-placement` names the **rail's** edge rather than the flyout's, so the anchor rules invert:
- * a rail on the `left` opens its flyout to the right of itself. Read as a bare pair of names that
- * looks like a transcription error, which is exactly why it is pinned here.
- *
- * The stylesheet loads raw, so no Tailwind utility resolves and the fixture sizes the rail and the
- * flyout with an explicit `<style>`.
- *
- * `forge-ui.css` is the only sheet needed: the toolbar's `anchor-name` / `position-anchor`
- * pair and its four `data-placement` rules are all there, and every assertion below is a box.
- */
 const PLACEMENT_CSS = { css: ["./ui/assets/css/forge-ui.css"], expose: EXPOSE.expose };
 
-/** The rail sits well inside the viewport on every axis, so a flyout fits on **either** side of it.
- * Too close to an edge and `position-try-fallbacks: flip-inline` correctly moves the panel to the
- * other side — which is the rail's desired behaviour and would read here as the placement being
- * inverted. */
+// The rail sits well inside the viewport on every axis: too close to an edge and
+// `position-try-fallbacks: flip-inline` would correctly move the panel and read as an inverted placement.
 const PLACEMENT_STYLE = `<style>
   body { margin: 0; }
   [data-slot~="toolbar"] { position: fixed; top: 200px; left: 400px; width: 48px; }
@@ -263,13 +228,8 @@ test.describe("Toolbar — flyout placement", () => {
   });
 
   test("the flyout is anchored to its own trigger, not to a rail elsewhere on the page", async ({ page }) => {
-    // `anchor-scope` on `[data-slot~="toolbar-popover"]` is what makes this hold: every rail on a page
-    // shares the name `--forge-toolbar`, and an open flyout is in the top layer, where the resolution
-    // algorithm would otherwise return the last matching trigger in the document.
     const html = await render(Toolbar({ config: CONFIG, icon, placement: "left", id: "one" }));
     const other = await render(Toolbar({ config: CONFIG, icon, placement: "left", id: "two" }));
-    // The id selector outranks `[data-slot~="toolbar"]`, so the second rail really does land somewhere
-    // else — two rails stacked at one position would let this pass without proving anything.
     await mount(
       page,
       `${PLACEMENT_STYLE}<style>#two { top: 500px; left: 800px; }</style><div data-scope="app">${html}${other}</div>`,

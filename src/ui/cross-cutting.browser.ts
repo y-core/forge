@@ -9,22 +9,6 @@ import { Tabs } from "./core/tabs";
 import { Toolbar } from "./core/toolbar";
 import { Resumable } from "./server/resumable";
 
-/**
- * The scenarios no single component owns.
- *
- * Every case here needs **two things live at once**, which is why none of them belongs in a
- * component's own spec: the failure only exists in the seam between them. A Menu alone cannot show
- * that Escape closes the wrong overlay; a ToggleGroup alone cannot show its signal and its DOM
- * disagreeing after a form reset; a composite alone cannot show a delegated click routing to the
- * host instead of the item that was hit.
- *
- * Base UI's scenarios are the specification here, and none of its structure is: no `render()`, no
- * `userEvent`, no context providers, no `act()`. Each case builds real markup, dispatches real
- * events, and asserts a DOM or focus state — never a call count.
- *
- * Lives at the `ui/` root because it has no single subject.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("./client/resume");
@@ -68,26 +52,17 @@ function isPopoverOpen(page: Page, id: string): Promise<boolean> {
   return page.evaluate((sel) => document.querySelector(sel)?.matches(":popover-open") ?? false, `#${id}`);
 }
 
-/**
- * `Menu.Trigger`'s `id` prop names the **popup** it toggles — it is the `commandfor` target, not the
- * button's own id. A trigger is therefore addressed by a `data-ref`, which is also what tells two
- * live triggers apart in the nested-overlay cases.
- */
+/** Builds a `Menu.Trigger` whose `id` names the popup it toggles, addressing the button itself by `data-ref`. */
 function menuTrigger(popupId: string, ref: string, label: string) {
   return Menu.Trigger({ id: popupId, "data-ref": ref, children: label });
 }
 
 const triggerRef = (ref: string) => `[data-ref='${ref}']`;
 
-/**
- * The `data-slot` tokens of whatever holds focus — enough to tell a menu trigger from a dialog
- * trigger. `data-slot` is a token list, so the value is parsed rather than compared whole.
- */
+/** The `data-slot` tokens of whatever currently holds focus. */
 function focusedSlots(page: Page): Promise<string[]> {
   return page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []);
 }
-
-// ─── 1. Nested overlays ──────────────────────────────────────────────────────
 
 test.describe("nested overlays — a Menu inside a Dialog", () => {
   async function mountNested(page: Page): Promise<void> {
@@ -120,7 +95,6 @@ test.describe("nested overlays — a Menu inside a Dialog", () => {
     await page.keyboard.press("Escape");
 
     await expect.poll(() => isPopoverOpen(page, "inner-menu")).toBe(false);
-    // The dialog is the outer overlay and Escape was never its keystroke to take.
     expect(await page.evaluate(() => document.querySelector<HTMLDialogElement>("#outer-dialog")?.open)).toBe(true);
   });
 
@@ -129,8 +103,6 @@ test.describe("nested overlays — a Menu inside a Dialog", () => {
 
     await page.keyboard.press("Escape");
 
-    // Two triggers are live at once; restoring to the wrong one is the failure this catches, and it
-    // is only reachable with both overlays open.
     await expect.poll(() => focusedSlots(page)).toContain("menu-trigger");
     expect(await focusedId(page)).not.toBe("open-dialog");
   });
@@ -150,13 +122,9 @@ test.describe("nested overlays — a Menu inside a Dialog", () => {
 
     await page.keyboard.press("ArrowDown");
 
-    // A modal dialog makes everything outside it inert. A popup opened from inside it must not be
-    // caught by that, or the menu would be visible and unusable.
     expect(await focusedId(page)).toBe("row-b");
   });
 });
-
-// ─── 2. Removed trigger ──────────────────────────────────────────────────────
 
 test.describe("a trigger removed while its popup is open", () => {
   async function mountMenu(page: Page): Promise<void> {
@@ -180,9 +148,6 @@ test.describe("a trigger removed while its popup is open", () => {
     await page.evaluate(() => document.querySelector("[data-ref='gone-trigger']")?.remove());
     await page.keyboard.press("Escape");
 
-    // The controller captured the opener when the menu opened. Focusing a node that is no longer in
-    // the document silently does nothing, so focus must be somewhere still connected — never on the
-    // orphan, and never reported as focused when it cannot be.
     const state = await page.evaluate(() => ({
       connected: document.activeElement ? document.contains(document.activeElement) : false,
       isOrphan: document.activeElement?.getAttribute("data-ref") === "gone-trigger",
@@ -207,8 +172,6 @@ test.describe("a trigger removed while its popup is open", () => {
     await expect.poll(() => isPopoverOpen(page, "orphan-menu")).toBe(false);
   });
 });
-
-// ─── 3. Form reset and submission ────────────────────────────────────────────
 
 test.describe("a composite widget inside a form", () => {
   async function mountForm(page: Page): Promise<void> {
@@ -260,8 +223,6 @@ test.describe("a composite widget inside a form", () => {
 
     await page.evaluate(() => document.querySelector<HTMLFormElement>("#form")?.requestSubmit());
 
-    // A consumer needs to know this: `<button>` items contribute nothing to `FormData`, so a
-    // segmented control that must be submitted needs a companion field.
     expect(await page.evaluate(() => window.submitted)).toEqual([["label", "start"]]);
   });
 
@@ -272,9 +233,6 @@ test.describe("a composite widget inside a form", () => {
 
     await page.evaluate(() => document.querySelector<HTMLFormElement>("#form")?.reset());
 
-    // `form.reset()` restores a native control's default and does not touch `aria-pressed`. The
-    // property that matters is that the widget's DOM and its signal never diverge from each other —
-    // one reverting without the other is the bug this scenario exists to catch.
     expect(await page.evaluate(() => document.querySelector<HTMLInputElement>("#native")?.value)).toBe("start");
     expect(await agreement(page)).toEqual({ dom: "in", signal: "in" });
   });
@@ -294,13 +252,7 @@ test.describe("a composite widget inside a form", () => {
   });
 });
 
-// ─── 4. Widgets inside a web component ───────────────────────────────────────
-
 test.describe("widgets inside a shadow root", () => {
-  // Each case attaches its own open shadow root and mounts exactly what that case needs, because
-  // what differs between them is *which* half of the boundary problem is under test: delegated
-  // dispatch out of the root, or a controller's view of focus inside it.
-
   test("a delegated click from inside a shadow root routes to the right action", async ({ page }) => {
     const group = BoundToggleGroup({
       type: "single",
@@ -320,9 +272,6 @@ test.describe("widgets inside a shadow root", () => {
       item?.click();
     });
 
-    // `event.target` on a composed event reports the **host**, so a dispatcher reading it would look
-    // for `[data-on-click]` on `<div id="host">` and find nothing. `composedPath()[0]` reports the
-    // button, and `closestAcross` climbs out of the shadow root to reach the scope.
     expect(await page.evaluate(() => window.activations)).toEqual(["s-cm"]);
   });
 
@@ -348,8 +297,6 @@ test.describe("widgets inside a shadow root", () => {
       if (!host || !template) return;
       const root = host.attachShadow({ mode: "open" });
       root.append(template.content.cloneNode(true));
-      // A plain `resume()`, with nothing said about the shadow root: its eager pass descends into
-      // open roots, so the Menu scope inside one is discovered like any other.
       window.forgeResume.resume();
     });
 
@@ -382,14 +329,10 @@ test.describe("widgets inside a shadow root", () => {
     await page.evaluate(() => document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("#t0")?.focus());
     await page.keyboard.press("ArrowRight");
 
-    // "Which item has focus" is the question the controller exists to answer, and bare
-    // `document.activeElement` answers "the host" here — which is never a composite item.
     expect(await page.evaluate(() => document.querySelector("#host")?.shadowRoot?.activeElement?.id)).toBe("t1");
     expect(await page.evaluate(() => document.activeElement?.id)).toBe("host");
   });
 });
-
-// ─── 5. Focus restoration across unmount ─────────────────────────────────────
 
 test.describe("focus restoration when the focused item is removed", () => {
   test("a Toolbar puts focus on a sibling rather than on <body>", async ({ page }) => {
@@ -408,8 +351,6 @@ test.describe("focus restoration when the focused item is removed", () => {
     await page.focus("#tb1");
     await page.evaluate(() => document.querySelector("#tb1")?.remove());
 
-    // At the consumer level, not against a synthetic `<div id="root">` harness: this is the markup a
-    // consumer of `core/Toolbar` actually gets, driven through the scope it actually stamps.
     await expect.poll(() => focusedId(page)).toBe("tb2");
   });
 
@@ -432,13 +373,10 @@ test.describe("focus restoration when the focused item is removed", () => {
     await page.evaluate(() => document.querySelector("#m-b")?.remove());
 
     await expect.poll(() => focusedId(page)).toBe("m-c");
-    // And the ring still navigates after the removal, rather than being stranded on a stale index.
     await page.keyboard.press("ArrowUp");
     expect(await focusedId(page)).toBe("m-a");
   });
 });
-
-// ─── 6. RTL ──────────────────────────────────────────────────────────────────
 
 test.describe("RTL — every composite consumer inherits it and each can break it alone", () => {
   test("a Toolbar's ArrowLeft moves forward under dir=rtl", async ({ page }) => {
@@ -483,7 +421,6 @@ test.describe("RTL — every composite consumer inherits it and each can break i
     await page.keyboard.press("ArrowLeft");
 
     expect(await focusedId(page)).toBe("tab-2");
-    // Automatic activation rides `focusin`, so a direction bug would move focus and the panel with it.
     expect(await page.evaluate(() => document.querySelector<HTMLElement>("#panel-2")?.hidden)).toBe(false);
   });
 
@@ -503,8 +440,6 @@ test.describe("RTL — every composite consumer inherits it and each can break i
 
     await page.keyboard.press("ArrowDown");
 
-    // Direction reverses the horizontal axis and only that. A controller that swapped Up and Down
-    // too would make every RTL menu navigate backwards.
     expect(await focusedId(page)).toBe("rtl-b");
   });
 
@@ -516,7 +451,6 @@ test.describe("RTL — every composite consumer inherits it and each can break i
     await page.focus("#i0");
     await page.keyboard.press("ArrowLeft");
 
-    // Reading direction off a global would answer "ltr" here and move the wrong way.
     expect(await focusedId(page)).toBe("i1");
   });
 });

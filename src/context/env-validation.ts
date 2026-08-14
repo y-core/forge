@@ -8,10 +8,7 @@ export function validateEnv<T>(env: unknown, schema: v.BaseSchema<unknown, T, v.
   return parseEnv(schema, env);
 }
 
-/**
- * Middleware that validates Cloudflare Worker bindings on first request (or when the env changes).
- * Throws on failure; does not modify or store the env — use `context.env` directly. @public
- */
+/** Middleware that validates Worker bindings against a schema on first request, or when the env changes. @public */
 export function validateBindings(schema: v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>): Middleware {
   let cachedEnvRef: unknown;
   return async (context, next) => {

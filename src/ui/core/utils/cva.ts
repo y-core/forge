@@ -14,15 +14,7 @@ export type CVAProps<V extends VariantConfig> = {
   [K in keyof V]?: keyof V[K];
 } & { class?: string };
 
-/**
- * Class-variance-authority: builds a class-name resolver from a `base` string plus named
- * variant maps and their defaults. The returned function takes selected variant values (and
- * an optional `class` override) and returns the composed class string.
- *
- * Composition order is base → variants → `class`, and the parts are merged through `cn`, so a
- * later part *overrides* an earlier one on any Tailwind utility they both set rather than
- * appending to it. @public
- */
+/** Builds a class-name resolver that composes `base` → variants → `class` through `cn`, so a later part overrides an earlier one. @public */
 export function cva<V extends VariantConfig>(config: CVADefinition<V>) {
   const base = config.base ?? "";
   const variants = config.variants;

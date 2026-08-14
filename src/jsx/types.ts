@@ -21,10 +21,6 @@ export type FC<P = Record<string, unknown>> = (props: P & { children?: JSXNode }
 /** @public */
 export type PropsWithChildren<P = Record<string, unknown>> = P & { children?: JSXNode };
 
-// ---------------------------------------------------------------------------
-// Common attribute sets shared across HTML elements
-// ---------------------------------------------------------------------------
-
 interface AriaAttributes {
   role?: string;
   "aria-label"?: string;
@@ -110,7 +106,6 @@ export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   autocapitalize?: "none" | "off" | "on" | "sentences" | "words" | "characters";
   children?: JSXNode;
   key?: unknown;
-  // data-* (catch-all for arbitrary data attributes)
   [key: `data-${string}`]: unknown;
 }
 
@@ -138,11 +133,9 @@ interface ButtonAttributes extends HTMLAttributes {
   autofocus?: boolean;
   popovertarget?: string;
   popovertargetaction?: "hide" | "show" | "toggle";
-  /** Native Invoker Commands: the command activated on the `commandfor` target when the button is
-   * pressed. Built-ins (`toggle-popover`, `show-modal`, `close`, …) are handled by the platform;
-   * custom commands are `--action` strings routed through the `CommandEvent` scope bridge. */
+  /** Invoker command activated on the `commandfor` target when the button is pressed. */
   command?: string;
-  /** Native Invoker Commands: the id of the element this button acts on. */
+  /** The id of the element this button's `command` acts on. */
   commandfor?: string;
 }
 
@@ -228,8 +221,8 @@ interface FormAttributes extends HTMLAttributes {
 }
 
 interface LabelAttributes extends HTMLAttributes {
-  // `| undefined` lets a label keep `for={maybeId}` statically visible (so a11y lint can see the
-  // association) while satisfying `exactOptionalPropertyTypes` when the id resolves to undefined.
+  // `| undefined` keeps `for={maybeId}` statically visible to a11y lint under
+  // `exactOptionalPropertyTypes`.
   for?: string | undefined;
   form?: string;
 }
@@ -433,18 +426,13 @@ interface BaseAttributes extends HTMLAttributes {
   target?: string;
 }
 
-// ---------------------------------------------------------------------------
-// SVG attributes
-// ---------------------------------------------------------------------------
-
 interface SVGAttributes extends HtmxAttributes {
   id?: string;
   class?: string;
   children?: JSXNode;
   key?: unknown;
-  // `| undefined` on these lets SVG primitives (e.g. Icon) render attributes inline as
-  // `width={maybe}` / `aria-label={maybe}` — keeping them statically visible to a11y lint —
-  // while satisfying `exactOptionalPropertyTypes` when the value resolves to undefined.
+  // `| undefined` keeps inline `width={maybe}` / `aria-label={maybe}` statically visible to a11y
+  // lint under `exactOptionalPropertyTypes`.
   width?: number | string | undefined;
   height?: number | string | undefined;
   viewBox?: string | undefined;
@@ -560,10 +548,7 @@ interface SVGFilterAttributes extends SVGAttributes {
   primitiveUnits?: "userSpaceOnUse" | "objectBoundingBox";
 }
 
-// ---------------------------------------------------------------------------
-// JSX namespace — must be named exactly `JSX` for the TypeScript transform
-// ---------------------------------------------------------------------------
-
+// Must be named exactly `JSX`: the TypeScript transform resolves this namespace by name.
 export declare namespace JSX {
   type Element = JSXElement;
 
@@ -583,12 +568,10 @@ export declare namespace JSX {
   }
 
   interface IntrinsicElements {
-    // Root
     html: HtmlRootAttributes;
     head: HTMLAttributes;
     body: HTMLAttributes;
 
-    // Metadata
     title: HTMLAttributes;
     base: BaseAttributes;
     link: LinkAttributes;
@@ -596,7 +579,6 @@ export declare namespace JSX {
     style: StyleAttributes;
     script: ScriptAttributes;
 
-    // Sectioning
     article: HTMLAttributes;
     aside: HTMLAttributes;
     footer: HTMLAttributes;
@@ -613,7 +595,6 @@ export declare namespace JSX {
     section: HTMLAttributes;
     search: HTMLAttributes;
 
-    // Grouping
     blockquote: HTMLAttributes;
     dd: HTMLAttributes;
     div: HTMLAttributes;
@@ -629,7 +610,6 @@ export declare namespace JSX {
     pre: HTMLAttributes;
     ul: HTMLAttributes;
 
-    // Text
     a: AnchorAttributes;
     abbr: HTMLAttributes;
     b: HTMLAttributes;
@@ -660,7 +640,6 @@ export declare namespace JSX {
     var: HTMLAttributes;
     wbr: HTMLAttributes;
 
-    // Embedded
     area: AreaAttributes;
     audio: AudioAttributes;
     img: ImgAttributes;
@@ -668,16 +647,13 @@ export declare namespace JSX {
     track: TrackAttributes;
     video: VideoAttributes;
 
-    // Scripting
     canvas: HTMLAttributes;
     noscript: HTMLAttributes;
 
-    // Interactive
     details: DetailsAttributes;
     dialog: DialogAttributes;
     summary: HTMLAttributes;
 
-    // Forms
     button: ButtonAttributes;
     datalist: HTMLAttributes;
     fieldset: FieldsetAttributes;
@@ -693,7 +669,6 @@ export declare namespace JSX {
     select: SelectAttributes;
     textarea: TextareaAttributes;
 
-    // Tables
     caption: HTMLAttributes;
     col: ColAttributes;
     colgroup: ColAttributes;
@@ -705,18 +680,15 @@ export declare namespace JSX {
     thead: HTMLAttributes;
     tr: HTMLAttributes;
 
-    // Web Components
     slot: HTMLAttributes;
     template: HTMLAttributes;
 
-    // Iframes / Embedded objects
     iframe: IframeAttributes;
     embed: HTMLAttributes;
     object: HTMLAttributes;
     source: SourceAttributes;
     param: HTMLAttributes;
 
-    // SVG
     svg: SVGAttributes;
     path: SVGPathAttributes;
     circle: SVGCircleAttributes;

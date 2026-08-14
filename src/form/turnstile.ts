@@ -4,13 +4,7 @@ import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-/**
- * Verifies a Cloudflare Turnstile token against the siteverify API.
- *
- * @remarks
- * `options.expectedHostname`: required. Tokens minted on a different hostname cannot be replayed here.
- * @public
- */
+/** Verifies a Cloudflare Turnstile token against the siteverify API. @public */
 export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: string, options: TurnstileVerifyOptions): Promise<TurnstileResult> {
   if (!options.expectedHostname) {
     return err("hostname-mismatch");
@@ -24,8 +18,7 @@ export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: str
   if (options.remoteIp) body.remoteip = options.remoteIp;
 
   const controller = new AbortController();
-  // Clamp to ≥1ms so a caller passing 0 or a negative value cannot abort the request before the
-  // fetch is even dispatched (which would surface as a spurious "timeout").
+  // Clamped to >=1ms: a 0 would abort before the fetch dispatched and surface as a spurious "timeout".
   const timeoutMs = Math.max(1, options?.timeoutMs ?? 5_000);
   const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 

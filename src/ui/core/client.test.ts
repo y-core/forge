@@ -4,15 +4,10 @@ import { resumeScope } from "../client/resume";
 // Import client.ts to register the toast and alert scopes as a side effect.
 import "./client";
 
-/** Minimal fake element — passes WeakMap key requirements and provides the
- *  surface that `ensureResumed` and our scope callbacks actually touch. */
 class FakeEl {
   dataset: Record<string, string>;
   removed = false;
-  /** The toast schedules its auto-close on its **own** realm's clock, resolved via `ownerWindow`.
-   *  Naming `globalThis` as the owning realm's view is what routes it back to the captured
-   *  `setTimeout` below — a fake element with no owner document would reach for a global `document`
-   *  that does not exist in `bun test`. */
+  // Names `globalThis` as the owning realm so `ownerWindow` routes the toast's timer to the captured `setTimeout`.
   ownerDocument = { defaultView: globalThis };
   remove() {
     this.removed = true;
@@ -29,7 +24,6 @@ const origSetTimeout = globalThis.setTimeout;
 
 beforeEach(() => {
   capturedTimer = undefined;
-  // Replace setTimeout to capture auto-close calls.
   // @ts-expect-error — intentionally replacing global for test isolation
   globalThis.setTimeout = (fn: () => void, ms: number) => {
     capturedTimer = { fn, ms };

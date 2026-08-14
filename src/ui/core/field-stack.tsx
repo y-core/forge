@@ -11,13 +11,7 @@ type FieldProps = Omit<JSX.IntrinsicElements["div"], "children"> & { label: JSXN
 
 const FIELD_LAYOUT: Record<FieldOrientation, string> = { vertical: "flex flex-col gap-1", horizontal: "flex items-center gap-2" };
 
-/**
- * A lightweight labelled control: a caption tightly bound to its control, *without* the
- * form-semantics (`<fieldset>`, validation, error/description wiring) of `FormField`. Use it for
- * settings rows and labelled inputs that aren't a validated form field. The label renders as a
- * decorative `<span>`; pass any control as `children`. Theme-token styled and `class`-overridable.
- * @public
- */
+/** A lightweight labelled control with a decorative `<span>` caption and no form semantics. @public */
 export const Field: FC<PropsWithChildren<FieldProps>> = ({
   label,
   orientation = "vertical",

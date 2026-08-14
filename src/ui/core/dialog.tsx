@@ -92,30 +92,7 @@ const DialogFooter: FC<DialogSectionProps> = ({ class: cls, children, "data-slot
   </div>
 );
 
-/**
- * Compound modal dialog built on the native `<dialog>` + Invoker Commands APIs. `Dialog.Trigger`
- * emits `command="show-modal"` and `Dialog.Close` emits `command="close"` (or `"request-close"`
- * with `request`); the shared id links each button's `commandfor` to the dialog. Top-layer
- * rendering, the `::backdrop`, focus trapping, and Esc-to-cancel are handled by the platform.
- *
- * The root draws only the surface; `Dialog.Header`, `Dialog.Body` and `Dialog.Footer` carry the
- * gutter, so content never sits flush against the dialog's edge.
- *
- * ```tsx
- * <>
- *   <Dialog.Trigger for="confirm">Delete…</Dialog.Trigger>
- *   <Dialog id="confirm">
- *     <Dialog.Header>Delete project</Dialog.Header>
- *     <Dialog.Body>This cannot be undone.</Dialog.Body>
- *     <Dialog.Footer>
- *       <Dialog.Close for="confirm">Cancel</Dialog.Close>
- *     </Dialog.Footer>
- *   </Dialog>
- * </>
- * ```
- *
- * @public
- */
+/** Compound modal dialog built on the native `<dialog>` and Invoker Commands APIs. @public */
 export const Dialog = Object.assign(DialogRoot, {
   Trigger: DialogTrigger,
   Close: DialogClose,

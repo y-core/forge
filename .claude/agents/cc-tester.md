@@ -2,13 +2,13 @@
 name: cc-tester
 description: >
   Verification-gate runner for the forge namespace library — the sole agent that executes the
-  full local gate (`bun run check` and any extra cross-cutting suite) and returns a compact
+  full local gate (`bun run verify` and any extra cross-cutting suite) and returns a compact
   pass/fail verdict, never the full stream. cc-plan / cc-dev / cc-doc / cc-test delegate every
   gate run here so voluminous output never fills their context. Runs gates; does NOT fix
   failures — reports the minimal excerpt back to the owning agent.
 
   Examples of when to invoke:
-  - "Run bun run check and report the verdict"
+  - "Run bun run verify and report the verdict"
   - "Verify the current change passes the full gate"
   - "Run validate-exports and validate-docs after the barrel change"
   - "Re-run the gate after cc-dev's fix and confirm it is green"
@@ -28,8 +28,8 @@ back to the caller.
 ## The Step List Is Not Yours to Know
 
 **Never hardcode or recite the gate's steps.** `scripts/lib/steps.ts` owns them. Run
-`bun run check` and report what it does; if you need the step list, read that file — or run
-`bun run check --list`, which prints the selection and runs nothing.
+`bun run verify` and report what it does; if you need the step list, read that file — or run
+`bun run verify --list`, which prints the selection and runs nothing.
 
 A verdict that names a step the gate no longer runs is worse than no verdict. You do not have to
 infer the failing step: the runner names it on its own summary line, and that name is what your
@@ -39,13 +39,13 @@ verdict quotes.
 
 **Pass** — one line:
 
-    ✓ bun run check green
+    ✓ bun run verify green
 
 Name any additional gate you also ran on the same line.
 
 **Fail** — the failing step, then the minimal excerpt per failure:
 
-    ✗ bun run check — failed at `typecheck`
+    ✗ bun run verify — failed at `typecheck`
 
     src/form/csrf.ts:88:12
     Type 'string | undefined' is not assignable to type 'string'.

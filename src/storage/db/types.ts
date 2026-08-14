@@ -3,13 +3,7 @@ import type { Logger } from "../../logging/types";
 import type { Result } from "../../result/result";
 import type { SQL_FRAGMENT_BRAND } from "./sql";
 
-/**
- * A parameterised SQL fragment — values are bind params, never concatenated text.
- * Compose fragments with nested interpolation; they flatten automatically.
- *
- * Branded: the only way to obtain one is to call `sql`. The brand is what lets `isSqlFragment`
- * distinguish a fragment forge minted from an arbitrary object that merely has the same shape. @public
- */
+/** A parameterised SQL fragment — values are bind params, never concatenated text. @public */
 export interface SqlFragment {
   /** Provenance brand — set only by `sql()`, unreachable from consumer code. @internal */
   readonly [SQL_FRAGMENT_BRAND]: true;
@@ -22,7 +16,7 @@ export interface D1ClientOptions {
   logger?: Logger;
 }
 
-/** @public */
+/** A D1 binding that accepts only `sql` fragments and returns every outcome as a `Result`. @public */
 export interface D1Client {
   batch<T = unknown>(fragments: SqlFragment[]): Promise<Result<D1Result<T>[]>>;
   execute(fragment: SqlFragment): Promise<Result<{ rowsWritten: number; lastRowId?: number | null }>>;
@@ -30,22 +24,14 @@ export interface D1Client {
   queryOne<T = unknown>(fragment: SqlFragment): Promise<Result<T | null>>;
 }
 
-/** Options for resolving a D1 binding from context. The binding return is constrained to the
- *  structural contract `DB extends D1DatabaseLike` so any platform database (forge's neutral type
- *  or Cloudflare's runtime type) is accepted cast-free. @public */
+/** Options for resolving a D1 binding from context. @public */
 export interface D1BindingOptions<Bindings = Record<string, unknown>, DB extends D1DatabaseLike = D1Database> {
   binding: (c: AppContext<Bindings>) => DB | undefined;
-  /** When true (default), throws if the binding is absent. Set false to return null instead. */
   required?: boolean;
   client?: D1ClientOptions;
 }
 
-/**
- * Structural contract — the consumed surface of a D1 database binding. Typed loosely enough that
- * both forge's neutral `D1Database` and Cloudflare's runtime `D1Database` (an abstract class with
- * extra `withSession`/`dump` members and richer `D1Result` meta) satisfy it. Constraining a resolver
- * to `DB extends D1DatabaseLike` proves any platform database meets the contract cast-free. @public
- */
+/** Structural contract — the consumed surface of a D1 database binding. @public */
 export interface D1DatabaseLike {
   prepare(query: string): D1PreparedStatement;
   batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;

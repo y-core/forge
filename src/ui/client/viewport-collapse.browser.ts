@@ -1,22 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mount } from "./browser-test-helper";
 
-/**
- * `mountViewportCollapse` against a real `<details>` and a real `matchMedia` in real Chromium.
- *
- * The controller tells its own writes from the user's by counting `toggle` events, which only holds
- * because the platform fires exactly one per change to `open`, in order — a claim about the browser
- * that a fake cannot make. The media query is a plain width query rather than a Tailwind breakpoint
- * class: the harness serves CSS raw with no Tailwind build, so nothing about viewport width is
- * observable through a `md:` utility here.
- */
-
 declare global {
   interface Window {
     forgeViewportCollapse: typeof import("./viewport-collapse");
     forgeDispose: () => void;
-    /** Every `toggle` the rail has actually **dispatched**, counted by a listener registered before
-     *  the controller's. See {@link toggleCount} for why a case waits on this rather than on `open`. */
+    /** Every `toggle` the rail has actually dispatched. See {@link toggleCount}. */
     forgeToggles: number;
   }
 }
@@ -51,17 +40,9 @@ function isOpen(page: Page): Promise<boolean> {
   return page.evaluate(() => document.querySelector<HTMLDetailsElement>("#rail")?.open ?? false);
 }
 
-/**
- * How many `toggle` events the rail has **dispatched** — which is not how many times `open` changed.
- *
- * `open` moves synchronously; `toggle` is queued as a task, and the HTML spec **coalesces** it: a
- * second change while a toggle task is still pending updates that task rather than queueing another,
- * so two changes can produce one event. The controller tells its own writes from the user's by
- * counting events, so a case that drives a change while the previous event is still in flight has
- * the two collapse into one, the controller's counter absorb it, and the user's override silently
- * not register. Waiting on `open` does not close that window — `open` is already correct before the
- * event exists. Waiting on the count does.
- */
+/** How many `toggle` events the rail has dispatched, which is not how many times `open` changed:
+ * the HTML spec coalesces a toggle task still pending, so a case must wait on the count and never
+ * on `open`, which is already correct before the event exists. */
 function toggleCount(page: Page): Promise<number> {
   return page.evaluate(() => window.forgeToggles);
 }
@@ -83,8 +64,6 @@ test.describe("mountViewportCollapse", () => {
 
     await page.setViewportSize(WIDE);
 
-    // The collapsed default every existing consumer ships. A reopen here would show navigation the
-    // app never asked to show, at the one width where nothing is wrong.
     await expect.poll(() => isOpen(page)).toBe(false);
   });
 
@@ -97,18 +76,14 @@ test.describe("mountViewportCollapse", () => {
   test("stops driving the rail once the user has opened it", async ({ page }) => {
     await mountRail(page, NARROW);
     await expect.poll(() => isOpen(page)).toBe(false);
-    // The controller's own close, *delivered* — not merely applied. Clicking before this event lands
-    // lets the two changes coalesce into one, which the controller would charge to itself; see
-    // `toggleCount`. The case would then fail at the last assertion, having proved nothing about the
-    // override it exists to test.
+    // Waits for the controller's close to be *delivered*: clicking before it lands lets the two
+    // changes coalesce into one, which the controller would charge to itself. See `toggleCount`.
     await expect.poll(() => toggleCount(page)).toBe(1);
 
     await page.click("#rail summary");
     await expect.poll(() => toggleCount(page)).toBe(2);
     expect(await isOpen(page)).toBe(true);
 
-    // Across the breakpoint and back. Without the override rule the return to a narrow viewport
-    // would shut the rail the user just opened — the "rotating the phone closes the menu" failure.
     await page.setViewportSize(WIDE);
     await page.setViewportSize(NARROW);
 
@@ -123,7 +98,6 @@ test.describe("mountViewportCollapse", () => {
 
     expect(await isOpen(page)).toBe(true);
 
-    // And nothing is left listening: a later crossing must not move it again.
     await page.setViewportSize(WIDE);
     await page.setViewportSize(NARROW);
     expect(await isOpen(page)).toBe(true);

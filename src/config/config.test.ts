@@ -2,8 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { v } from "../validation/mod";
 import { applyMapping, createConfig, env, optionalGroup, resolveConfig } from "./config";
 
-// --- applyMapping ---
-
 describe("applyMapping", () => {
   it("returns a literal string value as-is", () => {
     expect(applyMapping({}, "https://api.example.com")).toBe("https://api.example.com");
@@ -49,8 +47,6 @@ describe("applyMapping", () => {
   });
 });
 
-// --- optionalGroup ---
-
 const emailEntries = { apiKey: v.string(), apiUrl: v.string(), from: v.string(), senderName: v.string(), to: v.string() };
 
 const emailGroup = optionalGroup(emailEntries, {
@@ -72,7 +68,6 @@ describe("optionalGroup — null when required fields missing", () => {
   });
 
   it("treats an empty string as a present value (not null) for required fields", () => {
-    // `== null` check: empty string is a present value; only undefined/null triggers null.
     const result = v.parse(emailGroup, { apiKey: "key", from: "", to: "to@example.com" });
     expect(result).not.toBeNull();
   });
@@ -218,8 +213,6 @@ describe("optionalGroup — keys not declared in entries are stripped", () => {
     expect(Object.keys(result)).toEqual(["siteKey"]);
   });
 });
-
-// --- Config<T> ---
 
 const testDescriptor = { map: { dbUrl: env("DB_URL"), mode: env("MODE") }, schema: v.object({ dbUrl: v.string(), mode: v.optional(v.string()) }) };
 

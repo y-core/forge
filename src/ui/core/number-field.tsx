@@ -30,7 +30,6 @@ const NumberFieldRoot: FC<NumberFieldRootProps> = ({ class: cls, children, "data
   </div>
 );
 
-/** `type="number"` and nothing else: the input is the value, the validation and the form entry. */
 const NumberFieldInput: FC<NumberFieldInputProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
   <input
     type='number'
@@ -66,27 +65,7 @@ const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({ class: cls, children
   </button>
 );
 
-/**
- * A numeric input with optional styled stepper buttons.
- *
- * The buttons exist for **styling control, not behaviour**: `<input type="number">` already has a
- * spinner and already steps with the arrow keys, so this component is what you reach for when the
- * UA's spinner cannot be made to match the rest of the interface. Drop the buttons and everything
- * still works.
- *
- * The input stays authoritative throughout — the controller steps it with the element's own
- * `stepUp()` / `stepDown()` and dispatches a real `input` event, so `bindField` and any other
- * listener see an ordinary edit with no special case.
- *
- * ```tsx
- * <NumberField>
- *   <NumberField.Decrement />
- *   <NumberField.Input name='count' value='1' min='0' max='10' />
- *   <NumberField.Increment />
- * </NumberField>
- * ```
- * @public
- */
+/** A numeric input with optional styled stepper buttons. @public */
 export const NumberField = Object.assign(NumberFieldRoot, {
   Input: NumberFieldInput,
   Decrement: NumberFieldDecrement,

@@ -8,7 +8,7 @@ description: "Test placement, the HTML-entity exact-match assertion rule, fakes 
 > Owns test file placement, the assertion rules, the fakes-over-mocks posture, the security-test
 > requirements, and the verification gate. Other documents link here rather than restating them.
 >
-> Defers to: `scripts/lib/steps.ts` for the gate's step list; `src/testing/README.md` for the
+> Defers to: `config/steps.ts` for the gate's step list; `src/testing/README.md` for the
 > `testing` namespace's fixtures and their usage; [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md)
 > §1c for what `validate-exports` proves.
 
@@ -127,6 +127,11 @@ markup — rendered by the real SSR components wherever possible — dispatches 
 browser's own input path, and reads what resulted. A test that counts calls is testing the test's
 own fixture.
 
+**A UA pseudo-element is asserted from rendered pixels, never from `getComputedStyle`.** Chromium
+answers `getComputedStyle(el, "::-webkit-slider-runnable-track")` with the *host* element's style
+rather than the pseudo-element's, so a computed-style spec for the slider track would pass whatever
+the track actually did. `slider.browser.ts` samples a screenshot instead.
+
 ---
 
 ## 2. Co-Located Test Files
@@ -142,6 +147,12 @@ own fixture.
 **Test files never go in a top-level `__tests__/` or `test/` directory.** Co-location makes
 coverage visible at a glance and keeps relative imports short (§2c).
 
+**A configuration file gets no test.** `config/steps.ts` names values; it has no logic to exercise,
+so a test over it can only restate the file back to itself and fail whenever the config legitimately
+changes. Where such a test looks like it is proving something, the property it asserts belongs to
+the code that *reads* the config, and the fix is to enforce it there — `selectSteps`' table refusals
+(§6c) began as assertions in a config test and now hold for every project rather than this one.
+
 **The browser set follows the same rule with its own suffix** — `foo.ts` → `foo.browser.ts`, same
 directory (§1c). A subject may have both, and often should: the exact-HTML test proves what the
 server emitted, the browser test proves what the markup then does.
@@ -153,6 +164,13 @@ server emitted, the browser test proves what the markup then does.
 *between* two components — nested overlays, a widget inside a form, a widget inside a shadow root —
 sits at the root of the tier it spans rather than beside an arbitrary one of its participants.
 Choosing a co-location for it would name one component as the subject when none is.
+
+**A cross-cutting sweep enumerates barrel roots only.** `src/ui/core/conformance.test.tsx` derives
+its subjects from the barrel's own uppercase-initial exports, so a new component is covered the day
+it is exported and a sub-component (`Dialog.Header`, `Menu.Item`) is not covered at all. The
+alternative — walking compounds for their sub-components — makes the subject set something the
+sweep computes rather than something `mod.ts` declares, and the contracts under test are stated
+against the element a caller addresses.
 
 ### 2b. Excluded from npm Publish
 
@@ -424,39 +442,45 @@ guard middleware to test — see [`HTMX.md`](./HTMX.md) §2.
 
 ### 6a. The Gate and Its Steps
 
-**`bun run check` is the gate; `bun run verify` is the release gate.** Both are the same runner
-over one table, and **`scripts/lib/steps.ts` owns the step list** — every step, its command, and
-which gates it belongs to. Read it there rather than trusting any prose copy.
+**`bun run verify` is the gate. `bun run verify --full` is the release gate.** One command, two
+modes — not two commands. `check` and `verify` were previously two verbs sharing every flag and
+every line of behaviour, differing only in a membership filter, which is a mode by definition.
 
-**The runner behind both is `createGateCommand` from `@y-core/forge/pkg`**
-([`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) §5f), not a script under `scripts/`.
-The table stays forge's; the runner is shared with every app that consumes forge. `scripts/check.ts`
-and `scripts/verify.ts` are bindings that pass `STEPS` in — which is why "where do the steps live"
-and "where does the gate live" now have different answers.
+**`config/steps.ts` owns the step list** — every step, how it runs, and whether it is
+`fullOnly`. Read it there rather than trusting any prose copy. A step is one of two things: an
+external command, or a check the runner calls in-process. Only the external tools are commands, so
+no check needs a file of its own under `scripts/` to be spawnable.
+
+**The runner is the `forge-verify` bin from `@y-core/forge`**
+([`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) §5f), not a script forge owns. The
+table stays forge's; the runner is shared with every app that consumes forge. The bin loads
+`config/steps.ts` through its default export, so there is no binding file at all — which is why
+"where do the steps live" and "where does the gate live" have different answers.
 
 **Every step must pass with zero errors before a task is declared complete.** A partial pass —
 "types pass, lint has one warning" — is a failure, and skipping a step is not permitted.
 
 The runner reports each step as it finishes, stops at the first failure, and names it:
-`✗ check — failed at \`typecheck\``. **That name is the verdict** — it is read off the summary
-line, never inferred from raw tool output.
+`✗ verify — failed at \`typecheck\``. **That name is the verdict** — it is read off the summary
+line, never inferred from raw tool output. A full run says so: `✓ verify --full — 12 steps passed`.
+The mode is part of the verdict, because the two are different assurances.
 
-Three flags, all resolved against the same table:
+Four flags, all resolved against the same table:
 
 | Flag | Effect |
 |---|---|
+| `--full` | Also run the `fullOnly` steps — the ones that may require a machine prerequisite. |
 | `--only <a,b>` | Run only those steps. An unknown label is refused, with the known ones listed. |
 | `--list` | Print the resolved selection and exit, running nothing. |
 | `--fix` | Run each selected step's fixer, then re-run the gate to confirm. |
 
-**A scoped run is not a gate run.** `--only` selecting fewer steps than the gate holds makes every
+**A scoped run is not a gate run.** `--only` selecting fewer steps than the mode holds makes every
 summary line carry `⚠ scoped run (N of M steps) — not the gate`, so a scoped green can never be
 read as a green gate. A selection that resolves to **zero** steps is refused outright: a gate that
 ran nothing must never be indistinguishable from a gate that passed.
 
-**`bun run test:browser` is not one of `check`'s steps and is still required of any change that
-touches a controller** (§1c). A green `check` says nothing whatever about whether a keystroke still
-moves focus.
+**`test:browser` is `fullOnly` and is still required of any change that touches a controller**
+(§1c). A green fast run says nothing whatever about whether a keystroke still moves focus.
 
 ### 6b. What Each Tool Catches
 
@@ -474,25 +498,36 @@ lives. What a given tool proves does not drift.
 table encodes this by ordering `typecheck` first, so a fail-fast run stops there without being
 told to.
 
-### 6c. `check` Carries No Machine Prerequisite; `verify` May
+### 6c. A Fast Run Carries No Machine Prerequisite; `--full` May
 
-**This is the line between the two verbs.** Every step in `check` runs on any machine with the
-repo's dependencies installed — nothing to fetch, no binary beyond `devDependencies`. That is what
-makes `check` the gate anyone may run at any time, and why cost is never grounds for moving a step
-out of it (§1c).
+**This is the line between the two modes, and it is an objective property rather than a
+judgement.** Every step in a fast run works on any machine with the repo's dependencies installed —
+nothing to fetch, no binary beyond `devDependencies`. That is what makes `bun run verify` the gate
+anyone may run at any time, and **why cost is never grounds for moving a step out of it** (§1c).
+"This suite got slow" has no bearing on the question the boundary asks.
 
-`bun run verify` is the release gate — `prepublishOnly` runs it — and **is** permitted a
+`bun run verify --full` is the release gate — `prepublishOnly` runs it — and **is** permitted a
 prerequisite. It adds the browser set, whose Chromium binary comes from `bun run test:install`.
-**Publishing therefore requires that install**, and a machine that lacks it fails `verify` at
-`test:browser` before running any test, with the install command in the failure line.
+**Publishing therefore requires that install**, and a machine that lacks it fails at `test:browser`
+before running any test, with the install command in the failure line.
 
-A step needing a prerequisite belongs in `verify` only. A step needing nothing belongs in both.
+A step needing a prerequisite is `fullOnly`. A step needing nothing carries no flag and runs in both.
+**`selectSteps` refuses a table that breaks this**, before the mode is applied and before `--only`
+narrows — so the rule is enforced for every project that consumes the runner, and no repository
+writes a test of its own to assert it.
 
-**The closed `Gate` union is what carries this.** `"check" | "verify"` admits no third verb, so
-every step in every project's table faces exactly one question — may it require a machine
-prerequisite? — with a defined answer. A gate named freely would have no answer at all, and the
-invariant would survive only as prose. That is why the published type stays closed even though
-widening it would cost one character — see
+**Two things in the type system carry this, and neither is prose.**
+
+`GateMode` is a closed `"fast" | "full"` union. Every step in every project's table therefore faces
+exactly one question — may it require a machine prerequisite? — with a defined answer. A third mode
+would need its own equally objective property, and the candidates do not have one: "release-shaped"
+is a judgement call, and "inner loop" is `--only`, which already exists and already brands itself as
+not-the-gate. Judgement-call modes are how a four-mode gate with named step groups becomes
+unreadable.
+
+`Step.fullOnly` is a **boolean, not a list of modes**. There is consequently no way to express a
+step a fast run has and a full run does not, so "full is a superset of fast" is structural rather
+than something a test has to catch after the fact — see
 [`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) §5f for the runner it belongs to.
 
 ---

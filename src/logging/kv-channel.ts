@@ -3,27 +3,15 @@ import type { KVNamespaceLike } from "../storage/kv/types";
 import type { KvLogChannelOptions, KvLogMetadata, LogChannel, LogQuery, LogReadResult, LogRecord, LogRow } from "./types";
 
 const DEFAULT_PREFIX = "logs";
-const DEFAULT_TTL = 60 * 60 * 24 * 7; // 7 days
+const DEFAULT_TTL = 60 * 60 * 24 * 7;
 const DEFAULT_MAX_LOGS = 500;
 const DEFAULT_PURGE_PROBABILITY = 0.02;
 const PURGE_BATCH = 20;
-// A single purge pass only sees the first PURGE_LIST_LIMIT keys under the prefix; the TTL is the
-// hard backstop for anything beyond that window.
 const PURGE_LIST_LIMIT = 1000;
 const DEFAULT_LIMIT = 50;
-// Substituted for a value already open on the current path, so a self-referential structure
-// terminates instead of recursing until the stack overflows.
 const CIRCULAR_MARKER = "[circular]";
 
-/**
- * Deep-clones `value` into a shape `JSON.stringify` preserves, so structured context survives the
- * trip into KV. `Date`, `Map` and `Set` hold their payload outside enumerable own properties — a
- * property-wise clone flattens all three to `{}` — so each gets an explicit form: an ISO 8601
- * string, and tagged lists that rebuild with `new Map(entries)` / `new Set(values)`. A reference
- * that reappears on its own path becomes `CIRCULAR_MARKER`. When `keepStacks` is false, any
- * property named `stack` is dropped along the way so error stacks never reach KV persistence.
- * Never mutates the input. @internal
- */
+/** Deep-clones `value` into a JSON-stable shape, marking cycles and optionally dropping `stack`. @internal */
 function toPersistable(value: unknown, keepStacks: boolean): unknown {
   const openPath = new WeakSet<object>();
 
@@ -44,7 +32,6 @@ function toPersistable(value: unknown, keepStacks: boolean): unknown {
           .map(([key, val]) => [key, walk(val)]),
       );
     } finally {
-      // Released on the way out: the same object appearing twice as siblings is not a cycle.
       openPath.delete(input);
     }
   }
@@ -52,15 +39,7 @@ function toPersistable(value: unknown, keepStacks: boolean): unknown {
   return walk(value);
 }
 
-/**
- * Async log channel that writes records to Cloudflare KV with time-ordered keys and reads
- * them back via the same key convention. Keys are `{prefix}||{isoTimestamp}||{rand}`,
- * enabling lexicographic oldest-first listing. Metadata is stored alongside each entry so
- * the viewer can list rows without per-row reads. A probabilistic high/low-water purge provides
- * a best-effort soft cap; the TTL is the hard backstop. Best-effort means probabilistic and
- * error-swallowing — not untracked: when the purge branch is selected, `write`'s promise covers it,
- * so `flush()`/`waitUntil()` hold the isolate open until the sweep finishes. @public
- */
+/** Log channel that writes records to Cloudflare KV under time-ordered keys and reads them back. @public */
 export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: NS, options?: KvLogChannelOptions): LogChannel {
   const prefix = options?.prefix ?? DEFAULT_PREFIX;
   const defaultTtl = options?.defaultTtl ?? DEFAULT_TTL;
@@ -72,9 +51,7 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
 
   return {
     async write(record: LogRecord): Promise<void> {
-      // Crypto-random suffix (8 hex chars / 32 bits) so two records written in the same millisecond
-      // do not collide on the same KV key — KV is last-write-wins, and a collision silently drops a
-      // log line. `Math.random()` (≈31 bits, non-uniform across runtimes) made that more likely.
+      // KV is last-write-wins: a same-millisecond key collision silently drops a log line.
       const rand = bytesToHex(randomBytes(4));
       const key = `${listPrefix}${record.timestamp}||${rand}`;
 
@@ -89,8 +66,6 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
         ...(safeRequestId ? { requestId: safeRequestId } : {}),
       };
 
-      // Normalize a clone of the record's data for persistence — the caller's record is never
-      // mutated (consoleChannel keeps the original, stacks included, for local debugging).
       const persisted =
         record.data === undefined ? record : { ...record, data: toPersistable(record.data, persistStack) as Record<string, unknown> };
 
@@ -100,16 +75,8 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
         return putPromise;
       }
 
-      // The purge joins the returned promise so `Logger.flush()` and `executionCtx.waitUntil()` keep
-      // the isolate alive until it settles — a detached purge can be cancelled mid-pass when the
-      // tracked work finishes first. Its own rejection stays swallowed: a failed sweep must never
-      // reject a log write.
       const purgePromise = purge(kv, listPrefix, maxLogs, highWater).catch(() => {});
-      // `allSettled`, not `all`: `all` rejects the instant the put does, which stops the returned
-      // promise covering the still-running sweep — the detached-purge cancellation this branch
-      // exists to prevent, in the one case a sweep is most likely to be mid-flight. The put's
-      // rejection is then rethrown, because only a failure of the record write itself may reject
-      // (see README "A promise returned by `write` must cover every operation the write starts").
+      // `allSettled`, not `all`: `all` would settle on the put's rejection and let the isolate cancel the in-flight purge.
       const [put] = await Promise.allSettled([putPromise, purgePromise]);
       if (put.status === "rejected") throw put.reason;
     },
@@ -146,8 +113,7 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
     },
 
     async readEntry(key: string): Promise<LogRecord | null> {
-      // Only keys under this channel's prefix are readable — the viewer must not become
-      // an arbitrary-KV read oracle via a crafted detail key.
+      // Prefix-scoped: without this the viewer is an arbitrary-KV read oracle via a crafted key.
       if (!key.startsWith(listPrefix)) return null;
       const value = await kv.get(key, { type: "text" });
       if (value === null) return null;
@@ -161,7 +127,6 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
 }
 
 async function purge(kv: KVNamespaceLike, listPrefix: string, maxLogs: number, highWater: number): Promise<void> {
-  // Purge is probabilistic and best-effort; the TTL is the hard backstop against unbounded growth.
   const result = await kv.list({ prefix: listPrefix, limit: PURGE_LIST_LIMIT });
   if (result.keys.length <= highWater) return;
 

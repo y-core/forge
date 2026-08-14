@@ -277,19 +277,6 @@ describe("mergeSecurityHeaders", () => {
   });
 });
 
-/**
- * The header-conflict precedence, pinned.
- *
- * `createSecurityHeaders` queues its headers **before** `next()`, alongside the nonce.
- * `setPendingHeader` is last-writer-wins per name and a middleware registered deeper queues later,
- * so an overlapping name resolves **inner-wins**.
- *
- * This was previously un-pinned and undocumented — the middleware queued after `next()`, giving the
- * opposite (outer-wins) resolution, and no test or doc said so in either direction. Nothing inside
- * forge overlaps today (`createSecurityHeaders` owns its 8–9 names, `requestId` owns
- * `x-request-id`, session and flash use `set-cookie` with `{ append: true }`), so only a consumer
- * middleware can observe this. That is exactly why it needs a test rather than an assumption.
- */
 describe("createSecurityHeaders — pending-header precedence", () => {
   it("lets a middleware registered deeper win an overlapping header name", async () => {
     const app = new Forge();
@@ -303,13 +290,10 @@ describe("createSecurityHeaders — pending-header precedence", () => {
     const res = await app.request("/");
 
     expect(res.headers.get("referrer-policy")).toBe("unsafe-url");
-    // Names the inner middleware did not touch still come from the security middleware.
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
   it("still wins over a header the route handler set on the Response itself", async () => {
-    // `applyPendingHeaders` set-overwrites onto the response, so the pending channel outranks a
-    // header baked into the Response. Unchanged by the move, and pinned alongside it.
     const app = new Forge();
     app.use("*", createSecurityHeaders());
     mapHandler(app, "GET", "/", () => new Response("ok", { headers: { "referrer-policy": "unsafe-url" } }));
@@ -320,8 +304,6 @@ describe("createSecurityHeaders — pending-header precedence", () => {
   });
 
   it("reaches the error page when a guard registered deeper throws", async () => {
-    // Queuing before `next()` means the headers are already on the channel when the throw happens,
-    // so they no longer depend on the response unwinding back out through this middleware.
     const app = new Forge();
     app.use("*", createSecurityHeaders());
     app.use("*", () => {

@@ -4,7 +4,7 @@ export { createUuidv7, createUuidv7Bytes, uuidFromBytes, uuidToBytes, uuidv7, uu
 type CfSubtleCrypto = SubtleCrypto & { timingSafeEqual?: (a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView) => boolean };
 const subtle = crypto.subtle as CfSubtleCrypto;
 
-/** Shared module-level codec singletons — stateless, safe to reuse across all operations. @internal */
+/** @internal */
 export const TEXT_ENCODER = new TextEncoder();
 /** @internal */
 export const TEXT_DECODER = new TextDecoder();
@@ -48,10 +48,7 @@ export function importHmacKey(raw: Uint8Array<ArrayBuffer>): Promise<CryptoKey> 
   return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
 
-/**
- * Validates a hex secret and imports it as an HMAC-SHA-256 key.
- * Async so validation errors always surface as rejections. @internal
- */
+/** Validates a hex secret and imports it as an HMAC-SHA-256 key. @internal */
 export async function importHmacKeyFromHex(hexSecret: string, label = "secret"): Promise<CryptoKey> {
   if (hexSecret.length % 2 !== 0) throw new Error(`${label} must have an even number of hex characters`);
   if (!/^[0-9a-fA-F]+$/.test(hexSecret)) throw new Error(`${label} must contain only hexadecimal characters (0-9, a-f, A-F)`);
@@ -91,15 +88,10 @@ export function base64urlDecode(str: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-/**
- * Constant-time JS fallback for runtimes without `crypto.subtle.timingSafeEqual`.
- * XOR-accumulates a difference over all bytes; for unequal lengths it still runs a fixed-length
- * loop and returns false, never short-circuiting on the first differing byte. @internal
- */
+/** Constant-time JS fallback for runtimes without `crypto.subtle.timingSafeEqual`. @internal */
 function timingSafeEqualBytesFallback(a: Uint8Array, b: Uint8Array): boolean {
   if (a.byteLength !== b.byteLength) {
-    // Fixed-time compare so the result timing does not depend on array contents. Seed a non-zero
-    // accumulator to guarantee a false result regardless of the bytes.
+    // Must still run a full pass: an early `return false` here would leak length by timing.
     let acc = 1;
     // biome-ignore lint/style/noNonNullAssertion: optional chaining would branch in constant-time code; bounds guaranteed by the loop condition.
     for (let i = 0; i < a.byteLength; i++) acc |= a[i]! ^ a[i]!;
@@ -111,10 +103,7 @@ function timingSafeEqualBytesFallback(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
-/**
- * Constant-time byte array comparison. Uses Cloudflare Workers' native
- * `crypto.subtle.timingSafeEqual` when available, otherwise a constant-time JS fallback. @internal
- */
+/** Constant-time byte array comparison, preferring Workers' native `crypto.subtle.timingSafeEqual`. @internal */
 export function timingSafeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (typeof subtle.timingSafeEqual !== "function") {
     return timingSafeEqualBytesFallback(a, b);

@@ -3,9 +3,6 @@ import { cloneElement, createElement as el, Fragment, isValidElement } from "./e
 import { renderPage, renderToString } from "./render-to-string";
 import type { ComponentFn } from "./types";
 
-// Helpers to construct trees without JSX syntax so the tsconfig jsxImportSource
-// does not interfere with these runtime-level tests.
-
 describe("renderToString — primitives", () => {
   it("renders a string as escaped text", async () => {
     expect(String(await renderToString("hello"))).toBe("hello");
@@ -282,7 +279,6 @@ describe("renderToString — html tagged template", () => {
     const node = el("title", null);
     node.props.children = "My Page";
     const rendered = await renderToString(node);
-    // html.raw`` must be used inside the html tag function — it marks a value as pre-rendered
     const result = html`<!DOCTYPE html>${html.raw`${rendered}`}`;
     expect(String(result)).toBe("<!DOCTYPE html><title>My Page</title>");
   });
@@ -352,7 +348,6 @@ describe("renderToString — URL attribute sanitization", () => {
   });
 
   it("does not sanitize non-URL attributes", async () => {
-    // `id` is not a URL attribute, so a colon value passes through (escaped only).
     const node = el("div", { id: "javascript:notaurl" });
     expect(String(await renderToString(node))).toBe('<div id="javascript:notaurl"></div>');
   });
@@ -382,15 +377,11 @@ describe("renderToString — URL attribute sanitization", () => {
     expect(String(await renderToString(node))).toBe('<div hx-get="javascript:alert(1)"></div>');
   });
 
-  // Tripwire: sanitizing hx-* would rewrite a rejected URL to "#", which htmx fetches as the
-  // current page rather than leaving dead as an href does. One value, two attributes, two fates.
   it("sanitizes href but not hx-push-url when both carry the same value", async () => {
     const node = el("a", { href: "javascript:alert(1)", "hx-push-url": "javascript:alert(1)", children: "x" });
     expect(String(await renderToString(node))).toBe('<a href="#" hx-push-url="javascript:alert(1)">x</a>');
   });
 
-  // hx-on:* is absent from the JSX attribute types, but the renderer has no on* filter and emits it
-  // like any other attribute. Pinned so the type omission is never mistaken for enforcement.
   it("emits hx-on:click verbatim — the renderer has no on* filter", async () => {
     const node = el("button", { "hx-on:click": "alert(1)", children: "go" });
     expect(String(await renderToString(node))).toBe('<button hx-on:click="alert(1)">go</button>');
@@ -424,7 +415,6 @@ describe("isValidElement / cloneElement", () => {
     const base = el("button", { type: "button", children: "Go" });
     const cloned = cloneElement(base, { "data-ref": "b1" });
     expect(String(await renderToString(cloned))).toBe('<button type="button" data-ref="b1">Go</button>');
-    // Original is untouched:
     expect(String(await renderToString(base))).toBe('<button type="button">Go</button>');
   });
 });

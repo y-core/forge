@@ -42,7 +42,6 @@ describe("createSignedObjectUrl / verifySignedObjectUrl", () => {
 
   it("returns expired for a URL past its expiry", async () => {
     const key = await makeKey();
-    // Create with -1 second TTL: exp is in the past
     const url = await createSignedObjectUrl(key, "https://x.com/", "file.txt", { expiresInSeconds: -1 });
     const result = await verifySignedObjectUrl(key, url);
     expect(result).toEqual({ ok: false, reason: "expired" });
@@ -69,8 +68,7 @@ describe("createSignedObjectUrl / verifySignedObjectUrl", () => {
 
   it("does not accept a signature minted for a different key/exp split (delimiter ambiguity)", async () => {
     const key = await makeKey();
-    // Sign for key "a|100"; an attacker cannot reuse the signature as key "a", exp 100 because the
-    // length prefix makes "5:a|100|<exp>" distinct from "1:a|100".
+    // Fixture key "a|100" embeds the payload delimiter; the length prefix makes "5:a|100" distinct from "1:a|100".
     const url = await createSignedObjectUrl(key, "https://x.com/", "a|100");
     const parsed = new URL(url);
     parsed.searchParams.set("key", "a");

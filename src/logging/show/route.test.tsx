@@ -14,8 +14,6 @@ import { loadLogViewer } from "./route";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
-/** What the consumer's `context` resolves to. `theme` is derived from `config`, so the rendered
- *  document proves both hops: config reached `context`, and the resolved `ctx` reached `layout`. */
 interface Ctx {
   theme: string;
 }
@@ -23,8 +21,6 @@ interface Config {
   dark: boolean;
 }
 
-/** The shell the viewer no longer builds for itself. Deliberately minimal — the point of the
- *  assertions below is that `<html>`, `<head>` and `<body>` come from *here*. */
 const Layout: FC<{ ctx: Ctx }> = ({ ctx, children }) => (
   <html lang='en' class={ctx.theme}>
     <head>
@@ -44,23 +40,17 @@ const ROW: LogRow = {
 
 const emptyChannel: LogChannel = { write: () => {}, read: () => Promise.resolve({ rows: [], complete: true }) };
 const pagedChannel: LogChannel = { write: () => {}, read: () => Promise.resolve({ rows: [ROW], complete: false, cursor: "cursor-2" }) };
-/** A channel whose read rejects. The loader catches it; nothing here asserts on the reason, because
- *  the reason is deliberately never carried into the markup. */
 const failingChannel: LogChannel = { write: () => {}, read: () => Promise.reject(new Error("kv down")) };
 
 interface AppOptions {
   basePath?: string;
   access?: LogViewerAccess;
   channel?: LogChannel;
-  /** Overrides the whole factory, for the cases that assert *whether* it was called. */
   channelFactory?: () => LogChannel;
   context?: (c: AppContext, config: Config) => Promise<Ctx>;
   config?: Config;
 }
 
-// Drives loadLogViewer through a definePage, mirroring how an app composes it. The loader returns a
-// Response for every path, so it short-circuits before the view runs — the view is a sentinel that
-// must never execute.
 function makeApp(options: AppOptions = {}) {
   const { basePath, access = "allow-unauthenticated", channel = emptyChannel, channelFactory, context, config = { dark: true } } = options;
   const app = new Forge();
@@ -86,9 +76,7 @@ const EMPTY_TBODY_HTML =
 const ROW_HTML =
   '<tr class="border-b border-border hover:bg-accent"><td class="py-2 pl-4 pr-4 font-mono text-xs tabular-nums whitespace-nowrap text-muted-foreground">2026-05-31T10:00:00.000Z</td><td class="py-2 pr-4"><span data-slot="badge" data-variant="info" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-status-info-strong text-status-info-strong-foreground border-status-info-border">info</span></td><td class="py-2 pr-4 font-mono text-xs text-muted-foreground">svc</td><td class="py-2 pr-4 max-w-xs truncate text-foreground"><button type="button" data-slot="button" class="inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm" aria-expanded="false" aria-controls="log-detail-logs--2026-05-31T10-00-00-000Z--aaa" hx-get="/admin/logs?detail=logs%7C%7C2026-05-31T10%3A00%3A00.000Z%7C%7Caaa" hx-target="#log-detail-logs--2026-05-31T10-00-00-000Z--aaa" hx-swap="outerHTML" hx-indicator="#log-detail-logs--2026-05-31T10-00-00-000Z--aaa" hx-disabled-elt="this">first event</button></td><td class="py-2 pr-4 font-mono text-xs text-muted-foreground">—</td></tr><tr id="log-detail-logs--2026-05-31T10-00-00-000Z--aaa" class="hidden border-b border-border [&amp;.htmx-request]:table-row"><td colspan="5" class="px-4 py-2"><span class="sr-only">Loading log entry detail…</span><div data-slot="skeleton" aria-hidden="true" class="animate-pulse rounded-md bg-muted h-4 w-full"></div></td></tr>';
 
-/** The whole document for an allowed, unfiltered, empty read — `LogViewerContent` as the children of
- *  the consumer's `Layout`, and no shell of the viewer's own anywhere in it. */
-const PAGE_HTML = `<!DOCTYPE html><html lang="en" class="dark"><head><title>Request Log</title></head><body class="bg-background"><main id="main-content" class="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-10 lg:px-10"><h1 class="text-2xl font-semibold tracking-tight text-foreground">Request Log</h1><form class="flex flex-wrap sm:flex-nowrap items-end gap-2" hx-get="/admin/logs" hx-target="#log-tbody" hx-swap="outerHTML" hx-indicator="#log-tbody" hx-disabled-elt="find button[type=&#39;submit&#39;]" hx-push-url="true"><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full flex-1 min-w-xs"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-q">Search</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" name="q" type="search" placeholder="message, prefix, requestId…" value="" id="field-q"></fieldset><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full flex-1 max-w-xs"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-level">Level</label><div data-slot="select-wrapper" class="group/select relative w-full has-[select:disabled]:opacity-50"><select data-slot="select" class="w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:pointer-events-none" name="level" id="field-level"><option data-slot="select-option" value="" selected>All</option><option data-slot="select-option" value="debug">debug</option><option data-slot="select-option" value="info">info</option><option data-slot="select-option" value="warn">warn</option><option data-slot="select-option" value="error">error</option></select><span aria-hidden="true" data-slot="select-icon" class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></div></fieldset><button type="submit" data-slot="button" class="inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-sm">Filter</button></form><div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-content" class="p-0"><div data-slot="scroll-area" data-orientation="vertical" class="relative max-h-96"><div data-slot="scroll-area-viewport" tabindex="0" class="h-full w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring [scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent]"><table class="w-full border-collapse text-sm"><thead><tr class="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"><th class="py-2 pl-4 pr-4 whitespace-nowrap">Timestamp</th><th class="py-2 pr-4">Level</th><th class="py-2 pr-4">Prefix</th><th class="py-2 pr-4 max-w-xs">Message</th><th class="py-2 pr-4">Request ID</th></tr></thead>${EMPTY_TBODY_HTML}<tfoot><tr id="log-load-more"><td colspan="5" class="px-4 py-2 text-center"></td></tr></tfoot></table></div></div></div></div></main></body></html>`;
+const PAGE_HTML = `<!DOCTYPE html><html lang="en" class="dark"><head><title>Request Log</title></head><body class="bg-background"><main id="main-content" data-fill-viewport class="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-10 lg:px-10"><h1 class="text-2xl font-semibold tracking-tight text-foreground">Request Log</h1><form class="flex flex-wrap sm:flex-nowrap items-end gap-2" hx-get="/admin/logs" hx-target="#log-tbody" hx-swap="outerHTML" hx-indicator="#log-tbody" hx-disabled-elt="find button[type=&#39;submit&#39;]" hx-push-url="true"><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full flex-1 min-w-xs"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-q">Search</label><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" name="q" type="search" placeholder="message, prefix, requestId…" value="" id="field-q"></fieldset><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full flex-1 max-w-xs"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50" for="field-level">Level</label><div data-slot="select-wrapper" class="group/select relative w-full has-[select:disabled]:opacity-50"><select data-slot="select" class="w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:pointer-events-none" name="level" id="field-level"><option data-slot="select-option" value="" selected>All</option><option data-slot="select-option" value="debug">debug</option><option data-slot="select-option" value="info">info</option><option data-slot="select-option" value="warn">warn</option><option data-slot="select-option" value="error">error</option></select><span aria-hidden="true" data-slot="select-icon" class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></div></fieldset><button type="submit" data-slot="button" class="inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-sm">Filter</button></form><div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm min-h-0 flex-1"><div data-slot="card-content" class="flex min-h-0 flex-1 flex-col p-0"><div data-slot="scroll-area" data-orientation="vertical" class="relative flex min-h-0 max-h-dvh flex-1 flex-col"><div data-slot="scroll-area-viewport" tabindex="0" class="h-full max-h-[inherit] w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring [scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent] min-h-0 flex-1"><table class="w-full border-collapse text-sm"><thead><tr class="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"><th class="py-2 pl-4 pr-4 whitespace-nowrap">Timestamp</th><th class="py-2 pr-4">Level</th><th class="py-2 pr-4">Prefix</th><th class="py-2 pr-4 max-w-xs">Message</th><th class="py-2 pr-4">Request ID</th></tr></thead>${EMPTY_TBODY_HTML}<tfoot><tr id="log-load-more"><td colspan="5" class="px-4 py-2 text-center"></td></tr></tfoot></table></div></div></div></div></main></body></html>`;
 
 describe("loadLogViewer — access control", () => {
   it("denies with exactly 403 Forbidden when the access predicate returns false", async () => {
@@ -144,8 +132,6 @@ describe("loadLogViewer — access control", () => {
   });
 
   it("fails closed when the access predicate throws — the rejection reaches the error boundary", async () => {
-    // The channel read is caught; `access` deliberately is not. A predicate that throws must never
-    // be read as an allow, so the boundary's 500 is the correct outcome and no log markup is emitted.
     const res = await makeApp({
       access: () => {
         throw new Error("access boom");
@@ -164,8 +150,6 @@ describe("loadLogViewer — full page (non-HTMX GET)", () => {
     const res = await makeApp().request("/logs");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    // The `class="dark"` on <html> is `ctx.theme`, resolved from the `config` argument — so this one
-    // assertion also proves config reached `context` and the resolved ctx reached `layout`.
     expect(await res.text()).toBe(PAGE_HTML);
   });
 
@@ -188,15 +172,11 @@ describe("loadLogViewer — full page (non-HTMX GET)", () => {
   });
 
   it("never falls through to the view — the loader short-circuits with a Response", async () => {
-    // The sentinel view answers 500 with `view-should-not-run`; the exact page above is what proves
-    // it never ran.
     const res = await makeApp().request("/logs");
     expect(res.status).toBe(200);
   });
 
   it("renders the error state in place when the channel read rejects, still as a 200 page", async () => {
-    // A page load carries no cursor, so the rejection resolves as complete — visible here as the
-    // tfoot's load-more row rendering empty, exactly as it does for a successful exhausted read.
     const res = await makeApp({ channel: failingChannel }).request("/logs");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe(
@@ -236,8 +216,6 @@ describe("loadLogViewer — HTMX filter submit (no cursor)", () => {
   });
 
   it("answers a failed read with the error state inside the tbody, keeping the retry on the filters", async () => {
-    // The rejection is caught rather than propagated on purpose: the error boundary answers a
-    // fragment request with a whole page, which HTMX would swap into the log table.
     const res = await makeApp({ channel: failingChannel }).request("/logs?level=error", { headers: { "HX-Request": "true" } });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe(
@@ -279,8 +257,6 @@ describe("loadLogViewer — HTMX load-more (cursor)", () => {
   });
 
   it("answers a failed read with no rows and a control that still names the cursor it was asked for", async () => {
-    // The cursor was requested but never consumed, so it survives the failure and the control becomes
-    // the retry. The reader can try again; the control does not disappear.
     const res = await makeApp({ channel: failingChannel }).request("/logs?cursor=abc", { headers: { "HX-Request": "true" } });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe(
@@ -291,10 +267,6 @@ describe("loadLogViewer — HTMX load-more (cursor)", () => {
 
 describe("loadLogViewer — a rejected read resolves differently on each path", () => {
   it("reports the stream complete for a filter submit, and incomplete with the cursor kept for an append", async () => {
-    // The same rejection, one query parameter apart. Without a cursor there is nothing to resume, so
-    // the stream is complete and the message belongs inside the tbody beside the header row. With
-    // one, the cursor is unspent — reporting complete there would delete the control on a transient
-    // failure, which is the one outcome the reader cannot recover from.
     const app = makeApp({ channel: failingChannel });
 
     const filterSubmit = await (await app.request("/logs?level=error", { headers: { "HX-Request": "true" } })).text();

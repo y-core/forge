@@ -244,6 +244,13 @@ of by subpath reports namespaces the package does not have, and edges nobody can
 runtime cycle (§2), but it is a coupling that a rename breaks, so it is declared with its kind
 rather than left out. A namespace whose every edge is type-only is integration all the same.
 
+**Duplicated markup across a leaf boundary is the accepted cost, not an oversight.**
+`src/http/fragment.ts` restates the banner classes `src/ui/core/alert.tsx` renders because sharing
+them would add an `http → ui/core` edge that `validate-namespace-graph` rejects — and it would put
+every consumer of a response builder behind the SSR component tier for a class string. The two
+copies drift only in appearance, and both resolve through the same `--status-*` tokens, which is
+where the coupling that matters actually lives.
+
 ### 4b. Integration Namespace Rules
 
 A namespace is **integration** when it composes across forge namespaces. **Every edge is declared

@@ -14,13 +14,11 @@ type PopoverAlign = "start" | "center" | "end";
 type PopoverSide = "bottom" | "top";
 
 interface PopoverTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
-  /** id of the `Popover.Content` this trigger toggles — its `commandfor` target. */
   id: string;
   children?: JSXNode;
 }
 
 interface PopoverContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  /** Element id — the `commandfor` target named by the matching `Popover.Trigger`. */
   id: string;
   align?: PopoverAlign;
   side?: PopoverSide;
@@ -45,17 +43,6 @@ const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, "da
   </button>
 );
 
-/**
- * Popover panel. Rendered natively via the Popover API (`popover="auto"`): it lives in the top
- * layer with free light-dismiss (outside-click + Esc) and exclusive-open against sibling auto
- * popovers — no JavaScript. Placement (`align`/`side`) is applied by static CSS anchored to the
- * invoker (the popover's implicit anchor); the data attributes select the rule.
- *
- * `side` and `align` are stamped here because they are decided at render and never change. Open and
- * closed are **not**: they belong to the platform, and the eager `popover` scope reconciles them
- * from the element's own `:popover-open`. A server-stamped `data-closed` would be an assertion this
- * component is in no position to keep true.
- */
 const PopoverContent: FC<PopoverContentProps> = ({
   id,
   align = "start",
@@ -77,19 +64,5 @@ const PopoverContent: FC<PopoverContentProps> = ({
   </div>
 );
 
-/**
- * Compound popover built on the native Popover + Invoker Commands APIs. The trigger is a
- * `<button command="toggle-popover" commandfor={id}>` and the content is a `<div popover="auto"
- * id={id}>`; the shared `id` links them. Open/close, top-layer stacking, and light-dismiss are all
- * handled by the platform — zero client JavaScript.
- *
- * ```tsx
- * <Popover>
- *   <Popover.Trigger id="menu-file">File</Popover.Trigger>
- *   <Popover.Content id="menu-file">…</Popover.Content>
- * </Popover>
- * ```
- *
- * @public
- */
+/** Compound popover built on the native Popover + Invoker Commands APIs, linked by a shared `id`. @public */
 export const Popover = Object.assign(PopoverRoot, { Trigger: PopoverTrigger, Content: PopoverContent });

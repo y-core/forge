@@ -56,14 +56,10 @@ describe("cn conflict resolution", () => {
     });
   }
 
-  // A caller's height override reaching a component base, which is the shape that sent the vertical
-  // Separator looking for a call-site workaround before its base was fixed.
   it("lets a caller's height displace a base height inside a longer class string", () => {
     expect(cn("h-full w-px border-0 bg-border", "h-5")).toBe("w-px border-0 bg-border h-5");
   });
 
-  // display, align-items and gap are three separate groups — this passes because they genuinely
-  // do not conflict, not because `items-center` is outside the table.
   it("keeps source order for non-conflicting utilities", () => {
     expect(cn("flex", "items-center", "gap-2")).toBe("flex items-center gap-2");
   });
@@ -82,8 +78,6 @@ describe("cn alignment and cursor groups", () => {
     });
   }
 
-  // The case the decision was opened for: a caller's layout override replaces the component's
-  // own, rather than tying with it and leaving sheet order to decide.
   it("lets a caller override a full layout triplet", () => {
     expect(cn("inline-flex items-center justify-center", "flex items-baseline justify-between")).toBe("flex items-baseline justify-between");
   });
@@ -151,8 +145,6 @@ describe("cn arbitrary properties", () => {
 });
 
 describe("cn importance", () => {
-  // A deliberate divergence from tailwind-merge: `!important` wins the cascade regardless of
-  // source order, so an important utility is never displaced by a later normal one.
   it("keeps an important utility ahead of a later normal one", () => {
     expect(cn("h-full!", "h-5")).toBe("h-full! h-5");
   });
@@ -181,8 +173,6 @@ describe("cn negative and fractional values", () => {
 });
 
 describe("cn override relations", () => {
-  // One-directional: a shorthand consumes its longhands, never the reverse — a longhand after a
-  // shorthand is a deliberate narrowing, not a conflict.
   const cases: { shorthand: string; longhand: string; collapsed: string; narrowed: string }[] = [
     { shorthand: "p-4", longhand: "px-2", collapsed: "p-4", narrowed: "p-4 px-2" },
     { shorthand: "size-6", longhand: "w-4", collapsed: "size-6", narrowed: "size-6 w-4" },

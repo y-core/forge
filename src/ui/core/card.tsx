@@ -54,6 +54,7 @@ const CardFooter: FC<CardProps> = ({ class: cls, children, "data-slot": inherite
   </div>
 );
 
+/** A bordered surface container, with `Header`, `Title`, `Description`, `Action`, `Content`, and `Footer` subcomponents. @public */
 export const Card = Object.assign(CardRoot, {
   Header: CardHeader,
   Title: CardTitle,

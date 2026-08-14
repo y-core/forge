@@ -48,12 +48,6 @@ describe("resolveKVStore", () => {
   });
 });
 
-// ── Cloudflare-shaped contract proof (compile-time) ────────────────────────
-// Mirrors the divergent shape of Cloudflare's real KV binding — a generic
-// `KVNamespace<Key>` with many overloaded `get`/`getWithMetadata` signatures, a
-// metadata result carrying an extra `cacheStatus`, and a branded list result.
-// The structural contract `KVNamespaceLike` must accept it cast-free.
-
 interface CfKVListResult<M> {
   keys: { name: string; expiration?: number; metadata?: M }[];
   list_complete: boolean;

@@ -1,11 +1,14 @@
+/** A parsed `major.minor.patch` version. */
 export interface SemVer {
   major: number;
   minor: number;
   patch: number;
 }
 
+/** Which component of a {@link SemVer} to increment. */
 export type BumpKind = "major" | "minor" | "patch";
 
+/** The category of failure a release operation raised. */
 export type ReleaseErrorKind =
   | "invalid-version"
   | "version-not-greater"
@@ -16,6 +19,7 @@ export type ReleaseErrorKind =
   | "changelog-empty"
   | "changelog-malformed";
 
+/** An error raised by the release pipeline, tagged with its {@link ReleaseErrorKind}. */
 export class ReleaseError extends Error {
   readonly kind: ReleaseErrorKind;
 
@@ -26,21 +30,25 @@ export class ReleaseError extends Error {
   }
 }
 
+/** The version {@link resolveVersion} resolved to, and why. */
 export interface VersionResult {
   version: string;
   reason: "explicit" | "auto-patch" | "auto-minor" | "auto-major" | "first-release" | "in-sync";
   previous: string | null;
 }
 
+/** Configuration for {@link createReleaseCommand}. */
 export interface ReleaseCommandConfig {
   cwd: string;
   tagPrefix?: string;
+  /** Files staged into the release commit. Defaults to what the release itself wrote — `package.json`,
+   *  plus `changelogFile` when a changelog was promoted. Name it only to stage something else too. */
   stageFiles?: string[];
-  /** Changelog to promote, relative to `cwd`. Defaults to `"CHANGELOG.md"`. A repository without
-   *  one is not an error — the promotion step is skipped and the release proceeds. */
+  /** Changelog to promote, relative to `cwd`. Defaults to `"CHANGELOG.md"`. */
   changelogFile?: string;
 }
 
+/** Injectable dependencies of {@link createReleaseCommand}, faked in tests. */
 export interface ReleaseDeps {
   isWorkingTreeClean: (cwd: string) => boolean;
   resolveVersion: (opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult;
@@ -58,12 +66,14 @@ export interface ReleaseDeps {
   now: () => Date;
 }
 
+/** Options for {@link resolveVersion}. */
 export interface ResolveVersionOptions {
   explicit?: string;
   cwd: string;
   tagPrefix: string;
 }
 
+/** Injectable dependencies of {@link resolveVersion}, faked in tests. */
 export interface VersionDeps {
   getLatestTag: (cwd: string, prefix: string) => string | null;
   getCommitsSinceTag: (cwd: string, tag: string) => string[];

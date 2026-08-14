@@ -1,25 +1,3 @@
-/**
- * Pure OKLCh → sRGB colour conversion and CSS colour-literal parsing.
- *
- * No dependencies — implements the OKLab transform from Björn Ottosson's spec plus
- * CSS Color 4 chroma-reduction gamut mapping. Used by the cursor bake step to turn
- * design-token colour literals into concrete hex values embedded in cursor SVGs.
- *
- * ## The second copy, and why it is not this one
- *
- * `src/ui/contracts/color.ts` implements the same transform and the same gamut mapping, for the
- * theme customiser. That is a deliberate exception to the never-duplicate-a-capability rule, taken
- * because the namespace graph leaves no shared home: `EDGES` in `scripts/namespace-graph.ts` grants
- * this namespace only a type-only edge to `assets`, and `ui/contracts` is reachable from
- * `ui/client` and `ui/show` — so neither module can import the other without wiring the browser
- * runtime to the build pipeline. Extending the maths here means extending it there too.
- *
- * The two are held together by `src/ui/contracts/color.test.ts`, which imports **both** and asserts
- * they agree across a sample of the oklch space. Tests are outside the namespace-graph parse, so
- * that test can cross the boundary this source cannot, and drift fails the gate rather than going
- * unnoticed.
- */
-
 const GAMUT_EPSILON = 1e-4;
 
 function srgbGamma(c: number): number {
@@ -51,13 +29,7 @@ function clip01(c: number): number {
   return c;
 }
 
-/**
- * Convert OKLCh to sRGB [r,g,b] in [0,1].
- *
- * `l` is 0–1, `c` is chroma (0–0.4 typical), `h` is hue in degrees. Applies CSS Color 4
- * chroma-reduction gamut mapping (binary search on chroma) when the colour falls outside
- * the sRGB gamut, clipping any residual out-of-bounds channels. @public
- */
+/** Converts OKLCh to sRGB [r,g,b] in [0,1], gamut-mapping by chroma reduction. @public */
 export function oklchToSrgb(l: number, c: number, h: number): [number, number, number] {
   const hRad = (h * Math.PI) / 180;
   const a = c * Math.cos(hRad);
@@ -90,12 +62,7 @@ export function oklchToSrgb(l: number, c: number, h: number): [number, number, n
   return [srgbGamma(clip01(mapped[0])), srgbGamma(clip01(mapped[1])), srgbGamma(clip01(mapped[2]))];
 }
 
-/**
- * Convert [r,g,b] or [r,g,b,a] in [0,1] to the shortest canonical hex string.
- *
- * Emits `#rrggbb` for opaque colours (alpha omitted or `1`) and `#rrggbbaa` only when
- * alpha is below 1 — a trailing `ff` byte would be redundant. @public
- */
+/** Converts [r,g,b] or [r,g,b,a] in [0,1] to the shortest canonical hex string. @public */
 export function toHex(rgb: [number, number, number] | [number, number, number, number]): string {
   const byte = (c: number) =>
     Math.round(clip01(c) * 255)
@@ -145,7 +112,6 @@ function parseOklchArgs(value: string): { l: number; c: number; h: number; alpha
 }
 
 function splitColorMix(inner: string): [string, string] | null {
-  // Split the two colour arguments at the top-level comma, respecting nested parens.
   let depth = 0;
   for (let i = 0; i < inner.length; i++) {
     const ch = inner[i];
@@ -204,14 +170,7 @@ function normalizeOklchLiteral(value: string): string {
   return value.trim();
 }
 
-/**
- * Parse a CSS colour literal to normalized [r,g,b,a] in [0,1].
- *
- * Supports `oklch(L C H)` (with `%` on L), `rgb()`/`rgba()` (0–255 args), `#rrggbb`/`#rrggbbaa`
- * hex, and `color-mix(in oklch|srgb, c1 p%, c2)`. Alpha may be written as a slash component
- * (`rgb(0 0 0 / 0.28)`, `oklch(0.6 0.1 160 / 50%)`), a fourth `rgba()` argument, or a trailing
- * hex byte; it defaults to `1` when absent. Returns null for unrecognized formats. @public
- */
+/** Parses a CSS colour literal to normalized [r,g,b,a] in [0,1], or null. @public */
 export function parseColor(value: string): [number, number, number, number] | null {
   const trimmed = value.trim();
   if (trimmed.startsWith("#")) return parseHex(trimmed);

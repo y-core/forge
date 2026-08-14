@@ -4,18 +4,6 @@ import { ToggleGroup } from "../controls/toggle-group";
 import { Resumable } from "../server/resumable";
 import { mount } from "./browser-test-helper";
 
-/**
- * `bindGroup` in a real browser, against the real bound `ToggleGroup` markup.
- *
- * These cases were unit tests against a hand-rolled context until `bindGroup` grew the job of
- * reconciling pressed state across a group. Reconciliation is DOM work — it reads siblings, writes
- * ARIA and writes state attributes — and a fake context cannot honestly assert any of it. Every case
- * below clicks a real button and reads the resulting DOM.
- *
- * **No app-side effect is registered anywhere in this file.** That absence is the point: the pressed
- * state that appears is forge's, not an application's.
- */
-
 declare global {
   interface Window {
     forgeBind: typeof import("./bind");
@@ -71,7 +59,6 @@ test.describe("bindGroup — single selection", () => {
 
     await page.click("#i2");
 
-    // Nothing app-side reconciled this: the scope's only handler is `bindGroup`.
     expect(await pressedState(page)).toEqual([
       { aria: "false", data: false },
       { aria: "false", data: false },
@@ -169,8 +156,6 @@ test.describe("bindGroup — scoping", () => {
     await page.click("#a1");
 
     const pressedIds = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-pressed]")].map((el) => el.id).sort());
-    // The second group's pressed item is untouched: `bindGroup` reconciles within the nearest
-    // `[data-slot~='toggle-group']`, not across the whole scope.
     expect(pressedIds).toEqual(["a1", "b0"]);
   });
 

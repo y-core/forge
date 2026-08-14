@@ -17,18 +17,7 @@ function parseRange(header: string): { offset?: number; length?: number; suffix?
   return { offset, ...(end !== undefined ? { length: end - offset + 1 } : {}) };
 }
 
-/**
- * Approximates a filename in printable ASCII for the `filename="…"` parameter, which cannot hold
- * anything else — a non-Latin-1 character reaching `Headers.set` throws and turns a legitimate
- * download into a 500.
- *
- * Accents decompose to their base letter, and every other run of non-printable-ASCII collapses to a
- * single `_`. Substituting per run rather than dropping characters keeps the surrounding ASCII in
- * place — above all the extension, which is what most clients key their handling off — and
- * guarantees a non-empty result for a name that is entirely non-ASCII. Quotes and backslashes are
- * printable ASCII, so they survive the approximation and are emitted as quoted-pairs; they cannot
- * break out of the quoted string.
- */
+/** Approximates a filename in printable ASCII — a non-Latin-1 character reaching `Headers.set` throws and turns a legitimate download into a 500. */
 function asciiFallbackFilename(filename: string): string {
   const approximated = filename
     .normalize("NFKD")
@@ -38,10 +27,6 @@ function asciiFallbackFilename(filename: string): string {
   return approximated === "" ? "download" : approximated;
 }
 
-/**
- * Builds a `Content-Disposition` value pairing an RFC 5987 `filename*=UTF-8''…` parameter, which
- * carries the exact name, with the ASCII `filename="…"` fallback clients that ignore it read.
- */
 function contentDisposition(type: "inline" | "attachment", filename: string): string {
   // encodeURIComponent leaves a few non-attr-chars unescaped; encode them too for a strict ext-value.
   const encoded = encodeURIComponent(filename).replace(/['()*!]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -62,15 +47,11 @@ function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
   return h;
 }
 
-/**
- * Serves an object from a storage backend with ETag / If-None-Match / Range support.
- * Returns 200, 206, 304, 404, or 416. @public
- */
+/** Serves an object from a storage backend with ETag / If-None-Match / Range support. @public */
 export async function serveObject(backend: ObjectStorageBackend, request: Request, key: string, options?: ServeOptions): Promise<Response> {
   const ifNoneMatch = request.headers.get("If-None-Match");
   const rangeHeader = request.headers.get("Range");
 
-  // Conditional GET without range: head to avoid downloading body
   if (ifNoneMatch && !rangeHeader) {
     const meta = await backend.head(key);
     if (!meta) return new Response(null, { status: 404 });

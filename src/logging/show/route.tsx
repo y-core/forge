@@ -15,81 +15,46 @@ import { LOG_TBODY_ID, LogAppendFragment, LogDetailRow, LogTableBody, LogViewerC
 
 const LevelParamSchema = v.picklist(LOG_LEVELS);
 
-/**
- * Narrows the untrusted `?level=` query parameter to a known level at the request boundary. An
- * unrecognised value is dropped rather than rejected: the filter only narrows a row set the caller
- * has already been authorised to read in full, so falling back to every level cannot expose
- * anything `access` did not already permit, and the unfiltered view is a state the filter bar
- * renders anyway as "All". @internal
- */
+/** Narrows the untrusted `?level=` query parameter to a known level, dropping an unrecognised value. @internal */
 function parseLevelParam(raw: string | null): LogLevel | undefined {
   if (raw === null) return undefined;
   const parsed = v.safeParse(LevelParamSchema, raw);
   return parsed.success ? parsed.output : undefined;
 }
 
-/**
- * Access decision for the log viewer. Either a per-request predicate (return `false` to deny
- * with a `403`), or the explicit literal `"allow-unauthenticated"` for viewers that are
- * intentionally public (dev-only mounts). There is no implicit-open default. @public
- */
+/** Access decision for the log viewer: a per-request predicate, or the explicit literal `"allow-unauthenticated"`. @public */
 export type LogViewerAccess<Bindings = Record<string, unknown>> =
   | ((c: AppContext<Bindings>) => boolean | Promise<boolean>)
   | "allow-unauthenticated";
 
-/**
- * Options for the log viewer loader. Logs expose request paths, request ids, and error
- * messages, so `access` is required — forgetting a guard is a compile error, and opting
- * out is an explicit, greppable literal. @public
- */
+/** Options for the log viewer loader. @public */
 export type LogViewerOptions<Bindings = Record<string, unknown>, Config = unknown, Ctx = unknown> = {
-  /** Returns the log channel to read from. Called per request. */
   channel: (c: AppContext<Bindings>) => LogChannel;
   /** Required access decision; runs before the channel is touched. */
   access: LogViewerAccess<Bindings>;
-  /** App-bound icon (must provide `chevron-down`) rendered in the filter bar's level select. */
   icon: ForgeIcon<"chevron-down">;
-  /**
-   * Async context factory called per request for a full-page render. The resolved value is forwarded
-   * as the `ctx` prop to `layout`. Mirrors `ShowcaseOptions.context`.
-   */
+  /** Async context factory called per request; its resolved value is the `ctx` prop of `layout`. */
   context: (c: AppContext<Bindings>, config: Config) => Promise<Ctx>;
   /**
-   * Layout component wrapping the viewer page, receiving `ctx` from `context` and the viewer content
-   * as `children`. **Required**, and required for a reason: the document is where the theme lives.
-   * The `<html>` element carries the dark class, the head carries the FOUC script that sets it before
-   * first paint, and `<body>` carries `bg-background`. A viewer that builds its own bare document —
-   * which this one used to — cannot reach any of that, so its markup renders light whatever classes
-   * the components carry. Handing the shell to the consumer is the same move `registerShowcase`
-   * makes, and for the same reason.
-   * @example
-   * ```ts
-   * layout: Layout  // FC<{ ctx: MyRenderContext }>
+   * Layout component wrapping the viewer page, receiving `ctx` from `context` and the content as `children`.
+   *
+   * The viewer's `<main>` is `flex-1 min-h-0` and carries `data-fill-viewport`, so it fills the height the
+   * layout leaves it and scrolls the table inside that box rather than growing the document. To get that,
+   * make `children` a direct child of a flex column that goes *definite* for a filling page:
+   *
    * ```
+   * <body class='flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden'>
+   * ```
+   *
+   * `min-h-dvh` alone is not enough: an indefinite column takes its height from its items' content, so a
+   * long table grows the page. Any other layout still renders correctly; the table then falls back to a
+   * `max-h-dvh` box instead of filling the space between header and footer.
    */
   layout: FC<{ ctx: Ctx }>;
-  /** URL path prefix where the viewer is mounted (used for HTMX targets). */
   basePath?: string;
 };
 
-/**
- * Log viewer loader. Evaluates `access` first — a denial returns a `403 Forbidden` `Response`
- * without touching the channel. On allow, reads the requested log page via the channel and
- * returns a rendered `Response` for every path: the detail `<tr>` fragment for `?detail=<key>`,
- * the append fragment (rows plus an out-of-band load-more row) for an `HX-Request` carrying a
- * `?cursor=`, the `<tbody>` HTMX partial for any other `HX-Request`, or the full viewer page
- * rendered inside `options.layout` otherwise.
- *
- * A rejected `channel.read` is **caught** and rendered as the surface's error state, rather than
- * propagating. Letting it reach the error boundary is wrong specifically for a fragment request: the
- * boundary answers with a page, and HTMX would swap that page's body into the log table. `access` is
- * deliberately not covered by that catch — a throwing predicate still propagates, so the viewer
- * fails closed.
- *
- * Rendering happens only here — the record-rendering components are internal, so records can
- * never be rendered without passing `access`. Use inside `definePage`'s `loader`; a loader
- * returning a `Response` short-circuits rendering. @public
- */
+/** Evaluates `access`, then renders the log page or the HTMX fragment the request asks for. @public */
 export async function loadLogViewer<Bindings = Record<string, unknown>, Config = unknown, Ctx = unknown>(
   c: AppContext<Bindings>,
   config: Config,
@@ -126,13 +91,8 @@ export async function loadLogViewer<Bindings = Record<string, unknown>, Config =
     data.complete = result.complete;
     if (result.cursor !== undefined) data.cursor = result.cursor;
   } catch {
-    // The reason is deliberately not carried into the markup: a channel error can name a binding, a
-    // key prefix or a backend path, and `STRUCTURED_LOGGING.md`'s no-PII rule governs what a log
-    // surface is allowed to show. The reader gets a retry; the operator gets the platform's own log.
+    // The failure reason stays out of the markup: it can name a binding, key prefix or backend path.
     data.failed = true;
-    // A cursor the read never consumed is still good, so the load-more control keeps it and becomes
-    // its own retry. Reporting `complete` here instead would delete that control on a transient
-    // failure — the one outcome from which the reader has no way back.
     if (cursor === undefined) {
       data.complete = true;
     } else {
@@ -142,19 +102,12 @@ export async function loadLogViewer<Bindings = Record<string, unknown>, Config =
   }
 
   if (isHxRequest(c)) {
-    // A cursor means the load-more control fired: return the new rows plus the replacement control.
-    // Without one it is a filter submit, which replaces the whole tbody.
     return cursor === undefined ? renderLogFragment(data) : renderLogAppendFragment(data);
   }
   return renderLogViewerPage(data, options, await options.context(c, config));
 }
 
-/**
- * Renders the full viewer page — `LogViewerContent` as the children of the consumer's `layout`.
- *
- * No `<html>`, `<head>` or `<body>` is built here on purpose; see `LogViewerOptions.layout`.
- * @internal
- */
+/** Renders the full viewer page — `LogViewerContent` as the children of the consumer's `layout`. @internal */
 async function renderLogViewerPage<Bindings, Config, Ctx>(
   data: LogViewerLoaderData,
   options: LogViewerOptions<Bindings, Config, Ctx>,
@@ -168,10 +121,7 @@ async function renderLogViewerPage<Bindings, Config, Ctx>(
   );
 }
 
-/**
- * Renders the `<tbody>` HTMX partial from loader data. `loadLogViewer` returns this when the
- * request carries `HX-Request` without a cursor. @internal
- */
+/** Renders the `<tbody>` HTMX partial from loader data. @internal */
 async function renderLogFragment(data: LogViewerLoaderData): Promise<Response> {
   const body = await renderToString(
     <LogTableBody
@@ -186,21 +136,13 @@ async function renderLogFragment(data: LogViewerLoaderData): Promise<Response> {
   return fragmentResponse(body);
 }
 
-/**
- * Renders the next page as a `<tr>` sequence appended to the tbody, followed by the load-more row
- * carrying the new cursor out of band. `loadLogViewer` returns this for an HTMX request carrying a
- * `?cursor=`. @internal
- */
+/** Renders the next page of rows plus the load-more row carrying the new cursor out of band. @internal */
 async function renderLogAppendFragment(data: LogViewerLoaderData): Promise<Response> {
   const body = await renderToString(<LogAppendFragment data={data} />);
   return fragmentResponse(body);
 }
 
-/**
- * Renders the expanded detail `<tr>` HTMX partial for one stored record — the `outerHTML`
- * replacement of that row's own detail row. `loadLogViewer` returns this when a `?detail=<key>`
- * query parameter is present. @internal
- */
+/** Renders the expanded detail `<tr>` HTMX partial for one stored record. @internal */
 async function renderLogDetailFragment(record: LogRecord | null, rowKey: string): Promise<Response> {
   const body = await renderToString(<LogDetailRow record={record} rowKey={rowKey} />);
   return fragmentResponse(body);

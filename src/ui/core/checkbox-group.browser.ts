@@ -4,11 +4,6 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { CheckboxGroup } from "./checkbox-group";
 
-/**
- * The claim these cases exist to check is that the group is native all the way down: it submits with
- * a form and resets with a form **without any client code at all**, so no module is exposed here.
- */
-
 async function formMarkup(): Promise<string> {
   return render(
     jsx("form", {
@@ -29,7 +24,6 @@ async function formMarkup(): Promise<string> {
   );
 }
 
-/** What a real `FormData` would carry — the only honest way to ask what the form submits. */
 function submitted(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const form = document.querySelector<HTMLFormElement>("#form");

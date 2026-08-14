@@ -3,6 +3,7 @@ import { setPendingHeader } from "../../context/pending-headers";
 import { createSignedCookie } from "../../session/signed";
 import type { FlashMessage, FlashType } from "./flash";
 
+/** Options for `createFlash`. @public */
 export interface FlashCookieOptions {
   secrets: [string, ...string[]];
   name?: string;
@@ -11,6 +12,7 @@ export interface FlashCookieOptions {
   sameSite?: "Strict" | "Lax";
 }
 
+/** Reads and writes flash messages on a signed, single-read cookie. @public */
 export interface Flasher {
   // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant for cookie operations
   set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void>;
@@ -26,6 +28,7 @@ export interface Flasher {
   error(c: RequestContext<any, any>, text: string): Promise<void>;
 }
 
+/** Creates a `Flasher` backed by a signed cookie cleared on read. @public */
 export function createFlash(options: FlashCookieOptions): Flasher {
   const name = options.name ?? "flash";
   const path = options.path ?? "/";

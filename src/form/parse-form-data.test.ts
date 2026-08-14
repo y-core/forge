@@ -86,7 +86,7 @@ describe("parseFormData — byte limits", () => {
 
   it("rejects an oversized body on the stream when Content-Length is absent (chunked bypass)", async () => {
     const big = `name=${"x".repeat(100)}`;
-    // A ReadableStream body carries no Content-Length, so only the streaming cap can catch it.
+    // No Content-Length on a ReadableStream body, so only the streaming cap can catch it.
     const req = new Request("http://localhost/test", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },

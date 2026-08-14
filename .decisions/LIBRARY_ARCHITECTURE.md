@@ -130,8 +130,22 @@ cross-namespace dependency.**
 
 ### 3c. Peer Dependencies for Build Tools
 
-`esbuild` and `sharp` are **optional peer dependencies** for the `assets/build` pipeline.
-Neither is in the main dependency tree — only apps that build assets need them.
+`esbuild`, `sharp` and `tailwindcss` are **optional peer dependencies** for the `assets/build`
+pipeline. None is in the main dependency tree — only apps that build assets need them, and none is
+ever imported by runtime source, so none reaches a Worker bundle.
+
+**A tool the pipeline shells out to is a peer dependency, declared.** `buildCSS` runs
+`execFileSync("tailwindcss", …)` exactly as `buildJS` runs `esbuild` and the image step runs
+`sharp`; the three are one category. `tailwindcss` went undeclared for as long as it did because
+nothing imports it — but an undeclared requirement does not stop being one, it only stops being
+checked. The symptom was a `command not found` in the middle of a build where `bun install` should
+have warned, and the cost of the fix was zero: every consuming app already installs it.
+
+Declaring it also makes forge's own palette **readable**. Tailwind v4 ships its default theme as
+CSS (`tailwindcss/theme.css`, `--color-red-700: oklch(…)`), which is what lets the contrast audit
+resolve the status hues rather than pinning a human's measurement of them
+(`scripts/contrast-measure.ts`). That capability is a
+consequence of the declaration, not its justification — the declaration was owed either way.
 
 ### 3d. CSS Source Scanning Stops at `ui/`
 

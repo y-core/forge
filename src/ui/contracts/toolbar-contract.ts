@@ -1,33 +1,8 @@
-/**
- * Shared Toolbar wiring — imported by BOTH the SSR `<Toolbar>` component (`ui/core`) and the client
- * scope that mounts its roving focus (`ui/core/client.ts`). Pure data, side-effect-free: safe to
- * import into either bundle.
- *
- * The two halves run in different bundles and cannot see each other, so a selector written twice
- * would drift silently — the toolbar would simply stop being one tab stop, with nothing to fail.
- * A consuming app that has to stamp `data-toolbar-item` on markup of its own is a *third* writer,
- * which is why this module is published rather than internal.
- */
-
-/**
- * Resumable-scope name the Toolbar root stamps and the client scope registers.
- * @public
- */
+/** Resumable-scope name the Toolbar root stamps and the client scope registers. @public */
 export const TOOLBAR_SCOPE = "toolbar";
 
-/**
- * Marks an element as a roving-focus stop. Stamped by `Toolbar.Button`, `Toolbar.Link` and
- * `Toolbar.Input`; a `ToggleGroup.Item` nested inside a toolbar opts in by carrying it too.
- *
- * An explicit marker rather than a `[data-slot^='toolbar-']` prefix match: `Toolbar.Group` and
- * `Toolbar.Separator` are toolbar slots and must *not* be focus stops, and a prefix selector cannot
- * express that without listing the exceptions.
- * @public
- */
+/** Marks an element as a roving-focus stop within a Toolbar. @public */
 export const TOOLBAR_ITEM_ATTR = "data-toolbar-item";
 
-/**
- * Selector form of {@link TOOLBAR_ITEM_ATTR}, for the composite controller.
- * @public
- */
+/** Selector form of {@link TOOLBAR_ITEM_ATTR}, for the composite controller. @public */
 export const TOOLBAR_ITEM_SELECTOR = `[${TOOLBAR_ITEM_ATTR}]`;

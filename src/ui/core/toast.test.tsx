@@ -82,12 +82,6 @@ describe("Toast", () => {
   });
 
   it("keeps a duration of 0 in data-state, distinguishable from a duration never passed", async () => {
-    // The falsy-number trap: `duration={0}` must not serialize like an absent duration. It does not
-    // — 0 survives `JSON.stringify` where `undefined` is dropped, so the state key is present and
-    // zero here and absent in DISMISSIBLE_TOAST above. The client scope reads it as
-    // `Number(state.duration?.value) || 0` and schedules only on a positive value, so both spellings
-    // mean "no auto-close" downstream; what matters is that the markup does not lose the 0 the
-    // caller wrote.
     expect(
       await render(
         <Toast dismissible duration={0}>

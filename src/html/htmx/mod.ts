@@ -1,12 +1,4 @@
-/**
- * HTMX server-side utilities for `@y-core/forge/html/htmx`. @public
- *
- * Single home for all HTMX server concerns: request detection, response header helpers,
- * attribute builders, and common UI patterns. Import only in SSR/Workers contexts.
- *
- * Note: `isHxRequest` is a UX routing hint, not a security boundary — always pair with
- * origin verification and CSRF checks for mutation routes.
- */
+/** HTMX server-side utilities for `@y-core/forge/html/htmx`. @public */
 
 export type { HxAttrs, HxAttrsProps } from "./htmx-attrs";
 export { hxAttrs } from "./htmx-attrs";

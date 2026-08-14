@@ -4,24 +4,28 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { ScrollArea } from "./scroll-area";
 
-/**
- * No module is exposed, because there is none to expose. These cases assert that the region scrolls
- * with nothing loaded at all — the property that separates this component from every custom
- * scrollbar that breaks when its script fails.
- */
+// The test page loads no Tailwind, so without a bound root nothing overflows and every case below passes
+// vacuously. `max-h-[inherit]` on the viewport is stubbed alongside `h-full` because the two together are
+// what bind the scrolling element under either kind of root.
+const VIEWPORT_STYLE = "[data-slot~='scroll-area-viewport'] { height: 100%; max-height: inherit; overflow: auto; }";
 
-/** The component's own classes are Tailwind, which the test page does not load — so the bounding
- * height comes from a stylesheet here. Without a bound height nothing overflows and there is nothing
- * to scroll, which would make every case below pass vacuously. */
-const STYLES = `<style>
+// A root sized by `h-*`: the height is definite, so `h-full` alone already binds the viewport.
+const DEFINITE_STYLES = `<style>
   [data-slot~='scroll-area'] { height: 96px; width: 192px; }
-  [data-slot~='scroll-area-viewport'] { height: 100%; overflow: auto; }
+  ${VIEWPORT_STYLE}
 </style>`;
 
-async function markup(): Promise<string> {
+// A root sized by `max-h-*` — how the log viewer uses it. The height is indefinite, so `h-full` collapses to
+// `auto` and only the inherited max-height stops the viewport growing to its content and spilling out.
+const BOUNDED_STYLES = `<style>
+  [data-slot~='scroll-area'] { max-height: 96px; width: 192px; }
+  ${VIEWPORT_STYLE}
+</style>`;
+
+async function markup(styles: string = DEFINITE_STYLES): Promise<string> {
   const rows = Array.from({ length: 40 }, (_, i) => jsx("p", { children: `row ${i}` }));
   const html = await render(ScrollArea({ id: "area", children: ScrollArea.Viewport({ id: "viewport", children: rows }) }));
-  return `${STYLES}${html}`;
+  return `${styles}${html}`;
 }
 
 function scrollTop(page: Page): Promise<number | undefined> {
@@ -56,4 +60,18 @@ test("the viewport overflows rather than clipping", async ({ page }) => {
   });
 
   expect(overflow).toEqual({ css: "auto", scrollable: true });
+});
+
+test("a root bounded by max-height scrolls instead of spilling its content past the root", async ({ page }) => {
+  await mount(page, await markup(BOUNDED_STYLES));
+
+  const boxes = await page.evaluate(() => {
+    const root = document.querySelector("#area");
+    const viewport = document.querySelector("#viewport");
+    if (!root || !viewport) return null;
+    return { rootHeight: root.getBoundingClientRect().height, viewportHeight: viewport.getBoundingClientRect().height };
+  });
+
+  // Both stay at the bound: a viewport grown to its 40 rows would report far more than 96 and paint outside the root.
+  expect(boxes).toEqual({ rootHeight: 96, viewportHeight: 96 });
 });

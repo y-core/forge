@@ -4,11 +4,7 @@ import { readdirSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter } from "node:path";
 
-// Install mock before ./proc is loaded so its top-level import gets the stub.
-// Only spawnSync is overridden — node:fs/node:path stay real so insertPath
-// exercises genuine on-disk existence checks against process.cwd(). mock.module is
-// process-global, so we spread the real module to preserve its other exports (e.g.
-// execFileSync, which a sibling test file mocks) rather than replacing it wholesale.
+// `mock.module` is process-global, so the real module is spread to preserve exports a sibling test file mocks (e.g. execFileSync).
 const mockSpawnSync = mock((_cmd: string, _args?: string[], _opts?: unknown): { status: number | null; error?: Error } => ({ status: 0 }));
 mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
 
@@ -50,9 +46,6 @@ describe("run()", () => {
 });
 
 describe("capture()", () => {
-  // spawnSync is mocked, so nothing writes to the capture fd unless the fake does it.
-  // Writing through the fd the caller was handed is what exercises the real seam: the
-  // temp file, the read-back, and the interleaving all stay genuine.
   type SpawnOpts = { stdio?: (string | number)[]; cwd?: string };
   function fakeChild(writes: string[], status: number | null = 0, error?: Error) {
     mockSpawnSync.mockClear();
@@ -140,17 +133,15 @@ describe("probeOk()", () => {
 
   it("returns true when the probe exits 0", () => {
     mockSpawnSync.mockReturnValue({ status: 0 });
-    expect(probeOk("bun", ["run", "scripts/probe-browser.ts"])).toBe(true);
+    expect(probeOk("docker", ["compose", "ps", "--quiet"])).toBe(true);
   });
 
   it("returns false when the probe exits non-zero", () => {
     mockSpawnSync.mockReturnValue({ status: 1 });
-    expect(probeOk("bun", ["run", "scripts/probe-browser.ts"])).toBe(false);
+    expect(probeOk("docker", ["compose", "ps", "--quiet"])).toBe(false);
   });
 
   it("returns false when the probe never started at all (spawn error, null status)", () => {
-    // A missing binary yields `status: null` plus an `error`, not a non-zero exit — a different
-    // code path from a failing probe, and the one the gate's fail-closed posture rests on.
     mockSpawnSync.mockReturnValue({ status: null, error: new Error("spawnSync forge-no-such-binary ENOENT") });
     expect(probeOk("forge-no-such-binary", ["--version"])).toBe(false);
   });
@@ -159,22 +150,20 @@ describe("probeOk()", () => {
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
 
-    probeOk("bun", ["run", "scripts/probe-browser.ts"]);
+    probeOk("docker", ["compose", "ps", "--quiet"]);
 
     expect(mockSpawnSync.mock.calls).toHaveLength(1);
-    expect(mockSpawnSync.mock.calls[0]![0]).toBe("bun");
-    expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["run", "scripts/probe-browser.ts"]);
-    // A probe that inherited stdio would print the prerequisite's own output into the gate's
-    // step report, which reads as the step having run.
+    expect(mockSpawnSync.mock.calls[0]![0]).toBe("docker");
+    expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["compose", "ps", "--quiet"]);
     expect((mockSpawnSync.mock.calls[0]![2] as SpawnCallOpts).stdio).toBe("ignore");
   });
 
   it("copies the caller's args rather than handing the declared tuple to the spawner", () => {
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
-    const declared = ["run", "scripts/probe-browser.ts"];
+    const declared = ["compose", "ps", "--quiet"];
 
-    probeOk("bun", declared);
+    probeOk("docker", declared);
 
     expect(mockSpawnSync.mock.calls[0]![1]).toEqual(declared);
     expect(mockSpawnSync.mock.calls[0]![1]).not.toBe(declared);
@@ -200,8 +189,6 @@ describe("hasTool()", () => {
   });
 
   it("probes with exactly `--version` and no other argument", () => {
-    // This is the shape `StepRequirement.probe` documents as its default, so a change here
-    // silently changes what an un-probed gate requirement resolves to.
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
 
@@ -233,7 +220,7 @@ describe("requireTools()", () => {
 });
 
 describe("insertPath()", () => {
-  const present = process.cwd(); // guaranteed to exist on disk
+  const present = process.cwd();
   const missing = "/no/such/forge/cli/dir";
   let original: string | undefined;
 
@@ -277,12 +264,7 @@ describe("insertPath()", () => {
   });
 });
 
-// `node:child_process` is replaced process-wide by this file and by three sibling test files, so
-// every assertion above answers for `probeOk`'s branching over a *stub's* return value — not for
-// what `spawnSync` really does when a binary is absent. The gate fails closed on exactly that
-// case, so it is proven here against real processes: a fresh `bun` child imports the real `./proc`
-// with no module registry mocked at all, and reports what it observed. `Bun.spawnSync` is the
-// spawner because it is the one the module mock cannot reach.
+// A fresh `bun` child is the only way to reach the unmocked `spawnSync`, since `node:child_process` is replaced process-wide above.
 declare const Bun: {
   spawnSync(opts: { cmd: string[]; cwd: string }): { exitCode: number; stdout: { toString(): string }; stderr: { toString(): string } };
 };

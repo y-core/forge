@@ -1,33 +1,10 @@
-/** cf-env-registry.ts — the data table + policy shapes for the env-schema generator.
- *
- *  The heart is `REGISTRY` — a data table mirroring wrangler's own binding-emission
- *  loop (`collectCoreBindings` in `wrangler@4.103.0`'s `wrangler-dist/cli.js`). Each
- *  row is a *(configKey → nameField → TS type)* triple, in wrangler's collection order,
- *  so a host's configured subset keeps the same relative order wrangler would emit. The
- *  IO-free codegen that consumes this table lives next door in `cf-env-gen.ts`.
- *
- *  Two deliberate simplifications vs wrangler, both inert unless the kind is configured:
- *    - **Base (non-generic) TS types** — `DurableObjectNamespace`/`Service`/`Workflow`,
- *      never the `<ClassName>`/`<Entrypoint>` parameterised forms wrangler derives from
- *      worker entrypoints (it has no access to those here).
- *    - **Out of scope**: module `rules`, `data_blobs`/`text_blobs`, `logfwdr`, pipelines,
- *      and `unsafe` bindings — none are env bindings a host declares for this schema.
- */
-
-/** One binding flavour: where it lives in config, how its name is read, and its TS type.
- *  `shape:"list"` walks an array; `shape:"object"` reads a single `{ binding }` object. @internal */
+/** One binding flavour: where it lives in config, how its name is read, and its TS type. @internal */
 export interface BindingDef {
-  /** Dotted path into the wrangler config (e.g. `"queues.producers"`). */
   configKey: string;
-  /** The field on each entry holding the JS identifier of the binding. */
   nameField: "binding" | "name";
-  /** The Cloudflare ambient TS type the `v.custom<T>` generic references. */
   tsType: string;
-  /** Whether `configKey` resolves to an array of entries or a single object. */
   shape: "list" | "object";
-  /** Human-readable kind label (diagnostics / coverage tests). */
   label: string;
-  /** The validation message for a binding of this kind named `n`. */
   message: (n: string) => string;
 }
 
@@ -39,26 +16,19 @@ export interface Entry {
 
 /** Host policy layered over the generated schema. @public */
 export interface GenOptions {
-  /** Binding names wrapped in `v.optional` (absent in some environments). */
   optional: Set<string>;
-  /** Per-var refinements applied on top of the inferred base schema. */
   refinements: Record<string, { minLength?: number }>;
-  /** The inline `v.custom` check expression every binding shares (a presence/shape
-   *  floor); the exact type is carried by each `v.custom<T>` generic, not this check. */
   bindingCheck: string;
 }
 
-/** Sensible default policy used when no `--config` module is supplied: nothing optional,
- *  no refinements, and the presence/shape binding floor. A host overrides any field with a
- *  `Partial<GenOptions>` config module (see `loadOptions`). @internal */
+/** Default policy used when no `--config` module is supplied: nothing optional, no refinements, and the presence/shape binding floor. @internal */
 export const DEFAULT_OPTIONS: GenOptions = {
   optional: new Set<string>(),
   refinements: {},
   bindingCheck: '(x) => typeof x === "object" && x !== null',
 };
 
-/** The generated module's header (doc comment). Generic by design — every emitted schema
- *  documents the same contract — so it is baked in here, not part of the host's `GenOptions`. @internal */
+/** The generated module's header comment. @internal */
 export const HEADER = `/** env.schema.ts — GENERATED — do not edit; run \`bun run gen:env\`.
  *
  *  Schema-first replacement for \`wrangler types … --no-include-runtime\`. The single
@@ -67,11 +37,7 @@ export const HEADER = `/** env.schema.ts — GENERATED — do not edit; run \`bu
  *  contract enforced by \`validateBindings\`; \`type Env\` is its compile-time face.
  */`;
 
-/** The binding-kind table, in `wrangler@4.103.0`'s emission order. List kinds first
- *  (its `collectCoreBindings` loop), then the single-object kinds it checks inline, then
- *  durable objects / services / workflows (wrangler's separate collectors, emitted after
- *  the core bindings). The four common kinds (KV, R2, ratelimit, Fetcher) keep their
- *  messages verbatim so the generated module stays byte-stable. @internal */
+/** The binding-kind table, in `wrangler@4.103.0`'s own emission order. @internal */
 export const REGISTRY: readonly BindingDef[] = [
   {
     configKey: "kv_namespaces",

@@ -1,19 +1,15 @@
-/** presets.ts — ready-made step tables.
- *
- *  A preset is a *factory*, not machinery: it returns an ordinary `Step[]` an app spreads into
- *  its own table and appends to. Nothing here is privileged — an app that outgrows a preset
- *  writes the rows out by hand and loses nothing.
- */
-
+import { changelogStep, docsStep, exportsStep, jsxStep, lintStep, testStep, typecheckStep } from "./builders";
+import type { ChangelogCheckConfig } from "./checks/changelog";
+import type { DocsCheckConfig } from "./checks/docs";
+import type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
+import type { JsxCheckConfig } from "./checks/jsx";
 import type { Step } from "./steps";
 
-const CHECK_AND_VERIFY: readonly ["check", "verify"] = ["check", "verify"];
+const RUNTIME_TYPES = "./.types/cloudflare.d.ts";
 
-/** Knobs on the shared Cloudflare Worker table. Every one is a path the fleet's apps genuinely
- *  disagree about; anything they agree on is baked in rather than exposed.
- *
- * @public
- */
+const BINDING_TYPES = "./.types/worker-configuration.d.ts";
+
+/** Options for the shared Cloudflare Worker step table. @public */
 export interface CloudflareWorkerStepOptions {
   /** Directories linted and type-checked. Defaults to `["src/", "tests/"]`. */
   sources?: readonly string[];
@@ -21,50 +17,85 @@ export interface CloudflareWorkerStepOptions {
   tests?: readonly string[];
   /** Asset config path; omit to skip the asset-types step entirely. */
   assetConfig?: string;
-  /** Extra `wrangler types` invocation for a second wrangler config. */
+  /** Where the asset-types emitter writes. Defaults to `.forge/assets.ts`. */
+  assetOut?: string;
+  /** Whether to emit the two `wrangler types` steps. Defaults to `true`. */
+  wranglerTypes?: boolean;
+  /** `--config` for the bindings invocation; the runtime invocation takes none. */
   workerConfig?: string;
 }
 
-/** The step table every Cloudflare Worker app in this fleet shares, in execution order:
- *  `cf:typecheck` → `types:assets` → `typecheck` → `lint` → `test`.
- *
- *  Generation leads: `wrangler types` and the asset-types emitter both write files `typecheck`
- *  then reads, so a stale generated type surfaces as a type error rather than as a silently
- *  green run over yesterday's bindings.
- *
- *  Spread it and append app-specific steps. **Every step is prerequisite-free**, so the whole
- *  preset is legal in `check` — see `.decisions/TESTING.md` §6c.
- *
- * @public
- */
+/** The step table every Cloudflare Worker app in this fleet shares, in execution order. @public */
 export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {}): readonly Step[] {
   const sources = options.sources ?? ["src/", "tests/"];
   const tests = options.tests ?? ["tests/"];
+  const assetOut = options.assetOut ?? ".forge/assets.ts";
 
-  const steps: Step[] = [
-    {
-      label: "cf:typecheck",
-      gates: CHECK_AND_VERIFY,
-      tail: 20,
-      cmd: options.workerConfig === undefined ? ["wrangler", "types"] : ["wrangler", "types", "--config", options.workerConfig],
-    },
-  ];
+  const steps: Step[] = [];
 
-  if (options.assetConfig !== undefined) {
-    steps.push({ label: "types:assets", gates: CHECK_AND_VERIFY, tail: 20, cmd: ["forge-assets", "types", "--config", options.assetConfig] });
+  if (options.wranglerTypes !== false) {
+    steps.push(
+      { label: "cf:types:runtime", tail: 20, cmd: ["wrangler", "types", RUNTIME_TYPES, "--no-include-env"] },
+      {
+        label: "cf:types:bindings",
+        tail: 20,
+        cmd:
+          options.workerConfig === undefined
+            ? ["wrangler", "types", BINDING_TYPES, "--no-include-runtime"]
+            : ["wrangler", "types", BINDING_TYPES, "--no-include-runtime", "--config", options.workerConfig],
+      },
+    );
   }
 
-  steps.push(
-    // First of the three judging steps, deliberately: a type failure cascades into misleading
-    // lint and test failures, so fail-fast ordering encodes "fix types first" rather than
-    // leaving it to the reader.
-    { label: "typecheck", gates: CHECK_AND_VERIFY, tail: 20, cmd: ["tsgo", "--noEmit"] },
-    { label: "lint", gates: CHECK_AND_VERIFY, tail: 20, cmd: ["biome", "check", ...sources], fix: ["biome", "check", "--write", ...sources] },
-    // 120 rather than 40: console output from suites that run late fills a narrow window and
-    // pushes the `(fail)` blocks out of it. The tail is a probability reduction, not the fix —
-    // that is the full-log path the runner prints beneath it.
-    { label: "test", gates: CHECK_AND_VERIFY, tail: 120, cmd: ["bun", "test", ...tests] },
-  );
+  if (options.assetConfig !== undefined) {
+    steps.push({ label: "types:assets", tail: 20, cmd: ["forge-assets", "types", "--config", options.assetConfig, "--out", assetOut] });
+  }
+
+  steps.push(typecheckStep(), lintStep({ sources }), testStep({ sources: tests }));
 
   return steps;
+}
+
+/** The fields `forgeChecks` reads from the consuming package's `package.json`. @public */
+export interface GatePackage {
+  name: string;
+  version: string;
+  exports: ExportsMap;
+  files: readonly string[];
+}
+
+/** Options for the shared library step table. @public */
+export interface LibraryStepOptions {
+  /** Repository root. Every check resolves and reports its paths against it. */
+  root: string;
+  /** The consuming package's `package.json`, read for its name, version, `exports`, and `files`. */
+  pkg: GatePackage;
+  /** Directories linted. Defaults to `["src/"]`. */
+  sources?: readonly string[];
+  /** Test paths passed to `bun test`. Defaults to the whole project. */
+  tests?: readonly string[];
+  /** Merged over the exports config derived from `pkg`. */
+  exports?: Omit<Partial<ExportsCheckConfig>, "root">;
+  /** Merged over the docs config derived from `pkg`. */
+  docs?: Omit<Partial<DocsCheckConfig>, "root">;
+  /** Merged over the jsx config derived from `root`. */
+  jsx?: Omit<Partial<JsxCheckConfig>, "root">;
+  /** Merged over the changelog config derived from `pkg`. */
+  changelog?: Omit<Partial<ChangelogCheckConfig>, "root">;
+}
+
+/** The baseline table for a library published under an `exports` map, in execution order. @public */
+export function forgeChecks(options: LibraryStepOptions): readonly Step[] {
+  const { root, pkg } = options;
+  const derived = { root, packageName: pkg.name, exports: pkg.exports };
+
+  return [
+    typecheckStep(),
+    lintStep({ sources: options.sources ?? ["src/"] }),
+    testStep({ sources: options.tests ?? [] }),
+    exportsStep({ ...derived, files: pkg.files, ...options.exports }),
+    jsxStep({ root, ...options.jsx }),
+    docsStep({ ...derived, ...options.docs }),
+    changelogStep({ root, packageVersion: pkg.version, ...options.changelog }),
+  ];
 }

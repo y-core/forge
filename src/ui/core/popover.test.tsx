@@ -18,12 +18,6 @@ describe("Popover", () => {
   });
 });
 
-/**
- * `data-slot` is a token list. `Popover.Trigger` composes an inherited token with its own rather than
- * letting `{...props}` replace it — the token `forge-ui.css` keys `anchor-name: --forge-popover` and
- * the `[data-slot~="tooltip-trigger"][data-slot~="popover-trigger"]` pair rule on. The composed case
- * is in `utils/as-child.test.tsx`; this is the mechanism reached directly.
- */
 describe("Popover.Trigger — data-slot", () => {
   const TRIGGER_CLASS = "list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring";
 

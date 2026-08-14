@@ -19,22 +19,10 @@ export interface ThemeToggleProps {
 
 const TOGGLE_BASE = "rounded-lg p-2 text-foreground transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring";
 
-/**
- * Theme toggle button — one button that cycles light → dark → system → light.
- *
- * Visibility is driven by CSS keyed off the `.dark` class and `data-theme-preference` attribute
- * that the `theme` scope sets. The `theme-{light,dark,system}-icon` classes are the contract the
- * theme CSS depends on — keep them exact. Wrapped in a `<Resumable name="theme">` scope.
- *
- * **The accessible name tracks the theme with no JavaScript at all.** Each icon span carries its
- * own `sr-only` label, and the CSS that shows exactly one span (`display: contents`) hides the
- * other two with `display: none` — which also removes them from the accessible-name computation.
- * So the name is computed from whichever theme is active, by the same mechanism that switches the
- * glyph, and it is already correct at first paint because the FOUC script stamps
- * `data-theme-preference` before anything renders. A static `aria-label` here would announce
- * "Toggle theme" forever and never say which theme is on.
- * @public
- */
+// The `theme-{light,dark,system}-icon` classes are matched by the shipped theme CSS, which shows one
+// span and sets the other two to `display: none` — that is also what leaves one `sr-only` label in
+// the accessible name, so a static `aria-label` here would never say which theme is on.
+/** One button that cycles the theme light -> dark -> system. @public */
 export const ThemeToggle: FC<ThemeToggleProps> = ({ icon: Icon, size = 20, class: cls }) => (
   <Resumable name='theme' state={{ pref: DEFAULT_PREF }}>
     <button type='button' class={cn(TOGGLE_BASE, cls)} {...scopeAttrs<"cycleTheme">({ onClick: "cycleTheme" })}>

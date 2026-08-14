@@ -20,38 +20,16 @@ interface MenuTriggerProps extends Omit<JSX.IntrinsicElements["button"], "childr
 interface MenuPopupProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   /** Element id — the `commandfor` target named by the matching `Menu.Trigger`. */
   id: string;
-  /**
-   * Which side of its anchor the popup opens on. All eight of `Side` are expressible, because a
-   * **submenu** opens *beside* the panel that contains it, and a menu that could only say `top` or
-   * `bottom` had no way to describe that at all — a nested popup left on the default opened below its
-   * parent panel rather than beside it.
-   *
-   * A submenu wants the logical `inline-end`: "beside" means the panel's own trailing edge, which is
-   * its left in an RTL subtree, so the logical spelling mirrors on its own and the caller never
-   * branches on direction.
-   * @default "bottom"
-   */
+  /** Which side of its anchor the popup opens on. */
   side?: Side;
   align?: Align;
-  /**
-   * Place this popup at a coordinate handed to `openPopoverAt` instead of against an invoker.
-   *
-   * A context menu is the case: it has no trigger button, so `side` and `align` — which describe a
-   * position *relative to an anchor* — have nothing to describe, and the anchored rules resolve to
-   * nothing. They are still emitted, because the attributes are a styling hook a consumer may key on
-   * for its own arrow or shadow direction; they simply stop deciding placement.
-   */
+  /** Place this popup at a coordinate handed to `openPopoverAt` instead of against an invoker. */
   coords?: boolean;
   children?: JSXNode;
 }
 
 interface MenuItemBaseProps {
-  /**
-   * id of the enclosing `Menu.Popup`. Emits `command="hide-popover"`, which is how selecting an item
-   * closes the menu **without any JavaScript** — the platform hides the popover, while forge's own
-   * `data-on-click` delegation on the same button runs the item's action. Pass `false` for an item
-   * that should leave the menu open.
-   */
+  /** id of the enclosing `Menu.Popup` to close on select; `false` leaves the menu open. */
   for?: string | false;
   children?: JSXNode;
 }
@@ -80,30 +58,9 @@ interface MenuGroupLabelProps extends Omit<JSX.IntrinsicElements["div"], "childr
 
 type MenuSeparatorProps = Omit<JSX.IntrinsicElements["hr"], "children">;
 
-/**
- * **No `display` utility here, and its absence is load-bearing rather than an omission.**
- *
- * A closed popover is hidden by the UA rule `[popover]:not(:popover-open) { display: none }`, which
- * is *not* `!important` — so any author-origin `display` on the same element beats it and the popup
- * renders permanently visible. This string used to end in `flex flex-col`, which did exactly that:
- * `Escape` and light-dismiss both worked, `:popover-open` went false, and the menu stayed on screen.
- *
- * Nothing was lost by removing it. Every row shape (`Menu.Item`, `Menu.LinkItem`,
- * `Menu.SubmenuTrigger`) carries `flex w-full` from {@link ITEM_BASE}, so each is already a
- * block-level box at full width; `Menu.Group`, `Menu.GroupLabel` and `Menu.Separator` are block-level
- * too. The rows stacked because of their own display, not because of this one.
- *
- * The general rule this is an instance of: **a popover or `<dialog>` must not carry a bare `display`
- * utility.** Express layout on the children, or behind a `:popover-open` variant.
- */
+// No `display` utility: the UA rule `[popover]:not(:popover-open){display:none}` is not
+// `!important`, so an author-origin `display` here leaves a closed popup permanently visible.
 const POPUP_BASE = "z-50 min-w-[10rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none";
-/**
- * The row classes, read from `contracts/menu-contract.ts` rather than declared here.
- *
- * It moved because a **client-built** row needs the same string and cannot invoke this component —
- * an SSR component renders on the Worker. Keeping a private copy beside the published one is exactly
- * how "a menu row" comes to mean two things, which is the argument the contracts modules exist for.
- */
 const ITEM_BASE = MENU_ITEM_CLASS;
 
 const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
@@ -125,15 +82,7 @@ const MenuTrigger: FC<MenuTriggerProps> = ({ id, class: cls, children, "data-slo
   </button>
 );
 
-/**
- * The menu surface. A native `popover="auto"`, so the top layer, light-dismiss, Escape and
- * exclusive-open against sibling popovers are the platform's and stay free.
- *
- * The scope stamped here mounts the keyboard behaviour the platform does *not* supply: arrow
- * navigation, typeahead, and focus restoration to the trigger. It resolves its items live from this
- * element on every interaction, so a popup whose rows are replaced between openings — the shape a
- * context menu built from synchronous callbacks has — needs no re-mounting.
- */
+/** The menu surface — a native `popover="auto"` carrying the keyboard-behaviour scope. */
 const MenuPopup: FC<MenuPopupProps> = ({
   id,
   side = "bottom",
@@ -203,29 +152,14 @@ const MenuRadioItem: FC<MenuRadioItemProps> = ({ for: target, checked = false, c
   </button>
 );
 
-/**
- * A menu row that is a **real link**. Use it wherever the row navigates: an `<a href>` keeps
- * middle-click, open-in-new-tab, copy-link-address and no-JavaScript navigation, all of which a
- * `<button>` silently drops.
- *
- * No `command="hide-popover"`: only a button can be an Invoker command source, and a navigation
- * unloads the page anyway. `MENU_ITEM_SELECTOR` matches on the ARIA role, so this is part of the
- * arrow-key ring the moment it exists — which is the case that role-based selector was chosen for.
- */
+/** A menu row that navigates as a real `<a href>`. */
 const MenuLinkItem: FC<MenuLinkItemProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <a role='menuitem' data-slot={slotToken("menu-link-item", inherited)} class={cn(ITEM_BASE, asClass(cls))} {...rest}>
     {children}
   </a>
 );
 
-/**
- * A menu row that opens a nested `Menu.Popup`.
- *
- * Distinct from `Menu.Trigger`, and the difference is load-bearing: a bare trigger carries no role,
- * so a nested one would be invisible to `MENU_ITEM_SELECTOR` and the parent's arrow navigation would
- * skip straight past the submenu it opens. This carries `role="menuitem"` so the row is reachable,
- * and `aria-haspopup="menu"` so it announces what it does.
- */
+/** A menu row that opens a nested `Menu.Popup`. */
 const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ id, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
@@ -261,30 +195,7 @@ const MenuSeparator: FC<MenuSeparatorProps> = ({ class: cls, "data-slot": inheri
   <hr data-slot={slotToken("menu-separator", inherited)} class={cn("my-1 h-px w-full border-0 bg-border", asClass(cls))} {...rest} />
 );
 
-/**
- * Compound menu on the native Popover and Invoker Commands APIs. The trigger is a
- * `<button command="toggle-popover" commandfor={id}>`, the popup is a `<div popover="auto" id={id}
- * role="menu">`, and an item closes the menu with `command="hide-popover"` — so opening, closing,
- * light-dismiss and Escape involve no JavaScript at all.
- *
- * ```tsx
- * <Menu>
- *   <Menu.Trigger id='file-menu'>File</Menu.Trigger>
- *   <Menu.Popup id='file-menu'>
- *     <Menu.Item for='file-menu' {...scopeAttrs({ onClick: 'save' })}>Save</Menu.Item>
- *     <Menu.Separator />
- *     <Menu.CheckboxItem for={false} checked>Autosave</Menu.CheckboxItem>
- *     <Menu.LinkItem href='/docs'>Docs</Menu.LinkItem>
- *   </Menu.Popup>
- * </Menu>
- * ```
- *
- * A submenu is a `Menu.SubmenuTrigger` beside its own `Menu.Popup`, nested inside the parent popup;
- * the trigger is a menu item in the parent's ring, and the nested popup is its own menu.
- *
- * Keyboard behaviour arrives with the `ui/core/client` side-effect import.
- * @public
- */
+/** Compound menu built on the native Popover and Invoker Commands APIs. @public */
 export const Menu = Object.assign(MenuRoot, {
   Trigger: MenuTrigger,
   Popup: MenuPopup,

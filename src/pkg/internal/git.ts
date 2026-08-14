@@ -1,12 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { ReleaseError } from "../types";
 
-/**
- * Extract the most informative text from a failed `execFileSync` error.
- * `execFileSync` surfaces the actual git output on `stderr`/`stdout`; `message`
- * is only the generic `"Command failed: <cmd>"` shell summary.
- * @internal
- */
+// `execFileSync` surfaces the actual git output on stderr/stdout; `message` is only the generic "Command failed: <cmd>" summary.
 function gitErrorDetail(err: unknown): string {
   if (err && typeof err === "object") {
     const e = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
@@ -19,6 +14,7 @@ function gitErrorDetail(err: unknown): string {
   return String(err);
 }
 
+/** Runs a git command in `cwd` and returns its trimmed stdout, throwing a {@link ReleaseError} on failure. */
 export function gitExec(args: string[], cwd: string): string {
   try {
     const result = execFileSync("git", args, { cwd, encoding: "utf-8" });
@@ -28,11 +24,13 @@ export function gitExec(args: string[], cwd: string): string {
   }
 }
 
+/** True when the working tree has no uncommitted changes. */
 export function isWorkingTreeClean(cwd: string): boolean {
   const output = gitExec(["status", "--porcelain"], cwd);
   return output === "";
 }
 
+/** Returns the most recent tag matching `prefix`, or `null` when there are none. */
 export function getLatestTag(cwd: string, prefix: string): string | null {
   const output = gitExec(["tag", "--list", `${prefix}*`, "--sort=-v:refname"], cwd);
   if (!output) return null;
@@ -40,28 +38,23 @@ export function getLatestTag(cwd: string, prefix: string): string | null {
   return lines[0] ?? null;
 }
 
+/** Returns each `--oneline` commit entry made since `tag`. */
 export function getCommitsSinceTag(cwd: string, tag: string): string[] {
   const output = gitExec(["log", `${tag}..HEAD`, "--oneline"], cwd);
   if (!output) return [];
   return output.split("\n").filter(Boolean);
 }
 
+/** Returns the subject line of the most recent commit. */
 export function getLastCommitMessage(cwd: string): string {
   return gitExec(["log", "-1", "--format=%s"], cwd);
 }
 
-/**
- * Returns `true` when the index contains staged changes, `false` otherwise.
- * @internal
- */
 function hasStagedChanges(cwd: string): boolean {
   return gitExec(["diff", "--cached", "--name-only"], cwd) !== "";
 }
 
-/**
- * Stages `files` and commits. Returns `true` when a commit was made, `false`
- * when the index was empty after staging (nothing to commit — no error thrown).
- */
+/** Stages `files` and commits. Returns `false`, without error, when nothing was staged. */
 export function commit(cwd: string, message: string, files: string[]): boolean {
   gitExec(["add", ...files], cwd);
   if (!hasStagedChanges(cwd)) return false;
@@ -69,13 +62,12 @@ export function commit(cwd: string, message: string, files: string[]): boolean {
   return true;
 }
 
-/**
- * Returns `true` when `tag` already exists in the repository.
- */
+/** True when `tag` already exists in the repository. */
 export function tagExists(cwd: string, tag: string): boolean {
   return gitExec(["tag", "--list", tag], cwd) !== "";
 }
 
+/** Creates a git tag named `tag`. */
 export function createTag(cwd: string, tag: string): void {
   gitExec(["tag", tag], cwd);
 }

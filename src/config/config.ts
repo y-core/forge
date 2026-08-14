@@ -52,10 +52,7 @@ export function applyMapping(env: Record<string, unknown>, map: EnvMapping): unk
   return result;
 }
 
-/**
- * Builds a schema for an optional config group that resolves to `null` when required keys are absent.
- * @public
- */
+/** Builds a schema for an optional config group that resolves to `null` when required keys are absent. @public */
 export function optionalGroup<T extends Record<string, v.GenericSchema>>(
   entries: T,
   options: { required: (keyof T & string)[] | "all"; defaults?: Partial<Record<keyof T & string, unknown>> },
@@ -66,7 +63,6 @@ export function optionalGroup<T extends Record<string, v.GenericSchema>>(
 
   const gate = v.transform((raw: unknown): unknown => {
     const input = (raw !== null && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-    // An absent required key means "integration not configured" — that is null, not invalid.
     for (const key of requiredKeys) {
       if (input[key] == null) return null;
     }
@@ -85,7 +81,7 @@ export function resolveConfig<T>(store: Config<T> | undefined, env: object): T {
   return (store ? store.get(env) : {}) as T;
 }
 
-/** Lazy config holder. Resolves and caches parsed config per distinct `env`; seed()/reset() for test control. @public */
+/** Lazy config holder that resolves and caches parsed config per distinct `env`. @public */
 export class Config<ConfigData> {
   #cache = new WeakMap<object, ConfigData>();
   #seed: ConfigData | undefined;
@@ -97,7 +93,7 @@ export class Config<ConfigData> {
     this.#resolve = (env: object) => resolve(env, descriptor);
   }
 
-  /** Instantiates a holder. Use the {@link createConfig} factory; the constructor is private. @internal */
+  /** Instantiates a holder; prefer the {@link createConfig} factory. @internal */
   static create<ConfigData>(
     map: EnvMapping,
     schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>,
@@ -106,7 +102,7 @@ export class Config<ConfigData> {
     return new Config(map, schema, overrides);
   }
 
-  /** Resolves config for `env`, caching the parsed result per distinct `env` object. */
+  /** Resolves config for `env`, caching the parsed result. */
   get(env: object): ConfigData {
     if (this.#hasSeed) return this.#seed as ConfigData;
     const hit = this.#cache.get(env);
@@ -116,13 +112,13 @@ export class Config<ConfigData> {
     return resolved;
   }
 
-  /** Seeds a fixed config returned by every get(), bypassing resolution (whole-holder override). */
+  /** Seeds a fixed config returned by every `get()`, bypassing resolution. */
   seed(config: ConfigData): void {
     this.#seed = config;
     this.#hasSeed = true;
   }
 
-  /** Clears the seed and the per-env cache, forcing re-resolution on the next get(). */
+  /** Clears the seed and the per-env cache, forcing re-resolution. */
   reset(): void {
     this.#seed = undefined;
     this.#hasSeed = false;
@@ -130,7 +126,7 @@ export class Config<ConfigData> {
   }
 }
 
-/** Creates a lazy config holder that resolves and caches parsed config per distinct `env` object. @public */
+/** Creates a lazy config holder that resolves and caches parsed config per distinct `env`. @public */
 export function createConfig<ConfigData>(
   map: EnvMapping,
   schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>,

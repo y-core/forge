@@ -37,22 +37,13 @@ export interface SecurityHeadersOptions {
   childSrc?: CspValue;
   hstsMaxAge?: number;
   permissionsPolicy?: PermissionsPolicyOptions;
-  /** Cross-Origin-Opener-Policy. `same-origin` isolates the browsing context group; use
-   *  `same-origin-allow-popups` if the app opens OAuth/payment popups that must retain a
-   *  window reference. @defaultValue "same-origin" */
   crossOriginOpenerPolicy?: "same-origin" | "same-origin-allow-popups" | "unsafe-none";
-  /** Cross-Origin-Resource-Policy. `same-origin` blocks other origins from embedding this
-   *  Worker's responses; use `cross-origin` for intentionally embeddable assets/APIs.
-   *  @defaultValue "same-origin" */
   crossOriginResourcePolicy?: "same-origin" | "same-site" | "cross-origin";
-  /** Cross-Origin-Embedder-Policy. Opt-in only — `require-corp` breaks any subresource
-   *  without CORP/CORS opt-in, so forge never sets it by default. */
   crossOriginEmbedderPolicy?: "require-corp" | "credentialless";
 }
 
 /** `SecurityHeadersOptions` plus an explicit CSP nonce for `applySecurityHeaders`. @public */
 export interface ApplySecurityHeadersOptions extends SecurityHeadersOptions {
-  /** CSP nonce to embed; a fresh nonce is minted when omitted. */
   nonce?: string;
 }
 
@@ -61,13 +52,10 @@ export type OriginResult = GuardResult<"missing" | "disallowed">;
 
 /** Options controlling how allowed origins are derived from a base URL. @public */
 export interface DeriveAllowedOriginsOptions {
-  /** When true, adds the `www.` variant for non-www hostnames. Defaults to false. */
   includeWww?: boolean;
 }
 
-/** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`).
- *  `same-site` is reported distinctly from `cross-site` because the two describe different
- *  attackers — a sibling subdomain you may partly control, versus an unrelated origin. @public */
+/** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`). @public */
 export type CrossOriginResult = GuardResult<"missing-fetch-metadata" | "cross-site" | "same-site">;
 
 /** Options for the Fetch-Metadata cross-origin protection guard. @public */
@@ -78,10 +66,7 @@ export interface CrossOriginProtectionOptions {
 
 /** Options for the Origin/Referer allowlist middleware, with per-request origin resolution. @public */
 export interface OriginProtectionOptions<Bindings = Record<string, unknown>> {
-  /** Allowed origins, consulted on **every** mutating request that carries an `Origin` or
-   *  `Referer` — not only when `Sec-Fetch-Site` is absent. The app's own origin must therefore
-   *  appear here, or its own same-origin mutations are rejected. A static list, or a per-request
-   *  resolver over the app context (e.g. parsed BASE_URL config). */
+  /** The app's own origin must appear here, or its own same-origin mutations are rejected. */
   allowedOrigins: string[] | ((c: AppContext<Bindings>) => string[]);
 }
 
@@ -97,9 +82,8 @@ export interface RateLimitOptions<Bindings = Record<string, unknown>> {
   onLimit?: (c: AppContext<Bindings>) => Response | Promise<Response>;
   /** When true (default), returns 503 if the binding is absent. */
   required?: boolean;
-  /** When true, the default key reads the `CF-Connecting-IP` header (only trustworthy behind
-   *  Cloudflare). Defaults to false (default-distrust): without a custom `key` the default keying
-   *  throws. A custom `key` always overrides regardless of this flag. */
+  /** Opts the default keying into `CF-Connecting-IP`, which is only trustworthy behind Cloudflare;
+   *  defaults to false, and without a custom `key` the default keying then throws. */
   trustCfHeaders?: boolean;
 }
 
@@ -110,7 +94,7 @@ export interface CorsOptions {
   methods?: string[];
   allowedHeaders?: string[];
   credentials?: boolean;
-  /** Preflight cache duration in seconds. @defaultValue 86400 */
+  /** Preflight cache duration in seconds. */
   maxAge?: number;
 }
 

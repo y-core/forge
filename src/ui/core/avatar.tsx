@@ -38,4 +38,5 @@ const AvatarFallback: FC<PropsWithChildren<AvatarFallbackProps>> = ({ class: cls
   </span>
 );
 
+/** A circular user avatar, with `Image` and `Fallback` subcomponents. @public */
 export const Avatar = Object.assign(AvatarRoot, { Image: AvatarImage, Fallback: AvatarFallback });

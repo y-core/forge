@@ -136,9 +136,6 @@ describe("csrfProtection middleware", () => {
     expect(res.status).toBe(403);
   });
 
-  // a single unauthenticated request carrying a kid that names an inherited
-  // Object.prototype member used to throw an uncaught TypeError out of crypto.subtle.verify —
-  // a 500 DoS reachable on every route guarded by csrfProtection.
   it("POST with a prototype-polluting kid in X-CSRF-Token returns 403, never 500", async () => {
     const app = makeApp();
     const forged = await createCsrfToken(key, "/test", { kid: "constructor" });
@@ -285,7 +282,6 @@ describe("csrfProtection middleware", () => {
     const getRes = await app.request("/test", { headers: { "x-session": "session-a" } });
     const token = await getRes.text();
 
-    // A different session still passes: the token is bound only to the path, not the subject.
     const res = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token, "x-session": "session-b" } });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
@@ -345,7 +341,6 @@ describe("csrfProtection middleware with resolver secret", () => {
   it("resolves key via function, mints token on GET, validates on POST, and caches the key", async () => {
     let callCount = 0;
     const key = await importCsrfKey(HEX_SECRET);
-    // A single shared env object — both requests must use the same reference to hit the cache.
     const sharedEnv = { CSRF_SECRET: HEX_SECRET };
 
     const app = new Forge();
@@ -396,12 +391,10 @@ describe("csrfProtection middleware with resolver secret", () => {
     mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
-    // Mint a token under envA (signed by keyA).
     const getRes = await app.request("/test", undefined, envA);
     const tokenFromA = await getRes.text();
     expect(tokenFromA).toContain(".");
 
-    // Replay that token under envB — must fail: keyB cannot verify a keyA signature.
     const postRes = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": tokenFromA } }, envB);
     expect(postRes.status).toBe(403);
 
@@ -508,9 +501,7 @@ describe("CSRF token", () => {
     expect(result).toEqual({ ok: false, error: "unknown-key" });
   });
 
-  // W1-5: `ring.keys[kid]` walked the prototype chain, so these kids resolved to truthy
-  // non-CryptoKey members of Object.prototype, slipped past the `!key` guard, and threw an
-  // uncaught TypeError out of crypto.subtle — an unauthenticated 500 from one request.
+  // Kids naming an inherited Object.prototype member — the prototype-chain lookup these pin against.
   for (const pollutedKid of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
     it(`rejects a token whose kid is the inherited member "${pollutedKid}" (unknown-key, not a throw)`, async () => {
       const token = await createCsrfToken(key, "/api/contact", { kid: pollutedKid });
@@ -527,7 +518,6 @@ describe("CSRF token", () => {
   });
 
   it("still resolves an own key whose id shadows an inherited member name", async () => {
-    // Object.hasOwn must not reject a legitimately-registered kid that happens to collide.
     const token = await createCsrfToken(key, "/api/contact", { kid: "constructor" });
     const ring: CsrfKeyRing = { activeKeyId: "constructor", keys: { constructor: key } };
     const result = await verifyCsrfToken(ring, token, "/api/contact");

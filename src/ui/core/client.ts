@@ -1,16 +1,4 @@
-/**
- * Core component client scopes — every resumable scope the `ui/core` components stamp.
- *
- * Import this module once in the app's client entry (side-effect import) BEFORE
- * calling `resume()`. `toast` and `alert` handle dismiss; the `toast` scope also handles
- * timed auto-close via the `duration` value serialised into `data-state`. `toolbar` mounts roving
- * focus, which is why it is eager: a single tab stop has to exist before the first interaction,
- * or every item stays individually tabbable until the user happens to click one.
- *
- * **Eager is the default here, and `toggle` is the exception.** A scope resumes lazily only if its
- * markup carries a `data-on-*` action to resume it on; every scope below whose behaviour is
- * `setup`-only has no such action and must therefore be eager, or it never runs at all.
- */
+/** Registers every resumable client scope the `ui/core` components stamp; side-effect import before `resume()`. */
 
 import { mountRovingFocus } from "../client/composite";
 import { ownerWindow } from "../client/dom";
@@ -49,8 +37,6 @@ registerScope(TOOLBAR_SCOPE, {
   setup: ({ root }) =>
     mountRovingFocus(root, {
       items: TOOLBAR_ITEM_SELECTOR,
-      // The root's own `data-orientation` decides which arrows navigate, so a vertical toolbar needs
-      // no second declaration on the client.
       orientation: root.getAttribute("data-orientation") === "vertical" ? "vertical" : "horizontal",
     }),
 });
@@ -61,18 +47,10 @@ registerScope(TABS_SCOPE, { eager: true, setup: ({ root }) => mountTabs(root) })
 
 registerScope(TOOLTIP_SCOPE, { eager: true, setup: ({ root }) => mountTooltip(root) });
 
-// `<details>` owns open and closed; the controller only publishes them for CSS to react to. Same for
-// an Accordion item, which is the same element playing the same part.
 registerScope(COLLAPSIBLE_SCOPE, { eager: true, setup: ({ root }) => mountTransitionState(root) });
 
 registerScope(ACCORDION_SCOPE, { eager: true, setup: ({ root }) => mountTransitionState(root) });
 
-/**
- * A native overlay publishes two things: its own open state, and its triggers'. Both are eager out
- * of necessity rather than taste — the markup carries no `data-on-*` action, because opening,
- * closing, Escape and light-dismiss are all the platform's, so a lazy scope would have nothing to
- * resume it and every state attribute would stay frozen at its server-rendered value.
- */
 const mountOverlay = ({ root }: { root: HTMLElement }): (() => void) => {
   const disposeTransition = mountTransitionState(root);
   const disposeTriggers = mountPopupTriggerState(root);
@@ -96,6 +74,4 @@ registerScope<ToggleAction>(TOGGLE_SCOPE, {
   },
 });
 
-// Eager like the other setup-only scopes: the stepper buttons carry no `data-on-*` action, so a
-// lazy scope would have nothing to resume it and the buttons would stay inert.
 registerScope(NUMBER_FIELD_SCOPE, { eager: true, setup: ({ root }) => mountNumberField(root) });

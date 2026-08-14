@@ -40,8 +40,7 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
   };
 }
 
-/** Runs `cmd.run` with `console.log` captured, so an assertion can read what was printed without
- *  the output landing in the test report. */
+/** Runs `cmd.run` with `console.log` captured so an assertion can read what was printed. */
 function runCapturingLogs(run: () => void): string[] {
   const logs: string[] = [];
   const origLog = console.log;
@@ -377,5 +376,49 @@ describe("createReleaseCommand() — changelog promotion", () => {
       "Working tree is not clean. Commit or stash changes first, or use --allow-dirty.",
     );
     expect(deps.readChangelog.mock.calls).toHaveLength(0);
+  });
+});
+
+describe("createReleaseCommand — the derived stageFiles default", () => {
+  const FLAGS = { dry: false, "allow-dirty": true, "allow-empty-changelog": false };
+
+  it("stages the changelog it promoted, so the bump and the promotion land in one commit", () => {
+    const deps = makeDeps();
+
+    createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS);
+
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "CHANGELOG.md"]);
+  });
+
+  it("follows a renamed changelog rather than staging a `CHANGELOG.md` that was never written", () => {
+    const deps = makeDeps();
+
+    createReleaseCommand({ cwd: "/project", changelogFile: "docs/CHANGES.md" }, deps).run?.([], FLAGS);
+
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "docs/CHANGES.md"]);
+  });
+
+  it("stages package.json alone when there is no changelog, since `git add` fails on a missing path", () => {
+    const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => null) });
+
+    createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS);
+
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json"]);
+  });
+
+  it("takes an explicit list verbatim, for a lockfile or a monorepo's sibling manifests", () => {
+    const deps = makeDeps();
+
+    createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "bun.lock"] }, deps).run?.([], FLAGS);
+
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "bun.lock"]);
+  });
+
+  it("lets an explicit list drop the changelog, since the field is an override and not an addition", () => {
+    const deps = makeDeps();
+
+    createReleaseCommand({ cwd: "/project", stageFiles: ["package.json"] }, deps).run?.([], FLAGS);
+
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json"]);
   });
 });

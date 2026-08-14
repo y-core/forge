@@ -10,6 +10,7 @@ function commandPath(command: CommandBase): string {
   return parts.join(" ");
 }
 
+/** Renders the `Usage:` block for a command, spelling out its full path from the root command. @public */
 export function formatUsage(command: CommandBase): string {
   const path = commandPath(command);
   const parts = [path];
@@ -19,6 +20,7 @@ export function formatUsage(command: CommandBase): string {
   return `Usage:\n  ${parts.join(" ")}`;
 }
 
+/** Renders the full help text: description, usage, sorted subcommands, and the column-aligned flag list including `--help`. @public */
 export function formatHelp(command: CommandBase): string {
   const lines: string[] = [];
 
@@ -42,8 +44,6 @@ export function formatHelp(command: CommandBase): string {
   lines.push("");
   lines.push("Flags:");
 
-  // Collect all flag entries plus the framework-injected --help/-h.
-  // CommandBase.flags is FlagDefs so no cast needed.
   const flagEntries = Object.entries(command.flags as FlagDefs);
   type FlagRow = { short: string; name: string; description: string; suffix: string };
   const rows: FlagRow[] = [];
@@ -58,8 +58,6 @@ export function formatHelp(command: CommandBase): string {
   }
   rows.push({ short: "-h, ", name: "help", description: "Show help for this command", suffix: "" });
 
-  // Align descriptions: prefix is always 6 chars (`  -X, ` or `      `),
-  // then `--name` padded to maxNameLen, then minGap spaces.
   const minGap = 2;
   const maxNameLen = Math.max(...rows.map((r) => r.name.length));
 

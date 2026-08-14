@@ -5,14 +5,12 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { CollectionSurface, CompositionsSection, FeedbackSurface, SettingsSurface } from "./compositions";
 
-// Minimal icon compatible with ForgeIcon<…>; renders nothing.
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
 const StubIcon = ((_props: any) => null) as any;
 StubIcon.sprite = "/icons.svg";
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
 const icon = StubIcon as any;
 
-/** Occurrences of an exact substring — the primary-action count is a count, not a presence check. */
 function occurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
@@ -42,7 +40,6 @@ describe("CollectionSurface", () => {
 
   it("shows the loading state as a skeleton in the row shape, never a spinner", async () => {
     const out = await render(<CollectionSurface />);
-    // Two skeletons per real row: the placeholder occupies the box the table will occupy.
     expect(occurrences(out, 'data-slot="skeleton"')).toBe(10);
     expect(out).not.toContain('data-slot="spinner"');
   });

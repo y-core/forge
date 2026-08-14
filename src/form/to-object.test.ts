@@ -2,15 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { formToObject } from "./to-object";
 import type { ReadonlyFormData } from "./types";
 
-/**
- * A `ReadonlyFormData` over a fixed entry list, typed to the interface so a change to it breaks this
- * file at compile time.
- *
- * It exists for one property a real `FormData` cannot give: Bun's `FormData` re-wraps a `File` on
- * every read, so `fd.get("doc") !== fd.get("doc")` and identity preservation is unobservable through
- * it. This fake yields the very instance it was seeded with, which makes "the `File` is passed
- * through unchanged" an assertion rather than a claim.
- */
+/** A `ReadonlyFormData` over a fixed entry list, which unlike Bun's `FormData` yields the very `File` instance it was seeded with. */
 function fakeFormData(entries: readonly [string, FormDataEntryValue][]): ReadonlyFormData {
   const matching = (name: string): FormDataEntryValue[] => entries.filter(([key]) => key === name).map(([, value]) => value);
   const fake: ReadonlyFormData = {
@@ -45,8 +37,6 @@ describe("formToObject", () => {
   });
 
   it("leaves an absent field absent rather than writing an empty string", () => {
-    // The property the deleted named-field readers could not hold: `""` for a missing field makes
-    // `v.optional` unreachable and turns required-ness into a min-length check.
     const body = formToObject(fakeFormData([["name", "Jane"]]));
     expect(Object.keys(body)).toEqual(["name"]);
     expect(Object.hasOwn(body, "phone")).toBe(false);
@@ -114,8 +104,6 @@ describe("formToObject", () => {
   });
 
   it("preserves a File's name, size and bytes through a real FormData", async () => {
-    // Bun's FormData hands out a fresh wrapper per read, so identity is not its to give — what is
-    // pinned here is that nothing in `formToObject` stringifies or truncates the upload.
     const formData = new FormData();
     formData.append("doc", new File(["hello"], "a.txt", { type: "text/plain" }));
     const body = formToObject(formData);
@@ -137,8 +125,6 @@ describe("formToObject", () => {
   });
 
   it("gives a caller-sent __proto__ an own key instead of mutating a prototype", () => {
-    // Assignment on a prototype-less object cannot reach the inherited `__proto__` setter, so the
-    // key lands as data. That is what lets a strict schema see it and refuse it.
     const body = formToObject(
       fakeFormData([
         ["name", "Jane"],
@@ -147,8 +133,6 @@ describe("formToObject", () => {
     );
 
     expect(Object.hasOwn(body, "__proto__")).toBe(true);
-    // Read through the descriptor: `body.__proto__` would be the deprecated accessor, and on a
-    // prototype-less bag it is also the wrong question — ownership is the property being pinned.
     expect(Object.getOwnPropertyDescriptor(body, "__proto__")?.value).toBe("polluted");
     expect(Object.getPrototypeOf(body)).toBe(null);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();

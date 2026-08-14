@@ -80,7 +80,7 @@ A single import supplies both:
 scan **ignores `node_modules`**, so without help none of forge's classes are ever generated — the
 markup renders and every class on it has no rule. `forge.css` fixes that from inside the package: it
 carries an `@source` path for **every directory under `src/ui/` whose files declare a utility
-class** — components and published class strings alike — and `scripts/validate-css-sources.ts`
+class** — components and published class strings alike — and the gate's `validate-css-sources` step
 enforces exactly that scope, in both directions: a directory under `src/ui/` that is neither scanned
 nor registered as class-free fails the gate, and so does an `@source` path that resolves outside
 `src/ui/`. Read `forge.css` for the current list. The paths resolve **relative to
@@ -133,19 +133,18 @@ section make sense:
 --gray-11: #b4b4b4;                  /* scale step, .dark */
 ```
 
-The step numbering is Radix's twelve-step scale, and so is the lightness of every step forge ships: 1
+The step numbering is a twelve-step scale, and so is the lightness of every step forge ships: 1
 app background, 2 subtle background, 3 UI element background, 4 hovered UI element background, 5
 active/selected, 6 subtle borders and separators, 7 UI element border and focus rings, 8 hovered UI
 element border, 9 solid backgrounds, 10 hovered solid backgrounds, 11 low-contrast text, 12
 high-contrast text. The scheme file is where the literals live — `theme-neutral.css` for the default
 — along with the light-mode 1↔2 swap that keeps a `Card` raised above the page, which is a value
-rather than a mapping. `theme-base.css` owns the mapping, and the one place forge's *role mapping*
-deliberately differs from Radix's: the border tokens, where `--input` and `--ring` sit at steps 10
-and 11 rather than 7 and 8 so they clear WCAG 1.4.11's 3:1.
+rather than a mapping. `theme-base.css` owns the mapping, where `--input` and `--ring` sit at steps 10
+and 11 so they clear WCAG 1.4.11's 3:1.
 
 **The four schemes share that one lightness ramp and differ only in hue.** `theme-neutral.css` is
 achromatic; `theme-stone.css`, `theme-gray.css` and `theme-slate.css` take their chroma and hue from
-Tailwind's `stone`, `gray` and `slate`, resampled at each Radix lightness. How far each leans is the
+Tailwind's `stone`, `gray` and `slate`, resampled at each lightness. How far each leans is the
 whole difference between them — measured as max−min across R/G/B at step 11, the muted-text step:
 neutral 0, stone 12, gray 20, slate 42. Two consequences are worth knowing before you pick one:
 swapping schemes is a visible change of tint rather than a one-unit nudge, and every contrast ratio
@@ -396,7 +395,7 @@ const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }
 | `Collapsible` | native `<details>` | Compounds: `Collapsible.Trigger`, `Collapsible.Panel`. `<details>` owns open and closed; the controller only publishes them. |
 | `Accordion` | stack of `<details>` | Compounds: `Accordion.Item`, `Accordion.Trigger`, `Accordion.Content`. Each item is its own disclosure and its own tab stop. |
 | `Tooltip` | `popover="hint"` | Compounds: `Tooltip.Trigger`, `Tooltip.Content`. A hint does not dismiss the `auto` popover beneath it. |
-| `CheckboxGroup`, `RadioGroup` | `<fieldset>` of native inputs | Real `<input type="checkbox">` / `<input type="radio">`. Radio grouping and its roving focus are the platform's. Compound: `.Item` on each. `description` and `scope` behave as on `FormField` — `scope` must be repeated on every `.Item`, since each item derives its own id. |
+| `CheckboxGroup`, `RadioGroup` | `<fieldset>` of native inputs | Real `<input type="checkbox">` / `<input type="radio">`. Radio grouping and its roving focus are the platform's. Compound: `.Item` on each. `description` and `scope` behave as on `FormField` — `scope` must be repeated on every `.Item`, since each item derives its own id from `name`, `scope` and its `value` — and derives none if any of them contains whitespace. |
 | `Meter` | `<meter>` | A measurement in a known range — distinct from `Progress`, which is task completion. |
 | `NumberField` | numeric `<input>` + steppers | `min` / `max` / `step` enforced natively via `stepUp` / `stepDown`. Compounds: `NumberField.Input`, `NumberField.Increment`, `NumberField.Decrement`. |
 | `ScrollArea` | scroll container | Almost entirely CSS — no scroll hijacking, no synthetic thumb. Compound: `ScrollArea.Viewport`. |

@@ -41,8 +41,6 @@ describe("checkCrossOriginProtection", () => {
     expect(checkCrossOriginProtection(req)).toEqual({ ok: true });
   });
 
-  // W1-2: `same-site` was previously allowed, so any sibling subdomain — including one an
-  // attacker controls via subdomain takeover — could drive authenticated mutations.
   it("blocks POST with Sec-Fetch-Site: same-site (sibling subdomain)", () => {
     const req = new Request("https://example.com/test", { method: "POST", headers: { "Sec-Fetch-Site": "same-site" } });
     expect(checkCrossOriginProtection(req)).toEqual({ ok: false, error: "same-site" });
@@ -124,8 +122,6 @@ describe("originProtection middleware", () => {
   });
 
   it("allows POST with Sec-Fetch-Site: same-origin and no Origin/Referer (browser vouched)", async () => {
-    // Nothing to check against the allowlist, but Sec-Fetch-Site is a forbidden header name, so
-    // web content cannot have set it — the browser did.
     const app = makeOriginApp();
     const res = await app.request("/test", { method: "POST", headers: { "Sec-Fetch-Site": "same-origin" } });
     expect(res.status).toBe(200);
@@ -137,9 +133,6 @@ describe("originProtection middleware", () => {
     expect(res.status).toBe(200);
   });
 
-  // W1-2: the old "COP authoritative" early return skipped `allowedOrigins` whenever
-  // Sec-Fetch-Site was present, so any non-browser client bypassed the allowlist with one
-  // forged header. Sec-Fetch-Site is now a veto, not a pass.
   it("returns 403 for POST with Sec-Fetch-Site: same-origin when Origin is disallowed", async () => {
     const app = makeOriginApp();
     const res = await app.request("/test", { method: "POST", headers: { "Sec-Fetch-Site": "same-origin", Origin: "https://evil.example.com" } });

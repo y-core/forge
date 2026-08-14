@@ -1,26 +1,3 @@
-/**
- * Tailwind conflict-group table: maps a utility to the name of the CSS concern it sets, so
- * `cn` can drop every earlier utility that a later one would fight over.
- *
- * **Coverage boundary.** The table covers the families forge's own primitives emit plus those a
- * consumer override plausibly targets. It is deliberately *not* a complete map of Tailwind:
- * utilities outside it return `undefined` and pass through untouched, leaving stylesheet order to
- * decide — which is the pre-existing behaviour, not a regression. Adding a family is a one-line
- * data edit to one of the tables below.
- *
- * **Fail-open.** An unrecognised utility is always kept. This inverts the fail-closed posture of
- * `ERROR_HANDLING.md` on purpose: the "failure" here is incomplete knowledge of a third-party
- * vocabulary, not untrusted input. Failing closed would silently delete a consumer's custom class
- * or a utility from a newer Tailwind — with no error, and no fix available from outside this file.
- * Failing open has the status quo as its worst case.
- *
- * **Closed value spaces get exact whole-utility entries; only open value spaces get prefix
- * matching.** A `select-` prefix entry would make a consumer's `select-wrapper` claim the
- * user-select group and silently delete a real `select-none`.
- *
- * @internal
- */
-
 const DISPLAY = [
   "block",
   "inline-block",
@@ -126,7 +103,6 @@ const CURSOR_VALUES = [
   "zoom-out",
 ] as const;
 
-/** Value sets consulted by the prefix dispatchers, which match on the remainder after the prefix. */
 const TEXT_ALIGNS: ReadonlySet<string> = new Set(["left", "center", "right", "justify", "start", "end"]);
 const TEXT_OVERFLOWS: ReadonlySet<string> = new Set(["ellipsis", "clip"]);
 const FONT_SIZES: ReadonlySet<string> = new Set(["xs", "sm", "base", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl", "9xl"]);
@@ -154,13 +130,11 @@ const FONT_WEIGHTS: ReadonlySet<string> = new Set(["thin", "extralight", "light"
 const OUTLINE_STYLES: ReadonlySet<string> = new Set(["none", "hidden", "dashed", "dotted", "double", "solid"]);
 const BG_IMAGE_PREFIXES = ["gradient-", "linear-", "radial-", "conic-"] as const;
 
-/** Anchored unit-suffix check — the only regex on the resolver's hot path. */
 const ARBITRARY_LENGTH = /^\[-?[\d.]+(?:px|rem|em|%|ch|ex|vw|vh|vmin|vmax|pt|pc|in|cm|mm|q)\]$/;
 
 const isArbitraryLength = (value: string): boolean => value.startsWith("[length:") || ARBITRARY_LENGTH.test(value);
 
-/** Bare, plain-numeric and `px` remainders all denote a size rather than a colour. */
-const isNumericValue = (value: string): boolean => {
+const isSizeScaleStep = (value: string): boolean => {
   if (value.length === 0 || value === "px") return true;
   for (let i = 0; i < value.length; i += 1) {
     const ch = value[i] as string;
@@ -169,9 +143,8 @@ const isNumericValue = (value: string): boolean => {
   return true;
 };
 
-const isSizeValue = (value: string): boolean => isNumericValue(value) || isArbitraryLength(value);
+const isSizeValue = (value: string): boolean => isSizeScaleStep(value) || isArbitraryLength(value);
 
-/** Splits `"b-red-500"` into `["b", "red-500"]` so a side/corner letter can be tested alone. */
 const firstSegment = (value: string): string => {
   const dash = value.indexOf("-");
   return dash === -1 ? value : value.slice(0, dash);
@@ -186,10 +159,6 @@ const constant =
   () =>
     group;
 
-/**
- * `text-` spans four concerns at once. Splitting them keeps a base `text-xs` alive alongside a
- * variant `text-blue-700`.
- */
 const textGroup: Dispatcher = (rest) => {
   if (TEXT_ALIGNS.has(rest)) return "text-align";
   if (TEXT_OVERFLOWS.has(rest)) return "text-overflow";
@@ -197,7 +166,6 @@ const textGroup: Dispatcher = (rest) => {
   return "text-color";
 };
 
-/** `flex` itself is a display value; `flex-col` and `flex-1` are unrelated concerns. */
 const flexGroup: Dispatcher = (rest) => {
   if (FLEX_DIRECTIONS.has(rest)) return "flex-direction";
   if (FLEX_WRAPS.has(rest)) return "flex-wrap";
@@ -246,10 +214,7 @@ const outlineGroup: Dispatcher = (rest) => {
 
 const strokeGroup: Dispatcher = (rest) => (isSizeValue(rest) ? "stroke-w" : "stroke-color");
 
-/**
- * `cursor-` is closed apart from arbitrary values, so only the bracketed form goes through the
- * prefix path — a consumer's `cursor-brand` must not claim the group.
- */
+// `cursor-` is closed apart from arbitrary values, so a consumer's `cursor-brand` must not claim the group.
 const cursorGroup: Dispatcher = (rest) => (rest.startsWith("[") ? "cursor" : undefined);
 
 const exactEntries = (utilities: readonly string[], group: string): [string, string][] => utilities.map((utility) => [utility, group]);
@@ -257,7 +222,6 @@ const exactEntries = (utilities: readonly string[], group: string): [string, str
 const valueEntries = (prefix: string, values: readonly string[], group: string): [string, string][] =>
   values.map((value) => [`${prefix}${value}`, group]);
 
-/** Closed value spaces: every legal value is enumerated, so nothing else can claim the group. */
 const EXACT_GROUPS: ReadonlyMap<string, string> = new Map<string, string>([
   ...exactEntries(DISPLAY, "display"),
   ...exactEntries(POSITION, "position"),
@@ -289,7 +253,6 @@ const EXACT_GROUPS: ReadonlyMap<string, string> = new Map<string, string>([
   ["outline", "outline-w"],
 ]);
 
-/** Open value spaces: numeric, colour or arbitrary values that cannot be enumerated. */
 const PREFIX_GROUPS: ReadonlyMap<string, Dispatcher> = new Map<string, Dispatcher>([
   ["p-", constant("p")],
   ["px-", constant("px")],
@@ -342,7 +305,6 @@ const PREFIX_GROUPS: ReadonlyMap<string, Dispatcher> = new Map<string, Dispatche
   ["shadow-", shadowGroup],
   ["font-", fontGroup],
   ["outline-", outlineGroup],
-  // The object-fit values are enumerated exactly above, so the prefix only ever sees a position.
   ["object-", constant("object-position")],
   ["stroke-", strokeGroup],
   ["cursor-", cursorGroup],
@@ -352,11 +314,7 @@ const BORDER_SIDE_NAMES = ["x", "y", "t", "r", "b", "l", "s", "e"] as const;
 
 const sideGroups = (base: string, sides: readonly string[]): string[] => sides.map((side) => `${base}-${side}`);
 
-/**
- * One-directional override edges: accepting the shorthand marks its longhands consumed, never the
- * reverse. So `cn("px-2", "p-4")` collapses to `p-4`, while `cn("p-4", "px-2")` keeps both — the
- * second is a deliberate narrowing of the first, not a conflict.
- */
+/** One-directional override edges: accepting a shorthand marks its longhands consumed, never the reverse. */
 export const GROUP_OVERRIDES: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ["p", ["px", "py", "pt", "pr", "pb", "pl", "ps", "pe"]],
   ["px", ["pl", "pr", "ps", "pe"]],
@@ -402,17 +360,10 @@ export const GROUP_OVERRIDES: ReadonlyMap<string, readonly string[]> = new Map<s
   ["border-color", sideGroups("border-color", BORDER_SIDE_NAMES)],
   ["border-color-x", ["border-color-l", "border-color-r", "border-color-s", "border-color-e"]],
   ["border-color-y", ["border-color-t", "border-color-b"]],
-  // `flex-1` governs grow/shrink only. Display lives in its own group, so accepting one must
-  // never consume the other.
   ["flex", []],
 ]);
 
-/**
- * Names the CSS concern a utility sets, or `undefined` when the utility is outside the table.
- * The argument must already have its modifier prefix, importance marker and value slash removed.
- *
- * @internal
- */
+/** Names the CSS concern a modifier-stripped utility sets, or `undefined` when it is outside the table. @internal */
 export function classGroup(utility: string): string | undefined {
   if (utility.length === 0) return undefined;
 

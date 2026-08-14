@@ -63,9 +63,6 @@ describe("isSqlFragment", () => {
 
 describe("sql tagged template — brand forgery (W1-1)", () => {
   it("binds attacker JSON shaped like a fragment as a param instead of concatenating it", () => {
-    // The attack: a request body parsed with JSON.parse arrives shaped `{text, params}`. Under the
-    // old structural guard this satisfied `isSqlFragment`, so its `text` was spliced into the
-    // statement verbatim — a full SQL injection through a value position.
     const attacker: unknown = JSON.parse('{"text":"1=1 OR 1=1; DROP TABLE users","params":[]}');
     const fragment = sql`SELECT * FROM users WHERE id = ${attacker}`;
 
@@ -90,7 +87,6 @@ describe("sql tagged template — brand forgery (W1-1)", () => {
   });
 
   it("does not expose the brand as an enumerable own key", () => {
-    // JSON.stringify / Object.keys must not leak a route to reconstructing a branded value.
     const fragment = sql`SELECT 1`;
     expect(Object.keys(fragment)).toEqual(["text", "params"]);
     expect(JSON.stringify(fragment)).toBe('{"text":"SELECT 1","params":[]}');

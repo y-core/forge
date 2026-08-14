@@ -11,12 +11,6 @@ const ITEM_CLASS =
   "cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
   "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
-/**
- * `data-slot` is a token list, and both triggers compose an inherited token with their own instead of
- * letting `{...rest}` replace it. The composed-with-a-tooltip cases live beside the rule they belong
- * to, in `utils/as-child.test.tsx`; these pin the single-compound halves — the token an outer compound
- * injects arrives as an ordinary prop, so this *is* the mechanism, reached directly.
- */
 describe("Menu.Trigger — data-slot", () => {
   it("emits its own token alone when none was inherited", async () => {
     expect(await render(<Menu.Trigger id='m' />)).toBe(
@@ -54,8 +48,6 @@ describe("Menu.SubmenuTrigger — data-slot", () => {
   });
 });
 
-/** The attributes that decide placement, and nothing else — the surrounding markup is pinned by
- * `navbar.test.tsx`'s whole-tree fixtures. */
 describe("Menu.Popup — placement attributes", () => {
   it("defaults to the bottom-start placement a top-level menu wants", async () => {
     expect(await render(<Menu.Popup id='m' />)).toBe(
@@ -63,11 +55,6 @@ describe("Menu.Popup — placement attributes", () => {
     );
   });
 
-  // `side` used to be `Extract<Side, "top" | "bottom">`, which could not describe a submenu at all:
-  // a nested popup opens *beside* the panel containing it, and on the default it opened below the
-  // whole parent panel. The CSS matrix keyed on `data-side` has all eight rows — the four physical
-  // ones, plus the logical four, whose inline-axis pair resolves through `:dir()`; this is the half
-  // that lets a caller reach them.
   it("emits side=right, the placement a submenu needs", async () => {
     expect(await render(<Menu.Popup id='m' side='right' />)).toBe(
       `<div id="m" role="menu" data-slot="menu-popup" data-scope="menu" popover="auto" data-closed="" data-side="right" data-align="start" class="${POPUP_CLASS}"></div>`,
@@ -81,8 +68,6 @@ describe("Menu.Popup — placement attributes", () => {
   });
 
   it("still emits side and align alongside data-coords, as a styling hook that no longer places it", async () => {
-    // The anchored rules are guarded by `:not([data-coords])`, so these attributes stop deciding
-    // placement here — they remain because a consumer may key its own arrow or shadow on them.
     expect(await render(<Menu.Popup id='m' coords side='top' align='end' />)).toBe(
       `<div id="m" role="menu" data-slot="menu-popup" data-scope="menu" popover="auto" data-coords="" data-closed="" data-side="top" data-align="end" class="${POPUP_CLASS}"></div>`,
     );

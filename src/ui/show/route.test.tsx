@@ -20,7 +20,6 @@ import {
   showcasePaths,
 } from "./route";
 
-// A minimal icon compatible with ForgeIcon<"spinner"|"chevron-down"|"sun"|"moon"|"monitor">
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
 const StubIcon = (_props: any) => null as any;
 StubIcon.sprite = "/icons.svg";
@@ -127,8 +126,6 @@ describe("loadValidate", () => {
 
 describe("renderValidate", () => {
   const paths = showcasePaths("/showcase");
-  // A real sprite binding rather than the null stub: the glyph is half of what an invalid field has
-  // to render, and a stub that renders nothing cannot tell whether it was there.
   const errorIcon = createIcon("/sprite.svg", { "icon-close": "0 0 24 24" });
 
   it("returns 200 with text/html", async () => {

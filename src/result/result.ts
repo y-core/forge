@@ -1,40 +1,30 @@
-/**
- * Discriminated-union result type aligned with forge's `{ ok }` convention.
- * Use `result()` to wrap synchronous or async operations without try/catch at every call site.
- * @public
- */
+/** Discriminated-union result type aligned with forge's `{ ok }` convention. @public */
 export type Result<T, E = Error> = { ok: true; data: T } | { ok: false; error: E };
 
-/**
- * Predicate/authorization check result — a domain alias of `Result` with no success value; the
- * failure channel carries a machine-readable reason code (typically a string-literal union).
- * Use for guard-style checks (origin, CSRF, Turnstile) rather than value-producing operations. @public
- */
+/** A `Result` with no success value whose failure channel carries a machine-readable reason code. @public */
 export type GuardResult<R = string> = Result<void, R>;
 
-/**
- * Validation result — a domain alias of `Result` whose failure channel carries the per-field message
- * list as `error: readonly string[]` (rather than a single `Error`). Use for `v`-backed validation. @public
- */
+/** A `Result` whose failure channel carries a per-field message list rather than an `Error`. @public */
 export type ValidationResult<T> = Result<T, readonly string[]>;
 
-/** Converts any thrown value to an `Error` instance; safe to use in `catch (err)` blocks where `err` is `unknown`. @public */
+/** Converts any thrown value to an `Error` instance. @public */
 export function toError(thrown: unknown): Error {
   return thrown instanceof Error ? thrown : new Error(String(thrown));
 }
 
-/** Constructs a successful `Result`; call with no argument for a `Result<void>` (e.g. a passing `GuardResult`). @public */
+/** Constructs a successful `Result`; call with no argument for a `Result<void>`. @public */
 export function ok(): Result<void, never>;
 export function ok<T>(data: T): Result<T, never>;
 export function ok<T>(data?: T): Result<T, never> {
   return { ok: true, data: data as T };
 }
 
-/** Constructs a failed `Result` carrying `error` in the failure channel (an `Error`, reason code, or message list). @public */
+/** Constructs a failed `Result` carrying `error` in the failure channel. @public */
 export function err<E>(error: E): Result<never, E> {
   return { ok: false, error };
 }
 
+/** Runs a function or awaits a promise, capturing a thrown value as a failed `Result`. @public */
 function result<E = Error>(fn: () => never): Result<never, E>;
 function result<T, E = Error>(fn: () => Promise<T>): Promise<Result<T, E>>;
 function result<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;

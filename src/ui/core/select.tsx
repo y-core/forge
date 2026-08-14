@@ -19,9 +19,9 @@ const SELECT_DISABLED = "disabled:cursor-not-allowed disabled:pointer-events-non
 const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({ class: cls, field, icon: Icon, children, "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 
+  // The caller's class sizes the wrapper, not the `<select>`: the arrow is absolutely positioned
+  // against the wrapper and the `<select>` fills it, so a width moved onto the control strands both.
   return (
-    // The wrapper is the element with the geometry — width, position, the chevron's containing
-    // block — so a caller's `class` has to land here to size the control as laid out.
     <div data-slot='select-wrapper' class={cn(SELECT_WRAPPER, asClass(cls))}>
       <select data-slot={slotToken("select", inherited)} class={`${SELECT_BASE} ${SELECT_FOCUS} ${SELECT_DISABLED}`} {...resolved}>
         {children}

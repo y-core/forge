@@ -6,7 +6,6 @@ import { Forge } from "../../app/forge-app";
 import type { FC } from "../../jsx/types";
 import { registerShowcase, showcaseRoutes } from "./register";
 
-// Minimal icon compatible with ShowcaseIcon; renders nothing.
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
 const StubIcon = ((_props: any) => null) as any;
 StubIcon.sprite = "/icons.svg";
@@ -23,8 +22,6 @@ describe("showcaseRoutes", () => {
   it("derives the index href, the theme href and six API hrefs from the default base", () => {
     const r = showcaseRoutes();
     expect(r.ui.index.href()).toBe("/showcase/ui");
-    // A sibling of `index`, not a child of `api` — a page someone shares a link to rather than an
-    // HTMX fragment endpoint.
     expect(r.ui.theme.href()).toBe("/showcase/ui/theme");
     expect(r.ui.api.preview.href()).toBe("/showcase/ui/api/preview");
     expect(r.ui.api.validate.href()).toBe("/showcase/ui/api/validate");
@@ -63,8 +60,6 @@ describe("registerShowcase", () => {
     const body = await res.text();
     expect(body).toContain('data-ctx="chrome"');
     expect(body).toContain("Theme customiser");
-    // Gray chroma falls back to 0, which is `theme-neutral.css` exactly — so a bare URL renders the
-    // shipped scheme rather than an arbitrary starting point.
     expect(body).toContain("#646464");
   });
 
@@ -72,8 +67,6 @@ describe("registerShowcase", () => {
     const res = await makeApp().request("/showcase/ui/theme?gh=256&gc=45&ah=267&ac=195&r=4");
     expect(res.status).toBe(200);
     const body = await res.text();
-    // The slate-ish scheme's step 11, generated — proof the loader reached the generator rather
-    // than defaulting silently.
     expect(body).toContain("#53667e");
     expect(body).toContain("4px");
   });
@@ -82,7 +75,6 @@ describe("registerShowcase", () => {
     const res = await makeApp().request("/showcase/ui/theme?gc=99999&gh=abc");
     expect(res.status).toBe(200);
     const body = await res.text();
-    // `gc` clamps to the dial's max of 100; `gh` is unparseable and falls back to 0.
     expect(body).toContain(">100</output>");
     expect(body).toContain("0°");
   });

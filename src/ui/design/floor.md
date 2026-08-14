@@ -42,10 +42,13 @@ replacement ring is a removed affordance, not a style choice.
 Each suppression utility deletes something the browser drew, and forge names what goes back in its
 place. `appearance-none` on a `type='range'` leaves no track and no thumb — `Slider` redraws both as
 authored `::-webkit-slider-runnable-track` / `::-moz-range-track` and thumb rules in
-`theme-base.css`, because no utility class reaches a UA pseudo-element. On a `<select>` it leaves no
+`forge-ui.css`, because no utility class reaches a UA pseudo-element. On a `<select>` it leaves no
 arrow — `Select` reserves `pr-10` and positions its own `aria-hidden` `chevron-down` `Icon`. On a
-checkbox or radio it leaves nothing to mark checked, which is why `CheckboxGroup` and `RadioGroup`
-keep the native box and tint it with `accent-primary` instead of suppressing it. `list-none` removes
+checkbox or radio it leaves nothing to mark checked — and it also gives up the exemption 1.4.11
+grants a control the author has not modified, so `CheckboxGroup` and `RadioGroup` replace *two*
+things: the box, with an explicit `border-input` boundary and a `checked:bg-primary` fill, and the
+user's own palette, with the `@media (forced-colors: active)` block in `forge-ui.css` §9 — without
+which a High Contrast reader gets two identically empty squares. `list-none` removes
 the markers that separated the items — a `Separator` or a deliberate `gap-*` takes over. `p-0`
 removes the box that made the target hittable — restore a size that clears `forge-ui-hit-target`.
 `border-0` removes the boundary — restore it with `border-input`, `border-border`, or a

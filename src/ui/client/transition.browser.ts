@@ -4,15 +4,6 @@ import { Dialog } from "../core/dialog";
 import { Popover } from "../core/popover";
 import { mount } from "./browser-test-helper";
 
-/**
- * `mountTransitionState` against the platform's own state machine.
- *
- * Every case here opens or closes through the **native** path — a `command="toggle-popover"` button,
- * a real Escape key, `showModal()` — never by calling into the controller. That is the contract
- * being tested: the controller observes, and if it observed wrongly the attributes would disagree
- * with `:popover-open`, which each case checks alongside them.
- */
-
 declare global {
   interface Window {
     forgeTransition: typeof import("./transition");
@@ -118,8 +109,6 @@ test.describe("data-open and data-closed are mutually exclusive", () => {
       (window as unknown as { samples: Array<[boolean, boolean]> }).samples.filter(([open, closed]) => open === closed),
     );
 
-    // `open === closed` is true when both are present AND when neither is: one assertion covers
-    // both halves of "mutually exclusive".
     expect(violations).toEqual([]);
   });
 });
@@ -245,7 +234,6 @@ test.describe("disposer", () => {
     await page.click("[data-slot~='popover-trigger']");
 
     const state = await readState(page, "#panel");
-    // The popover still opened — the controller never owned that — but published nothing about it.
     expect(state).toEqual({ open: false, closed: true, starting: false, ending: false, platformOpen: true });
   });
 });

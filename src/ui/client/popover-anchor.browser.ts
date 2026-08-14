@@ -3,16 +3,6 @@ import { render } from "../../testing/render";
 import { Menu } from "../core/menu";
 import { mount } from "./browser-test-helper";
 
-/**
- * `openPopoverAt` in a real browser, with the real stylesheet.
- *
- * The rule under test is as much CSS as it is TypeScript: without the coordinate rule's explicit
- * `inset: auto` the UA's `[popover]` default (`inset: 0; margin: auto`) survives and the panel
- * centres itself no matter what the custom properties say. So every case asserts a **measured**
- * `getBoundingClientRect`, not the properties that were written — the properties being right while
- * the box is centred is precisely the failure this exists to catch.
- */
-
 declare global {
   interface Window {
     forgePopoverAnchor: typeof import("./popover-anchor");
@@ -94,8 +84,6 @@ test.describe("openPopoverAt", () => {
 
     await openAt(page, 200, 150);
 
-    // forge's CSP has no `style-src 'unsafe-inline'`, so a generated `style="left:…"` would be
-    // blocked in exactly the app this exists for. CSSOM properties are not what CSP gates.
     expect(
       await page.evaluate(() => {
         const el = document.querySelector<HTMLElement>("#ctx");
@@ -162,7 +150,6 @@ test.describe("openPopoverAt", () => {
     await openAt(page, 200, 150);
     await openAt(page, 40, 60);
 
-    // Right-clicking somewhere else does not close and reopen the menu; it relocates it.
     expect(await page.evaluate(() => document.querySelector("#ctx")?.matches(":popover-open"))).toBe(true);
     expect(await box(page)).toMatchObject({ left: 40, top: 60 });
   });
@@ -193,13 +180,6 @@ test.describe("openPopoverAt", () => {
   });
 });
 
-/**
- * `flip` — open *away* from the point instead of sliding back over it.
- *
- * Both behaviours keep the panel on screen; they differ in where the **point** ends up. Clamping
- * leaves it inside the box, which for a context menu pre-hovers the row under the cursor. Flipping
- * mirrors the box past the point, which is what every desktop context menu does.
- */
 test.describe("openPopoverAt with flip", () => {
   async function openFlipped(page: Page, x: number, y: number): Promise<void> {
     await page.evaluate(
@@ -212,7 +192,6 @@ test.describe("openPopoverAt with flip", () => {
   }
 
   test("leaves the point at the corner when the popup fits", async ({ page }) => {
-    // The flip is conditional on *not* fitting; where there is room, it must change nothing.
     await mount(page, await markup(), EXPOSE);
     await sizeIt(page);
 
@@ -226,7 +205,6 @@ test.describe("openPopoverAt with flip", () => {
     await sizeIt(page);
     const { h } = await viewport(page);
 
-    // Comfortably inside on x, hard against the bottom on y.
     await openFlipped(page, 200, h - 10);
 
     const rect = await box(page);
@@ -245,9 +223,6 @@ test.describe("openPopoverAt with flip", () => {
   });
 
   test("falls back to clamping when the mirrored box would not fit either", async ({ page }) => {
-    // The guarantee that the whole panel stays on screen is **unconditional**: a popup taller than the
-    // space on either side of the point cannot be fixed by mirroring, and silently leaving it
-    // off-screen would be worse than ignoring the preference.
     await mount(page, await markup(), EXPOSE);
     await page.evaluate(() => {
       const el = document.querySelector<HTMLElement>("#ctx");

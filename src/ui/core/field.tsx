@@ -9,14 +9,9 @@ import { cva } from "./utils/cva";
 /** Plain object describing a form field — pass explicitly to controls instead of relying on context. @public */
 export interface FieldDescriptor {
   name: string;
-  /** Distinguishes fields that share a `name` on one page — a sign-in and a sign-up form both
-   * holding an `email`. Ids are derived from `name` alone without it, so the two forms would produce
-   * one id twice and a label would point at whichever control the browser found first. Pass the same
-   * value to the field's `Label`, `Description` and `Error`. */
+  /** Distinguishes fields that share a `name` on one page. */
   scope?: string;
-  /** A description element renders for this field. Off by default: `aria-describedby` may only name
-   * an element that is actually on the page, and a dangling IDREF is an error assistive technology
-   * reports rather than ignores. */
+  /** A description element renders for this field. */
   description?: boolean;
   invalid?: boolean;
   disabled?: boolean;
@@ -32,8 +27,6 @@ interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children">
   children?: JSXNode;
 }
 
-/** What a compound member needs to derive the same id the control derived: the field's name, and the
- * scope that separates it from a same-named field elsewhere on the page. */
 interface FieldNaming {
   name?: string;
   scope?: string;
@@ -68,32 +61,22 @@ const fieldVariants = cva({
 export const FIELD_LABEL_CLASSES =
   "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50";
 
-/** HTML's ASCII whitespace set — the characters an id may not contain and the ones an IDREF list is
- * split on. Deliberately not JS `\s`, which also matches U+00A0 and the Unicode spaces: those are
- * legal id characters that no parser treats as a token separator, so folding them in here would
- * suppress ids that resolve perfectly well. @internal */
+// HTML's ASCII whitespace set, deliberately not JS `\s`: U+00A0 and the Unicode spaces are legal id
+// characters that no parser treats as a token separator.
 const ASCII_WS = /[\t\n\f\r ]/;
 
-/** The blank test for the same set as {@link ASCII_WS} — again not JS `\s`, for the same reason: a
- * value of only non-breaking spaces is a real, resolvable id, not a blank one. @internal */
 const ASCII_WS_ONLY = /^[\t\n\f\r ]*$/;
 
-/** Whether a value can stand as a whole id token: non-empty, and free of {@link ASCII_WS}. @internal */
 function idToken(value: string): boolean {
   return value !== "" && !ASCII_WS.test(value);
 }
 
-/** Whether an id can be derived for this field at all. `name` must be an id token. A blank `scope`
- * is no scope; a non-blank one must be an id token too — falling back to the unscoped id instead
- * would collide with the very field the scope exists to be distinguished from. Every site that
- * derives an id or an IDREF routes through this, which is what keeps a control's
- * `aria-describedby` and the compound members' ids agreeing. @internal */
-function derivable(name: string | undefined, scope?: string): name is string {
+/** Whether an id can be derived from this naming — every part must be a single id token. @internal */
+export function derivable(name: string | undefined, scope?: string): name is string {
   return name !== undefined && idToken(name) && (scope === undefined || ASCII_WS_ONLY.test(scope) || idToken(scope));
 }
 
-/** The control's id. `scope` separates two fields that share a name on one page; a blank one is no
- * scope. */
+/** The control's id, optionally separated from a same-named field by `scope`. */
 export function fieldId(name: string, scope?: string): string {
   return scope !== undefined && !ASCII_WS_ONLY.test(scope) ? `field-${scope}-${name}` : `field-${name}`;
 }
@@ -111,27 +94,14 @@ export function fieldErrorId(name: string, scope?: string): string {
 /** What {@link fieldDescribedBy} needs beyond the field's name. */
 export interface FieldDescribedByOptions {
   scope?: string;
-  /** A description element renders for this field — see {@link FieldDescriptor.description}. */
+  /** A description element renders for this field. */
   description?: boolean;
   invalid?: boolean;
   /** An `aria-describedby` the caller already has, kept ahead of the derived ids. */
   existing?: string;
 }
 
-/**
- * The `aria-describedby` value for a field, or `undefined` when nothing to point at renders. @public
- *
- * Names only the elements that actually render — the description when the field declares one, the
- * error when the field is invalid — because an IDREF pointing at nothing is not ignored by
- * assistive technology, it is reported as an error.
- *
- * Extracted from {@link fieldControlProps} because it is the one piece of that function's output a
- * `<fieldset>`-based group can adopt. The rest of it — `id`, `name`, `aria-invalid` — is shaped for
- * a labelable control and is wrong on a fieldset, which is why the groups call this directly
- * instead.
- *
- * The `name` and `scope` must each be a single id token — see {@link fieldControlProps}.
- */
+/** The `aria-describedby` value for a field, or `undefined` when nothing to point at renders. @public */
 export function fieldDescribedBy(name: string, options: FieldDescribedByOptions = {}): string | undefined {
   const named = derivable(name, options.scope);
   const value = [
@@ -145,18 +115,7 @@ export function fieldDescribedBy(name: string, options: FieldDescribedByOptions 
   return value ? value : undefined;
 }
 
-/**
- * Pure function that merges field descriptor wiring into control props. @public
- *
- * `aria-describedby` names only the elements that actually render — the description when the
- * descriptor declares one, the error when the field is invalid — and is omitted entirely when
- * neither does, because an IDREF pointing at nothing is worse than no IDREF at all.
- *
- * The `name`, and any non-blank `scope`, must each be a single id token: anything containing ASCII
- * whitespace derives no `id` and no `aria-describedby`, because HTML forbids ASCII whitespace in an
- * id and splits every IDREF list on it. That matches the compound members; the `name` attribute
- * itself is still passed through as given.
- */
+/** Merges field descriptor wiring into control props. @public */
 export function fieldControlProps<T extends FieldControlProps>(props: T, field: FieldDescriptor): T {
   const invalid = field.invalid ?? false;
   const describedBy = fieldDescribedBy(field.name, {
@@ -178,6 +137,7 @@ export function fieldControlProps<T extends FieldControlProps>(props: T, field: 
   };
 }
 
+/** A `<fieldset>` wrapper carrying a field's name, orientation, and invalid or disabled state to its parts. @internal */
 export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   name,
   invalid = false,
@@ -188,7 +148,6 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   "data-slot": inherited,
   ...props
 }) => {
-  // cva's `class` is `class?: string` (no `undefined`), so omit it rather than pass undefined.
   const clsValue = asClass(cls);
   return (
     <fieldset
@@ -202,6 +161,7 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   );
 };
 
+/** A `<label>` whose `for` is derived from the field's name and scope unless given explicitly. @internal */
 export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({
   class: cls,
   for: htmlFor,
@@ -220,6 +180,7 @@ export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({
   </label>
 );
 
+/** Help text for a field, with the id that `aria-describedby` points at derived from its name and scope. @internal */
 export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNaming>> = ({
   class: cls,
   id,
@@ -241,6 +202,7 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNami
   );
 };
 
+/** A field's error message as a live `alert`, rendering nothing when it has no children. @internal */
 export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
   class: cls,
   id,

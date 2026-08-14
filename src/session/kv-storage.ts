@@ -4,10 +4,7 @@ import { createSession } from "@remix-run/session";
 /** The `[values, flash]` tuple `Session` persists — not exported upstream, so derived. */
 type SessionData = NonNullable<Parameters<typeof createSession>[1]>;
 
-/**
- * Minimal structural KV surface the session store needs — keeps `session` a leaf namespace
- * (no `storage/kv` import); any Workers `KVNamespace` binding satisfies it. @public
- */
+/** Minimal structural KV surface the session store needs; any Workers `KVNamespace` satisfies it. @public */
 export interface SessionKVBinding {
   get(key: string, options: { type: "text" }): Promise<string | null>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
@@ -16,32 +13,15 @@ export interface SessionKVBinding {
 
 /** Options for `createKVSessionStorage`. @public */
 export interface KVSessionStorageOptions {
-  /** KV key prefix; the stored key is `${prefix}:${session.id}`. @defaultValue "session" */
+  /** KV key prefix; the stored key is `${prefix}:${session.id}`. */
   prefix?: string;
-  /** KV expiration TTL in seconds, refreshed (sliding) on every save. @defaultValue 31536000 (1 year) */
+  /** KV expiration TTL in seconds, refreshed (sliding) on every save. */
   ttlSeconds?: number;
 }
 
 const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 365;
 
-/**
- * `SessionStorage` backed by Workers KV — the durable sibling of `createMemorySessionStorage`.
- * The session cookie carries **only the opaque session id**; all session data lives in KV under
- * that id with a sliding TTL. Compared to cookie storage this removes the ~4 KB size limit,
- * keeps data out of the client entirely, and makes server-side revocation possible
- * (delete the KV key).
- *
- * Mirrors the upstream storage contract exactly: `read` never throws (unknown ids and corrupt
- * records yield a fresh session); `save` returns the id when dirty, `""` when destroyed
- * (clearing the cookie), and `null` when unchanged (no Set-Cookie).
- *
- * @example
- * ```typescript
- * const storage = createKVSessionStorage(c.env.SESSIONS_KV, { ttlSeconds: 60 * 60 * 24 * 30 });
- * app.use("*", sessionMiddleware(storage, sessionCookie));
- * ```
- * @public
- */
+/** `SessionStorage` backed by Workers KV, keyed by the opaque session id under a sliding TTL. @public */
 export function createKVSessionStorage(kv: SessionKVBinding, options?: KVSessionStorageOptions): SessionStorage {
   const prefix = options?.prefix ?? "session";
   const ttlSeconds = options?.ttlSeconds ?? DEFAULT_TTL_SECONDS;
@@ -59,7 +39,7 @@ export function createKVSessionStorage(kv: SessionKVBinding, options?: KVSession
       try {
         return createSession(cookie, JSON.parse(raw) as SessionData);
       } catch {
-        // Corrupt record — fail soft with a fresh session rather than breaking the request.
+        // A corrupt record fails soft: `read` must never throw, per the upstream storage contract.
         return createSession();
       }
     },

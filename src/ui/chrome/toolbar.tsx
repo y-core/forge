@@ -6,8 +6,6 @@ import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { Button } from "../core/button";
 import type { ForgeIcon } from "../core/icon";
-// The rail renders its own `<nav>`, but every *part* of it is a `core/Toolbar` primitive — aliased
-// because this module publishes a `Toolbar` of its own.
 import { Toolbar as CoreToolbar } from "../core/toolbar";
 import { slotToken } from "../core/utils/as-child";
 import { asClass, cn } from "../core/utils/cn";
@@ -21,15 +19,11 @@ export interface ToolbarAction<A extends string = string> {
   icon: string;
   /** Tooltip / aria-label. */
   label: string;
-  /** Action name dispatched on click — into an ancestor scope (`data-on-click`) or, with
-   * `dispatch:"command"`, through the native Invoker `CommandEvent` bridge (`--action`). */
   action: A;
-  /** How the action reaches a handler. `"scope"` (default) emits `data-on-click`; `"command"`
-   * emits `command="--action"` targeting the toolbar's `commandTarget`. Both hit the same `on` table. */
+  /** How the action reaches a handler: `"scope"` emits `data-on-click`, `"command"` a native Invoker command. */
   dispatch?: "scope" | "command";
   /** data-ref (test/parity hook). */
   ref?: string;
-  /** Extra data-* attributes (e.g. `{ "data-tool": "line" }`). */
   data?: Record<string, string>;
   /** Stamps class="active" at SSR for boot highlight. */
   active?: boolean;
@@ -43,7 +37,6 @@ export interface ToolbarTitleAction<A extends string = string> {
   icon: string;
   /** Tooltip + aria-label. */
   label: string;
-  /** Delegated action dispatched on click (bubbles to an ancestor scope). */
   action: A;
   /** data-ref (test/parity hook). */
   ref?: string;
@@ -62,7 +55,6 @@ export interface ToolbarPopover<A extends string = string> {
   content: JSXNode;
   /** Shrink flyout to content width (no min-w-52 floor). */
   compact?: boolean;
-  /** Optional action button stamped inline on the flyout title row. */
   titleAction?: ToolbarTitleAction<A>;
 }
 
@@ -71,7 +63,7 @@ export interface ToolbarSeparator {
   kind: "separator";
 }
 
-/** @public */
+/** Rail item that renders caller-supplied markup in place of a button. @public */
 export interface ToolbarSlot {
   kind: "slot";
   slot: JSXNode;
@@ -93,11 +85,7 @@ export interface ToolbarDefinition<A extends string = string> {
 /** Edge the rail pins to; drives flex direction + flyout direction. @public */
 export type ToolbarPlacement = "left" | "right" | "top" | "bottom";
 
-/**
- * Props for {@link Toolbar}. Extends `<nav>` attributes minus `children`,
- * since the tree is built from `config`.
- * @public
- */
+/** Props for {@link Toolbar}; the tree is built from `config`, so `children` is removed. @public */
 export interface ToolbarProps<A extends string = string> extends Omit<JSX.IntrinsicElements["nav"], "children"> {
   config: ToolbarDefinition<A>;
   /** App sprite icon — glyph names are app-defined. Required. */
@@ -106,23 +94,18 @@ export interface ToolbarProps<A extends string = string> extends Omit<JSX.Intrin
   placement?: ToolbarPlacement;
   /** `commandfor` sink (element id, bare or `#id`) for actions with `dispatch:"command"`. */
   commandTarget?: string;
-  /** Optional DOM id for the rail. Also namespaces the generated flyout ids; supply a distinct
-   * value when two rails share the same `placement`, otherwise `placement` disambiguates them. */
+  /** DOM id for the rail; also namespaces the generated flyout ids, which two same-placement rails
+   * on one page would otherwise collide on. */
   id?: string;
-  /** Extra classes merged onto the root element. */
   class?: string;
 }
 
-/** Threaded through the item renderers: bound icon, placement, a per-render popover-id counter,
- * the id namespace that keeps flyout ids unique across multiple rails on one page, and the
- * optional `commandfor` sink for command-dispatch actions. */
+/** Threaded through the item renderers. */
 interface RenderCtx {
   placement: ToolbarPlacement;
   icon: ForgeIcon<string>;
   commandTarget: string | undefined;
-  /** Namespace prefix for generated flyout ids — the rail's `id` when given, else its placement.
-   * Two rails on a page must not both mint `toolbar-flyout-0`, or their `commandfor` links would
-   * collide and a trigger would toggle the wrong (first-in-document) flyout. */
+  /** Namespace prefix for generated flyout ids — the rail's `id` when given, else its placement. */
   idBase: string;
   seq: { n: number };
 }
@@ -148,13 +131,7 @@ function isVerticalPlacement(placement: ToolbarPlacement): boolean {
   return placement === "left" || placement === "right";
 }
 
-/**
- * `core/Toolbar.Separator` with the rail's own margins, and nothing else — the element, its
- * `data-slot` and its `aria-orientation` are the primitive's.
- *
- * `aria-orientation` describes the **rule's own axis**, which is across the rail: a left rail is
- * divided by horizontal lines, so a vertical placement asks for a horizontal separator.
- */
+/** `core/Toolbar.Separator` with the rail's own margins; the rule's axis is across the rail. */
 function separator(placement: ToolbarPlacement): JSXNode {
   const vertical = isVerticalPlacement(placement);
   return <CoreToolbar.Separator orientation={vertical ? "horizontal" : "vertical"} class={cn("shrink-0", vertical ? "my-1" : "mx-1")} />;
@@ -189,7 +166,6 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
     );
   }
 
-  // popover — a native top-layer flyout toggled by its trigger button
   const { icon, label, ref, content, compact, titleAction } = item;
   const id = `toolbar-flyout-${ctx.idBase}-${ctx.seq.n++}`;
   return (
@@ -207,9 +183,8 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
       <div id={id} data-slot='toolbar-flyout' popover='auto' data-placement={placement} data-compact={compact ? "" : undefined} class={FLYOUT_CLS}>
         <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
           <span>{label}</span>
-          {/* Deliberately unmarked: roving focus queries the whole `<nav>` subtree, and the flyout
-              is a descendant of it — a marker here would splice flyout buttons into the rail's ring
-              and the arrow keys would walk out of the rail into an open panel. */}
+          {/* Unmarked on purpose: roving focus queries the whole `<nav>` subtree, so a toolbar-item
+              marker here would splice flyout buttons into the rail's arrow-key ring. */}
           {titleAction && (
             <Button
               data-slot='toolbar-title-action'
@@ -240,23 +215,7 @@ function renderGroup<A extends string>(group: ToolbarGroup<A>, ctx: RenderCtx): 
   );
 }
 
-/**
- * A configuration-driven icon rail with placement-aware flyout panels. Action items fire a
- * delegated scope event (or a native Invoker command with `dispatch:"command"`) on click; popover
- * items open natively via the Popover API (`popover="auto"`) for top-layer stacking, exclusive
- * open, and light-dismiss — zero JavaScript for open/close.
- *
- * Feed a {@link ToolbarDefinition} and an `icon` prop (the app sprite binding). The `placement`
- * drives flex direction and flyout position (the flyout is anchored to its trigger via CSS).
- *
- * The rail's **root** is its own `<nav>` — it stamps `role="toolbar"`, the toolbar scope and the
- * orientation directly, because the flyout is anchored by CSS the generic `Popover` cannot express:
- * a left rail opens its flyout to the *right*, and `data-placement` is what the theme's anchor rules
- * match on. Everything inside it is a `core/Toolbar` primitive, so the item marker, the pressed pair
- * and the separator's shape are declared in one place rather than restated here.
- *
- * @public
- */
+/** A configuration-driven icon rail with placement-aware flyout panels. @public */
 export const Toolbar: FC<ToolbarProps> = ({
   config,
   icon: Icon,
@@ -274,8 +233,6 @@ export const Toolbar: FC<ToolbarProps> = ({
     children.push(renderGroup(group, ctx));
   }
 
-  // The client reads this attribute to decide which arrows navigate, so a left or right rail must
-  // say `vertical` here or Up/Down would do nothing on it.
   const orientation = isVerticalPlacement(placement) ? "vertical" : "horizontal";
 
   return (

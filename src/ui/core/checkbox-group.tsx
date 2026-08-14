@@ -2,23 +2,18 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
-import { FieldDescription, FieldError, fieldDescribedBy, fieldId } from "./field";
+import { derivable, FieldDescription, FieldError, fieldDescribedBy, fieldId } from "./field";
 import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 type GroupOrientation = Extract<Orientation, "horizontal" | "vertical">;
 
 interface CheckboxGroupRootProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
-  /** Shared `name` for every checkbox in the group — also the key its ids are derived from. */
+  /** Shared `name` for every checkbox in the group, and the key its ids are derived from. */
   name: string;
-  /** Distinguishes two same-named groups on one page. Ids are derived from `name` alone without it,
-   * so both groups would emit the same id for every item as well as for the description and error.
-   * Pass the same value to every `Item`, and to the group's `Description` and `Error`. */
+  /** Distinguishes two same-named groups on one page; pass the same value to every `Item`, `Description` and `Error`. */
   scope?: string;
-  /** A description element renders for this group. Off by default: `aria-describedby` may only name
-   * an element that is actually on the page, and a dangling IDREF is an error assistive technology
-   * reports rather than ignores. `<CheckboxGroup.Description>` must be given the same `name` (and
-   * `scope`) for the id it emits to match the one named here. */
+  /** A description element renders for this group. */
   description?: boolean;
   invalid?: boolean;
   disabled?: boolean;
@@ -34,14 +29,8 @@ interface CheckboxGroupItemProps extends Omit<JSX.IntrinsicElements["input"], "c
   children?: JSXNode;
 }
 
-/** Per-item id, derived rather than passed: the group and the item cannot see each other, and a
- * hand-written id in two places is the drift `field.tsx`'s helpers already exist to prevent.
- *
- * This id is declared but never referenced — the input is wrapped in its `<label>`, so no `for`
- * names it, and a `value` containing whitespace is caller data that round-trips verbatim. Adding an
- * IDREF to it means gating it through `field.tsx`'s id-token predicate first. */
-function itemId(name: string, value: string, scope?: string): string {
-  return `${fieldId(name, scope)}-${value}`;
+function itemId(name: string, value: string, scope?: string): string | undefined {
+  return derivable(name, scope) && derivable(value) ? `${fieldId(name, scope)}-${value}` : undefined;
 }
 
 const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
@@ -56,10 +45,6 @@ const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
   "data-slot": inherited,
   ...rest
 }) => {
-  // A `<fieldset>` cannot take `fieldControlProps` wholesale — it is not a labelable control, so
-  // that function's `id`/`name`/`aria-invalid` outputs are wrong here and invalid is routed through
-  // `stateAttrs` instead. `aria-describedby` is the one half that is not structural, so it comes
-  // from the same helper `fieldControlProps` uses rather than from a second, drifting expression.
   const describedBy = fieldDescribedBy(name, { ...(scope !== undefined ? { scope } : {}), description, invalid });
   return (
     <fieldset
@@ -85,7 +70,6 @@ const CheckboxGroupLabel: FC<PropsWithChildren<Omit<JSX.IntrinsicElements["legen
   </legend>
 );
 
-/** Submits with the form, resets with the form, and needs no JavaScript to do either. */
 const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({
   name,
   value,
@@ -94,34 +78,25 @@ const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({
   children,
   "data-slot": inherited,
   ...rest
-}) => (
-  <label data-slot='checkbox-group-item' class={cn("inline-flex items-center gap-2 text-sm text-foreground", asClass(cls))}>
-    <input
-      type='checkbox'
-      data-slot={slotToken("checkbox-group-input", inherited)}
-      id={itemId(name, value, scope)}
-      name={name}
-      value={value}
-      class='size-4 rounded border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring'
-      {...rest}
-    />
-    {children}
-  </label>
-);
+}) => {
+  const id = itemId(name, value, scope);
+  return (
+    <label data-slot='checkbox-group-item' class={cn("inline-flex items-center gap-2 text-sm text-foreground", asClass(cls))}>
+      <input
+        type='checkbox'
+        data-slot={slotToken("checkbox-group-input", inherited)}
+        {...(id !== undefined ? { id } : {})}
+        name={name}
+        value={value}
+        class='size-4 shrink-0 appearance-none rounded border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
+        {...rest}
+      />
+      {children}
+    </label>
+  );
+};
 
-/**
- * A set of checkboxes sharing one name, wired to `core/field.tsx`'s existing description and error
- * plumbing rather than restating it.
- *
- * ```tsx
- * <CheckboxGroup name='toppings'>
- *   <CheckboxGroup.Label>Toppings</CheckboxGroup.Label>
- *   <CheckboxGroup.Item name='toppings' value='cheese'>Cheese</CheckboxGroup.Item>
- *   <CheckboxGroup.Item name='toppings' value='basil'>Basil</CheckboxGroup.Item>
- * </CheckboxGroup>
- * ```
- * @public
- */
+/** A set of checkboxes sharing one name, wired to `core/field.tsx`'s description and error plumbing. @public */
 export const CheckboxGroup = Object.assign(CheckboxGroupRoot, {
   Label: CheckboxGroupLabel,
   Item: CheckboxGroupItem,

@@ -54,7 +54,6 @@ describe("sessionMiddleware with cookie storage", () => {
     const res = await app.request("/login", { method: "POST" });
     const cookies = res.headers.getSetCookie();
     expect(cookies).toHaveLength(2);
-    // Both cookies survive; set-cookie order is not semantically meaningful.
     expect(cookies.some((c) => c.includes("__session="))).toBe(true);
     expect(cookies.some((c) => c.includes("flash=1"))).toBe(true);
   });
@@ -97,7 +96,6 @@ describe("sessionMiddleware destroy", () => {
       return new Response("ok");
     });
 
-    // Seed an existing session and capture its cookie.
     const setRes = await app.request("/set", { method: "POST" });
     const setCookie = setRes.headers.get("set-cookie")!;
     const sessionId = setCookie.match(/__session=([^;]+)/)?.[1] ?? "";
@@ -122,16 +120,13 @@ describe("sessionMiddleware with memory storage", () => {
       return new Response(String(session.get("role") ?? "none"));
     });
 
-    // First request: set the value
     const setRes = await app.request("/set", { method: "POST" });
     const setCookieHeader = setRes.headers.get("set-cookie");
     expect(setCookieHeader).not.toBeNull();
 
-    // Parse session ID from Set-Cookie to send on next request
     const match = setCookieHeader!.match(/__session=([^;]+)/);
     const sessionId = match?.[1] ?? "";
 
-    // Second request: read the value back
     const getRes = await app.request("/get", { headers: { cookie: `__session=${sessionId}` } });
     expect(await getRes.text()).toBe("admin");
   });

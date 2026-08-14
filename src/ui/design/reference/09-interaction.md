@@ -65,6 +65,13 @@ It takes `{ items, orientation?, loop?, typeahead?, typeaheadTimeout? }`, resolv
 the DOM on every interaction, skips disabled items, reads direction from the element so an RTL
 island navigates as RTL, and returns a disposer.
 
+Default: leave a `RadioGroup` alone — do not mount `mountRovingFocus` on it — unless the group is
+not built from same-named `<input type="radio">` at all. <!-- rule:forge-ui-interaction-no-roving-radio -->
+The platform already supplies the whole roving-tabindex contract for radios sharing a `name`: one
+tab stop, arrow keys that move *and* check, Home/End. Mounting the controller beside it gives arrow
+keys two handlers, and the second one moves focus without checking, so the group's value and its
+focus stop agreeing.
+
 Default: mark the item that should hold the tab stop at mount with `ACTIVE_COMPOSITE_ITEM` from
 `@y-core/forge/ui/contracts` — unless nothing in the composite is selected on first render, in which
 case the first item takes it. <!-- rule:forge-ui-interaction-active-item -->
@@ -165,6 +172,14 @@ Default: express entry and exit through `mountTransitionState` and style them of
 The controller observes the platform's own state events and publishes the four attributes; it never
 calls `showPopover` or `close()`, so dismissal stays the platform's. `Popover` and `Dialog` emit
 their initial state attribute in SSR markup and contain no animation branch at all.
+
+Default: put no bare `display` utility on a `[popover]` element or a `<dialog>` — reach for
+`opacity`, `visibility` or a `transform` instead — unless the utility is variant-gated on the open
+state. <!-- rule:forge-ui-interaction-no-display-on-popup -->
+The UA rule that hides a closed popover, `[popover]:not(:popover-open) { display: none }`, is not
+`!important`, so an author `display: flex` — `flex`, `grid`, `block`, or a responsive `md:flex` —
+outranks it and the popup renders permanently, on top of the page, before anything has opened it.
+Lay a popup's contents out on a child instead of on the popover element itself.
 
 Default: give a trigger its open-state feedback with `mountPopupTriggerState` and a
 `data-popup-open` selector, rather than a second listener on the trigger — unless the trigger is not

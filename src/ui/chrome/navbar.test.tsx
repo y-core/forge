@@ -61,23 +61,13 @@ describe("Navbar — structure", () => {
   });
 });
 
-/**
- * The landmark. `NavbarProps` promises `<nav>` attributes, and for as long as the component rendered
- * only a `<details>` the promise was false in the one way that matters: the page carried no
- * navigation landmark, and an `aria-label` meant for it named a disclosure instead.
- */
 describe("Navbar — landmark", () => {
   const A: NavDefinition = { sections: [{ items: [{ label: "A", href: "a" }] }] };
 
-  /** The `<nav>` open tag's attributes and the `<details>` open tag's attributes, verbatim. The two
-   * are matched adjacently on purpose: that the pattern matches at all is the nesting claim, since
-   * nothing may sit between the landmark and the disclosure it names. */
   const landmark = (html: string) => /<nav([^>]*)><details([^>]*)>/.exec(html);
 
   it("wraps the disclosure in a real nav element", async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} />);
-    // A native `<nav>`, never `role="navigation"` on the `<details>` — and unnamed when the consumer
-    // supplies no name, rather than carrying an invented one.
     expect(landmark(out)?.[1]).toBe("");
     expect(out.includes('role="navigation"')).toBe(false);
   });
@@ -87,8 +77,6 @@ describe("Navbar — landmark", () => {
     expect(out).toBe(
       '<div data-scope="navbar" data-state="{&quot;filters&quot;:[]}"><nav aria-label="Component catalog"><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky left-0 inset-y-0 md:inset-x-0 md:top-0 md:bottom-auto md:right-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="md:hidden flex items-center justify-end p-3 list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden group-open:flex md:flex flex-col md:flex-row md:items-center justify-between gap-4 p-2"><div data-slot="navbar-section" class="flex flex-col md:flex-row md:items-center gap-1"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-accent aria-[current]:text-accent-foreground aria-[current]:font-semibold">A</a></div></div></details></nav></div>',
     );
-    // The whole point of the fix: the name reaches the landmark a screen reader user navigates by,
-    // not the disclosure, which is a different kind of thing and should not be named as one.
     expect(landmark(out)?.[1]).toBe(' aria-label="Component catalog"');
     expect(/<details[^>]*aria-label/.test(out)).toBe(false);
   });
@@ -103,8 +91,6 @@ describe("Navbar — landmark", () => {
     const out = await render(
       <Navbar config={A} resolveHref={id} icon={icon} collapsible='always' placement='left' defaultOpen aria-label='Catalog' />,
     );
-    // The pure-CSS collapse is untouched by the landmark: every attribute that drives it is still on
-    // the `<details>`, and the `<nav>` carries the name plus its link of the rail's height chain.
     expect(landmark(out)?.[1]).toBe(' aria-label="Catalog" class="h-full"');
     expect(landmark(out)?.[2]).toBe(
       ' data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky top-0 left-0 max-h-dvh overflow-y-auto" open',
@@ -164,8 +150,6 @@ describe("Navbar — menu id scoping", () => {
     sections: [{ items: [{ label: "Edit", items: [{ label: "More", items: [{ label: "Deep", href: "deep" }] }] }] }],
   };
 
-  /** Every `id` and every `commandfor` in the markup, in document order. The complete set, so a
-   * stray extra id fails the comparison rather than hiding inside a substring match. */
   function idLinks(html: string): { ids: string[]; commandfor: string[] } {
     return {
       ids: [...html.matchAll(/ id="([^"]*)"/g)].map(([, value]) => value ?? ""),
@@ -200,16 +184,6 @@ describe("Navbar — menu id scoping", () => {
     });
   });
 
-  /**
-   * The residual, pinned so it is explicit rather than accidental. `placement` disambiguates two
-   * bars only when they differ; two bars sharing one placement and given no `id` mint the same
-   * menu ids, and `commandfor` resolves to the first match in the document — so the second bar's
-   * trigger toggles the first bar's popup.
-   *
-   * This is `Toolbar`'s posture too, and the fix is the same: give one of them an `id`. Documented
-   * on `NavbarProps.id`; asserted here so a future change that silently *removes* the collision
-   * (auto-generated ids, say) shows up as a failing test rather than an unnoticed behaviour change.
-   */
   it("collides when two bars share a placement and neither is given an id", async () => {
     const out = await render([
       <Navbar config={ONE_MENU} resolveHref={id} icon={icon} />,
@@ -324,15 +298,9 @@ describe("Navbar — placement", () => {
   });
 });
 
-/**
- * `collapsible` is additive: the `"mobile"` default must emit byte-for-byte what the component
- * emitted before the prop existed, or every consumer's bar silently changed shape.
- */
 describe("Navbar — collapsible", () => {
   const A: NavDefinition = { sections: [{ items: [{ label: "A", href: "a" }] }] };
 
-  /** The exact `class` value of the panel — the `<div>` immediately after the toggle, which carries
-   * no `data-slot` of its own. Whole-attribute match, so a stray utility fails the comparison. */
   const panelClass = (html: string) => /<\/summary><div class="([^"]*)"/.exec(html)?.[1] ?? "";
   const classOf = (html: string, slot: string) => new RegExp(`data-slot="${slot}"[^>]*? class="([^"]*)"`).exec(html)?.[1] ?? "";
   const rootClass = (html: string) => /<details data-slot="navbar" class="([^"]*)"/.exec(html)?.[1] ?? "";
@@ -347,21 +315,11 @@ describe("Navbar — collapsible", () => {
     expect(out).toBe(RAIL_LEFT_A);
   });
 
-  /**
-   * The rail's own `placement` default. A bar that never expands has no use for a full-width top
-   * strip, so an unnamed rail must render exactly what the named `placement="left"` one renders —
-   * pinned against that same constant, byte for byte, rather than against a fresh copy of it.
-   */
   it('defaults placement to "left" when collapsible="always" and none is given', async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='always' />);
     expect(out).toBe(RAIL_LEFT_A);
   });
 
-  /**
-   * The other half of that default: `idBase` falls back to the placement the bar actually renders
-   * at, so an unnamed rail namespaces its menu ids `left` — the edge it is pinned to. Config `A`
-   * mints no ids at all, so nothing above this covers it.
-   */
   it("namespaces an unnamed rail's generated menu ids by the resolved placement", async () => {
     const config: NavDefinition = { sections: [{ items: [{ label: "File", items: [{ label: "New", href: "new" }] }] }] };
     const out = await render(<Navbar config={config} resolveHref={id} icon={icon} collapsible='always' />);
@@ -375,12 +333,6 @@ describe("Navbar — collapsible", () => {
     );
   });
 
-  /**
-   * The toggle of a rail that scrolls its own overflow has to stay where the reader can reach it, so
-   * it is sticky against the `<details>` it sits in and carries the surface behind it. It also moves:
-   * a closed rail is a narrow column with room for the control at the start, an open one wants it
-   * beside the panel edge it closes.
-   */
   it("pins the rail's toggle and flips its justification on the disclosure's open state", async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='always' />);
     const toggle = classOf(out, "navbar-toggle").split(" ");
@@ -388,18 +340,11 @@ describe("Navbar — collapsible", () => {
     expect(toggle).toContain("sticky");
     expect(toggle).toContain("top-0");
     expect(toggle).toContain("bg-background/95");
-    // `group-open:`, never `open:` or `[&[open]]:` — `open` is on the ancestor `<details>` carrying
-    // `.group`, and a variant reading the element's own state would match nothing here.
     expect(toggle).toContain("justify-start");
     expect(toggle).toContain("group-open:justify-end");
     expect(toggle).not.toContain("justify-end");
   });
 
-  /**
-   * The height chain, which is what makes `max-h-dvh overflow-y-auto` on the `<details>` mean
-   * anything. `h-full` is a percentage: it resolves to `auto` against any `auto` ancestor, so both
-   * boxes this component owns between the consumer's layout and the disclosure have to carry it.
-   */
   it("carries the height chain on both boxes it owns between the layout and the disclosure", async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='always' />);
 
@@ -407,11 +352,6 @@ describe("Navbar — collapsible", () => {
     expect(/<nav class="h-full">/.test(out)).toBe(true);
   });
 
-  /**
-   * The containment that makes the rail work safe. `collapsible="mobile"` is the default every
-   * existing consumer is on, and it has nothing to cap — so its markup is byte-identical, including
-   * the scope root and the landmark, which take no class at all there.
-   */
   it("leaves the expanding bar's markup untouched — no height chain, no sticky toggle", async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} />);
 
@@ -435,8 +375,6 @@ describe("Navbar — collapsible", () => {
         rootClass(await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='always' placement={placement} />)),
       ),
     );
-    // The vertical edges cap and scroll; `max-h-dvh` rather than `h-screen`, which mobile browser
-    // chrome makes taller than the viewport actually is.
     expect(classes).toEqual([
       "group z-40 bg-background/95 backdrop-blur sticky top-0 inset-x-0",
       "group z-40 bg-background/95 backdrop-blur sticky bottom-0 inset-x-0",
@@ -464,7 +402,6 @@ describe("Navbar — defaultOpen", () => {
 describe("Navbar — groups", () => {
   const DOCS: NavDefinition = { sections: [{ items: [{ heading: "Docs", group: [{ label: "Intro", href: "intro" }] }] }] };
 
-  /** Every `id`, `aria-labelledby` and `commandfor` in the markup, in document order. */
   const attrs = (html: string, name: string) => [...html.matchAll(new RegExp(` ${name}="([^"]*)"`, "g"))].map(([, value]) => value ?? "");
 
   it("renders a labelled group whose children are visible bar links", async () => {
@@ -474,8 +411,6 @@ describe("Navbar — groups", () => {
 
   it("associates the group with its heading by id, without asserting a heading level", async () => {
     const out = await render(<Navbar config={DOCS} resolveHref={id} icon={icon} />);
-    // A `<p>` and not an `<h2>`: the bar cannot know what level it nests under, and picking one for
-    // its type size is exactly the heading skip `forge-ui-heading-order` forbids.
     expect(attrs(out, "aria-labelledby")).toEqual(["navbar-group-top-0"]);
     expect(attrs(out, "id")).toEqual(["navbar-group-top-0"]);
     expect(/<p id="navbar-group-top-0"/.test(out)).toBe(true);
@@ -483,8 +418,6 @@ describe("Navbar — groups", () => {
 
   it("renders a group's children as navbar links, never as menu rows", async () => {
     const out = await render(<Navbar config={DOCS} resolveHref={id} icon={icon} />);
-    // The assertion that proves a group is not a dropdown wearing a heading: its destinations are
-    // visible `<a data-slot="navbar-link">`, not `menu-link-item` rows inside a popup.
     expect(attrs(out, "data-slot")).toEqual([
       "navbar",
       "navbar-toggle",
@@ -526,9 +459,6 @@ describe("Navbar — groups", () => {
       ],
     };
     const out = await render(<Navbar config={config} resolveHref={id} icon={icon} />);
-    // The counter interleaves across both kinds, so the menu takes index 1 and the second group
-    // index 2 — menu ids in a bar containing groups are no longer contiguous. Harmless, and pinned
-    // here so nobody reads it as a bug.
     expect(attrs(out, "id")).toEqual(["navbar-group-top-0", "navbar-menu-top-1", "navbar-group-top-2"]);
     expect(attrs(out, "commandfor")).toEqual(["navbar-menu-top-1"]);
   });
@@ -538,8 +468,6 @@ describe("Navbar — groups", () => {
       sections: [{ items: [{ heading: "Admin", group: [{ label: "Users", href: "users", filters: ["root"] }], filters: ["admin"] }] }],
     };
     const out = await render(<Navbar config={config} resolveHref={id} icon={icon} activeFilters={["root"]} />);
-    // The group is seeded `hidden` (no `admin` token) while its child is not (its own `root` token
-    // matches) — two independent decisions, not one inherited from the parent.
     expect(out).toBe(GROUP_FILTERED);
   });
 });

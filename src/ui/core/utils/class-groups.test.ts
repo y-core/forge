@@ -1,9 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { classGroup, GROUP_OVERRIDES } from "./class-groups";
 
-// `classGroup` receives a utility that has already had its modifier prefix, importance marker and
-// value slash stripped by `cn` — never a full token such as `hover:h-5` or `bg-primary/90`.
-
 describe("classGroup exact families", () => {
   const cases: { utility: string; expected: string }[] = [
     { utility: "block", expected: "display" },
@@ -140,8 +137,6 @@ describe("classGroup alignment families", () => {
     { utility: "self-start", expected: "align-self" },
     { utility: "justify-center", expected: "justify-content" },
     { utility: "justify-self-center", expected: "justify-self" },
-    // Near-collision: `justify` is a text-align value, but TEXT_ALIGNS is only ever consulted on
-    // the remainder after a `text-` prefix, so it can never claim the alignment families.
     { utility: "text-justify", expected: "text-align" },
   ];
 

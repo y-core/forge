@@ -88,8 +88,6 @@ describe("resolveVersion() — auto bump", () => {
     expect(result).toEqual({ version: "1.0.0", reason: "auto-major", previous: "v0.2.0" });
   });
 
-  // The regression this range scan exists for. Reading only the tip subject — `chore: c` — resolved
-  // a patch and silently discarded the major bump sitting one commit behind it.
   it("bumps major when 'major:' is on a non-tip commit in the range", () => {
     const result = resolveVersion(
       { cwd: CWD, tagPrefix: PREFIX },

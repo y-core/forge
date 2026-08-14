@@ -18,7 +18,6 @@ function makeApp(handler: ReturnType<typeof definePage>) {
 
 const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
 
-/** Structural, so it accepts a `Forge` at any binding type without restating its generics. */
 type Requestable = { request(path: string, init: RequestInit): Promise<Response> };
 
 function post(app: Requestable, body: string, path = "/test"): Promise<Response> {
@@ -27,28 +26,16 @@ function post(app: Requestable, body: string, path = "/test"): Promise<Response>
 
 const NameSchema = strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 
-/**
- * The shared pipeline's 422 refusal, built from one template because several cases assert it and the
- * point of those cases is that the *same* bytes come back from the page path as from the action path.
- * The anchor case in `definePage — the schema pipeline` spells the literal out in full.
- */
 function refusal(...fields: readonly string[]): string {
   const items = fields.map((field) => `<li>${field}</li>`).join("");
   return `<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5">${items}</ul></div>`;
 }
 
-/**
- * What the **app-level** boundary answers, which is where a `definePage` throw with no `onError`
- * lands. Named because a status-only assertion cannot tell this apart from `ACTION_500_FRAGMENT` —
- * both are 500, and only the body says which mechanism produced it.
- */
 const APP_BOUNDARY_500 = "<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1><p>An unexpected error occurred.</p></body></html>";
 
-/** What `defineAction`'s own recovery arm answers. `definePage` deliberately does not have this arm. */
 const ACTION_500_FRAGMENT =
   '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>';
 
-/** Captures the structured log lines written while `run` executes. */
 async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {
   const lines: string[] = [];
   const originalLog = console.log;
@@ -278,13 +265,6 @@ describe("definePage", () => {
   });
 });
 
-/**
- * Declaring a `schema` puts the page's action behind the same read → drop → guard → `safeParse`
- * sequence `defineAction` runs. The guarantee this suite exists for is a *negative* one — the action
- * is unreachable with a body the schema refused — so every case here asserts what did **not** run
- * alongside the bytes that came back, and each is paired with the case proving the same trio does run
- * on a body the schema accepts.
- */
 describe("definePage — the schema pipeline", () => {
   it("renders exactly this refusal, which is the literal every other case here is asserted against", () => {
     expect(refusal("name")).toBe(
@@ -319,8 +299,6 @@ describe("definePage — the schema pipeline", () => {
     const res = await post(app, "name=");
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal("name"));
-    // The empty trace is only meaningful next to the case below, which proves the very same trio
-    // runs on a body the schema accepts — a page whose route never matched would trace empty too.
     expect(calls).toEqual([]);
   });
 
@@ -338,8 +316,6 @@ describe("definePage — the schema pipeline", () => {
         schema: Schema,
         action: (c, _config, data) => {
           calls.push("action");
-          // Data-first could not have been additive: an action written against `(c, config)` would
-          // silently retype its first parameter. This is what pins the chosen order.
           firstArgIsTheContext = c.request.method === "POST";
           received = data;
           return { saved: data.name };
@@ -361,15 +337,10 @@ describe("definePage — the schema pipeline", () => {
     expect(calls).toEqual(["action", "loader", "view"]);
     expect(firstArgIsTheContext).toBe(true);
     expect(received).toEqual({ name: "Jane" });
-    // An absent optional field stays absent rather than arriving as `""` — the property `formToObject`
-    // exists to hold, now reaching the page builder too.
     expect("phone" in (received as object)).toBe(false);
   });
 
   it("leaves a schema-less page exactly as it was — no third argument, and the body still unread", async () => {
-    // The additive-not-breaking guarantee, and the most important regression guard in this file. If the
-    // pipeline ever became unconditional, `parseFormData` would have piped the request body through its
-    // counting transform before the action ran, and the action's own read would throw.
     let thirdArg: unknown = "never assigned";
     let bodyUsedAtEntry: boolean | undefined;
     let readByAction: string | null = null;
@@ -399,7 +370,6 @@ describe("definePage — the schema pipeline", () => {
   });
 
   it("keeps a schema-less page's action reachable with a body a schema would have refused", async () => {
-    // The same guarantee from the other side: no schema means no refusal, however malformed the body.
     const app = new Forge();
     mapHandler(app, "POST", "/test", definePage({ action: () => "ran", view: (_c, _config, state) => new Response(String(state.actionData)) }));
 
@@ -409,8 +379,6 @@ describe("definePage — the schema pipeline", () => {
   });
 
   it("never runs the pipeline on a GET, so a bodiless request still renders", async () => {
-    // A GET carries no body, so a pipeline that ran would fail its own `parseFormData` and answer 400.
-    // The rendered 200 is therefore evidence the sequence was skipped, not merely that it passed.
     const calls: string[] = [];
     const app = makeApp(
       definePage({
@@ -430,7 +398,6 @@ describe("definePage — the schema pipeline", () => {
   });
 
   it("never runs the pipeline when the page declares a schema but no action", async () => {
-    // There is no terminal step to protect, so a body the schema would refuse is simply not read.
     const app = new Forge();
     mapHandler(app, "POST", "/test", definePage({ schema: NameSchema, view: (_c, _config, state) => new Response(`rendered:${state.method}`) }));
 
@@ -440,12 +407,6 @@ describe("definePage — the schema pipeline", () => {
   });
 });
 
-/**
- * A page's refusals are the page's responses, so they carry its configured `cache`/`headers` — a
- * genuine difference from `defineAction`, whose refusal is a bare fragment. That is what routing the
- * pipeline's `Response` through `applyResponseHeaders` buys, and it is worth pinning on all three
- * refusal statuses rather than the one that happened to be written first.
- */
 describe("definePage — a refusal carries the page's own headers", () => {
   const CACHE = "no-store" as const;
   const HEADERS = { "x-page": "value" };
@@ -523,23 +484,11 @@ describe("definePage — a refusal carries the page's own headers", () => {
   });
 });
 
-/**
- * The sequence is shared and so are its options: a page declares `onValidationError`, `honeypot`,
- * `onBotDetected` and `maxBytes` exactly as an action does. Each case here is written so that
- * un-wiring the option changes the bytes — a refusal that still names the schema's own field, a
- * decoy that would otherwise be an undeclared key, a cap only a raised limit could clear.
- */
 describe("definePage — the submission sequence's options are the page's own", () => {
-  /** Unguessable by construction, so a fallback that dropped a "likely" decoy name could not match it. */
   const DECOY = "contact_reason_2";
 
-  /** Carries characters that must survive as entities, so a refusal cannot be asserted by substring. */
   const MessageSchema = strictObject({ message: v.pipe(v.string(), v.minLength(1, "Tell us what you'd like & we'll reply.")) });
 
-  /**
-   * The page's own markup, rendered from the same function on a first paint and on a refusal — which
-   * is the capability under test: the refusal is this page, not the shared fragment.
-   */
   function renderForm(errors: readonly string[]): Response {
     const items = errors.map((message) => `<li>${escapeHtml(message)}</li>`).join("");
     return new Response(`<main><h1>Contact</h1><form method="post"><ul>${items}</ul></form></main>`, {
@@ -578,8 +527,6 @@ describe("definePage — the submission sequence's options are the page's own", 
     expect(await res.text()).toBe(
       '<main><h1>Contact</h1><form method="post"><ul><li>Tell us what you&#39;d like &amp; we&#39;ll reply.</li></ul></form></main>',
     );
-    // The page answered without running its own trio, so the errors came from the sequence's issues
-    // rather than from a second validation pass the action would have had to write.
     expect(calls).toEqual([]);
     expect(methodAtRefusal).toBe("POST");
   });
@@ -609,8 +556,6 @@ describe("definePage — the submission sequence's options are the page's own", 
     const res = await post(decoyPage(calls), `name=Jane&${DECOY}=spam`);
 
     expect(res.status).toBe(422);
-    // Naming `name` is the whole assertion: an unwired honeypot would have reached `strictObject`,
-    // which refuses `contact_reason_2` as the undeclared key it is — same status, different bytes.
     expect(await res.text()).toBe(refusal("name"));
     expect(calls).toEqual([]);
   });
@@ -687,12 +632,6 @@ describe("definePage — the submission sequence's options are the page's own", 
   });
 });
 
-/**
- * Derive-only holds on **both** builders: the CSRF field is dropped because `csrfProtection` recorded
- * on the request which field it took the token from, and on no other ground. Both directions are
- * pinned, because a fallback that dropped `_csrf` on a guess would make the positive case pass while
- * the guard was absent.
- */
 describe("definePage — the CSRF field the guard consumed", () => {
   const SECRET = "a".repeat(64);
   const KeysSchema = strictObject({ name: v.string() });
@@ -726,16 +665,6 @@ describe("definePage — the CSRF field the guard consumed", () => {
   });
 });
 
-/**
- * **The asymmetry between the two builders is deliberate and is pinned here so it is not "unified"
- * later.** The pipeline lets a throw escape rather than answering it, and the two builders recover
- * differently on purpose: `defineAction` owns a 500 fragment because its terminal step *is* the
- * response, while a page with no `onError` rethrows to the app boundary, which is where a page's
- * unhandled failure has always been rendered.
- *
- * Every case asserts the exact body. Forge's app-level boundary also answers 500, so a status-only
- * assertion cannot distinguish "the builder caught it" from "the framework caught it".
- */
 describe("definePage — a throwing schema", () => {
   const ThrowingCheck = strictObject({
     name: v.pipe(

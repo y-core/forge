@@ -18,8 +18,6 @@ export type FlagDef = BooleanFlagDef | StringFlagDef;
 
 export type FlagDefs = Record<string, FlagDef>;
 
-// Conditional mapped type: boolean flags → boolean, string flags with a default → string,
-// required string flags → string, all other string flags → string | undefined.
 export type ResolvedFlags<F extends FlagDefs> = {
   [K in keyof F]: F[K] extends BooleanFlagDef
     ? boolean
@@ -45,9 +43,7 @@ export interface CommandDefinition<F extends FlagDefs = FlagDefs> {
   run?: (args: string[], flags: ResolvedFlags<F>) => void | Promise<void>;
 }
 
-// CommandBase holds the tree-structural properties without the typed run handler.
-// Used for parent/commands links to avoid invariance conflicts arising from the
-// contravariant `flags` parameter in `Command<F>.run`.
+/** Flag-type-erased view of a command, used to walk the command tree where the flag generic cannot be carried. */
 export interface CommandBase {
   name: string;
   description: string;
@@ -57,7 +53,6 @@ export interface CommandBase {
   commands: CommandBase[];
 }
 
-// Command<F> extends CommandBase and adds a type-safe run handler.
 export interface Command<F extends FlagDefs = FlagDefs> extends CommandBase {
   flags: F;
   run?: (args: string[], flags: ResolvedFlags<F>) => void | Promise<void>;
@@ -76,25 +71,18 @@ export type ToolHints = Record<string, string>;
 
 /** Outcome of a buffered child process spawned by `capture`. */
 export interface CaptureResult {
-  /** Exit code; `1` when the process was killed by a signal or never spawned. */
   code: number;
-  /** Combined stdout and stderr, interleaved in write order. */
   output: string;
-  /** Wall-clock duration of the spawn, in milliseconds. */
   ms: number;
 }
 
 /** A logger bound to a `[scope]` prefix. */
 export interface ScopedLogger {
-  /** Progress line to stdout: `[scope] msg`. */
   info(msg: string): void;
-  /** Warning line to stderr: `[scope] msg`. */
   warn(msg: string): void;
-  /** Completion line to stdout: `[scope] msg`. */
   done(msg: string): void;
 }
 
-// Internal types used to invoke run without knowing the specific flag type.
-// CommandBase omits run deliberately; we recover it here via an assertion.
 export type AnyFlags = Record<string, boolean | string | undefined>;
+/** Flag-type-erased call signature `execute` invokes a command through once its flag generic is gone. @internal */
 export type CallableCommand = { run?: (args: string[], flags: AnyFlags) => void | Promise<void> };

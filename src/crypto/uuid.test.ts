@@ -108,8 +108,6 @@ describe("uuidv7 — counter overflow", () => {
 
     expect(new Set(ids).size).toBe(5000);
     expect([...ids].sort()).toEqual(ids);
-    // 5000 IDs overflow the 12-bit counter exactly once: the seed leaves 3073-4096 slots in the
-    // frozen millisecond, so the remainder lands in the borrowed one and never overflows again.
     expect([...new Set(ids.map(timestampHex))].sort()).toEqual([
       frozen.toString(16).padStart(12, "0"),
       (frozen + 1).toString(16).padStart(12, "0"),
@@ -328,9 +326,7 @@ describe("uuidv7Bytes", () => {
     const generate = createUuidv7Bytes({ now: frozenClock(1_700_000_000_000) });
     const minted = Array.from({ length: 1000 }, generate);
 
-    // Sorting the bytes the way SQLite sorts a BLOB must reproduce insertion order …
     expect([...minted].sort(compareBytes).map(uuidFromBytes)).toEqual(minted.map(uuidFromBytes));
-    // … and must agree with the ordering of the TEXT form of the same values.
     expect(minted.map(uuidFromBytes).sort()).toEqual(minted.map(uuidFromBytes));
   });
 

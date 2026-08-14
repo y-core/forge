@@ -109,19 +109,15 @@ describe("createTag()", () => {
 describe("commit()", () => {
   it("returns false and does not call git commit when nothing is staged", () => {
     mockExecSync.mockClear();
-    // First call: git add (returns ""), second call: git diff --cached --name-only (returns "")
     mockExecSync.mockReturnValueOnce("");
     mockExecSync.mockReturnValueOnce("");
 
     const result = commit("/cwd", "chore: release 1.0.0", ["package.json"]);
 
     expect(result).toBe(false);
-    // git add was called
     expect(mockExecSync.mock.calls).toHaveLength(2);
     expect(mockExecSync.mock.calls[0]![1]).toEqual(["add", "package.json"]);
-    // git diff --cached was called
     expect(mockExecSync.mock.calls[1]![1]).toEqual(["diff", "--cached", "--name-only"]);
-    // git commit was NOT called
     const commitCall = mockExecSync.mock.calls.find((c) => Array.isArray(c[1]) && (c[1] as string[]).includes("commit"));
     expect(commitCall).toBeUndefined();
 
@@ -130,7 +126,6 @@ describe("commit()", () => {
 
   it("returns true and calls git commit when files are staged", () => {
     mockExecSync.mockClear();
-    // First call: git add, second call: git diff --cached (non-empty), third call: git commit
     mockExecSync.mockReturnValueOnce("");
     mockExecSync.mockReturnValueOnce("package.json");
     mockExecSync.mockReturnValueOnce("");

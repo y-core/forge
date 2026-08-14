@@ -1,30 +1,3 @@
-/* The mapping layer — where a role becomes a colour.
-   ─────────────────────────────────────────────────────────────────────────────
-   Three files, three jobs, and this is the middle one:
-
-     theme-neutral.css   THE SCALE     --gray-1 … --gray-12, per mode      (swappable)
-     theme-colors.css    THE HUES      --red-*, --yellow-*, --black-a*     (fixed)
-       → this file       THE MAPPING   --background: var(--gray-1)         (mode-free)
-         → @theme inline THE BRIDGE    --color-background, so bg-* resolves at runtime
-
-   **This file declares no `.dark` block, and that is the invariant the whole system rests on.** A
-   step means the same thing in both modes — step 1 is the app background whether the app is light or
-   dark — so `--background: var(--gray-1)` is already the whole statement, and a `.dark` twin would
-   only be a second chance to disagree. Every mode-varying value lives one layer down, in a file that
-   declares nothing but scale steps.
-
-   It was not always so: all 24 semantic tokens used to be declared twice, with nothing stopping the
-   two copies drifting apart. `validate-contrast` now fails any audited token that appears under
-   `.dark` at all, even when the value there is correct.
-
-   **Which step a role reaches for is forge's decision, not Radix's.** The scale files own the values;
-   this file owns the mapping, and the seam between them is what lets the two disagree without either
-   being edited. The border tokens are where that matters — see the note beside `--border`.
-
-   Component rules are in `forge-ui.css`; the two state utilities in `forge-ui.css`.
-   This file is declarations only.
-  ────────────────────────────────────────────────────────────────────────────── */
-
 /* To use a web font, uncomment the Tailwind v4 defaults and prepend your own:
      --font-sans: "Inter", var(--theme-font-sans);
 :root {
@@ -36,16 +9,6 @@
 
 :root {
   --radius: 0.625rem;
-
-  /* ── The brand seam ─────────────────────────────────────────────────────── */
-  /* Forge now ships a real accent, and `--accent-12: var(--gray-12)` is gone with the sentence that
-     explained it. That alias existed because there was no brand hue: `--primary` was step 12 of the
-     grey, so "theming" forge meant picking a grey and every `Button variant='primary'` was
-     near-black. `theme-neutral.css` declares a full `--accent-1…12` scale, so the seam moved from
-     one aliased step to a scale an application re-declares the same way it re-declares the grey.
-
-     `--primary` is Radix's `solid` state — step 9, the solid background — with `-contrast` as its
-     foreground. Both are named positions in the Radix vocabulary rather than forge inventions. */
 
   /* ── Semantic tokens — declared once, for both modes ───────────────────── */
   --background:           var(--gray-1);
@@ -66,16 +29,6 @@
   --muted:                var(--gray-3);
   --muted-foreground:     var(--gray-11);
 
-  /* Step 3, not step 4, and that is the bug rather than the design: `--secondary`, `--muted` and
-     `--accent` all resolve to one value, so `hover:bg-accent` inside a `bg-muted` panel is a visual
-     no-op. Radix has a step for exactly this — 4 is "hovered UI element background" to 3's "UI
-     element background" — and it is `#e8e8e8` against 3's `#f0f0f0`, so moving this one reference is
-     the whole fix. It is deliberately not made here: it repaints 154 `bg-accent` sites, which is a
-     visible change and belongs in its own one-line commit rather than buried in a value migration.
-
-     (`--background` used to be the fourth name in this collapse. It is not any more — step 1 is
-     `#f9f9f9` where step 3 is `#f0f0f0` — so adopting the scale fixed one quarter of this by
-     itself.) */
   --accent:               var(--gray-3);
   --accent-foreground:    var(--gray-12);
 
@@ -87,55 +40,14 @@
   --warning:              var(--yellow-9);
   --warning-foreground:   var(--yellow-contrast);
 
-  /* **Not steps 6, 7 and 8**, and this is the sharpest place forge's mapping departs from Radix's
-     step names. Radix calls step 6 "subtle borders and separators", step 7 "UI element border and
-     focus rings" and step 8 "hovered UI element border" — but measured against the surfaces they sit
-     on, those three are **1.24, 1.38 and 1.68** to 1 in light. WCAG 1.4.11 asks 3:1 of anything that
-     identifies a control, and `--input` is the sole boundary a text field has. Radix's own contrast
-     guarantee is explicit about its scope — steps 11 and 12, to APCA Lc 60 and Lc 90 on a step 2
-     background — and says nothing about 7.
-
-     So the decorative token keeps Radix's step and the affordances move to the steps that clear the
-     floor. `--border` is step 6, which is what a hairline should be and where Radix puts it;
-     `--input` and `--track` are step 10 (3.33 light / 3.76 dark) and `--ring` is step 11 (5.19 /
-     7.67), preserving the one-step gap that keeps `focus:border-ring` from being a no-op.
-
-     This is exactly the defect the 0.0.83 audit found and fixed — `--input` shipped at roughly half
-     the required ratio for 82 versions — so adopting step 7 because it is *called* the UI element
-     border would have re-introduced it under a better name. Whether to instead author compliant
-     values at steps 7 and 8 is an open question, deliberately left to a second pass. */
   --border:               var(--gray-6);
   --input:                var(--gray-10);
-  /* Deliberately equal to `--input` rather than derived from it. `--input` is named for a
-     *boundary*, so an app re-pointing it to a brand outline colour is doing what the name invites —
-     and before this token existed that also repainted the `Switch` off state and the `Slider`
-     track, because one token was doing two jobs. Aliasing would re-create the coupling. */
+
   --track:                var(--gray-10);
   --ring:                 var(--gray-11);
 
-  /* The modal scrim. `--black-a6` rather than the `rgb(0 0 0 / 0.5)` this used to be written as
-     inline on `[data-slot~="dialog"]::backdrop` — same job, but now an application can dim a dialog
-     to its own taste without overriding a component rule, and the value sits with the other colours
-     instead of 250 lines further down. */
   --overlay:              var(--black-a6);
 
-  /* ── Status roles ──────────────────────────────────────────────────────── */
-  /* Five roles × four intents. Distinct from `--destructive` / `--success` / `--warning`, and the
-     split is the whole point: those three are **fills the application owns** and may re-point to a
-     brand — a warning that is orange rather than yellow is an ordinary thing for an app to want —
-     while these are **fixed status hues forge owns**, which no scheme or brand swap moves by
-     accident. The two were one token until recently, and the collision was not hypothetical: the
-     `theme-zinc.css` that used to ship here re-pointed `--warning` to orange, which repainted every
-     status panel with it.
-
-     `-subtle` is the panel (`Alert`, `Toast`, the `http` banners) and `-strong` the chip (`Badge`).
-     They are deliberately *not* unified: a badge is a small filled chip, so it starts one stop in
-     from a panel's surface. Two hand-written stop choices in two component files become two named
-     roles in one place, which is what stops them drifting.
-
-     There is no solid `--status-info` pair. No forge component renders one, and a declaration with
-     no consumer inside forge is a declaration nobody checks — the failure that let a scheme file
-     alias a palette that did not exist and ship broken for 82 versions. */
   --status-danger-subtle:             var(--red-2);
   --status-danger-subtle-foreground:  var(--red-12);
   --status-danger-strong:             var(--red-3);
@@ -196,10 +108,6 @@
   --color-track:                       var(--track);
   --color-ring:                        var(--ring);
 
-  /* The status family, so `bg-status-danger-subtle` and `text-status-danger-subtle-foreground` are
-     ordinary utilities. Only the `--status-*` roles are bridged — the scale steps behind them are
-     not, deliberately: a `bg-red-3` utility would be a second, unaudited way to reach a colour, and
-     `forge-ui-color-token-only` exists to say there is one way. */
   --color-status-danger-subtle:             var(--status-danger-subtle);
   --color-status-danger-subtle-foreground:  var(--status-danger-subtle-foreground);
   --color-status-danger-strong:             var(--status-danger-strong);

@@ -309,6 +309,11 @@ platform's runtime type. Because the binding return is *constrained to* the cont
 *pinned to* the neutral type, the compiler infers the concrete type and proves it satisfies the
 contract — **no cast at any call site.**
 
+**A pass-through option bag is typed `unknown` on the contract.** `R2BucketLike`'s `get` and `list`
+options go straight to the binding and forge never reads a field of them, so naming a shape would
+pin the supertype to one platform's spelling and stop a real `R2Bucket` from satisfying it.
+`put` is typed (`R2PutLike`) precisely because the adapter *constructs* that object.
+
 **Where a platform brand genuinely forces a cast, localise it once inside the adapter — never in
 a resolver or a consumer.** The full rationale is in `src/storage/README.md`.
 

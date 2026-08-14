@@ -3,14 +3,7 @@ import { basename, extname, join, relative, resolve } from "node:path";
 import type { ResolvedJsBundle } from "../types";
 import { safeJoin } from "./paths";
 
-/**
- * Bundles JavaScript entries with esbuild and writes them to `opts.outDir`.
- *
- * **Output directory ownership:** `buildJS` removes all non-hidden files (and the `chunks/`
- * subdirectory) inside each `bundle.outdir` on each rebuild. Do not place hand-authored files
- * alongside generated output — they will be deleted. The path containment guard ensures
- * deletions stay within `opts.outDir`.
- */
+/** Bundles JavaScript entries with esbuild and writes them to `opts.outDir`. */
 export async function buildJS(
   bundles: ResolvedJsBundle[],
   opts: { outDir: string; minify?: boolean; hash?: boolean },
@@ -20,7 +13,6 @@ export async function buildJS(
   const shouldHash = opts.hash ?? false;
   const absPublicDir = resolve(opts.outDir);
 
-  // Group bundles by resolved outdir so each outdir is cleaned exactly once.
   const byOutdir = new Map<string, ResolvedJsBundle[]>();
   for (const bundle of bundles) {
     const key = safeJoin(absPublicDir, bundle.outdir);
@@ -33,7 +25,6 @@ export async function buildJS(
   const mapping: Record<string, string> = {};
 
   for (const [outdir, group] of byOutdir) {
-    // Clean previous entry files and stale chunks once per outdir.
     try {
       for (const entry of readdirSync(outdir, { withFileTypes: true })) {
         if (entry.isFile() && !entry.name.startsWith(".")) {
@@ -46,7 +37,6 @@ export async function buildJS(
     rmSync(join(outdir, "chunks"), { recursive: true, force: true });
     mkdirSync(outdir, { recursive: true });
 
-    // Sub-group by (format, splitting, define) — these are esbuild per-build settings.
     const bySubKey = new Map<string, ResolvedJsBundle[]>();
     for (const bundle of group) {
       const subKey = `${bundle.format ?? "esm"}:${bundle.splitting ?? false}:${JSON.stringify(bundle.define ?? {})}`;

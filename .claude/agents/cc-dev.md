@@ -78,16 +78,34 @@ reopen mid-implementation.
 - Early returns over nested `if` blocks
 - Named exports only — no default exports except Worker entries
 - `_` prefix for private fields
-- code should be self-describing and self-documenting with accurate and concise naming
-- comments need to earn it's place in the codebase.
-- a comment explains the non-obvious **why**; a decision not plainly clear from the code. 
-— don't include verbose comments unless the code does something non-obvious, or unexpected.
+
+## The Comment Budget — Binding
+
+**`PRODUCTION_TS_RULES.md` §5 is binding on every line you write. It is a ceiling, not a floor.**
+Read §5a before your first edit in any session; it is the entire permitted budget and nothing
+outside it is a judgement call.
+
+Three forms are allowed. Nothing else is:
+
+1. **One line** of TSDoc on an exported symbol — one sentence, saying what it does.
+2. **`@public` / `@internal`** appended to that line.
+3. **A rare one-or-two-line inline *why*** — only under §5a's four conditions. Most files have zero.
+
+**Unbudgeted comments are deleted from any file you touch.** Multi-paragraph TSDoc, `@example`
+blocks, banners, commented-out code, TODO/FIXME, and restatements of the code go — in existing
+code as readily as in new. This is not scope creep and is not covered by the no-adjacent-refactor
+rule; deleting them is part of the change.
+
+**The first fix for an unclear line is a better name, a smaller function, or a named intermediate
+— never a comment.** When you have real rationale, route it per §5c: `.decisions/` for
+architecture, the namespace `README.md` for usage, a *test* for a behavioural claim, a ledger task
+for undone work, the commit message for history. Never the source.
 
 ## Build Verification
 
 After every implementation batch, **delegate the gate to `cc-tester`**:
 
-- Ask `cc-tester` to run `bun run check` and report the verdict. Never run the gate inline, and
+- Ask `cc-tester` to run `bun run verify` and report the verdict. Never run the gate inline, and
   never stream its output through this context.
 - On `✗`: fix the reported failures, then re-delegate. Repeat until `✓ green`.
 - Never leave a broken build.
@@ -177,8 +195,8 @@ signature**, which `Grep` will under-report on re-exported or aliased symbols.
 - Factory functions accept dependencies as parameters; no module-level mutable state
   (`PRODUCTION_TS_RULES.md` §1)
 - Prefer array methods, object spread, and nullish coalescing over imperative loops and mutation
-- TSDoc on every exported symbol: one line minimum, `@internal` for non-public, `@example` where
-  usage is non-obvious
+- Comments obey the budget in `PRODUCTION_TS_RULES.md` §5a — one TSDoc line per export, plus
+  `@internal` where non-public. No `@example`, ever.
 - Named exports only — no default exports
 
 ### Error Handling

@@ -12,6 +12,7 @@ const INPUT_BASE = "w-full rounded-lg border border-input bg-background px-3 py-
 const INPUT_FOCUS = "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20";
 const INPUT_DISABLED = "disabled:cursor-not-allowed disabled:opacity-50";
 
+/** A styled text `<input>`, wired to a `FieldDescriptor` when one is passed. @public */
 export const Input: FC<InputProps> = ({ class: cls, field, "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 

@@ -1,5 +1,7 @@
+/** A flat map of `hx-*` attributes. @public */
 export type HxAttrs = Record<string, string>;
 
+/** The htmx attributes `hxAttrs` can emit. @public */
 export interface HxAttrsProps {
   get?: string;
   post?: string;
@@ -30,27 +32,8 @@ function encodeMap(m: Record<string, string>): string | undefined {
   return JSON.stringify(m);
 }
 
-/**
- * Converts a typed `HxAttrsProps` object into a flat `hx-*` attribute map for spreading onto JSX
- * elements. Undefined and empty-string values are omitted.
- *
- * @remarks
- * Selector- and JSON-valued props — `target`, `select`, `selectOob`, `include`, `trigger`,
- * `values` (→ `hx-vals`) and `headers` (→ `hx-headers`) — are emitted **verbatim**. They must be
- * TRUSTED, developer-supplied values, never raw user input: htmx interprets them client-side as
- * CSS selectors, trigger expressions, and JSON, so an attacker-controlled value can retarget
- * swaps, exfiltrate form fields via `hx-include`, or inject request headers. Escaping does not
- * help — these are behavioral directives, not display text.
- *
- * The URL-valued props — `get`, `post`, `put`, `patch`, `delete`, `pushUrl` and `replaceUrl` — must
- * be trusted for a different reason: the JSX renderer's URL sanitizer does not cover any `hx-*`
- * attribute, and deliberately so. It rejects a URL by rewriting it to `"#"`, which on an `href` is
- * a dead link but on an `hx-get` is a live same-origin request for the current page — so
- * sanitizing here would turn a refusal into a silently successful wrong request. Build these from
- * route definitions, never from request data.
- *
- * @public
- */
+/** Converts a typed `HxAttrsProps` object into a flat `hx-*` attribute map, omitting undefined and empty values. @public */
+// Every value is emitted verbatim and unsanitized by design; selectors, trigger expressions and URLs must be developer-supplied (HTMX.md §7, §7a).
 export function hxAttrs(p: HxAttrsProps): HxAttrs {
   const out: HxAttrs = {};
   const add = (key: string, val: string | undefined) => {

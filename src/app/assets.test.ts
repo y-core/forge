@@ -85,8 +85,6 @@ describe("serveAssets", () => {
   });
 
   it("passes through Cache-Control from ASSETS without overwriting it (caching owned by _headers)", async () => {
-    // Asset caching is delegated to the declarative public/_headers file emitted by the build
-    // pipeline — the Worker must not inject or overwrite Cache-Control for any asset path.
     const upstream = new Response("body{}", { status: 200, headers: { "Cache-Control": "no-store" } });
     const { app, env } = makeApp(upstream);
     const res = await app.request("/assets/main.205ed97c.css", {}, env as Bindings);

@@ -2,22 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { Tabs } from "./tabs";
 
-/**
- * `core/Tabs`' SSR markup, pinned exactly.
- *
- * `tabs.browser.ts` proves the arrow keys move focus and that selection follows it. What is pinned
- * here is the markup that arrives *before* any script does, and three parts of it are load-bearing
- * on their own:
- *
- * - `aria-selected` and `data-selected` are a pair — ARIA for the reader, the data hook for CSS —
- *   and a test asserting one leaves the other free to vanish (`UI_SSR_COMPONENTS.md` §4b).
- * - `hidden` on an unselected panel is the platform's mechanism, so the *initial* render is correct
- *   with JavaScript disabled entirely. A behaviour test can never observe that, because by then the
- *   controller has run.
- * - the composite marker rides on the selected tab, not the first one, so the boot tab stop lands
- *   where selection already is.
- */
-
 const TAB_BASE =
   "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground bg-transparent border-0 cursor-pointer outline-none " +
   "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring " +
@@ -89,22 +73,6 @@ describe("Tabs", () => {
   });
 });
 
-/**
- * **Why there is no "carries no aria-orientation when horizontal" case here.** base-ui asserts that
- * absence (TabsRoot.test.tsx:1134) and forge deliberately does not: `tabs.tsx` emits
- * `aria-orientation` on both axes, so a horizontal list carries `aria-orientation="horizontal"` —
- * pinned by the two cases directly below. That is forge's convention rather than an oversight, and
- * `core/Toolbar` follows it identically.
- *
- * The value is the ARIA default for `tablist`, so emitting it is redundant but explicitly valid;
- * base-ui's omission is a style preference, not a contract forge is breaking. The data-/aria- pair
- * is the point — `data-orientation` is what the stylesheet and the roving-focus controller read,
- * and emitting only one of the two on one of the two axes is the asymmetry worth avoiding.
- *
- * Recorded here because this is where a reader who went looking for the missing case will be. The
- * three negative ARIA contracts that *did* transfer from base-ui live in `switch.test.tsx`,
- * `number-field.test.tsx` and `toggle-group.test.tsx`.
- */
 describe("Tabs.List", () => {
   it("announces its axis to both readers and underlines a horizontal strip", async () => {
     expect(await render(<Tabs.List />)).toBe(

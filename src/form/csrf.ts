@@ -34,22 +34,14 @@ const CSRF_TOKEN_KEY = "csrfToken";
 
 /** Typed accessor for the per-request CSRF minter function set by `csrfProtection`. @public */
 export const csrfMinterCtx = contextVar<(path: string) => Promise<string>>(CSRF_MINTER_KEY);
-/**
- * Typed accessor for the pre-minted CSRF token set by `csrfProtection` on GET/HEAD requests.
- *
- * The token is bound to the **current request's pathname**. Use it only when the form POSTs back
- * to the same path. When the form submits to a different action path, mint a token for that path
- * with `mintCsrf(ctx, actionPath)` instead — otherwise verification fails with `path-mismatch`. @public
- */
+/** Typed accessor for the pre-minted CSRF token, bound to the current request's pathname, set by `csrfProtection` on GET/HEAD. @public */
 export const csrfTokenCtx = contextVar<string>(CSRF_TOKEN_KEY);
 
 async function keyFingerprint(hexSecret: string): Promise<string> {
   return base64urlEncode(await sha256(hexSecret.toLowerCase())).slice(0, 12);
 }
 
-/**
- * Looks a key id up in a ring **without** consulting the prototype chain.
- */
+// `Object.hasOwn` and not `ring.keys[kid]`: an attacker-supplied kid of `constructor` must not resolve.
 function lookupKey(ring: CsrfKeyRing, kid: string): CryptoKey | undefined {
   return Object.hasOwn(ring.keys, kid) ? ring.keys[kid] : undefined;
 }
@@ -66,10 +58,7 @@ export function importCsrfKey(hexSecret: string): Promise<CryptoKey> {
   return importHmacKeyFromHex(hexSecret, "CSRF secret");
 }
 
-/**
- * Imports one or more hex-encoded secrets into a CSRF key ring for rotation support.
- * The **first** secret becomes the active signing key; all secrets are valid for verification. @public
- */
+/** Imports hex-encoded secrets into a CSRF key ring, the first becoming the active signing key. @public */
 export async function importCsrfKeyRing(secrets: [string, ...string[]]): Promise<CsrfKeyRing> {
   const entries = await Promise.all(
     secrets.map(async (hex) => {
@@ -159,11 +148,7 @@ export async function verifyCsrfToken(
   return ok();
 }
 
-/**
- * Mints a CSRF token bound to `path` using the minter set by `csrfProtection`.
- * `path` is required — a token must declare the action path it authorizes, or verification
- * would fail with `path-mismatch`. Throws when `path` is missing or empty. @public
- */
+/** Mints a CSRF token bound to `path` using the minter set by `csrfProtection`. @public */
 // biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for csrf minting
 export async function mintCsrf(context: RequestContext<any, any>, path?: string): Promise<string> {
   if (!path) {
@@ -176,20 +161,7 @@ export async function mintCsrf(context: RequestContext<any, any>, path?: string)
 /** CSRF secret resolver type. @public */
 export type { CsrfSecretResolver };
 
-/**
- * Middleware that sets a CSRF token on GET requests and verifies it on mutations.
- *
- * The `secret` resolver is invoked **once per distinct `context.env` object** and the
- * resulting key ring is cached against it via `WeakMap`. In Cloudflare Workers production
- * the same `env` binding lives for the isolate's lifetime, so the key is imported exactly
- * once. In tests each `app.request(..., env)` call with a different `env` object re-invokes
- * the resolver, ensuring per-environment isolation. Falls back to no-cache when `env` is
- * absent.
- *
- * `subject` is **required**: pass a resolver that derives the session/subject the token is
- * bound to (returning `undefined` mints/verifies a path-only token for that request), or the
- * literal `false` to opt out of subject binding entirely (greppable, path-only tokens). @public
- */
+/** Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public */
 export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
   const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
@@ -220,9 +192,7 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
     const tokenOptions: CsrfTokenOptions = { kid: ring.activeKeyId, ...(subject !== undefined ? { subject } : {}) };
 
     csrfMinterCtx.set(context, (path: string) => createCsrfToken(activeKey, path, tokenOptions));
-    // Published here, above every early return below, because the request that needs it most is the
-    // mutation: a route builder downstream drops the field this guard consumed, and it can only do
-    // that on a request where the guard actually recorded the name it took the token from.
+    // Published above every early return: a mutation is exactly the request whose downstream builder must know which field was consumed.
     csrfFieldCtx.set(context, tokenField);
 
     if (method === "GET" || method === "HEAD") {
@@ -238,11 +208,10 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
         const formData = await parseFormData(context, parseOptions);
         token = formData.get(tokenField)?.toString() ?? undefined;
       } catch (err) {
-        // An oversized body is a size failure, not a CSRF failure, so answer 413 at the point of detection
+        // A size failure is not a CSRF failure; reporting 403 would send the client after the wrong problem.
         if ((err as { status?: number }).status === 413) {
           return new Response("Payload Too Large", { status: 413 });
         }
-        // body cannot be parsed as form data — token stays undefined
       }
     }
 

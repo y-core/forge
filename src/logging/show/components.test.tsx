@@ -28,8 +28,7 @@ const ROW_A: LogRow = {
   timestamp: "2026-05-31T10:00:00.000Z",
 };
 
-/** Carries a `requestId`, an escaping-sensitive message, and a different key, so the second row of a
- *  page is never a copy of the first. */
+// Carries a `requestId` and an escaping-sensitive message, so row two is never a copy of row one.
 const ROW_B: LogRow = {
   key: "logs||2026-05-31T10:00:01.000Z||bbb",
   level: "error",
@@ -39,9 +38,6 @@ const ROW_B: LogRow = {
   timestamp: "2026-05-31T10:00:01.000Z",
 };
 
-// The two `<tr>`s one row renders — the data row and the detail row it controls. Stated once so the
-// composite assertions below (`LogTableBody`, `LogAppendFragment`) read as composition rather than as
-// another wall of markup, and so a change to the pair fails in one place.
 const ROW_A_HTML =
   '<tr class="border-b border-border hover:bg-accent"><td class="py-2 pl-4 pr-4 font-mono text-xs tabular-nums whitespace-nowrap text-muted-foreground">2026-05-31T10:00:00.000Z</td><td class="py-2 pr-4"><span data-slot="badge" data-variant="info" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors bg-status-info-strong text-status-info-strong-foreground border-status-info-border">info</span></td><td class="py-2 pr-4 font-mono text-xs text-muted-foreground">svc</td><td class="py-2 pr-4 max-w-xs truncate text-foreground"><button type="button" data-slot="button" class="inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm" aria-expanded="false" aria-controls="log-detail-logs--2026-05-31T10-00-00-000Z--aaa" hx-get="/admin/logs?detail=logs%7C%7C2026-05-31T10%3A00%3A00.000Z%7C%7Caaa" hx-target="#log-detail-logs--2026-05-31T10-00-00-000Z--aaa" hx-swap="outerHTML" hx-indicator="#log-detail-logs--2026-05-31T10-00-00-000Z--aaa" hx-disabled-elt="this">first event</button></td><td class="py-2 pr-4 font-mono text-xs text-muted-foreground">—</td></tr><tr id="log-detail-logs--2026-05-31T10-00-00-000Z--aaa" class="hidden border-b border-border [&amp;.htmx-request]:table-row"><td colspan="5" class="px-4 py-2"><span class="sr-only">Loading log entry detail…</span><div data-slot="skeleton" aria-hidden="true" class="animate-pulse rounded-md bg-muted h-4 w-full"></div></td></tr>';
 
@@ -68,8 +64,6 @@ describe("LOG_TBODY_ID / LOG_LOAD_MORE_ID", () => {
     expect({ tbody: LOG_TBODY_ID, loadMore: LOG_LOAD_MORE_ID }).toEqual({ tbody: "log-tbody", loadMore: "log-load-more" });
   });
 });
-
-// ── LogLevelBadge ─────────────────────────────────────────────────────────────────────────────
 
 describe("LogLevelBadge", () => {
   it("renders error as the destructive badge", async () => {
@@ -103,8 +97,6 @@ describe("LogLevelBadge", () => {
   });
 });
 
-// ── LogFilterBar ──────────────────────────────────────────────────────────────────────────────
-
 describe("LogFilterBar", () => {
   it("renders the unfiltered form — All selected, empty search, the tbody as the indicator", async () => {
     expect(await render(<LogFilterBar targetId={LOG_TBODY_ID} formAction='/admin/logs' icon={icon} />)).toBe(FILTER_BAR_UNFILTERED_HTML);
@@ -116,8 +108,6 @@ describe("LogFilterBar", () => {
     );
   });
 });
-
-// ── LogLoadMoreRow ────────────────────────────────────────────────────────────────────────────
 
 describe("LogLoadMoreRow", () => {
   it("renders the control appending into the tbody it sits outside of", async () => {
@@ -139,8 +129,6 @@ describe("LogLoadMoreRow", () => {
   });
 
   it("becomes its own retry when the read failed — the Alert above it, and Try again on the same cursor", async () => {
-    // The cursor was never consumed, so the control keeps it: there is no second control to keep in
-    // step, and the reader is never left with the button gone and no way back.
     expect(await render(<LogLoadMoreRow cursor='c1' complete={false} loadMoreAction='/admin/logs' failed={true} />)).toBe(
       '<tr id="log-load-more"><td colspan="5" class="px-4 py-2 text-center"><div data-slot="alert" data-variant="destructive" class="relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground mb-2 text-left"><div data-slot="alert-title" class="font-medium leading-none tracking-tight">Could not load the next page</div><div data-slot="alert-description" class="text-sm leading-relaxed opacity-90">The channel did not answer. The entries already loaded are unaffected.</div></div><button type="button" data-slot="button" class="inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm" hx-get="/admin/logs?cursor=c1" hx-target="#log-tbody" hx-swap="beforeend" hx-indicator="this" hx-disabled-elt="this">Try again</button></td></tr>',
     );
@@ -153,14 +141,8 @@ describe("LogLoadMoreRow", () => {
   });
 });
 
-// ── LogRows ───────────────────────────────────────────────────────────────────────────────────
-
 describe("LogRows", () => {
   it("wires the message trigger to its sibling detail row — never to its own cell", async () => {
-    // `aria-expanded` / `aria-controls` name the detail row, and `hx-target` is that same
-    // `<tr id="log-detail-…">` rather than the `<td>` holding the button: a swap over the trigger's
-    // own cell destroys the trigger. The key's `|` and `:` are percent-encoded in the detail URL and
-    // folded to `-` in the id.
     expect(await render(<LogRows rows={[ROW_A]} loadMoreAction='/admin/logs' />)).toBe(ROW_A_HTML);
   });
 
@@ -168,8 +150,6 @@ describe("LogRows", () => {
     expect(await render(<LogRows rows={[ROW_A, ROW_B]} loadMoreAction='/admin/logs' />)).toBe(`${ROW_A_HTML}${ROW_B_HTML}`);
   });
 });
-
-// ── LogTableBody ──────────────────────────────────────────────────────────────────────────────
 
 describe("LogTableBody — empty states", () => {
   it("says nothing has been recorded, with no clear-filters control, when no filter is active", async () => {
@@ -203,8 +183,6 @@ describe("LogTableBody — rows and the error state", () => {
   });
 });
 
-// ── LogTable ──────────────────────────────────────────────────────────────────────────────────
-
 describe("LogTable", () => {
   it("renders thead, the tbody it is given an id for, and the load-more row in a tfoot", async () => {
     expect(
@@ -215,11 +193,6 @@ describe("LogTable", () => {
   });
 });
 
-// ── LogAppendFragment ─────────────────────────────────────────────────────────────────────────
-
-// Two consecutive pages. The control the first response ships carries `cursor-2`; the second
-// response replaces that same `#log-load-more` out of band with one carrying `cursor-3`. Without the
-// out-of-band half, the control would keep pointing at a cursor already consumed.
 describe("LogAppendFragment", () => {
   it("ships the first page's rows plus an out-of-band load-more row carrying the next cursor", async () => {
     expect(await render(<LogAppendFragment data={{ rows: [ROW_A], cursor: "cursor-2", complete: false, basePath: "/admin/logs" }} />)).toBe(
@@ -248,8 +221,6 @@ describe("LogAppendFragment", () => {
   });
 });
 
-// ── LogDetailRow ──────────────────────────────────────────────────────────────────────────────
-
 describe("LogDetailRow", () => {
   const record: LogRecord = {
     level: "error",
@@ -272,12 +243,10 @@ describe("LogDetailRow", () => {
   });
 });
 
-// ── LogViewerContent ──────────────────────────────────────────────────────────────────────────
-
 describe("LogViewerContent", () => {
   it("composes the heading, the filter bar and the card-bounded table", async () => {
     expect(await render(<LogViewerContent data={{ rows: [], complete: true, basePath: "/admin/logs" }} icon={icon} />)).toBe(
-      `<main id="main-content" class="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-10 lg:px-10"><h1 class="text-2xl font-semibold tracking-tight text-foreground">Request Log</h1>${FILTER_BAR_UNFILTERED_HTML}<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-content" class="p-0"><div data-slot="scroll-area" data-orientation="vertical" class="relative max-h-96"><div data-slot="scroll-area-viewport" tabindex="0" class="h-full w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring [scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent]"><table class="w-full border-collapse text-sm">${THEAD_HTML}<tbody id="log-tbody">${EMPTY_UNFILTERED_ROW_HTML}</tbody><tfoot><tr id="log-load-more"><td colspan="5" class="px-4 py-2 text-center"></td></tr></tfoot></table></div></div></div></div></main>`,
+      `<main id="main-content" data-fill-viewport class="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-10 lg:px-10"><h1 class="text-2xl font-semibold tracking-tight text-foreground">Request Log</h1>${FILTER_BAR_UNFILTERED_HTML}<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm min-h-0 flex-1"><div data-slot="card-content" class="flex min-h-0 flex-1 flex-col p-0"><div data-slot="scroll-area" data-orientation="vertical" class="relative flex min-h-0 max-h-dvh flex-1 flex-col"><div data-slot="scroll-area-viewport" tabindex="0" class="h-full max-h-[inherit] w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring [scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent] min-h-0 flex-1"><table class="w-full border-collapse text-sm">${THEAD_HTML}<tbody id="log-tbody">${EMPTY_UNFILTERED_ROW_HTML}</tbody><tfoot><tr id="log-load-more"><td colspan="5" class="px-4 py-2 text-center"></td></tr></tfoot></table></div></div></div></div></main>`,
     );
   });
 });

@@ -1,15 +1,3 @@
-/** cf-env-gen.ts — portable, schema-first generator for the Cloudflare binding/var surface.
- *
- *  A reusable, IO-free core that re-creates the env half of `wrangler types …
- *  --include-env --no-include-runtime` as a committed valibot module: a runtime
- *  `EnvSchema` plus `type Env = v.InferOutput<typeof EnvSchema>`. The runnable command
- *  (file IO, CLI flags, formatting) lives next door in `cf-env-command.ts`; everything
- *  here is pure so both ship together under `@y-core/forge/validation/cli`.
- *
- *  The binding-kind data table (`REGISTRY`) and the policy/entry shapes it consumes live
- *  in `cf-env-registry.ts`; this module is the codegen that walks them.
- */
-
 import { type BindingDef, type Entry, type GenOptions, HEADER, REGISTRY } from "./cf-env-registry";
 
 /** Strip `//` and block comments from JSONC, string-aware so `//` inside a string survives. @internal */
@@ -40,7 +28,7 @@ export function stripJsonc(text: string): string {
     if (ch === "/" && next === "*") {
       i += 2;
       while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
-      i++; // skip the closing '/'
+      i++;
       continue;
     }
     out += ch;
@@ -48,7 +36,6 @@ export function stripJsonc(text: string): string {
   return out;
 }
 
-/** Resolve a (possibly dotted) path through an object, returning `undefined` on any gap. */
 function getPath(obj: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, key) => {
     if (acc == null || typeof acc !== "object") return undefined;
@@ -56,7 +43,6 @@ function getPath(obj: unknown, path: string): unknown {
   }, obj);
 }
 
-/** Build a binding entry for `name`, wrapping in `v.optional` when policy marks it optional. */
 function bindingEntry(name: string, def: BindingDef, opts: GenOptions): Entry {
   const base = `v.custom<${def.tsType}>(${opts.bindingCheck}, "${def.message(name)}")`;
   return { name, expr: opts.optional.has(name) ? `v.optional(${base})` : base };
@@ -81,15 +67,13 @@ export function collectBindings(cfg: Record<string, unknown>, opts: GenOptions):
   return entries;
 }
 
-/** Apply a name's `minLength` refinement to a string base, else return the base unchanged. */
 function refine(name: string, base: string, opts: GenOptions): string {
   const min = opts.refinements[name]?.minLength;
   if (min != null && base === "v.string()") return `v.pipe(v.string(), v.minLength(${min}))`;
   return base;
 }
 
-/** Collect var entries: typed `wrangler.jsonc` `vars` first, then `.dev.vars` secrets
- *  (all `v.string()`). `.dev.vars` wins on name collisions (secret precedence). @internal */
+/** Collects var entries: typed `wrangler.jsonc` vars first, then `.dev.vars` secrets, which win on name collisions. @internal */
 export function collectVars(devVarsText: string, wranglerVars: Record<string, unknown>, opts: GenOptions): Entry[] {
   const secretNames = new Set<string>();
   for (const line of devVarsText.split("\n")) {
@@ -100,7 +84,7 @@ export function collectVars(devVarsText: string, wranglerVars: Record<string, un
   const entries: Entry[] = [];
   const seen = new Set<string>();
   for (const [name, value] of Object.entries(wranglerVars)) {
-    if (secretNames.has(name)) continue; // secret takes precedence
+    if (secretNames.has(name)) continue;
     const base = typeof value === "number" ? "v.number()" : typeof value === "boolean" ? "v.boolean()" : "v.string()";
     entries.push({ name, expr: refine(name, base, opts) });
     seen.add(name);
@@ -114,7 +98,7 @@ export function collectVars(devVarsText: string, wranglerVars: Record<string, un
   return entries;
 }
 
-/** Render the full env-schema module text for the collected entries (with the baked `HEADER`). @internal */
+/** Renders the full env-schema module text for the collected entries. @internal */
 export function emit(entries: Entry[]): string {
   const body = entries.map((e) => `  ${e.name}: ${e.expr},`).join("\n");
   return `${HEADER}

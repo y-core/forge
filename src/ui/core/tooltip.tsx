@@ -13,22 +13,12 @@ interface TooltipRootProps extends Omit<JSX.IntrinsicElements["div"], "children"
 interface TooltipTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   /** id of the `Tooltip.Content` describing this trigger. */
   for: string;
-  /**
-   * Render onto the caller's own element instead of forge's. Same contract as `core/Button`'s:
-   * exactly one JSX element child, or it throws.
-   *
-   * **The case this exists for is an app adding tooltips to controls it already has.** A toolbar
-   * button carrying its own selector hooks and its own delegated action must stay *one* element —
-   * wrapping it in forge's trigger would put a second button around it, breaking every selector that
-   * addresses it and giving the row two focus stops.
-   */
+  /** Render onto the caller's own element instead of forge's, which must be exactly one JSX element child. */
   asChild?: boolean;
   children?: JSXNode;
 }
 
-/** The tooltip's stylesheet is a complete *physical* matrix, so a logical side would match no rule
- * at all and the popup would fall back to centred on its anchor. Projecting the subset makes that
- * unrepresentable rather than a silent placement bug. */
+/** The stylesheet's placement matrix is physical-only, so a logical side would match no rule and silently centre the popup. */
 type TooltipSide = Exclude<Side, "block-start" | "block-end" | "inline-start" | "inline-end">;
 
 interface TooltipContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
@@ -44,15 +34,9 @@ const TooltipRoot: FC<TooltipRootProps> = ({ class: cls, children, "data-slot": 
   </div>
 );
 
-/**
- * `aria-describedby`, not `aria-labelledby`: a tooltip supplements the trigger's own name rather
- * than replacing it. Getting this wrong is how a button ends up announced only by its hint.
- */
 const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = false, class: cls, children, "data-slot": inherited, ...rest }) => {
   const className = cn("cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls));
-  // `aria-describedby` is also what `mountTooltip` resolves the content by, so it is part of the
-  // wiring rather than only of the announcement — an `asChild` trigger that lost it would be a
-  // control with a tooltip that never shows.
+  // `mountTooltip` resolves the content by `aria-describedby`, so dropping it disables the tooltip entirely.
   const attrs = { "aria-describedby": contentId, ...rest };
   const slot = slotToken("tooltip-trigger", inherited);
 
@@ -75,14 +59,6 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = fal
   );
 };
 
-/**
- * `popover="manual"` rather than `"auto"`: an auto popover is light-dismissed and participates in
- * the exclusive-open stack, which would close a menu the moment a tooltip appeared. A tooltip is
- * shown and hidden by its trigger's hover and focus, never by the user clicking elsewhere.
- *
- * It carries **no `tabindex`** and is never focusable — a focusable tooltip is a keyboard trap that
- * announces itself twice.
- */
 const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "center", class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     id={id}
@@ -96,18 +72,5 @@ const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "ce
   </div>
 );
 
-/**
- * Compound tooltip. The trigger is described by the content; the content is a manual popover shown
- * after a short delay on hover or keyboard focus and hidden after a shorter one.
- *
- * ```tsx
- * <Tooltip>
- *   <Tooltip.Trigger for='save-tip'>Save</Tooltip.Trigger>
- *   <Tooltip.Content id='save-tip'>Writes the file to disk</Tooltip.Content>
- * </Tooltip>
- * ```
- *
- * The delays and the Escape handling arrive with the `ui/core/client` side-effect import.
- * @public
- */
+/** Compound tooltip whose trigger is described by a manual popover shown on hover or keyboard focus. @public */
 export const Tooltip = Object.assign(TooltipRoot, { Trigger: TooltipTrigger, Content: TooltipContent });

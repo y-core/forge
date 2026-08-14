@@ -1,13 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { mount } from "../client/browser-test-helper";
 
-/**
- * The half of the state-attribute convention a string assertion cannot reach: that the attributes
- * actually *are* styling hooks. `stateAttrs` is proven by its exact output in `bun test`; here a
- * real stylesheet matches the real attributes, and `applyStateAttrs` moves a real element between
- * states with the selectors following it.
- */
-
 declare global {
   interface Window {
     forgeState: typeof import("./state-attrs");
@@ -16,7 +9,6 @@ declare global {
 
 const EXPOSE = { expose: { forgeState: "./ui/contracts/state-attrs" } };
 
-/** Presence selectors only — the point of `data-open=""` over `data-open="true"`. */
 const STYLES = `
   <style>
     [data-open] { --matched: open; }

@@ -4,9 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Install the mock before cf-env-command loads so its top-level `spawnSync` import gets the
-// stub — the run handler shells out to biome, which must not execute in tests. mock.module is
-// process-global; spread the real module to preserve other exports for sibling test files.
+// mock.module must be registered before cf-env-command loads, hence the dynamic imports below; it is process-global, so the real module is spread through.
 const mockSpawnSync = mock((_cmd: string, _args?: string[], _opts?: unknown): { status: number | null; error?: Error } => ({ status: 0 }));
 mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
 
@@ -76,7 +74,6 @@ describe("createGenEnv — run handler end-to-end", () => {
     );
     writeFileSync(devVarsPath, "CSRF_SECRET=deadbeef\n");
 
-    // Absolute flag paths make the handler cwd-independent (resolve() passes them through).
     await execute(createGenEnv(), ["--wrangler", wranglerPath, "--dev-vars", devVarsPath, "--out", outPath, "--config", join(dir, "absent.ts")]);
 
     const cfg = readWranglerConfig(wranglerPath);

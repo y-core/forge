@@ -11,8 +11,7 @@ type TabsOrientation = Extract<Orientation, "horizontal" | "vertical">;
 
 interface TabsRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   orientation?: TabsOrientation;
-  /** Select a tab as soon as it receives focus. `manual` waits for Enter, Space or a click, which
-   * suits panels that are expensive to render. @default "automatic" */
+  /** Select a tab as soon as it receives focus; `manual` waits for Enter, Space or a click. @default "automatic" */
   activation?: "automatic" | "manual";
   children?: JSXNode;
 }
@@ -71,9 +70,6 @@ const TAB_BASE =
   "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring " +
   "aria-selected:bg-accent aria-selected:text-accent-foreground disabled:pointer-events-none disabled:opacity-50";
 
-/** The selected tab carries the composite marker, so the list's boot tab stop lands on it rather
- * than on whichever tab happens to be first — otherwise the first arrow key moves relative to tab 0
- * and reselects it. */
 const Tab: FC<TabProps> = ({ for: panelId, selected = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
@@ -89,8 +85,6 @@ const Tab: FC<TabProps> = ({ for: panelId, selected = false, class: cls, childre
   </button>
 );
 
-/** `hidden` on an unselected panel is the platform's own mechanism — no JS is needed to make the
- * initial render correct, and the controller flips the same attribute. */
 const TabsPanel: FC<TabsPanelProps> = ({ id, selected = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     id={id}
@@ -105,22 +99,5 @@ const TabsPanel: FC<TabsPanelProps> = ({ id, selected = false, class: cls, child
   </div>
 );
 
-/**
- * Compound tabs. The list is a single Tab stop with arrow-key navigation from `mountRovingFocus`;
- * selection follows focus unless `activation="manual"`.
- *
- * ```tsx
- * <Tabs>
- *   <Tabs.List>
- *     <Tabs.Tab for='panel-a' selected>A</Tabs.Tab>
- *     <Tabs.Tab for='panel-b'>B</Tabs.Tab>
- *   </Tabs.List>
- *   <Tabs.Panel id='panel-a' selected>…</Tabs.Panel>
- *   <Tabs.Panel id='panel-b'>…</Tabs.Panel>
- * </Tabs>
- * ```
- *
- * Keyboard behaviour arrives with the `ui/core/client` side-effect import.
- * @public
- */
+/** Compound tabs whose list is a single Tab stop with arrow-key navigation, selection following focus unless `activation="manual"`. @public */
 export const Tabs = Object.assign(TabsRoot, { List: TabsList, Tab, Panel: TabsPanel });

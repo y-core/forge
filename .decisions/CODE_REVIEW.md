@@ -66,6 +66,7 @@ argument.**
 | Security-critical paths fail closed | [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §4 |
 | A state-changing route carries a CSRF guard | [`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §3a |
 | A security guard has both a pass and a fail test | [`TESTING.md`](./TESTING.md) §5a |
+| No comment outside the permitted budget | [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a |
 
 **The pre-1.0 shim ban is the one most often argued away.** A published shim is unrecoverable:
 once a consumer depends on it, removing it is a breaking change, which is precisely what a
@@ -150,6 +151,35 @@ rg -n 'toContain\(|toMatch\(' src/ --glob '*.test.ts*'
 *Triage:* legitimate on non-HTML strings — an error message, a log line, a SQL fragment. **A hit
 asserting on rendered markup is a defect** ([`TESTING.md`](./TESTING.md) §3b).
 
+**Unbudgeted comment** ([`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a is the whole
+budget; [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5b is what is deleted on sight)
+
+```bash
+rg -n '^\s*\*\s*@example' --glob 'src/**/*.ts*' --glob 'scripts/**/*.ts'
+rg -UPn '/\*\*(?:[^*]|\*(?!/)){400,}\*/' --glob 'src/**/*.ts*'
+rg -n '^\s*//\s*[-=*_]{3,}' --glob 'src/**/*.ts*'
+rg -n '\b(TODO|FIXME|XXX)\b' --glob 'src/**/*.ts*'
+rg -n '^\s*//\s*(const|let|function|return|import|export|if|await)\b' --glob 'src/**/*.ts*'
+```
+
+*Triage:* the third, fourth, and fifth have **no false-positive class** — every hit is a defect, in
+a test file as readily as in production source. The other two do, and both were confirmed on a real
+sweep:
+
+- The first is anchored to `^\s*\*\s*@example` — a TSDoc continuation line — precisely because a
+  bare `rg "@example"` matches the `you@example.com` in every email fixture in the repo, plus a
+  `barrel-parse.test.ts` fixture that feeds the parser a literal `" * @example"` as **test input**.
+  Deleting that string would delete the test. Never grep for the bare tag.
+- The second needs `-P`: its lookahead is unsupported by the default engine, which errors rather
+  than under-matching. Its 400-character threshold is a heuristic floor, not the rule — read each
+  hit and keep the one sentence [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a permits.
+  It also matches **template-literal contents** that use
+  comment syntax as their payload: `cf-env-registry.ts`'s `HEADER` is the banner the `gen:env`
+  command emits into generated files, so shortening it would change generator output. A hit inside
+  a backtick string is code, not a comment.
+
+Restating-the-code and narration are not reachable by any command; they belong to §3c.
+
 ### 3c. Tier 3 — Judgement
 
 No command decides these. Read the named files and answer the named question.
@@ -188,10 +218,15 @@ before it settles — as a probabilistic purge detached from the write promise d
   state-changing endpoint; an unchecked error on a security-critical path.
 - **Major — fix before merge.** A new export missing from its barrel; a security test missing
   its fail case; an undeclared cross-namespace edge; wrong entity encoding in an assertion; a
-  route registered outside the map + controller pattern; any gate step failing.
-- **Minor — consider fixing.** Missing TSDoc on an export; an imperative loop where an array
-  method reads better; a name that breaks the [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5e
-  suffix convention.
+  route registered outside the map + controller pattern; any gate step failing; a comment outside
+  the [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a budget.
+- **Minor — consider fixing.** An export with no TSDoc line at all; an imperative loop where an
+  array method reads better; a name that breaks the
+  [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5e suffix convention.
+
+**Excess prose is Major, absence is Minor — the asymmetry is deliberate.** A missing summary line
+costs one read; an unbudgeted one is re-read on every pass, is reachable by no gate, and goes
+stale silently. **Never report "expand this comment" as a finding.**
 - **Informational — note only.** Future namespace splits, alternative API designs, performance
   observations with no security impact.
 
@@ -238,3 +273,6 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `ok` / `err` not following `create*` | The one documented naming exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1a |
 | `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5e |
 | `Input` exported from both `ui/core` and `ui/controls` | Deliberate shadowing — [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §5b |
+| `@public` / `@internal` on a TSDoc line | Machine-readable visibility markers, explicitly budgeted — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a |
+| A one-line inline comment carrying an external *why* | The third budgeted form, subject to §5a's four conditions — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a |
+| A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5d |

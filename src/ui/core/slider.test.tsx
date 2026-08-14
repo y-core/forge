@@ -2,13 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { Slider, sanitizeRangeValue } from "./slider";
 
-/** The input's own box paints nothing — the track and thumb are authored pseudo-element rules in
- *  `forge-ui.css`, so every class here is geometry, cursor, or focus. */
 const SLIDER_CLASS =
   "h-8 w-full cursor-pointer appearance-none rounded-full bg-transparent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-/** The vertical override displaces the base's `h-8 w-full` through `cn`, so the surviving base
- *  classes keep their order and the override's own tokens follow them. */
 const SLIDER_VERTICAL_CLASS =
   "cursor-pointer appearance-none rounded-full bg-transparent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [writing-mode:vertical-lr] [direction:rtl] h-22 w-8";
 
@@ -58,9 +54,6 @@ describe("Slider", () => {
     );
   });
 
-  // The vertical override carries `h-22 w-8`, which displaces the base's `h-8 w-full` outright —
-  // a vertical slider is 22 tall and 8 wide. Which of the two applied used to be decided by `.h-8`
-  // vs `.h-22` sheet order; `cn` now settles it at composition time.
   it("vertical orientation adds writing-mode and direction classes to the slider", async () => {
     expect(await render(<Slider min={0} max={10} value={5} orientation='vertical' />)).toBe(
       `<input data-slot="slider" type="range" class="${SLIDER_VERTICAL_CLASS}" min="0" max="10" value="5">`,
@@ -73,9 +66,6 @@ describe("Slider", () => {
     );
   });
 
-  // The reported defect: the browser clamps the thumb to `max`, and with no client controller the
-  // readout is the only thing forge can bring into agreement with it. The emitted `value` attribute
-  // is deliberately left alone — forge reports the browser's reading, it does not rewrite the input.
   it("clamps the output readout to max while leaving the value attribute intact", async () => {
     expect(await render(<Slider min={0} max={100} value={150} output />)).toBe(
       `<div data-slot="slider-wrapper" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" min="0" max="100" value="150"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">100</output></div>`,
@@ -104,7 +94,6 @@ describe("Slider", () => {
 type RangeAttrs = Parameters<typeof sanitizeRangeValue>[0];
 type OracleRow = { input: RangeAttrs; expected: string; why: string };
 
-/** Renders the attribute set into an `it` title without pulling in a serializer. */
 function label(input: RangeAttrs): string {
   const parts = (["min", "max", "step", "value"] as const)
     .filter((key) => input[key] !== undefined)
@@ -120,9 +109,7 @@ function runOracle(cases: OracleRow[]): void {
   }
 }
 
-// Every row below was probed from a real Chromium and is ground truth for what the browser's own
-// value-sanitization algorithm settles on. A row that fails is a defect in the implementation, not
-// an expectation to be updated.
+// Every expectation below was probed from a real Chromium: these are oracle values, not guesses.
 describe("sanitizeRangeValue", () => {
   describe("clamps to the declared range", () => {
     runOracle([
@@ -179,8 +166,6 @@ describe("sanitizeRangeValue", () => {
     ]);
   });
 
-  // The naive implementation anchors at zero when `min` is absent and silently snaps the value away
-  // from itself. Each fallback row is paired with its `min: 0` form so the two cannot be conflated.
   describe("falls back to the value attribute as the step base when min is absent", () => {
     runOracle([
       { input: { max: 100, step: 10, value: 35 }, expected: "35", why: "with no min the value is aligned to itself" },
@@ -219,8 +204,6 @@ describe("sanitizeRangeValue", () => {
     ]);
   });
 
-  // Asserted as strings on purpose: a numeric assertion would pass on 5.1000000000000005 and defeat
-  // the whole point of the scrub.
   describe("emits fractional results without binary-float noise", () => {
     runOracle([
       {

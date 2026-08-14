@@ -73,8 +73,6 @@ describe("createHandlerFactory — type binding", () => {
   it("pre-binds Bindings/ConfigData while leaving per-call generics free", () => {
     const factory = createHandlerFactory<TestEnv, { debug: boolean }>();
 
-    // Compile-level contract: loader's context is typed to TestEnv, config to { debug: boolean },
-    // and LoaderData is inferred from the loader's return type into the view's state.
     const handler = factory.definePage({
       loader: (c: AppContext<TestEnv>, config: { debug: boolean }) => ({ site: c.env.SITE_NAME, debug: config.debug }),
       view: (_c, _config, state) => new Response(`${state.data.site}:${state.data.debug}`),

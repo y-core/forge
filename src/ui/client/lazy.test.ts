@@ -58,8 +58,6 @@ function flush(): Promise<void> {
   return new Promise<void>((resolve) => realSetTimeout(resolve, 0));
 }
 
-// ── lazy ──────────────────────────────────────────────────────────────────────
-
 interface MockObserver {
   observe: (el: Element) => void;
   disconnect: () => void;
@@ -74,8 +72,7 @@ interface LazyGlobalMock {
 
 const lg = globalThis as unknown as LazyGlobalMock;
 
-/** The delay `lazy` schedules its retry on. A module constant rather than an exported option, so the
- *  value is spelled out here — an accidental change to either has to be an accepted change to both. */
+/** The delay `lazy` schedules its retry on, spelled out because the module constant is not exported. */
 const RETRY_DELAY_MS = 500;
 
 describe("lazy", () => {
@@ -95,13 +92,10 @@ describe("lazy", () => {
     capturedOptions = undefined;
     capturedTimer = undefined;
 
-    // `defaultView` is what makes the stubbed clock reachable: the retry is scheduled on the
-    // element's own realm via `ownerWindow`, which resolves through the owner document. Without it
-    // the fallback is a bare `window`, which does not exist in the Bun test runtime.
+    // `defaultView` is what makes the stubbed clock reachable: `ownerWindow` resolves through the
+    // owner document, and the bare `window` fallback does not exist in the Bun test runtime.
     lg.document = { querySelector: (selector: string) => (selector === "[data-ref='target']" ? mockElement : null), defaultView: globalThis };
 
-    // Capture the retry timer instead of running it, so "did not retry yet" and "retried once the
-    // delay elapsed" are separate, assertable states rather than a race against a real 500ms wait.
     // @ts-expect-error — intentionally replacing the global timer for test isolation
     globalThis.setTimeout = (fn: () => void, ms: number) => {
       capturedTimer = { fn, ms };
@@ -141,11 +135,8 @@ describe("lazy", () => {
     timer?.fn();
   }
 
-  /**
-   * An intersection the platform would actually deliver. The real observer only calls back for an
-   * element it is currently observing, so driving `capturedCallback` directly would let a retry
-   * "fire" after the observer gave up and report an attempt cap that does not exist.
-   */
+  /** An intersection the platform would actually deliver: the real observer only calls back for an
+   * element it is currently observing. */
   function intersect(): void {
     if (observing) capturedCallback([makeEntry(true)], {} as IntersectionObserver);
   }
@@ -236,8 +227,6 @@ describe("lazy", () => {
   });
 
   it("routes a load rejection to onError rather than leaking an unhandled rejection", async () => {
-    // Bun reports an unhandled rejection as a test-file error, so this case passing at all is the
-    // evidence that the rejection was consumed; `errors` is the evidence it reached the caller.
     const failure = new Error("chunk fetch failed");
     const errors: unknown[] = [];
     let initCalled = false;
@@ -281,8 +270,6 @@ describe("lazy", () => {
     intersect();
     await flush();
 
-    // The failure has already been reported and the retry scheduled — but re-observing now would
-    // spend the whole attempt budget within a few frames, retrying an outage that is still current.
     expect(observedElements).toStrictEqual([mockElement]);
     expect(capturedTimer?.ms).toBe(RETRY_DELAY_MS);
 
@@ -308,8 +295,6 @@ describe("lazy", () => {
       elapseRetryDelay();
     }
 
-    // Three `load()` calls, so two re-observes on top of the initial one — and then it gives up,
-    // even though the element stays in view and would keep re-triggering.
     expect(attempts).toBe(3);
     expect(observedElements).toHaveLength(3);
   });
@@ -361,9 +346,6 @@ describe("lazy", () => {
     intersect();
     await flush();
 
-    // The load succeeded, so a retry would only re-run the same failing `init`. This case passing at
-    // all is also the evidence the throw did not become an unhandled rejection on the fulfilment
-    // path, which Bun reports as a test-file error.
     expect(errors).toStrictEqual([failure]);
     expect(loads).toBe(1);
     expect(capturedTimer).toBeUndefined();
@@ -377,8 +359,6 @@ describe("lazy", () => {
     await flush();
     expect(capturedTimer?.ms).toBe(RETRY_DELAY_MS);
 
-    // A real `clearTimeout` cannot be observed through this stub, so the fired-after-disposal case
-    // is what proves the guard: even a timer that survives the disposer must not re-observe.
     dispose();
     elapseRetryDelay();
 
@@ -427,13 +407,7 @@ describe("lazy", () => {
     settleLoad({ doThing: () => {} });
     await flush();
 
-    // The invocation count is the assertion, deliberately — not `observedElements`. A fulfilled load
-    // never re-observes on any path, so the re-observation assertion its rejecting sibling above uses
-    // would read identically with the disposal guard deleted, and pin nothing. What must not happen
-    // is `init` mounting a controller onto an element the app has already swapped out.
     expect(initCalls).toBe(0);
-    // Nothing failed, so nothing is reported. A load that *rejects* after disposal still reaches
-    // `onError`: that is information the app has a right to hear, not a touch on the element.
     expect(errors).toStrictEqual([]);
   });
 
@@ -447,8 +421,6 @@ describe("lazy", () => {
     expect(capturedSelector).toBe("[data-ref='a\\'b']");
   });
 });
-
-// ── loadScriptOnEvent ─────────────────────────────────────────────────────────
 
 interface ScriptGlobalMock {
   document: {
@@ -577,8 +549,6 @@ describe("loadScriptOnEvent", () => {
   });
 });
 
-// ── loadStylesheet ────────────────────────────────────────────────────────────
-
 interface StylesheetGlobalMock {
   document: {
     querySelector: (selector: string) => MockLink | null;
@@ -603,9 +573,8 @@ describe("loadStylesheet", () => {
   let appendedLinks: MockLink[];
   let createdLinks: MockLink[];
 
-  /** A distinct element per `createElement`, as the DOM gives. A shared singleton cannot tell a
-   *  fresh link from a stale one — each `addEventListener` would overwrite the previous handler, so
-   *  firing `load` on "the link" would fire it on whichever call registered last. */
+  /** A distinct element per `createElement`, as the DOM gives: a shared singleton could not tell a
+   * fresh link from a stale one. */
   function createLink(): MockLink {
     const link: MockLink = {
       rel: "",

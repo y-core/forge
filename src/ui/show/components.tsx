@@ -50,19 +50,10 @@ import { DependentSection, PaginateSection, PreviewSection, SearchSection, Toast
 /** The showcase's bound sprite. Named once because a dozen section signatures take it. */
 type ShowIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close">;
 
-// ─── TOC ─────────────────────────────────────────────────────────────────────
-
 /** The bands the table of contents reads in — a catalog entry names one, and nothing else groups. */
 type ShowcaseGroup = "Primitives" | "Forms & Controls" | "Interaction & Overlay" | "Feedback" | "Chrome" | "Behaviour";
 
-/**
- * The catalog, and the showcase's completeness contract.
- *
- * Exported because `components.test.tsx` asserts against it: **every component exported from
- * `core/mod.ts` has a section here, keyed by its own kebab-cased name.** A primitive with no section
- * is one nobody can look at, and — after the cross-cutting corpus — one nobody drives, so the
- * property is checked rather than remembered.
- */
+/** Every catalog entry, keyed by the kebab-cased name of the component it shows. */
 export const SECTIONS: { id: string; label: string; group: ShowcaseGroup }[] = [
   { id: "accordion", label: "Accordion", group: "Behaviour" },
   { id: "alert", label: "Alert", group: "Feedback" },
@@ -101,10 +92,6 @@ export const SECTIONS: { id: string; label: string; group: ShowcaseGroup }[] = [
   { id: "number-field", label: "NumberField", group: "Forms & Controls" },
   { id: "scroll-area", label: "ScrollArea", group: "Behaviour" },
   { id: "turnstile", label: "Turnstile", group: "Forms & Controls" },
-  // `compositions` is deliberately absent: the composition band moved to the theme customiser at
-  // `showcaseRoutes().ui.theme`, where a real UI is what the generated scheme is judged against.
-  // The catalog and the rail are derived from this list, so the row had to go with the component —
-  // leaving it would have produced a rail link to an element that is no longer on the page.
   { id: "htmx-demos", label: "HTMX Demos", group: "Behaviour" },
   { id: "theme", label: "Theme", group: "Chrome" },
   { id: "resumable", label: "Resumable", group: "Behaviour" },
@@ -113,13 +100,7 @@ export const SECTIONS: { id: string; label: string; group: ShowcaseGroup }[] = [
 /** The order the groups are read in — plainest primitives first, page-level behaviour last. */
 const GROUP_ORDER: ShowcaseGroup[] = ["Primitives", "Forms & Controls", "Interaction & Overlay", "Feedback", "Chrome", "Behaviour"];
 
-/**
- * The catalog as a navbar configuration: one section holding one group per band.
- *
- * A group is the shape a vertical rail wants — a heading over visible destinations — so the whole
- * table of contents is a single section, and the bands are its groups rather than sibling sections
- * (siblings would be spread across the bar's ends, which is the wrong reading for a list).
- */
+/** The catalog as a navbar configuration: one section holding one group per band. */
 const TOC_CONFIG: NavDefinition = {
   sections: [
     {
@@ -136,8 +117,6 @@ const TOC_CONFIG: NavDefinition = {
 /** The rail's `href`s are page fragments: `resolveHref` takes a key, and nothing says it is a route. */
 const tocHref = (key: string) => `#${key}`;
 
-// ─── Catalog section wrapper ──────────────────────────────────────────────────
-
 interface CatalogSectionProps {
   id: string;
   title: string;
@@ -150,8 +129,6 @@ const CatalogSection: FC<CatalogSectionProps> = ({ id, title, children }) => (
     <div class='flex flex-wrap items-start gap-4'>{children}</div>
   </section>
 );
-
-// ─── Static catalog sections ─────────────────────────────────────────────────
 
 const AlertSection: FC = () => (
   <CatalogSection id='alert' title='Alert'>
@@ -345,8 +322,6 @@ const SCROLL_ROWS = ["Alert", "Avatar", "Badge", "Button", "Card", "Dialog", "Fi
 
 const CheckboxGroupSection: FC = () => (
   <CatalogSection id='checkbox-group' title='CheckboxGroup'>
-    {/* `description` opts the group into `aria-describedby`; the `name` on `Description` is what
-        makes the id it emits match. Without both, the attribute would name nothing. */}
     <CheckboxGroup name='toppings' orientation='horizontal' description>
       <CheckboxGroup.Label>Toppings</CheckboxGroup.Label>
       <CheckboxGroup.Description name='toppings'>Pick as many as you like.</CheckboxGroup.Description>
@@ -420,9 +395,6 @@ const ToggleSection: FC = () => (
 );
 
 const AccordionSection: FC<{ icon: ShowIcon }> = ({ icon }) => {
-  // `Accordion.Trigger` takes `ForgeIcon<string>`, because its optional `iconName` is an arbitrary
-  // glyph. The showcase's binding names a fixed set, and a narrower name set is not assignable to a
-  // wider one — the trigger only ever draws `chevron-down` here, which this binding supplies.
   const wide = icon as unknown as ForgeIcon<string>;
   return (
     <CatalogSection id='accordion' title='Accordion'>
@@ -462,8 +434,6 @@ const DialogSection: FC = () => (
 const PopoverSection: FC = () => (
   <CatalogSection id='popover' title='Popover'>
     <Popover>
-      {/* `data-[popup-open]:` is the trigger's own state, not the panel's — it stays lit for exactly
-          as long as the surface it opened. No selector walks from the panel back to here. */}
       <Popover.Trigger
         id='show-popover'
         class='rounded-md border border-border px-3 py-1.5 text-sm data-[popup-open]:bg-accent data-[popup-open]:text-accent-foreground'>
@@ -517,8 +487,6 @@ const SwitchSection: FC = () => (
 
 const FormSection: FC = () => (
   <CatalogSection id='form' title='Form'>
-    {/* `Honeypot` is composed explicitly — `Form` renders none. On a `method='get'` form the
-        browser would serialise the decoy into the query string, and it protects nothing there. */}
     <Form action='#' method='post' csrfToken='demo-token' class='w-full max-w-xs space-y-3'>
       <Honeypot field='company' />
       <Field label='Project name'>
@@ -529,12 +497,6 @@ const FormSection: FC = () => (
   </CatalogSection>
 );
 
-/**
- * The one section with nothing to look at, and that is the demonstration: the decoy is off-canvas
- * and `aria-hidden`, so the markup is the exhibit. It is a section because it is a published
- * component — `Form` stopped rendering it, and a composition a consumer has to write is exactly the
- * kind the catalog exists to show.
- */
 const HoneypotSection: FC = () => (
   <CatalogSection id='honeypot' title='Honeypot'>
     <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
@@ -559,21 +521,11 @@ const FieldStackSection: FC = () => (
   </CatalogSection>
 );
 
-/**
- * Cloudflare's documented always-passes test key. A real key would tie the showcase to one origin,
- * and this widget is here to be looked at, not to gate anything.
- */
+/** Cloudflare's documented always-passes test key. */
 const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
 
-/**
- * The widget inside a form, because the controller has no other shape to run in: it resolves the
- * enclosing `<form>` and gives up when there is none, and it gates Cloudflare's script on the first
- * `focusin` within that form — so a form holding the widget alone would never load the script and
- * the box would stay empty forever. The field is what makes the demo reachable.
- *
- * Immediately above the submit control, which is where a challenge belongs: appearing there does not
- * push the button the reader is already reaching for.
- */
+// The field is not decoration: `mountTurnstile` gates Cloudflare's script on the first `focusin`
+// within the enclosing form, so a form with nothing to focus never loads the widget.
 const TurnstileSection: FC = () => (
   <CatalogSection id='turnstile' title='Turnstile'>
     <Form action='#' method='post' data-scope='show-turnstile' class='w-full max-w-xs space-y-3'>
@@ -588,7 +540,6 @@ const TurnstileSection: FC = () => (
 const ToolbarSection: FC = () => (
   <CatalogSection id='toolbar' title='Toolbar'>
     <Toolbar aria-label='Formatting'>
-      {/* `pressed` is what puts the boot tab stop here rather than on the first item. */}
       <Toolbar.Button pressed>Bold</Toolbar.Button>
       <Toolbar.Button pressed={false}>Italic</Toolbar.Button>
       <Toolbar.Button variant='secondary' size='icon' aria-label='Underline'>
@@ -627,11 +578,6 @@ const MenuSection: FC = () => (
       </Menu.Popup>
     </Menu>
 
-    {/* A context menu: no invoker at all, so anchor positioning has nothing to anchor to and the
-        coordinates come from the pointer. `coords` selects the placement rule; `openPopoverAt`,
-        wired by the eager `show-context-menu` scope in `show/client.ts`, writes the two custom
-        properties. The scope is eager because `contextmenu` is not one of the four delegated
-        `SCOPE_EVENTS` — there is no `data-on-*` here for a lazy scope to resume on. */}
     <div
       data-ref='context-surface'
       data-scope='show-context-menu'
@@ -671,8 +617,6 @@ const TabsSection: FC = () => (
 );
 
 const CollapsibleSection: FC<{ icon: ShowIcon }> = ({ icon }) => {
-  // `Collapsible.Trigger` takes `ForgeIcon<string>`, and a narrower name set is not assignable to a
-  // wider one. The trigger only ever draws `chevron-down`, which this binding supplies.
   const wide = icon as unknown as ForgeIcon<string>;
   return (
     <CatalogSection id='collapsible' title='Collapsible'>
@@ -750,8 +694,6 @@ const ToastCatalog: FC = () => (
   </CatalogSection>
 );
 
-// ─── Theme section ────────────────────────────────────────────────────────────
-
 const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => (
   <section id='theme' class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
     <div>
@@ -764,8 +706,6 @@ const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "m
     </div>
   </section>
 );
-
-// ─── Resumability island ─────────────────────────────────────────────────────
 
 const FILTER_ITEMS = ["Alert", "Avatar", "Badge", "Button", "Card", "Input", "Spinner", "Textarea", "Toast"];
 
@@ -799,8 +739,6 @@ const ResumableSection: FC = () => (
   </section>
 );
 
-// ─── ShowcaseContent ──────────────────────────────────────────────────────────
-
 /** Full showcase page content — Layout-less; the consuming app wraps this in its own Layout. @public */
 export const ShowcaseContent: FC<{
   data: ShowcaseData;
@@ -809,18 +747,8 @@ export const ShowcaseContent: FC<{
   const { paths } = data;
   return (
     <div class='flex min-h-dvh'>
-      {/* The rail is DOM-first, matching where it is drawn. That puts every catalog entry in the tab
-          order ahead of the content, which is what the app's skip link exists for — reversing it with
-          flex `order` would trade the tab stops for a DOM/visual mismatch, a worse outcome. */}
-      {/* The collapsed shape is the override, never the base: a browser without `:has()` keeps the
-          16rem full-height column rather than pinning a shrunken one that would clip the open panel.
-
-          Closed, the column is only the toggle. Three utilities, each undoing one thing the open
-          column needs: `w-auto` drops the 16rem track so the width is the hamburger's own box,
-          `self-start` stops the flex stretch that otherwise runs the item to the full `min-h-dvh`
-          page height, and `border-r-0` removes the rule that would be left hanging beside it — a
-          46px vertical stub reads as an artefact, not as the edge of a panel that is no longer
-          there. */}
+      {/* The collapsed shape is the override, never the base: a browser without `:has()` then keeps
+          the full column rather than pinning a shrunken one that would clip the open panel. */}
       <Resumable
         name='show-toc'
         class='w-64 shrink-0 border-r border-border has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-r-0'>
@@ -842,7 +770,6 @@ export const ShowcaseContent: FC<{
           </p>
         </div>
 
-        {/* Static catalog */}
         <div class='space-y-10'>
           <AccordionSection icon={icon} />
           <AlertSection />
@@ -883,7 +810,6 @@ export const ShowcaseContent: FC<{
           <TurnstileSection />
         </div>
 
-        {/* HTMX demos */}
         <section id='htmx-demos' class='scroll-mt-24 space-y-6'>
           <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>HTMX Demos</h2>
           <PreviewSection paths={paths} icon={icon} />
@@ -894,13 +820,10 @@ export const ShowcaseContent: FC<{
           <ToastSection paths={paths} />
         </section>
 
-        {/* Theme toggle */}
         <ThemeSection icon={icon} />
 
-        {/* Resumability island */}
         <ResumableSection />
 
-        {/* OOB flash target */}
         <FlashContainer />
       </main>
     </div>

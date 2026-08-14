@@ -45,6 +45,10 @@ type size is exactly what `forge-ui-heading-order` forbids; the ARIA pairing giv
 association without asserting a level. Its children render as bar links rather than menu rows,
 because visible destinations are the whole reason to reach for a group.
 
+The bar is **not** a `role="menubar"`, and must not be given the role. A menubar owes its triggers a
+roving tab stop of their own, and forge ships no menubar controller; claiming the role without the
+behaviour announces a keyboard interface that is not there.
+
 **Default: one `Navbar` per application, and it holds destinations only.**
 <!-- rule:forge-ui-nav-one-primary -->
 Two primary bars means the user must learn which one holds what before they can navigate at all.

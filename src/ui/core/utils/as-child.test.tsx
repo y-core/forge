@@ -14,29 +14,13 @@ const MESSAGE = "test compound with asChild requires exactly one JSX element chi
 
 const base = { slot: "probe", class: "probe-class", props: {}, message: MESSAGE };
 
-/** The class strings the composed cases assert, spelled out rather than imported, so a change to any
- * of them is a failing test here rather than a silently co-moving expectation. */
 const BUTTON_BASE =
   "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none " +
   "focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 const TOOLBAR_ITEM_CLASS = `${BUTTON_BASE} text-foreground hover:bg-accent h-8 px-3 text-sm`;
 
-/**
- * The composed cases below assert the class string *after* `cn` has merged the two components'
- * own strings, so each is spelled out whole rather than concatenated from its parts — writing
- * `${A} ${B}` here would assert the inputs, not the merge.
- *
- * Every composed trigger declares `outline-none focus-visible:ring-2 focus-visible:ring-ring`
- * for itself, so composing two of them yields the token twice and the earlier copy is dropped.
- * A repeated identical class name has no cascade effect, so the rendered result is unchanged.
- *
- * The `cursor-*` pair is a real conflict rather than a duplicate: a trigger that declares
- * `cursor-pointer` loses it to the tooltip's later `cursor-default`, which is the resolution the
- * stylesheet would have had to make anyway.
- */
 const MENU_WITH_TOOLTIP_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const POPOVER_WITH_TOOLTIP_CLASS = "list-none cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
-/** `focus-visible:outline-none` survives: a modifier scope is part of the key, so it never met the bare `outline-none`. */
 const TOOLBAR_ITEM_WITH_TOOLTIP_CLASS =
   "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none " +
   "disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm " +
@@ -46,11 +30,6 @@ const MENU_ITEM_WITH_TOOLTIP_CLASS =
   "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
   "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 " +
   "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
-/**
- * Coincides with `TOOLBAR_ITEM_WITH_TOOLTIP_CLASS` — the menu trigger's only surviving contribution
- * was `cursor-pointer`, which the tooltip's `cursor-default` now takes. Kept as its own constant so
- * a change to either assertion fails on its own rather than silently co-moving with the other.
- */
 const MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS =
   "inline-flex items-center justify-center rounded-lg font-medium transition-colors " +
   "focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent " +
@@ -124,9 +103,6 @@ describe("cloneAsChild — non-button children", () => {
 
 describe("cloneAsChild — data-slot is a token list", () => {
   it("appends to a child that already declares a slot, rather than unmaking it", async () => {
-    // Composing two compounds produces one element that genuinely is both. Overwriting used to
-    // destroy the inner compound silently: every `[data-slot~="menu-trigger"]` rule stopped matching,
-    // and with them the `anchor-name` that positions the menu's popup.
     const child = (
       <button type='button' data-slot='menu-trigger'>
         File
@@ -137,8 +113,6 @@ describe("cloneAsChild — data-slot is a token list", () => {
   });
 
   it("stamps its own slot alone when the child declares none", async () => {
-    // The single-token path, pinned so the append never leaks a leading space or an empty token into
-    // markup that has only one compound in it.
     expect(await render(cloneAsChild(<button type='button'>Go</button>, base))).toBe(
       '<button type="button" class="probe-class" data-slot="probe">Go</button>',
     );
@@ -153,8 +127,6 @@ describe("cloneAsChild — data-slot is a token list", () => {
 
 describe("Toolbar.Link asChild — the compound that sets neither option", () => {
   it("does not turn a child button into a submit button", async () => {
-    // `Toolbar.Link` passes no `type` and no `disabled`; spreading those as undefined used to erase
-    // the child's own `type`, leaving a button that submits the surrounding form on click.
     expect(
       await render(
         <Toolbar.Link asChild>
@@ -169,22 +141,14 @@ describe("Toolbar.Link asChild — the compound that sets neither option", () =>
 
 describe("slotToken", () => {
   it("concatenates own first, matching cloneAsChild's order", () => {
-    // The order is the contract, not an accident: `cloneAsChild` writes the *child's* token first and
-    // appends the outer compound's, so a compound composing an inherited token has to do the same or
-    // the two halves of the same rule would disagree about which end a token joins at.
     expect(slotToken("menu-trigger", "tooltip-trigger")).toBe("menu-trigger tooltip-trigger");
   });
 
   it("appends a whole inherited token list, not just its first token", () => {
-    // The three-deep case arrives here as a two-token `inherited`.
     expect(slotToken("menu-trigger", "toolbar-button tooltip-trigger")).toBe("menu-trigger toolbar-button tooltip-trigger");
   });
 
   it("contributes no token, and no trailing space, for anything that is not a non-empty string", () => {
-    // `inherited` comes from a caller-supplied prop bag, so every one of these is reachable. A
-    // trailing space would be harmless in HTML token-splitting but would break the exact-match
-    // goldens that pin every non-composed element in this library, so it is asserted rather than
-    // assumed.
     const cases: Array<{ inherited: unknown; label: string }> = [
       { inherited: "", label: "empty string" },
       { inherited: undefined, label: "undefined" },
@@ -197,28 +161,12 @@ describe("slotToken", () => {
       { inherited: ["a"], label: "an array" },
     ];
 
-    // Asserted as `{ label, token }` pairs rather than one `toBe` per row, so a failure reports which
-    // input produced the wrong token instead of only that some row did.
     expect(cases.map(({ inherited, label }) => ({ label, token: slotToken("menu-trigger", inherited) }))).toEqual(
       cases.map(({ label }) => ({ label, token: "menu-trigger" })),
     );
   });
 });
 
-/**
- * The composed-trigger cases, and the reason they are written as **JSX** rather than as a direct call
- * to the compound.
- *
- * `Menu.Trigger({ id, children })` returns already-rendered intrinsic markup whose `data-slot` is a
- * plain string prop — the one child shape `cloneAsChild` could always merge, and therefore the one
- * shape that cannot detect this bug. JSX (and `createElement`) hand `cloneAsChild` an *unrendered*
- * component element instead, so the token has to survive being injected into the inner compound's
- * props and re-emitted by it. Every assertion below must go through that path or it pins nothing.
- *
- * These are the compositions `forge-ui.css` writes `[data-slot~="tooltip-trigger"][data-slot~="…"]`
- * rules for; a dropped token makes all three rules unmatchable and the popup falls back to the UA's
- * `[popover]` centring.
- */
 describe("data-slot composition through an unrendered component child", () => {
   it("keeps menu-trigger when a tooltip is composed onto it", async () => {
     expect(
@@ -247,10 +195,6 @@ describe("data-slot composition through an unrendered component child", () => {
   });
 
   it("keeps both toolbar tokens when a tooltip is composed onto a chrome rail trigger", async () => {
-    // `chrome/Toolbar` passes `data-slot='toolbar-trigger'` *through* `core/Toolbar.Button`, so this
-    // element carries three tokens at once and each has a rule keyed on it: `toolbar-button` for the
-    // item styling, `toolbar-trigger` for the flyout's `anchor-name` and the open-flyout highlight,
-    // and `tooltip-trigger` for the tooltip's own anchor.
     expect(
       await render(
         <Tooltip.Trigger for='tip' asChild>
@@ -293,8 +237,6 @@ describe("data-slot composition through an unrendered component child", () => {
   });
 
   it("accumulates all three tokens through two nested asChild compounds", async () => {
-    // Two clones deep: the outer token is injected into `Toolbar.Button`'s props, merged there, then
-    // handed on as `cloneAsChild`'s slot for the innermost compound. Nothing may be lost at either hop.
     expect(
       await render(
         <Tooltip.Trigger for='tip' asChild>
@@ -311,9 +253,6 @@ describe("data-slot composition through an unrendered component child", () => {
   });
 
   it("merges the same way for a child built with createElement rather than JSX syntax", async () => {
-    // JSX desugars to this, so the two are the same path — pinned because the *third* spelling,
-    // `Menu.Trigger({ … })`, is not: it renders the child eagerly and reaches `cloneAsChild` as an
-    // intrinsic `<button>`, which merged correctly even before this fix.
     expect(
       await render(
         <Tooltip.Trigger for='tip' asChild>
@@ -327,12 +266,6 @@ describe("data-slot composition through an unrendered component child", () => {
   });
 });
 
-/**
- * The other half of the same bug: `cloneAsChild` writes `"data-slot"` as the **last** key of its
- * literal, so a token the caller handed the compound through its own props used to be spread in and
- * then overwritten. The six merging compounds now lift it out of the prop bag and fold it into the
- * slot they pass down, so it survives.
- */
 describe("a caller's own data-slot on an asChild compound", () => {
   it("survives on Toolbar.Button", async () => {
     expect(
@@ -355,8 +288,6 @@ describe("a caller's own data-slot on an asChild compound", () => {
   });
 
   it("stacks behind the child's own token when the child declares one too", async () => {
-    // Three sources for one attribute: the child element's literal, the compound's literal, and the
-    // caller's prop. All three are kept, child-first, because the element is genuinely all three.
     expect(
       await render(
         <Button asChild data-slot='caller'>

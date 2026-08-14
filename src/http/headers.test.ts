@@ -1,9 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Accept, CacheControl, ContentDisposition, ContentRange, ContentType, Range, SetCookie, Vary } from "./mod";
 
-// Facade-contract test: `http/headers.ts` is a pure re-export of `@remix-run/headers`.
-// These cases assert the public export path resolves and each key value symbol is
-// exported and usable — not the upstream library's own behaviour.
 describe("http/headers facade", () => {
   it("exports every value symbol as a constructable class", () => {
     const classes = [Accept, CacheControl, ContentDisposition, ContentRange, ContentType, Range, SetCookie, Vary];

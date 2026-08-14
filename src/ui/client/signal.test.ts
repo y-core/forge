@@ -95,7 +95,6 @@ describe("effect", () => {
     b.value = 20;
     expect(runs).toBe(4);
     expect(result).toBe(20);
-    // a is no longer tracked after condition switched
     a.value = 99;
     expect(runs).toBe(4);
   });
@@ -118,7 +117,6 @@ describe("effect", () => {
     expect(innerRuns).toBe(1);
     b.value = 1;
     expect(innerRuns).toBe(2);
-    // outer re-runs → disposes old inner, creates new inner
     a.value = 1;
     expect(innerRuns).toBe(3);
     b.value = 2;
@@ -142,7 +140,6 @@ describe("computed", () => {
 
   it("does not trigger downstream effects when the computed value is unchanged", () => {
     const a = createSignal(0);
-    // floor always returns 0 for values in [0, 1)
     const floored = computed(() => Math.floor(a.value));
     let sideEffectRuns = 0;
     effect(() => {
@@ -165,7 +162,6 @@ describe("batching", () => {
     const c = createSignal(0);
     let downstreamRuns = 0;
 
-    // one write to `trigger` opens a batch in which three signals are written
     effect(() => {
       const n = trigger.value;
       a.value = n;
@@ -193,7 +189,6 @@ describe("batching", () => {
     effect(() => {
       mid.value = trigger.value;
     });
-    // writing `mid` re-runs this inside the outer batch, opening a nested one
     effect(() => {
       leaf.value = mid.value;
     });
@@ -228,8 +223,6 @@ describe("effect that throws", () => {
       trigger.value = 1;
     }).toThrow("boom");
 
-    // two consecutive writes: the second only re-runs if the batch depth —
-    // and therefore the epoch counter — recovered from the throw
     other.value = 1;
     expect(otherRuns).toBe(2);
     other.value = 2;
@@ -254,9 +247,6 @@ describe("effect that throws", () => {
     expect(deadRuns).toBe(1);
   });
 
-  // The case above throws *before reading anything*, so it never subscribes and cannot detect an
-  // orphaned subscription. Reading first is what makes the leak reachable — and it is unbounded,
-  // not one-shot: the disposer never reaches the caller, so nothing can ever unsubscribe the node.
   it("leaves nothing subscribed when the first run reads a signal and then throws", () => {
     const s = createSignal(0);
     let runs = 0;
@@ -270,8 +260,6 @@ describe("effect that throws", () => {
     ).toThrow("poison");
     expect(runs).toBe(1);
 
-    // Each of these would rethrow "poison" out of the *setter* — an unrelated call site — while the
-    // dead node stayed subscribed, and would keep doing so for every write for the signal's life.
     expect(() => {
       s.value = 1;
     }).not.toThrow();

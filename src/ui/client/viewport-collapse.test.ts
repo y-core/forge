@@ -1,13 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { mountViewportCollapse } from "./viewport-collapse";
 
-/**
- * A hand-built disclosure, because `bun test` runs with no DOM. The fake fires `toggle`
- * synchronously on every write to `open` — one event per change, in order — which is the property
- * the controller's own-write bookkeeping depends on. That the real element behaves that way is the
- * browser set's claim (`viewport-collapse.browser.ts`); what is proven here is what the controller
- * does with the answer.
- */
+/** The fake fires `toggle` synchronously on every write to `open` — one event per change, in order
+ * — which is the property the controller's own-write bookkeeping depends on. */
 
 class FakeMediaQueryList {
   readonly listeners = new Set<() => void>();
@@ -121,8 +116,6 @@ describe("mountViewportCollapse", () => {
   });
 
   it("never opens a disclosure that was already closed at mount", () => {
-    // The shipped default: a collapsed bar server-renders closed, and a wide viewport must not be
-    // read as permission to show navigation the app never asked to show.
     const f = fixture(true, false);
     mountViewportCollapse({ element: f.element });
     expect(f.el.open).toBe(false);
@@ -152,8 +145,6 @@ describe("mountViewportCollapse", () => {
     f.media.set(true);
     expect(f.el.open).toBe(false);
 
-    // The user opens it on the phone and closes it again: the state on screen is now their answer,
-    // and the reopen this controller owed is cancelled with the rest of its authority.
     f.el.userToggle();
     f.el.userToggle();
 
@@ -183,7 +174,6 @@ describe("mountViewportCollapse", () => {
     f.el.userToggle();
     expect(f.el.open).toBe(true);
 
-    // The phone rotates. Slamming the rail shut here is exactly what the override rule forbids.
     f.media.set(false);
     f.media.set(true);
 

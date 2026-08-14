@@ -6,11 +6,6 @@ import { join } from "node:path";
 import type { ResolvedConfig } from "../types";
 import { buildAll, generateAssetsTypes } from "./pipeline";
 
-/**
- * Reads one emitted object literal back out of the generated module by text, rather than by
- * importing it: the artifact imports `@y-core/forge/ui/core`, and parsing keeps the assertion
- * on the bytes actually written.
- */
 function parseEmittedObject(source: string, opening: string): Record<string, string> {
   const start = source.indexOf(opening);
   if (start === -1) throw new Error(`generated module has no \`${opening}\` block`);
@@ -27,7 +22,6 @@ function parseEmittedObject(source: string, opening: string): Record<string, str
 
 const DATA_BLOCK = "const DATA: Record<string, string> = {";
 
-/** Stubs the `tailwindcss` shell-out, writing deterministic CSS to the `-o` path. */
 function stubTailwind() {
   const spy = spyOn(childProcess, "execFileSync").mockImplementation(((_cmd: string, args: string[]) => {
     writeFileSync(args[args.indexOf("-o") + 1] as string, "/* built css */");
@@ -107,9 +101,6 @@ describe("buildAll() — generated module available to the JS bundle", () => {
     mkdirSync(publicDir, { recursive: true });
 
     try {
-      // esbuild resolves the `@assets` alias via the nearest tsconfig to the entry file. The
-      // generated module imports `createManifest` from forge; alias it to source so the bundle
-      // resolves outside forge's own node_modules tree.
       const forgeManifest = join(process.cwd(), "src", "assets", "manifest", "mod.ts");
       writeFileSync(
         join(tmpDir, "tsconfig.json"),
@@ -117,10 +108,8 @@ describe("buildAll() — generated module available to the JS bundle", () => {
           compilerOptions: { baseUrl: ".", paths: { "@assets": [".forge/assets.ts"], "@y-core/forge/assets/manifest": [forgeManifest] } },
         }),
       );
-      // The entry imports the generated module — exactly what breaks if it isn't written first.
       writeFileSync(join(tmpDir, "src", "main.ts"), `import { assets } from "@assets";\nexport const path = assets.path("styles.css");\n`);
 
-      // No `.forge/assets.ts` exists yet — a clean checkout.
       expect(existsSync(assetsModule)).toBe(false);
 
       await buildAll(
@@ -137,10 +126,8 @@ describe("buildAll() — generated module available to the JS bundle", () => {
         { minify: false, assetsPath: assetsModule },
       );
 
-      // The bundle resolved `@assets` and was emitted, and the module is present for SSR.
       expect(existsSync(assetsModule)).toBe(true);
       expect(existsSync(join(publicDir, "js", "main.js"))).toBe(true);
-      // The final module carries the JS bundle's own output path (added after bundling) for SSR.
       expect(readFileSync(assetsModule, "utf-8")).toContain("js/main.js");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
@@ -165,8 +152,6 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
       writeFileSync(join(svgDir, "x-mark.svg"), `<svg viewBox="0 0 20 20"><path d="M0 0h4v4H0z"/></svg>`);
       writeFileSync(join(tmpDir, "src", "main.ts"), `export const x = 1;\n`);
 
-      // Every shape the two derivations could disagree on: a bare-string sprite entry (key from
-      // the basename) and an object entry (explicit key), under a default prefix and an override.
       const config = {
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
         css: [{ tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "styles.css" }],
@@ -194,20 +179,14 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
       const builtBrand = parseEmittedObject(built, "const BRAND_META = {");
       const typesBrand = parseEmittedObject(types, "const BRAND_META = {");
 
-      // Guard the comparisons below against passing vacuously on two empty sets.
       expect(Object.keys(builtData).sort()).toEqual(["js/main.js", "sprites/brand.svg", "sprites/ui.svg", "styles.css"]);
       expect(Object.keys(builtUi)).toEqual(["icon-arrow-right"]);
       expect(Object.keys(builtBrand)).toEqual(["glyph-close"]);
 
-      // The manifest keys are identical — every logical asset name the build knows about.
       expect(Object.keys(typesData).sort()).toEqual(Object.keys(builtData).sort());
-      // The `*_META` keys are identical — this is the icon-name union `createIcon` is typed on,
-      // and the only real type safety the artifact carries.
       expect(Object.keys(typesUi).sort()).toEqual(Object.keys(builtUi).sort());
       expect(Object.keys(typesBrand).sort()).toEqual(Object.keys(builtBrand).sort());
 
-      // The *values* are exactly where the two diverge: hashed paths and scraped viewBoxes need
-      // a real build; identity paths and empty viewBoxes are what config alone can know.
       expect(builtData["styles.css"]).toMatch(/^styles\.[0-9a-f]{8}\.css$/);
       expect(typesData["styles.css"]).toBe("styles.css");
       expect(builtUi["icon-arrow-right"]).toBe("0 0 16 16");
@@ -215,8 +194,6 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
       expect(builtBrand["glyph-close"]).toBe("0 0 20 20");
       expect(typesBrand["glyph-close"]).toBe("");
 
-      // Same emitter, so everything structural — imports, `createIcon` calls, export names,
-      // publicPrefix — is byte-identical outside the banner and those values.
       expect(types).toContain(`export const UiIcon = createIcon(assets.path("sprites/ui.svg"), UI_META, "icon-");`);
       expect(types).toContain(`export const BrandIcon = createIcon(assets.path("sprites/brand.svg"), BRAND_META, "glyph-");`);
       expect(types).toContain(`createManifest(DATA, "/assets")`);
@@ -239,8 +216,6 @@ describe("generateAssetsTypes() — derives from config alone", () => {
 
     const execSpy = stubTailwind();
     try {
-      // Nothing this config names is on disk, and one sprite source is a URL that would have to
-      // be fetched. A build would fail or reach the network; the derivation reads only the config.
       const config = {
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/static" },
         css: [{ tool: "tailwindcss", input: join(missing, "app.css"), output: "styles.css" }],
@@ -268,16 +243,13 @@ describe("generateAssetsTypes() — derives from config alone", () => {
 
       const source = readFileSync(typesModule, "utf-8");
       expect(Object.keys(parseEmittedObject(source, DATA_BLOCK)).sort()).toEqual(["js/main.js", "sprites/ui.svg", "styles.css"]);
-      // A remote source contributes its icon name like any other — the name is in the config.
       expect(Object.keys(parseEmittedObject(source, "const UI_META = {")).sort()).toEqual(["icon-chevron-down", "icon-spinner"]);
-      // `CURSOR_BAKES` exists wherever a real build would export it, keyed cursor × theme.
       expect(source).toContain("export const CURSOR_BAKES");
       expect(source).toContain(`"pointer": {`);
       expect(source).toContain(`"light": "",`);
       expect(source).toContain(`"dark": "",`);
 
       expect(execSpy).not.toHaveBeenCalled();
-      // No build ran, so nothing was written outside the module itself.
       expect(existsSync(publicDir)).toBe(false);
     } finally {
       execSpy.mockRestore();

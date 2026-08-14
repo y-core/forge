@@ -6,15 +6,6 @@ import { Navbar } from "./navbar";
 import { DARK_CLASS, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 import { ThemeToggle } from "./theme-toggle";
 
-/**
- * The `theme` and `navbar` scopes against a real browser.
- *
- * These cases replace a hand-rolled harness that stubbed the document, the media query and local
- * storage, and two of them were unreachable from it at any price: a `prefers-color-scheme` the
- * browser actually resolves, and a **live** media change arriving after resume — which is the only
- * reason the scope's `mql.addEventListener("change")` exists.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
@@ -22,9 +13,6 @@ declare global {
 }
 
 const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeChromeClient: "./ui/chrome/client" } };
-
-// The theme scope reads and writes `localStorage`, which needs a real origin — `mount()` gives the
-// page one, because `page.setContent()` alone leaves it on `about:blank` where storage throws.
 
 const icon = createIcon("/sprite.svg", { "icon-sun": "0 0 24 24", "icon-moon": "0 0 24 24", "icon-monitor": "0 0 24 24" });
 const navIcon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16", "icon-hamburger": "0 0 22 22", "icon-close": "0 0 22 22" });
@@ -66,7 +54,6 @@ test.describe("theme scope — the cycle", () => {
     expect(await themeState(page)).toEqual({ pref: "dark", dark: true, stored: "dark" });
 
     await page.click("[data-on-click='cycleTheme']");
-    // `system` against a light OS preference resolves to light.
     expect(await themeState(page)).toEqual({ pref: "system", dark: false, stored: "system" });
 
     await page.click("[data-on-click='cycleTheme']");
@@ -88,7 +75,6 @@ test.describe("theme scope — the system preference", () => {
     await page.emulateMedia({ colorScheme: "dark" });
     await mountTheme(page, "system");
 
-    // The case a stubbed `matchMedia` could only assert against its own stub.
     expect(await themeState(page)).toEqual({ pref: "system", dark: true, stored: "system" });
   });
 
@@ -106,7 +92,6 @@ test.describe("theme scope — the system preference", () => {
 
     await page.emulateMedia({ colorScheme: "dark" });
 
-    // The whole reason the scope listens for `change` on the media query, and never once exercised.
     await expect.poll(async () => (await themeState(page)).dark).toBe(true);
   });
 
@@ -132,7 +117,6 @@ test.describe("theme toggle — the accessible name follows the theme", () => {
 
   for (const pref of ["light", "dark", "system"] as const) {
     test(`announces the ${pref} theme with no JavaScript beyond the attribute`, async ({ page }) => {
-      // Sighted CSS is not loaded here, so both spans are readable; assert the one the CSS keeps.
       await mount(page, await render(ThemeToggle({ icon })), EXPOSE);
       await seed(page, pref);
 
@@ -216,7 +200,6 @@ test.describe("navbar scope — auth filters", () => {
 
     await page.evaluate(() => document.dispatchEvent(new CustomEvent("navbar:filters", { detail: ["admin"] })));
 
-    // Still the server-seeded set: the listener that would have re-synced it is gone.
     expect(await visible(page)).toEqual(["Account"]);
   });
 });

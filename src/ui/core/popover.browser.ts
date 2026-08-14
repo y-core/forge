@@ -3,15 +3,6 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { Popover } from "./popover";
 
-/**
- * `Popover` after render.
- *
- * The panel used to stamp a hardcoded `data-closed` — not a value frozen at the server's answer, but
- * one that was never true for longer than the first click, and stayed wrong for the entire time the
- * popover was open. Everything below opens or closes the panel for real and then re-reads it; the
- * old markup would satisfy any assertion made before the first event.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
@@ -92,8 +83,6 @@ test.describe("Popover", () => {
     await page.click("[data-ref='trigger']");
     await expect.poll(async () => (await state(page)).open).toBe(true);
 
-    // The controller reconciles `open` only, so a `side` / `align` decided at render is not something
-    // it can quietly drop — `applyStateAttrs` touches the keys it is handed and no others.
     expect(
       await page.evaluate(() => {
         const panel = document.querySelector("#tips");

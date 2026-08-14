@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import { fail, warn } from "./finding";
 import {
   formatDuration,
   formatFailureExcerpt,
+  formatFindingBlock,
   formatFixSummary,
   formatFullLogPath,
   formatList,
@@ -9,11 +11,6 @@ import {
   formatStepLine,
   formatSummary,
 } from "./report";
-
-// Every formatter here is pure, so each assertion is an exact-match on the whole string rather
-// than a substring probe: a reporting contract asserted by `toContain` cannot catch a line that
-// grew a second copy of what it names, which is the class of defect these formatters exist to
-// prevent.
 
 describe("formatDuration()", () => {
   it("renders sub-50ms as `<0.1s` rather than a zero that reads as a broken timer", () => {
@@ -43,7 +40,6 @@ describe("formatFailureExcerpt()", () => {
   });
 
   it("drops trailing blank lines first, so `tail` counts content rather than whitespace", () => {
-    // Without this, a step whose stream ends in newlines spends its whole window on nothing.
     const output = ["one", "two", "three", "", "", ""].join("\n");
 
     expect(formatFailureExcerpt(output, 2)).toBe("    two\n    three");
@@ -58,10 +54,6 @@ describe("formatFailureExcerpt()", () => {
     expect(formatFailureExcerpt("only", 40)).toBe("    only");
   });
 
-  // bug-260808-33. This is the mechanism itself, asserted rather than described: the excerpt is a
-  // blind tail, so a signal that lands early is discarded no matter how large `tail` grows. That
-  // is why the full-log path is printed beneath it — a bigger window is a probability reduction,
-  // not a fix.
   it("discards an early failure line that later noise pushes out of the window", () => {
     const output = ["(fail) parses a nested spread", ...Array.from({ length: 200 }, (_, i) => `noise ${i}`)].join("\n");
 
@@ -119,11 +111,11 @@ describe("formatList()", () => {
 
 describe("formatFixSummary()", () => {
   it("ends by pointing at the run that proves something, since a fixer pass proves nothing", () => {
-    expect(formatFixSummary("check", 2, 0)).toBe("2 fixed — re-run `bun run check` to confirm.");
+    expect(formatFixSummary("verify", 2, 0)).toBe("2 fixed — re-run `bun run verify` to confirm.");
   });
 
   it("counts the steps that had no fixer", () => {
-    expect(formatFixSummary("check", 1, 5)).toBe("1 fixed, 5 without a fixer — re-run `bun run check` to confirm.");
+    expect(formatFixSummary("verify", 1, 5)).toBe("1 fixed, 5 without a fixer — re-run `bun run verify` to confirm.");
   });
 });
 
@@ -132,5 +124,35 @@ describe("formatMissingRequirement()", () => {
     expect(formatMissingRequirement("test:browser", "chromium", "bun run test:install")).toBe(
       "✗ test:browser — chromium not found; run `bun run test:install`",
     );
+  });
+});
+
+describe("formatFindingBlock()", () => {
+  it("renders nothing for a check that found nothing, so a clean step stays one line", () => {
+    expect(formatFindingBlock([])).toBe("");
+  });
+
+  it("indents each finding to the depth a command step's failure excerpt uses", () => {
+    expect(formatFindingBlock([fail("barrel omits `parseThing`", { file: "src/pkg/mod.ts", line: 12 })])).toBe(
+      "    FAIL src/pkg/mod.ts:12: barrel omits `parseThing`",
+    );
+  });
+
+  it("indents a finding's evidence lines too, rather than letting them escape the block", () => {
+    expect(formatFindingBlock([fail("two subpaths unresolved", { detail: ["./ui/show", "./ui/chrome"] })])).toBe(
+      ["    FAIL: two subpaths unresolved", "        ./ui/show", "        ./ui/chrome"].join("\n"),
+    );
+  });
+
+  it("keeps warnings in the block, since a passing step is the only place they are ever printed", () => {
+    expect(formatFindingBlock([warn("622 lines exceeds the 600-line target", { file: "docs/A.md" })])).toBe(
+      "    warn docs/A.md: 622 lines exceeds the 600-line target",
+    );
+  });
+
+  it("renders every finding in order, never truncating to a tail the way captured output is", () => {
+    const findings = Array.from({ length: 40 }, (_, index) => fail(`finding ${index}`));
+
+    expect(formatFindingBlock(findings).split("\n")).toHaveLength(40);
   });
 });

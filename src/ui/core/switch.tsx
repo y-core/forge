@@ -15,6 +15,7 @@ const SWITCH_THUMB =
   "absolute left-0.5 top-0.5 size-4 rounded-full bg-background transition-transform " +
   "[[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&]:translate-x-4";
 
+/** A labelled on/off toggle backed by a native checkbox with the `switch` role. @public */
 export const Switch: FC<PropsWithChildren<SwitchProps>> = ({
   class: cls,
   field,

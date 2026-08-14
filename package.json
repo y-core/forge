@@ -3,23 +3,26 @@
   "version": "0.0.84",
   "bin": {
     "forge-assets": "./src/assets/cli/bin.ts",
-    "forge-cfgen": "./src/validation/cli/bin.ts"
+    "forge-cfgen": "./src/validation/cli/bin.ts",
+    "forge-release": "./src/pkg/release/bin.ts",
+    "forge-verify": "./src/pkg/gate/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
+  "description": "Server-rendered web utilities for Cloudflare Workers \u2014 HTMX + Tailwind",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/y-core/forge.git"
   },
   "license": "MIT",
   "scripts": {
-    "check": "bun run scripts/check.ts",
-    "verify": "bun run scripts/verify.ts",
-    "lint:fix": "bun run scripts/check.ts --fix",
+    "fix": "bun run src/pkg/gate/bin.ts --fix",
+    "lint": "bun run src/pkg/gate/bin.ts --only lint",
+    "release": "bun run src/pkg/release/bin.ts",
     "test": "bun test",
     "test:browser": "playwright test",
-    "prepublishOnly": "bun run verify",
-    "release": "bun run scripts/release.ts"
+    "verify": "bun run src/pkg/gate/bin.ts",
+    "verify:full": "bun run src/pkg/gate/bin.ts --full",
+    "prepublishOnly": "bun run verify:full"
   },
   "sideEffects": [
     "./src/jsx/register.ts",
@@ -43,17 +46,22 @@
     "@biomejs/biome": "^2.5.4",
     "@playwright/test": "^1.62.0",
     "@typescript/native-preview": "^7.0.0-dev.20260707.2",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "tailwindcss": "^4.3.3"
   },
   "peerDependencies": {
     "esbuild": ">=0.20.0",
-    "sharp": "latest"
+    "sharp": "latest",
+    "tailwindcss": ">=4.0.0"
   },
   "peerDependenciesMeta": {
     "esbuild": {
       "optional": true
     },
     "sharp": {
+      "optional": true
+    },
+    "tailwindcss": {
       "optional": true
     }
   },
@@ -223,7 +231,6 @@
   },
   "files": [
     "README.md",
-    "scripts/",
     "src/app/",
     "src/assets/",
     "src/cli/",
@@ -247,7 +254,6 @@
     "!**/*-test-helper.ts",
     "!**/*.browser.ts",
     "!**/*.test.ts",
-    "!**/*.test.tsx",
-    "!scripts/**/*.test.ts"
+    "!**/*.test.tsx"
   ]
 }

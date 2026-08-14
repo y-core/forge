@@ -1,11 +1,3 @@
-/**
- * Server-side JSX components for `@y-core/forge/ui/server`. @public
- *
- * Exports flash messages and `Resumable`.
- * HTMX helpers (headers, attrs, patterns) moved to `@y-core/forge/html/htmx`.
- * Import only in SSR/Workers contexts — never in browser bundles.
- */
-
 export { commandAttrs } from "./command-attrs";
 export { fieldAttr } from "./field-attr";
 export type { FlashMessage, FlashType } from "./flash";

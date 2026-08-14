@@ -4,11 +4,6 @@ import { mount } from "../client/browser-test-helper";
 import { Collapsible } from "./collapsible";
 import { createIcon } from "./icon";
 
-/**
- * `Collapsible` on native `<details>`: the platform owns open and closed, the controller only
- * publishes them.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");

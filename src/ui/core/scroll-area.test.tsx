@@ -2,18 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { ScrollArea } from "./scroll-area";
 
-/**
- * `core/ScrollArea`'s SSR markup, pinned exactly.
- *
- * The component is CSS and nothing else — no scroll listener, no custom scrollbar — so the emitted
- * string *is* the whole implementation, and these assertions are the only place the utilities that
- * make it scroll are pinned. `tabindex="0"` on the viewport is asserted for the same reason: a
- * scrollable region that cannot be focused cannot be scrolled from the keyboard, and losing the
- * attribute changes nothing a mouse-driven behaviour test would notice.
- */
-
 const VIEWPORT_BASE =
-  "h-full w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+  "h-full max-h-[inherit] w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring " +
   "[scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent]";
 
 describe("ScrollArea", () => {
@@ -80,7 +70,7 @@ describe("ScrollArea.Viewport", () => {
 
   it("lets a caller class override the conflicting overflow utility rather than stacking on it", async () => {
     expect(await render(<ScrollArea.Viewport class='overflow-hidden'>Log line</ScrollArea.Viewport>)).toBe(
-      '<div data-slot="scroll-area-viewport" tabindex="0" class="h-full w-full overscroll-contain rounded-[inherit] outline-none ' +
+      '<div data-slot="scroll-area-viewport" tabindex="0" class="h-full max-h-[inherit] w-full overscroll-contain rounded-[inherit] outline-none ' +
         "focus-visible:ring-2 focus-visible:ring-ring [scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent] " +
         'overflow-hidden">Log line</div>',
     );

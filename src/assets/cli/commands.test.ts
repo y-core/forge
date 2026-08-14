@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import type { CommandBase } from "../../cli/types";
 import { createAssetsCommands } from "./commands";
 
-/** Depth-first collection of every runnable (leaf) command in the tree. */
 function runnableCommands(root: CommandBase): CommandBase[] {
   const out: CommandBase[] = [];
   const walk = (cmd: CommandBase): void => {
@@ -31,6 +30,13 @@ describe("createAssetsCommands", () => {
     const root = createAssetsCommands();
     for (const cmd of runnableCommands(root)) {
       expect(cmd.flags.config).toEqual({ type: "string", description: "Path to assets.config.ts" });
+    }
+  });
+
+  it("gives every runnable subcommand the shared root flag", () => {
+    const root = createAssetsCommands();
+    for (const cmd of runnableCommands(root)) {
+      expect(cmd.flags.root).toEqual({ type: "string", description: "Application root (default: derived from forge's install path)" });
     }
   });
 });

@@ -1,6 +1,6 @@
 ---
 title: Production TypeScript Rules
-description: "Six non-negotiable coding rules: zero global state, explicit errors, validation first, testability, TSDoc, and declarative style."
+description: "Six non-negotiable coding rules: zero global state, explicit errors, validation first, testability, the comment budget, and declarative style."
 ---
 
 # Production TypeScript Rules
@@ -32,10 +32,11 @@ description: "Six non-negotiable coding rules: zero global state, explicit error
 - §3c Abort-Early Validation: form-validation default
 - §4 Testability Rule: design so tests need no mocks
 - §4a No Globals to Mock: what factory functions buy
-- §5 TSDoc on All Exports Rule: the documentation floor
-- §5a TSDoc for Public Exports: one line minimum
-- §5b @internal for Non-Public Symbols: the visibility marker
-- §5c @example for Complex APIs: when usage is non-obvious
+- §5 Comment Budget Rule: a ceiling on prose, not a floor
+- §5a The Entire Permitted Budget: one-line TSDoc, visibility tags, the rare inline why
+- §5b Forbidden Outright: what is deleted on sight
+- §5c Where Rationale Belongs Instead: the routing table
+- §5d Tests Are Not Exempt: the test name is the documentation
 - §6 Declarative Over Imperative Rule: expression over statement
 
 ---
@@ -191,11 +192,36 @@ signal: make its dependency an argument.
 
 ---
 
-## 5. TSDoc on All Exports Rule
+## 5. Comment Budget Rule
 
-### 5a. TSDoc for Public Exports
+**Code is the documentation. A comment is an admission that the code failed to explain itself,
+and it is paid for out of every future reader's attention.** This rule is a *ceiling*, not a
+floor: §5a is the entire permitted budget, and anything not named there is a defect to be
+deleted — not a judgement call, not a matter of taste, not something to leave because it is
+already written.
 
-**Every exported function, type, and constant carries at minimum a one-line TSDoc.**
+Prose does not compile, is not typechecked, is not tested, and is not reachable by any gate. It
+therefore goes stale silently and asserts things no one can verify. Every line of it is read —
+by a human or an agent — on every single pass over the file, and then discarded. That cost is
+paid continuously; the comment's value is paid once, at most.
+
+**The first fix for an unclear line is always a better name, a smaller function, or a named
+intermediate — never a comment.** Reach for a comment only after those have been tried and have
+genuinely failed.
+
+### 5a. The Entire Permitted Budget
+
+Exactly three forms of comment are allowed in `src/` and `scripts/`. Nothing else is.
+
+**Machine-readable directives are not comments and are outside this budget entirely** — they are
+compiler or tooling *input* that happens to use comment syntax: `@jsx*` pragmas, `biome-ignore`,
+and `design-allow:`. Never delete one. Where a directive carries a human-readable reason field,
+that reason must be **self-contained**: `design-allow: … — see the note above` breaks the moment
+the note it points at is deleted, and `design-parse.ts` requires the field to be non-empty. Write
+the reason so it survives alone.
+
+**1. One line of TSDoc on an exported symbol.** One sentence, on one line, saying what the
+symbol does. Not why it exists, not what it does not do, not what was considered instead.
 
 ```typescript
 /** Creates a Forge app with a structured error boundary and config validation. */
@@ -204,15 +230,73 @@ export function createApp<Bindings extends object = Record<string, unknown>>(
 ): Forge<Bindings>
 ```
 
-### 5b. `@internal` for Non-Public Symbols
+**2. The visibility tags `@public` and `@internal`.** These are machine-readable markers, not
+prose. `@internal` is what keeps a symbol out of the barrel without keeping it out of
+cross-namespace use. They append to the TSDoc line and do not earn it extra lines.
 
-**Internal utilities that are not part of the public API must be marked `@internal`.** The tag
-is what keeps a symbol out of the barrel without keeping it out of cross-namespace use.
+**3. A rare inline comment carrying a genuinely non-obvious *why*.** This is the exceptional
+case, and it is exceptional in the literal sense — most files contain zero. It is permitted only
+when all four hold:
 
-### 5c. `@example` for Complex APIs
+- the *what* is already plain from the code, and only the *why* is missing;
+- the reason is external to the file — a spec quirk, a browser or runtime bug, a wire-format
+  constraint, a security invariant that a plausible "simplification" would silently break;
+- a reader who did not know it would reasonably change the code and be wrong;
+- it fits in one or two lines.
 
-**Add `@example` when the usage pattern is non-obvious** — a builder, a multi-step lifecycle, or
-an argument whose shape is not evident from its type.
+```typescript
+// Cloudflare strips this header before the isolate sees it; re-reading it here is not redundant.
+const clientIp = request.headers.get("cf-connecting-ip") ?? fallbackIp(request);
+```
+
+### 5b. Forbidden Outright
+
+Delete these on sight, in existing code as readily as in new code. No deprecation window, no
+"leave it for now" — an unbudgeted comment is removed in whatever change touches the file.
+
+- **Multi-paragraph TSDoc.** Design rationale, alternatives weighed, history, numbered
+  justifications, "for four reasons", "two earlier attempts were wrong".
+- **`@example` blocks.** A signature plus a one-line summary is the usage documentation. If an
+  API genuinely cannot be used from its types, that is an API defect — fix the API. Consumer-
+  facing usage belongs in the namespace `README.md` or the governing `.decisions/` doc, where it
+  has a single home and does not ride along in every read of the source.
+- **Restating the code.** `// increment the counter`, `/** The user's name. */ name: string`,
+  `// Returns true if valid`.
+- **Section banners and separators.** `// ---- helpers ----`, `// === Types ===`,
+  box-drawing rules. File structure is what files and exports are for.
+- **Commented-out code.** Git holds it.
+- **Narration of the obvious.** `// Guard clause`, `// Early return`, `// Loop over items`.
+- **Self-referential meta-commentary.** A comment about why a comment exists, or about what a
+  previous attempt at the comment got wrong, is never load-bearing.
+- **Justifying a decision the code cannot observe.** If two orderings, spellings, or shapes are
+  provably indistinguishable to every caller, the choice needs no defence in the source. If it
+  genuinely matters, a *test* asserts it — a comment cannot.
+- **TODO / FIXME / XXX.** Unactionable in-band. Open a ledger task.
+
+### 5c. Where Rationale Belongs Instead
+
+The instinct behind a long comment is usually sound — the reasoning is real and worth keeping.
+It is the *placement* that is wrong. Route it to the one place that owns it:
+
+| The content is… | Its single home |
+|---|---|
+| Architectural rationale, a boundary, a trade-off | the governing `.decisions/` doc |
+| Consumer-facing usage, examples, recipes | the namespace `README.md` |
+| A claim about behaviour | a test that asserts it |
+| A design rule or UI anti-pattern | `src/ui/design/` |
+| Work not yet done | a ledger task |
+| The history of a decision | the commit message |
+
+A comment that could live in any row above does not also live in the source. Duplicating it
+there is how the two copies drift.
+
+### 5d. Tests Are Not Exempt
+
+A test name is the test's documentation, and it is the one form of description that runs. A test
+whose intent needs a comment needs a better name. The same budget applies to `*.test.ts` /
+`*.test.tsx`, with one addition: a fixture holding a deliberately malformed or adversarial value
+may carry a one-line note saying what makes it malformed, when that is not visible from the
+literal itself.
 
 ---
 

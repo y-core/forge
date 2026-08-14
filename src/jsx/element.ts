@@ -2,8 +2,7 @@ import type { ComponentFn, JSXElement } from "./types";
 
 /** Fragment renders its children without a wrapper element. @public */
 export function Fragment(_: { children?: unknown }): JSXElement | null {
-  // Never actually called by renderToString — the renderer detects Fragment by reference
-  // equality and renders its children directly. Return type satisfies JSX component constraints.
+  // Never called: renderToString detects Fragment by reference equality and renders its children.
   return null;
 }
 

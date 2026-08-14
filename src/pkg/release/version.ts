@@ -4,23 +4,11 @@ import type { BumpKind, ResolveVersionOptions, VersionDeps, VersionResult } from
 import { ReleaseError } from "../types";
 import { bumpSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
 
-/**
- * The subject of a `git log --oneline` entry — the abbreviated sha and its single separating
- * space removed. `--oneline` is exactly `%h %s`, so this consumes one token and no more: a
- * subject that itself opens with a hex word survives intact.
- * @internal
- */
+// `git log --oneline` is exactly `%h %s`; this strips only the sha token so a subject starting with a hex word survives.
 function subjectOf(entry: string): string {
   return entry.replace(/^[0-9a-f]+ /, "");
 }
 
-/**
- * The highest bump any commit in the range asks for — `major` beats `minor` beats `patch`.
- *
- * Scanning the whole range rather than the tip is the point: a cycle holding `major: …` followed
- * by `fix typo` used to ship as a patch, because only the tip subject was ever read.
- * @internal
- */
 function highestBump(entries: readonly string[]): BumpKind {
   let kind: BumpKind = "patch";
   for (const entry of entries) {
@@ -31,6 +19,7 @@ function highestBump(entries: readonly string[]): BumpKind {
   return kind;
 }
 
+/** Resolves the next release version from an explicit override or the commits since the latest tag. */
 export function resolveVersion(
   { explicit, cwd, tagPrefix }: ResolveVersionOptions,
   deps: VersionDeps = { getLatestTag, getCommitsSinceTag, readPackageVersion },

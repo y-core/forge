@@ -46,12 +46,6 @@ describe("Badge", () => {
   });
 
   it("expresses every status variant through `--status-*` tokens, with no raw palette or `dark:` utility", async () => {
-    // `forge-ui-color-theme-no-raw-utility` in a single assertion, restated for the token world: a
-    // status variant re-maps under `.dark` through the token, so a hand-written `dark:` pair is now
-    // itself the defect the rule catches, alongside the fixed-palette stop it used to catch.
-    // The token count is asserted beside the two violation lists: a variant whose colour utilities
-    // were deleted outright would leave both lists empty too, and would pass a check that only
-    // counted the failures.
     const audit: Record<string, { tokens: number; palette: string[]; dark: string[] }> = {};
     for (const variant of ["destructive", "info", "success", "warning"] as const) {
       const html = await render(<Badge variant={variant}>x</Badge>);

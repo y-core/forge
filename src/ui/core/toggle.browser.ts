@@ -3,15 +3,6 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { Toggle } from "./toggle";
 
-/**
- * `Toggle` — a lone two-state button, deliberately not a form control.
- *
- * The markup is rendered with **no caller-supplied wiring**, and that is the point. `Toggle` stamps
- * a lazy scope, and a lazy scope resumes only on a `data-on-*` interaction; for as long as the
- * component emitted the scope name and left the action to the caller, a plain `<Toggle>` was a
- * button that announced its own behaviour and had none.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");

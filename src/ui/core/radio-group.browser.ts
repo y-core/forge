@@ -4,13 +4,6 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { RadioGroup } from "./radio-group";
 
-/**
- * No module is exposed here either, and for RadioGroup that is the substantive claim: the keyboard
- * behaviour these cases assert is entirely the platform's. If a composite controller were ever
- * mounted on this component, the arrow-key cases would start skipping items — which is precisely
- * what makes them worth writing.
- */
-
 async function formMarkup(): Promise<string> {
   return render(
     jsx("form", {
@@ -89,7 +82,6 @@ test("the group is already a single Tab stop", async ({ page }) => {
   await page.focus("#field-plan-pro");
   await page.keyboard.press("Tab");
 
-  // Tab leaves the group from the middle item — the roving-tabindex contract, supplied natively.
   expect(await focusedId(page)).toBe("after");
 });
 

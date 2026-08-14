@@ -18,28 +18,12 @@ import type { LogRecord, LogRow } from "../types";
 /** Stable id of the log table tbody; shared so HTMX outerHTML swaps target the node the partial returns. @internal */
 export const LOG_TBODY_ID = "log-tbody";
 
-/**
- * Stable id of the load-more row, which the append fragment replaces out of band.
- *
- * The control's `hx-get` carries the cursor it was rendered with, so appending a page leaves it
- * pointing at a cursor already consumed. Replacing it is therefore not optional; doing it out of
- * band is what keeps the control *outside* the region it appends into. One writer, one id — the
- * append fragment is the only thing that ever names this. @internal
- */
+/** Stable id of the load-more row, which the append fragment replaces out of band. @internal */
 export const LOG_LOAD_MORE_ID = "log-load-more";
 
-/** Columns in the log table, so a full-width cell's `colspan` is not restated at five call sites. */
 const LOG_COLUMNS = 5;
 
-/**
- * The id of a row's detail region.
- *
- * A log key is `logs||<iso>||<suffix>`, whose `|`, `:` and `.` are all legal in an HTML id and all
- * meaningful in the CSS selector `hx-target` parses — so the key is folded to `[A-Za-z0-9_-]`
- * before it becomes one. Two keys can only collide here by differing *solely* in which punctuation
- * character sits at a given position, which that key format cannot produce: the suffix is what
- * distinguishes two rows at the same instant, and it is alphanumeric.
- */
+// A log key's `|`, `:` and `.` are legal in an HTML id but meaningful in the selector `hx-target` parses.
 function detailRowId(key: string): string {
   return `log-detail-${key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
 }
@@ -52,28 +36,14 @@ export interface LogViewerLoaderData {
   level?: string;
   q?: string;
   basePath: string;
-  /** Set when the channel read rejected. The table keeps its shape and an `Alert` sits in place of
-   *  the rows, rather than the rejection reaching the error boundary — for a fragment request that
-   *  boundary returns a non-HTML body, which HTMX would swap into the table. */
   failed?: boolean;
 }
 
-/**
- * Which `Badge` variant carries each level.
- *
- * `debug` is `outline` rather than a fifth hue: it is a neutral label, not a status signal, which is
- * `forge-ui-hierarchy-badge-outline-first`. The three that *are* signals take the variants `Badge`
- * owns — the fixed palette utilities stay inside the component, per
- * `forge-ui-color-semantic-variant-fixed`, rather than being copied back out into this markup.
- */
 const LEVEL_VARIANT: Readonly<Record<string, BadgeVariant>> = { debug: "outline", info: "info", warn: "warning", error: "destructive" };
 
-/** Badge for a log level. An unknown level falls back to `info` — the level word is still the
- *  badge's own content, so the status is never carried by colour alone. @internal */
+/** Badge for a log level; an unknown level falls back to `info`. @internal */
 export const LogLevelBadge: FC<{ level: string }> = ({ level }) => <Badge variant={LEVEL_VARIANT[level] ?? "info"}>{level}</Badge>;
 
-/** The query string the filter bar's current state resolves to — also what the retry and the
- *  clear-filters controls need. */
 function filteredHref(basePath: string, level?: string, q?: string): string {
   const params = new URLSearchParams();
   if (level) params.set("level", level);
@@ -82,11 +52,6 @@ function filteredHref(basePath: string, level?: string, q?: string): string {
   return query ? `${basePath}?${query}` : basePath;
 }
 
-/**
- * Builds the next-page URL for the load-more control. The active filters ride along so the
- * appended page is drawn from the same filtered set the table already shows — otherwise page two
- * arrives unfiltered and mixes rows the viewer asked to exclude into the rows it is showing.
- */
 function nextPageHref(basePath: string, cursor: string, level?: string, q?: string): string {
   const params = new URLSearchParams({ cursor });
   if (level) params.set("level", level);
@@ -102,14 +67,7 @@ interface LogFilterBarProps {
   icon: ForgeIcon<"chevron-down">;
 }
 
-/**
- * Filter form for the log viewer — level selector, text search, and HTMX-powered submit.
- *
- * The indicator is the **region**, not the button: this is the "a region of content loading" row of
- * the table in `11-htmx.md`, and HTMX's `htmx-request` class on the tbody is what reveals the
- * skeleton rows already sitting in it. The submit is still disabled for the duration.
- * @internal
- */
+/** Filter form for the log viewer — level selector, text search, and HTMX-powered submit. @internal */
 export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAction, icon }) => (
   <form
     class='flex flex-wrap sm:flex-nowrap items-end gap-2'
@@ -200,31 +158,11 @@ interface LogLoadMoreRowProps {
   loadMoreAction: string;
   level?: string;
   q?: string;
-  /** The read this control issued rejected. The cursor is unspent, so the control stays and becomes
-   *  its own retry, under a message saying why the page did not arrive. */
   failed?: boolean;
-  /** Spread by the append fragment so this row replaces the one already on the page. */
   "hx-swap-oob"?: string;
 }
 
-/**
- * The load-more control, as a `<tfoot>` row.
- *
- * It sits **outside** `#log-tbody`, which is what it appends into — a control inside its own swap
- * target is destroyed by the swap and drops focus to `<body>` (`forge-ui-htmx-restore-focus`).
- *
- * A `<tr>` rather than a `Card.Footer` `<div>`, and that is load-bearing rather than stylistic. The
- * append response carries this row out of band beside the new `<tr>`s, and HTMX parses a response
- * into a fragment using a wrapper chosen from its *first* tag: a `<div>` sibling of `<tr>`s is
- * hoisted out by the HTML parser and lost. Keeping both halves of the response `<tr>`-shaped is what
- * makes the out-of-band replacement arrive at all.
- *
- * This row is also where an append failure is reported, rather than the tbody: the rows already in
- * the table are untouched by a page that never arrived, so putting the message at the point of
- * interaction leaves them alone and keeps the retry where the reader's attention already is. The
- * control's own `hx-get` still names the cursor that failed, so it *is* the retry — no second
- * control, and nothing to keep in step with it. @internal
- */
+/** The load-more control as a `<tfoot>` `<tr>`; a non-`<tr>` sibling of the appended rows is hoisted away by the HTML fragment parse. @internal */
 export const LogLoadMoreRow: FC<LogLoadMoreRowProps> = ({ cursor, complete, loadMoreAction, level, q, failed, "hx-swap-oob": oob }) => (
   <tr id={LOG_LOAD_MORE_ID} {...(oob !== undefined ? { "hx-swap-oob": oob } : {})}>
     <td colspan={LOG_COLUMNS} class='px-4 py-2 text-center'>
@@ -257,12 +195,7 @@ interface LogRowsProps {
   loadMoreAction: string;
 }
 
-/**
- * One page of log rows, as a bare `<tr>` sequence — each data row followed by its own detail row.
- *
- * Rendered on its own for a load-more append, and nested inside `LogTableBody` for a whole-table
- * render. @internal
- */
+/** One page of log rows, as a bare `<tr>` sequence — each data row followed by its own detail row. @internal */
 export const LogRows: FC<LogRowsProps> = ({ rows, loadMoreAction }) => (
   <>
     {rows.map((row) => (
@@ -271,16 +204,6 @@ export const LogRows: FC<LogRowsProps> = ({ rows, loadMoreAction }) => (
   </>
 );
 
-/**
- * One log row and the detail row that belongs to it.
- *
- * The message control targets its **sibling** detail row rather than its own cell, so the swap never
- * contains the button that triggered it. The detail row ships in the initial render rather than
- * being swapped in (`forge-ui-htmx-reserve-space`): it is the control's `hx-indicator`, so HTMX's
- * `htmx-request` class is what reveals it, and what it reveals is a skeleton at the shape the record
- * will occupy. `Skeleton` is `aria-hidden`, so the `sr-only` line beside it is the announcement the
- * region would otherwise not make.
- */
 const LogRowPair: FC<{ row: LogRow; loadMoreAction: string }> = ({ row, loadMoreAction }) => {
   const detailId = detailRowId(row.key);
   return (
@@ -311,11 +234,6 @@ const LogRowPair: FC<{ row: LogRow; loadMoreAction: string }> = ({ row, loadMore
       </tr>
       <tr id={detailId} class='hidden border-b border-border [&.htmx-request]:table-row'>
         <td colspan={LOG_COLUMNS} class='px-4 py-2'>
-          {/* Named, but deliberately **not** a live region. One `role='status'` per row is N live
-              regions on a page whose budget is one, and `forge-ui-a11y-one-live-region` means it.
-              `forge-ui-a11y-spinner-announces` takes its own stated override instead — the wait is a
-              single record read, and HTMX disables the trigger for its duration, which is already an
-              announced state change on the control the reader touched. */}
           <span class='sr-only'>Loading log entry detail…</span>
           <Skeleton class='h-4 w-full' />
         </td>
@@ -333,14 +251,7 @@ interface LogTableBodyProps {
   failed?: boolean;
 }
 
-/**
- * `<tbody>` fragment — returned standalone for HTMX partial swaps.
- *
- * Carries the surface's empty and error states, because both belong *inside* the table: the header
- * row and the filter bar above it stay put either way, which is what `forge-ui-state-error-inline`
- * asks for and what makes a failed read distinguishable from a filter that matched nothing.
- * @internal
- */
+/** `<tbody>` fragment carrying the empty and error states — returned standalone for HTMX partial swaps. @internal */
 export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, loadMoreAction, level, q, failed }) => (
   <tbody {...(id !== undefined ? { id } : {})}>
     {failed ? <LogErrorRow {...(level !== undefined ? { level } : {})} {...(q !== undefined ? { q } : {})} retryAction={loadMoreAction} /> : null}
@@ -351,15 +262,6 @@ export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, loadMoreAction, 
   </tbody>
 );
 
-/**
- * The empty state.
- *
- * `forge-ui-state-empty-composed` grants a log stream the standalone-sentence override — there is no
- * user-initiated way to fill a log — **on condition that the sentence says why**, so the two causes
- * are spelled out separately rather than sharing one "No log entries found." A filter that matched
- * nothing additionally keeps its control and gains one that clears it, which is
- * `forge-ui-state-hide-empty-controls`' own override.
- */
 const LogEmptyRow: FC<{ level?: string; q?: string; clearAction: string }> = ({ level, q, clearAction }) => {
   const filtered = Boolean(level) || Boolean(q);
   return (
@@ -390,12 +292,6 @@ const LogEmptyRow: FC<{ level?: string; q?: string; clearAction: string }> = ({ 
   );
 };
 
-/**
- * The error state — in place, with the table's own shape preserved around it.
- *
- * The retry re-issues the read the filters describe, so the reader lands back where they were rather
- * than on an unfiltered stream (`forge-ui-state-error-retry`).
- */
 const LogErrorRow: FC<{ level?: string; q?: string; retryAction: string }> = ({ level, q, retryAction }) => (
   <tr>
     <td colspan={LOG_COLUMNS} class='px-4 py-4'>
@@ -419,11 +315,7 @@ const LogErrorRow: FC<{ level?: string; q?: string; retryAction: string }> = ({ 
   </tr>
 );
 
-/**
- * The append fragment — the next page of rows, plus the load-more row carrying its new cursor out of
- * band. Both halves are `<tr>`-shaped so HTMX's fragment parse keeps them; see `LogLoadMoreRow`.
- * @internal
- */
+/** The append fragment — the next page of rows, plus the load-more row carrying its new cursor out of band. @internal */
 export const LogAppendFragment: FC<{ data: LogViewerLoaderData }> = ({ data }) => (
   <>
     <LogRows rows={data.rows} loadMoreAction={data.basePath} />
@@ -439,11 +331,7 @@ export const LogAppendFragment: FC<{ data: LogViewerLoaderData }> = ({ data }) =
   </>
 );
 
-/**
- * Expanded detail row — the full stored record (including `data.stack` when present) as
- * pretty-printed JSON. Rendered as the HTMX `outerHTML` replacement of a row's own detail row, so it
- * keeps that row's id and the trigger beside it survives the swap. @internal
- */
+/** Expanded detail row — the full stored record as pretty-printed JSON. @internal */
 export const LogDetailRow: FC<{ record: LogRecord | null; rowKey: string }> = ({ record, rowKey }) => (
   <tr id={detailRowId(rowKey)} class='border-b border-border'>
     <td colspan={LOG_COLUMNS} class='px-4 py-2'>
@@ -458,15 +346,19 @@ export const LogDetailRow: FC<{ record: LogRecord | null; rowKey: string }> = ({
   </tr>
 );
 
-/**
- * Full log viewer content — heading, filter bar, and the bounded table.
- *
- * The table bleeds to the card's border (`Card.Content class='p-0'`), which is the case
- * `forge-ui-layout-card-section-rhythm` names verbatim, and is bounded by a `ScrollArea` so a long
- * stream scrolls inside the card rather than extending the page. @internal
- */
+/** Full log viewer content — heading, filter bar, and the bounded table. @internal */
 export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"chevron-down"> }> = ({ data, icon }) => (
-  <main id='main-content' class='mx-auto flex max-w-7xl flex-col gap-4 px-6 py-10 lg:px-10'>
+  // `flex-1 min-h-0` claims the column's leftover height from the consumer's layout and lets the chain
+  // below shrink past its content rather than flooring at it.
+  //
+  // `data-fill-viewport` is the half a page cannot do for itself. `min-h-dvh` on the shell leaves the
+  // column's height *indefinite*, and a flex container sized that way takes its height from its items'
+  // content — so a long table grows the document however the items are flexed (`min-h-0` and a definite
+  // `height: 0` were both measured; neither holds it). Only a definite shell height does, and only the
+  // shell can set one. The attribute is the handle a layout switches on:
+  //   <body class='flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden'>
+  // A layout that ignores it still renders correctly — the table then falls back to the `max-h-dvh` box.
+  <main id='main-content' data-fill-viewport class='mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-10 lg:px-10'>
     <h1 class='text-2xl font-semibold tracking-tight text-foreground'>Request Log</h1>
     <LogFilterBar
       {...(data.level !== undefined ? { level: data.level } : {})}
@@ -475,10 +367,16 @@ export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"
       formAction={data.basePath}
       icon={icon}
     />
-    <Card>
-      <Card.Content class='p-0'>
-        <ScrollArea class='max-h-96'>
-          <ScrollArea.Viewport>
+    <Card class='min-h-0 flex-1'>
+      <Card.Content class='flex min-h-0 flex-1 flex-col p-0'>
+        {/* Every link here grows by `flex-1`, never by a percentage. `h-full` cannot be used: a layout
+            bounded by `min-h-dvh` has no *definite* height, so `height: 100%` resolves to `auto` and the
+            table grows the page instead of scrolling. `flex-1` needs no definite parent, and the paired
+            `min-h-0` lifts the automatic minimum size that would otherwise floor each box at its content.
+            `max-h-dvh` is the fallback for a consumer whose layout is not a flex column, where `flex-1`
+            is inert: the table then scrolls in a viewport-tall box rather than growing without bound. */}
+        <ScrollArea class='flex min-h-0 max-h-dvh flex-1 flex-col'>
+          <ScrollArea.Viewport class='min-h-0 flex-1'>
             <LogTable
               rows={data.rows}
               {...(data.cursor !== undefined ? { cursor: data.cursor } : {})}

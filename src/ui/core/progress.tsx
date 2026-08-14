@@ -7,6 +7,7 @@ import { asClass, cn } from "./utils/cn";
 
 type ProgressProps = Omit<JSX.IntrinsicElements["progress"], "children"> & { label?: string; orientation?: "horizontal" | "vertical" };
 
+/** A native `<progress>` bar for a task with a known total, horizontal or vertical. @public */
 export const Progress: FC<ProgressProps> = ({
   class: cls,
   label,

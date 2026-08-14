@@ -15,6 +15,7 @@ export {
   type Scale,
 } from "./color";
 export { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
+export { ACCEPTED_CONTRAST, type AcceptedContrastRow } from "./contrast-accepted";
 export {
   CONTRAST_PAIRS,
   type ContrastPair,
@@ -52,16 +53,21 @@ export {
   DIALS,
   type Dial,
   type DialValues,
+  dialQuery,
   type GeneratedTheme,
   HEX_ATTR,
   type LiveRatio,
   leverRows,
   liveRatios,
+  PRESET_PARAM,
   RADIUS_PROPERTY,
   ratioKey,
   SCALE_ROW_ATTR,
   SCALE_ROWS,
+  SCHEME_PRESETS,
   type ScaleFamily,
+  type SchemePreset,
+  STEP_SEGMENTS,
   scaleVars,
   schemeCss,
   stepProperty,

@@ -8,26 +8,11 @@ import { createIcon } from "../core/icon";
 import { ShowcaseContent } from "./components";
 import { renderValidate, showcasePaths } from "./route";
 
-/**
- * The whole showcase page, driven.
- *
- * The epic's cut posture makes `ui/show` the living demo estate, and this is the one surface in
- * forge where a dozen primitives are composed together — so it is the honest place to assert the
- * property none of them can assert alone: **they coexist**. Every scope on this page resumes from
- * one `resume()` call, every controller mounts against markup it did not choose its neighbours for,
- * and driving one widget must not disturb another.
- *
- * Rendered by calling `ShowcaseContent` as a function with the same argument shape
- * `components.test.tsx` uses, so there is no bespoke fixture to drift from the real page.
- */
-
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
     forgeHtmx: typeof import("../client/htmx");
-    /** Renders recorded by the fake Cloudflare script this spec serves. Named for this spec rather
-     * than reusing `turnstileCalls`, which `turnstile.browser.ts` declares globally with a wider
-     * shape — one global name cannot carry two. */
+    /** Renders recorded by the fake Cloudflare script this spec serves. */
     showcaseTurnstileRenders?: Array<{ sitekey: unknown; size: unknown; theme: unknown }>;
   }
 }
@@ -42,18 +27,8 @@ const EXPOSE = {
   },
 };
 
-/**
- * Wire htmx over the markup already on the page.
- *
- * htmx boots itself once, off `DOMContentLoaded`, and the harness injects its bundle after the
- * document has finished loading — so nothing on this page is wired unless it is asked for
- * explicitly. Without this call every `hx-*` attribute the showcase renders is inert and a case
- * driving one asserts nothing.
- *
- * The page sits on a real origin (`givePageAnOrigin`), which is what satisfies htmx's
- * `selfRequestsOnly`: it compares `location.origin` against the resolved request URL, and an
- * `about:blank` document would fail that check for every root-relative path the showcase uses.
- */
+// htmx boots itself once off `DOMContentLoaded`, and the harness injects its bundle after the
+// document has loaded — without this call every `hx-*` attribute on the page is inert.
 async function processHtmx(page: Page): Promise<void> {
   await page.evaluate(() => window.forgeHtmx.htmx.process(document.body));
 }
@@ -68,37 +43,11 @@ const icon = createIcon("/sprite.svg", {
   "icon-close": "0 0 24 24",
 });
 
-/**
- * The two tokens the theme cases read back, in both modes, as the shipped token layer declares them.
- *
- * Nothing is injected to make these resolve. This spec used to supply an eleven-stop `--palette-*`
- * ramp, because the semantic layer mapped every token onto one and shipped none of the stops — a
- * consuming app chose them, and the harness runs no Tailwind build, so the `--color-slate-*` a
- * shipped `theme-*.css` aliased did not exist to alias. Both halves of that are gone: the ramp has
- * been deleted and `theme-neutral.css` carries a literal twelve-step scale, so the shipped files
- * alone resolve every token here. Re-pointing the fixture at the new scale was not an
- * alternative — `mount` adds the stylesheet *after* the markup, and between two `:root` blocks of
- * equal weight source order decides, so an injected step would simply lose to the shipped one.
- *
- * The mapping is two hops and they are two files: `theme-base.css` says `--background: var(--gray-1)`
- * and `--ring: var(--gray-11)`, and `theme-neutral.css` says what those steps are worth in each
- * block. The values below are those two steps, pinned rather than read from the file so that a step
- * edited without intent fails here instead of agreeing with itself.
- */
+/** The two tokens the theme cases read back, in both modes, as the shipped token layer declares them. */
 const TOKENS = { light: { background: "#f9f9f9", ring: "#646464" }, dark: { background: "#111111", ring: "#b4b4b4" } } as const;
 
-/**
- * Every utility the rail's geometry is built from, restated as a real rule.
- *
- * The harness runs no Tailwind build, so `class="w-64"` styles nothing — a case that measures a box
- * has to supply the rules it measures or it measures the browser's defaults. Restating them here
- * rather than loading a built stylesheet keeps the dependency visible: each rule below is one the
- * markup names, and a case fails if the markup stops naming it.
- *
- * The collapsed width is keyed off the class token itself rather than a hand-escaped class selector,
- * so a renamed token takes the rule with it. Its `:has()` argument carries the specificity that puts
- * it above `.w-64`, which is the same order the built stylesheet would emit.
- */
+// The harness runs no Tailwind build, so the utilities the markup names style nothing unless a case
+// supplies them; a measurement without these rules measures the browser's defaults.
 const GEOMETRY_STYLE = `<style>
   body { margin: 0 }
   .flex { display: flex }
@@ -120,17 +69,13 @@ const GEOMETRY_STYLE = `<style>
   [class~="has-[[data-slot~=navbar]:not([open])]:self-start"]:has([data-slot~="navbar"]:not([open])) { align-self: flex-start }
 </style>`;
 
-/** The token layer: the scale, then the mapping that points a semantic name at a step. Both halves
- * are needed for `getComputedStyle` to answer a colour, and neither carries a component rule — the
- * `themed` cases read tokens and measure no box. */
+/** The token layer: the scale, then the mapping that points a semantic name at a step. */
 const TOKEN_CSS = ["./ui/assets/css/theme-neutral.css", "./ui/assets/css/theme-base.css"];
 
 interface MountShowcaseOptions {
-  /** Load the shipped token layer, so semantic tokens resolve to real colours and a case may
-   * read computed style rather than markup. */
+  /** Load the shipped token layer, so semantic tokens resolve to real colours. */
   themed?: boolean;
-  /** Supply the layout utilities the page's classes name, so a case may measure a box. Without it
-   * every element is at its browser default size and a measurement means nothing. */
+  /** Supply the layout utilities the page's classes name, so a case may measure a box. */
   geometry?: boolean;
 }
 
@@ -157,8 +102,6 @@ test.describe("the showcase page as a whole", () => {
 
     await mountShowcase(page);
 
-    // A component whose markup names a scope has to guarantee the scope exists. This is the page
-    // that would catch a primitive shipped with a `data-scope` nobody registers.
     expect(warnings.filter((text) => text.includes("[resume]"))).toEqual([]);
   });
 
@@ -185,8 +128,6 @@ test.describe("primitives coexisting on one page", () => {
     await page.keyboard.press("ArrowRight");
 
     expect(await focusedSlots(page)).toContain("tab");
-    // Two composites are mounted on one page; a controller that queried the document rather than its
-    // own root would move the other one's tab stop too.
     expect(await page.evaluate(() => document.querySelector<HTMLElement>("[data-toolbar-item]")?.tabIndex)).toBe(before);
   });
 
@@ -233,8 +174,6 @@ test.describe("primitives coexisting on one page", () => {
     const before = await page.evaluate(() => document.querySelector("[data-slot~='collapsible']")?.hasAttribute("data-open"));
     await page.click("[data-slot~='collapsible-trigger']");
 
-    // `<details>` owns open and closed; the transition controller only publishes them for CSS. This
-    // is the assertion that the controller is actually mounted on the real page.
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-slot~='collapsible']")?.hasAttribute("data-open"))).toBe(!before);
   });
 
@@ -244,8 +183,6 @@ test.describe("primitives coexisting on one page", () => {
     const before = await page.evaluate(() => document.querySelector<HTMLInputElement>("[data-slot~='number-field-input']")?.value);
     await page.click("[data-slot~='number-field-increment']");
 
-    // The steppers carry no `data-on-*` action, so a lazy scope would have nothing to resume it and
-    // the buttons would sit inert on the page.
     const after = await page.evaluate(() => document.querySelector<HTMLInputElement>("[data-slot~='number-field-input']")?.value);
     expect(after).not.toBe(before);
   });
@@ -282,25 +219,15 @@ test.describe("the showcase's own filter island", () => {
     expect((await shown(page)).labels).toEqual([]);
     await page.fill("#filter-input", "");
 
-    // A scope like any other, mounted alongside a dozen controllers — its own state has to survive
-    // being one island among many.
     expect(await shown(page)).toEqual(all);
   });
 });
-
-// ─── The inline-validation demo, driven ──────────────────────────────────────
 
 const VALIDATE_FIELD = "#show-validate-field";
 const VALIDATE_INPUT = `${VALIDATE_FIELD} input[name='email']`;
 const SHOWCASE_PATHS = showcasePaths("/showcase");
 
-/**
- * Answer the validate endpoint with the fragment the real route would have produced, and record
- * every request that reached it.
- *
- * Registered after `mountShowcase`, so it takes precedence over the harness's origin-wide stub —
- * which would otherwise hand htmx an empty document to swap in and hide the failure this describes.
- */
+/** Answers the validate endpoint with the fragment the real route would produce, recording every request. */
 async function interceptValidate(page: Page): Promise<string[]> {
   const requested: string[] = [];
   await page.route(
@@ -328,13 +255,8 @@ function validateFieldState(page: Page) {
   );
 }
 
-/**
- * Type a value into the demo field the way a reader leaves it: filled, then blurred.
- *
- * Playwright's `fill` emits `input` alone — the browser itself emits `change` only when the control
- * loses focus — so a case that filled and waited would sit through the whole poll on a field whose
- * trigger has not fired yet.
- */
+/** Types a value into the demo field the way a reader leaves it: filled, then blurred. */
+// Playwright's `fill` emits `input` alone; the browser emits `change` only when the control blurs.
 async function typeEmail(page: Page, value: string): Promise<void> {
   await page.fill(VALIDATE_INPUT, value);
   await page.locator(VALIDATE_INPUT).blur();
@@ -347,8 +269,6 @@ test.describe("the showcase's inline-validation demo", () => {
 
     await typeEmail(page, "not-an-email");
 
-    // The whole defect in one assertion: attributes on a wrapper make htmx serialise the wrapper,
-    // which has no value, so the endpoint is asked to validate an empty string forever.
     await expect.poll(() => requested.length).toBe(1);
     const sent = new URL(requested[0] ?? "");
     expect({ path: sent.pathname, params: [...sent.searchParams] }).toEqual({ path: SHOWCASE_PATHS.validate, params: [["email", "not-an-email"]] });
@@ -360,8 +280,6 @@ test.describe("the showcase's inline-validation demo", () => {
 
     await typeEmail(page, "not-an-email");
 
-    // `data-invalid`, `aria-invalid` and a glyph together — colour alone says nothing to a reader
-    // who cannot see it, and the two attributes come from two different mechanisms.
     await expect
       .poll(() => validateFieldState(page))
       .toEqual({ dataInvalid: true, ariaInvalid: "true", error: "Please enter a valid email address.", errorIcons: 1 });
@@ -373,12 +291,8 @@ test.describe("the showcase's inline-validation demo", () => {
 
     await typeEmail(page, "not-an-email");
 
-    // Waited on the *swapped-in* state, not on `requested.length`. `interceptValidate` records a
-    // request when it reaches the route handler, which is before the response is fulfilled and well
-    // before htmx has swapped — so waiting on the counter returns mid-swap, and the second `fill`
-    // would land on the input that is about to be replaced. Its `change` then dies with the element
-    // and no second request is ever sent. `data-invalid` only appears once the fragment is in the
-    // DOM, so polling it is what proves the swap finished.
+    // Polls the swapped-in state rather than `requested.length`: the counter increments before htmx
+    // has swapped, so the second `fill` would land on an input about to be replaced.
     await expect
       .poll(() => validateFieldState(page))
       .toEqual({ dataInvalid: true, ariaInvalid: "true", error: "Please enter a valid email address.", errorIcons: 1 });
@@ -386,14 +300,10 @@ test.describe("the showcase's inline-validation demo", () => {
 
     await typeEmail(page, "user@example.com");
 
-    // The swap replaces the field the attributes sit on, so the fragment has to render them again —
-    // attributes placed in the section would be destroyed here and validation would work once.
     await expect.poll(() => requested.length).toBe(2);
     await expect.poll(() => validateFieldState(page)).toEqual({ dataInvalid: false, ariaInvalid: null, error: null, errorIcons: 0 });
   });
 });
-
-// ─── The Turnstile demo, driven ──────────────────────────────────────────────
 
 /** Cloudflare's documented always-passes test key, which is what the section renders. */
 const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
@@ -413,20 +323,12 @@ const FAKE_TURNSTILE_SCRIPT = `
   };
 `;
 
-/**
- * Answer Cloudflare's script URL with the recorder above.
- *
- * The route is the whole reason this case may exist: the controller performs a genuine `<script>`
- * load, and without an interception the showcase's own markup would reach the real endpoint from
- * the test suite. Nothing else is faked — the form, the `focusin`, the injection and the load event
- * are the platform's.
- */
+/** Answers Cloudflare's script URL with the recorder above, so no case reaches the real endpoint. */
 async function serveTurnstileScript(page: Page): Promise<void> {
   await page.route(TURNSTILE_SCRIPT_SRC, (route) => route.fulfill({ contentType: "application/javascript", body: FAKE_TURNSTILE_SCRIPT }));
 }
 
-/** What the demo widget has actually done: the renders recorded, and whether the failure message
- * the component ships hidden is still hidden. */
+/** What the demo widget has done: the renders recorded, and whether the failure message is hidden. */
 function turnstileState(page: Page) {
   return page.evaluate(
     ({ fallbackRef }) => ({
@@ -442,15 +344,10 @@ test.describe("the showcase's Turnstile demo", () => {
     await mountShowcase(page);
     await serveTurnstileScript(page);
 
-    // The gate, asserted before it is opened: the third-party cost is deferred until intent to
-    // submit, so a reader who only scrolls past the section loads nothing.
     expect(await turnstileState(page)).toEqual({ renders: [], fallbackHidden: true });
 
     await page.focus(TURNSTILE_FIELD);
 
-    // The whole defect in one assertion: `mountTurnstile` resolves the enclosing form and gates the
-    // load on `focusin` within it, so a section with no form — or a form with nothing to focus —
-    // renders a permanently empty box and records no render at all.
     await expect
       .poll(() => turnstileState(page))
       .toEqual({ renders: [{ sitekey: TURNSTILE_TEST_KEY, size: "normal", theme: "light" }], fallbackHidden: true });
@@ -470,13 +367,9 @@ test.describe("the showcase's Turnstile demo", () => {
       { scope: TURNSTILE_SCOPE, widgetRef: TURNSTILE.widget },
     );
 
-    // A challenge that appears above the submit control does not push the button the reader is
-    // already reaching for; below the field, so the widget is not the first thing in the form.
     expect(order).toEqual(["email", "widget", "submit"]);
   });
 });
-
-// ─── The context-menu island across a shadow boundary ────────────────────────
 
 /** Which tree a case reads its markup out of — the light document, or the host's open shadow root. */
 type Tree = "light" | "shadow";
@@ -484,29 +377,11 @@ type Tree = "light" | "shadow";
 const CONTEXT_SURFACE = "[data-scope='show-context-menu']";
 const CONTEXT_POPUP_ID = "show-context-menu-popup";
 
-/**
- * The showcase, with the context-menu demo left where it was rendered or relocated into an open
- * shadow root before anything resumes.
- *
- * The demo's scope resolves its popup from the id serialised into `data-state`, and a document-scoped
- * lookup answers `null` for an id living in a shadow tree — so `setup` returned before ever binding
- * `contextmenu`, and a right-click fell straight through to the browser's own menu. Relocating the
- * real page's own markup rather than hand-rolling a fixture keeps that failure attached to the demo
- * the epic actually ships.
- */
+/** The showcase, with the context-menu demo left in place or relocated into an open shadow root. */
 async function mountContextMenu(page: Page, tree: Tree): Promise<void> {
   const html = await render(ShowcaseContent({ data: { paths: showcasePaths("/showcase") }, icon }));
-  // The one mount in this spec that loads the stylesheet, and it is load-bearing rather than
-  // incidental. Unstyled, the coordinate rule never applies and the popup falls back to the UA's
-  // centred `[popover]` box — which sits *under* the pointer, so the release that ends the
-  // right-click lands on the panel and the platform's light-dismiss pass declines to match. The demo
-  // then appears to work in the harness while flashing and vanishing on the real page, which is
-  // exactly what happened. Placed at the point, the release lands on the surface and these cases see
-  // what a reader sees.
-  //
-  // `forge-ui.css` and not the token sheets: the rule wanted is `[popover][data-coords]`,
-  // which lives there and names only `--anchor-x` / `--anchor-y` — properties `openPopoverAt` writes
-  // through CSSOM rather than ones the token layer declares.
+  // Unstyled, the `[popover][data-coords]` rule never applies and the popup falls back to the UA's
+  // centred box under the pointer, where the right-click release light-dismisses it.
   await mount(page, html, { ...EXPOSE, css: ["./ui/assets/css/forge-ui.css"] });
   if (tree === "shadow") {
     await page.evaluate(
@@ -517,8 +392,6 @@ async function mountContextMenu(page: Page, tree: Tree): Promise<void> {
         const host = document.createElement("div");
         host.id = "ctx-host";
         surface.before(host);
-        // Moved rather than cloned: exactly one element carries each id, and the document is left
-        // holding none of them — which is what makes the document-scoped lookup answer null.
         host.attachShadow({ mode: "open" }).append(surface, popup);
       },
       { surfaceSelector: CONTEXT_SURFACE, popupId: CONTEXT_POPUP_ID },
@@ -527,25 +400,19 @@ async function mountContextMenu(page: Page, tree: Tree): Promise<void> {
   await page.evaluate(() => window.forgeResume.resume());
 }
 
-/** Right-click the surface at a point the case can name, and report that point in viewport
- * coordinates — the same ones `clientX`/`clientY` hand the controller. */
+/** Right-clicks the surface at a nameable point, reported in viewport coordinates. */
 async function rightClickSurface(page: Page): Promise<{ x: number; y: number }> {
   const surface = page.locator(CONTEXT_SURFACE);
-  // Centred rather than merely scrolled into view, so the click point has the whole lower half of the
-  // viewport beneath it and the placement clamp below stays the identity.
   await surface.evaluate((el) => el.scrollIntoView({ block: "center" }));
   const box = await surface.boundingBox();
   if (!box) throw new Error("the context-menu surface has no box");
-  // The centre, not a fixed offset from the corner: the harness loads no stylesheet, so the surface
-  // is whatever height its one line of text gives it and a corner offset lands on the next element.
   const x = Math.round(box.x + box.width / 2);
   const y = Math.round(box.y + box.height / 2);
   await page.mouse.click(x, y, { button: "right" });
   return { x, y };
 }
 
-/** Whether the popup is open, where it was placed, and the two measurements the placement assertion
- * needs in order to be exact rather than recomputed. */
+/** Whether the popup is open, where it was placed, and the measurements the placement assertion needs. */
 function contextPopupState(page: Page, tree: Tree) {
   return page.evaluate(
     ({ where, popupId, xProp, yProp }) => {
@@ -570,25 +437,18 @@ test.describe("the showcase's context-menu island across a shadow boundary", () 
   test("a right-click inside an open shadow root opens the popup at the pointer", async ({ page }) => {
     await mountContextMenu(page, "shadow");
 
-    // Asserted, not assumed: it is the precondition that makes this case about a shadow boundary at
-    // all. With the popup id visible to the document, a document-scoped lookup would pass too.
     expect(await page.evaluate((popupId) => document.getElementById(popupId) === null, CONTEXT_POPUP_ID)).toBe(true);
     await expect.poll(async () => (await contextPopupState(page, "shadow")).open).toBe(false);
 
     const { x, y } = await rightClickSurface(page);
 
     const state = await contextPopupState(page, "shadow");
-    // `openPopoverAt` clamps the panel onto the screen, so the coordinates are only the click point
-    // when the panel fits below and to the right of it. Pinned rather than recomputed: reimplementing
-    // the clamp here would make the assertion agree with the controller by construction.
     const fits = x + state.size.width <= state.viewport.width && y + state.size.height <= state.viewport.height;
     expect(fits, "the click point leaves no room for the panel, so the coordinates below are clamped").toBe(true);
     expect({ open: state.open, x: state.x, y: state.y }).toEqual({ open: true, x: `${x}px`, y: `${y}px` });
   });
 
   test("the identical markup in the light DOM opens the popup at the pointer", async ({ page }) => {
-    // The parity half. Without it a regression that broke the ordinary document path could hide
-    // behind a green shadow case, because the shadow lookup and the document lookup are one call.
     await mountContextMenu(page, "light");
 
     await expect.poll(async () => (await contextPopupState(page, "light")).open).toBe(false);
@@ -602,14 +462,6 @@ test.describe("the showcase's context-menu island across a shadow boundary", () 
   });
 });
 
-// ─── The component catalog's table of contents ───────────────────────────────
-
-/**
- * Two handles, because the rail is two elements with two different jobs. The landmark is what a
- * reader navigates by, so the entries are addressed through it — a selector that fails the moment
- * the catalog stops being navigation. The disclosure is what opens and closes, and `open` lives on
- * the `<details>`, which is the element carrying the id.
- */
 const TOC_NAV = "nav[aria-label='Component catalog']";
 const TOC_RAIL = "#showcase-toc";
 const TOC_LINK = `${TOC_NAV} a[href^='#']`;
@@ -618,8 +470,6 @@ test.describe("the component catalog's table of contents", () => {
   test("hands the keyboard a link the browser itself agrees is focus-visible, over a ring colour that resolves", async ({ page }) => {
     await mountShowcase(page, { themed: true });
 
-    // The rail is DOM-first and its disclosure toggle is the page's first focusable, so the catalog
-    // is two presses in: the toggle, then the first entry.
     await page.keyboard.press("Tab");
     expect(await focusedSlots(page)).toContain("navbar-toggle");
     await page.keyboard.press("Tab");
@@ -630,21 +480,13 @@ test.describe("the component catalog's table of contents", () => {
       const classes = link.className.split(/\s+/);
       return {
         isTocLink: link.matches(selector),
-        // The browser's own answer, not a class-name reading of it: `:focus-visible` matching is the
-        // precondition every `focus-visible:` utility on this link is gated on.
         focusVisible: link.matches(":focus-visible"),
-        // A ring drawn from an unresolved token paints nothing, so the colour has to arrive through
-        // the cascade at this element rather than merely be named by it.
         ring: getComputedStyle(link).getPropertyValue("--ring").trim(),
-        // The pair, together. Dropping the ring while keeping the outline suppression is the exact
-        // shape of the regression that leaves these links with no focus affordance at all.
         suppressesOutline: classes.includes("outline-none"),
         drawsRing: classes.includes("focus-visible:ring-2") && classes.includes("focus-visible:ring-ring"),
       };
     }, TOC_LINK);
 
-    // Light, because nothing has clicked the toggle: the theme scope reconciles the server's
-    // `system` default against `prefers-color-scheme`, which the harness leaves at light.
     expect(focused).toEqual({ isTocLink: true, focusVisible: true, ring: TOKENS.light.ring, suppressesOutline: true, drawsRing: true });
   });
 
@@ -652,14 +494,12 @@ test.describe("the component catalog's table of contents", () => {
     await mountShowcase(page);
 
     const railOpen = () => page.evaluate((selector) => document.querySelector<HTMLDetailsElement>(selector)?.open, TOC_RAIL);
-    // The rail ships open, and at this viewport the viewport-collapse controller leaves it that way.
     expect(await railOpen()).toBe(true);
 
     await page.click("[data-slot~='navbar-toggle']");
     expect(await railOpen()).toBe(false);
 
     await page.click("[data-slot~='navbar-toggle']");
-    // Open and closed belong to `<details>`; the controller above only ever hands them back.
     expect(await railOpen()).toBe(true);
   });
 
@@ -674,14 +514,10 @@ test.describe("the component catalog's table of contents", () => {
       };
     }, TOC_LINK);
 
-    // A nav is only navigation while its targets exist; a renamed section id turns an entry into a
-    // link that scrolls nowhere and reports nothing.
     expect(state.total).toBeGreaterThan(0);
     expect(state.dangling).toEqual([]);
   });
 });
-
-// ─── The table of contents as a column ───────────────────────────────────────
 
 /** The flex item the column's sizing lives on — the scope root, not the navbar inside it. */
 const TOC_SCOPE = "[data-scope='show-toc']";
@@ -692,14 +528,6 @@ const TOC_MARKED = `${TOC_NAV} a[aria-current='location']`;
 /** The floor an interactive target is held to: the `Button` `sm` box, which is `h-8`. */
 const HIT_TARGET_FLOOR = 32;
 
-/**
- * The rail's geometry, measured rather than read off class names.
- *
- * Every case here mounts with `geometry`, because the class strings the SSR tests pin are inert
- * until something resolves them — `sticky top-0 max-h-dvh overflow-y-auto` on the disclosure did
- * nothing at all for as long as the boxes above it had no height, and no class-string assertion
- * could have said so.
- */
 test.describe("the table of contents as a column", () => {
   test("sizes the column on the scope root, and the landmark inside fills it in both axes", async ({ page }) => {
     await mountShowcase(page, { geometry: true });
@@ -718,8 +546,6 @@ test.describe("the table of contents as a column", () => {
       };
     }, TOC_SCOPE);
 
-    // 16rem wide, and a landmark that reaches the full height of the column: the height chain the
-    // sticky disclosure travels within, and the width it needs no class to inherit.
     expect(box).toEqual({ column: 256, navWidth: 256, navFillsHeight: true, columnHasHeight: true });
   });
 
@@ -732,10 +558,6 @@ test.describe("the table of contents as a column", () => {
 
     await page.evaluate(() => window.scrollTo(0, 1200));
 
-    // The property the placement string always claimed and never delivered: a sticky box travels
-    // within its containing block, so a rail whose ancestors have no height scrolls away with the
-    // page. Both halves in one assertion — a rail that stayed at 0 because nothing scrolled would
-    // pass the second on its own.
     expect({ scrolled: Math.round(await page.evaluate(() => window.scrollY)), top: await railTop() }).toEqual({ scrolled: 1200, top: 0 });
   });
 
@@ -752,9 +574,6 @@ test.describe("the table of contents as a column", () => {
         const column = root.getBoundingClientRect();
         return {
           open: document.querySelector<HTMLDetailsElement>(rail)?.open,
-          // Both axes, as one comparison against the control rather than as two pinned numbers: what
-          // the closed column owes is that it is the toggle and nothing else, and a pinned width
-          // would go on passing while a full-height strip ran down the page beside it.
           columnIsTheToggle: Math.round(column.width) === Math.round(box.width) && Math.round(column.height) === Math.round(box.height),
           clearsHitTarget: box.width >= floor && box.height >= floor,
         };
@@ -762,10 +581,6 @@ test.describe("the table of contents as a column", () => {
       { scope: TOC_SCOPE, toggle: TOC_TOGGLE, rail: TOC_RAIL, floor: HIT_TARGET_FLOOR },
     );
 
-    // The column gives the page back every pixel the closed rail is not using — `w-auto` on the
-    // inline axis, `self-start` on the block one, since a stretched flex item would otherwise hold
-    // the full `min-h-dvh` height under a 46px control. It still clears the hit-target floor: a strip
-    // whose control cannot be hit is a rail that cannot reopen.
     expect(collapsed).toEqual({ open: false, columnIsTheToggle: true, clearsHitTarget: true });
   });
 
@@ -776,23 +591,16 @@ test.describe("the table of contents as a column", () => {
     await page.evaluate(() => {
       const section = document.getElementById("toolbar");
       if (!section) throw new Error("the showcase no longer renders the toolbar section");
-      // A little past the section's own top, so the section above it is clear of the observation
-      // band rather than touching it at the edge.
       window.scrollTo(0, section.getBoundingClientRect().top + window.scrollY + 20);
     });
 
-    // The rail's scope is eager, so the spy came up on the same `resume()` every other scope on this
-    // page did — nothing here mounts it by hand, which is the half a unit test cannot assert.
     await expect.poll(marked).toEqual(["#toolbar"]);
   });
 });
 
-// ─── The theme toggle, driven ────────────────────────────────────────────────
-
 const THEME_TOGGLE = "[data-scope='theme'] button";
 
-/** What the page says its theme is: the class strategy's switch, the persisted choice, and the two
- * tokens the switch re-maps. */
+/** What the page says its theme is: the class switch, the persisted choice, and the re-mapped tokens. */
 function themeState(page: Page): Promise<{ dark: boolean; stored: string | null; background: string; ring: string }> {
   return page.evaluate(
     ({ key, darkClass }) => {
@@ -819,7 +627,6 @@ test.describe("the showcase's theme toggle", () => {
       seen.push(await page.evaluate((key) => localStorage.getItem(key), THEME_STORAGE_KEY));
     }
 
-    // The server default is `system`, and the scope reconciles it into storage before any click.
     expect(seen).toEqual(["system", "light", "dark", "system"]);
   });
 
@@ -831,11 +638,6 @@ test.describe("the showcase's theme toggle", () => {
     await page.click(THEME_TOGGLE);
     const dark = await themeState(page);
 
-    // The class is only half the claim. The tokens have to actually land on different scale steps,
-    // because that re-mapping is the entire mechanism — no utility on the page carries a `dark:`
-    // variant, so a class that toggled without moving the tokens would re-theme nothing. The
-    // semantic layer is now declared once for both modes, which makes this the case that proves the
-    // `.dark` block really does carry the whole difference.
     expect(light).toEqual({ dark: false, stored: "light", background: TOKENS.light.background, ring: TOKENS.light.ring });
     expect(dark).toEqual({ dark: true, stored: "dark", background: TOKENS.dark.background, ring: TOKENS.dark.ring });
   });

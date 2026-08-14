@@ -1,5 +1,3 @@
-// Core router engine
-
 export type {
   Action,
   Controller,
@@ -24,17 +22,12 @@ export type {
   RouteDefs,
   RouteMap,
 } from "@remix-run/fetch-router/routes";
-// Route authoring helpers
 export { del, form, get, head, options, patch, post, put, Route, resource, resources, route } from "@remix-run/fetch-router/routes";
-// Route-pattern capture introspection  `getRoutePatternCaptures(route.pattern)` returns the declared params (`:name`) and wildcards
-// (`*name`) in source order without touching parser internals.
 export type { RoutePatternCapture, RoutePatternJSON } from "@remix-run/route-pattern";
 export { getRoutePatternCaptures } from "@remix-run/route-pattern";
-// Type-safe URL generation from route patterns
 export type { CreateHrefArgs } from "@remix-run/route-pattern/href";
 export { CreateHrefError, createHref } from "@remix-run/route-pattern/href";
 export type { JoinPatterns } from "@remix-run/route-pattern/join";
 export { joinPatterns } from "@remix-run/route-pattern/join";
-// Route-table introspection
 export type { RouteFilter } from "./filter";
 export { forMethod, routePaths } from "./filter";

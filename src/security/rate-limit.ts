@@ -21,17 +21,7 @@ function defaultOnLimit(): Response {
   return new Response(DEFAULT_MESSAGE, { status: 429 });
 }
 
-/**
- * Middleware that enforces Cloudflare rate-limit bindings; returns 503 when binding is absent
- * unless `required: false`.
- *
- * @remarks
- * Default-distrust: the `CF-Connecting-IP` header default key is only used when `trustCfHeaders` is
- * `true` (the Worker is known to run behind Cloudflare). Off Cloudflare a client can forge that
- * header to evade or poison the limit, so without `trustCfHeaders` and without a custom `key` the
- * default keying throws — supply a custom `key` for non-Cloudflare deployments. A custom `key`
- * always overrides regardless of `trustCfHeaders`. @public
- */
+/** Middleware enforcing a Cloudflare rate-limit binding, returning 503 when the binding is absent unless `required: false`. @public */
 export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimitOptions<Bindings>): Middleware {
   const logger = createLogger("rate-limit");
   const limiter = options.limiter;

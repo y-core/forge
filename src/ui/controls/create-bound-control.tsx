@@ -4,16 +4,10 @@ import type { FC, JSXElement } from "../../jsx/types";
 import { type ScopeAttrsProps, scopeAttrs } from "../contracts/scope-attrs";
 import { fieldAttr } from "../server/field-attr";
 
-/** The delegated events a bound control listens on. Each maps to a `data-on-<event>` attribute. */
+/** The delegated events a bound control listens on. */
 type BoundEvent = "onChange" | "onInput" | "onClick";
 
-/**
- * Build a bound wrapper around a `ui/core` control. The returned component adds a `bind` prop
- * (naming the `SignalRecord` field) plus an optional `action` override, pre-spreading
- * `scopeAttrs({ [event]: action })` + `fieldAttr(bind)` onto the wrapped `Core` for the
- * resumable-scope signal contract. All other props pass through to `Core` unchanged.
- * @internal
- */
+/** Builds a wrapper around a `ui/core` control that adds `bind` and optional `action` props. @internal */
 export function createBoundControl<P>(
   Core: (props: P) => JSXElement | null,
   opts: { event: BoundEvent; defaultAction: string },

@@ -12,11 +12,7 @@ export function consoleChannel(): LogChannel {
   };
 }
 
-/**
- * Wraps a channel so only records at or above `min` are written; reads pass through
- * unchanged. Lets one logger fan out at different verbosities per channel — e.g. the
- * full stream to console but only `warn`+ to a capped KV namespace. @public
- */
+/** Wraps a channel so only records at or above `min` are written; reads pass through unchanged. @public */
 export function withMinLevel(channel: LogChannel, min: LogLevel): LogChannel {
   return {
     write(record: LogRecord): void | Promise<void> {
@@ -28,13 +24,7 @@ export function withMinLevel(channel: LogChannel, min: LogLevel): LogChannel {
   };
 }
 
-/**
- * Wraps a channel so only records whose level is in `levels` are written; reads pass through
- * unchanged. Where `withMinLevel` sets a floor, this names the set outright — so it can express a
- * non-contiguous selection, and an empty array silences the channel entirely. That empty case is
- * how a deployment turns logging off by configuration rather than by omitting the channel.
- * Applies per channel, so a quiet console can sit beside a complete KV history. @public
- */
+/** Wraps a channel so only records whose level is in `levels` are written; reads pass through unchanged. @public */
 export function withLevels(channel: LogChannel, levels: readonly LogLevel[]): LogChannel {
   const allowed = new Set(levels);
   return {
@@ -47,12 +37,7 @@ export function withLevels(channel: LogChannel, levels: readonly LogLevel[]): Lo
   };
 }
 
-/**
- * Wraps a channel so each record is passed through `redact` before being written; reads pass
- * through unchanged. Composable transform for stripping or masking sensitive fields (PII,
- * secrets) on a per-channel basis — e.g. redact before persisting to KV while leaving the
- * console stream intact. @public
- */
+/** Wraps a channel so each record passes through `redact` before being written; reads pass through unchanged. @public */
 export function withRedaction(channel: LogChannel, redact: (record: LogRecord) => LogRecord): LogChannel {
   return {
     write(record: LogRecord): void | Promise<void> {

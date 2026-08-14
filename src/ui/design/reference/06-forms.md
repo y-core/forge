@@ -34,6 +34,24 @@ single question — a matrix of independent toggles, which is a stack of `Field`
 Choosing by size instead of by role is what produces a legend that outranks the form's own heading.
 Override only under a brief that restates the form's type scale.
 
+## `Toggle`, `Switch` and `ToggleGroup`
+
+Three two-state controls, and only one of them submits.
+
+| Given | Choose | What it renders |
+|---|---|---|
+| A setting whose value is submitted with the form | `Switch` | `<input type="checkbox" role="switch">` — it has a `name` and a value |
+| An in-page mode that no server ever reads | `Toggle` | `<button type="button" aria-pressed>` — submits nothing |
+| One choice out of a small visible set | `ToggleGroup` | A `<fieldset>` of pressed buttons; `type` picks single or multiple |
+
+**Default: pick by whether the value is submitted, not by which one looks right.**
+<!-- rule:forge-ui-form-toggle-by-submission -->
+Reaching for `Switch` when a `Toggle` was meant puts a checkbox into the submitted body under a name
+the action never declared. Reaching for `Toggle` when a `Switch` was meant loses the value silently
+at submit. Override never — the distinction is what the elements are.
+
+---
+
 ## Never hand-write the wiring
 
 Forge exports the id derivation as functions precisely so two places cannot disagree about an id. A

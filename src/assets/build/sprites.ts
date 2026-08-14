@@ -5,17 +5,20 @@ import { fetchURL } from "./download";
 import { hashFile } from "./hash";
 import { safeJoin } from "./paths";
 
+/** One built sprite sheet: its manifest key, its symbol-id-to-viewBox map, and its symbol id prefix. @public */
 export interface SpriteGroupResult {
   spriteKey: string;
   meta: Record<string, string>;
   prefix: string;
 }
 
+/** A sprite build's logical-to-emitted path mappings, plus one result per sprite group. @public */
 export interface SpriteBuildResult {
   mapping: Record<string, string>;
   groups: Record<string, SpriteGroupResult>;
 }
 
+/** Builds every sprite group into `publicDir`, content-hashing the emitted sheets when `opts.hash` is set. @public */
 export async function buildSprites(sprites: Sprites, publicDir: string, opts?: { hash?: boolean }): Promise<SpriteBuildResult> {
   const mapping: Record<string, string> = {};
   const groups: Record<string, SpriteGroupResult> = {};
@@ -29,6 +32,7 @@ export async function buildSprites(sprites: Sprites, publicDir: string, opts?: {
   return { mapping, groups };
 }
 
+/** Maps each `<symbol>` id in sprite markup to its viewBox. @public */
 export function extractViewBoxes(spriteContent: string): Record<string, string> {
   const meta: Record<string, string> = {};
   const symbolRegex = /<symbol([^>]*)>/g;
@@ -45,14 +49,6 @@ export function extractViewBoxes(spriteContent: string): Record<string, string> 
   return meta;
 }
 
-/**
- * Builds a single SVG sprite group and writes it to `publicDir`.
- *
- * **Cleanup scope:** on each rebuild, only files whose name matches this group's target
- * stem (e.g. `icons.svg`, `icons.<hash>.svg`) are removed from `dirname(target)`. Sibling
- * sprite groups sharing the same output directory are not affected, and hand-authored files
- * with a different stem are preserved.
- */
 async function buildSpriteGroup(
   group: SpriteGroup,
   publicDir: string,
@@ -97,9 +93,6 @@ async function buildSpriteGroup(
 
   const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">\n${[...symbolMap.values()].join("\n")}\n</svg>`;
 
-  // Clean up this group's old sprite files (hashed or not) before writing.
-  // Scoped to the group's own target stem so sibling sprite groups that share
-  // this output directory are not deleted.
   const targetStem = basename(group.target, ".svg");
   try {
     for (const entry of readdirSync(spriteDir, { withFileTypes: true })) {
@@ -134,32 +127,13 @@ async function buildSpriteGroup(
   return { mapping: { [group.target]: hashedRelative }, spriteKey: group.target, meta: viewBoxMeta, prefix };
 }
 
-/**
- * Best-effort SVG sanitizer for inline sprite content.
- *
- * Strips the most common injection vectors from SVG inner content before it is embedded
- * in a sprite sheet served to end users. The production nonce CSP (`self`, NONCE,
- * TURNSTILE) is the primary runtime control; this function is defense-in-depth.
- *
- * **Scope:** trusted sources (e.g. icon libraries you reference by URL in config).
- * Untrusted / user-supplied SVGs are out of scope — use a full DOM-based sanitizer
- * (e.g. DOMPurify) for that use case.
- *
- * **Note:** root-`<svg>` event handlers (`onload=` on the `<svg>` element itself) are
- * already neutralised because `svgToSymbol` discards the root tag and re-emits only the
- * inner content wrapped in a `<symbol>`.
- */
+/** Best-effort SVG sanitizer for inline sprite content from trusted sources. */
 export function sanitizeSVG(content: string): string {
   let result = content;
-  // Strip script elements (inline and src-based)
   result = result.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-  // Strip foreignObject elements (can embed arbitrary HTML / iframes)
   result = result.replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, "");
-  // Strip style elements (CSS url(javascript:...) / expression() / data: URIs)
   result = result.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
-  // Strip SMIL animate/set elements that retarget href/xlink:href (navigation attack)
   result = result.replace(/<(?:animate|set)\b[^>]*\battributeName\s*=\s*["'](?:xlink:)?href["'][^>]*(?:\/>|>[\s\S]*?<\/(?:animate|set)>)/gi, "");
-  // Drop href / xlink:href attributes carrying dangerous URI schemes
   result = result.replace(/\s+(?:xlink:)?href\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, (match, val: string) => {
     const normalized = val
       .replace(/^["']|["']$/g, "")
@@ -168,7 +142,6 @@ export function sanitizeSVG(content: string): string {
     if (normalized.startsWith("javascript:") || normalized.startsWith("data:text/html")) return "";
     return match;
   });
-  // Strip event handler attributes (double-quoted, single-quoted, or unquoted values).
   result = result.replace(/\s+on[a-zA-Z]+=(?:"[^"]*"|'[^']*'|[^\s"'>]+)/gi, "");
   return result;
 }
@@ -176,6 +149,7 @@ export function sanitizeSVG(content: string): string {
 const PROPAGATABLE_ATTRS = ["fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"] as const;
 const SHAPE_ELEMENTS = ["path", "rect", "circle", "line", "ellipse", "polygon", "polyline"];
 
+/** Reads the presentation attributes on a root `<svg>` tag that propagate to its shapes. @internal */
 export function extractRootAttrs(svgTag: string): Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>> {
   const attrs: Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>> = {};
   for (const attr of PROPAGATABLE_ATTRS) {
@@ -185,6 +159,7 @@ export function extractRootAttrs(svgTag: string): Partial<Record<(typeof PROPAGA
   return attrs;
 }
 
+/** Copies root presentation attributes onto the shape elements that do not already set them. @internal */
 export function propagateRootAttrs(inner: string, rootAttrs: Partial<Record<string, string>>): string {
   const entries = Object.entries(rootAttrs);
   if (entries.length === 0) return inner;
@@ -206,13 +181,12 @@ export function propagateRootAttrs(inner: string, rootAttrs: Partial<Record<stri
   });
 }
 
+/** Converts an SVG document into a sanitized `<symbol>` with a zero-origin viewBox, or null when it has no content. @public */
 export function svgToSymbol(svgContent: string, key: string, prefix: string): { id: string; symbol: string } | null {
   const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/i);
   const rawViewBox = viewBoxMatch?.[1] ?? "0 0 24 24";
 
-  // Normalize non-zero-origin viewBoxes to "0 0 w h" and compensate with a
-  // translate on the inner content. This ensures <use> at (0,0) is always
-  // within the symbol's viewport, regardless of the source SVG's coordinate origin.
+  // `<use>` renders at (0,0), so a non-zero viewBox origin must be zeroed and translated back.
   const [minX = 0, minY = 0, w = 24, h = 24] = rawViewBox
     .trim()
     .split(/[\s,]+/)

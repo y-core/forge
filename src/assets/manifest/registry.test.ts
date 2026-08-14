@@ -2,18 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { createManifest } from "./manifest";
 import { createSpriteRegistry } from "./registry";
 
-// The manifest data maps a key to a path string. When the key is found in data,
-// the resolved value is used; otherwise the key itself is used. Given
-// createManifest({ "icons.svg": "icons.svg" }, "/assets"), manifest.path("icons.svg")
-// yields "/assets/icons.svg".
-//
-// The sprites config maps sprite-registry-name → manifest-key. So:
-//   sprites = { icons: "icons.svg" }  →  registry.get("icons") calls manifest.path("icons.svg")
-
 describe("createSpriteRegistry — get", () => {
   it("returns the manifest path for a registered sprite name", () => {
-    // data maps "icons.svg" → "icons.svg" (identity), prefix "/assets"
-    // manifest.path("icons.svg") = "/assets/icons.svg"
     const manifest = createManifest({ "icons.svg": "icons.svg" }, "/assets");
     const registry = createSpriteRegistry({ icons: "icons.svg" }, manifest);
     expect(registry.get("icons")).toBe("/assets/icons.svg");

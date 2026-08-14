@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import { resolve } from "node:path";
 import { ReleaseError } from "../types";
 
+/** Reads the `version` field from `package.json` in `cwd`, throwing a {@link ReleaseError} if it is missing or unreadable. */
 export function readPackageVersion(cwd: string): string {
   const pkgPath = resolve(cwd, "package.json");
   try {
@@ -18,18 +19,7 @@ export function readPackageVersion(cwd: string): string {
   }
 }
 
-/**
- * The repository's base URL for compare links, normalised — `git+` prefix and `.git` suffix
- * stripped — or `null` when `package.json` carries no usable `repository` field.
- *
- * `null` rather than an error: a consumer whose package omits the field still gets a valid
- * promotion, just without the link reference definition. Deriving the URL from
- * `git remote get-url origin` was the alternative and was rejected — it breaks in a clone with a
- * renamed remote, and it would put a subprocess call on a path that is otherwise pure metadata.
- *
- * @param cwd - Directory holding `package.json`.
- * @internal
- */
+/** The repository's base URL for compare links, normalised, or `null` when `package.json` carries no usable `repository` field. */
 export function readRepositoryUrl(cwd: string): string | null {
   const pkgPath = resolve(cwd, "package.json");
   let parsed: { repository?: unknown };
@@ -44,16 +34,7 @@ export function readRepositoryUrl(cwd: string): string | null {
   return raw.replace(/^git\+/, "").replace(/\.git$/, "");
 }
 
-/**
- * Reads the changelog, or returns `null` when it does not exist.
- *
- * Absence is a valid state — `createReleaseCommand` is library API and a consumer without a
- * changelog must keep releasing — so only a genuine read failure raises.
- *
- * @param cwd - Repository root.
- * @param file - Changelog path relative to `cwd`.
- * @internal
- */
+/** Reads the changelog at `file`, or returns `null` when it does not exist. */
 export function readChangelog(cwd: string, file: string): string | null {
   const path = resolve(cwd, file);
   if (!fs.existsSync(path)) return null;
@@ -65,20 +46,11 @@ export function readChangelog(cwd: string, file: string): string | null {
   }
 }
 
-/**
- * Writes `source` to the changelog verbatim.
- *
- * No trailing-newline normalisation: `promoteUnreleased` round-trips the document byte-for-byte
- * outside the lines it changes, and adding one here would put a spurious hunk in every release
- * diff for a file that has never ended in a newline.
- *
- * @param cwd - Repository root.
- * @param file - Changelog path relative to `cwd`.
- * @param source - The promoted document.
- * @internal
- */
+/** Writes `source` to the changelog at `file` verbatim. */
 export function writeChangelog(cwd: string, file: string, source: string): void {
   try {
+    // No trailing-newline normalisation: `promoteUnreleased` round-trips the document byte-for-byte,
+    // and adding one here would put a spurious hunk in a file that never had one.
     fs.writeFileSync(resolve(cwd, file), source, "utf-8");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -86,6 +58,7 @@ export function writeChangelog(cwd: string, file: string, source: string): void 
   }
 }
 
+/** Updates the `version` field in `package.json`, preserving its existing indentation. */
 export function updatePackageVersion(version: string, cwd: string): void {
   const pkgPath = resolve(cwd, "package.json");
   let raw: string;

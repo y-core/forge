@@ -169,15 +169,12 @@ describe("Field primitives", () => {
   });
 });
 
-/** Every id the rendered markup declares or references, in document order. */
 function idsAndRefs(html: string): string[] {
   return [...html.matchAll(/(?:^|\s)(?:id|for|aria-describedby)="([^"]*)"/g)].flatMap((match) => (match[1] ?? "").split(" "));
 }
 
 describe("Field ids — aria-describedby names only what renders", () => {
   it("a control with no description emits no aria-describedby at all", async () => {
-    // A dangling IDREF is not a no-op: assistive technology reports it as an error, and the user
-    // hears a field whose help text it cannot find.
     expect(await render(<Input field={{ name: "email" }} />)).toBe(
       '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50" id="field-email" name="email">',
     );
@@ -214,7 +211,6 @@ describe("Field ids — aria-describedby names only what renders", () => {
 describe("Field ids — two forms on one page", () => {
   const twoForms = (scoped: boolean) => {
     const form = (scope: string) => {
-      // The one naming object every member of the field reads, which is what keeps them agreeing.
       const naming = scoped ? { name: "email", scope } : { name: "email" };
       return (
         <FormField name='email'>
@@ -247,7 +243,6 @@ describe("Field ids — two forms on one page", () => {
       "field-signup-email-description",
       "field-signup-email-description",
     ]);
-    // Each id appears exactly twice — once declared, once referenced — and never across forms.
     expect(new Set(ids).size).toBe(4);
   });
 
@@ -267,23 +262,17 @@ describe("Field ids — two forms on one page", () => {
   });
 });
 
-/** The ids the markup *declares* — every `id="…"`, in document order. */
 function declaredIds(html: string): string[] {
   return [...html.matchAll(/(?:^|\s)id="([^"]*)"/g)].map((match) => match[1] ?? "");
 }
 
-/** The ids the markup *references* — every token of every `for` / `aria-describedby` /
- * `aria-labelledby`, in document order. Split on a single space so an empty token survives into the
- * list rather than being silently swallowed: an empty IDREF is precisely what this is looking for. */
+// Split on a single space, not `\s+`: an empty IDREF token must survive into the list.
 function referencedIds(html: string): string[] {
   return [...html.matchAll(/(?:^|\s)(?:for|aria-describedby|aria-labelledby)="([^"]*)"/g)].flatMap((match) => (match[1] ?? "").split(" "));
 }
 
 describe("Field ids — the empty string is not a missing value", () => {
   it("an empty caller-supplied aria-describedby does not become the whole value", () => {
-    // Were the final emptiness check dropped, this would return "" and render
-    // `aria-describedby=""` — an IDREF list naming nothing, which assistive technology reports as
-    // an error rather than ignoring.
     expect(fieldDescribedBy("email", { existing: "" })).toBe(undefined);
   });
 
@@ -296,8 +285,6 @@ describe("Field ids — the empty string is not a missing value", () => {
   });
 
   it("an empty scope derives the same three ids as no scope at all", () => {
-    // `scope` is genuinely optional and "" is the caller saying "no scope", so collapsing the two
-    // is correct: the alternative would be ids like `field--email` on every unscoped field.
     expect([fieldId("email", ""), fieldDescriptionId("email", ""), fieldErrorId("email", "")]).toEqual([
       "field-email",
       "field-email-description",
@@ -307,10 +294,6 @@ describe("Field ids — the empty string is not a missing value", () => {
   });
 
   it("fieldControlProps omits the aria-describedby key entirely rather than setting it undefined", () => {
-    // `toStrictEqual`, not `toEqual`: `toEqual` treats a key holding `undefined` as absent, so it
-    // could not tell "no aria-describedby key" from "the key is there and undefined" — which is the
-    // whole claim. The two `undefined` values below are keys the function does set, and their
-    // presence here is what proves the matcher is reading key identity rather than value equality.
     expect(fieldControlProps({}, { name: "email" })).toStrictEqual({
       id: "field-email",
       name: "email",
@@ -331,8 +314,6 @@ describe("Field ids — the empty string is not a missing value", () => {
       </FormField>,
     );
 
-    // Pin that references were emitted at all — an invariant over an empty list holds vacuously,
-    // and this whole case would pass on markup that had stopped wiring anything.
     const refs = referencedIds(html);
     expect(refs).toEqual(["field-email", "field-email-description", "field-email-error"]);
     const declared = declaredIds(html);
@@ -344,8 +325,6 @@ describe("Field ids — the empty string is not a missing value", () => {
 const INPUT_CLASSES =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50";
 
-/** The full compound field, named however the caller names it — the one render the suppression
- * invariant and its named counterpart are both read off, so the two differ in nothing but `name`. */
 const fullField = (name: string) =>
   render(
     <FormField name={name} invalid>
@@ -360,8 +339,6 @@ const fullField = (name: string) =>
 
 describe("Field ids — an empty or whitespace-only name is no name at all", () => {
   it("fieldControlProps derives neither an id nor an aria-describedby for an empty name", () => {
-    // The control derived two IDREFs here before the fix, naming a description and an error element
-    // that the members — which have always guarded the empty name — render no id for.
     expect(fieldControlProps({}, { name: "", description: true, invalid: true })).toStrictEqual({
       name: "",
       disabled: undefined,
@@ -370,8 +347,6 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("a whitespace-only name is the same no-name as the empty string", () => {
-    // An id of `field- ` could never be referenced by an IDREF, since HTML splits IDREF lists on
-    // whitespace — so there is no reading of a blank name under which deriving one is useful.
     expect(fieldControlProps({}, { name: " ", description: true, invalid: true })).toStrictEqual({
       name: " ",
       disabled: undefined,
@@ -391,9 +366,6 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("a caller's own reference still survives an unnamed field", () => {
-    // Only *derived* ids are suppressed. `custom-help` is the caller's own claim about a element
-    // forge did not render and cannot vouch for either way, so suppressing it would be forge
-    // discarding data it was handed.
     expect(fieldDescribedBy("", { existing: "custom-help", description: true })).toBe("custom-help");
   });
 
@@ -406,10 +378,6 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("a control with a blank name renders no id, and its name attribute passes through as given", async () => {
-    // `name=""` IS emitted, deliberately: a `name` is not an IDREF but caller data under the
-    // pass-through contract, and a control with an empty name is one the browser already skips at
-    // submission. Suppressing an id is about references that resolve; this attribute references
-    // nothing.
     expect(await render(<Input field={{ name: "" }} />)).toBe(`<input data-slot="input" class="${INPUT_CLASSES}" name="">`);
   });
 
@@ -435,15 +403,10 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   it("a whole blank-named field declares and references no id at all", async () => {
     const html = await fullField("");
 
-    // Both halves: an empty *reference* list is what the fix is for, and an empty *declared* list is
-    // what makes it agreement rather than one side of the pair having simply stopped rendering.
     expect([referencedIds(html), declaredIds(html)]).toEqual([[], []]);
   });
 
   it("the same markup named renders the full set, so the empty pair above means suppression", async () => {
-    // The control case for the one above. An invariant over two empty lists holds vacuously; this is
-    // the render that shows the lists are empty because the name is blank, not because the compound
-    // stopped wiring anything.
     const html = await fullField("email");
 
     expect([referencedIds(html), declaredIds(html)]).toEqual([
@@ -453,18 +416,12 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("a whole field named with an interior space declares and references no id either", async () => {
-    // Beside its control case deliberately: same render, same reader, one line apart, so the empty
-    // pair reads as suppression of an unresolvable id rather than as the compound having stopped
-    // wiring. `first name` derives `field-first name-description`, which the browser splits into
-    // `field-first` and `name-description` — two tokens, neither declared anywhere on the page.
     const html = await fullField("first name");
 
     expect([referencedIds(html), declaredIds(html)]).toEqual([[], []]);
   });
 
   it("an empty caller aria-describedby leaves no leading space on the rendered attribute", async () => {
-    // The exact path the bug was reported through. The empty attribute is the input under test —
-    // biome is right that it is invalid, and that is precisely why forge must not propagate it.
     // biome-ignore lint/a11y/useValidAriaValues: an invalid empty IDREF list is the input this case exists to feed in
     expect(await render(<Input aria-describedby='' field={{ name: "email", description: true }} />)).toBe(
       `<input data-slot="input" class="${INPUT_CLASSES}" aria-describedby="field-email-description" id="field-email" name="email">`,
@@ -472,12 +429,9 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 });
 
-/** U+00A0. A legal id character that no parser treats as a token separator — spelled by codepoint so
- * the difference from an ASCII space is visible in the source rather than only in a diff. */
+/** U+00A0 — a legal id character that no parser treats as a token separator. */
 const NBSP = "\u00a0";
 
-/** Every character in HTML's ASCII whitespace set, labelled — the class an id may not contain and
- * the one an IDREF list is split on. */
 const ASCII_WS_CHARS: ReadonlyArray<readonly [label: string, ws: string]> = [
   ["tab", "\t"],
   ["line feed", "\n"],
@@ -488,7 +442,6 @@ const ASCII_WS_CHARS: ReadonlyArray<readonly [label: string, ws: string]> = [
 
 describe("Field ids — a name or scope must be a single id token", () => {
   it("fieldControlProps derives neither an id nor an aria-describedby for a name with a space", () => {
-    // The reported case.
     expect(fieldControlProps({}, { name: "first name", description: true, invalid: true })).toStrictEqual({
       name: "first name",
       disabled: undefined,
@@ -497,24 +450,16 @@ describe("Field ids — a name or scope must be a single id token", () => {
   });
 
   it("every other ASCII whitespace character suppresses derivation exactly as a space does", () => {
-    // The one case that fails if the class is narrowed back to `" "` alone. HTML splits an IDREF list
-    // on all five of these, so an id containing any of them is equally unreferenceable.
-    // The label rides along so a failure names the character rather than printing an invisible one.
     const derived = ASCII_WS_CHARS.map(([label, ws]) => [label, fieldControlProps({}, { name: `a${ws}b`, description: true, invalid: true })]);
 
     expect(derived).toStrictEqual(ASCII_WS_CHARS.map(([label, ws]) => [label, { name: `a${ws}b`, disabled: undefined, "aria-invalid": true }]));
   });
 
   it("fieldDescribedBy derives nothing from a name containing a tab or a newline", () => {
-    // Before the fix these returned `"field-a b-description"` — the whitespace run collapsed by the
-    // `\s+` split — while the sibling `FieldDescription` declared `id="field-a\tb-description"`. Not
-    // the same string, so the reference dangled even though both halves had been asked for one id.
     expect([fieldDescribedBy("a\tb", { description: true }), fieldDescribedBy("a\nb", { description: true })]).toEqual([undefined, undefined]);
   });
 
   it("a scope containing whitespace suppresses derivation as surely as the name does", () => {
-    // Falling back to the unscoped id instead would collide with the very field the scope exists to
-    // be distinguished from.
     expect(fieldDescribedBy("email", { scope: "sign up", description: true })).toBe(undefined);
     expect(fieldControlProps({}, { name: "email", scope: "sign up", description: true })).toStrictEqual({
       name: "email",
@@ -529,15 +474,10 @@ describe("Field ids — a name or scope must be a single id token", () => {
   });
 
   it("an empty scope still derives the unscoped id", () => {
-    // Regression pin on the path the fix did not touch: `""` and a blank scope must stay the same.
     expect(fieldId("email", "")).toBe("field-email");
   });
 
   it("a non-breaking space is a legal id character, so it derives and the two halves agree", async () => {
-    // The both-directions guard, paired with the space case above: ASCII whitespace suppresses, a
-    // non-ASCII space does not. The defect was precisely that these two strings diverged — the
-    // declared id held codepoint 160 where the reference held 32 — so the assertion is that the
-    // rendered id IS the derived reference, not merely that each looks right on its own.
     const describedBy = fieldDescribedBy(`a${NBSP}b`, { description: true });
 
     expect(await render(<FieldDescription name={`a${NBSP}b`}>Work address</FieldDescription>)).toBe(
@@ -547,9 +487,6 @@ describe("Field ids — a name or scope must be a single id token", () => {
   });
 
   it("a name of nothing but a non-breaking space is a present name", () => {
-    // An accepted behaviour change, not an accident: under the old `.trim()` this name was absent.
-    // One whitespace definition per file is the whole point of the fix — two is how the defect
-    // arose — and `field- ` is an id an IDREF can name, so there is no ground to suppress it.
     expect(fieldControlProps({}, { name: NBSP })).toStrictEqual({
       id: `field-${NBSP}`,
       name: NBSP,
@@ -567,8 +504,6 @@ describe("Field ids — a name or scope must be a single id token", () => {
   });
 
   it("a control named with a space renders no id, and its name attribute passes through as given", async () => {
-    // `name` is caller data under the pass-through contract, not an IDREF — it references nothing, so
-    // there is nothing for it to fail to resolve.
     expect(await render(<Input field={{ name: "first name" }} />)).toBe(`<input data-slot="input" class="${INPUT_CLASSES}" name="first name">`);
   });
 

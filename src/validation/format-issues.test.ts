@@ -49,10 +49,6 @@ describe("formatValidationIssues", () => {
   });
 
   it("still reproduces the rejected value verbatim, which is why it is the internal diagnostic", () => {
-    // `parseEnv` builds `Invalid environment: <this>`, and that shape is depended on by
-    // `src/validation/parse-env.test.ts`, `src/context/env-validation.test.ts`,
-    // `src/config/config.test.ts` and `src/app/app.test.ts`. It must not acquire
-    // `describeValidationIssue`'s bounds — an operator reading a startup crash needs the value.
     expect(formatValidationIssues(issuesFor(v.object({ port: v.string() }), { port: 8080 }))).toBe(
       "port: Invalid type: Expected string but received 8080",
     );
@@ -65,10 +61,6 @@ describe("formatValidationIssues", () => {
   });
 });
 
-/**
- * The caller-facing describer. Its whole contract is subtractive — the field name survives, bounded,
- * and nothing else does — so the cases worth writing are the ones that prove what is *not* there.
- */
 describe("describeValidationIssue", () => {
   it("names a single failing field", () => {
     expect(describeValidationIssue(firstIssue(v.object({ email: v.string() }), { email: 42 }))).toBe("email");
@@ -83,8 +75,7 @@ describe("describeValidationIssue", () => {
   });
 
   it("falls back to the same wording when a path item's key names nothing a caller can act on", () => {
-    // A set path item carries `key: null`. Anything that is not a string or a number contributes no
-    // segment, rather than a stringified placeholder — and nothing here can run a hostile `toString`.
+    // A set path item carries `key: null`, which is what makes this input exercise the non-string branch.
     expect(describeValidationIssue(firstIssue(v.set(v.string()), new Set([1])))).toBe("the submitted form");
   });
 
@@ -112,7 +103,6 @@ describe("describeValidationIssue", () => {
   it("reproduces neither the submitted value nor the schema's own pattern", () => {
     const issue = firstIssue(strictObject({ password: v.pipe(v.string(), v.regex(/^(?=.*[A-Z]).{12,}$/)) }), { password: "hunter2secret" });
 
-    // The message valibot built carries both, which is the disclosure being bounded out.
     expect(issue.message).toBe('Invalid format: Expected /^(?=.*[A-Z]).{12,}$/ but received "hunter2secret"');
     expect(describeValidationIssue(issue)).toBe("password");
   });

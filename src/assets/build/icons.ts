@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IconOutput, IconsConfig } from "../types";
 
+/** Writes every configured icon output, loading the optional `sharp` dependency on demand. @public */
 export async function buildIcons(config: IconsConfig): Promise<void> {
   // Dynamic import keeps sharp optional — callers without icons skip it entirely
   const { default: sharp } = await import("sharp");
@@ -23,7 +24,6 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
     return buf;
   };
 
-  // Collect png entries opted-in to the web app manifest
   const manifestPngs = config.outputs.filter((o): o is Extract<IconOutput, { kind: "png" }> => o.kind === "png" && !!o.manifest);
 
   for (const o of config.outputs) {
@@ -74,12 +74,10 @@ function buildIco(sizes: number[], pngs: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(cursor);
   const view = new DataView(out.buffer);
 
-  // ICONDIR
   view.setUint16(0, 0, true); // reserved
   view.setUint16(2, 1, true); // type = 1 (ICO)
   view.setUint16(4, count, true); // count
 
-  // ICONDIRENTRY × count
   let pos = 6;
   for (let i = 0; i < count; i++) {
     const size = sizes[i] ?? 0;
@@ -97,7 +95,6 @@ function buildIco(sizes: number[], pngs: Uint8Array[]): Uint8Array {
     pos += 16;
   }
 
-  // PNG payloads
   for (const png of pngs) {
     out.set(png, pos);
     pos += png.length;

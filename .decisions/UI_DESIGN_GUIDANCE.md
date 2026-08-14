@@ -295,8 +295,8 @@ The exemption is stated explicitly because it is the question a reader arrives w
 the reasonable inference is that the corpus was written to the governing-doc format and failed
 to follow it.
 
-The exemption is from `validate-docs.ts` only. The corpus's own gate step (§4) has no equivalent
-carve-out.
+The exemption is from the `validate-docs` step only. The corpus's own gate step (§4) has no
+equivalent carve-out.
 
 ---
 

@@ -51,7 +51,6 @@ describe("buildCursors()", () => {
       expect(light).toContain(`d="M1 0"`);
       expect(dark).toContain(`d="M1 0"`);
 
-      // Different themes yield different resolved background/signal colours.
       expect(light).not.toBe(dark);
 
       expect(select.light!.startsWith(`url("data:image/svg+xml,`)).toBe(true);
@@ -131,11 +130,9 @@ describe("buildCursors()", () => {
       const lightSvg = decodeURIComponent(result.cursor!.light!);
       const darkSvg = decodeURIComponent(result.cursor!.dark!);
 
-      // Flat var resolves to the same hex in both themes.
       expect(lightSvg).toContain('fill="#ff0000"');
       expect(darkSvg).toContain('fill="#ff0000"');
 
-      // Per-theme var resolves to distinct hex values.
       expect(lightSvg).toContain('fill="#0000ff"');
       expect(darkSvg).toContain('fill="#00ff00"');
       expect(lightSvg).not.toContain('fill="#00ff00"');
@@ -168,17 +165,14 @@ describe("buildCursors()", () => {
       const lightSvg = decodeURIComponent(result.cursor!.light!);
       const darkSvg = decodeURIComponent(result.cursor!.dark!);
 
-      // Per-theme alpha vars bake to distinct 8-digit hex values.
       expect(lightSvg).toContain('fill="#00000047"');
       expect(darkSvg).toContain('fill="#00000073"');
       expect(lightSvg).not.toContain('fill="#00000073"');
       expect(darkSvg).not.toContain('fill="#00000047"');
 
-      // A flat alpha var bakes to the same 8-digit hex in every theme.
       expect(lightSvg).toContain('stroke="#ffffffe6"');
       expect(darkSvg).toContain('stroke="#ffffffe6"');
 
-      // An alpha-bearing signal token bakes 8-digit too.
       expect(lightSvg).toContain('stroke="#ff000080"');
       expect(darkSvg).toContain('stroke="#ff000080"');
     } finally {
@@ -210,8 +204,7 @@ describe("buildCursors()", () => {
     const dir = join(tmpdir(), `forge-cursors-comments-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(dir, { recursive: true });
     try {
-      // A `--` inside a comment is ill-formed XML, and a commented-out cssvar() must not
-      // resolve (or throw for a missing token) — both must vanish from the bake.
+      // Adversarial fixture: a `--` inside a comment and a commented-out cssvar().
       const template = `<svg viewBox="{{viewBox}}">
   <!-- shadow layer uses the --cursor-shadow token -->
   <!-- <rect fill="cssvar(--not-declared-anywhere)"/> -->
@@ -241,12 +234,10 @@ describe("buildCursors()", () => {
     const { dir, config } = setup();
     try {
       const result = buildCursors(config, CSS);
-      // The core bake properties are unchanged: per-theme output, correct hotspot suffix.
       expect(Object.keys(result)).toEqual(["select"]);
       expect(Object.keys(result.select!).sort()).toEqual(["dark", "light"]);
       expect(result.select!.light!.endsWith("6 4, auto")).toBe(true);
       expect(result.select!.dark!.endsWith("6 4, auto")).toBe(true);
-      // Themes still differ because halo/signal colors differ.
       expect(result.select!.light).not.toBe(result.select!.dark);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -256,9 +247,7 @@ describe("buildCursors()", () => {
   it("bakes from minified CSS where the signal chain ends on a last-in-block token", () => {
     const { dir, config } = setup();
     try {
-      // A minifier drops the `;` after the last declaration of every block. Here the light
-      // chain is --foreground → --palette-950 → --color-gray-950, and both indirections sit
-      // last in their block — the shape that used to throw "missing CSS token".
+      // Minified fixture: no `;` after each block's last declaration.
       const minified = [
         ":root,:host{--color-gray-50:oklch(98.5% .002 247.839);--color-gray-950:oklch(13% .028 261.692)}",
         ":root{--background:#f3f4f6;--foreground:var(--palette-950)}",
@@ -272,7 +261,6 @@ describe("buildCursors()", () => {
 
       expect(light).toContain('stroke="#030712"');
       expect(dark).toContain('stroke="#f9fafb"');
-      // The halo reads --background directly, so a wrong theme map would show up here too.
       expect(light).toContain('stroke="#f3f4f6"');
       expect(dark).toContain('stroke="#1e2939"');
     } finally {

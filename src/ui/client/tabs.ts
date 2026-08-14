@@ -3,14 +3,6 @@ import { TAB_SELECTOR, TABLIST_SELECTOR } from "../contracts/tabs-contract";
 import { mountRovingFocus } from "./composite";
 import { closestAcross, elementById, eventTarget } from "./dom";
 
-/**
- * Tab selection and keyboard navigation.
- *
- * The list is one Tab stop via `mountRovingFocus`; this adds the part that is specific to tabs —
- * moving the selection, and the panel visibility that follows it. Panels are found through the
- * `aria-controls` the markup already declares, so there is no second registry to keep in step.
- */
-
 export interface TabsOptions {
   /** Select a tab as soon as focus reaches it. @default read from the root's `data-activation` */
   activation?: "automatic" | "manual";
@@ -36,10 +28,7 @@ function select(root: HTMLElement, chosen: HTMLElement): void {
   }
 }
 
-/**
- * Mount a `Tabs` root and return a disposer.
- * @public
- */
+/** Mounts a `Tabs` root and returns a disposer. @public */
 export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => void {
   const list = root.querySelector<HTMLElement>(TABLIST_SELECTOR) ?? root;
   const vertical = root.getAttribute("data-orientation") === "vertical";
@@ -52,7 +41,7 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
     if (tab && list.contains(tab)) select(root, tab);
   };
 
-  // Automatic activation rides `focusin`, which the arrow keys already produce — so the selection
+  // Automatic activation rides `focusin`, which the arrow keys already produce, so the selection
   // follows the roving focus without this controller knowing which key moved it.
   list.addEventListener(activation === "automatic" ? "focusin" : "click", onActivate);
 

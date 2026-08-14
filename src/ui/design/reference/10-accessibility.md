@@ -125,6 +125,14 @@ has no visual required convention at all. <!-- rule:forge-ui-a11y-required-marke
 `Label`'s `required` prop renders an `aria-hidden` asterisk; the `required` attribute on the input
 is what is actually announced.
 
+Default: never put `aria-readonly` on a `<button>` or a `role="button"` element — carry the state on
+the control the button acts on, or use `disabled` — unless the element's role genuinely supports it.
+<!-- rule:forge-ui-a11y-no-aria-readonly-on-button -->
+`aria-readonly` is not a supported attribute of `role="button"`, so a validator flags it and no
+assistive technology acts on it. `NumberField`'s steppers are where the mistake looks most
+plausible — a `readonly` input beside two buttons — and forge deliberately leaves them bare, letting
+the input's own `readonly` carry the state.
+
 ---
 
 ## Heading order

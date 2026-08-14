@@ -11,16 +11,14 @@ export function matchOrigin(origin: string, patterns: string[]): boolean {
     // `?` must be escaped too — unescaped it makes the preceding character optional, silently
     // widening the pattern.
     const escaped = pattern.replace(/[.+^${}()|[\]\\?]/g, "\\$&");
-    // A label may not contain a path, port, userinfo, query or fragment delimiter. `[^.]+` alone
-    // matched `/`, `:` and `@`, so `https://a/b.example.com` satisfied `https://*.example.com`
-    // and was reflected straight into Access-Control-Allow-Origin.
+    // The excluded delimiters are load-bearing: with `[^.]+`, `https://a/b.example.com` matches
+    // `https://*.example.com` and is reflected into Access-Control-Allow-Origin.
     const rePattern = escaped.replace(/\*/g, "[^./:@?#]+");
     if (new RegExp(`^${rePattern}$`).test(origin)) return true;
   }
   return false;
 }
 
-/** Appends a token to the response's Vary header without dropping existing tokens. */
 function appendVary(headers: Headers, token: string): void {
   const existing = headers.get("Vary");
   if (existing == null || existing.trim() === "") {
@@ -53,7 +51,6 @@ export function cors(options: CorsOptions): Middleware {
   return async (context, next) => {
     const origin = context.request.headers.get("Origin");
 
-    // Preflight
     if (context.method === "OPTIONS" && context.request.headers.get("Access-Control-Request-Method") != null) {
       if (origin != null && isAllowed(origin)) {
         return new Response(null, {
@@ -74,8 +71,7 @@ export function cors(options: CorsOptions): Middleware {
     const res = await next();
 
     if (origin != null && isAllowed(origin)) {
-      // Rebuild rather than mutate: the downstream response's headers may be immutable (e.g. a
-      // cached or constructed Response), and in-place mutation would silently throw or no-op.
+      // Rebuild rather than mutate: a downstream response's headers may be immutable.
       const headers = new Headers(res.headers);
       headers.set("Access-Control-Allow-Origin", resolveAcao(origin));
       if (credentials) headers.set("Access-Control-Allow-Credentials", "true");

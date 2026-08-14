@@ -31,9 +31,7 @@ function toObjectBody(obj: R2ObjectBodyLike): ObjectBody {
   };
 }
 
-/** Creates an ObjectStorageBackend backed by a Cloudflare R2 bucket. Accepts any binding that
- *  meets the structural contract `R2BucketLike` — forge's neutral `R2Bucket` or the platform's
- *  runtime bucket — so consumers never cast at the resolve site. @public */
+/** Creates an ObjectStorageBackend backed by a Cloudflare R2 bucket. @public */
 export function r2Backend(bucket: R2BucketLike): ObjectStorageBackend {
   return {
     name: "r2",

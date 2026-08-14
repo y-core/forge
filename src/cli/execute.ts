@@ -29,6 +29,7 @@ function validateArgs(command: CommandBase, args: string[]): void {
   }
 }
 
+/** Resolves the subcommand from argv, parses and validates its flags and args, runs it, and exits 1 on any error. @public */
 export async function execute(root: CommandBase, argv?: string[], io?: CliIO): Promise<void> {
   const tokens = argv ?? processArgv.slice(2);
   const resolvedIO: CliIO = io ?? {
@@ -38,7 +39,6 @@ export async function execute(root: CommandBase, argv?: string[], io?: CliIO): P
   };
 
   try {
-    // Descend the command tree by matching leading non-flag tokens to subcommand names
     let current: CommandBase = root;
     let remaining = tokens;
 
@@ -65,7 +65,6 @@ export async function execute(root: CommandBase, argv?: string[], io?: CliIO): P
     if (callable.run) {
       await callable.run(args, flags as AnyFlags);
     } else if (current.commands.length > 0) {
-      // User invoked a group command without a subcommand — show help
       resolvedIO.stdout(formatHelp(current));
     } else {
       throw new CliError("missing-command", `Command "${current.name}" has no run handler`);

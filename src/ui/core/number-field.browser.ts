@@ -24,8 +24,6 @@ function markup(): Promise<string> {
   );
 }
 
-/** Count real `input` events, because "the input stays authoritative" is only true if listeners see
- * a stepped value exactly as they see a typed one. */
 async function start(page: Page): Promise<void> {
   await page.evaluate(() => {
     window.inputEvents = 0;
@@ -104,10 +102,7 @@ test("the buttons are optional: the input alone is a working number field", asyn
 });
 
 test("increment still steps up when its slot carries a second token", async ({ page }) => {
-  // `data-slot` is a token list, and the buttons are found with `~=`. The direction branch used to
-  // compare the whole attribute, so a second token made the equality fail and sent the *increment*
-  // button down the `else` branch — clicking `+` decremented the value, silently and in the wrong
-  // direction. `{...rest}` on `NumberField.Increment` is enough to reach it.
+  // The fixture's `data-slot` carries a second token deliberately: the controller matches with `~=`.
   const html = await render(
     NumberField({
       children: [

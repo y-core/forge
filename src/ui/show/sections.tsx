@@ -11,14 +11,11 @@ import { Select } from "../core/select";
 import { FlashOob } from "../server/flash";
 import type { DependentData, PaginateData, PreviewData, SearchData, ShowcasePaths, ToastData, ValidateData } from "./route";
 
-// ─── Stable swap-target ids ─────────────────────────────────────────────────
 /** @public */ export const SHOW_SEARCH_ID = "show-search-results";
 /** @public */ export const SHOW_VALIDATE_ID = "show-validate-field";
 /** @public */ export const SHOW_PAGINATE_ID = "show-paginate-table";
 /** @public */ export const SHOW_DEPENDENT_ID = "show-dependent-select";
 /** @public */ export const SHOW_PREVIEW_ID = "show-preview-button";
-
-// ─── Demo corpus ─────────────────────────────────────────────────────────────
 
 const SEARCH_CORPUS = [
   "Alert",
@@ -73,8 +70,6 @@ const CATEGORY_ITEMS: Record<string, string[]> = {
   grain: ["Barley", "Millet", "Oats", "Quinoa", "Wheat"],
 };
 
-// ─── Fragment views ───────────────────────────────────────────────────────────
-
 /** Live button preview from variant + size query params. @public */
 export const PreviewFragment: FC<{ data: PreviewData; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
   data,
@@ -98,16 +93,9 @@ export const ValidateFragment: FC<{ data: ValidateData; icon: ForgeIcon<"close">
   return (
     <FormField id={SHOW_VALIDATE_ID} name='email' invalid={showError}>
       <FormField.Label name='email'>Email</FormField.Label>
-      {/* The attributes belong on the control, not on a wrapper: htmx sends the triggering element's
-          own value on a GET, so a wrapper would send no `email` at all. They live inside the fragment
-          because the swap replaces this whole field — a spread outside it survives the first swap and
-          is then gone from the markup that came back.
-          Blur is a legitimate trigger here rather than the first-blur-paints-it-red mistake: the
-          fragment renders neutral for an empty value, so tabbing through an untouched field shows
-          nothing.
-          `sync` is given rather than defaulted, too: the default resolves `closest form`, and this
-          standalone field has none — htmx then throws inside its own trigger handler and the request
-          is never sent, with nothing logged. */}
+      {/* On the control rather than a wrapper: htmx sends the triggering element's own value on a
+          GET. `sync` is explicit because the default resolves `closest form`, which this standalone
+          field has none of — htmx would throw inside its own trigger handler and send nothing. */}
       <Input
         type='email'
         name='email'
@@ -231,8 +219,6 @@ export const ToastFragment: FC<{ data: ToastData }> = ({ data }) => {
   ];
   return <FlashOob messages={messages} />;
 };
-
-// ─── Demo section wrappers ────────────────────────────────────────────────────
 
 interface SectionProps {
   id: string;

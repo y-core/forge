@@ -1,3 +1,4 @@
+export { findAppRoot, installedAppRoot, resolveAppRoot } from "./app-root";
 export { addCommand, createCommand } from "./command";
 export { CliError, formatError } from "./errors";
 export { execute } from "./execute";
