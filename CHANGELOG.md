@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.0.85] — 2026-08-14
+
 ### Fixed
 
 - **`CheckboxGroup.Item` and `RadioGroup.Item` painted nothing.** Both named `border-input` with no
@@ -2501,6 +2507,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.0.85]: https://github.com/y-core/forge/compare/v0.0.84...v0.0.85
 [0.0.84]: https://github.com/y-core/forge/compare/v0.0.83...v0.0.84
 [0.0.83]: https://github.com/y-core/forge/compare/v0.0.82...v0.0.83
 [0.0.82]: https://github.com/y-core/forge/compare/v0.0.81...v0.0.82

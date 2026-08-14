@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.84",
+  "version": "0.0.85",
   "bin": {
     "forge-assets": "./src/assets/cli/bin.ts",
     "forge-cfgen": "./src/validation/cli/bin.ts",
@@ -8,7 +8,7 @@
     "forge-verify": "./src/pkg/gate/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities for Cloudflare Workers \u2014 HTMX + Tailwind",
+  "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/y-core/forge.git"
