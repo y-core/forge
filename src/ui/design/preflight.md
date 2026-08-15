@@ -210,6 +210,30 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 72. **Count** headings carrying an eyebrow line above them. Expect 0, or 1 that names a category the
     heading cannot. `forge-ui-tell-eyebrow-kicker`
 
+### Platform
+
+Seven of the forty rules in [`reference/16-platform.md`](./reference/16-platform.md) — the ones an
+agent writes from muscle memory, and that one grep answers with a number. The rest of that file is
+read when the task reaches it; these are checked on every surface. **Items 73–76 are stated flat and
+no brief rebuts them**; 77–79 are Defaults like the rest of this block.
+
+73. **Grep** `rg -o '\b(ml|mr|pl|pr)-[0-9.]+|border-[lr]\b|rounded-[lr]\b|text-(left|right)\b'`.
+    Expect 0 hits; the logical spelling is `ms-`/`me-`, `ps-`/`pe-`, `border-s`/`border-e`,
+    `rounded-s`/`rounded-e`, `text-start`/`text-end`. `forge-ui-platform-logical-spacing`
+74. **Grep** `rg 'padding-bottom:\s*[0-9.]+%'`. Expect 0 hits; an `aspect-*` utility is the box.
+    `forge-ui-platform-aspect-ratio`
+75. **Grep** `rg -- '-translate-x-1/2|translate\(-50%'` and, for each hit, name the container that
+    could have carried the centring instead. Expect 0 bare. `forge-ui-platform-centering`
+76. **Grep** `rg '::-webkit-scrollbar'`. Expect 0 hits; `ScrollArea.Viewport`'s `scrollbar-width`
+    and `scrollbar-color` pair is the form. `forge-ui-platform-scrollbar`
+77. **Count** selectors declared a second time under `prefers-color-scheme`:
+    `rg -c 'prefers-color-scheme'`. Expect 0; one `light-dark()` value holds both modes.
+    `forge-ui-platform-light-dark`
+78. **Grep** `rg 'role="(alert)?dialog"|aria-modal'` and, for each hit, name the element it sits on.
+    Expect every hit on a `<dialog>`, and 0 on a `div`. `forge-ui-platform-native-dialog`
+79. **Count** headings at `text-2xl` or larger, then count those carrying `text-balance`. Expect
+    equal, less any heading that cannot wrap. `forge-ui-platform-text-balance`
+
 ---
 
 ## Reporting

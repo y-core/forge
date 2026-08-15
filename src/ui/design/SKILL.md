@@ -20,7 +20,7 @@ generating. There is no surface small enough to skip it, and no brief that overr
 evidence.** Counts, not adjectives: how many `primary` buttons on the surface, how many text colors,
 how many spacing steps, which states are designed. "Looks right" is not a preflight result.
 
-Between those two, read only what the task names. The corpus has 19 rule files and a typical task
+Between those two, read only what the task names. The corpus has 20 rule files and a typical task
 touches two of them.
 
 ## Where to go
@@ -50,6 +50,7 @@ neither.**
 | It is a landing page, not an app screen. | [`reference/13-marketing.md`](./reference/13-marketing.md) |
 | I am auditing someone else's surface. | [`reference/14-review.md`](./reference/14-review.md) |
 | There is a photograph or a glyph on this surface. | [`reference/15-media.md`](./reference/15-media.md) |
+| I am about to write this behaviour in script or in an older CSS idiom. | [`reference/16-platform.md`](./reference/16-platform.md) |
 
 ## Two tiers
 
@@ -82,8 +83,4 @@ When the task is a review rather than a build, replace steps 2–4 with
 [`reference/14-review.md`](./reference/14-review.md), which owns the audit pass and the shape of its
 findings.
 
-## Sources
-
-The design principles these rules rest on are argued in *Refactoring UI* by Adam Wathan and Steve
-Schoger. Every rule in this corpus was re-derived against forge's own components, tokens, and
-utilities, and is stated in forge's terms rather than reproduced.
+The corpus's attribution is in [`index.md`](./index.md)'s `## Sources` footer.

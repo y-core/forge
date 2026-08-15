@@ -78,7 +78,7 @@ test("the native arrow keys still step it, with no buttons involved", async ({ p
   expect(await value(page)).toBe("6");
 });
 
-test("a disabled input is not stepped by the buttons", async ({ page }) => {
+test("a disabled input takes its buttons out of reach rather than leaving them live and inert", async ({ page }) => {
   await mount(page, await markup(), EXPOSE);
   await page.evaluate(() => {
     const el = document.querySelector<HTMLInputElement>("#count");
@@ -86,7 +86,16 @@ test("a disabled input is not stepped by the buttons", async ({ page }) => {
   });
   await start(page);
 
-  await page.click("#inc");
+  expect(
+    await page.evaluate(() => [
+      (document.querySelector("#dec") as HTMLButtonElement).disabled,
+      (document.querySelector("#inc") as HTMLButtonElement).disabled,
+    ]),
+  ).toEqual([true, true]);
+
+  // `force`, because the button is now genuinely unclickable — which is the point. The value must
+  // still be untouched even if a synthetic click reaches it.
+  await page.click("#inc", { force: true });
 
   expect(await value(page)).toBe("5");
 });

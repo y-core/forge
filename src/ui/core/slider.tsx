@@ -1,6 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
+import { scopeAttrs } from "../contracts/scope-attrs";
+import { SLIDER_SCOPE, type SliderAction } from "../contracts/slider-contract";
 import type { FieldDescriptor } from "./field";
 import { fieldControlProps } from "./field";
 import { slotToken } from "./utils/as-child";
@@ -66,15 +68,22 @@ export const Slider: FC<SliderProps> = ({ class: cls, field, output, orientation
   const resolved = field ? fieldControlProps(props, field) : props;
   const isVertical = orientation === "vertical";
   const sliderCls = cn(SLIDER_BASE, isVertical && SLIDER_VERTICAL, asClass(cls));
-  const control = <input data-slot={slotToken("slider", inherited)} type='range' class={sliderCls} {...resolved} />;
-
   if (!output) {
-    return control;
+    return <input data-slot={slotToken("slider", inherited)} type='range' class={sliderCls} {...resolved} />;
   }
 
+  const control = (
+    <input
+      data-slot={slotToken("slider", inherited)}
+      type='range'
+      class={sliderCls}
+      {...scopeAttrs<SliderAction>({ onInput: "sync" })}
+      {...resolved}
+    />
+  );
   const readout = sanitizeRangeValue(resolved);
   return (
-    <div data-slot='slider-wrapper' class={cn("flex gap-2", isVertical ? "flex-col items-center" : "items-center")}>
+    <div data-slot='slider-wrapper' data-scope={SLIDER_SCOPE} class={cn("flex gap-2", isVertical ? "flex-col items-center" : "items-center")}>
       {control}
       <output data-slot='slider-output' class='text-sm tabular-nums text-muted-foreground'>
         {readout}

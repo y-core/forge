@@ -41,6 +41,15 @@ interface Section {
   line: number;
 }
 
+const INTER_DOC_CITATION = /((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?\s+§([0-9][A-Za-z0-9]*)((?:(?:,|\s+and|\s+or)\s+§[0-9][A-Za-z0-9]*)*)/g;
+const LINE_FINAL_DOC_LINK = /\]\([^()]*[A-Z_]+\.md\)`?\s*$/;
+const LEADING_SECTION = /^\s*§[0-9][A-Za-z0-9]*/;
+const BARE_SECTION = /§([0-9][A-Za-z0-9]*)/g;
+const BACKTICKED_PATH = /`((?:src|config|\.claude)\/[^`]*)`/g;
+const UNRESOLVABLE_PATH = /[*<{…\s]/;
+const ROT_PROSE = /\b(previously|no longer|used to|formerly|renamed from|fixed by|has since)\b/i;
+const INLINE_CODE = /`[^`]*`/g;
+
 /** Strip fenced code blocks, leaving the line count intact so reported line numbers stay true. @public */
 export function stripFences(source: string): string[] {
   let inFence = false;
@@ -126,6 +135,29 @@ export function validateNoRot(file: string, lines: readonly string[]): Finding[]
   return findings;
 }
 
+/** Prose narrating a change — a governing document describes only the present. */
+function warnRotProse(file: string, lines: readonly string[]): Finding[] {
+  const findings: Finding[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i]?.replace(INLINE_CODE, " ").match(ROT_PROSE);
+    if (match) findings.push(warn(`historical phrasing \`${match[0]}\` — governing docs carry no history`, { file, line: i + 1 }));
+  }
+  return findings;
+}
+
+/** Every backticked repository path a governing document names must exist on disk. */
+function validatePaths(file: string, lines: readonly string[], root: string): Finding[] {
+  const findings: Finding[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    for (const match of (lines[i] ?? "").matchAll(BACKTICKED_PATH)) {
+      const path = (match[1] ?? "").replace(/\/+$/, "");
+      if (path === "" || UNRESOLVABLE_PATH.test(path)) continue;
+      if (!existsSync(resolve(root, path))) findings.push(fail(`path \`${path}\` does not exist`, { file, line: i + 1 }));
+    }
+  }
+  return findings;
+}
+
 /** Frontmatter presence and shape. @public */
 export function validateFrontmatter(file: string, source: string, descriptionMax: number): Finding[] {
   if (!source.startsWith("---\n")) return [fail("missing YAML frontmatter", { file })];
@@ -134,6 +166,13 @@ export function validateFrontmatter(file: string, source: string, descriptionMax
 
   const block = source.slice(4, end);
   const findings: Finding[] = [];
+
+  for (const match of block.matchAll(/^([A-Za-z][A-Za-z0-9_-]*):/gm)) {
+    const [, key = ""] = match;
+    if (key !== "title" && key !== "description") {
+      findings.push(fail(`unexpected frontmatter key \`${key}\` — \`title\` and \`description\` only`, { file }));
+    }
+  }
 
   if (!block.match(/^title:\s*(.+)$/m)?.[1]?.trim()) findings.push(fail("frontmatter is missing `title`", { file }));
 
@@ -186,8 +225,17 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
 
   const files: string[] = [];
   const decisionsPath = resolve(root, decisionsDir);
+  const walkDocs = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolve(dir, entry.name);
+      if (entry.isDirectory()) walkDocs(full);
+      else if (entry.isFile() && entry.name.endsWith(".md")) files.push(relative(root, full));
+    }
+  };
   if (existsSync(decisionsPath)) {
-    for (const entry of readdirSync(decisionsPath)) if (entry.endsWith(".md")) files.push(join(decisionsDir, entry));
+    walkDocs(decisionsPath);
+    // A directory that exists and yields nothing is a discovery bug, not a clean repository.
+    if (files.length === 0) findings.push(fail(`\`${decisionsDir}/\` exists but holds no documents`, { file: decisionsDir }));
   }
   if (existsSync(resolve(root, guideIndexOwner))) files.push(guideIndexOwner);
   if (existsSync(resolve(root, rootReadme))) files.push(rootReadme);
@@ -225,6 +273,24 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     sectionsByDoc.set(file.slice(decisionsDir.length + 1), new Set(sections.map((section) => section.number)));
   }
 
+  // Keys are `subdir/DOC.md` once the tree nests, but a citation may name either form. A same-line
+  // link resolves it exactly; a bare basename resolves only while it is unique.
+  const docKeys = [...sectionsByDoc.keys()];
+  const resolveDocKey = (file: string, cited: string, line: string): { key?: string; ambiguous?: string[] } => {
+    for (const match of line.matchAll(/\]\((\.{0,2}\/?[A-Za-z0-9._\-/]+\.md)\)/g)) {
+      const [, href = ""] = match;
+      if (href !== cited && !href.endsWith(`/${cited}`)) continue;
+      const key = relative(decisionsPath, resolve(dirname(resolve(root, file)), href));
+      if (sectionsByDoc.has(key)) return { key };
+    }
+    if (sectionsByDoc.has(cited)) return { key: cited };
+    const matches = docKeys.filter((key) => key.endsWith(`/${cited}`));
+    const only = matches[0];
+    if (matches.length === 1 && only !== undefined) return { key: only };
+    if (matches.length > 1) return { ambiguous: matches };
+    return {};
+  };
+
   for (const file of files) {
     const source = sources.get(file) ?? "";
     const stripped = stripFences(source);
@@ -240,6 +306,14 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
 
     const ownSections = new Set((parsed.get(file) ?? []).map((section) => section.number));
     const fileDir = dirname(resolve(root, file));
+
+    // A citation wrapped across a line break is one citation: the link ends a line and its §N opens
+    // the next, so the pair is matched joined and the continuation's §N is not a bare token.
+    const wrappedContinuations = new Set<number>();
+    for (let i = 0; i < stripped.length - 1; i++) {
+      if (LINE_FINAL_DOC_LINK.test(stripped[i] ?? "") && LEADING_SECTION.test(stripped[i + 1] ?? "")) wrappedContinuations.add(i + 1);
+    }
+
     for (let i = 0; i < stripped.length; i++) {
       const line = stripped[i];
       if (line === undefined) continue;
@@ -249,17 +323,29 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
         if (!existsSync(resolve(fileDir, href))) findings.push(fail(`link target \`${href}\` does not exist`, { file, line: i + 1 }));
       }
 
-      for (const match of line.matchAll(/([A-Z_]+\.md)`?\)?\s+§([0-9][A-Za-z0-9]*)/g)) {
-        const [, doc = "", section = ""] = match;
-        const known = sectionsByDoc.get(doc);
-        if (known === undefined) continue;
-        if (!known.has(section)) {
-          findings.push(fail(`\`${doc} §${section}\` does not resolve to a section in that document`, { file, line: i + 1 }));
+      const continuation = wrappedContinuations.has(i + 1) ? (stripped[i + 1] ?? "") : "";
+      const citationLine = continuation === "" ? line : `${line} ${continuation}`;
+      let bare = wrappedContinuations.has(i) ? line.replace(LEADING_SECTION, " ") : line;
+
+      for (const match of citationLine.matchAll(INTER_DOC_CITATION)) {
+        const [pair, doc = "", section = "", conjuncts = ""] = match;
+        bare = bare.replace(pair, " ");
+        const { key, ambiguous } = resolveDocKey(file, doc, citationLine);
+        if (ambiguous !== undefined) {
+          findings.push(fail(`\`${doc} §${section}\` is ambiguous — ${ambiguous.join(" and ")} both match; cite the path`, { file, line: i + 1 }));
+          continue;
+        }
+        if (key === undefined) continue;
+        const cited = [section, ...[...conjuncts.matchAll(BARE_SECTION)].map((conjunct) => conjunct[1] ?? "")];
+        for (const number of cited) {
+          if (!sectionsByDoc.get(key)?.has(number)) {
+            findings.push(fail(`\`${doc} §${number}\` does not resolve to a section in that document`, { file, line: i + 1 }));
+          }
         }
       }
 
-      if (/[A-Z_]+\.md/.test(line) || ownSections.size === 0) continue;
-      for (const match of line.matchAll(/§([0-9][A-Za-z0-9]*)/g)) {
+      if (ownSections.size === 0) continue;
+      for (const match of bare.matchAll(BARE_SECTION)) {
         const [, section = ""] = match;
         if (!ownSections.has(section)) {
           findings.push(fail(`intra-document \`§${section}\` does not resolve to a section in this file`, { file, line: i + 1 }));
@@ -270,6 +356,8 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     if (!file.startsWith(`${decisionsDir}/`)) continue;
 
     findings.push(...validateFrontmatter(file, source, descriptionMax));
+    findings.push(...validatePaths(file, stripped, root));
+    findings.push(...warnRotProse(file, stripped));
 
     const lineCount = source.split("\n").length;
     if (lineCount > sizeFail) findings.push(fail(`${lineCount} lines exceeds the ${sizeFail}-line hard limit — split or cut`, { file }));
@@ -305,7 +393,7 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
       findings.push(fail("no `## Guide Index` section", { file: guideIndexOwner }));
     } else {
       const indexed = new Set<string>();
-      const linkRe = new RegExp(`\\]\\((?:\\./)?${decisionsDir}/([A-Za-z0-9_]+\\.md)\\)`, "g");
+      const linkRe = new RegExp(`\\]\\((?:\\./)?${decisionsDir}/((?:[A-Za-z0-9_-]+/)?[A-Za-z0-9_]+\\.md)\\)`, "g");
       for (const line of block.lines) {
         for (const match of line.matchAll(linkRe)) {
           const [, doc = ""] = match;

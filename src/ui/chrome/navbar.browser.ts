@@ -12,7 +12,13 @@ declare global {
 
 const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeChromeClient: "./ui/chrome/client" } };
 
-const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16", "icon-hamburger": "0 0 22 22", "icon-close": "0 0 22 22" });
+const icon = createIcon("/sprite.svg", {
+  "icon-chevron-down": "0 0 16 16",
+  "icon-hamburger": "0 0 22 22",
+  "icon-close": "0 0 22 22",
+  "icon-panel-open": "0 0 24 24",
+  "icon-panel-close": "0 0 24 24",
+});
 
 const CONFIG: NavDefinition = {
   sections: [
@@ -76,21 +82,14 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
     expect(roles).toEqual({ menubar: 0, menus: 2, barLink: null });
   });
 
-  test("a bar menu's popup publishes its open state, and the state updates", async ({ page }) => {
+  test("a bar menu's popup reports its open state to the platform's own selector", async ({ page }) => {
     await mountNavbar(page);
 
-    const before = await page.evaluate(() => {
-      const el = document.querySelector("#navbar-menu-top-0");
-      return { open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
-    });
-    await page.click("[data-slot~='menu-trigger']");
-    const after = await page.evaluate(() => {
-      const el = document.querySelector("#navbar-menu-top-0");
-      return { open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
-    });
+    const isOpen = () => page.evaluate(() => document.querySelector("#navbar-menu-top-0")?.matches(":popover-open"));
 
-    expect(before).toEqual({ open: false, closed: true });
-    expect(after).toEqual({ open: true, closed: false });
+    expect(await isOpen()).toBe(false);
+    await page.click("[data-slot~='menu-trigger']");
+    expect(await isOpen()).toBe(true);
   });
 
   test("a nested leaf is a menu item and still a real link", async ({ page }) => {
@@ -211,6 +210,139 @@ test.describe("Navbar — hidden items stay out of the keyboard ring", () => {
     await page.keyboard.press("ArrowDown");
 
     expect(await focusedText(page)).toBe("Quit");
+  });
+});
+
+// The harness runs no Tailwind build, so the `max-md:` utilities the drawer names style nothing
+// unless the spec supplies them; without these rules a case would measure the browser's defaults.
+const DRAWER_STYLE = `<style>
+  body { margin: 0 }
+  .hidden { display: none }
+  #page { height: 3000px; background: #eee }
+  @media (max-width: 47.99rem) {
+    .max-md\\:fixed { position: fixed }
+    .max-md\\:relative { position: relative }
+    .max-md\\:inset-y-0 { top: 0; bottom: 0 }
+    .max-md\\:inset-0 { top: 0; right: 0; bottom: 0; left: 0 }
+    .max-md\\:start-0 { inset-inline-start: 0 }
+    .max-md\\:z-50 { z-index: 50 }
+    .max-md\\:z-40 { z-index: 40 }
+    .max-md\\:z-30 { z-index: 30 }
+    .max-md\\:flex { display: flex }
+    .max-md\\:block { display: block }
+    .max-md\\:w-72 { width: 18rem }
+    .max-md\\:flex-col { flex-direction: column }
+    .max-md\\:bg-background { background: #fff }
+    .max-md\\:bg-foreground\\/40 { background: rgba(0, 0, 0, 0.4) }
+    .max-md\\:invisible { visibility: hidden }
+    .max-md\\:opacity-0 { opacity: 0 }
+    .max-md\\:-translate-x-full { transform: translateX(-100%) }
+    [open] .max-md\\:group-open\\:visible { visibility: visible }
+    [open] .max-md\\:group-open\\:opacity-100 { opacity: 1 }
+    [open] .max-md\\:group-open\\:translate-x-0 { transform: translateX(0) }
+  }
+</style>`;
+
+const PANEL = "[data-slot~='navbar-backdrop'] + div";
+const BACKDROP = "[data-slot~='navbar-backdrop']";
+const TOGGLE = "[data-slot~='navbar-toggle']";
+
+async function mountDrawer(page: Page): Promise<void> {
+  const html = await render(Navbar({ config: CONFIG, resolveHref: (key: string) => `#${key}`, icon, collapsedAs: "drawer" }));
+  await mount(page, `${DETAILS_CONTENT_RULE}${DRAWER_STYLE}${html}<div id="page">page content</div>`, EXPOSE);
+  await page.evaluate(() => window.forgeResume.resume());
+}
+
+const isDrawerOpen = (page: Page) => page.evaluate(() => document.querySelector<HTMLDetailsElement>("[data-slot~='navbar']")?.open ?? null);
+
+/** Where the page content sits, and where the panel sits over it. */
+function geometry(page: Page, panel: string) {
+  return page.evaluate((selector) => {
+    const content = document.getElementById("page");
+    const drawer = document.querySelector(selector);
+    if (content === null || drawer === null) throw new Error("the drawer fixture is not on the page");
+    const box = drawer.getBoundingClientRect();
+    return {
+      contentY: Math.round(content.getBoundingClientRect().top),
+      panel: { x: Math.round(box.x), width: Math.round(box.width), height: Math.round(box.height) },
+      panelVisibility: getComputedStyle(drawer).visibility,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    };
+  }, panel);
+}
+
+test.describe("Navbar — the drawer at phone width", () => {
+  test.use({ viewport: { width: 375, height: 700 } });
+
+  test("overlays the content from the leading edge without moving a pixel of it", async ({ page }) => {
+    await mountDrawer(page);
+    const closed = await geometry(page, PANEL);
+    expect({ visibility: closed.panelVisibility, open: await isDrawerOpen(page) }).toEqual({ visibility: "hidden", open: false });
+
+    await page.click(TOGGLE);
+
+    const open = await geometry(page, PANEL);
+    // The defect this mode exists to fix: an in-flow panel pushes the content down by its height.
+    expect(open.contentY).toBe(closed.contentY);
+    expect({ visibility: open.panelVisibility, x: open.panel.x, width: open.panel.width }).toEqual({ visibility: "visible", x: 0, width: 288 });
+    expect(open.panel.height).toBe(open.viewport.height);
+  });
+
+  // The panel starts at the same edge as the toggle, so an equal stacking order buried the one
+  // control that shuts the drawer with JavaScript off. The toggle sits above both layers.
+  test("keeps its own toggle clickable while open, which is the JavaScript-off way back out", async ({ page }) => {
+    await mountDrawer(page);
+    await page.click(TOGGLE);
+    expect(await isDrawerOpen(page)).toBe(true);
+
+    await page.click(TOGGLE);
+
+    await expect.poll(() => isDrawerOpen(page)).toBe(false);
+  });
+
+  test("closes from a click on the backdrop", async ({ page }) => {
+    await mountDrawer(page);
+    await page.click(TOGGLE);
+    expect(await isDrawerOpen(page)).toBe(true);
+
+    await page.click(BACKDROP, { position: { x: 340, y: 400 } });
+
+    await expect.poll(() => isDrawerOpen(page)).toBe(false);
+  });
+
+  test("closes on Escape, and hands focus back to the toggle", async ({ page }) => {
+    await mountDrawer(page);
+    await page.click(TOGGLE);
+    await expect.poll(() => focusedText(page)).toBe("Home");
+
+    await page.keyboard.press("Escape");
+
+    await expect.poll(() => isDrawerOpen(page)).toBe(false);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? [])).toContain("navbar-toggle");
+  });
+
+  // A wheel, not `scrollTo`: `overflow: hidden` stops the reader's scroll and permits a scripted
+  // one, so a programmatic scroll would measure nothing about the lock.
+  test("holds the page behind it still while it is open, and gives the scroll back on close", async ({ page }) => {
+    await mountDrawer(page);
+    await page.click(TOGGLE);
+    await page.mouse.move(340, 400);
+
+    await page.mouse.wheel(0, 500);
+
+    await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(0);
+
+    await page.keyboard.press("Escape");
+    await expect.poll(() => isDrawerOpen(page)).toBe(false);
+
+    // The wheel is re-sent on each attempt: the unlock and the compositor's next frame are not the
+    // same instant, and a single wheel swallowed by the locked frame would never be retried.
+    const wheelThenScrollY = async () => {
+      await page.mouse.wheel(0, 100);
+      return page.evaluate(() => Math.round(window.scrollY));
+    };
+    await expect.poll(wheelThenScrollY).toBeGreaterThan(0);
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("overflow"))).toBe("");
   });
 });
 

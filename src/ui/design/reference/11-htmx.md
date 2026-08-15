@@ -2,7 +2,7 @@
 
 This page is about the *design* consequences of swapping fragments. The API — `hxAttrs`,
 `hxHeaders`, the pattern helpers, `isHxRequest`, the trust posture on selector-valued attributes —
-belongs to [`HTMX.md`](../../../../.decisions/HTMX.md) and `src/html/htmx/README.md`, and is not
+belongs to [`HTMX.md`](../../../../.decisions/implementation/HTMX.md) and `src/html/README.md`, and is not
 restated here.
 
 The one idea everything below follows from: **a swapped region is a surface, not a hole.** It is

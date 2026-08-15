@@ -1,3 +1,4 @@
+/* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */
 /* Colours that are not the scheme — the four status hues, and the two absolute alpha ramps.
 
    Steps only, exactly as a scheme file is, and each declared once: the mode difference belongs in

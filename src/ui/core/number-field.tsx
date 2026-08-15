@@ -12,6 +12,8 @@ interface NumberFieldRootProps extends Omit<JSX.IntrinsicElements["div"], "child
 type NumberFieldInputProps = Omit<JSX.IntrinsicElements["input"], "children" | "type">;
 
 interface NumberFieldButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
+  /** Accessible name for the stepper. Defaults to `"Decrement"` / `"Increment"`. */
+  label?: string;
   children?: JSXNode;
 }
 
@@ -43,22 +45,22 @@ const NumberFieldInput: FC<NumberFieldInputProps> = ({ class: cls, "data-slot": 
   />
 );
 
-const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({ label = "Decrement", class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
     data-slot={slotToken("number-field-decrement", inherited)}
-    aria-label='Decrement'
+    aria-label={label}
     class={cn(BUTTON_BASE, asClass(cls))}
     {...rest}>
     {children ?? "−"}
   </button>
 );
 
-const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
+const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({ label = "Increment", class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
     data-slot={slotToken("number-field-increment", inherited)}
-    aria-label='Increment'
+    aria-label={label}
     class={cn(BUTTON_BASE, asClass(cls))}
     {...rest}>
     {children ?? "+"}

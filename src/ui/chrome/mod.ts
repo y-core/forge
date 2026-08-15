@@ -2,8 +2,11 @@
 
 export type {
   NavbarProps,
+  NavCollapsedAs,
   NavCollapsible,
   NavDefinition,
+  NavDrawerGlyph,
+  NavGlyph,
   NavGroup,
   NavItem,
   NavLink,

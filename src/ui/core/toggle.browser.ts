@@ -3,73 +3,58 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { Toggle } from "./toggle";
 
-declare global {
-  interface Window {
-    forgeResume: typeof import("../client/resume");
-  }
-}
-
-const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeCoreClient: "./ui/core/client" } };
-
-async function start(page: Page): Promise<void> {
-  await page.evaluate(() => window.forgeResume.resume());
+function state(page: Page) {
+  return page.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>("#bold");
+    const label = input?.closest("label");
+    return { tag: input?.tagName, type: input?.getAttribute("type"), checked: input?.checked, slot: label?.getAttribute("data-slot") };
+  });
 }
 
 test.describe("Toggle", () => {
-  test("renders as a button with an explicit pressed state, not a checkbox", async ({ page }) => {
-    await mount(page, await render(Toggle({ id: "bold", children: "Bold" })), EXPOSE);
+  test("is a native checkbox inside its label, not a button carrying an ARIA state", async ({ page }) => {
+    await mount(page, await render(Toggle({ id: "bold", name: "bold", children: "Bold" })));
 
-    const shape = await page.evaluate(() => {
-      const el = document.querySelector("#bold");
-      return { tag: el?.tagName, type: el?.getAttribute("type"), aria: el?.getAttribute("aria-pressed"), name: el?.getAttribute("name") };
-    });
-
-    expect(shape).toEqual({ tag: "BUTTON", type: "button", aria: "false", name: null });
+    expect(await state(page)).toEqual({ tag: "INPUT", type: "checkbox", checked: false, slot: "toggle" });
   });
 
-  test("flips both halves of its pressed state on click", async ({ page }) => {
-    await mount(page, await render(Toggle({ id: "bold", children: "Bold" })), EXPOSE);
-    await start(page);
+  // No `resume()` anywhere in this file: that is the assertion. The platform toggles the checkbox,
+  // and `:has(:checked)` paints the label — there is nothing left for a controller to do.
+  test("flips on a click on the label, with no client runtime loaded", async ({ page }) => {
+    await mount(page, await render(Toggle({ id: "bold", children: "Bold" })));
 
-    await page.click("#bold");
-    expect(
-      await page.evaluate(() => {
-        const el = document.querySelector("#bold");
-        return { aria: el?.getAttribute("aria-pressed"), data: el?.hasAttribute("data-pressed") };
-      }),
-    ).toEqual({ aria: "true", data: true });
+    await page.click('[data-slot~="toggle"]');
+    expect((await state(page)).checked).toBe(true);
 
-    await page.click("#bold");
-    expect(
-      await page.evaluate(() => {
-        const el = document.querySelector("#bold");
-        return { aria: el?.getAttribute("aria-pressed"), data: el?.hasAttribute("data-pressed") };
-      }),
-    ).toEqual({ aria: "false", data: false });
+    await page.click('[data-slot~="toggle"]');
+    expect((await state(page)).checked).toBe(false);
   });
 
-  test("carries the action that resumes its own scope, with nothing asked of the caller", async ({ page }) => {
-    await mount(page, await render(Toggle({ id: "bold", children: "Bold" })), EXPOSE);
+  test("toggles from the keyboard, since the input is focusable rather than hidden", async ({ page }) => {
+    await mount(page, await render(Toggle({ id: "bold", children: "Bold" })));
 
-    expect(
-      await page.evaluate(() => {
-        const el = document.querySelector("#bold");
-        return { scope: el?.getAttribute("data-scope"), action: el?.getAttribute("data-on-click") };
-      }),
-    ).toEqual({ scope: "toggle", action: "toggle" });
+    await page.locator("#bold").focus();
+    await page.keyboard.press("Space");
+
+    expect((await state(page)).checked).toBe(true);
   });
 
   test("a server-rendered pressed toggle un-presses on the first click", async ({ page }) => {
-    await mount(page, await render(Toggle({ id: "bold", pressed: true, children: "Bold" })), EXPOSE);
-    await start(page);
+    await mount(page, await render(Toggle({ id: "bold", pressed: true, children: "Bold" })));
 
-    await page.click("#bold");
+    await page.click('[data-slot~="toggle"]');
+
+    expect((await state(page)).checked).toBe(false);
+  });
+
+  test("names no scope and no action, because it has no state a controller could own", async ({ page }) => {
+    await mount(page, await render(Toggle({ id: "bold", children: "Bold" })));
 
     expect(
       await page.evaluate(() => {
-        const el = document.querySelector("#bold");
-        return { aria: el?.getAttribute("aria-pressed"), data: el?.hasAttribute("data-pressed") };
+        const label = document.querySelector('[data-slot~="toggle"]');
+        return { scope: label?.getAttribute("data-scope"), action: label?.getAttribute("data-on-click") };
       }),
-    ).toEqual({ aria: "false", data: false });
+    ).toEqual({ scope: null, action: null });
   });
 });

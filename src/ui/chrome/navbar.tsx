@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { NAVBAR_DRAWER_ATTR } from "../contracts/navbar-contract";
 import type { ForgeIcon } from "../core/icon";
 import { Menu } from "../core/menu";
 import { slotToken } from "../core/utils/as-child";
@@ -64,8 +65,17 @@ export type NavPlacement = "top" | "bottom" | "left" | "right";
 /** Which breakpoints the bar collapses behind its toggle at. @public */
 export type NavCollapsible = "mobile" | "always";
 
-/** Props for {@link Navbar}; the tree is built from `config`, so `children` is removed. */
-export interface NavbarProps extends Omit<JSX.IntrinsicElements["nav"], "children"> {
+/** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. @public */
+export type NavCollapsedAs = "inline" | "drawer";
+
+/** The glyphs every bar draws: the menu chevron and the inline toggle's own pair. @public */
+export type NavGlyph = "chevron-down" | "hamburger" | "close";
+
+/** The two a drawer's toggle draws instead. One pair, drawn and mirrored under `rtl:` */
+export type NavDrawerGlyph = "panel-open" | "panel-close";
+
+/** What every bar takes, whatever its collapse mode; the tree is built from `config`, so `children` is removed. */
+interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children"> {
   config: NavDefinition;
   /** Resolves a route-map key to a URL — REQUIRED, since `href` is always a key. */
   resolveHref: (key: string) => string;
@@ -79,19 +89,42 @@ export interface NavbarProps extends Omit<JSX.IntrinsicElements["nav"], "childre
   collapsible?: NavCollapsible;
   /** Renders the underlying `<details>` open on first paint. Attribute-only; there is no controller. */
   defaultOpen?: boolean;
-  icon: ForgeIcon<"chevron-down" | "hamburger" | "close">;
   /** DOM id for the bar; also namespaces the generated menu ids, which two same-placement bars on
    * one page would otherwise collide on. */
   id?: string;
   class?: string;
 }
 
+/** The in-the-flow bar: the toggle is a hamburger, so the sprite owes nothing new. */
+interface NavbarInlineProps extends NavbarSharedProps {
+  /** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. */
+  collapsedAs?: "inline";
+  icon: ForgeIcon<NavGlyph>;
+}
+
+/** A top bar that opens off-canvas: still a hamburger, which is the affordance a bar's menu has. */
+interface NavbarBarDrawerProps extends NavbarSharedProps {
+  collapsedAs: "drawer";
+  collapsible?: "mobile";
+  icon: ForgeIcon<NavGlyph>;
+}
+
+/** A rail that opens off-canvas: its toggle draws the panel pair, so those two glyphs are owed too. */
+interface NavbarRailDrawerProps extends NavbarSharedProps {
+  collapsedAs: "drawer";
+  collapsible: "always";
+  icon: ForgeIcon<NavGlyph | NavDrawerGlyph>;
+}
+
+/** Props for {@link Navbar}. `collapsedAs` and `collapsible` decide the glyphs owed: opens off-canvas. @public */
+export type NavbarProps = NavbarInlineProps | NavbarBarDrawerProps | NavbarRailDrawerProps;
+
 /** Threaded through the recursive renderers. */
 interface NavRenderCtx {
   resolveHref: (key: string) => string;
   slots?: Record<string, JSXNode> | undefined;
   activeFilters: string[];
-  icon: ForgeIcon<"chevron-down" | "hamburger" | "close">;
+  icon: ForgeIcon<NavGlyph>;
   /** Namespace prefix for generated menu ids — the bar's `id` when given, else its placement. */
   idBase: string;
   seq: { n: number };
@@ -129,6 +162,35 @@ const railPlacementVariants = cva({
 /** What the two boxes between the consumer's layout and the `<details>` carry in rail mode. */
 const RAIL_HEIGHT_CHAIN = "h-full";
 
+/** What the bar itself paints below `md` it would position against the bar, not the viewport. */
+const DRAWER_BAR_CLASS = "max-md:bg-transparent max-md:backdrop-blur-none";
+
+/** The rail's own scrolling box has to be released too, or the out-of-flow panel is clipped by it. */
+const DRAWER_RAIL_CLASS = `${DRAWER_BAR_CLASS} max-md:max-h-none max-md:overflow-visible`;
+
+/** The off-canvas panel below `md`. `visibility`, not `display`: `display` is not transitionable and
+ * `visibility` is, and `invisible` still keeps the closed panel out of the tab order and the a11y tree. */
+const DRAWER_PANEL_BASE =
+  "max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:invisible max-md:group-open:visible max-md:group-open:translate-x-0 max-md:transition-[transform,visibility] max-md:duration-200 motion-reduce:max-md:transition-none";
+
+/** Which edge the panel slides from — derived from `placement`, never configured separately. */
+type DrawerEdge = "leading" | "trailing";
+
+const DRAWER_EDGE_CLASS: Record<DrawerEdge, string> = {
+  leading: "max-md:start-0 max-md:border-e max-md:-translate-x-full max-md:rtl:translate-x-full",
+  trailing: "max-md:end-0 max-md:border-s max-md:translate-x-full max-md:rtl:-translate-x-full",
+};
+
+/** The glyph pair is drawn once, for a leading edge in a left-to-right page, and mirrored into the other three cases */
+const DRAWER_GLYPH_CLASS: Record<DrawerEdge, string> = { leading: "rtl:-scale-x-100", trailing: "-scale-x-100 rtl:scale-x-100" };
+
+/** The scrim under the panel. A `<div>` rather than a `<button>`: it duplicates the summary's affordance, so it must not be a second tab stop. */
+const DRAWER_BACKDROP_CLASS =
+  "hidden max-md:block max-md:fixed max-md:inset-0 max-md:z-30 max-md:bg-foreground/40 max-md:invisible max-md:opacity-0 max-md:group-open:visible max-md:group-open:opacity-100 max-md:transition-[opacity,visibility]";
+
+/** Keeps the toggle above both the scrim and the panel it opened — starts at the same edge and would otherwise cover the one control that shuts it*/
+const DRAWER_SUMMARY_CLASS = "max-md:relative max-md:z-50";
+
 /** Summary (toggle) classes per collapse mode; `"always"` keeps the toggle at every breakpoint. */
 const SUMMARY_CLASS: Record<NavCollapsible, string> = {
   mobile: "md:hidden flex items-center justify-end p-3 list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -140,6 +202,13 @@ const SUMMARY_CLASS: Record<NavCollapsible, string> = {
 const PANEL_CLASS: Record<NavCollapsible, string> = {
   mobile: "hidden group-open:flex md:flex flex-col md:flex-row md:items-center justify-between gap-4 p-2",
   always: "hidden group-open:flex flex-col gap-4 p-2",
+};
+
+/** Panel classes per collapse mode in drawer mode: the `≥md` half of the inline table, restated so
+ * that nothing unprefixed decides `display` — below `md` the overlay's own `max-md:flex` does. */
+const DRAWER_PANEL_CLASS: Record<NavCollapsible, string> = {
+  mobile: "md:flex flex-col md:flex-row md:items-center justify-between gap-4 p-2",
+  always: "md:hidden md:group-open:flex flex-col gap-4 p-2",
 };
 
 /** Section classes per collapse mode; `"always"` never turns the row horizontal. */
@@ -271,27 +340,59 @@ function renderSection(section: NavSection, ctx: NavRenderCtx): JSXNode {
   );
 }
 
+/** The toggle's two states, taken from the props union rather than from a widened `icon`: only the
+ * rail-drawer member's `icon` is typed for the panel pair, so the discriminants are what reach them.
+ * A bar keeps the hamburger even when it opens off-canvas — that glyph is what a bar's menu is. */
+function renderToggleGlyphs(props: NavbarProps, edge: DrawerEdge): JSXNode {
+  if (props.collapsedAs === "drawer" && props.collapsible === "always") {
+    const Glyph = props.icon;
+    const mirror = DRAWER_GLYPH_CLASS[edge];
+    return [
+      <span class={cn("group-open:hidden", mirror)} aria-hidden='true'>
+        <Glyph name='panel-open' width={22} height={22} />
+      </span>,
+      <span class={cn("hidden group-open:inline", mirror)} aria-hidden='true'>
+        <Glyph name='panel-close' width={22} height={22} />
+      </span>,
+    ];
+  }
+  const Glyph = props.icon;
+  return [
+    <span class='group-open:hidden' aria-hidden='true'>
+      <Glyph name='hamburger' width={22} height={22} />
+    </span>,
+    <span class='hidden group-open:inline' aria-hidden='true'>
+      <Glyph name='close' width={22} height={22} />
+    </span>,
+  ];
+}
+
 /** A configuration-driven, responsive navbar built from a {@link NavDefinition}. @public */
-export const Navbar: FC<NavbarProps> = ({
-  config,
-  resolveHref,
-  slots,
-  activeFilters = [],
-  placement,
-  collapsible = "mobile",
-  defaultOpen = false,
-  icon: Icon,
-  class: cls,
-  id,
-  "data-slot": inherited,
-  "aria-label": ariaLabel,
-  "aria-labelledby": ariaLabelledby,
-  ...rest
-}) => {
+export const Navbar: FC<NavbarProps> = (props) => {
+  const {
+    config,
+    resolveHref,
+    slots,
+    activeFilters = [],
+    placement,
+    collapsible = "mobile",
+    collapsedAs = "inline",
+    defaultOpen = false,
+    icon: Icon,
+    class: cls,
+    id,
+    "data-slot": inherited,
+    "aria-label": ariaLabel,
+    "aria-labelledby": ariaLabelledby,
+    ...rest
+  } = props;
   const resolvedPlacement = placement ?? (collapsible === "always" ? "left" : "top");
   const ctx: NavRenderCtx = { resolveHref, slots, activeFilters, icon: Icon, idBase: id ?? resolvedPlacement, seq: { n: 0 }, collapsible };
   const variants = collapsible === "always" ? railPlacementVariants : placementVariants;
   const heightLink: { class?: string } = collapsible === "always" ? { class: RAIL_HEIGHT_CHAIN } : {};
+  const drawer = collapsedAs === "drawer";
+  const edge = resolvedPlacement === "right" || resolvedPlacement === "bottom" ? "trailing" : "leading";
+  const drawerBar = collapsible === "always" ? DRAWER_RAIL_CLASS : DRAWER_BAR_CLASS;
   return (
     <Resumable name='navbar' state={{ filters: activeFilters }} {...heightLink}>
       <nav
@@ -300,19 +401,18 @@ export const Navbar: FC<NavbarProps> = ({
         {...heightLink}>
         <details
           data-slot={slotToken("navbar", inherited)}
-          class={cn(variants({ placement: resolvedPlacement }), asClass(cls))}
+          class={cn(variants({ placement: resolvedPlacement }), drawer ? drawerBar : undefined, asClass(cls))}
           {...(id === undefined ? {} : { id })}
           {...(defaultOpen ? { open: true } : {})}
+          {...(drawer ? { [NAVBAR_DRAWER_ATTR]: true } : {})}
           {...rest}>
-          <summary data-slot='navbar-toggle' aria-label='Menu' class={SUMMARY_CLASS[collapsible]}>
-            <span class='group-open:hidden' aria-hidden='true'>
-              <Icon name='hamburger' width={22} height={22} />
-            </span>
-            <span class='hidden group-open:inline' aria-hidden='true'>
-              <Icon name='close' width={22} height={22} />
-            </span>
+          <summary data-slot='navbar-toggle' aria-label='Menu' class={cn(SUMMARY_CLASS[collapsible], drawer ? DRAWER_SUMMARY_CLASS : undefined)}>
+            {renderToggleGlyphs(props, edge)}
           </summary>
-          <div class={PANEL_CLASS[collapsible]}>{config.sections.map((section) => renderSection(section, ctx))}</div>
+          {drawer ? <div data-slot='navbar-backdrop' data-on-click='closeNav' aria-hidden='true' class={DRAWER_BACKDROP_CLASS} /> : null}
+          <div class={drawer ? cn(DRAWER_PANEL_CLASS[collapsible], DRAWER_PANEL_BASE, DRAWER_EDGE_CLASS[edge]) : PANEL_CLASS[collapsible]}>
+            {config.sections.map((section) => renderSection(section, ctx))}
+          </div>
         </details>
       </nav>
     </Resumable>

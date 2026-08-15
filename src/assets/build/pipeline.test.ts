@@ -20,6 +20,12 @@ function parseEmittedObject(source: string, opening: string): Record<string, str
   return out;
 }
 
+function extractUnionLine(source: string, typeName: string): string {
+  const line = source.split("\n").find((candidate) => candidate.startsWith(`export type ${typeName} = `));
+  if (line === undefined) throw new Error(`generated module has no \`${typeName}\` union`);
+  return line;
+}
+
 const DATA_BLOCK = "const DATA: Record<string, string> = {";
 
 function stubTailwind() {
@@ -49,7 +55,7 @@ describe("buildAll() — emitHeaders", () => {
           icons: null,
           cursors: null,
         },
-        { minify: false },
+        { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
 
       const headersPath = join(tmpDir, "public", "_headers");
@@ -79,7 +85,7 @@ describe("buildAll() — emitHeaders", () => {
           icons: null,
           cursors: null,
         },
-        { minify: true },
+        { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
 
       const headersPath = join(tmpDir, "public", "_headers");
@@ -194,6 +200,11 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
       expect(builtBrand["glyph-close"]).toBe("0 0 20 20");
       expect(typesBrand["glyph-close"]).toBe("");
 
+      expect(extractUnionLine(built, "UiIconName")).toBe(`export type UiIconName = "arrow-right";`);
+      expect(extractUnionLine(built, "BrandIconName")).toBe(`export type BrandIconName = "close";`);
+      expect(extractUnionLine(types, "UiIconName")).toBe(extractUnionLine(built, "UiIconName"));
+      expect(extractUnionLine(types, "BrandIconName")).toBe(extractUnionLine(built, "BrandIconName"));
+
       expect(types).toContain(`export const UiIcon = createIcon(assets.path("sprites/ui.svg"), UI_META, "icon-");`);
       expect(types).toContain(`export const BrandIcon = createIcon(assets.path("sprites/brand.svg"), BRAND_META, "glyph-");`);
       expect(types).toContain(`createManifest(DATA, "/assets")`);
@@ -203,6 +214,65 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
       execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("generateAssetsTypes() — glyph-name union", () => {
+  function typesConfig(tmpDir: string, sprites: ResolvedConfig["sprites"]): ResolvedConfig {
+    return {
+      paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
+      css: [],
+      js: { bundles: [] },
+      copy: [],
+      sprites,
+      fonts: { downloads: [] },
+      icons: null,
+      cursors: null,
+    };
+  }
+
+  async function emitTypes(label: string, sprites: ResolvedConfig["sprites"], assert: (source: string) => void): Promise<void> {
+    const tmpDir = join(tmpdir(), `forge-pipeline-union-${label}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const typesModule = join(tmpDir, "assets.ts");
+    mkdirSync(tmpDir, { recursive: true });
+    try {
+      await generateAssetsTypes(typesConfig(tmpDir, sprites), { assetsPath: typesModule });
+      assert(readFileSync(typesModule, "utf-8"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+
+  it("emits one member per glyph in config order with the default `icon-` prefix stripped", async () => {
+    await emitTypes(
+      "default-prefix",
+      { ui: { target: "sprites/ui.svg", sources: [{ path: "svg", files: ["spinner.svg", "chevron-down.svg"] }] } },
+      (source) => {
+        expect(extractUnionLine(source, "UiIconName")).toBe(`export type UiIconName = "spinner" | "chevron-down";`);
+      },
+    );
+  });
+
+  it("strips a custom prefix rather than the default", async () => {
+    await emitTypes(
+      "custom-prefix",
+      {
+        brand: {
+          target: "sprites/brand.svg",
+          prefix: "glyph-",
+          sources: [{ path: "svg", files: [{ key: "close", file: "x-mark.svg" }, "icon-badge.svg"] }],
+        },
+      },
+      (source) => {
+        expect(extractUnionLine(source, "BrandIconName")).toBe(`export type BrandIconName = "close" | "icon-badge";`);
+      },
+    );
+  });
+
+  it("emits `never` for a group whose sources contribute no glyph", async () => {
+    await emitTypes("empty-meta", { ui: { target: "sprites/ui.svg", sources: [] } }, (source) => {
+      expect(extractUnionLine(source, "UiIconName")).toBe("export type UiIconName = never;");
+    });
   });
 });
 

@@ -8,9 +8,19 @@ import { cn } from "./utils/cn";
 export type ToastVariant = "default" | "success" | "info" | "warning" | "destructive";
 export type ToastPosition = "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
 
-type ToastContainerProps = JSX.IntrinsicElements["section"] & { position?: ToastPosition };
+type ToastContainerProps = JSX.IntrinsicElements["section"] & {
+  position?: ToastPosition;
+  /** Accessible name for the notification region. @default "Notifications" */
+  label?: string;
+};
 
-type ToastProps = JSX.IntrinsicElements["div"] & { variant?: ToastVariant; dismissible?: boolean; duration?: number };
+type ToastProps = JSX.IntrinsicElements["div"] & {
+  variant?: ToastVariant;
+  dismissible?: boolean;
+  duration?: number;
+  /** Accessible name for the dismiss button. @default "Dismiss notification" */
+  dismissLabel?: string;
+};
 
 const toastVariantClasses: Record<ToastVariant, string> = {
   default: "border-border bg-background text-foreground",
@@ -29,11 +39,23 @@ const positionClasses: Record<ToastPosition, string> = {
   "bottom-right": "bottom-4 right-4 items-end",
 };
 
-const ToastContainer: FC<ToastContainerProps> = ({ position = "bottom-right", class: cls, children, "data-slot": inherited, ...rest }) => (
+// The container is the page's one toast live region, and the individual toasts deliberately are not:
+// a live region nested in a live region has undefined announcement behaviour, and of the two only
+// this one can announce an *insertion* — `FlashOob` swaps a toast in here after load, and a
+// `role="status"` element that did not exist when the region was read is announced by nothing.
+// A `Toast` therefore has to be rendered inside a `Toast.Container` to be heard at all.
+const ToastContainer: FC<ToastContainerProps> = ({
+  position = "bottom-right",
+  label = "Notifications",
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <section
     data-slot={slotToken("toast-container", inherited)}
     data-position={position}
-    aria-label='Notifications'
+    aria-label={label}
     aria-live='polite'
     aria-atomic='false'
     class={cn("fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4", positionClasses[position], cls)}
@@ -46,6 +68,7 @@ const ToastRoot: FC<ToastProps> = ({
   variant = "default",
   dismissible = false,
   duration,
+  dismissLabel = "Dismiss notification",
   class: cls,
   children,
   "data-slot": inherited,
@@ -56,13 +79,11 @@ const ToastRoot: FC<ToastProps> = ({
     <div
       data-slot={slotToken("toast", inherited)}
       data-variant={variant}
-      role='status'
-      aria-atomic='true'
       {...(interactive ? { "data-scope": "toast", "data-state": JSON.stringify({ duration }) } : {})}
       class={cn(
-        "relative flex w-full items-start gap-3 rounded-xl border p-4 shadow-lg",
+        "relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg",
         toastVariantClasses[variant],
-        dismissible && "pr-10",
+        dismissible && "pe-10",
         cls,
       )}
       {...rest}>
@@ -73,9 +94,9 @@ const ToastRoot: FC<ToastProps> = ({
         <button
           type='button'
           data-slot='toast-close'
-          aria-label='Dismiss notification'
+          aria-label={dismissLabel}
           {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-          class='absolute right-2 top-2 rounded p-1 opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
+          class='absolute end-2 top-2 rounded p-1 opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
           <span aria-hidden='true' class='text-sm leading-none'>
             ×
           </span>

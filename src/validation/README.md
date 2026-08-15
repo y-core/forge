@@ -126,7 +126,7 @@ const MessageSchema = strictObject({
 });
 ```
 
-**Why here and not in the body reader.** A form body reaches a schema exactly as submitted, so without one of these a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "` and every required-field check becomes bypassable with spaces. Normalizing in the reader was rejected for four reasons, and [`INPUT_VALIDATION.md`](../../.decisions/INPUT_VALIDATION.md) §1d owns them — the short version is that only the schema knows a field was a textarea.
+**Why here and not in the body reader.** A form body reaches a schema exactly as submitted, so without one of these a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "` and every required-field check becomes bypassable with spaces. Normalizing in the reader was rejected for four reasons, and [`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1d owns them — the short version is that only the schema knows a field was a textarea.
 
 **The fold runs before the trim, and that ordering is about length, not output.** `trim` treats `\r` and `\n` alike, so the two operations produce the same string in either order. What the order decides is what the rest of the pipe sees: under `v.pipe(formMultilineText(), v.maxLength(500))` each line break counts once, so a 500-character limit means the same thing whether the newline arrived as LF or CRLF instead of silently halving the budget for line breaks.
 

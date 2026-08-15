@@ -1,3 +1,4 @@
+/* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */
 /* ─────────────────────────────────────────────────────────────────────────────
    The one import a consuming app needs:
 
@@ -27,10 +28,10 @@
    Measured as max−min across R/G/B at step 11, the muted-text step: neutral 0, stone 12, gray 20,
    slate 42. Tailwind's `gray` is blue-tinted despite the name — `theme-neutral.css` is the grey one.
 
-   An application's own scheme is structurally identical: re-declare `--gray-1` … `--gray-12` and
-   `--gray-a1` … `--gray-a12` in **one** `:root` block, and nothing else. A step whose value differs
-   by mode is written `light-dark(light, dark)`; `theme-base.css` sets the `color-scheme` that picks
-   the branch, so supplying the light half alone is not something the syntax lets you do.
+   An application's own scheme is structurally identical: re-declare `--gray-1` … `--gray-12` in
+   **one** `:root` block, and nothing else. A step whose value differs by mode is written
+   `light-dark(light, dark)`; `theme-base.css` sets the `color-scheme` that picks the branch, so
+   supplying the light half alone is not something the syntax lets you do.
 
    A brand colour goes on `--accent-12`, which forge aliases to `--gray-12` precisely because it
    ships no brand hue of its own.

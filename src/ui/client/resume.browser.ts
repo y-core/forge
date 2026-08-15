@@ -9,10 +9,11 @@ import { mount } from "./browser-test-helper";
 declare global {
   interface Window {
     forgeResume: typeof import("./resume");
+    forgeSignal: typeof import("./signal");
   }
 }
 
-const EXPOSE = { expose: { forgeResume: "./ui/client/resume" } };
+const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeSignal: "./ui/client/signal" } };
 
 /** One scope root with a single `data-on-click` button, rendered through the real SSR components. */
 function scopeMarkup(name: string, action: string, state?: Record<string, unknown>): Promise<string> {
@@ -72,7 +73,9 @@ test.describe("resume — delegation", () => {
     expect(log).toEqual(["act"]);
   });
 
-  test("a second resume() before teardown returns the same disposer and does not double-fire", async ({ page }) => {
+  // Each call owns what it resumed, so the disposers are distinct — but the delegation underneath is
+  // shared and refcounted, so a second call installs no second listener and the action fires once.
+  test("a second resume() shares the delegation rather than doubling it", async ({ page }) => {
     await mount(page, await scopeMarkup("demo", "act"), EXPOSE);
 
     const result = await page.evaluate(() => {
@@ -81,10 +84,10 @@ test.describe("resume — delegation", () => {
       const first = window.forgeResume.resume();
       const second = window.forgeResume.resume();
       document.querySelector<HTMLElement>("#btn")?.click();
-      return { same: first === second, calls };
+      return { distinct: first !== second, calls };
     });
 
-    expect(result).toEqual({ same: true, calls: ["act"] });
+    expect(result).toEqual({ distinct: true, calls: ["act"] });
   });
 
   test("re-mounting after teardown restores delegation with a distinct disposer", async ({ page }) => {
@@ -263,6 +266,176 @@ test.describe("resume — the disposer contract", () => {
     });
 
     expect(result).toEqual({ afterTeardown: { setups: 1, disposed: 1 }, afterRemount: { setups: 2, disposed: 1 } });
+  });
+
+  test("an effect a setup discarded stops writing to the DOM after teardown", async ({ page }) => {
+    await mount(page, await scopeMarkup("demo", "act", { n: 0 }), EXPOSE);
+
+    const result = await page.evaluate(() => {
+      window.forgeResume.registerScope("demo", {
+        eager: true,
+        setup: ({ root, state }) => {
+          window.forgeSignal.effect(() => {
+            root.dataset.out = String(state.n?.value);
+          });
+        },
+      });
+      const teardown = window.forgeResume.resume();
+      const root = document.querySelector<HTMLElement>("[data-scope='demo']");
+      const state = root ? window.forgeResume.resumeScope(root) : undefined;
+      const beforeTeardown = root?.dataset.out ?? null;
+      teardown();
+      const n = state?.n;
+      if (n) n.value = 1;
+      return { beforeTeardown, afterTeardown: root?.dataset.out ?? null };
+    });
+
+    expect(result).toEqual({ beforeTeardown: "0", afterTeardown: "0" });
+  });
+
+  test("an effect stops writing to the DOM after the swap that detached its root", async ({ page }) => {
+    const markup = await scopeMarkup("demo", "act", { n: 0 });
+    await mount(page, '<div id="host"></div>', EXPOSE);
+
+    const result = await page.evaluate((html) => {
+      window.forgeResume.registerScope("demo", {
+        setup: ({ root, state }) => {
+          window.forgeSignal.effect(() => {
+            root.dataset.out = String(state.n?.value);
+          });
+        },
+      });
+
+      const host = document.querySelector<HTMLElement>("#host");
+      if (!host) return null;
+      host.innerHTML = html;
+      const first = host.querySelector<HTMLElement>("[data-scope]");
+      if (!first) return null;
+      const firstState = window.forgeResume.resumeScope(first);
+      // What an htmx swap does: the previous markup is detached with no notice, and the
+      // replacement's resume is what sweeps it.
+      host.innerHTML = html;
+      const second = host.querySelector<HTMLElement>("[data-scope]");
+      if (!second) return null;
+      window.forgeResume.resumeScope(second);
+
+      const n = firstState?.n;
+      if (n) n.value = 1;
+      return { detached: first.dataset.out ?? null, live: second.dataset.out ?? null };
+    }, markup);
+
+    expect(result).toEqual({ detached: "0", live: "0" });
+  });
+
+  test("a setup's own disposer runs after the effects it created", async ({ page }) => {
+    await mount(page, await scopeMarkup("demo", "act", { n: 0 }), EXPOSE);
+
+    const result = await page.evaluate(() => {
+      window.forgeResume.registerScope("demo", {
+        eager: true,
+        setup: ({ root, state }) => {
+          window.forgeSignal.effect(() => {
+            root.dataset.out = String(state.n?.value);
+          });
+          // A still-live effect would flush this write into `data-out`, which is the ordering
+          // expressed as DOM state.
+          return () => {
+            const n = state.n;
+            if (n) n.value = 1;
+          };
+        },
+      });
+      window.forgeResume.resume()();
+      return document.querySelector<HTMLElement>("[data-scope='demo']")?.dataset.out ?? null;
+    });
+
+    expect(result).toBe("0");
+  });
+
+  test("a torn-down scope rebinds its effects when it resumes again", async ({ page }) => {
+    await mount(page, await scopeMarkup("demo", "act", { n: 0 }), EXPOSE);
+
+    const result = await page.evaluate(() => {
+      window.forgeResume.registerScope("demo", {
+        eager: true,
+        setup: ({ root, state }) => {
+          window.forgeSignal.effect(() => {
+            root.dataset.out = String(state.n?.value);
+          });
+        },
+      });
+      window.forgeResume.resume()();
+      window.forgeResume.resume();
+      const root = document.querySelector<HTMLElement>("[data-scope='demo']");
+      const n = root ? window.forgeResume.resumeScope(root)?.n : undefined;
+      if (n) n.value = 2;
+      return root?.dataset.out ?? null;
+    });
+
+    expect(result).toBe("2");
+  });
+
+  test("a setup that throws leaves its root resumable and disposes the effects it created", async ({ page }) => {
+    await mount(page, await scopeMarkup("demo", "act", { n: 0 }), EXPOSE);
+
+    const result = await page.evaluate(() => {
+      let attempts = 0;
+      const abandoned: Array<{ value: unknown }> = [];
+      window.forgeResume.registerScope("demo", {
+        setup: ({ root, state }) => {
+          attempts += 1;
+          const generation = attempts;
+          const n = state.n;
+          if (n) abandoned.push(n);
+          window.forgeSignal.effect(() => {
+            root.dataset.out = `${generation}:${state.n?.value}`;
+          });
+          if (generation === 1) throw new Error("boom");
+        },
+      });
+
+      const root = document.querySelector<HTMLElement>("[data-scope='demo']");
+      if (!root) return null;
+      let threw = false;
+      try {
+        window.forgeResume.resumeScope(root);
+      } catch {
+        threw = true;
+      }
+      window.forgeResume.resumeScope(root);
+      const afterSecond = root.dataset.out ?? null;
+      const orphan = abandoned[0];
+      if (orphan) orphan.value = 9;
+      return { threw, attempts, afterSecond, out: root.dataset.out ?? null };
+    });
+
+    expect(result).toEqual({ threw: true, attempts: 2, afterSecond: "2:0", out: "2:0" });
+  });
+
+  test("a throwing scope disposer does not stop the next scope's teardown", async ({ page }) => {
+    const two = await render([Resumable({ name: "boomer", children: "a" }), Resumable({ name: "quiet", children: "b" })]);
+    await mount(page, two, EXPOSE);
+
+    const result = await page.evaluate(() => {
+      window.forgeResume.registerScope("boomer", {
+        eager: true,
+        setup: () => () => {
+          throw new Error("boom");
+        },
+      });
+      window.forgeResume.registerScope("quiet", {
+        eager: true,
+        setup: ({ root }) => {
+          return () => {
+            root.dataset.out = "disposed";
+          };
+        },
+      });
+      window.forgeResume.resume()();
+      return document.querySelector<HTMLElement>("[data-scope='quiet']")?.dataset.out ?? null;
+    });
+
+    expect(result).toBe("disposed");
   });
 
   test("a setup that returns nothing is not treated as a disposer", async ({ page }) => {
@@ -484,5 +657,203 @@ test.describe("resume — Invoker Commands bridge", () => {
     });
 
     expect(result).toEqual({ calls: [], popoverOpen: true });
+  });
+});
+
+test.describe("resume — a throwing setup is contained", () => {
+  async function twoScopes(page: Page): Promise<void> {
+    const html = await render([
+      Resumable({ name: "thrower", children: jsx("span", { id: "a", children: "a" }) }),
+      Resumable({ name: "sibling", children: jsx("span", { id: "b", children: "b" }) }),
+    ]);
+    await mount(page, html, EXPOSE);
+  }
+
+  // Before: the first throw aborted the eager loop, so every later scope stayed dead — and because
+  // the teardown was assigned before the loop, a retry short-circuited and never re-ran the pass.
+  test("a sibling still resumes, the teardown disposes it, and a second resume re-attempts the thrower", async ({ page }) => {
+    await twoScopes(page);
+
+    const result = await page.evaluate(() => {
+      const log: string[] = [];
+      let attempts = 0;
+      window.forgeResume.registerScope("thrower", {
+        eager: true,
+        setup: () => {
+          attempts += 1;
+          throw new Error("boom");
+        },
+      });
+      window.forgeResume.registerScope("sibling", {
+        eager: true,
+        setup: () => {
+          log.push("sibling-setup");
+          return () => log.push("sibling-disposed");
+        },
+      });
+
+      const teardown = window.forgeResume.resume();
+      const afterFirst = { log: [...log], attempts };
+
+      teardown();
+      const afterTeardown = [...log];
+
+      window.forgeResume.resume();
+      return { afterFirst, afterTeardown, attemptsAfterSecond: attempts, finalLog: log };
+    });
+
+    expect(result.afterFirst.log, "the thrower took its sibling down with it").toEqual(["sibling-setup"]);
+    expect(result.afterFirst.attempts).toBe(1);
+    expect(result.afterTeardown, "the caller never got a usable teardown").toEqual(["sibling-setup", "sibling-disposed"]);
+    expect(result.attemptsAfterSecond, "the retry short-circuited instead of re-running the eager pass").toBe(2);
+    expect(result.finalLog.at(-1), "the sibling did not come back on the second resume").toBe("sibling-setup");
+  });
+
+  // Malformed `data-state` is server-authored markup, so it throws — and the throw is contained to
+  // its own scope by the per-scope catch above.
+  test("a scope with malformed data-state throws without taking the page down", async ({ page }) => {
+    const html = `<div data-scope="broken" data-state="{nope"></div><div data-scope="sibling"></div>`;
+    await mount(page, html, EXPOSE);
+
+    const log = await page.evaluate(() => {
+      const seen: string[] = [];
+      window.forgeResume.registerScope("broken", {
+        eager: true,
+        setup: () => {
+          seen.push("broken-setup");
+        },
+      });
+      window.forgeResume.registerScope("sibling", {
+        eager: true,
+        setup: () => {
+          seen.push("sibling-setup");
+        },
+      });
+      window.forgeResume.resume();
+      return seen;
+    });
+
+    expect(log, "the broken scope ran its setup on state that never parsed").toEqual(["sibling-setup"]);
+  });
+});
+
+test.describe("resume — installing listeners and resuming a tree are two jobs", () => {
+  // Before: `resume()` returned early on the second call, so the shadow subtree was never scanned
+  // and a web component resuming its own tree came back silently inert.
+  test("resume() then resume(host.shadowRoot) runs the inner setup", async ({ page }) => {
+    const inner = await render(Resumable({ name: "inner", children: jsx("span", { id: "deep", children: "deep" }) }));
+    await mount(page, `<div id="host"></div><template id="source">${inner}</template>`, EXPOSE);
+
+    const log = await page.evaluate(() => {
+      const seen: string[] = [];
+      window.forgeResume.registerScope("inner", {
+        eager: true,
+        setup: () => {
+          seen.push("inner-setup");
+        },
+      });
+
+      window.forgeResume.resume();
+
+      const host = document.querySelector("#host") as HTMLElement;
+      const shadow = host.attachShadow({ mode: "open" });
+      shadow.append((document.querySelector("#source") as HTMLTemplateElement).content.cloneNode(true));
+
+      window.forgeResume.resume(shadow);
+      return seen;
+    });
+
+    expect(log, "the shadow subtree was never visited").toEqual(["inner-setup"]);
+  });
+
+  // Refcounted per document: the first teardown must not strip the listeners the second call relies on.
+  test("the first teardown leaves the second call's delegation installed", async ({ page }) => {
+    await mount(page, await scopeMarkup("demo", "ping"), EXPOSE);
+
+    const calls = await page.evaluate(() => {
+      const seen: string[] = [];
+      window.forgeResume.registerScope("demo", { on: { ping: () => seen.push("ping") } });
+
+      const first = window.forgeResume.resume();
+      window.forgeResume.resume();
+      first();
+
+      document.querySelector<HTMLElement>("#btn")?.click();
+      return seen;
+    });
+
+    expect(calls, "the first disposer tore down delegation the second holder still needed").toEqual(["ping"]);
+  });
+
+  // A lazily-resumed scope belongs to no call's `mine`, so without the last-holder sweep its effects
+  // outlive the runtime that stopped listening for them.
+  test("the last disposer stops a lazily-hydrated scope's effects", async ({ page }) => {
+    await mount(page, await scopeMarkup("demo", "act", { n: 0 }), EXPOSE);
+
+    const result = await page.evaluate(() => {
+      let signal: { value: unknown } | undefined;
+      window.forgeResume.registerScope("demo", {
+        setup: ({ root, state }) => {
+          signal = state.n;
+          window.forgeSignal.effect(() => {
+            root.dataset.out = String(state.n?.value);
+          });
+        },
+        on: {},
+      });
+
+      const teardown = window.forgeResume.resume();
+      document.querySelector<HTMLElement>("#btn")?.click();
+      const root = document.querySelector<HTMLElement>("[data-scope='demo']");
+      const afterHydration = root?.dataset.out ?? null;
+
+      teardown();
+      if (signal) signal.value = 1;
+      return { afterHydration, afterTeardown: root?.dataset.out ?? null };
+    });
+
+    expect(result, "the lazily-hydrated scope kept writing to the DOM after its runtime went away").toEqual({
+      afterHydration: "0",
+      afterTeardown: "0",
+    });
+  });
+
+  // The sweep is the last holder's job alone: a disposer that swept unconditionally would kill a
+  // scope the remaining holder still owns.
+  test("disposing one of two holders leaves a lazily-hydrated scope live", async ({ page }) => {
+    await mount(page, await scopeMarkup("demo", "act", { n: 0 }), EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const calls: string[] = [];
+      let signal: { value: unknown } | undefined;
+      window.forgeResume.registerScope("demo", {
+        setup: ({ root, state }) => {
+          signal = state.n;
+          window.forgeSignal.effect(() => {
+            root.dataset.out = String(state.n?.value);
+          });
+        },
+        on: { act: () => calls.push("act") },
+      });
+
+      const first = window.forgeResume.resume();
+      const second = window.forgeResume.resume();
+      document.querySelector<HTMLElement>("#btn")?.click();
+      const root = document.querySelector<HTMLElement>("[data-scope='demo']");
+
+      first();
+      if (signal) signal.value = 1;
+      document.querySelector<HTMLElement>("#btn")?.click();
+      const afterFirst = { out: root?.dataset.out ?? null, calls: [...calls] };
+
+      second();
+      if (signal) signal.value = 2;
+      return { afterFirst, afterSecond: root?.dataset.out ?? null };
+    });
+
+    expect(result, "the sweep ran on a holder that was not the last one").toEqual({
+      afterFirst: { out: "1", calls: ["act", "act"] },
+      afterSecond: "1",
+    });
   });
 });

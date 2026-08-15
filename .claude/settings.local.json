@@ -41,9 +41,6 @@
       "Bash(cut *)",
       "Bash(date *)",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(echo \"EXIT=$?\")",
-      "Bash(echo \"exit=$?\")",
-      "Bash(echo \"EXIT_CODE:$?\")",
       "Bash(find *)",
       "Bash(git *)",
       "Bash(grep *)",
@@ -64,12 +61,12 @@
       "Bash(wrangler *)",
       "Bash(xargs *)",
       "Edit(//tmp/**)",
-      "mcp__ledger",
       "Read(//src/**)",
       "Read(//tmp/**)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebSearch"
+      "WebSearch",
+      "mcp__ledger"
     ],
     "deny": [
       "Bash(git commit *)",

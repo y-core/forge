@@ -19,21 +19,14 @@ export interface LazyImportOptions<T> {
   onError?: (error: unknown) => void;
 }
 
-export interface LazyLoadOptions {
-  triggerSelector: string;
-  event: string;
-  scriptSrc: string;
-  /** SHA-256/384/512 SRI hash, e.g. `"sha384-abc..."`. Sets `crossOrigin="anonymous"` automatically. Pass `false` to explicitly opt out. */
-  integrity: string | false;
-  onLoad?: () => void;
-  /** Any node in the document to search and inject into. Omit for the top-level page. */
-  within?: Node;
-}
-
 /** Defers loading a module until its anchor element enters the viewport, retrying a rejected load up to `LAZY_MAX_ATTEMPTS` times. @public */
 export function lazy<T>(options: LazyImportOptions<T>): () => void {
   const el = ownerDocument(options.within).querySelector(`[data-ref='${CSS.escape(options.ref)}']`);
-  if (!el) return () => {};
+  // A property of the rendered page — the anchor is free not to be on this route — so it reports.
+  if (!el) {
+    console.warn(`[lazy] no [data-ref="${options.ref}"] in this document; "${options.ref}" will never load`);
+    return () => {};
+  }
 
   const init: IntersectionObserverInit = {};
   if (options.rootMargin !== undefined) init.rootMargin = options.rootMargin;
@@ -44,7 +37,17 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
   // Resolved off the element's realm so a realm lacking the constructor degrades to a no-op disposer
   // rather than throwing off the bare global. See `UI_CLIENT_RUNTIME.md` §6a.
   const observerCtor = (win as Window & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver;
-  if (typeof observerCtor !== "function") return () => {};
+  if (typeof observerCtor !== "function") {
+    console.warn(`[lazy] IntersectionObserver is unavailable in this realm; "${options.ref}" will never load`);
+    return () => {};
+  }
+
+  /** Every failure reaches somewhere: without a handler the error was dropped outright, so a load
+   * that never arrived looked identical to one that was never scheduled. */
+  const report = (error: unknown) => {
+    if (options.onError) options.onError(error);
+    else console.error(`[lazy] "${options.ref}" failed to load`, error);
+  };
 
   let disposed = false;
   let attempts = 0;
@@ -62,11 +65,11 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
         } catch (error) {
           // Caught here rather than left to the rejection handler below, which is a sibling of this
           // callback and not downstream of it — a throw here would land nowhere.
-          options.onError?.(error);
+          report(error);
         }
       },
       (error) => {
-        options.onError?.(error);
+        report(error);
         if (disposed || attempts >= LAZY_MAX_ATTEMPTS) return;
         retryId = win.setTimeout(() => {
           retryId = 0;
@@ -82,76 +85,4 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
     win.clearTimeout(retryId);
     observer.disconnect();
   };
-}
-
-/** Injects a `<script>` tag on the first occurrence of an event, with optional SRI integrity. @public */
-export function loadScriptOnEvent(options: LazyLoadOptions): void {
-  const doc = ownerDocument(options.within);
-  const element = doc.querySelector<HTMLElement>(options.triggerSelector);
-  if (!element) return;
-
-  element.addEventListener(
-    options.event,
-    () => {
-      if (doc.querySelector(`script[src="${CSS.escape(options.scriptSrc)}"]`)) return;
-
-      const script = doc.createElement("script") as HTMLScriptElement;
-      script.src = options.scriptSrc;
-      script.async = true;
-      if (options.integrity !== false) {
-        script.integrity = options.integrity;
-        script.crossOrigin = "anonymous";
-      }
-      if (options.onLoad) {
-        script.addEventListener("load", options.onLoad);
-      }
-      doc.head.appendChild(script);
-    },
-    { once: true },
-  );
-}
-
-/** The promise for every link {@link loadStylesheet} is still waiting on, per document. A second
- * caller sees the first caller's `<link>` the instant it is appended — before its `load` event — so
- * the duplicate check alone would report it as already loaded. */
-const inFlightStylesheets = new WeakMap<Document, Map<string, Promise<void>>>();
-
-/** Loads a stylesheet by appending a `<link rel="stylesheet">`, resolving on its `load` event and rejecting on `error`. */
-export function loadStylesheet(href: string, integrity: string | false, within?: Node): Promise<void> {
-  const doc = ownerDocument(within);
-  const map = inFlightStylesheets.get(doc) ?? new Map<string, Promise<void>>();
-  inFlightStylesheets.set(doc, map);
-
-  const pending = map.get(href);
-  if (pending) return pending;
-
-  if (doc.querySelector(`link[rel="stylesheet"][href="${CSS.escape(href)}"]`)) {
-    return Promise.resolve();
-  }
-
-  const promise = new Promise<void>((resolve, reject) => {
-    const link = doc.createElement("link") as HTMLLinkElement;
-    link.rel = "stylesheet";
-    link.href = href;
-    if (integrity !== false) {
-      link.integrity = integrity;
-      link.crossOrigin = "anonymous";
-    }
-    link.addEventListener("load", () => resolve());
-    link.addEventListener("error", () => {
-      // Removed as well as evicted: the next call would otherwise miss the map, find this dead
-      // `<link>` in the duplicate check above, and resolve for a stylesheet that never loaded.
-      link.remove();
-      reject(new Error(`Failed to load stylesheet: ${href}`));
-    });
-    doc.head.appendChild(link);
-  });
-
-  map.set(href, promise);
-  // The identity check keeps a slow failure from evicting a newer entry for the same href.
-  promise.catch(() => {
-    if (map.get(href) === promise) map.delete(href);
-  });
-
-  return promise;
 }

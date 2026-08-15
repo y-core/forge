@@ -12,6 +12,7 @@ import { Resumable } from "./server/resumable";
 declare global {
   interface Window {
     forgeResume: typeof import("./client/resume");
+    forgeSignal: typeof import("./client/signal");
     forgeMenu: typeof import("./client/menu");
     forgeComposite: typeof import("./client/composite");
     forgeTabs: typeof import("./client/tabs");
@@ -26,6 +27,7 @@ declare global {
 const EXPOSE = {
   expose: {
     forgeResume: "./ui/client/resume",
+    forgeSignal: "./ui/client/signal",
     forgeCoreClient: "./ui/core/client",
     forgeMenu: "./ui/client/menu",
     forgeComposite: "./ui/client/composite",
@@ -188,9 +190,9 @@ test.describe("a composite widget inside a form", () => {
     await page.evaluate(() => {
       window.submitted = [];
       const signals = window.forgeSignals.signalRecord({ choice: "mm" });
-      window.forgeResume.registerScope("demo", { on: { bindGroup: window.forgeBind.bindGroup(signals) } });
+      window.forgeResume.registerScope("demo", { eager: true, setup: ({ root }) => window.forgeBind.bindControls(root, signals) });
       window.forgeResume.resume();
-      window.forgeResume.effect(() => {
+      window.forgeSignal.effect(() => {
         window.lastChoice = signals.choice.value;
       });
       document.querySelector("#form")?.addEventListener("submit", (event) => {
@@ -200,11 +202,10 @@ test.describe("a composite widget inside a form", () => {
     });
   }
 
-  /** The pressed item's value read from the DOM, beside the value the signal holds. */
+  /** The checked item's value read from the DOM, beside the value the signal holds. */
   function agreement(page: Page): Promise<{ dom: string | undefined; signal: unknown }> {
     return page.evaluate(() => ({
-      dom: [...document.querySelectorAll<HTMLElement>("[data-slot~='toggle-group-item']")].find((el) => el.getAttribute("aria-pressed") === "true")
-        ?.dataset.value,
+      dom: [...document.querySelectorAll<HTMLInputElement>("[data-slot~='toggle-group-input']")].find((el) => el.checked)?.dataset.value,
       signal: window.lastChoice,
     }));
   }
@@ -212,24 +213,30 @@ test.describe("a composite widget inside a form", () => {
   test("the DOM and the signal agree after a click", async ({ page }) => {
     await mountForm(page);
 
-    await page.click("#u-in");
+    await page.click("label:has(#u-in)");
 
     expect(await agreement(page)).toEqual({ dom: "in", signal: "in" });
   });
 
-  test("submission carries the native controls; button items are not successful controls", async ({ page }) => {
+  // Inverted deliberately. A bound group item used to be a `<button>`, which no form ever submits;
+  // it is now a real radio, so the widget's own answer travels with the form — the whole point of
+  // backing these components with native controls.
+  test("submission carries the widget's own value alongside the native controls", async ({ page }) => {
     await mountForm(page);
-    await page.click("#u-cm");
+    await page.click("label:has(#u-cm)");
 
     await page.evaluate(() => document.querySelector<HTMLFormElement>("#form")?.requestSubmit());
 
-    expect(await page.evaluate(() => window.submitted)).toEqual([["label", "start"]]);
+    expect(await page.evaluate(() => window.submitted)).toEqual([
+      ["label", "start"],
+      ["choice", "cm"],
+    ]);
   });
 
   test("a native reset reverts the native control and leaves the widget and its signal in step", async ({ page }) => {
     await mountForm(page);
     await page.fill("#native", "edited");
-    await page.click("#u-in");
+    await page.click("label:has(#u-in)");
 
     await page.evaluate(() => document.querySelector<HTMLFormElement>("#form")?.reset());
 
@@ -239,24 +246,26 @@ test.describe("a composite widget inside a form", () => {
 
   test("clicking again after a reset still reconciles the whole group", async ({ page }) => {
     await mountForm(page);
-    await page.click("#u-in");
+    await page.click("label:has(#u-in)");
     await page.evaluate(() => document.querySelector<HTMLFormElement>("#form")?.reset());
 
-    await page.click("#u-mm");
+    await page.click("label:has(#u-mm)");
 
-    const pressed = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>("[data-slot~='toggle-group-item']")].map((el) => el.getAttribute("aria-pressed")),
+    const checked = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLInputElement>("[data-slot~='toggle-group-input']")].map((el) => el.checked),
     );
-    expect(pressed).toEqual(["true", "false", "false"]);
+    expect(checked).toEqual([true, false, false]);
     expect(await agreement(page)).toEqual({ dom: "mm", signal: "mm" });
   });
 });
 
 test.describe("widgets inside a shadow root", () => {
-  test("a delegated click from inside a shadow root routes to the right action", async ({ page }) => {
+  // The binding listens on the scope root, which is itself inside the shadow tree, so the click never
+  // has to cross the boundary — but the scope only exists at all if `resume` scanned into the tree.
+  test("a click from inside a shadow root reaches the binding", async ({ page }) => {
     const group = BoundToggleGroup({
       type: "single",
-      children: ["mm", "cm"].map((value) => BoundToggleGroup.Item({ id: `s-${value}`, bind: "choice", value, action: "pick", children: value })),
+      children: ["mm", "cm"].map((value) => BoundToggleGroup.Item({ id: `s-${value}`, bind: "choice", value, children: value })),
     });
     const html = await render(Resumable({ name: "demo", children: group }));
     await mount(page, `<div id="host"></div><template id="source">${html}</template>`, EXPOSE);
@@ -265,14 +274,22 @@ test.describe("widgets inside a shadow root", () => {
       const template = document.querySelector<HTMLTemplateElement>("#source");
       if (host && template) host.attachShadow({ mode: "open" }).append(template.content.cloneNode(true));
     });
-    await start(page);
+
+    await page.evaluate(() => {
+      const signals = window.forgeSignals.signalRecord({ choice: "mm" });
+      window.forgeResume.registerScope("demo", { eager: true, setup: ({ root }) => window.forgeBind.bindControls(root, signals) });
+      window.forgeResume.resume();
+      window.forgeSignal.effect(() => {
+        window.lastChoice = signals.choice.value;
+      });
+    });
 
     await page.evaluate(() => {
       const item = document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("#s-cm");
       item?.click();
     });
 
-    expect(await page.evaluate(() => window.activations)).toEqual(["s-cm"]);
+    expect(await page.evaluate(() => window.lastChoice)).toBe("cm");
   });
 
   test("a Menu mounted inside a shadow root answers the keyboard there", async ({ page }) => {

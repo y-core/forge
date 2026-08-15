@@ -68,6 +68,23 @@ export function contains(parent?: Node | null, child?: Node | null): boolean {
   return false;
 }
 
+/** Every element matching `selector` at or below `root`, descending into open shadow roots. @public */
+export function queryAcross<E extends Element>(root: ParentNode, selector: string): E[] {
+  const found: E[] = [];
+  // Breadth-first over a growing list rather than recursion — a shadow root nested inside a shadow
+  // root is just another tree to visit, at any depth.
+  const trees: ParentNode[] = [root];
+  for (let i = 0; i < trees.length; i += 1) {
+    const tree = trees[i];
+    if (!tree) continue;
+    for (const el of tree.querySelectorAll<HTMLElement>("*")) {
+      if (el.matches(selector)) found.push(el as unknown as E);
+      if (el.shadowRoot) trees.push(el.shadowRoot);
+    }
+  }
+  return found;
+}
+
 /** An element by id, resolved in the tree `node` lives in rather than in the document. */
 export function elementById(node: Node, id: string): HTMLElement | null {
   if (!id) return null;
@@ -76,4 +93,20 @@ export function elementById(node: Node, id: string): HTMLElement | null {
   // `getElementById` at all.
   if (typeof root.getElementById === "function") return root.getElementById(id);
   return ownerDocument(node).getElementById(id);
+}
+
+/** The `localStorage` of `win`'s realm, or `null` when reading it is not allowed.
+ *
+ * `typeof win.localStorage` is not the test: in Safari's private mode, and on any opaque origin, the
+ * property is present and every `getItem` throws `SecurityError`. Only a real access answers, so this
+ * performs one and reports rather than letting the throw reach a caller that cannot act on it. @public */
+export function safeStorage(win: Window): Storage | null {
+  try {
+    const storage = win.localStorage;
+    storage.getItem("");
+    return storage;
+  } catch (error) {
+    console.warn("[dom] localStorage is unavailable in this realm; preferences will not persist", error);
+    return null;
+  }
 }

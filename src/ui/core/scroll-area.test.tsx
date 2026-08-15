@@ -40,12 +40,12 @@ describe("ScrollArea", () => {
     expect(
       await render(
         <ScrollArea class='h-48'>
-          <ScrollArea.Viewport>Log line</ScrollArea.Viewport>
+          <ScrollArea.Viewport label='Log'>Log line</ScrollArea.Viewport>
         </ScrollArea>,
       ),
     ).toBe(
       '<div data-slot="scroll-area" data-orientation="vertical" class="relative h-48">' +
-        `<div data-slot="scroll-area-viewport" tabindex="0" class="${VIEWPORT_BASE}">Log line</div>` +
+        `<section data-slot="scroll-area-viewport" aria-label="Log" tabindex="0" class="${VIEWPORT_BASE}">Log line</section>` +
         "</div>",
     );
   });
@@ -53,26 +53,40 @@ describe("ScrollArea", () => {
 
 describe("ScrollArea.Viewport", () => {
   it("renders the focusable scrolling element with its overflow utilities", async () => {
-    expect(await render(<ScrollArea.Viewport>Log line</ScrollArea.Viewport>)).toBe(
-      `<div data-slot="scroll-area-viewport" tabindex="0" class="${VIEWPORT_BASE}">Log line</div>`,
+    expect(await render(<ScrollArea.Viewport label='Log'>Log line</ScrollArea.Viewport>)).toBe(
+      `<section data-slot="scroll-area-viewport" aria-label="Log" tabindex="0" class="${VIEWPORT_BASE}">Log line</section>`,
+    );
+  });
+
+  it("names the region from the required label, escaping it, so the tab stop announces something", async () => {
+    expect(await render(<ScrollArea.Viewport label={`R&D's "log" <pane>`} />)).toBe(
+      `<section data-slot="scroll-area-viewport" aria-label="R&amp;D&#39;s &quot;log&quot; &lt;pane&gt;" tabindex="0" class="${VIEWPORT_BASE}"></section>`,
     );
   });
 
   it("merges a caller class, appends an inherited slot token, and escapes children", async () => {
     expect(
       await render(
-        <ScrollArea.Viewport class='p-2' data-slot='log-viewport'>
+        <ScrollArea.Viewport label='Log' class='p-2' data-slot='log-viewport'>
           {`R&D's <logs>`}
         </ScrollArea.Viewport>,
       ),
-    ).toBe(`<div data-slot="scroll-area-viewport log-viewport" tabindex="0" class="${VIEWPORT_BASE} p-2">R&amp;D&#39;s &lt;logs&gt;</div>`);
+    ).toBe(
+      `<section data-slot="scroll-area-viewport log-viewport" aria-label="Log" tabindex="0" class="${VIEWPORT_BASE} p-2">R&amp;D&#39;s &lt;logs&gt;</section>`,
+    );
   });
 
   it("lets a caller class override the conflicting overflow utility rather than stacking on it", async () => {
-    expect(await render(<ScrollArea.Viewport class='overflow-hidden'>Log line</ScrollArea.Viewport>)).toBe(
-      '<div data-slot="scroll-area-viewport" tabindex="0" class="h-full max-h-[inherit] w-full overscroll-contain rounded-[inherit] outline-none ' +
+    expect(
+      await render(
+        <ScrollArea.Viewport label='Log' class='overflow-hidden'>
+          Log line
+        </ScrollArea.Viewport>,
+      ),
+    ).toBe(
+      '<section data-slot="scroll-area-viewport" aria-label="Log" tabindex="0" class="h-full max-h-[inherit] w-full overscroll-contain rounded-[inherit] outline-none ' +
         "focus-visible:ring-2 focus-visible:ring-ring [scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent] " +
-        'overflow-hidden">Log line</div>',
+        'overflow-hidden">Log line</section>',
     );
   });
 });

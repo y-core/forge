@@ -3,7 +3,7 @@ import { render } from "../../testing/render";
 import { Button } from "./button";
 
 const BASE =
-  "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex items-center justify-center rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
 describe("Button", () => {
   it("renders with primary variant classes by default", async () => {

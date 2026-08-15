@@ -10,7 +10,7 @@ whole point of naming them is that a brief can move one without moving the other
 | Variance | How far a surface departs from the plainest arrangement that works | **4** |
 | Motion | How much movement the interface carries | **3** |
 
-Those defaults are ratified in `.decisions/UI_DESIGN_GUIDANCE.md` §8, and they are deliberately
+Those defaults are ratified in `.decisions/implementation/UI_DESIGN_GUIDANCE.md` §8, and they are deliberately
 restrained because forge's primary target is product and app UI — surfaces a user sees many times a
 day, having arrived to finish a task. Variance costs recognition there, and motion costs time.
 
@@ -175,9 +175,9 @@ component composition and the same size vocabulary, unless a brief raises varian
 ratified default of 4. <!-- rule:forge-ui-density-variance-repetition -->
 
 Motion at 3 means transitions exist to explain a change of state and nothing else: a popup opening,
-a panel collapsing, a toast arriving. Those are already owned by `mountTransitionState` and
-`mountPopupTriggerState` from `@y-core/forge/ui/client`, which publish the state attributes the
-stylesheet animates against.
+a panel collapsing, a toast arriving. Every one of those is a state the platform already exposes to a
+selector — `:popover-open`, `[open]`, `@starting-style` — so the stylesheet animates against the
+element's own state with no controller in between.
 
 Default: authored motion is limited to state changes a user caused — open, close, dismiss — and
 carries no entrance animation on page load, unless a brief raises motion above forge's ratified

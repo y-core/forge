@@ -41,7 +41,7 @@ function state(page: Page) {
   return page.evaluate(() => {
     const read = (id: string) => {
       const el = document.querySelector<HTMLDetailsElement>(`#${id}`);
-      return { nativeOpen: el?.open, open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
+      return { nativeOpen: el?.open };
     };
     return { one: read("one"), two: read("two") };
   });
@@ -52,42 +52,32 @@ test.describe("Accordion", () => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
-    expect(await state(page)).toEqual({
-      one: { nativeOpen: false, open: false, closed: true },
-      two: { nativeOpen: false, open: false, closed: true },
-    });
+    expect(await state(page)).toEqual({ one: { nativeOpen: false }, two: { nativeOpen: false } });
   });
 
-  test("clicking a trigger opens that item and the state attributes follow", async ({ page }) => {
+  test("clicking a trigger sets the platform's own open state on that item", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
     await page.click("#one-trigger");
 
-    await expect
-      .poll(() => state(page))
-      .toEqual({ one: { nativeOpen: true, open: true, closed: false }, two: { nativeOpen: false, open: false, closed: true } });
+    await expect.poll(() => state(page)).toEqual({ one: { nativeOpen: true }, two: { nativeOpen: false } });
   });
 
-  test("an exclusive group closes the other item, and its attributes are reconciled too", async ({ page }) => {
+  test("an exclusive group closes the other item, so exactly one stays open", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
     await page.click("#one-trigger");
-    await expect.poll(async () => (await state(page)).one.open).toBe(true);
+    await expect.poll(async () => (await state(page)).one.nativeOpen).toBe(true);
     await page.click("#two-trigger");
 
-    await expect
-      .poll(() => state(page))
-      .toEqual({ one: { nativeOpen: false, open: false, closed: true }, two: { nativeOpen: true, open: true, closed: false } });
+    await expect.poll(() => state(page)).toEqual({ one: { nativeOpen: false }, two: { nativeOpen: true } });
   });
 
   test("a server-rendered open item needs no client work to be correct", async ({ page }) => {
     await mount(page, await markup(true), EXPOSE);
 
-    expect(await state(page)).toEqual({
-      one: { nativeOpen: true, open: true, closed: false },
-      two: { nativeOpen: false, open: false, closed: true },
-    });
+    expect(await state(page)).toEqual({ one: { nativeOpen: true }, two: { nativeOpen: false } });
   });
 });

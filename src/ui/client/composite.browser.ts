@@ -596,3 +596,40 @@ test.describe("disposer", () => {
     expect(await focusedId(page)).toBe("");
   });
 });
+
+test.describe("idempotence per root", () => {
+  test("a second mount on the same root moves focus once, not twice", async ({ page }) => {
+    await mount(page, toolbar({ count: 4 }), EXPOSE);
+    await install(page);
+    await install(page);
+
+    await page.focus("#b0");
+    await page.keyboard.press("ArrowRight");
+
+    expect(await focusedId(page)).toBe("b1");
+  });
+
+  test("the disposer from a repeat mount tears down the one controller there is", async ({ page }) => {
+    await mount(page, toolbar({ count: 3 }), EXPOSE);
+    await install(page);
+    await install(page);
+
+    await page.evaluate(() => window.disposeComposite?.());
+    await page.focus("#b0");
+    await page.keyboard.press("ArrowRight");
+
+    expect(await focusedId(page)).toBe("b0");
+  });
+
+  test("mounting again after disposal installs a live controller", async ({ page }) => {
+    await mount(page, toolbar({ count: 3 }), EXPOSE);
+    await install(page);
+    await page.evaluate(() => window.disposeComposite?.());
+    await install(page);
+
+    await page.focus("#b0");
+    await page.keyboard.press("ArrowRight");
+
+    expect(await focusedId(page)).toBe("b1");
+  });
+});

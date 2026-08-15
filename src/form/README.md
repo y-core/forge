@@ -217,7 +217,7 @@ Four properties are load-bearing, and each is why a named-field reader could not
 
 Text normalization is deliberately **not** done here — it belongs to the schema, via `formText()` and
 `formMultilineText()` from `@y-core/forge/validation`. See
-[`INPUT_VALIDATION.md`](../../.decisions/INPUT_VALIDATION.md) §1d for the four reasons.
+[`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1d for the four reasons.
 
 ### CSRF middleware — `csrfProtection`
 
@@ -299,7 +299,7 @@ guard ran on: the `GET` that mints, the mutation that passes, and the mutation i
 guard ran on this request, so nothing consumed the field and nothing should be dropped for it. That is
 the whole contract a downstream reader needs, which is why the accessor lives apart from `csrf.ts` —
 importing it pulls in no token implementation and no Web Crypto work. See
-[`ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §2b for the derive-only rule
+[`ROUTING_AND_MIDDLEWARE.md`](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §2b for the derive-only rule
 built on it.
 
 ### Mint for another path — `mintCsrf`
@@ -404,10 +404,10 @@ if (isHoneypotFilled(formData, CONTACT_DECOY)) return new Response("Bad request"
 
 #### Rendering the decoy — compose `<Honeypot />` explicitly
 
-**`Form` does not render a honeypot.** It used to, unconditionally — including on `method="get"`,
-where the browser serialises the decoy into the query string of every resulting URL, so `?__surname=`
-leaked into the address bar, bookmarks, shared links, history, and the outbound `Referer`. It also
-protects nothing there: `isHoneypotFilled` is only consulted by mutation handlers.
+**`Form` renders no honeypot.** An unconditional one reaches `method="get"` too, where the browser
+serialises the decoy into the query string of every resulting URL — `?__surname=` in the address bar,
+in bookmarks, in shared links, in history and in the outbound `Referer` — while protecting nothing,
+since `isHoneypotFilled` is only consulted by mutation handlers.
 
 Render `Honeypot` from `@y-core/forge/ui/core` on the forms that submit mutations:
 
@@ -426,10 +426,9 @@ same constant to whatever checks it: `defineAction`'s `honeypot`, or `isHoneypot
 argument. The rendered markup carries no attribute naming the wrapper as a honeypot, for the same
 reason the field name should not be forge's: an attribute nothing reads still identifies the decoy.
 
-> **Migrating from ≤ 0.0.79.** Every `<Form method='post'>` needs a `<Honeypot />` child added.
-> Nothing fails at build or at runtime if you forget — the form simply stops being protected.
-> `Form`'s `honeypotField` prop was removed rather than deprecated so a form that *customised* the
-> name becomes a type error instead of degrading silently.
+Nothing fails at build or at runtime when the child is missing — the form simply stops being
+protected — so treat `<Honeypot />` as part of the shape of a mutation form rather than an addition
+to it.
 
 ### Turnstile — `verifyTurnstile`
 
@@ -508,64 +507,17 @@ if (!result.ok) {
 
 ---
 
-## Security
+## See also
 
-This namespace is security-critical. The notes below are load-bearing, not advisory.
+> **Never surface `CsrfResult.error` or `TurnstileResult.error` to a client.** Echoing a reason code
+> back turns the endpoint into a token-introspection oracle on unauthenticated input — an attacker
+> distinguishes "wrong signature" from "expired" from "wrong path" and probes accordingly. The codes
+> are server diagnostics; `csrfProtection` collapses every failure to a bare `403` with no body
+> detail precisely so nothing else has to.
 
-### CSRF failure reasons are server-log-only
-
-On failure, `verifyCsrfToken` returns a discriminated reason code in `.error`
-(`missing-token`, `invalid-format`, `expired`, `future-timestamp`, `path-mismatch`,
-`subject-mismatch`, `unknown-key`, `invalid-signature`). `CsrfResult` is a
-`GuardResult` alias, so this reason lives in the single `error` field. It is for
-**server diagnostics only** — `csrfProtection` deliberately collapses **every** failure
-to a bare `403` with no body detail.
-
-**Never surface `CsrfResult.error` to clients.** Echoing it back turns the endpoint into a
-token-introspection oracle on unauthenticated input — an attacker can distinguish "wrong signature"
-from "expired" from "wrong path" and probe accordingly. The same applies to `TurnstileResult.error`.
-
-### Tokens are stateless and path-bound
-
-CSRF tokens carry no server-side state; integrity rests entirely on the HMAC-SHA256 signature over
-`kid | path | subject | timestamp | nonce`. A token is valid **only** for the exact path it was minted
-for. Mint a separate token per action path (`mintCsrf(context, path)`) rather than reusing one across
-routes. The signature is verified with `hmacVerify` (constant-time comparison), so verification does
-not leak timing information about the expected signature.
-
-### Bind tokens to a subject for authenticated flows
-
-Pass `subject` to `csrfProtection` (or `createCsrfToken`/`verifyCsrfToken`) to bind a token to a
-session or user id. A token minted for one subject then fails verification (`subject-mismatch`) if
-replayed under another — defending against token-fixation across sessions.
-
-### Rotate keys without downtime
-
-Rotate signing secrets with `importCsrfKeyRing`: front-load the new secret (it becomes the active
-signing key), keep the old one in the ring for verification, and retire it only after the maximum token
-age has elapsed. Existing tokens stay valid throughout rotation.
-
-### Always pin the Turnstile hostname
-
-`expectedHostname` is mandatory and strongly load-bearing: without it, a Turnstile token solved on an
-attacker's domain can be replayed against your endpoint. `verifyTurnstile` refuses to proceed
-(returning `hostname-mismatch`) when it is omitted. Pin `expectedAction` as well so a token solved for
-one widget cannot be reused on another action. Always pass the Turnstile **secret** key — never the
-site key, which is public.
-
-### Enforce the body-size cap
-
-`parseFormData` caps body size both via `Content-Length` and a streaming counter, so a malicious
-chunked request without a truthful `Content-Length` cannot exhaust memory. Surface the thrown
-`{ status: 413 }` error as a `413` response; do not catch and ignore it. Lower `maxBytes` on routes
-that accept only small text payloads. When raising it above the default, raise it on **both** the
-route handler and any `csrfProtection` guard in front of it — the guard parses first, so a mismatch
-rejects the request before the handler runs.
-
-### Layered defense
-
-CSRF, honeypot, and Turnstile are complementary — apply them together on high-risk routes, and pair
-with the transport-layer guards in `@y-core/forge/security` (`crossOriginProtection`,
-`requireFormContentType`, `rateLimit`). CSRF token verification lives **here**, in
-`@y-core/forge/form`; the origin/Fetch-Metadata guards live in `@y-core/forge/security`. Use both —
-neither subsumes the other.
+- [`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) — the CSRF guard
+  contract (§3), the honeypot and Turnstile guards (§4), the refusal shape and its residual oracle
+  (§4c), and the byte cap (§2c).
+- [`BOUNDARIES.md`](../../.decisions/governance/BOUNDARIES.md) — validate-at-boundary, and the
+  transport-versus-application split that puts the origin and Fetch-Metadata guards in
+  [`@y-core/forge/security`](../security/README.md) rather than here.

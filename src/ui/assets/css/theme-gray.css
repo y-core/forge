@@ -1,3 +1,4 @@
+/* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */
 /* Gray — the cool scheme, at half slate's strength.
 
    Only the twelve gray steps, each declared once. A step that differs by mode carries a
@@ -18,17 +19,4 @@
   --gray-10: light-dark(oklch(60.93% 0.0209 265.9), oklch(58.23% 0.0212 265.9));
   --gray-11: light-dark(oklch(50.41% 0.0215 258.4), oklch(77.08% 0.0132 255.5));
   --gray-12: light-dark(oklch(24.29% 0.0270 262.5), oklch(94.92% 0.0042 271.4));
-
-  --gray-a1:  light-dark(#00005503, #00000000);
-  --gray-a2:  light-dark(#00005506, #d8f4f609);
-  --gray-a3:  light-dark(#0000330f, #ddeaf814);
-  --gray-a4:  light-dark(#00002d17, #d3edf81d);
-  --gray-a5:  light-dark(#0009321f, #d9edfe25);
-  --gray-a6:  light-dark(#00002f26, #d6ebfd30);
-  --gray-a7:  light-dark(#00062e32, #d9edff40);
-  --gray-a8:  light-dark(#00083046, #d9edff5d);
-  --gray-a9:  light-dark(#00051d74, #dfebfd6d);
-  --gray-a10: light-dark(#00071b7f, #e5edfd7b);
-  --gray-a11: light-dark(#0007149f, #f1f7feb5);
-  --gray-a12: light-dark(#000509e3, #fcfdffef);
 }

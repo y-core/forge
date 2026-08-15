@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { TURNSTILE } from "../contracts/turnstile-contract";
+import { TURNSTILE, TURNSTILE_SCOPE } from "../contracts/turnstile-contract";
 import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
@@ -17,6 +17,7 @@ const DEFAULT_FALLBACK = "The security challenge couldn't load. Please disable a
 export const Turnstile: FC<TurnstileProps> = ({ siteKey, size = "normal", class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     data-slot={slotToken("turnstile", inherited)}
+    data-scope={TURNSTILE_SCOPE}
     data-ref={TURNSTILE.widget}
     data-sitekey={siteKey}
     data-size={size}

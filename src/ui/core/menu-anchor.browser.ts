@@ -4,6 +4,7 @@ import { Navbar, type NavDefinition } from "../chrome/navbar";
 import { mount } from "../client/browser-test-helper";
 import { createIcon } from "./icon";
 import { Menu } from "./menu";
+import { Popover } from "./popover";
 import { Tooltip } from "./tooltip";
 
 declare global {
@@ -78,18 +79,6 @@ test.describe("Menu — anchored to its trigger", () => {
 
     expect(near(popup.top, trigger.bottom + GAP), `popup.top ${popup.top} should be trigger.bottom ${trigger.bottom} + ${GAP}`).toBe(true);
     expect(near(popup.left, trigger.left), `popup.left ${popup.left} should be trigger.left ${trigger.left}`).toBe(true);
-  });
-
-  test("declares the anchor name the trigger publishes", async ({ page }) => {
-    await simpleMenu(page);
-
-    const declared = await page.evaluate(() => ({
-      trigger: getComputedStyle(document.querySelector('[data-slot~="menu-trigger"]') as HTMLElement).getPropertyValue("anchor-name"),
-      popup: getComputedStyle(document.querySelector("#file-menu") as HTMLElement).getPropertyValue("position-anchor"),
-      scope: getComputedStyle(document.querySelector('[data-slot~="menu"]') as HTMLElement).getPropertyValue("anchor-scope"),
-    }));
-
-    expect(declared).toEqual({ trigger: "--forge-menu", popup: "--forge-menu", scope: "--forge-menu" });
   });
 
   test("side and align move the panel to the named corner", async ({ page }) => {
@@ -194,73 +183,6 @@ const SELECTORS = {
   subB: "#export-menu",
 };
 
-test.describe("Menu — submenu anchoring", () => {
-  test("without JavaScript, a submenu pins to the panel edge — and not to the other trigger's row", async ({ page }) => {
-    await twoSubmenus(page);
-    await page.click('[data-slot~="menu-trigger"]');
-    await page.click(SELECTORS.triggerA);
-
-    const box = await boxes(page, SELECTORS);
-
-    expect(box.triggerA.top, "the fixture must place the two rows apart for this case to mean anything").not.toBe(box.triggerB.top);
-    expect(near(box.subA.left, box.panel.right + GAP), `subA.left ${box.subA.left} vs panel.right ${box.panel.right} + ${GAP}`).toBe(true);
-    expect(near(box.subA.top, box.panel.top), `subA.top ${box.subA.top} vs panel.top ${box.panel.top}`).toBe(true);
-    expect(box.subA.top, "bound to the wrong trigger's row — the row-named failure this design avoids").not.toBe(box.triggerB.top);
-  });
-
-  test("with the client bundle, each submenu is row-accurate", async ({ page }) => {
-    await twoSubmenus(page, CSS_AND_JS);
-    await page.evaluate(() => window.forgeResume.resume());
-    await page.click('[data-slot~="menu-trigger"]');
-    await page.click(SELECTORS.triggerA);
-
-    await expect
-      .poll(async () => {
-        const box = await boxes(page, SELECTORS);
-        return near(box.subA.top, box.triggerA.top);
-      })
-      .toBe(true);
-
-    const box = await boxes(page, SELECTORS);
-    expect(near(box.subA.left, box.triggerA.right + GAP), `subA.left ${box.subA.left} vs triggerA.right ${box.triggerA.right}`).toBe(true);
-  });
-
-  test("the second submenu binds to its own row, not to the first", async ({ page }) => {
-    await twoSubmenus(page, CSS_AND_JS);
-    await page.evaluate(() => window.forgeResume.resume());
-    await page.click('[data-slot~="menu-trigger"]');
-    await page.click(SELECTORS.triggerB);
-
-    await expect
-      .poll(async () => {
-        const box = await boxes(page, SELECTORS);
-        return near(box.subB.top, box.triggerB.top);
-      })
-      .toBe(true);
-
-    const box = await boxes(page, SELECTORS);
-    expect(box.subB.top, "bound to the other trigger's row").not.toBe(box.triggerA.top);
-  });
-
-  test("re-opening reuses the minted name rather than growing the list", async ({ page }) => {
-    await twoSubmenus(page, CSS_AND_JS);
-    await page.evaluate(() => window.forgeResume.resume());
-    await page.click('[data-slot~="menu-trigger"]');
-
-    const names: string[] = [];
-    for (let i = 0; i < 3; i += 1) {
-      await page.click(SELECTORS.triggerA);
-      names.push(
-        await page.evaluate(() => (document.querySelector('[commandfor="recent-menu"]') as HTMLElement).style.getPropertyValue("anchor-name")),
-      );
-      await page.keyboard.press("Escape");
-    }
-
-    expect(new Set(names).size, `anchor-name changed between openings: ${names.join(" | ")}`).toBe(1);
-    expect(names.at(-1)?.split(",").length, `the list grew across openings: ${names.join(" | ")}`).toBe(1);
-  });
-});
-
 const FADE_STYLE = `<style>
   #export-menu { opacity: 0; transition: opacity 400ms linear, display 400ms allow-discrete, overlay 400ms allow-discrete; }
   #export-menu:popover-open { opacity: 1; }
@@ -274,46 +196,7 @@ interface ExitFrame {
   opacity: number;
 }
 
-test.describe("Menu — a submenu re-opened after its first binding", () => {
-  test("an open that resolves no trigger drops the dead name and falls back to the panel binding", async ({ page }) => {
-    await twoSubmenus(page, CSS_AND_JS);
-    await page.evaluate(() => window.forgeResume.resume());
-    await page.click('[data-slot~="menu-trigger"]');
-    await page.click(SELECTORS.triggerA);
-
-    await expect
-      .poll(async () => {
-        const box = await boxes(page, SELECTORS);
-        return near(box.subA.top, box.triggerA.top);
-      })
-      .toBe(true);
-
-    const bound = await page.evaluate(() => (document.querySelector("#recent-menu") as HTMLElement).style.getPropertyValue("position-anchor"));
-    expect(bound, "the first open wrote no inline anchor, so there is nothing stale to clear").toBe("--forge-anchor-1");
-
-    await page.keyboard.press("Escape");
-    await page.evaluate(() => {
-      document.querySelector('[commandfor="recent-menu"]')?.remove();
-      (document.querySelector("#recent-menu") as HTMLElement).showPopover();
-    });
-
-    const remaining = { panel: SELECTORS.panel, subA: SELECTORS.subA };
-
-    await expect
-      .poll(async () => {
-        const box = await boxes(page, remaining);
-        return near(box.subA.top, box.panel.top) && near(box.subA.left, box.panel.right + GAP);
-      })
-      .toBe(true);
-
-    const box = await boxes(page, remaining);
-    const after = await page.evaluate(() => (document.querySelector("#recent-menu") as HTMLElement).style.getPropertyValue("position-anchor"));
-
-    expect(after, "the dead name survived the open").toBe("");
-    expect(near(box.subA.top, box.panel.top), `subA.top ${box.subA.top} vs panel.top ${box.panel.top}`).toBe(true);
-    expect(near(box.subA.left, box.panel.right + GAP), `subA.left ${box.subA.left} vs panel.right ${box.panel.right} + ${GAP}`).toBe(true);
-  });
-
+test.describe("Menu — a submenu mid-exit", () => {
   test("a closing submenu stays on its own row for every frame it is still painted", async ({ page }) => {
     await twoSubmenus(page, CSS_AND_JS, FADE_STYLE);
     await page.evaluate(() => window.forgeResume.resume());
@@ -402,55 +285,13 @@ test.describe("Menu — a submenu re-opened after its first binding", () => {
     });
     expect(reopened).toEqual({ anchor: "", top: 220, left: 300 });
   });
-
-  test("re-opening from a different row unwinds the previous one, so at most one trigger is retained", async ({ page }) => {
-    await twoSubmenus(page, CSS_AND_JS);
-    await page.evaluate(() => {
-      window.forgeScopeTeardown = window.forgeResume.resume();
-    });
-    await page.click('[data-slot~="menu-trigger"]');
-    await page.click(SELECTORS.triggerA);
-
-    await expect
-      .poll(async () => {
-        const box = await boxes(page, SELECTORS);
-        return near(box.subA.top, box.triggerA.top);
-      })
-      .toBe(true);
-
-    const rebuilt = await render(Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent again" }));
-    await page.keyboard.press("Escape");
-    await page.evaluate((html) => {
-      document.querySelector('[commandfor="recent-menu"]')?.insertAdjacentHTML("beforebegin", html);
-    }, rebuilt);
-    await page.locator(SELECTORS.triggerA).first().click();
-
-    const after = await page.evaluate(() => {
-      const rows = [...document.querySelectorAll<HTMLElement>('[commandfor="recent-menu"]')];
-      const fresh = rows[0];
-      const previous = rows[1];
-      return {
-        rows: rows.length,
-        fresh: fresh?.style.getPropertyValue("anchor-name") ?? "",
-        previousInline: previous?.style.getPropertyValue("anchor-name") ?? "",
-        previousDeclared: previous ? getComputedStyle(previous).getPropertyValue("anchor-name") : "",
-        popup: (document.querySelector("#recent-menu") as HTMLElement).style.getPropertyValue("position-anchor"),
-      };
-    });
-
-    expect(after).toEqual({ rows: 2, fresh: "--forge-anchor-2", previousInline: "", previousDeclared: "none", popup: "--forge-anchor-2" });
-
-    await page.evaluate(() => window.forgeScopeTeardown?.());
-    const disposed = await page.evaluate(() => ({
-      rows: [...document.querySelectorAll<HTMLElement>('[commandfor="recent-menu"]')].map((row) => row.style.getPropertyValue("anchor-name")),
-      popup: (document.querySelector("#recent-menu") as HTMLElement).style.getPropertyValue("position-anchor"),
-    }));
-    expect(disposed).toEqual({ rows: ["", ""], popup: "" });
-  });
 });
 
-test.describe("Menu — a composed trigger anchors both of its compounds", () => {
-  test("a tooltip wrapping a menu trigger keeps both anchor names", async ({ page }) => {
+// One button carrying both slot tokens once needed three spelled-out `anchor-name` pairs. It now
+// needs none: the menu takes the implicit anchor its own invocation supplies and the tooltip takes
+// `--forge-tooltip`, and the two cannot collide because only one of them is a name.
+test.describe("Menu — a composed trigger serves both of its compounds", () => {
+  test("a tooltip wrapping a menu trigger anchors each popup to the shared button", async ({ page }) => {
     const trigger = Tooltip.Trigger({ id: "file", for: "file-tip", asChild: true, children: Menu.Trigger({ id: "file-menu", children: "File" }) });
     const popup = Menu.Popup({ id: "file-menu", children: [Menu.Item({ id: "new", for: false, children: "New" })] });
     const html = await render(
@@ -466,17 +307,23 @@ test.describe("Menu — a composed trigger anchors both of its compounds", () =>
     await expect.poll(() => page.evaluate(() => document.querySelector("#file-tip")?.matches(":popover-open"))).toBe(true);
 
     const tipBox = await boxes(page, { trigger: "#file", tip: "#file-tip" });
-    expect(near(tipBox.tip.bottom, tipBox.trigger.top - GAP), "the tooltip is centred — it lost its anchor to the menu rule").toBe(true);
+    expect(near(tipBox.tip.bottom, tipBox.trigger.top - GAP), "the tooltip is centred — it lost `--forge-tooltip`").toBe(true);
     expect(near(tipBox.tip.left + tipBox.tip.width / 2, tipBox.trigger.left + tipBox.trigger.width / 2)).toBe(true);
 
     await page.click("#file");
     const menuBox = await boxes(page, { trigger: "#file", popup: "#file-menu" });
-    expect(near(menuBox.popup.top, menuBox.trigger.bottom + GAP), "the menu lost its anchor to the tooltip rule").toBe(true);
+    expect(near(menuBox.popup.top, menuBox.trigger.bottom + GAP), "the menu lost the implicit anchor to the tooltip's name").toBe(true);
     expect(near(menuBox.popup.left, menuBox.trigger.left)).toBe(true);
   });
 });
 
-const NAV_ICON = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16", "icon-hamburger": "0 0 22 22", "icon-close": "0 0 22 22" });
+const NAV_ICON = createIcon("/sprite.svg", {
+  "icon-chevron-down": "0 0 16 16",
+  "icon-hamburger": "0 0 22 22",
+  "icon-close": "0 0 22 22",
+  "icon-panel-open": "0 0 24 24",
+  "icon-panel-close": "0 0 24 24",
+});
 
 const NAV_CONFIG: NavDefinition = {
   sections: [{ items: [{ label: "File", items: [{ label: "Recent", items: [{ label: "Yesterday", href: "yesterday" }] }] }] }],
@@ -542,12 +389,14 @@ test.describe("Menu — inline-end mirrors with the subtree direction, in CSS al
   }
 
   for (const dir of ["ltr", "rtl"] as const) {
-    test(`dir=${dir}: the submenu opens on the panel's inline-end edge`, async ({ page }) => {
+    // The row, not the panel: the implicit anchor is the invoker, so the submenu opens beside the
+    // row that opened it rather than at the panel's top corner. The mirroring is still CSS alone.
+    test(`dir=${dir}: the submenu opens on its row's inline-end edge`, async ({ page }) => {
       const html = await renderNavbar();
       const box = await openNested(page, dir, html);
 
-      expectOnInlineEnd(dir, box.sub, box.panel);
-      expect(near(box.sub.top, box.panel.top), `${dir}: sub.top ${box.sub.top} vs panel.top ${box.panel.top}`).toBe(true);
+      expectOnInlineEnd(dir, box.sub, box.row);
+      expect(near(box.sub.top, box.row.top), `${dir}: sub.top ${box.sub.top} vs row.top ${box.row.top}`).toBe(true);
 
       const control = await openNested(page, dir, html, NO_FALLBACK_STYLE);
       expect(control, `${dir}: a position-try fallback was supplying the placement`).toEqual(box);
@@ -582,4 +431,77 @@ test.describe("Menu — the key that opens a submenu and the edge it opens on ag
       expect(near(box.sub.top, box.row.top), `${dir}: sub.top ${box.sub.top} vs row.top ${box.row.top}`).toBe(true);
     });
   }
+});
+
+/* Resets exactly the declarations §1d deletes, so these cases measure the *implicit* anchor while the
+   named block is still in the stylesheet — and go on measuring it, unchanged, once the block is gone.
+   `position-anchor: auto` is the initial value, and it is what resolves to the invoker's anchor. */
+const NO_NAMES = `<style>
+  [data-slot~="menu"], [data-slot~="popover"] { anchor-scope: none; }
+  [data-slot~="menu-trigger"], [data-slot~="popover-trigger"], [data-slot~="menu-popup"] { anchor-name: none; }
+  [data-slot~="menu-popup"]:not([data-coords]), [data-slot~="popover-content"] { position-anchor: auto; }
+</style>`;
+
+test.describe("the implicit anchor an invoker supplies", () => {
+  // `UI_CLIENT_RUNTIME.md` claimed, "measured on Chrome 151", that command/commandfor sets no
+  // implicit anchor. On the Chromium this repository actually runs it sets one identical to
+  // `popovertarget`'s, which is what authorises deleting both the binding controller and the names.
+  test("a popover opened by commandfor lands under its trigger with no anchor-name in the sheet", async ({ page }) => {
+    const html = await render(
+      Popover({ children: [Popover.Trigger({ id: "tips", children: "Tips" }), Popover.Content({ id: "tips", side: "bottom", children: "Body" })] }),
+    );
+    await mount(
+      page,
+      `${FIXTURE_STYLE}<style>[data-slot~="popover-trigger"]{position:fixed;top:200px;left:120px;width:90px;height:30px}</style>${NO_NAMES}${html}`,
+      CSS,
+    );
+
+    const named = await page.evaluate(() => ({
+      trigger: getComputedStyle(document.querySelector('[data-slot~="popover-trigger"]') as HTMLElement).getPropertyValue("anchor-name"),
+      popup: getComputedStyle(document.querySelector("#tips") as HTMLElement).getPropertyValue("position-anchor"),
+    }));
+    expect(named, "the fixture failed to neutralise the names, so this proves nothing").toEqual({ trigger: "none", popup: "auto" });
+
+    await page.click('[data-slot~="popover-trigger"]');
+
+    const { trigger, popup } = await boxes(page, { trigger: '[data-slot~="popover-trigger"]', popup: "#tips" });
+    expect(near(popup.top, trigger.bottom + GAP), `popup.top ${popup.top} vs trigger.bottom ${trigger.bottom} + ${GAP}`).toBe(true);
+  });
+
+  // Row accuracy is what `mountAnchorBinding` was written to achieve, and the implicit anchor reaches
+  // it with no names and no JavaScript — the named binding that replaced it is what was suppressing it.
+  test("each submenu binds to its own row, with no names and no client bundle", async ({ page }) => {
+    await twoSubmenus(page, CSS, NO_NAMES);
+    await page.click('[data-slot~="menu-trigger"]');
+
+    await page.click(SELECTORS.triggerA);
+    const first = await boxes(page, SELECTORS);
+    expect(first.triggerA.top, "the fixture must place the rows apart for this to mean anything").not.toBe(first.triggerB.top);
+    expect(near(first.subA.top, first.triggerA.top), `subA.top ${first.subA.top} vs rowA.top ${first.triggerA.top}`).toBe(true);
+    expect(near(first.subA.left, first.triggerA.right + GAP), `subA.left ${first.subA.left} vs rowA.right ${first.triggerA.right}`).toBe(true);
+
+    // Opening the second light-dismisses the first, so each is measured while it alone is open.
+    await page.click(SELECTORS.triggerB);
+    const second = await boxes(page, SELECTORS);
+    expect(near(second.subB.top, second.triggerB.top), `subB.top ${second.subB.top} vs rowB.top ${second.triggerB.top}`).toBe(true);
+    expect(near(second.subB.left, second.triggerB.right + GAP), `subB.left ${second.subB.left} vs rowB.right ${second.triggerB.right}`).toBe(true);
+    expect(second.subB.top, "bound to the other row — the row-named failure the panel binding existed to avoid").not.toBe(second.triggerA.top);
+  });
+
+  // The boundary the deletion inherits: an implicit anchor exists only when an invoker opened the
+  // popup. Every popup forge ships is invoker-opened, and a coordinate-placed one sets its own inset.
+  test("a hand-shown popup has no implicit anchor at all", async ({ page }) => {
+    await twoSubmenus(page, CSS, NO_NAMES);
+    await page.evaluate(() => {
+      (document.querySelector("#file-menu") as HTMLElement).showPopover();
+    });
+
+    const { trigger, panel } = await boxes(page, { trigger: '[data-slot~="menu-trigger"]', panel: SELECTORS.panel });
+
+    // Every `anchor()` resolves to nothing, so both insets compute to `auto` and the panel falls back
+    // to its static position — the rule's own 0.375rem side margin is all that separates it from 0,0.
+    expect(near(panel.top, trigger.bottom + GAP), `an anchor resolved for a popup no invoker opened: top ${panel.top}`).toBe(false);
+    expect(near(panel.left, trigger.left), `an anchor resolved for a popup no invoker opened: left ${panel.left}`).toBe(false);
+    expect({ top: panel.top, left: panel.left }, "the panel is somewhere other than its unanchored static position").toEqual({ top: GAP, left: 0 });
+  });
 });

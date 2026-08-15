@@ -6,3 +6,6 @@ export const TAB_SELECTOR = "[role='tab']";
 
 /** The tablist a {@link TAB_SELECTOR} match belongs to. @public */
 export const TABLIST_SELECTOR = "[role='tablist']";
+
+/** Marks a tab set whose controller has mounted, retiring the `:target` fallback. @public */
+export const TABS_MOUNTED_ATTR = "data-tabs-mounted";

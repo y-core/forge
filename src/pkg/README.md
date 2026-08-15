@@ -20,33 +20,9 @@ invokes the bin, and owns no binding file for either verb. `createGateCommand` a
 import { cloudflareWorkerSteps, createGateCommand, createReleaseCommand } from "@y-core/forge/pkg";
 ```
 
----
-
-## Layout
-
-```
-src/pkg/
-  mod.ts        ← the only barrel; every public symbol, named
-  types.ts      ← shared error and config types
-  app-root.ts   ← where the application being tooled lives
-  gate/         steps.ts  builders.ts  report.ts  command.ts  presets.ts  finding.ts
-                bin.ts ← the `forge-verify` entry point
-  gate/checks/  browser  changelog  css-sources  design  docs  exports  jsx
-                namespace-graph — each with its pure `*-parse.ts`
-  release/      changelog.ts  release.ts  semver.ts  version.ts
-                bin.ts ← the `forge-release` entry point
-  internal/     git.ts  pkg-json.ts  config-module.ts
-```
-
-There is exactly **one barrel**. The subdirectories are plain directories of concrete files, not
-sub-namespaces: `NAMESPACE_DESIGN.md` §1a forbids a barrel importing another barrel, and §2 forbids
-sibling-barrel imports, so `mod.ts` reaches each file directly.
-
-**External vs internal is one question:** would a consuming app plausibly call this itself? If not,
-it exists to serve the two command factories and stays out of the barrel. That is why `internal/`
-holds the git and `package.json` helpers, and why `gate/report.ts`'s nine formatters are
-unpublished — publishing them would freeze the exact wording of every gate line across every
-repository that consumes forge.
+> The barrel rule, what stays unpublished and why, the check layering, and where a project root
+> comes from are owned by
+> [`ASSET_AND_BUILD_TOOLING.md`](../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5.
 
 ---
 
@@ -178,6 +154,7 @@ same rules on its own tree. Each is also a pre-built step, whose label is its `-
 | `namespaceGraphStep` | `checkNamespaceGraph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair |
 | `docsStep` | `checkDocs` | Documented subpaths resolve; section numbering, cross-references, frontmatter, size, freshness |
 | `designStep` | `checkDesign` | The design corpus teaches only what ships, and the source obeys the rules it states |
+| `modernCssStep` | `checkModernCss` | Stylesheets and class literals use the platform feature that replaced each hand-written pattern |
 | `cssSourcesStep` | `checkCssSources` | Every utility class the library emits is visible to a consumer's Tailwind scan |
 | `changelogStep` | `checkChangelog` | Keep a Changelog grammar, ordering, and the topmost heading equalling `package.json` |
 | `jsxStep` | `checkJsx` | Every shipped `.tsx` carries its pragmas and writes no clobberable `data-slot` |
@@ -197,6 +174,40 @@ exportsStep({
 }),
 ```
 
+### Check for hand-written CSS the platform replaced
+
+`modernCssStep` scans `.css`, `.scss`, `.sass`, `.ts` and `.tsx` under each entry of `sources`. A
+`!`-prefixed entry **excludes** a subtree — the usual case is a design corpus or a fixture directory
+whose samples quote the very patterns the check forbids:
+
+```ts
+// config/steps.ts
+modernCssStep({ root: ROOT, sources: ["src/ui", "!src/ui/design"] }),
+```
+
+`sources` matching nothing is a failure rather than a green run, for the same reason a zero-step
+selection is refused.
+
+Findings whose rule is `fail` block the gate; the rest are warnings that survive a passing step.
+`deferred` is the escape for a tree that does not satisfy a `fail` rule yet — a shrink-only list, one
+entry per path and rule, each naming the task that closes it:
+
+```ts
+modernCssStep({
+  root: ROOT,
+  sources: ["src", "!src/fixtures"],
+  deferred: [{ path: "src/legacy", ruleId: "forge-ui-platform-logical-spacing", owner: "PROJ-412" }],
+}),
+```
+
+**Naming `deferred` replaces forge's own list rather than adding to it**, so an app carries its
+deferrals and inherits none of forge's. An entry with an empty `owner`, and an entry whose path no
+longer violates its rule, both fail — the list can only shrink.
+
+Every rule id, its tier, its severity and the feature that replaces it are owned by
+`MODERN_CSS_RULES`; the rule each finding cites is stated for readers in forge's design corpus at
+`src/ui/design/reference/16-platform.md`.
+
 Every builder takes `{ fullOnly }` as its last argument, so a check can be held back to `--full`
 whatever its default. `changelogStep` is the one that defaults to `--full`: requiring a written
 `[Unreleased]` entry on every inner loop would fail every WIP commit.
@@ -215,25 +226,15 @@ if (!result.ok) {
 | `Finding` | `{ level: "fail" \| "warn"; message; file?; line?; detail? }` |
 | `CheckResult` | `{ ok; findings; summary }` — `ok` is **derived** from the findings, never passed |
 
-Each check is built from four layers, and the prefix states which one a function is — so the seams
-are assertable without a filesystem or a subprocess:
-
-| Prefix | Purity | Shape |
-|---|---|---|
-| `parse*` / `find*` | pure | text → data. No disk, no root, no path |
-| `validate*` | pure | data → `Finding[]`. Every policy decision lives here |
-| `resolve*` | impure | config → files or contents. Walks disk, judges nothing |
-| `check*` | impure | config → `CheckResult`. Orchestrates the three above |
-| `format*` | pure | findings → strings |
-
-`summary` always carries a count (`58 .tsx files carry every JSX pragma…`), because a silent green
-is indistinguishable from a check that walked nothing.
+The `parse*` / `validate*` / `resolve*` / `check*` / `format*` prefixes name the layer a function
+belongs to; the vocabulary and its purity rules are
+[`ASSET_AND_BUILD_TOOLING.md`](../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5i's.
 
 ### Where the project root comes from
 
-**No function here walks the disk to find it.** A root is stated by the caller or derived from
-forge's own install path — never discovered by searching upward, and never defaulted to
-`process.cwd()`.
+A root is **stated** by the caller or **derived** from forge's own install path — never discovered.
+`resolveAppRoot` throws when it can do neither; see
+[`ASSET_AND_BUILD_TOOLING.md`](../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5h.
 
 ```ts
 // from @y-core/forge/cli
@@ -241,18 +242,11 @@ resolveAppRoot()          // <app>, derived from <app>/node_modules/@y-core/forg
 resolveAppRoot(myRoot)    // stated; always wins
 ```
 
-`resolveAppRoot` **throws** when it can do neither. A `process.cwd()` default would make the answer
-depend on which directory the command was typed in, and a check that walked the wrong tree reports
-the same green as one that walked the right tree and found nothing.
-
 | Function | Returns |
 |---|---|
 | `resolveAppRoot(explicit?)` | The stated root, else the derived one, else throws. |
 | `installedAppRoot()` | The app root, or `undefined` when forge is not installed under a `node_modules`. |
 | `findAppRoot(modulePath)` | Pure: everything before the **first** `node_modules` segment of a path. |
-
-The first segment, not the last: a nested install and a pnpm store path both put the consuming
-application before it, while every later occurrence names a dependency's own root.
 
 ### Test your own step table
 
@@ -263,7 +257,7 @@ import { selectSteps } from "@y-core/forge/pkg";
 import { STEPS } from "./steps";
 
 const result = selectSteps(STEPS, { mode: "fast" });
-if (result.ok) expect(result.steps.map((s) => s.label)).toEqual(["cf:types:runtime", "cf:types:bindings", "typecheck", "lint", "test"]);
+if (result.ok) expect(result.steps.map((s) => s.label)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "test"]);
 
 // The §6c property: no fast-run step may carry a machine prerequisite.
 expect(STEPS.filter((s) => s.fullOnly !== true && s.requires)).toEqual([]);
@@ -518,7 +512,7 @@ no test of its own to assert either rule.
 #### `cloudflareWorkerSteps(options?)`
 
 The step table every Cloudflare Worker app in this fleet shares, in execution order:
-`cf:types:runtime` → `cf:types:bindings` → `types:assets` → `typecheck` → `lint` → `test`.
+`types:cf-runtime` → `types:cf-bindings` → `types:assets` → `typecheck` → `lint` → `test`.
 Generation leads judgement, so a stale generated type surfaces as a type error. Every step is
 prerequisite-free, so the whole preset is legal in a fast run.
 
@@ -706,13 +700,10 @@ Extends `Error` with a discriminated `kind` field for programmatic handling.
 
 ---
 
-## Not Published
+## See also
 
-Deliberately absent from the barrel, and from this namespace's contract:
-
-| What | Why |
-|---|---|
-| The gate's formatters (`gate/report.ts`) | Publishing nine formatters freezes the exact glyphs and wording of every gate line across every consuming repository — and hands the next one the parts to build an alternate runner from. |
-| Git helpers (`internal/git.ts`) | A consumer that needs `git tag` has `git`. What forge publishes is the *policy* over it — the ordered, refusing release command. |
-| `package.json` and changelog IO (`internal/pkg-json.ts`) | Same reason: `readFileSync` is not a contract worth freezing. |
-| Step sets, an `--inspect` mode, a preconditions phase | The published surface is exactly `--only`, `--list`, `--fix`, fail-fast, the `requires` probe and the full-log file. Narrowing a run means enumerating labels; a streamed run means `--list` then the step's own command. |
+- [`ASSET_AND_BUILD_TOOLING.md`](../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5 —
+  the release path and its refusals, the published gate, the fleet preset, root resolution, and the
+  helpers deliberately left out of the barrel.
+- [`TESTING.md`](../../.decisions/implementation/TESTING.md) §6 — the gate's two modes and its flags
+  as forge itself runs them.

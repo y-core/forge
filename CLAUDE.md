@@ -12,13 +12,11 @@
 - NEVER use Bun-specific or Node.js APIs in runtime source files (standard Web APIs only)
 - NEVER hardcode API keys, secrets, or credentials in source files
 - NEVER provide deprecation shims or backward-compatible paths before v1.0.0
-- NEVER write a comment outside the budget in `PRODUCTION_TS_RULES.md` §5 — one line of TSDoc per
-  export, the `@public`/`@internal` tags, and the rare inline *why*. Nothing else. No `@example`
-  blocks, no multi-paragraph rationale, no restating the code, no section banners, no TODOs. Code
-  is the documentation; prose is a cost paid on every read. Fix an unclear line with a better
-  name, not a comment
-- ALWAYS delete unbudgeted comments from any file you touch — there is no grandfathering, and
-  rationale worth keeping is routed to its single home (see `PRODUCTION_TS_RULES.md` §5c)
+- NEVER exceed the comment budget — one line of TSDoc per export, the `@public`/`@internal` tags,
+  and the rare inline *why*, nothing else
+  ([`PRODUCTION_TS_RULES.md`](.decisions/governance/PRODUCTION_TS_RULES.md) §5)
+- ALWAYS delete unbudgeted comments from any file you touch, routing rationale worth keeping to its
+  single home ([`PRODUCTION_TS_RULES.md`](.decisions/governance/PRODUCTION_TS_RULES.md) §5c)
 - ALWAYS add new public symbols to the namespace's `mod.ts` as a named export
 - ALWAYS co-locate tests (`*.test.ts` / `*.test.tsx`) with the source they test
 - ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
@@ -74,10 +72,8 @@ bun run lint                   # check only, never write (`verify --only lint`)
 bun run fix                    # every step's fixer (`verify --fix`) — lint is the only one today
 ```
 
-**One command, two modes**, not two commands. `config/steps.ts` is the single source of truth for
-the gate's steps and which of them are `fullOnly`; the `forge-verify` bin loads it through its
-default export, so there is no binding file to keep in step. Gate philosophy, the modes, and the
-flags: [`TESTING.md`](.decisions/TESTING.md) §6.
+Gate philosophy, the modes, and the flags: [`TESTING.md`](.decisions/implementation/TESTING.md) §6.
+The step list itself is `config/steps.ts`.
 
 **Avoid:** `tsc` (use `tsgo`), `bun-types` (use the custom stub), `eslint`/`prettier` (use `biome`).
 
@@ -129,9 +125,8 @@ from a wrapped package directly.
 
 **Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests.
 
-**Leaf vs integration:** every namespace is either a **leaf** (zero cross-namespace forge imports)
-or an **integration** namespace (declared composition across namespaces). Classify before adding
-code; never introduce an undeclared cross-namespace dependency.
+**Leaf vs integration:** classify a namespace before adding code, and never introduce an undeclared
+cross-namespace dependency ([`NAMESPACE_DESIGN.md`](.decisions/governance/NAMESPACE_DESIGN.md) §3).
 
 For the namespace catalog, barrel rules, and growth recipes, consult the governing `.decisions/`
 doc via the **Guide Index** — never duplicate that detail here.
@@ -143,24 +138,43 @@ doc via the **Guide Index** — never duplicate that detail here.
 > Before writing code, consult the relevant governing document. Each begins with a
 > `## 0. Quick Reference` listing every section, so you can pick a section without reading the
 > whole file.
+>
+> **Two tables, two directories.** `governance/` holds the portable rules shared with every forge
+> sibling and is overwritten on sync; `implementation/` holds forge's own catalog and rulings and
+> is never touched by a sync ([`AGENT_GUIDE.md`](.decisions/governance/AGENT_GUIDE.md) §6d). Both
+> tables must agree with their directory in both directions.
 
-- [`AGENT_GUIDE.md`](.decisions/AGENT_GUIDE.md): how `.decisions/` docs are structured, numbered, sized, and cross-referenced; the single-home rule and source-of-truth register
-- [`LIBRARY_ARCHITECTURE.md`](.decisions/LIBRARY_ARCHITECTURE.md): the dependency facade, the runtime-only no-build-step constraint, demand composition, Web-APIs-only, the `tsconfig` type-system constraints
-- [`NAMESPACE_DESIGN.md`](.decisions/NAMESPACE_DESIGN.md): barrel rules and the `export *` ban, the no-sibling-barrel guard, the authoritative subpath catalog, leaf/integration classification, naming conventions
-- [`PRODUCTION_TS_RULES.md`](.decisions/PRODUCTION_TS_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, **the comment budget (§5 — the ceiling on prose)**, declarative style
-- [`ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md): declarative route maps and controllers, `definePage`/`defineAction`, middleware ordering, the `context` namespace
-- [`HTMX.md`](.decisions/HTMX.md): request detection, `HX-*` header readers and setters, `hxAttrs`, the pattern helpers, and the selector trust posture
-- [`SECURITY_HARDENING.md`](.decisions/SECURITY_HARDENING.md): CSP nonce headers, CORS, origin-guard tiering, rate limiting, the `trustCfHeaders` trust boundary, the transport-layer boundary
-- [`STRUCTURED_LOGGING.md`](.decisions/STRUCTURED_LOGGING.md): log channels and wrappers, `requestLogger`, KV persistence, the auth-gated log viewer, the no-PII rule
-- [`ERROR_HANDLING.md`](.decisions/ERROR_HANDLING.md): the one `Result` primitive, fragment renderers, the router error boundary, the fail-closed posture
-- [`INPUT_VALIDATION.md`](.decisions/INPUT_VALIDATION.md): the valibot `v` facade, form parsing and its byte cap, CSRF, honeypot, Turnstile, validate-at-boundary
-- [`STORAGE_BINDINGS.md`](.decisions/STORAGE_BINDINGS.md): D1, KV, and R2 clients, the resolve/validate binding pattern, dev degradation
-- [`UI_SSR_COMPONENTS.md`](.decisions/UI_SSR_COMPONENTS.md): the `ui/core` component contract, `ui/controls` bound variants, the signal-binding seam, `cn`/`asClass`/`cva`
-- [`UI_CLIENT_RUNTIME.md`](.decisions/UI_CLIENT_RUNTIME.md): browser-only mount controllers, signals, lazy loading, the htmx side-effect import, and the hard SSR boundary
-- [`UI_DESIGN_GUIDANCE.md`](.decisions/UI_DESIGN_GUIDANCE.md): the `src/ui/design/` corpus — its Floor/Defaults tiers, the stable `forge-ui-` rule-id scheme, the anti-drift gate contract, the three-way doc boundary, and the dial defaults
-- [`ASSET_AND_BUILD_TOOLING.md`](.decisions/ASSET_AND_BUILD_TOOLING.md): the asset pipeline, the content-hash manifest, the CLI framework, release tooling
-- [`TESTING.md`](.decisions/TESTING.md): test placement, HTML-entity exact-match assertions, fakes over mocks, security-test requirements, the gate
-- [`CODE_REVIEW.md`](.decisions/CODE_REVIEW.md): blocking invariants, a detection command per rule, severity calibration, known false positives
+### Governance — portable, overwrite-on-sync
+
+- [`AGENT_GUIDE.md`](.decisions/governance/AGENT_GUIDE.md): how `.decisions/` docs are structured, numbered, sized, and cross-referenced; the governance/implementation boundary; the single-home rule
+- [`LIBRARY_ARCHITECTURE.md`](.decisions/governance/LIBRARY_ARCHITECTURE.md): the dependency facade, the runtime-only no-build-step constraint, demand composition, Web-APIs-only, the Workers isolate model
+- [`NAMESPACE_DESIGN.md`](.decisions/governance/NAMESPACE_DESIGN.md): barrel discipline and the `export *` ban, the no-sibling-barrel rule, leaf/integration classification, naming conventions, when to add a namespace
+- [`PRODUCTION_TS_RULES.md`](.decisions/governance/PRODUCTION_TS_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, **the comment budget (§5 — the ceiling on prose)**, declarative style
+- [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md): SSR versus browser, transport versus application security, validate-at-boundary, no-PII logging, fail-closed
+- [`ERROR_HANDLING.md`](.decisions/governance/ERROR_HANDLING.md): the one `Result` primitive, failures crossing a boundary, rendering a failure, the error taxonomy
+- [`TESTING.md`](.decisions/governance/TESTING.md): co-location, exact-match assertions, fakes over mocks, security-test requirements, the one-command-two-modes gate
+- [`CODE_REVIEW.md`](.decisions/governance/CODE_REVIEW.md): blocking invariants, tiered detection with a command per rule, severity calibration, known false positives
+
+### Implementation — forge only
+
+- [`SOURCE_OF_TRUTH.md`](.decisions/implementation/SOURCE_OF_TRUTH.md): the register naming which file owns each fact, and the rows that name more than one file
+- [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md): the authoritative subpath catalog, sealed-internal `crypto`, the foundational primitives, and forge's growth rulings
+- [`LIBRARY_ARCHITECTURE.md`](.decisions/implementation/LIBRARY_ARCHITECTURE.md): what forge wraps and what it authors, the named build-time exemptions, the peer-dependency set, the `@source` scope
+- [`ROUTING_AND_MIDDLEWARE.md`](.decisions/implementation/ROUTING_AND_MIDDLEWARE.md): declarative route maps and controllers, `definePage`/`defineAction`, middleware ordering, the `context` namespace
+- [`HTMX.md`](.decisions/implementation/HTMX.md): the selector and JSON trust posture, why URL-valued and `hx-on:*` attributes are unsanitized, and the `isHxRequest` not-a-boundary ruling
+- [`SECURITY_HARDENING.md`](.decisions/implementation/SECURITY_HARDENING.md): CSP nonce headers, CORS, origin-guard tiering, rate limiting, the `trustCfHeaders` trust boundary
+- [`STRUCTURED_LOGGING.md`](.decisions/implementation/STRUCTURED_LOGGING.md): log channels and wrappers, `requestLogger`, KV persistence, the auth-gated log viewer
+- [`ERROR_HANDLING.md`](.decisions/implementation/ERROR_HANDLING.md): the published `Result` signatures, the fragment renderers, the router error boundary's header guarantees, the `serveObject` exception
+- [`INPUT_VALIDATION.md`](.decisions/implementation/INPUT_VALIDATION.md): the valibot `v` facade, form parsing and its byte cap, CSRF, honeypot, Turnstile
+- [`STORAGE_BINDINGS.md`](.decisions/implementation/STORAGE_BINDINGS.md): D1, KV, and R2 clients, the resolve/validate binding pattern, dev degradation
+- [`UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md): the `ui/core` component contract, `ui/controls` bound variants, the signal-binding seam, `cn`/`asClass`/`cva`
+- [`UI_CLIENT_RUNTIME.md`](.decisions/implementation/UI_CLIENT_RUNTIME.md): browser-only mount controllers, signals, lazy loading, the htmx side-effect import
+- [`UI_DESIGN_GUIDANCE.md`](.decisions/implementation/UI_DESIGN_GUIDANCE.md): the `src/ui/design/` corpus — its Floor/Defaults tiers, the stable `forge-ui-` rule-id scheme, the anti-drift gate contract, the three-way doc boundary, and the dial defaults
+- [`THEME_GENERATION.md`](.decisions/implementation/THEME_GENERATION.md): the dial model a colour scheme is generated from, the emission contract, and the audited contrast pairs the gate and the customiser share
+- [`UI_SHOWCASE.md`](.decisions/implementation/UI_SHOWCASE.md): the `ui/show` surface — what an app supplies to mount it, and the coverage contract that fails the build when a published component has no demo
+- [`ASSET_AND_BUILD_TOOLING.md`](.decisions/implementation/ASSET_AND_BUILD_TOOLING.md): the asset pipeline, the content-hash manifest, the CLI framework, release tooling
+- [`TESTING.md`](.decisions/implementation/TESTING.md): the two runners and the browser set, the security matrix row-to-test map, the `testing` namespace fixtures, the gate's flags
+- [`CODE_REVIEW.md`](.decisions/implementation/CODE_REVIEW.md): forge's `detect:` commands with their real globs, the icon-prop rule, and the full do-not-flag table
 
 ---
 
@@ -171,10 +185,10 @@ never duplicate a capability that already exists.
 
 | Adding… | Goes to | Recipe |
 |---|---|---|
-| Authentication (JWT, OAuth, session login), permissions/RBAC, API-key lifecycle | NEW `auth` namespace — identity is application-layer, never `security` | `NAMESPACE_DESIGN.md` §5a |
-| CORS middleware, webhook signature verification | `security` — transport-layer request/response hardening only | `NAMESPACE_DESIGN.md` §5a, `SECURITY_HARDENING.md` §7 |
-| SSR component | `ui/core` (markup only); client behaviour goes in `ui/client` | `NAMESPACE_DESIGN.md` §5b, `UI_SSR_COMPONENTS.md` |
-| Browser controller, signal, or lazy-loaded resource | `ui/client` — never imported from a Worker-executed file | `UI_CLIENT_RUNTIME.md` §5 |
-| Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | `NAMESPACE_DESIGN.md` §5c |
-| HTTP output concern (response builders, header classes, HTML escaping, streaming) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | `NAMESPACE_DESIGN.md` §5d |
-| Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `.decisions/` | `UI_DESIGN_GUIDANCE.md` §5a |
+| Authentication (JWT, OAuth, session login), permissions/RBAC, API-key lifecycle | NEW `auth` namespace — identity is application-layer, never `security` | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5a |
+| CORS middleware, webhook signature verification | `security` — transport-layer request/response hardening only | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5a, [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md) §2 |
+| SSR component | `ui/core` (markup only); client behaviour goes in `ui/client` | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5b, [`UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md) |
+| Browser controller, signal, or lazy-loaded resource | `ui/client` — never imported from a Worker-executed file | [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md) §1, [`UI_CLIENT_RUNTIME.md`](.decisions/implementation/UI_CLIENT_RUNTIME.md) §2 |
+| Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5c |
+| HTTP output concern (response builders, header classes, HTML escaping, streaming) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5d |
+| Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `.decisions/` | [`UI_DESIGN_GUIDANCE.md`](.decisions/implementation/UI_DESIGN_GUIDANCE.md) §5a |

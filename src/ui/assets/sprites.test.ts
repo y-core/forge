@@ -16,7 +16,7 @@ describe("forgeUiSpriteSources", () => {
 
   it("core source has the expected files", () => {
     const sources = forgeUiSpriteSources();
-    expect(sources[0]?.files).toEqual(["spinner.svg", "chevron-down.svg", "hamburger.svg", "close.svg"]);
+    expect(sources[0]?.files).toEqual(["spinner.svg", "chevron-down.svg", "hamburger.svg", "close.svg", "panel-open.svg", "panel-close.svg"]);
   });
 
   it("theme source has the expected files", () => {
@@ -35,12 +35,12 @@ describe("forgeUiSpriteSources", () => {
 });
 
 describe("FORGE_UI_ICON_NAMES", () => {
-  it("has exactly 7 names", () => {
-    expect(FORGE_UI_ICON_NAMES).toHaveLength(7);
+  it("has exactly 9 names", () => {
+    expect(FORGE_UI_ICON_NAMES).toHaveLength(9);
   });
 
   it("contains the expected glyph names", () => {
-    const expected = ["spinner", "chevron-down", "hamburger", "close", "sun", "moon", "monitor"];
+    const expected = ["spinner", "chevron-down", "hamburger", "close", "panel-open", "panel-close", "sun", "moon", "monitor"];
     expect([...FORGE_UI_ICON_NAMES].sort()).toEqual([...expected].sort());
   });
 });

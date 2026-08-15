@@ -2,6 +2,7 @@ export type { SourceStepOptions, StepOptions } from "./gate/builders";
 export {
   browserStep,
   changelogStep,
+  coLocationStep,
   contrastStep,
   cssSourcesStep,
   designStep,
@@ -9,7 +10,9 @@ export {
   exportsStep,
   jsxStep,
   lintStep,
+  modernCssStep,
   namespaceGraphStep,
+  ssrBoundaryStep,
   testStep,
   typecheckStep,
 } from "./gate/builders";
@@ -23,6 +26,7 @@ export {
 export { hasChromium, resolveChromiumPath } from "./gate/checks/browser";
 export type { ChangelogCheckConfig } from "./gate/checks/changelog";
 export { checkChangelog, validateChangelog } from "./gate/checks/changelog";
+export { type CoLocationCheckConfig, checkCoLocation, testCandidates } from "./gate/checks/co-location";
 export { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./gate/checks/color";
 export type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, Measurement, Unresolved } from "./gate/checks/contrast";
 export { checkContrast, measurePairs, parsePalette, resolveColor } from "./gate/checks/contrast";
@@ -74,6 +78,29 @@ export type { JsxCheckConfig } from "./gate/checks/jsx";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./gate/checks/jsx";
 export type { SlotClobber } from "./gate/checks/jsx-parse";
 export { findSlotClobbers } from "./gate/checks/jsx-parse";
+export type { ModernCssCheckConfig } from "./gate/checks/modern-css";
+export { checkModernCss } from "./gate/checks/modern-css";
+export type { DeferredFinding } from "./gate/checks/modern-css-deferred";
+export { MODERN_CSS_DEFERRED } from "./gate/checks/modern-css-deferred";
+export type { CssBlock, ModernCssFinding } from "./gate/checks/modern-css-parse";
+export {
+  blankComments,
+  findAspectRatioPadding,
+  findCssBlocks,
+  findDensityQueries,
+  findDuplicatedColorScheme,
+  findModernCssViolations,
+  findNegativeZIndex,
+  findPhysicalSpacing,
+  findPrefixedLineClamp,
+  findTranslateCentering,
+  findWebkitScrollbar,
+  isModernCssSuppressed,
+  logicalUtility,
+} from "./gate/checks/modern-css-parse";
+export type { ModernCssCitedRuleId, ModernCssReportedId, ModernCssRule, ModernCssRuleId, ModernCssTier } from "./gate/checks/modern-css-rules";
+export { MODERN_CSS_CITED_RULES, MODERN_CSS_RULES, modernCssRule } from "./gate/checks/modern-css-rules";
+export { findModernCssSourceViolations } from "./gate/checks/modern-css-source-parse";
 export type { NamespaceGraphCheckConfig } from "./gate/checks/namespace-graph";
 export { checkNamespaceGraph, resolveNamespaces, validateNoEnumeration, validateNoMutualValuePairs } from "./gate/checks/namespace-graph";
 export type {
@@ -97,6 +124,7 @@ export {
   resolveSpecifier,
   sectionWindow,
 } from "./gate/checks/namespace-graph-parse";
+export { boundaryViolation, checkSsrBoundary, type SsrBoundaryCheckConfig, validateSsrBoundary } from "./gate/checks/ssr-boundary";
 export type { GateCommandConfig } from "./gate/command";
 export { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./gate/command";
 export type { CheckResult, Finding, FindingLevel } from "./gate/finding";

@@ -23,7 +23,9 @@ modes**, one step beyond `--input`: an earlier revision made the light value a 5
 composites against whatever is behind it and measured below the very border it was meant to replace.
 A focus indicator is non-text contrast under WCAG 1.4.11 and has a 3:1 floor of its own, so it
 cannot be expressed as a tint. Visibility itself is the Floor (`forge-ui-focus-ring`); this rule is
-about not inventing a second treatment beside it.
+about not inventing a second treatment beside it. That measurement is also why
+`forge-ui-platform-color-mix` in [`16-platform.md`](./16-platform.md) excludes ring, border and
+outline tokens from the derived form it otherwise asks for.
 
 Default: use the `focus-visible` variant, never bare `focus` — unless the control is reachable
 *only* by pointer, which in practice never happens. <!-- rule:forge-ui-interaction-focus-visible -->
@@ -79,18 +81,20 @@ The pressed tool, the selected tab, the checked radio. Without it a composite th
 puts the tab stop somewhere else, and the first Tab press moves focus to a row that is not the one
 highlighted.
 
-Default: use `mountActiveDescendant` for a listbox-shaped control — a combobox, an autocomplete, a
-filter field over a result list — rather than `mountRovingFocus` — unless real focus genuinely
-belongs on the option. <!-- rule:forge-ui-interaction-activedescendant -->
-The discriminator is where focus lives during the interaction. In a listbox-shaped control the user
-is typing, so focus stays in the field and `aria-activedescendant` names the current option;
-`mountRovingFocus` would call `item.focus()` and take focus out of the field the pattern is defined
-by keeping it in. `resetActiveDescendant` clears the pointer when the list is rebuilt.
+Default: reach for `Select` — the native `<select>` — for a listbox-shaped control, rather than
+building a listbox out of `div`s and pointing `mountRovingFocus` at it — unless real focus genuinely
+belongs on the option, as it does in a toolbar, a tab list or a
+menu. <!-- rule:forge-ui-interaction-activedescendant -->
+The discriminator is where focus lives during the interaction. The platform gives `<select>` the
+popup, the typeahead, Home/End, and the mobile picker, for no script at all; a roving-focus
+controller calls `item.focus()`, which is right for a composite whose items are the focus targets
+and wrong for a list a user reads while typing somewhere else. Forge ships no combobox controller,
+so a control that genuinely needs an editable field over a filtered list is one you own end to end.
 
-Default: mount the shipped controller for a shipped component — `mountTabs`, `mountMenu`,
-`mountTooltip` — rather than re-deriving its key handling — unless the markup sits somewhere
-`resume()` cannot reach, such as inside a shadow root, where you call the controller
-directly. <!-- rule:forge-ui-interaction-named-controllers -->
+Default: let the registered scope mount the controller for a shipped component — `Tabs`, `Menu`,
+`Tooltip` — rather than re-deriving its key handling — unless the markup sits somewhere a
+document-level `resume()` cannot reach, such as inside a shadow root, where you call `resume(root)`
+on that root. <!-- rule:forge-ui-interaction-named-controllers -->
 Under `@y-core/forge/ui/core/client` these are already registered as scopes, so the usual correct
 amount of code is the side-effect import and nothing else.
 
@@ -120,7 +124,9 @@ import { ACTIVE_COMPOSITE_ITEM } from "@y-core/forge/ui/contracts";
 ## Disabled, read-only, hidden
 
 Three ways to withhold a control, and they communicate three different things. Choosing by
-convenience is how a reader ends up staring at a greyed button with no way to learn why.
+convenience is how a reader ends up staring at a greyed button with no way to learn why. Withholding
+a whole *subtree* is a fourth thing and belongs to `forge-ui-platform-inert` in
+[`16-platform.md`](./16-platform.md).
 
 | The situation | Use | What the reader learns |
 |---|---|---|
@@ -155,7 +161,7 @@ revealed by `focus-within`.
 
 ## Motion
 
-Forge's ratified motion dial is 3 of 10 ([`UI_DESIGN_GUIDANCE.md`](../../../../.decisions/UI_DESIGN_GUIDANCE.md) §8).
+Forge's ratified motion dial is 3 of 10 ([`UI_DESIGN_GUIDANCE.md`](../../../../.decisions/implementation/UI_DESIGN_GUIDANCE.md) §8).
 That setting is what the rules below encode: movement that reads as the interface *responding*, and
 never as the interface performing.
 
@@ -166,12 +172,17 @@ was asked for, and the reader waits for all three. *Which* changes may carry mot
 [`12-density.md`](./12-density.md)'s (`forge-ui-density-motion-budget`); this rule bounds how much
 motion any one of them gets.
 
-Default: express entry and exit through `mountTransitionState` and style them off
-`data-starting-style` / `data-ending-style` — unless the element is not a native popover or
-`<dialog>`, in which case a plain `transition-*` class on the element is correct. <!-- rule:forge-ui-interaction-transition-controller -->
-The controller observes the platform's own state events and publishes the four attributes; it never
-calls `showPopover` or `close()`, so dismissal stays the platform's. `Popover` and `Dialog` emit
-their initial state attribute in SSR markup and contain no animation branch at all.
+Default: express entry with `starting:` and exit with `transition-discrete` on the base rule, and
+select open state with the `open:` / `not-open:` variants — unless the element is not a native
+popover, `<dialog>` or `<details>`, in which case a plain `transition-*` class is correct. <!-- rule:forge-ui-interaction-transition-controller -->
+`starting:` compiles to `@starting-style`, which the style engine applies before the first painted
+frame, and `transition-discrete` is `transition-behavior: allow-discrete`, which keeps `display` and
+`overlay` animatable so the element stays painted and in the top layer for the whole exit. Add
+`overlay` to the transition list on a popover: no JavaScript can keep an element in the top layer, so
+an exit that omits it is dropped out of the layer on frame one. Tailwind's `open:` variant compiles to
+`&:is([open], :popover-open, :open)` — one variant covering all three element kinds. Reaching for
+`requestAnimationFrame` to start an entry instead is `forge-ui-platform-entry-motion` in
+[`16-platform.md`](./16-platform.md), which is the same rule seen from the other side.
 
 Default: put no bare `display` utility on a `[popover]` element or a `<dialog>` — reach for
 `opacity`, `visibility` or a `transform` instead — unless the utility is variant-gated on the open
@@ -181,11 +192,15 @@ The UA rule that hides a closed popover, `[popover]:not(:popover-open) { display
 outranks it and the popup renders permanently, on top of the page, before anything has opened it.
 Lay a popup's contents out on a child instead of on the popover element itself.
 
-Default: give a trigger its open-state feedback with `mountPopupTriggerState` and a
-`data-popup-open` selector, rather than a second listener on the trigger — unless the trigger is not
-an invoker of the popup. <!-- rule:forge-ui-interaction-trigger-state -->
-`STATE_ATTRS` is the register of every state attribute forge emits, and every one of them is a
-presence flag with an empty value — select `[data-popup-open]`, never `[data-popup-open="true"]`.
+Default: give a trigger its open-state feedback with a `:has()` rule that reads the popup's own
+`:popover-open`, rather than a listener or a mirrored attribute on the trigger — unless the popup is
+modal, whose `::backdrop` paints over the trigger regardless. <!-- rule:forge-ui-interaction-trigger-state -->
+The trigger is styled from a *sibling's* state, which no class on the trigger could know about, and
+`:has()` is what makes that expressible with no runtime at all — the general form of that move, for
+any ancestor read from a descendant's state, is `forge-ui-platform-parent-state` in
+[`16-platform.md`](./16-platform.md). Match the structure: a trigger that is
+the popup's **parent's** child reads `:has(> …:popover-open)`, and a submenu row that **precedes** its
+panel reads `:has(+ …:popover-open)`.
 
 Default: keep an enter under 200ms and an exit shorter than its enter — roughly 120–200ms in,
 80–150ms out — unless a brief specifies a slower deliberate reveal. <!-- rule:forge-ui-interaction-duration -->
@@ -198,12 +213,12 @@ Animating `height`, `width` or `top` reflows every frame, and on a fragment-swap
 content the reader may be mid-click on.
 
 Every authored moment is subject to `forge-ui-reduced-motion`, which is Floor: gate it behind
-`motion-safe:` and give `motion-reduce:` the instant state. That includes anything driven by
-`mountTransitionState` or `mountPopupTriggerState`.
+`motion-safe:` and give `motion-reduce:` the instant state. That includes the declarative
+`starting:` / `open:` motion above.
 
 ```tsx
 // Wrong — three simultaneous moments, an unbounded duration, and no reduced-motion path.
-<Dialog class="transition-all duration-700 data-[starting-style]:scale-50 data-[starting-style]:opacity-0 data-[starting-style]:translate-y-8">
+<Dialog class="transition-all duration-700 starting:scale-50 starting:opacity-0 starting:translate-y-8">
   <p class="text-sm">Delete this workspace?</p>
 </Dialog>
 
@@ -211,7 +226,7 @@ Every authored moment is subject to `forge-ui-reduced-motion`, which is Floor: g
 // a reader who asked the OS for less motion.
 
 // Right — one moment, response-length, opt-in.
-<Dialog class="motion-safe:transition-opacity motion-safe:duration-150 motion-safe:data-[starting-style]:opacity-0">
+<Dialog class="motion-safe:transition-opacity motion-safe:transition-discrete motion-safe:duration-150 motion-safe:starting:opacity-0">
   <p class="text-sm">Delete this workspace?</p>
 </Dialog>
 ```

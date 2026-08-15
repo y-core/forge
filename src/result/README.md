@@ -295,8 +295,8 @@ in `catch (err)` blocks where `err` is `unknown`.
 |---|---|---|
 | `thrown` | `unknown` | The caught value to normalize into an `Error`. |
 
-## Related
+## See also
 
 - [`@y-core/forge/validation`](../validation) — produces `ValidationResult<T>` values.
 - [`@y-core/forge/http`](../http) — `renderValidationErrors`, `renderError`, `fragmentResponse` for turning results into HTMX fragments.
-- `.decisions/ERROR_HANDLING.md` — the governing error-handling doctrine (error taxonomy, fail-closed posture, router error boundary).
+- [`ERROR_HANDLING.md`](../../.decisions/implementation/ERROR_HANDLING.md) — the governing error-handling doctrine (error taxonomy, fail-closed posture, router error boundary).

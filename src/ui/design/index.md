@@ -18,7 +18,7 @@ here restates them.
 4. **[`preflight.md`](./preflight.md) — before you declare the work done.** Run it and report the
    counts it asks for.
 
-Reading all 19 rule files for one surface is the wrong move. The corpus is routed, not sequential:
+Reading all 20 rule files for one surface is the wrong move. The corpus is routed, not sequential:
 `floor.md` plus `preflight.md` plus the two files your task names is the intended read, and it is
 what the routing table below exists to make possible.
 
@@ -47,6 +47,7 @@ One row per file, keyed by the question that sends you there.
 | It is a landing page, not an app screen. | [`reference/13-marketing.md`](./reference/13-marketing.md) |
 | I am auditing someone else's surface. | [`reference/14-review.md`](./reference/14-review.md) |
 | There is a photograph or a glyph on this surface. | [`reference/15-media.md`](./reference/15-media.md) |
+| I am about to write this behaviour in script or in an older CSS idiom. | [`reference/16-platform.md`](./reference/16-platform.md) |
 
 ## Two tiers, one citation scheme
 
@@ -63,3 +64,13 @@ finding can cite the exact sentence it rests on rather than the paragraph around
 Emit the Design Read — one line naming who the surface is for, the one primary action, and what
 failure looks like. It is defined as `forge-ui-design-read` in [`floor.md`](./floor.md), with the
 shape it takes; do not reconstruct it from here.
+
+## Sources
+
+The design principles these rules rest on are argued in *Refactoring UI* by Adam Wathan and Steve
+Schoger. Every rule in this corpus was re-derived against forge's own components, tokens, and
+utilities, and is stated in forge's terms rather than reproduced.
+
+Where a single file rests on a source of its own, it credits it in its own `## Sources` footer —
+[`reference/04-color.md`](./reference/04-color.md) is the one that does, for the palettes forge's
+scheme files resample.

@@ -11,6 +11,7 @@ import { resolveAppRoot } from "../src/cli/mod";
 import {
   browserStep,
   changelogStep,
+  coLocationStep,
   contrastStep,
   cssSourcesStep,
   designStep,
@@ -19,13 +20,15 @@ import {
   exportsStep,
   jsxStep,
   lintStep,
+  modernCssStep,
   namespaceGraphStep,
   type Step,
+  ssrBoundaryStep,
   testStep,
   typecheckStep,
 } from "../src/pkg/mod";
-import { ACCEPTED_CONTRAST } from "../src/ui/contracts/contrast-accepted";
-import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/contrast-pairs";
+import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
+import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 
 // Derived from this file's location, never `process.cwd()`, so the table resolves the same paths
@@ -59,9 +62,50 @@ export const STEPS: readonly Step[] = [
     exports: EXPORTS,
     graph: { primitives: PRIMITIVES, leaf: LEAF, edges: EDGES },
     sealedInternal: ["src/crypto/mod.ts"],
-    enumerationDoc: ".decisions/NAMESPACE_DESIGN.md",
+    enumerationDoc: ".decisions/implementation/NAMESPACES.md",
   }),
   jsxStep({ root: ROOT }),
+  // CLAUDE.md requires co-located tests and nothing enforced it, which is how a `bind.test.ts`
+  // could vanish in a refactor with no signal at all.
+  coLocationStep({
+    root: ROOT,
+    sources: ["src/ui"],
+    // Every exemption is a module that declares data and no behaviour: a test could only restate
+    // the constant it names. Anything with a function in it is not on this list.
+    exempt: [
+      // `bind-contract`'s one function is covered where it is used, by `client/bind-display.test.ts`.
+      "src/ui/contracts/bind-contract.ts",
+      "src/ui/contracts/composite-contract.ts",
+      "src/ui/contracts/dialog-contract.ts",
+      "src/ui/contracts/navbar-contract.ts",
+      "src/ui/contracts/number-field-contract.ts",
+      "src/ui/contracts/overlay-contract.ts",
+      "src/ui/contracts/scope-events.ts",
+      "src/ui/contracts/slider-contract.ts",
+      "src/ui/contracts/tabs-contract.ts",
+      "src/ui/contracts/theme/contrast-accepted.ts",
+      "src/ui/contracts/theme/contrast-pairs.ts",
+      "src/ui/contracts/toggle-contract.ts",
+      "src/ui/contracts/toolbar-contract.ts",
+      "src/ui/contracts/turnstile-contract.ts",
+      "src/ui/show/coverage-missing.ts",
+      "src/ui/show/lazy-contract.ts",
+      // Test infrastructure and a vendor side-effect import: neither has behaviour of its own.
+      "src/ui/client/browser-test-helper.ts",
+      "src/ui/client/test-dom.ts",
+      "src/ui/client/htmx.ts",
+    ],
+  }),
+  // Runs in every mode, and deliberately: `namespaces.ts` declares `ui/core → ui/client` once for
+  // the whole namespace — an edge `core/client.ts` genuinely needs — and that one declaration would
+  // otherwise license every component in it to import browser code that throws inside a Worker.
+  ssrBoundaryStep({
+    root: ROOT,
+    clientDir: "src/ui/client",
+    sources: ["src/ui"],
+    // The registration entry points, and nothing else: each exists to pull the client runtime in.
+    entryPoints: ["client.ts"],
+  }),
   docsStep({
     root: ROOT,
     packageName: pkg.name,
@@ -72,8 +116,15 @@ export const STEPS: readonly Step[] = [
     // for any of them would advertise an import the reader must not write.
     tableExemptSubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"],
   }),
-  changelogStep({ root: ROOT, packageVersion: pkg.version }),
+  // `fullOnly` is stated here rather than inherited from the builder's default: this file calls
+  // itself the single source of truth for which steps run in which mode, so a reader must be able
+  // to answer that from this table alone.
+  changelogStep({ root: ROOT, packageVersion: pkg.version }, { fullOnly: true }),
   designStep({ root: ROOT, packageName: pkg.name, exports: EXPORTS, designDir: "src/ui/design", cssDir: "src/ui/assets/css" }),
+  // `src/ui/design` is excluded for the reason it is not `@source`-scanned either: half the corpus's
+  // samples are counter-examples quoting the exact patterns this check forbids, so scanning it would
+  // flag its own documentation.
+  modernCssStep({ root: ROOT, sources: ["src/ui", "!src/ui/design"] }),
   contrastStep({
     root: ROOT,
     cssDir: "src/ui/assets/css",
@@ -100,7 +151,7 @@ export const STEPS: readonly Step[] = [
     ]),
     consumerScanned: new Map([["show", '@source "../../node_modules/@y-core/forge/src/ui/show";']]),
   }),
-  browserStep(),
+  browserStep({ fullOnly: true }),
 ];
 
 export default STEPS;

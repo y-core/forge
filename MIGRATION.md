@@ -6,8 +6,308 @@ carries the releases where that is not obvious from a compile error.
 
 | Upgrade | What it needs | Size |
 |---|---|---|
+| **0.0.85 → 0.0.86** | Your `ui/client` import list — twenty-four names are gone or moved — plus your overlay transition classes, your two-way control bindings, your colour-scheme file's `.dark` block, and a grep for `--gray-a` | An afternoon |
 | **0.0.82 → 0.0.83** | Your theme import, if you have one — then a look at every screen, because every colour changes and `--primary` becomes a brand colour — plus your `--accent-12` override if you had one, two token checks, six silent hazards, and your page shell if you mount the log viewer | One import, then a design review |
 | **0.0.80 → 0.0.81** | The `defineAction` schema pipeline — four silent hazards | An afternoon |
+
+**Retention.** Entries for the last two minor bands stay inline here; older bands are dropped at
+0.1.0, after which `CHANGELOG.md` alone carries them.
+
+---
+
+# 0.0.85 → 0.0.86 — the browser tier is cut to the platform, and a scheme declares both modes at once
+
+**Two things happen in this release.** `@y-core/forge/ui/client` drops twenty-four names, because the
+platform now does what most of them did — that half announces itself as a pile of module-resolution
+errors. And a colour scheme now declares light and dark in one `:root` block with `light-dark()`,
+which announces itself as nothing at all until someone looks at the page in the other mode.
+
+Run these four greps over your own source before you start; each names the section that tells you
+what to do with the hits.
+
+```bash
+rg -n "bindField|bindGroup|parseControlValue|applyControlValue|mountAnchorBinding|mountTransitionState|mountPopupTriggerState|mountActiveDescendant|resetActiveDescendant|loadScriptOnEvent|loadStylesheet|\brepeat\(|mountMenu|mountTabs|mountTooltip|mountNumberField" src/
+rg -n "data-\[(open|closed|starting-style|ending-style|popup-open)\]|data-open|data-closed|data-starting-style|data-ending-style|data-popup-open" src/
+rg -n "^\s*\.dark\s*\{|--gray-a|--accent-a" --glob '*.css' .
+rg -n "MODE_SELECTOR|buildAlphaScale|scaleVars|stepProperty|TransitionState|COLLAPSIBLE_SCOPE|ACCORDION_SCOPE" src/
+```
+
+## Every name deleted from a barrel, and what replaces it
+
+| Gone from | Name | Replacement |
+|---|---|---|
+| `ui/client` | `bindField`, `bindGroup`, `parseControlValue`, `applyControlValue` | `bindControls(root, signals)` |
+| `ui/client` | `mountTransitionState`, `mountPopupTriggerState`, `TransitionStateOptions` | CSS — `@starting-style`, `transition-behavior: allow-discrete`, `overlay`, `:has()` |
+| `ui/client` | `mountAnchorBinding` | The implicit anchor a `command` / `commandfor` invoker gives its popup, plus CSS anchor positioning |
+| `ui/client` | `repeat`, `RepeatOptions` | None — render the list on the server and swap it with htmx |
+| `ui/client` | `mountActiveDescendant`, `resetActiveDescendant`, `ActiveDescendantOptions` | None — no forge component uses the active-descendant pattern; manage `aria-activedescendant` yourself if yours does |
+| `ui/client` | `loadScriptOnEvent`, `loadStylesheet`, `LazyLoadOptions` | `<script async>` / `<link rel="stylesheet">` in the markup, or `lazy({ ref, load, init })` for a dynamic `import()` |
+| `ui/client` | `mountMenu`, `mountTabs`, `mountTooltip`, `mountNumberField`, and their `MenuOptions` / `TabsOptions` / `TooltipOptions` | The registered scopes forge's own client entries install — import `@y-core/forge/ui/core/client` and call `resume()` |
+| `ui/client` | `ACTIVE_COMPOSITE_ITEM` | Same constant, one subpath over: `@y-core/forge/ui/contracts` |
+| `ui/contracts` | `COLLAPSIBLE_SCOPE`, `ACCORDION_SCOPE` | None — those scopes registered nothing but the two deleted transition controllers |
+| `ui/contracts` | `TransitionState`, and the `open` / `popupOpen` / `transition` keys of `stateAttrs` | The CSS above; there is no state attribute to type |
+| `ui/contracts` | `buildAlphaScale` | None — see the alpha-scale section below |
+| `pkg` | `MODE_SELECTOR` | `MODE_LABEL`, which carries the mode word rather than a selector |
+
+Everything below is one of these rows, in the order the greps above will hit them.
+
+## `bindField` and friends collapse into `bindControls`
+
+**What broke.** The four one-way helpers are gone. `bindControls(root, signals)` is two-way: it
+installs one listener on the scope root and one effect per field, and returns a disposer.
+
+```diff
+- registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
++ registerScope("chrome", { eager: true, setup: ({ root }) => bindControls(root, sig) });
+```
+
+**`eager: true` is not optional.** A bound control stamps `data-field` and no `data-on-*` action, so
+a lazy scope has nothing that could ever resume it and the controls sit inert.
+
+**Mark up each control with `data-field="<signal name>"`**, and a group item with `data-value` as
+well. The signal's current value decides how the control reads: a boolean signal reads `checked`, a
+number signal coerces, and an array signal toggles membership — which is how a button group now
+expresses multi-select. `@y-core/forge/ui/controls` stamps all of this for you.
+
+```bash
+rg -n "bindField|bindGroup|parseControlValue|applyControlValue" src/
+```
+
+## The transition controllers and their data attributes are gone
+
+**What broke.** `mountTransitionState`, `mountPopupTriggerState`, the `TransitionStateOptions` and
+`TransitionState` types, and the `data-open` / `data-closed` / `data-starting-style` /
+`data-ending-style` / `data-popup-open` attributes those controllers wrote. Nothing sets them, so a
+class keyed on one never applies.
+
+**The replacement is CSS**, and the mapping is mechanical:
+
+| Was | Now |
+|---|---|
+| `data-[starting-style]:` | `starting:` |
+| `data-[open]:` | `open:` |
+| `data-[closed]:` | `not-open:` |
+| — | add `transition-discrete` to the class string |
+| — | add `overlay` to the transition list of any popover that animates out |
+| `data-[popup-open]:` on a trigger | a `:has()` rule in your own stylesheet |
+
+```diff
+- <Dialog class="transition-all data-[starting-style]:opacity-0 data-[closed]:scale-95">
++ <Dialog class="transition-all transition-discrete starting:opacity-0 not-open:scale-95">
+```
+
+Tailwind's `open:` compiles to `&:is([open], :popover-open, :open)`, so the one variant covers
+`<details>`, `<dialog>` and popovers alike.
+
+```bash
+rg -n "mountTransitionState|mountPopupTriggerState|TransitionState|data-\[(open|closed|starting-style|ending-style|popup-open)\]" src/
+```
+
+## `mountAnchorBinding` is gone — the invoker is the anchor
+
+**What broke.** The controller that wrote `anchor-name` and `position-anchor` is deleted, along with
+the stylesheet block that named the anchors. A popup opened by a `command` / `commandfor` invoker
+gets that invoker as its **implicit anchor**, exactly as a `popovertarget` one does, and
+`position-anchor`'s initial `auto` resolves to it — forge's own names were overriding the anchor the
+platform already supplied. Delete the call; placement improves rather than regresses, because a
+submenu now anchors to its own row instead of the parent panel's corner.
+
+**If you anchor something with no invoker**, declare `anchor-name` on the anchor and
+`position-anchor` on the popup in your own CSS — that is what `Tooltip.Content` does with
+`--forge-tooltip`.
+
+```bash
+rg -n "mountAnchorBinding|anchor-name|position-anchor" src/
+```
+
+## `repeat`, active-descendant and the lazy loaders are removed outright
+
+**What broke.** `repeat` / `RepeatOptions`, `mountActiveDescendant` / `resetActiveDescendant` /
+`ActiveDescendantOptions`, and `loadScriptOnEvent` / `loadStylesheet` / `LazyLoadOptions`. None has a
+forge replacement; each has a platform one.
+
+- **`repeat`** was a client-side list renderer. Render the list on the server and swap it with htmx —
+  that is the model the rest of forge is built on.
+- **The active-descendant controllers** existed for a combobox forge does not ship. A widget of your
+  own that needs the pattern sets `aria-activedescendant` itself; forge's own composites use roving
+  tabindex.
+- **`loadScriptOnEvent`** could never return an honest disposer, since an injected script cannot be
+  un-run. Put the `<script async>` in the markup. **`loadStylesheet`** becomes a `<link
+  rel="stylesheet">`, or `media="print" onload="this.media='all'"` if you were deferring it.
+- **`lazy({ ref, load, init, onError? })` stays** and is the supported way to defer a dynamic
+  `import()` until an element scrolls into view.
+
+```bash
+rg -n "\brepeat\(|mountActiveDescendant|resetActiveDescendant|loadScriptOnEvent|loadStylesheet|LazyLoadOptions" src/
+```
+
+## Four mount controllers are no longer exported
+
+**What broke.** `mountMenu`, `mountTabs`, `mountTooltip` and `mountNumberField` — with `MenuOptions`,
+`TabsOptions` and `TooltipOptions` — are gone from the `ui/client` barrel. The code is retained and
+still runs; only the direct import is gone.
+
+**`mountRovingFocus` stays exported.** Each of the four above has a registered scope that mounts it
+over forge's own markup, so un-exporting relocates the capability rather than removing it. A
+composite you build yourself has no such scope, and `forge-ui-interaction-adopt-composite` tells you
+to reach for the controller — so the barrel keeps it.
+
+**The replacement is the scope runtime.** Import the client entry for the tier you use and call
+`resume()` once; each controller is mounted by its registered scope, exactly once per root, which is
+what makes forge's per-element idempotence guarantee true by construction.
+
+```diff
+- mountMenu(menuRoot);
++ import "@y-core/forge/ui/core/client";
++ resume();
+```
+
+`withOwner` and `OwnedRun` are un-exported on the same grounds — the scope runtime owns every effect
+a `setup` creates, so an app has nothing left to own manually. Whether any of these names return to
+the barrel is still open; today they are not exported, and a call site that needs one must move to a
+scope.
+
+```bash
+rg -n "mountMenu|mountTabs|mountTooltip|mountNumberField|withOwner|OwnedRun" src/
+```
+
+## `resume()` is refcounted, and the last disposer sweeps the document
+
+**What broke.** `resume()` used to return the same disposer to every caller after the first, and a
+second call did nothing. It is now two jobs: the delegated listeners are per-document and
+**refcounted**, while the eager pass runs on *every* call over the root it was handed. Three
+consequences:
+
+- **`resume(shadowRoot)` after `resume()` now works** — it visits the shadow subtree instead of
+  handing back the first call's inert disposer.
+- **Each disposer releases the scopes its own call resumed**, so disposing one island no longer tears
+  down another's.
+- **The last holder's disposer additionally disposes every scope still active in that document**, not
+  just its own. A scope resumed lazily, by an interaction, belongs to no call's list, and the last
+  disposer removes the listeners that could ever reach it — so it is swept then rather than leaked.
+  If you were relying on `resume()`'s disposer to leave lazily-resumed islands alive, hold a second
+  `resume()` open for as long as they must live.
+
+**A malformed `data-state` now throws** instead of yielding an empty state, and a throwing eager
+`setup` no longer kills the scopes behind it — each runs in its own try/catch and a later `resume()`
+re-attempts it.
+
+```bash
+rg -n "resume\(" src/
+```
+
+## `openPopoverAt` returns a disposer
+
+**What broke.** The signature went from `(el, x, y, options) => void` to `(el, x, y, options) => ()
+=> void`. Nothing at a call site has to change — but the return value is now worth keeping, because
+it cancels a pending arm. A second call cancels the first rather than arming a second listener, and
+the deferred show bails when the element has left the document, which is what an htmx swap between
+the arm and the release used to turn into `showPopover()` on a detached node.
+
+```bash
+rg -n "openPopoverAt" src/
+```
+
+## A write inside an `effect` or `computed` now throws
+
+**What broke.** Writing a signal while a reactive computation is running used to warn — and a write
+from inside a `computed` was not even warned about. It now throws:
+`signal: a signal was written while an effect or computed was running`.
+
+**A write that happens to match the current value throws too.** The refusal runs *before* the
+`Object.is` equality check, deliberately: the rule is about where the write was made, not what it
+carried, so a no-op write that was silently benign before is now a hard failure. This is the one to
+grep for, because it is the case a test suite will not have covered.
+
+**The fix at a call site is mechanical** — an `on` handler commands, a `computed` derives, an
+`effect` paints. Where none of the three fits, defer the write with `queueMicrotask`.
+
+```bash
+rg -n -B4 "\.value\s*=" src/ | rg -n "effect\(|computed\("
+```
+
+## `Tooltip.Content` is a `hint` popover
+
+**What broke.** It emits `popover="hint"` rather than `popover="manual"`, which brings light-dismiss
+and Escape from the platform. The behaviour change to know: showing a hint leaves an open `auto`
+popover open, and opening an `auto` popover closes the hint. A document-level `keydown` listener you
+added to close tooltips yourself can go. There is no fallback risk — `popover` is an enumerated
+attribute whose invalid-value default is `manual`, so an engine without `hint` gets the old
+behaviour.
+
+## A colour scheme declares both modes in one `:root` block
+
+**What broke, silently.** Forge's scheme files no longer carry a `.dark` block of values; each step is
+declared once, with `light-dark(light, dark)`. **A scheme file of your own that still uses the
+two-block form is the hazard this change exists to remove**: `:root` and `.dark` both weigh 0-1-0 and
+both match `<html>`, so source order decided the winner, and a scheme imported after forge's replaced
+the light half while silently keeping forge's dark one. Light mode looked right; only a reader
+already on the dark theme saw the defect.
+
+**Rewrite your scheme to one `:root` block.** Wrap any step whose value differs by mode; write a step
+that is identical in both modes bare. Solid steps are `oklch()` now, the space the ramps are authored
+in.
+
+```diff
+  :root {
+-   --gray-11: #646464;
++   --gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));
+  }
+- .dark {
+-   --gray-11: #b4b4b4;
+- }
+```
+
+**Every painted colour is byte-identical to 0.0.85.** This is a change of form, not of palette.
+
+- **`theme-base.css` now sets `color-scheme`** — `light` on `:root`, `dark` on `.dark` — which is what
+  selects the branch. Keep it out of your scheme file: the scheme is the file you replace, the mode
+  wiring is the file you do not. The bonus is that scrollbars and the UA-rendered controls forge
+  cannot paint, the native `<select>` popup among them, now follow the theme.
+- **`getComputedStyle(el).getPropertyValue("--gray-11")` no longer returns a colour.** `light-dark()`
+  resolves at *used*-value time and a custom property's computed value is the substituted text, so a
+  token read this way is the same string in both modes. Read the colour off an element that paints
+  it: set `style.color = "var(--gray-11)"` on a probe and read back `getComputedStyle(probe).color`.
+- **A browser without `light-dark()` loses its colours** rather than falling back to one mode.
+  Accepted: `light-dark()` is Baseline, and forge owes no compatibility shim before 1.0.
+- **`validate-contrast` now fails any `.dark` rule that declares a custom property**, in any
+  stylesheet under its `cssDir`. If you run forge's gate over your own CSS, that is the check that
+  will find the scheme files you have not converted. A `.dark` rule declaring no custom property is
+  untouched.
+- **Three generator signatures moved with it** (`@y-core/forge/ui/contracts/theme`): `scaleVars(family,
+  solid, alpha)` is now `scaleVars(family, scales)` and returns twelve pairs rather than twenty-four;
+  `stepProperty(family, step)` drops its `kind` parameter; and `schemeCss` emits one `:root` block and
+  adds `--accent-contrast`. `MODE_SELECTOR` (`@y-core/forge/pkg`) is now `MODE_LABEL`, carrying a mode
+  word rather than a selector.
+
+```bash
+rg -n "^\s*\.dark\s*\{" --glob '*.css' .
+rg -n "getPropertyValue\(\"--|MODE_SELECTOR|scaleVars|stepProperty|schemeCss" src/
+```
+
+## The per-scheme alpha scale is deleted
+
+**Grep your own stylesheets for `--gray-a`.** That is the whole of this one. The twelve
+`--gray-a1` … `--gray-a12` steps, and the `--accent-a1` … `--accent-a12` steps beside them, are gone
+from all four scheme files, and `buildAlphaScale` is gone from `@y-core/forge/ui/contracts`.
+
+**A scheme file of your own that still declares them keeps compiling and keeps rendering correctly.**
+Nothing in forge read the alpha steps, so the declarations are inert rather than wrong — delete them
+when convenient. The one break that shows on screen is an app that *reads* one, and only reads have
+to be re-pointed:
+
+| If you read | Re-point to |
+|---|---|
+| `--gray-a*` as a scrim or a backdrop — anything translucent over content it must not hide | `--overlay`, or the absolute `--black-a1` … `--black-a12` / `--white-a1` … `--white-a12` ramps, which stay in `theme-colors.css` |
+| `--gray-a*` as a surface tint — "slightly lighter", "slightly darker" | One step along the solid scale, per `forge-ui-color-scale-no-adhoc-tint` |
+
+**A `var(--gray-a6)` left in place paints nothing** — the property is undeclared, so the whole
+declaration is invalid at computed-value time. That is loud on a background and easy to miss on a
+border, which is why the grep is worth running rather than waiting for the screens.
+
+Why a per-scheme alpha step could not stay, and which ramps are the sanctioned form of translucency:
+[`src/ui/design/reference/04-color.md`](src/ui/design/reference/04-color.md),
+`forge-ui-color-scale-no-adhoc-tint`.
 
 ---
 
@@ -57,26 +357,9 @@ not a diagnostic.
 
 ## Why forge declares it rather than asking you to
 
-The line was previously conditional — you needed it only if *your* app wrote `dark:` utilities. It
-still is, in the sense that **forge writes none**. Every colour forge renders resolves through a
-custom property, and each role step carries both modes in one `light-dark()` that the `.dark` class
-selects between via `color-scheme`, so a forge component's dark mode arrives through the cascade
-rather than through a variant. The status
-variants on `Alert`, `Toast` and `Badge`, and the `renderSuccess` / `renderError` /
-`renderValidationErrors` banners in `@y-core/forge/http`, are the ones that used to be the exception;
-they resolve through the `--status-*` family now, so the exception is gone.
-
-What is left is the disagreement between two systems on the same page. **Forge's colours follow a
-class. Tailwind's `dark:` follows the OS unless someone says otherwise.** Whoever declares
-`@custom-variant dark` decides which — and it is a decision about *your whole stylesheet*, made in a
-file one of you owns and the other imports. Leaving it to the consumer meant a requirement with
-nothing to enforce it, whose only symptom is a rendering nobody sees until a user picks a theme that
-is not `system`: on a dark-OS machine with the toggle set to `light`, every `dark:` utility in the
-app renders its dark half against a light page. Forge holding its own half is one fewer of those.
-
-**The cost is that a custom variant has no scope.** It is not "forge's `dark:`" that gets
-redefined; it is `dark:` — every occurrence of it that Tailwind compiles for your app. That is a
-takeover, and it is worth naming as one rather than filing under convenience.
+Why the variant is forge's to declare, and why a custom variant has no scope:
+[`.decisions/implementation/UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md)
+§5d.
 
 ## What happens if you were deliberately on `prefers-color-scheme`
 
@@ -109,11 +392,11 @@ that.
 
 ## Why forge cannot catch this for you
 
-Forge has no Tailwind dependency — it ships raw TypeScript and no build step — so **nothing in its
-gate ever compiles CSS**. No unit test, no browser spec and no validation script can observe what
-your `dark:` resolves to, or whether anything ever puts `.dark` on your document. This one is on
-you, and there is no diagnostic to wait for — in either direction, which is why the takeover is
-stated here rather than left to be discovered.
+**Nothing in forge's gate ever compiles CSS**, so no check can observe what your `dark:` resolves to
+or whether anything puts `.dark` on your document — there is no diagnostic to wait for in either
+direction. Why:
+[`.decisions/implementation/UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md)
+§5d.
 
 ## How to verify it in ten seconds
 
@@ -351,7 +634,7 @@ high-contrast text — so your override still parses, still applies, and no long
 
 **Check the contrast if you supply your own step 9.** `--primary-foreground` is an audited pair now
 — WCAG 1.4.3 binds it, because a primary button is text on a filled surface — and forge's own values
-measure 5.48:1 in light and 4.97:1 in dark. Your brand colour is not covered by that measurement.
+measure 5.48:1 in light and 5.25:1 in dark. Your brand colour is not covered by that measurement.
 The customiser reports the ratio live for a generated scheme; for a hand-picked hex, measure it.
 
 **Why forge's step 9 is not exactly Radix indigo's.** Accents do not invert their solid between
@@ -677,9 +960,9 @@ suite — and behaves differently in production.
 
 Read this alongside the rules it applies:
 
-- [`.decisions/INPUT_VALIDATION.md`](.decisions/INPUT_VALIDATION.md) §1d — the schema contract, what
+- [`.decisions/implementation/INPUT_VALIDATION.md`](.decisions/implementation/INPUT_VALIDATION.md) §1d — the schema contract, what
   each guard consumes, and the failure modes.
-- [`.decisions/ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md) §2b — the
+- [`.decisions/implementation/ROUTING_AND_MIDDLEWARE.md`](.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §2b — the
   derive-only drop rule, and why a permissive default was rejected.
 - [`src/form/README.md`](src/form/README.md) and [`src/app/README.md`](src/app/README.md) — the
   worked examples and the current option tables.
@@ -940,7 +1223,7 @@ where the middleware was never mounted was **already** unprotected; the token wa
 changed is that the mismatch is now visible on the first submission instead of being absorbed
 forever. The fix is to mount the guard, not to relax the schema. A permissive default and a blanket
 `403` were both considered and rejected —
-[`.decisions/ROUTING_AND_MIDDLEWARE.md`](.decisions/ROUTING_AND_MIDDLEWARE.md) §2b has the argument.
+[`.decisions/implementation/ROUTING_AND_MIDDLEWARE.md`](.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §2b has the argument.
 
 A route that renamed the CSRF field declares the new name **once**, to `csrfProtection`'s
 `tokenField`. Nothing declares it a second time; that is what removing `injectedFields` bought.

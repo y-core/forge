@@ -14,9 +14,9 @@ const COMPOSITE_KEYS = new Set<string>([ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_
 /** The index reported when the ring has no current item. */
 const NO_CURRENT = -1;
 
-export { ACTIVE_COMPOSITE_ITEM };
+const mountedComposites = new WeakMap<HTMLElement, () => void>();
 
-/** Options for {@link mountRovingFocus}. */
+/** Options for {@link mountRovingFocus}. @public */
 export interface RovingFocusOptions {
   /** Selector for the composite's items, resolved **live** against `root` on every interaction. */
   items: string;
@@ -31,13 +31,13 @@ export interface RovingFocusOptions {
 }
 
 /** Both forms are checked: `disabled` removes an element from the tab order, while `aria-disabled`
- * keeps it focusable but inert — the right shape for a toolbar button that must stay discoverable. */
-function isDisabled(el: HTMLElement): boolean {
+ * keeps it focusable but inert — the right shape for a toolbar button that must stay discoverable. @internal */
+export function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLButtonElement).disabled === true || el.getAttribute("aria-disabled") === "true";
 }
 
-/** Whether a target is a real text field, whose caret owns the arrow keys. */
-function isNativeInput(el: EventTarget | null): el is HTMLInputElement | HTMLTextAreaElement {
+/** Whether a target is a real text field, whose caret owns the arrow keys. @internal */
+export function isNativeInput(el: EventTarget | null): el is HTMLInputElement | HTMLTextAreaElement {
   const node = el as HTMLElement | null;
   if (node?.nodeType !== 1) return false;
   if (node.tagName === "TEXTAREA") return true;
@@ -51,8 +51,11 @@ function scrollIntoViewIfNeeded(item: HTMLElement): void {
   item.scrollIntoView?.({ block: "nearest", inline: "nearest" });
 }
 
-/** Installs roving focus on `root` and returns a disposer. @public */
+/** Makes a composite's items one tab stop with arrow-key navigation and returns a disposer; idempotent per root. @public */
 export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions): () => void {
+  const existing = mountedComposites.get(root);
+  if (existing) return existing;
+
   const { items: selector, orientation = "horizontal", loop = true, typeahead = false, typeaheadTimeout = 500 } = options;
   const win = ownerWindow(root) as Window & typeof globalThis;
 
@@ -220,32 +223,42 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
 
   // Removing the focused item drops focus on `<body>`, stranding a keyboard user outside the widget;
   // this puts focus on whichever item took the removed one's place.
-  const observer = new win.MutationObserver(() => {
-    const items = listItems();
-    if (items.length === 0) return;
-    if (tabStopIndex(items) === -1) setTabStop(items, initialIndex(items));
+  // Environmental, so the roving focus still works and only the restore-on-removal refinement is lost.
+  const hasObserver = typeof win.MutationObserver === "function";
+  if (!hasObserver) {
+    console.warn("[composite] MutationObserver is unavailable in this realm; focus will not be restored when the focused item is removed");
+  }
+  const observer = hasObserver
+    ? new win.MutationObserver(() => {
+        const items = listItems();
+        if (items.length === 0) return;
+        if (tabStopIndex(items) === -1) setTabStop(items, initialIndex(items));
 
-    const focused = activeElement(root);
-    if (focused && contains(root, focused)) return;
-    if (lastFocusedIndex === -1) return;
+        const focused = activeElement(root);
+        if (focused && contains(root, focused)) return;
+        if (lastFocusedIndex === -1) return;
 
-    const target = Math.min(lastFocusedIndex, items.length - 1);
-    const back = nextEnabled(items, target, -1);
-    const restore = back === -1 ? firstEnabled(items) : back;
-    if (restore !== -1) focusItem(items, restore);
-  });
+        const target = Math.min(lastFocusedIndex, items.length - 1);
+        const back = nextEnabled(items, target, -1);
+        const restore = back === -1 ? firstEnabled(items) : back;
+        if (restore !== -1) focusItem(items, restore);
+      })
+    : null;
 
   const initial = listItems();
   if (initial.length > 0) setTabStop(initial, initialIndex(initial));
 
   root.addEventListener("keydown", onKeyDown);
   root.addEventListener("focusin", onFocusIn);
-  observer.observe(root, { childList: true, subtree: true });
+  observer?.observe(root, { childList: true, subtree: true });
 
-  return () => {
+  const dispose = () => {
+    mountedComposites.delete(root);
     root.removeEventListener("keydown", onKeyDown);
     root.removeEventListener("focusin", onFocusIn);
-    observer.disconnect();
+    observer?.disconnect();
     win.clearTimeout(bufferTimer);
   };
+  mountedComposites.set(root, dispose);
+  return dispose;
 }

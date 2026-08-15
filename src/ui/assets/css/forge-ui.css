@@ -45,12 +45,12 @@
        Theme toggle icons ....... ThemeToggle          — src/ui/chrome/theme-toggle.tsx, theme.ts
 
      Components
-       1. Anchor bindings ....... Popover, Menu, Toolbar — src/ui/core/popover.tsx, menu.tsx,
+       1. Anchored placement .... Popover, Menu, Toolbar — src/ui/core/popover.tsx, menu.tsx,
                                                            src/ui/chrome/toolbar.tsx
-       2. Anchored placement .... Popover, Menu, Toolbar
-       3. Tooltip ............... Tooltip              — src/ui/core/tooltip.tsx
-       4. Coordinate placement .. Menu (context menus) — src/ui/client/popover-anchor.ts
-       5. Open-trigger state .... Popover, Toolbar
+       2. Tooltip ............... Tooltip              — src/ui/core/tooltip.tsx
+       3. Coordinate placement .. Menu (context menus) — src/ui/client/popover-anchor.ts
+       4. Open-trigger state .... Popover, Toolbar, Menu
+       5. Disclosure motion ..... Collapsible, Accordion — src/ui/core/collapsible.tsx, accordion.tsx
        6. Dialog ................ Dialog               — src/ui/core/dialog.tsx
        7. Slider ................ Slider               — src/ui/core/slider.tsx
        8. Navbar ................ Navbar               — src/ui/chrome/navbar.tsx
@@ -114,48 +114,18 @@
 
 @layer components {
 
-/* ══ 1. Anchor bindings — Popover, Menu, Toolbar ══════════════════════════
-   These panels render in the top layer, so normal-flow positioning cannot reach their trigger, and
-   CSS Anchor Positioning is what places them. The binding is **explicit** — `anchor-name` on the
-   trigger, `anchor-scope` on the compound root, `position-anchor` on the panel — because the
-   implicit anchor a UA supplies comes from `popovertarget`, and forge invokes with
-   `command`/`commandfor` throughout. Measured on Chrome 151: an invoker-opened popup computes
-   `position-anchor: normal` and every `anchor()` resolves to nothing, leaving the UA's `[popover]`
-   default in charge. An earlier revision of this block relied on that implicit anchor and was dead
-   for every surface it named.
+/* ══ 1. Anchored placement — Popover, Menu, Toolbar ══════════════════════
 
-   `anchor-scope` on each compound root is what keeps one shared name per surface honest: many menus
-   on a page all use `--forge-menu`, and an open panel is in the **top layer**, where the resolution
-   algorithm treats every candidate as laid out before it and returns the last one in tree order.
-   Scoping to the root leaves exactly one trigger in view, so each pair is independent. */
+   No `anchor-name`, `anchor-scope` or `position-anchor` anywhere: a popup shown by an invoker gets
+   an **implicit anchor** — its invoker — and `position-anchor`'s initial `auto` resolves to it. That
+   holds for `command`/`commandfor` exactly as for `popovertarget`, and it binds each submenu to its
+   own row, which no name can do (an open panel is in the top layer, where a row-named lookup returns
+   the last matching row in tree order — csswg-drafts #11602). Naming an anchor here would *override*
+   the implicit one and is what previously made a JavaScript binding look necessary.
 
-[data-slot~="popover"]         { anchor-scope: --forge-popover; }
-[data-slot~="popover-trigger"] { anchor-name: --forge-popover; }
-
-[data-slot~="toolbar-popover"] { anchor-scope: --forge-toolbar; }
-[data-slot~="toolbar-trigger"] { anchor-name: --forge-toolbar; }
-
-[data-slot~="menu"]            { anchor-scope: --forge-menu; }
-[data-slot~="menu-trigger"]    { anchor-name: --forge-menu; }
-
-/* The submenu names the **parent panel**, never the row, and takes no `anchor-scope`. Both halves
-   were measured, because both are counter-intuitive:
-
-   - **Row-named fails.** An open submenu is in the top layer, so every trigger in the panel is an
-     acceptable anchor and the algorithm returns "the last element in tree order" — the wrong row for
-     every submenu but the last. (csswg-drafts #11602 closed this as intentional.) Naming the panel
-     puts the lookup on the *ancestor* branch instead, where the nearest match wins deterministically.
-   - **No `anchor-scope` here.** This selector matches the nested popup too, and an element inside a
-     scope "will only be able to see anchors with those names that are in this element's subtree" —
-     its parent panel is not, so scoping it resolves to nothing. The ancestor branch needs no scope to
-     be deterministic: with two menus open on one page each submenu still finds its own panel.
-
-   Cost of the panel over the row: the submenu pins to the panel's edge, top-aligned, rather than
-   beside the row that opened it. `mountAnchorBinding` upgrades that to row-accurate at runtime; this
-   is the correct-without-JavaScript floor. */
-[data-slot~="menu-popup"]      { anchor-name: --forge-menu-sub; }
-
-/* ══ 2. Anchored placement — Popover, Menu, Toolbar ═══════════════════════
+   The boundary: a popup shown by `showPopover()` rather than by an invoker has no implicit anchor and
+   falls back to its static position. Every popup forge ships is invoker-opened, and a coordinate-placed
+   one sets its own inset. `menu-anchor.browser.ts` holds all three cases.
 
    `:not([data-coords])` rather than source order. `Menu.Popup` emits `data-side` even when `coords`
    is set, so these selectors really do match a context menu, and the coordinate rule below used to
@@ -170,17 +140,12 @@
   position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
 }
 
-[data-slot~="menu-popup"]:not([data-coords])                           { position-anchor: --forge-menu; }
-[data-slot~="menu-popup"] [data-slot~="menu-popup"]:not([data-coords]) { position-anchor: --forge-menu-sub; }
-[data-slot~="popover-content"]                                         { position-anchor: --forge-popover; }
-[data-slot~="toolbar-flyout"]                                          { position-anchor: --forge-toolbar; }
-
 /* The menu gets the full side × align matrix rather than `popover-content`'s split model, because
    a submenu's side is an inline-axis one and a model that reads `data-side` as block-axis-only cannot
    express those at all. */
 [data-slot~="menu-popup"]:not([data-coords])[data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="left"]   { right: anchor(left); margin-right: 0.375rem; } /* modern-css-allow: forge-ui-platform-logical-spacing — the caller asked for a physical side, so its gap must not mirror */
 [data-slot~="menu-popup"]:not([data-coords])[data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
 
 /* The block-axis logical sides carry no `:dir()`: direction mirrors the *inline* axis only, and
@@ -195,9 +160,9 @@
    `position: fixed` popup is the viewport, i.e. the root element's direction. A `dir="rtl"` subtree
    inside an LTR document would then get the LTR answer, which is the bug these rules exist to fix.
    `:dir()` matches on the element's own inherited directionality, so the tree decides. */
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"]:dir(ltr)   { left: anchor(right); margin-left: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"]:dir(ltr)   { left: anchor(right); margin-left: 0.375rem; } /* modern-css-allow: forge-ui-platform-logical-spacing — `:dir()` mirrored this pair already; a logical margin would mirror it twice */
 [data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"]:dir(rtl)   { right: anchor(left); margin-right: 0.375rem; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"]:dir(ltr) { right: anchor(left); margin-right: 0.375rem; }
+[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"]:dir(ltr) { right: anchor(left); margin-right: 0.375rem; } /* modern-css-allow: forge-ui-platform-logical-spacing — `:dir()` mirrored this pair already; a logical margin would mirror it twice */
 [data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"]:dir(rtl) { left: anchor(right); margin-left: 0.375rem; }
 
 /* Align runs on the axis perpendicular to the side, and is read in whichever vocabulary the side
@@ -205,27 +170,15 @@
    because the caller asked for `left`/`right` and got it. */
 [data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="start"],
 [data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="start"] { left: anchor(left); }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-start"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="block-end"][data-align="center"] { left: anchor(center); translate: -50% 0; }
+[data-slot~="menu-popup"]:not([data-coords]):is([data-side="top"], [data-side="bottom"], [data-side="block-start"], [data-side="block-end"])[data-align="center"] { left: anchor(center); translate: -50% 0; }
 [data-slot~="menu-popup"]:not([data-coords])[data-side="top"][data-align="end"],
 [data-slot~="menu-popup"]:not([data-coords])[data-side="bottom"][data-align="end"] { right: anchor(right); }
 
 /* An inline-axis side aligns along the *block* axis, which does not mirror — so the logical sides
    join the physical rows verbatim rather than needing `:dir()` variants of their own. */
-[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="start"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="start"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="start"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="start"] { top: anchor(top); }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="center"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="center"] { top: anchor(center); translate: 0 -50%; }
-[data-slot~="menu-popup"]:not([data-coords])[data-side="left"][data-align="end"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="right"][data-align="end"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-start"][data-align="end"],
-[data-slot~="menu-popup"]:not([data-coords])[data-side="inline-end"][data-align="end"] { bottom: anchor(bottom); }
+[data-slot~="menu-popup"]:not([data-coords]):is([data-side="left"], [data-side="right"], [data-side="inline-start"], [data-side="inline-end"])[data-align="start"] { top: anchor(top); }
+[data-slot~="menu-popup"]:not([data-coords]):is([data-side="left"], [data-side="right"], [data-side="inline-start"], [data-side="inline-end"])[data-align="center"] { top: anchor(center); translate: 0 -50%; }
+[data-slot~="menu-popup"]:not([data-coords]):is([data-side="left"], [data-side="right"], [data-side="inline-start"], [data-side="inline-end"])[data-align="end"] { bottom: anchor(bottom); }
 
 /* A logical block-axis side aligns along the *inline* axis, which does mirror — and the side was
    asked for logically, so the align must answer logically too: `start` is the edge the text starts
@@ -249,20 +202,16 @@
    rather than a transcription slip: a rail on the `left` opens its flyout to the right of itself
    (`left: anchor(right)`). `toolbar.tsx` is where the value is set, from the same `placement` prop
    that puts the rail on that edge. */
-[data-slot~="toolbar-flyout"][data-placement="left"]   { left: anchor(right); top: anchor(top); margin-left: 0.5rem; }
+[data-slot~="toolbar-flyout"][data-placement="left"]   { left: anchor(right); top: anchor(top); margin-left: 0.5rem; } /* modern-css-allow: forge-ui-platform-logical-spacing — `data-placement` names a physical rail edge, so the gap stays on that edge */
 [data-slot~="toolbar-flyout"][data-placement="right"]  { right: anchor(left); top: anchor(top); margin-right: 0.5rem; }
 [data-slot~="toolbar-flyout"][data-placement="top"]    { top: anchor(bottom); left: anchor(left); margin-top: 0.5rem; }
 [data-slot~="toolbar-flyout"][data-placement="bottom"] { bottom: anchor(top); left: anchor(left); margin-bottom: 0.5rem; }
 
-/* ══ 3. Tooltip ═══════════════════════════════════════════════════════════
-   The same explicit binding as the block above, for the same reason — no popup forge ships gets an
-   implicit anchor — and this is the section that had it right first. A tooltip's content is
-   `popover="manual"`, shown by a controller rather than invoked by a button, so it does not even have
-   the `commandfor` that an earlier revision above mistook for an anchor source.
-
-   That failure is **unfixable from a consuming app**: the anchor name does not exist to bind to, so
-   no consumer rule can create the relationship. Hence the binding is declared here, on the trigger,
-   beside the placement it enables.
+/* ══ 2. Tooltip ═══════════════════════════════════════════════════════════
+   The one surface that still needs a **named** anchor, and the reason is structural: a tooltip's
+   content is `popover="hint"` shown by a controller, so it has no invoker and therefore no implicit
+   anchor to inherit. That gap is unfixable from a consuming app — the name does not exist to bind to
+   — so the binding is declared here, beside the placement it enables.
 
    `anchor-scope` keeps the name from leaking: many tooltips on one page all use `--forge-tooltip`,
    and without scoping each content box would resolve against whichever trigger the engine reached
@@ -275,16 +224,11 @@
   anchor-name: --forge-tooltip;
 }
 
-/* A composed trigger is **two** triggers — `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>`
-   renders one button carrying both slot tokens — and `anchor-name` is a single declaration rather
-   than a set that unions across rules. Two rules each naming the element would leave the cascade to
-   pick one, and the menu would lose to whichever came later. The pairs are therefore spelled out.
-   The set is **not** closed — `Button`, `Toolbar.Button` and `Toolbar.Link` offer `asChild` too, so
-   either side of a pair can be the outer wrapper and further combinations are expressible. These
-   three are the ones with an `anchor-name` on both halves; add a pair here when a new one arises. */
-[data-slot~="tooltip-trigger"][data-slot~="menu-trigger"]    { anchor-name: --forge-tooltip, --forge-menu; }
-[data-slot~="tooltip-trigger"][data-slot~="popover-trigger"] { anchor-name: --forge-tooltip, --forge-popover; }
-[data-slot~="tooltip-trigger"][data-slot~="toolbar-trigger"] { anchor-name: --forge-tooltip, --forge-toolbar; }
+/* A composed trigger — `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` renders one
+   button carrying both slot tokens — needed three spelled-out pairs while every surface had a name,
+   because `anchor-name` is a single declaration rather than a set that unions across rules. With
+   only this one name left there is nothing to collide with: the menu takes the implicit anchor and
+   the tooltip takes `--forge-tooltip`, from the rule above. */
 
 [data-slot~="tooltip-content"] {
   position: fixed;
@@ -296,9 +240,21 @@
   position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
 }
 
+/* The no-script fallback. A closed `popover="hint"` is `display:none` and therefore absent from the
+   accessibility tree, so with scripting off the trigger's `aria-describedby` points at content no
+   reader can reach — and no pointer can either. The UA's `[popover]:not(:popover-open)` rule is not
+   `!important`, so an author rule may reveal it. `:focus-within` covers the keyboard path.
+
+   Retired the instant `mountTooltip` stamps its marker, which is what restores the deliberate show
+   delay: without the `:not()` this rule would raise every tooltip immediately on hover. */
+[data-slot~="tooltip"]:not([data-tooltip-mounted]):hover [data-slot~="tooltip-content"],
+[data-slot~="tooltip"]:not([data-tooltip-mounted]):focus-within [data-slot~="tooltip-content"] {
+  display: block;
+}
+
 [data-slot~="tooltip-content"][data-side="top"]    { bottom: anchor(top); margin-bottom: 0.375rem; }
 [data-slot~="tooltip-content"][data-side="bottom"] { top: anchor(bottom); margin-top: 0.375rem; }
-[data-slot~="tooltip-content"][data-side="left"]   { right: anchor(left); margin-right: 0.375rem; }
+[data-slot~="tooltip-content"][data-side="left"]   { right: anchor(left); margin-right: 0.375rem; } /* modern-css-allow: forge-ui-platform-logical-spacing — the caller asked for a physical side, so its gap must not mirror */
 [data-slot~="tooltip-content"][data-side="right"]  { left: anchor(right); margin-left: 0.375rem; }
 
 [data-slot~="tooltip-content"][data-side="top"][data-align="center"],
@@ -315,7 +271,7 @@
 [data-slot~="tooltip-content"][data-side="left"][data-align="end"],
 [data-slot~="tooltip-content"][data-side="right"][data-align="end"] { bottom: anchor(bottom); }
 
-/* ══ 4. Coordinate placement — Menu, for context menus ════════════════════
+/* ══ 3. Coordinate placement — Menu, for context menus ════════════════════
    A popup with no invoker — a context menu opened where a right-click landed — has no anchor for
    `anchor()` to resolve against, so every rule above evaluates to nothing and the UA's `[popover]`
    default (`inset: 0; margin: auto`) centres it. Resetting `inset` and `margin` here is therefore
@@ -333,12 +289,12 @@
   position: fixed;
   margin: 0;
   inset: auto;
-  left: var(--anchor-x, 0px);
+  left: var(--anchor-x, 0px); /* modern-css-allow: forge-ui-platform-logical-spacing — a clamped viewport coordinate is physical, and mirroring it would move the menu off the click */
   top: var(--anchor-y, 0px);
   position-try-fallbacks: none;
 }
 
-/* ══ 5. Open-trigger state — Popover, Toolbar ═════════════════════════════
+/* ══ 4. Open-trigger state — Popover, Toolbar, Menu ═══════════════════════
    The trigger stays highlighted while its panel is open, replacing the old `<details open>` group
    state. `:has()` is what makes this expressible without a controller: the trigger is styled from a
    *sibling's* state, which no `class=` on the trigger could know about. */
@@ -350,6 +306,17 @@
   background-color: var(--primary);
   color: var(--primary-foreground);
 }
+[data-slot~="menu"]:has(> [data-slot~="menu-popup"]:popover-open) > [data-slot~="menu-trigger"] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+/* The submenu row is a *sibling* of the panel it opens, not its parent, so this pair reads `+`
+   where the three above read `>`. `Dialog` has no rule at all: its trigger only ever emits
+   `show-modal`, so the `::backdrop` paints over a highlight nothing could see. */
+[data-slot~="menu-submenu-trigger"]:has(+ [data-slot~="menu-popup"]:popover-open) {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
 
 /* Fallback for engines without anchor positioning: keep panels usable (a JS positioner can refine
    placement per-browser if needed). */
@@ -357,6 +324,52 @@
   [data-slot~="menu-popup"]:not([data-coords]),
   [data-slot~="popover-content"],
   [data-slot~="toolbar-flyout"] { inset: auto auto 1rem 1rem; }
+}
+
+/* ══ 5. Disclosure motion — Collapsible, Accordion ════════════════════════
+   The one place `forge-ui-interaction-no-motion-on-layout` permits animating a layout property, and
+   it is only expressible at all because `interpolate-size: allow-keywords` makes `auto` an
+   interpolable keyword — without it `block-size: 0 → auto` snaps.
+
+   `content-visibility` rides the same transition with `allow-discrete` so the content stays rendered
+   for the whole collapse instead of vanishing on frame one. Engines without `::details-content` drop
+   both rules as an unknown pseudo-element and get an instant open — the fallback is the absence of
+   the rule, not a second rule. */
+@media (prefers-reduced-motion: no-preference) {
+  /* `:root`, not the disclosure element. `interpolate-size` is inherited and computes to
+     `allow-keywords` on `::details-content` either way, but measured on Chromium 149 the keyword only
+     actually interpolates when the declaration is on the root — set on the element the transition
+     still snaps. It changes nothing on its own: it takes effect only where an author transitions to
+     or from a keyword, which forge does here and nowhere else. */
+  :root {
+    interpolate-size: allow-keywords;
+  }
+  [data-slot~="collapsible"]::details-content,
+  [data-slot~="accordion-item"]::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition: block-size 200ms ease, content-visibility 200ms allow-discrete;
+  }
+  [data-slot~="collapsible"][open]::details-content,
+  [data-slot~="accordion-item"][open]::details-content {
+    block-size: auto;
+  }
+}
+
+/* ══ 5b. Tabs — the no-script fallback ════════════════════════════════════
+   A tab is an `<a href="#panel">`, so with no script the browser still navigates to the panel; these
+   two rules are what make that navigation *show* it. The UA's `[hidden]` rule is not `!important`,
+   so an author rule may reveal a panel the server rendered closed, and `:has()` is what lets the
+   server-selected panel step aside once the reader has chosen another.
+
+   Both are retired by `data-tabs-mounted`, which `mountTabs` stamps — from there the controller owns
+   `hidden` and the fragment is never followed. */
+[data-slot~="tabs"]:not([data-tabs-mounted]) [data-slot~="tabs-panel"]:target {
+  display: block;
+}
+
+[data-slot~="tabs"]:not([data-tabs-mounted]):has([data-slot~="tabs-panel"]:target) [data-slot~="tabs-panel"]:not(:target) {
+  display: none;
 }
 
 /* ══ 6. Dialog ════════════════════════════════════════════════════════════
@@ -369,10 +382,21 @@
    positioned against, so `margin: auto` still centers within it and the caller's width clamps inside
    it. Setting the gutter as `margin-inline` instead would join the same over-constrained
    absolute-positioning equation `inset` and `margin: auto` already solve, and centering would be
-   what gives way. */
-[data-slot~="dialog"] {
+   what gives way.
+
+   `:modal`, not every dialog: the UA gives *any* open dialog `position: absolute`, so an unqualified
+   selector handed the viewport gutter to `<Dialog open>` — the documented non-modal mode — and it
+   floated over the page on load. The two states are styled apart because they are different objects:
+   one is a layer over the page, the other a panel in it, which is what `position: static` says. Both
+   are `components` defaults, so a caller who does want a non-modal dialog positioned still writes
+   `absolute` and wins on layer order. */
+[data-slot~="dialog"]:modal {
   inset: 1rem;
   margin: auto;
+}
+[data-slot~="dialog"]:not(:modal) {
+  position: static;
+  margin: 0;
 }
 [data-slot~="dialog"]::backdrop {
   background-color: var(--overlay);

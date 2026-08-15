@@ -42,8 +42,8 @@ const PARTICIPANTS: Record<string, Participant> = {
   Button: { slot: "button" },
   Card: { slot: "card" },
   CheckboxGroup: { props: { name: "cg" }, slot: "checkbox-group", stateAttr: "data-orientation" },
-  Collapsible: { slot: "collapsible", stateAttr: "data-closed" },
-  Dialog: { props: { id: "d1" }, slot: "dialog", stateAttr: "data-closed" },
+  Collapsible: { slot: "collapsible" },
+  Dialog: { props: { id: "d1" }, slot: "dialog" },
   Field: { props: { label: "L" }, slot: "field", stateAttr: "data-orientation" },
   Form: { slot: "form" },
   FormField: { props: { name: "ff" }, slot: "field", stateAttr: "data-orientation" },
@@ -67,7 +67,9 @@ const PARTICIPANTS: Record<string, Participant> = {
   Tabs: { slot: "tabs", stateAttr: "data-orientation" },
   Textarea: { slot: "textarea" },
   Toast: { slot: "toast" },
-  Toggle: { props: { pressed: true }, slot: "toggle", stateAttr: "data-pressed" },
+  // Same shape as `Switch`: props reach the native input, the caller's class dresses the label.
+  // No `stateAttr` — the checkbox's own `:checked` is the state, so there is none to stamp.
+  Toggle: { slot: "toggle-input", classSlot: "toggle" },
   ToggleGroup: { slot: "toggle-group", stateAttr: "data-orientation" },
   Toolbar: { slot: "toolbar", stateAttr: "data-orientation" },
   Tooltip: { slot: "tooltip" },

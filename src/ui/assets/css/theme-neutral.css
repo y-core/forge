@@ -1,8 +1,9 @@
+/* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */
 /* Neutral — the default colour scheme, and the only one `forge.css` imports.
 
    Every step is declared once. A step that differs by mode carries a `light-dark()`, and
    `theme-base.css` sets the `color-scheme` that picks the branch. Solids are gamut-mapped `oklch()`,
-   the space the ramps are authored in; alpha overlays are fitted to sRGB bytes and stay hex.
+   the space the ramps are authored in.
 
 @import forge.css before this file. */
 
@@ -20,19 +21,6 @@
   --gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));
   --gray-12: light-dark(oklch(24.35% 0 0), oklch(94.91% 0 0));
 
-  --gray-a1:  #00000000;
-  --gray-a2:  light-dark(#00000006, #ffffff09);
-  --gray-a3:  light-dark(#0000000f, #ffffff12);
-  --gray-a4:  light-dark(#00000017, #ffffff1b);
-  --gray-a5:  light-dark(#0000001f, #ffffff22);
-  --gray-a6:  light-dark(#00000026, #ffffff2c);
-  --gray-a7:  light-dark(#00000031, #ffffff3b);
-  --gray-a8:  light-dark(#00000044, #ffffff55);
-  --gray-a9:  light-dark(#00000072, #ffffff64);
-  --gray-a10: light-dark(#0000007c, #ffffff72);
-  --gray-a11: light-dark(#0000009b, #ffffffaf);
-  --gray-a12: light-dark(#000000df, #ffffffed);
-
   --accent-1:  light-dark(oklch(99.43% 0.0014 267.0), oklch(19.09% 0.0252 267.0));
   --accent-2:  light-dark(oklch(98.23% 0.0082 267.0), oklch(20.94% 0.0308 267.0));
   --accent-3:  light-dark(oklch(96.09% 0.0170 267.0), oklch(27.16% 0.0720 267.0));
@@ -41,23 +29,10 @@
   --accent-6:  light-dark(oklch(86.20% 0.0674 267.0), oklch(40.33% 0.1135 267.0));
   --accent-7:  light-dark(oklch(80.62% 0.0874 267.0), oklch(44.91% 0.1227 267.0));
   --accent-8:  light-dark(oklch(73.09% 0.1121 267.0), oklch(50.21% 0.1394 267.0));
-  --accent-9:  oklch(52.00% 0.1950 267.0);
+  --accent-9:  light-dark(oklch(52.00% 0.1950 267.0), oklch(50.75% 0.1950 267.0));
   --accent-10: light-dark(oklch(48.68% 0.1950 267.0), oklch(56.53% 0.1794 267.0));
   --accent-11: light-dark(oklch(50.92% 0.1722 267.0), oklch(77.59% 0.1132 267.0));
   --accent-12: light-dark(oklch(31.26% 0.0856 267.0), oklch(91.08% 0.0427 267.0));
-
-  --accent-a1:  #00000000;
-  --accent-a2:  light-dark(#0053ff06, #6f93fe08);
-  --accent-a3:  light-dark(#004efe10, #3967ff31);
-  --accent-a4:  light-dark(#004dff1d, #3a6aff4d);
-  --accent-a5:  light-dark(#004fff2c, #4674ff62);
-  --accent-a6:  light-dark(#004bff3f, #517bff74);
-  --accent-a7:  light-dark(#0149f058, #5783ff8a);
-  --accent-a8:  light-dark(#0041de76, #5983ffa8);
-  --accent-a9:  light-dark(#012eccc8, #406bffd1);
-  --accent-a10: light-dark(#0029c1d0, #517bffd9);
-  --accent-a11: light-dark(#012bb7c5, #96b4ffff);
-  --accent-a12: light-dark(#001247e2, #d5e1ffff);
 
   --accent-contrast: light-dark(var(--gray-1), var(--gray-12));
 }

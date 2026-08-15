@@ -19,6 +19,305 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Breaking Changes
 
+- **`NavbarProps` is now a union over `collapsedAs`/`collapsible`, and a rail drawer's sprite owes
+  two more glyphs.** A rail that opens off-canvas — `collapsedAs="drawer"` with
+  `collapsible="always"` — draws `panel-open`/`panel-close` rather than the hamburger, so its `icon`
+  is typed `ForgeIcon<NavGlyph | NavDrawerGlyph>`. A top bar keeps its hamburger whether it opens in
+  the flow or off-canvas, so every call site that existed before this release is unaffected in both
+  type and markup. The pair ships
+  in `src/ui/assets/core/`, so a consumer on `forgeUiSpriteSources()` gets them with no change;
+  a hand-listed sprite adds two filenames.
+
+  ```diff
+    sources: [
+  -   { path: "node_modules/@y-core/forge/src/ui/assets/core", files: ["chevron-down.svg", "close.svg", "hamburger.svg", "spinner.svg"] },
+  +   {
+  +     path: "node_modules/@y-core/forge/src/ui/assets/core",
+  +     files: ["chevron-down.svg", "close.svg", "hamburger.svg", "spinner.svg", "panel-open.svg", "panel-close.svg"],
+  +   },
+    ]
+  ```
+
+  There is deliberately no `panel-right-*`: the pair is drawn for the leading edge and mirrored with
+  `-scale-x-100` for a trailing bar and again under `rtl:`, so the two flips cancel and one pair
+  serves all four cases.
+
+- **Forge's components now emit logical spacing utilities, so a physical override no longer wins the
+  `cn()` conflict.** `pl-*`/`pr-*`/`ml-*`/`border-l`/`border-r`/`rounded-l`/`rounded-r`/`text-left`
+  have become `ps-*`/`pe-*`/`ms-*`/`border-s`/`border-e`/`rounded-s`/`rounded-e`/`text-start`
+  throughout `ui/core`, `ui/contracts` and `ui/show`. `border-w-r` and `border-w-e` are **distinct
+  conflict groups**, so an app that overrode a forge component with `border-r-0`, `pr-4` or
+  `text-left` previously replaced forge's token and now merely sits beside it — both reach the
+  stylesheet and the cascade, not `cn()`, decides. Restate such an override in its logical spelling.
+
+  ```diff
+  - <Alert class='pr-2 text-left' />
+  + <Alert class='pe-2 text-start' />
+  ```
+
+  The gutter-reserving components (`Select`, `Toast`, `Alert`) are additionally written
+  *explicitly* logical — `ps-3 py-2 pe-10` rather than `px-3 py-2 pe-10` — so no shorthand/longhand
+  pair is left for the consuming app's Tailwind build to order. One consequence is visible in
+  rendered markup: `Toast` and `Alert` now drop their base `pe-*` when the dismissible variant sets
+  its own, where the old `p-4` + `pr-10` pairing emitted both.
+
+- **`mountTurnstile` is no longer exported from `@y-core/forge/ui/client`; `<Turnstile>` carries its
+  own scope instead.** The widget now stamps `data-scope="turnstile"`, and
+  `@y-core/forge/ui/core/client` registers it — the same wiring `Menu`, `Tabs`, `Tooltip` and
+  `NumberField` have always used, none of whose controllers is public either. A global
+  `mountTurnstile()` in a shared client entry ran on **every route** of an app: 598 pages of 600 paid
+  for a capability two of them wanted, and each logged a "no widget under the mount root" miss. The
+  capability now arrives with the component and cannot be summoned without one — a page that renders
+  no `<Turnstile>` has no scope to resume, so nothing is mounted, fetched, or reported.
+
+  ```diff
+  - import { mountTurnstile, resume } from "@y-core/forge/ui/client";
+  -
+  - mountTurnstile();
+  - resume();
+  + import "@y-core/forge/ui/core/client";   // already imported by ui/chrome/client
+  + import { resume } from "@y-core/forge/ui/client";
+  +
+  + resume();
+  ```
+
+  Delete the `mountTurnstile()` call and its import — there is nothing to replace it with. The
+  contract gains `TURNSTILE_SCOPE`; the controller's argument is now a required root, and it matches
+  that root itself before descending, so the scope root being the widget resolves correctly.
+
+- **`ui/client` is cut to five complete offerings, and every remaining export carries an
+  unconditional guarantee.** The barrel goes from 23 statements and 51 names to 10 and 28. Five
+  guarantees now hold with no residual: every public export returns a disposer or is a pure function;
+  no failure is silent; every public mount controller is idempotent per element; an effect runs
+  exactly once per settled state; and overlay motion is the platform's.
+
+- **The transition and trigger-state controllers are deleted — the platform does both.**
+  `mountTransitionState`, `mountPopupTriggerState` and the `data-open` / `data-closed` /
+  `data-starting-style` / `data-ending-style` / `data-popup-open` attributes are gone, along with the
+  `open`, `popupOpen` and `transition` keys of `stateAttrs`. `@starting-style`,
+  `transition-behavior: allow-discrete` and `overlay` cover enter, exit, asymmetric durations and exit
+  timing; `:has()` covers the trigger highlight. The deleted controller re-derived the UA's own
+  transition clock by string-parsing `getComputedStyle`, could not see `animation-iteration-count` at
+  all, and could not keep an element in the top layer for a single frame.
+
+  ```diff
+  - <Dialog class="transition-all data-[starting-style]:opacity-0 data-[closed]:scale-95">
+  + <Dialog class="transition-all transition-discrete starting:opacity-0 not-open:scale-95">
+  ```
+
+  The mechanical mappings are `data-[starting-style]:` → `starting:`, `data-[open]:` → `open:`,
+  `data-[closed]:` → `not-open:`, plus `transition-discrete` on the class string and `overlay` in the
+  transition list of any popover that animates out. Tailwind's `open:` variant compiles to
+  `&:is([open], :popover-open, :open)`, so one variant covers `<details>`, `<dialog>` and popovers.
+  A trigger that read `data-[popup-open]:` is styled by a `:has()` rule in `forge-ui.css` instead;
+  `Dialog` has none, because its `::backdrop` paints over the trigger by construction.
+
+- **`mountAnchorBinding` and the `anchor-name` / `position-anchor` block are deleted.** A popup shown
+  by an invoker gets an **implicit anchor** — its invoker — for `command`/`commandfor` exactly as for
+  `popovertarget`, and `position-anchor`'s initial `auto` resolves to it. The stylesheet's own names
+  were *overriding* that anchor, which is what made a JavaScript binding look necessary. Placement
+  improves: each submenu now binds to its own row rather than to the parent panel's top corner.
+  `Tooltip.Content` keeps `--forge-tooltip`, since it has no invoker to inherit an anchor from.
+
+- **`bindField`, `bindGroup`, `parseControlValue` and `applyControlValue` collapse into one two-way
+  `bindControls(root, signals)`.** It installs one listener on the scope root and one effect per
+  field, and returns a disposer. Consumers no longer hand-write the signal → DOM write-back, and a
+  button group can now express booleans, numbers and multi-select, which the previous split could not.
+  Bound controls stamp `data-field` and no `data-on-*` action, so a bound-control scope must be
+  `eager: true`. It crosses both boundaries the split version tripped on: the event is resolved
+  without an `instanceof` check, so a control in another realm still binds, and the repaint descends
+  into open shadow roots, so a bound control inside one is painted from its signal like any other.
+
+  ```diff
+  - registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
+  + registerScope("chrome", { eager: true, setup: ({ root }) => bindControls(root, sig) });
+  ```
+
+- **Writing a signal during an `effect` or `computed` run now throws.** It previously warned, and a
+  write from inside a `computed` was not even warned about. This is what makes "an effect runs exactly
+  once per settled state" a guarantee: the edge that causes the double run is a *write* edge, which
+  the read graph cannot see, so topological ordering would not have fixed it. Derive with `computed`,
+  command from the `on` handler, and defer with `queueMicrotask`. The refusal runs *before* the
+  equality check, so a write that happens to match the current value throws too — where the write was
+  made is the rule, not what it carried.
+
+- **`resume()` no longer wedges the page.** Installing the delegated listeners and resuming a tree are
+  now two jobs: the delegation is per-document and refcounted, and the eager pass runs on every call
+  over the root it was given — so `resume()` followed by `resume(shadowRoot)` now visits the shadow
+  subtree instead of returning the first disposer and leaving it inert. Each disposer releases only
+  the scopes its own call resumed; the **last** holder's disposer additionally disposes every scope
+  still active in that document, because a lazily-resumed scope belongs to no call and would otherwise
+  outlive the listeners that could reach it. Each eager `setup` runs in its own try/catch, so one
+  throwing scope no longer kills every scope after it, and a later `resume()` re-attempts it.
+  `data-state` that is malformed or is not a JSON object now throws instead of silently yielding an
+  empty state.
+
+- **Removed with no replacement:** `repeat` (undocumented, framework-shaped, zero callers),
+  `mountActiveDescendant` / `resetActiveDescendant` (131 lines, zero callers, no Combobox exists),
+  and `loadScriptOnEvent` / `loadStylesheet` / `LazyLoadOptions` — a disposer for `loadScriptOnEvent`
+  is impossible in principle, since an injected script cannot be un-run.
+
+- **Un-exported, code retained:** `mountMenu`, `mountTabs`, `mountTooltip`, `mountNumberField`,
+  `withOwner` / `OwnedRun`, and the duplicate `ACTIVE_COMPOSITE_ITEM` route
+  (its home is `ui/contracts`). These are mounted by forge's own scopes exactly once per root, which
+  is what makes the per-element idempotence guarantee true by surface rather than by a registry per
+  controller. `COLLAPSIBLE_SCOPE` and `ACCORDION_SCOPE` are gone outright: their registrations did
+  nothing but mount the two deleted controllers. `DIALOG_SCOPE` and `POPOVER_SCOPE` stay — the first
+  calls `showModal()` for an SSR-open modal, the second syncs `aria-expanded`.
+
+- **`Tooltip.Content` emits `popover="hint"` instead of `popover="manual"`**, which brings
+  light-dismiss and Escape from the platform and deletes a document-level `keydown` listener. Showing
+  a hint leaves an open `auto` popover open — the exact property `manual` was chosen for — and opening
+  an `auto` popover closes the hint. There is no fallback risk: `popover` is an enumerated attribute
+  whose invalid-value default is `manual`, so a non-supporting engine gets exactly the old behaviour.
+
+- **`--accent-9` is no longer the same colour in both modes.** `ACCENT_RAMP.dark.lightness[8]` drops
+  from `0.52` to `0.5075`, so the shipped dark solid moves `#375bd7` → `#3457d3` and
+  `theme-neutral.css` declares the step as `light-dark(oklch(52.00% 0.1950 267.0), oklch(50.75%
+  0.1950 267.0))` — the last accent step that was written bare, precisely because the two modes used
+  to agree. This is what closes the `--primary-foreground` hazard recorded under **Fixed** below: one
+  solid served both a near-white light foreground and a dark-mode `--gray-12` one, and dark had the
+  smaller headroom. An app that copied forge's bare `oklch(52.00% 0.1950 267.0)` into its own scheme
+  file keeps the old, failing dark value and must restate it in the `light-dark()` form. The
+  customiser at `/showcase/ui/theme` emits the correct shape for any dials.
+
+### Added
+
+- **`Navbar` takes `collapsedAs`** — `"inline"` (the default, and byte-identical to today's markup)
+  or `"drawer"`, which below `md` takes the collapsed panel out of the flow: a fixed panel sliding
+  in from the edge `placement` implies, over a `data-slot="navbar-backdrop"` scrim, leaving the
+  content behind it exactly where it was. A rail in this mode swaps its hamburger for a
+  `panel-open`/`panel-close` toggle; a top bar keeps the hamburger, which is what a bar's menu reads as. Every drawer class is scoped `max-md:`, so the `≥md`
+  render is untouched. The bar drops its own `backdrop-blur` below `md` because `backdrop-filter`
+  establishes a containing block for `position: fixed` descendants — the same trap a consuming app
+  hits by blurring the `<header>` the bar sits in, which `08-navigation.md` now documents with a
+  worked pair (`forge-ui-nav-drawer-containing-block`).
+- **`mountNavDrawer`** in `ui/client`, and `NAVBAR_DRAWER_ATTR` in `ui/contracts` — the modal
+  behaviour a drawer owes: Escape, a focus trap over the panel's focusables, focus moved in on open
+  and returned to the toggle on close, and a scroll lock written through CSSOM and restored exactly.
+  The `navbar` scope mounts it for any bar carrying the attribute, so an app that already imports
+  `ui/chrome/client` wires nothing.
+
+- **`CatalogPanel`** in `ui/show` — the card-shaped catalog band, promoted from the copy
+  `sections.tsx` already had so `ThemeSection`, `ResumableSection` and the six HTMX demo sections
+  stop hand-rolling the same `<section>`/`<h2>`/`<p>` shape three ways. Deliberately a sibling of
+  `CatalogSection` rather than four new flags on it. The container bands (`#htmx-demos`,
+  `#compositions`), the `<h3>` sub-surfaces in `compositions.tsx` and the customiser's page sections
+  are left alone: they are different shapes, and forcing them through a band component would be
+  worse than the inconsistency.
+- **`Resumable` takes a `ref`**, mapped to `data-ref` and emitted after `data-state` and before
+  `class` — the same prop→attribute pattern `ToolbarAction.ref` uses. It is what let the showcase's
+  last two hand-written `<div data-scope>` elements become real `<Resumable>` components; the
+  attribute is absent entirely when the prop is.
+- **The lazy demo proves its own retry claim.** A second anchor's first two loads reject on purpose,
+  its `onError` writes each attempt to a `role='status'` line, and the third resolves — so
+  `lazy()`'s `LAZY_MAX_ATTEMPTS` path is walked rather than only described. The deferred module now
+  carries real content, so the deferral has a visible cost instead of setting one `textContent`.
+- **`COVERAGE_MISSING` is empty**, and the showcase's thin demos are thick. The coverage test now
+  renders through a real `createIcon` binding instead of a component returning `null`, which is what
+  made every glyph marker measurable at all; `IconSection` draws all seven glyphs and a labelled
+  `role="img"` one. Navbar and Toolbar render all four placements each — the two gaps that were
+  apologies in prose the gate could not see. `Meter`, `NumberField`, `Dialog`, `Input`, `Textarea`,
+  `Collapsible`, `Form`, `Honeypot` and `ThemeToggle` each gain the instances their own declared
+  props owe, and each of the six original bound controls gains a second instance on its own field in
+  a non-default state. Every added instance is declared as an axis in `DEMO_COVERAGE`; an instance
+  with no axis is decoration. `Card` and `Field` were already complete and are untouched.
+- **The theme customiser previews and measures the accent family**, so all five dials move something
+  on screen. `SCALE_ROWS` is four rows — both families in both modes, accent first to match the lever
+  order, every id `${family}-${mode}` — each with a visible label, because light `accent-1` and
+  `gray-1` are indistinguishable side by side. A contrast side now names its `family` and may carry a
+  step **per mode**, resolved through the one `sideStep(side, mode)`; that is what lets
+  `--primary-foreground` (`--accent-contrast` on `--accent-9`) be measured live rather than declared
+  unreachable. `liveRatios` grows from twelve entries to fourteen, `scalePairs()` from six to seven.
+- **A copy control beside the generated scheme and beside the share link**, each a `Button
+  variant='secondary' size='sm'` that reads the DOM it sits next to — what is copied is exactly what
+  is displayed — confirms in its own visible label, and announces through a sibling `role='status'`
+  span rather than an `aria-label` that would breach WCAG 2.5.3. Absent or rejected
+  `navigator.clipboard` (every plain-HTTP deploy) says so and leaves the label alone. The output block
+  carries its own stateless `customise-copy` scope: `runAction` walks to the nearest `[data-scope]`,
+  and widening the lever scope over the page would hand `bindControls` the compositions band.
+- **The customiser's scale preview has an `<h2>`**, like every sibling section, and the module-local
+  component is renamed `ScalePreviewSection` — `ui/show` no longer declares `PreviewSection` twice.
+- **`<dialog closedby="any">` on `Dialog`** — declarative light-dismiss, which `Dialog` did not have.
+- **An animated disclosure height** for `Collapsible` and `Accordion`, via `::details-content` and
+  `interpolate-size: allow-keywords`. Measured: the opt-in only takes effect from `:root`, so it is
+  declared there and takes effect only where an author transitions to or from a keyword.
+- **`safeStorage(win)`** in `ui/client` — a realm's `localStorage` or `null`. `typeof
+  win.localStorage` is not a sufficient test: in Safari's private mode the property is present and
+  `getItem` still throws `SecurityError`.
+- **`popover="hint"`** is now accepted by the JSX `popover` attribute type, and `<dialog>` accepts
+  `closedby`.
+- **A bound-control band in `ui/show`** — every `@y-core/forge/ui/controls` variant under one eager
+  `show-controls` scope, each with a live readout of the signal driving it, beside a native-versus-bound
+  exemplar of the same control. `FormField`'s `Set` / `Legend` / `Content` / `Title` / `Separator`
+  anatomy and `Label`'s required marker are demonstrated alongside it.
+- **A coverage gate for the showcase** — `DEMO_COVERAGE` names every `ui/core`, `ui/controls` and
+  `ui/chrome` component the catalog must demonstrate and the variant axes each must show; a test fails
+  the build on any barrel export it does not declare and on any demo or axis the rendered catalog does
+  not contain. `COVERAGE_MISSING` is the only excuse list, every entry owns a task, stale entries fail,
+  and it is empty today ([`UI_SHOWCASE.md`](.decisions/UI_SHOWCASE.md)).
+- **Catalog sections closing that gate** — the chrome navbar and toolbar, `Flash`, the lazy panel, the
+  six bound controls and the native-versus-bound pair, plus the overlay, menu and variant-axis demos
+  the existing sections were missing.
+- **`renderAvatar` (`@y-core/forge/ui/show`)** — the showcase's `…/api/avatar` endpoint, so the
+  `Avatar` demo loads an image from the app that mounts it rather than from the network.
+- `NAVBAR_FILTERS_EVENT` (`@y-core/forge/ui/contracts`) — the document event the navbar scope listens
+  for to re-sync its auth filters, named once so an app cannot mistype it.
+- `CONTROLS_DEMO_SCOPE`, `CONTROLS_DEMO_STATE`, `ControlsDemoState` and `controlsReadout`
+  (`@y-core/forge/ui/contracts`) — the bound-control band's scope name, server-rendered state and
+  readout formatter, so the SSR markup and the browser scope cannot drift on them.
+- `toSrgbGamut` and `oklchCss` (`@y-core/forge/ui/contracts`) — the gamut-mapped coordinate behind
+  `oklchToHex`, and the `oklch()` emission format a scheme file carries. `oklchToHex`'s output is
+  unchanged.
+- `lightDark` (`@y-core/forge/ui/contracts`) — one value covering both modes, collapsed to the bare
+  value where the two agree.
+- `matchPreset`, `PRESET_CUSTOM` and `PRESET_FIELDS` (`@y-core/forge/ui/contracts`) — the preset
+  picker's shared vocabulary, declared once so the SSR markup and the browser controller cannot drift
+  on it.
+- `PRESET_ACTION` (`@y-core/forge/ui/contracts`) — the scope action the preset picker fires, declared
+  beside the rest of the picker's vocabulary so the SSR markup and the browser handler cannot drift.
+- `paintedHex` (`ui/client/browser-test-helper`, test-only) — the `#rrggbb` a colour value paints as.
+  A token's computed value is now the `light-dark()` text, and a non-legacy colour serializes in its
+  own space, so neither `getPropertyValue` nor a computed `color` is a colour a spec can compare.
+- `splitLightDark` (`@y-core/forge/pkg`) — the depth-aware value splitter the contrast parser reads
+  a `light-dark()` with.
+- `validate-contrast` fails any `.dark` rule that declares a custom property, in any stylesheet under
+  its `cssDir`. This is the prevention the whole change is for. A `.dark` rule declaring no custom
+  property is untouched, which is what lets `theme-base.css` set `color-scheme` there.
+- **Two governing documents** — [`THEME_GENERATION.md`](.decisions/THEME_GENERATION.md) (the dial
+  model a scheme is generated from, its emission contract and the audited contrast pairs) and
+  [`UI_SHOWCASE.md`](.decisions/UI_SHOWCASE.md) (what an app supplies to mount `ui/show`, and the
+  coverage contract above).
+
+### Changed
+
+- **The showcase reads as two rails rather than one.** `tocConfig` held the page list and the
+  current page's anchors in a single `NavDefinition`; they are two axes, so they are now two bars —
+  `pagesConfig`/`pageHref` on the leading edge, `sectionsConfig`/`anchorHref` on the trailing one,
+  both `collapsedAs='drawer'`. The `show-toc` scope wraps only the trailing rail now, so
+  `mountScrollSpy`'s `a[href^='#']` default stops sweeping up the page links it never meant to mark.
+- **`Textarea` grows with its content.** The base now carries `field-sizing-content min-h-16
+  max-h-64`. Because `field-sizing: content` makes the `rows` attribute stop determining height, the
+  floor and the cap are part of the contract rather than styling: without them a consumer passing
+  `rows` would get a collapsed one-line box, and a long paste would grow without bound. Override
+  either with your own `min-h-*`/`max-h-*`.
+- **`Alert.Description` sets `text-pretty`**, so a description no longer ends on an orphan word.
+- **`Select`'s chevron, and `Toast`'s and `Alert`'s dismiss button, are positioned with `end-*`**
+  rather than `right-*`, so the reserved gutter and the control that occupies it stay on the same
+  side under `dir="rtl"`.
+- **Every silent failure path now throws or reports**, by one rule: *throw when the outcome is a
+  property of the call site; report when it is a property of the page, the realm or the data.* A
+  missing `root` in `mountScrollSpy` and an unresolvable target in `mountViewportCollapse` throw. A
+  missing `IntersectionObserver`, `matchMedia` or `MutationObserver`, an absent optional widget, a
+  `data-field` naming no signal, and a rejected `lazy` load with no `onError` all report.
+- **`openPopoverAt` returns a disposer** instead of `void`. A second call cancels the first pending
+  arm rather than arming a second listener, and the deferred show bails when the element has left the
+  document — an htmx swap between the arm and the release used to call `showPopover()` on a detached
+  node.
+- **`isDark` is a per-document registry.** A second theme scope reports and is ignored; disposal
+  promotes the next live scope, or falls back to constant `false`, rather than leaving a dangling
+  reference to a dead scope's computed.
+
 - **A colour scheme declares each step once, with `light-dark()`, and no forge stylesheet carries a
   `.dark` block of values.** The two-block form could not be supplied safely: `:root` and `.dark`
   both weigh 0-1-0 and both match `<html>`, so source order decided, and a consumer's scheme —
@@ -42,8 +341,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
   - **Update your own scheme file** to one `:root` block, wrapping any step whose value differs by
     mode in `light-dark(light, dark)`. A step that is the same colour in both modes is written bare.
-    Solid steps are now `oklch()`, the space the ramps are authored in; the `--gray-a*` overlays stay
-    eight-digit hex, because an overlay is fitted to sRGB bytes rather than authored.
+    Solid steps are now `oklch()`, the space the ramps are authored in.
   - **`theme-base.css` now sets `color-scheme`** — `light` on `:root`, `dark` on `.dark` — which is
     what selects the branch. It stays out of the scheme files deliberately: a scheme is the file a
     consumer replaces, the mode wiring is the file they do not. The visible bonus is that scrollbars
@@ -57,6 +355,28 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   - **A browser without `light-dark()` loses its colours** rather than falling back to one mode. This
     is accepted: `light-dark()` is Baseline, and forge owes no compatibility shim before 1.0.
 
+- **The per-scheme alpha scale is deleted.** `--gray-a1` … `--gray-a12` and `--accent-a1` …
+  `--accent-a12` are gone from all four scheme files, and `buildAlphaScale` is gone from
+  `@y-core/forge/ui/contracts`. Nothing in forge ever read them, so a scheme still declaring the
+  twenty-four properties compiles and renders exactly as before — the declarations are simply inert.
+  The only real break is an app reading `var(--gray-a6)` in its own CSS, so sizing this upgrade is a
+  grep for `--gray-a` in your own stylesheets.
+
+  - **A scrim, or anything translucent over content it must not hide**, moves to the absolute
+    `--black-a1` … `--black-a12` and `--white-a1` … `--white-a12` ramps in `theme-colors.css`. Those
+    stay, and are now the whole of forge's sanctioned translucency; `--overlay` is `--black-a6`.
+  - **A surface tint** — "slightly lighter", "slightly darker" — moves one step along the solid
+    scale, per `forge-ui-color-scale-no-adhoc-tint`.
+
+  A per-scheme alpha step composites over its *own* scheme's step 1, which makes it page-relative and
+  so mode-inverting: black over a light page, white over a dark one. A scrim has to darken in both
+  modes, so the ramp could not express the one thing an alpha token is for. The shipped values
+  carried a light-branch error besides — forge swaps steps 1 and 2 in light, and the alphas were
+  transcribed from a source where step 1 is the page — so nothing correct is lost.
+
+- **`scaleVars` returns twelve pairs rather than twenty-four, and `stepProperty(family, step)` drops
+  its `kind` parameter.** Both follow from the deleted alpha scale.
+
 - **`schemeCss` emits one `:root` block and adds `--accent-contrast`.** A generated scheme is now
   standalone-complete — a file that is correct only when layered over forge's default is the same
   silent half-supply in a different shape.
@@ -67,45 +387,104 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`MODE_SELECTOR` is now `MODE_LABEL`** (`@y-core/forge/pkg`), carrying a mode word rather than a
   selector, there no longer being a per-mode selector to name.
 
-### Added
+- **`computed` is lazy and pull-based.** Its body no longer runs at creation, and never runs at all
+  if nothing reads it — a behaviour change for any computed whose body has a side effect, which none
+  should. A read re-derives only when a source it read has actually moved, so a reader can never
+  observe a derived value assembled before one of its sources moved. That torn read was reachable
+  whenever a computed had two sources and the second was written later in the same flush.
 
-- `toSrgbGamut` and `oklchCss` (`@y-core/forge/ui/contracts`) — the gamut-mapped coordinate behind
-  `oklchToHex`, and the `oklch()` emission format a scheme file carries. `oklchToHex`'s output is
-  unchanged.
-- `lightDark` (`@y-core/forge/ui/contracts`) — one value covering both modes, collapsed to the bare
-  value where the two agree.
-- `matchPreset`, `customiseState`, `PRESET_CUSTOM`, `PRESET_FIELD` and `PRESET_FIELDS`
-  (`@y-core/forge/ui/contracts`) — the preset picker's shared vocabulary, declared once so the SSR
-  markup and the browser controller cannot drift on it. `customiseState` is the scope state itself:
-  every dial, plus the preset those dials name.
-- `paintedHex` (`ui/client/browser-test-helper`, test-only) — the `#rrggbb` a colour value paints as.
-  A token's computed value is now the `light-dark()` text, and a non-legacy colour serializes in its
-  own space, so neither `getPropertyValue` nor a computed `color` is a colour a spec can compare.
-- `splitLightDark` (`@y-core/forge/pkg`) — the depth-aware value splitter the contrast parser reads
-  a `light-dark()` with.
-- `validate-contrast` fails any `.dark` rule that declares a custom property, in any stylesheet under
-  its `cssDir`. This is the prevention the whole change is for. A `.dark` rule declaring no custom
-  property is untouched, which is what lets `theme-base.css` set `color-scheme` there.
+  ```typescript
+  const sum = computed(() => x.value + y.value);
+  effect(() => { observed = sum.value });
+  effect(() => { y.value = x.value });
+  x.value = 1;
+  // was: observed === 1 while x === 1 and y === 1.  now: 2
+  ```
 
-### Changed
-
+  Effect-to-effect chains are unchanged and still settle rather than being glitch-free: laziness
+  changes what a re-run reads, not whether it happens
+  ([`UI_CLIENT_RUNTIME.md`](.decisions/UI_CLIENT_RUNTIME.md) §3a). The cycle cap is now **100 runs
+  per node** per flush instead of 10 000 total, which makes the budget independent of graph size; a
+  computed that reads its own value throws with the same `the graph is cyclic` message rather than
+  recursing without bound.
 - **The theme customiser's preset dropdown applies on change.** Picking a scheme repaints the page
   immediately through the `customise` scope — no submit, no navigation, and the `Apply` button, the
   `<form>` around the control and its five hidden dial inputs are all gone. The picker moves its two
-  sliders with it (`bindField` is one-way, DOM to signal), and falls back to `custom` the moment a
-  lever is dragged off a preset. `?p=slate` still resolves server-side, so a preset link is unchanged.
+  sliders with it — `bindControls` writes the DOM back from the signal — and falls back to `custom`
+  the moment a lever is dragged off a preset. `?p=slate` still resolves server-side, so a preset link is unchanged.
   **The picker now needs JavaScript**, as the sliders beside it already did.
 
-  It is the bound `ui/controls` `Select` on its default `bindField`, writing a `preset` signal that a
-  domain effect in the page translates into the two gray dials — what a preset *means* is the page's
-  business, not the control's. Every dial's slider is now reconciled from its signal in the same
-  effect that writes the readouts, so a dial moved by anything other than its own thumb no longer
-  leaves the thumb behind.
+  It is the bound `ui/controls` `Select` on an `applyPreset` action, which writes the two gray dials
+  directly — what a preset *means* is the page's business, not the control's, and picking one is a
+  command rather than a field binding. Every dial's slider is now reconciled from its signal in the
+  same effect that writes the readouts, so a dial moved by anything other than its own thumb no
+  longer leaves the thumb behind, and which preset the dials name is derived at paint time rather
+  than stored.
 - **The theme customiser's painter writes one `light-dark()` per property** and no longer watches
   `<html>`'s class list — the browser selects the branch, so the `MutationObserver` that existed only
   to re-paint on a theme toggle is deleted.
 
 ### Fixed
+
+- **`<Dialog open>` floated over the page instead of sitting in the document flow.** `Dialog`
+  documents `open` as *"Render open and non-modal"*, but `forge-ui.css` §6's `inset: 1rem; margin:
+  auto` — written for the modal case, as its own comment says — matched **every**
+  `[data-slot~="dialog"]`. Combined with the UA's `position: absolute` for an open dialog, a
+  non-modal one took the viewport gutter and centred itself over the whole page from first paint.
+  The rule is now scoped to `:modal`, and a companion `:not(:modal)` rule flows a non-modal dialog
+  inline with `position: static; margin: 0`. Modal dialogs are unchanged; both rules are
+  `components` defaults, so a caller who wants a non-modal dialog positioned still writes
+  `absolute` and wins on layer order. Found by the showcase's own new `open` demo — the first
+  non-modal dialog forge had ever rendered.
+- **The customiser's "No setting fails" claim was false for two of its five dials.** Measuring
+  `--primary-foreground` for the first time turned up a real hazard the tool had never been able to
+  show: `--accent-9` is lightness-pinned and so identical in both modes, while `--accent-contrast` is
+  `--gray-1` in light but the darker `--gray-12` in dark, leaving dark the smaller headroom. Across
+  the accent dial range light bottoms out at 4.85:1, but dark reaches about 4.41:1 — under the 4.5
+  floor — in a band of high-chroma greens near hue 145, roughly 4.7% of the grid. The shipped defaults
+  were safe throughout (5.48 light, 4.97 dark). **The ramp has since been moved to close it**: the
+  dark step 9 drops to `0.5075`, no dial position on any of the four colour levers fails a floor any
+  more, and the tightest point across the whole grid measures 4.59 dark against 4.84 light. The
+  shipped defaults now read 5.48 light, 5.25 dark. See the `--accent-9` entry under **Breaking
+  Changes** for what a consumer who copied the old value must restate.
+- **Two theme toggles on one page cycled from each other's stale value.** Each `theme` scope hydrated
+  its own `pref` signal from its own `data-state`, so a navbar toggle beside a settings or showcase
+  toggle each mutated only its own: after cycling one, the other's next click advanced from the value
+  it held before. The preference is a property of the *document*, and `ui/chrome/client.ts` now holds
+  it that way — a `WeakMap<Document, …>` with a `holders` refcount, the shape `resume.ts` already uses
+  for its delegated listeners. The first scope in a document builds the `pref` signal, the `matchMedia`
+  listener and the two effects that paint `<html>`; every later scope takes a share and re-points its
+  own `state.pref` at the shared one. Those effects are created inside a nested `withOwner`, so
+  disposing the first of two toggles no longer stops the painting, and the last release drops the
+  listener and the effects together. The "a second theme scope resumed on this page" warning is gone
+  with the defect that motivated it ([`UI_CLIENT_RUNTIME.md`](.decisions/UI_CLIENT_RUNTIME.md) §2b).
+
+- **`mountTurnstile(within)` searched the whole document instead of the node it was given.** It widened
+  its argument to `ownerDocument(within)` before querying, so every scoped mount on a page with more
+  than one `<Turnstile>` resolved to the *first* widget: the later ones never rendered, never revealed
+  their fallback, and — sharing one entry in the mounted-controller registry — disposing any of them
+  removed the first one's live widget. It now looks the widget up within the passed element or
+  fragment, and the fallback message up inside the widget itself; the arg-less call still widens to the
+  document.
+
+- **The showcase's Turnstile section shadowed `window.turnstile`.** Its catalog anchor was
+  `id="turnstile"`, and the DOM publishes every `id` as a window property of that name, so Cloudflare's
+  `api.js` found `window.turnstile` already truthy and reported "Turnstile already has been loaded" on
+  a single, correct load. The anchor is now `turnstile-widget`, and a test refuses any catalog id in
+  the reserved set.
+
+- **An effect created in a scope's `setup` outlived the scope's teardown.** Only what a `setup`
+  *returned* was disposed, so an effect whose disposer was discarded stayed in its signals'
+  subscriber sets forever, holding a closure over detached DOM and still running on every later write.
+  The scope runtime now owns every effect created while `setup` runs and disposes it with the scope,
+  which makes the leak unwritable rather than fixing the two sites that had it. A `setup` returns a
+  disposer only for what the runtime cannot see — listeners, observers, timers, controller handles —
+  and it runs *after* the scope's effects are disposed, so nothing reactive is alive while an author's
+  teardown mutates the DOM ([`UI_CLIENT_RUNTIME.md`](.decisions/UI_CLIENT_RUNTIME.md) §2d). Three
+  adjacent defects are fixed with it: a `setup` that threw left its root marked resumed with no
+  disposer — unreachable by every teardown and inert on re-resume; a throwing disposer aborted the
+  teardown loop and silently skipped every scope behind it; and the `toast` scope's auto-dismiss timer
+  was never cancelled, so a disposed toast still removed a detached node when it fired.
 
 - **A signal written from inside an effect left its dependents permanently wrong.** Subscribers were
   notified inline and gated on an epoch counter that only advanced at the outermost write, so an

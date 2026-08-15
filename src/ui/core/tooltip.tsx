@@ -64,8 +64,8 @@ const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "ce
     id={id}
     role='tooltip'
     data-slot={slotToken("tooltip-content", inherited)}
-    popover='manual'
-    {...stateAttrs({ open: false, side, align })}
+    popover='hint'
+    {...stateAttrs({ side, align })}
     class={cn("z-50 w-max max-w-xs rounded-md bg-foreground px-2 py-1 text-xs text-background shadow-md", asClass(cls))}
     {...rest}>
     {children}

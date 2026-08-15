@@ -189,6 +189,13 @@ function lineAt(source: string, index: number): number {
   return line;
 }
 
+/** One `from → to` edge as a Set key. `\u0000` cannot appear in a namespace name, so it is the one
+ * separator that cannot collide — written as an escape rather than as a literal NUL, which made
+ * this whole file report as binary to `file` and be skipped silently by `grep`. */
+function edgeKey(from: string, to: string): string {
+  return `${from}\u0000${to}`;
+}
+
 /** Every module specifier `source` depends on, including re-exports and dynamic imports, in source order. */
 export function parseImports(source: string): ImportRef[] {
   const { masked, literals } = maskSource(source);
@@ -349,7 +356,7 @@ export function diffGraph(
     for (const to of [...targets.keys()].sort()) {
       if (primitives.has(to)) continue;
       const edge = targets.get(to) as ObservedEdge;
-      seen.add(`${from} ${to}`);
+      seen.add(edgeKey(from, to));
 
       if (primitives.has(from)) {
         findings.push({
@@ -408,7 +415,7 @@ export function diffGraph(
     const declaredTargets = declared.edges[from];
     if (declaredTargets === undefined) continue;
     for (const to of sortedKeys(declaredTargets)) {
-      if (seen.has(`${from} ${to}`)) continue;
+      if (seen.has(edgeKey(from, to))) continue;
       const reason = primitives.has(to)
         ? `\`${to}\` is a foundational primitive in \`PRIMITIVES\`, and an import of one is not an edge`
         : `no non-test source file imports it`;

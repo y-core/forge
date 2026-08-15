@@ -1,8 +1,6 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { stateAttrs } from "../contracts/state-attrs";
-import { COLLAPSIBLE_SCOPE } from "../contracts/toggle-contract";
 import type { ForgeIcon } from "./icon";
 import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
@@ -13,7 +11,7 @@ interface CollapsibleRootProps extends Omit<JSX.IntrinsicElements["details"], "c
 }
 
 interface CollapsibleTriggerProps extends Omit<JSX.IntrinsicElements["summary"], "children"> {
-  icon: ForgeIcon;
+  icon: ForgeIcon<"chevron-down">;
   children?: JSXNode;
 }
 
@@ -22,13 +20,7 @@ interface CollapsiblePanelProps extends Omit<JSX.IntrinsicElements["div"], "chil
 }
 
 const CollapsibleRoot: FC<CollapsibleRootProps> = ({ open = false, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <details
-    data-slot={slotToken("collapsible", inherited)}
-    data-scope={COLLAPSIBLE_SCOPE}
-    {...(open ? { open } : {})}
-    {...stateAttrs({ open })}
-    class={cn("group/collapsible-item", asClass(cls))}
-    {...rest}>
+  <details data-slot={slotToken("collapsible", inherited)} {...(open ? { open } : {})} class={cn("group/collapsible-item", asClass(cls))} {...rest}>
     {children}
   </details>
 );
@@ -42,11 +34,11 @@ const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ icon: Icon, class: cl
       asClass(cls),
     )}
     {...rest}>
-    <span class='flex-1 pl-1'>{children}</span>
+    <span class='flex-1 ps-1'>{children}</span>
     <Icon
       name='chevron-down'
       viewBox='0 0 24 24'
-      class='size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open/collapsible-item:rotate-180'
+      class='size-4 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 group-open/collapsible-item:rotate-180'
     />
   </summary>
 );

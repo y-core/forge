@@ -24,7 +24,7 @@ const BOUNDED_STYLES = `<style>
 
 async function markup(styles: string = DEFINITE_STYLES): Promise<string> {
   const rows = Array.from({ length: 40 }, (_, i) => jsx("p", { children: `row ${i}` }));
-  const html = await render(ScrollArea({ id: "area", children: ScrollArea.Viewport({ id: "viewport", children: rows }) }));
+  const html = await render(ScrollArea({ id: "area", children: ScrollArea.Viewport({ id: "viewport", label: "Rows", children: rows }) }));
   return `${styles}${html}`;
 }
 

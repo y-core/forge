@@ -1,8 +1,6 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { stateAttrs } from "../contracts/state-attrs";
-import { ACCORDION_SCOPE } from "../contracts/toggle-contract";
+import type { FC, JSX, JSXElement, JSXNode } from "../../jsx/types";
 import type { ForgeIcon } from "./icon";
 import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
@@ -15,9 +13,9 @@ interface AccordionItemProps extends Omit<JSX.IntrinsicElements["details"], "chi
   children?: JSXNode;
 }
 
-interface AccordionTriggerProps extends Omit<JSX.IntrinsicElements["summary"], "children"> {
-  icon: ForgeIcon;
-  iconName?: string;
+interface AccordionTriggerProps<N extends string = string> extends Omit<JSX.IntrinsicElements["summary"], "children"> {
+  icon: ForgeIcon<N | "chevron-down">;
+  iconName?: N;
   children?: JSXNode;
 }
 
@@ -35,16 +33,21 @@ const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children, "data-slo
 const AccordionItem: FC<AccordionItemProps> = ({ open, class: cls, children, "data-slot": inherited, ...props }) => (
   <details
     data-slot={slotToken("accordion-item", inherited)}
-    data-scope={ACCORDION_SCOPE}
     {...(open ? { open } : {})}
-    {...stateAttrs({ open: open === true })}
     class={cn("group/accordion-item border-b border-border last:border-b-0", asClass(cls))}
     {...props}>
     {children}
   </details>
 );
 
-const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, class: cls, children, "data-slot": inherited, ...rest }) => (
+const AccordionTrigger = <N extends string = string>({
+  icon: Icon,
+  iconName,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}: AccordionTriggerProps<N>): JSXElement => (
   <summary
     data-slot={slotToken("accordion-trigger", inherited)}
     class={cn(
@@ -53,11 +56,11 @@ const AccordionTrigger: FC<AccordionTriggerProps> = ({ icon: Icon, iconName, cla
     )}
     {...rest}>
     {iconName ? <Icon name={iconName} viewBox='0 0 24 24' class='size-4 shrink-0 text-muted-foreground' /> : null}
-    <span class='flex-1 pl-1'>{children}</span>
+    <span class='flex-1 ps-1'>{children}</span>
     <Icon
       name='chevron-down'
       viewBox='0 0 24 24'
-      class='size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open/accordion-item:rotate-180'
+      class='size-4 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 group-open/accordion-item:rotate-180'
     />
   </summary>
 );

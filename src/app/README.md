@@ -4,7 +4,7 @@ App bootstrap and request lifecycle for `@y-core/forge` — the namespace that t
 
 `createApp` returns a `Forge` instance: a Workers-native request router wrapped in a fail-closed error boundary. Its `fetch(request, env, executionCtx)` method *is* the Workers module handler, so the entire wiring is `export default app`. Around routing it provides path-scoped middleware, per-request config/env injection, two route-handler factories (`definePage`, `defineAction`), a static-asset catch-all (`applyAssets`), startup binding validation (`validateEnv`, `validateBindings`), and a JSON health endpoint (`healthCheck`).
 
-This namespace is an **integration namespace** — it composes `form`, `http`, `logging`, `result`, `router`, `security`, and `validation` into the app lifecycle. See [`.decisions/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) and [`.decisions/LIBRARY_ARCHITECTURE.md`](../../.decisions/LIBRARY_ARCHITECTURE.md) for the authoritative architecture.
+This namespace is an **integration namespace** — it composes `form`, `http`, `logging`, `result`, `router`, `security`, and `validation` into the app lifecycle. See [`.decisions/implementation/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) and [`.decisions/implementation/LIBRARY_ARCHITECTURE.md`](../../.decisions/implementation/LIBRARY_ARCHITECTURE.md) for the authoritative architecture.
 
 ---
 
@@ -178,7 +178,7 @@ The view receives the resolved `config` (the second argument) and the render `st
 
 Wires a `read → guard → validate → handle` pipeline into a POST handler that returns structured error fragments automatically.
 
-**The schema is the only way in.** `defineAction` reads the parsed body itself and `handle` is unreachable except through a passing `v.safeParse` of `schema`, so a route cannot accept a body nothing checked. This replaced a `parse`/`validate` pair of arbitrary callbacks, which fixed the *order* the two ran in but never that either involved a schema — `validate: (d) => ok(d)` compiled and was accepted.
+**The schema is the only way in.** `defineAction` reads the parsed body itself and `handle` is unreachable except through a passing `v.safeParse` of `schema`, so a route cannot accept a body nothing checked ([`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1d).
 
 **The body-content guards live here; transport guards do not.** The honeypot and Turnstile checks each read a named field out of this form, so they belong where the body is read and where the field they consume can be dropped in the same step. CSRF, origin and rate-limit guards decide from the request's envelope and need to know nothing about the route's fields, so they stay in the controller action's `middleware` array (`defineAction` accepts no `middleware` field).
 
@@ -197,7 +197,7 @@ Wires a `read → guard → validate → handle` pipeline into a POST handler th
 
 **What reaches the schema.** Every entry the caller sent, minus the fields a guard on that request consumed. An **absent field is absent** rather than `""`, which is what keeps `v.optional` reachable and required-ness a presence check. A **repeated key arrives as an array**, so a scalar schema refuses it in its own words and a route that genuinely accepts many says so with `v.array`. A **`File` passes through unchanged**, so an upload schema can see one.
 
-**Nothing is dropped on a guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them; the CSRF field is dropped because `csrfProtection` published the field it took the token from. A route with no CSRF middleware drops nothing for CSRF, so a submitted `_csrf` is an ordinary undeclared field that a strict schema refuses — which names the missing middleware instead of absorbing its absence. See [`.decisions/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §2b for the rule and the alternatives it rejects.
+**Nothing is dropped on a guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them; the CSRF field is dropped because `csrfProtection` published the field it took the token from. A route with no CSRF middleware drops nothing for CSRF, so a submitted `_csrf` is an ordinary undeclared field that a strict schema refuses — which names the missing middleware instead of absorbing its absence. See [`.decisions/implementation/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §2b for the rule and the alternatives it rejects.
 
 **Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control and `formMultilineText()` for a `<textarea>` — both from `@y-core/forge/validation`. The body read passes values through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "`.
 
@@ -230,8 +230,8 @@ The automatic error responses (all are HTMX-swappable fragments):
 |---|---|
 | `413` | Form body exceeds the size cap (`parseFormData` throws with `status: 413`). |
 | `400` | Body is unparseable as form data. |
-| `422` | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else: validation runs `abortEarly`, and each issue is rendered through `describeValidationIssue`, so neither the submitted value nor the schema's own rule travels back, and the response length cannot be steered by what the caller sent. |
-| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above — one `<li>` naming a field the schema declares, never the decoy — so a bot cannot tell a guard from a mistyped field by comparing answers. |
+| `422` | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else ([`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1b). |
+| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above, so a bot cannot tell a guard from a mistyped field by comparing answers ([`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §4c). |
 | `500` | Anything in the validate-and-handle region throws, and no `onError` was supplied; the failure is logged. That covers `handle`, a schema whose `v.transform`/`v.check` throws on malformed input (valibot does not catch those), and a throwing `onValidationError`. A throwing schema is a route defect, not a bad request, which is why it is a `500` and not a `400`. |
 
 ### `createHandlerFactory<Bindings, ConfigData>()`
@@ -406,7 +406,7 @@ requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders
   → validateBindings(bindings) → session → per-path guards (origin → rateLimit → middleware[])
 ```
 
-Global middleware (`app.use`) runs before route-level middleware (in the controller action); within each, handlers run left-to-right. When hand-writing a chain instead of using the builder, the load-bearing rule is: `createSecurityHeaders` must be registered **before any nonce consumer** (session, guards, views) — pure tracing middleware (`requestId`, `requestLogger`) may precede it. See [`.decisions/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §3d/§3e for the authoritative contract.
+Global middleware (`app.use`) runs before route-level middleware (in the controller action); within each, handlers run left-to-right. When hand-writing a chain instead of using the builder, the load-bearing rule is: `createSecurityHeaders` must be registered **before any nonce consumer** (session, guards, views) — pure tracing middleware (`requestId`, `requestLogger`) may precede it. See [`.decisions/implementation/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §3d/§3e for the authoritative contract.
 
 ### Page rendering
 
@@ -459,8 +459,8 @@ expect(res.status).toBe(200);
 - **Hardened error boundary.** Every throw — inside the middleware chain or in router internals outside it — yields a `500` page with `x-content-type-options: nosniff`, `content-security-policy: default-src 'none'`, and `referrer-policy: no-referrer`. The in-chain path overlays the consumer's CSP via the pending-header pass; out-of-chain throws still get this baseline. Error responses thus carry security headers by construction.
 - **Error detail is gated.** The default `500` page reveals the error message **only** when `isDebug(c)` returns `true`; otherwise it shows a generic message. Never wire `isDebug` to a value an attacker controls.
 - **Validation failures are generic by default.** `defineAction` collapses body-parse and handler failures to neutral `400`/`500` fragments — supply `onError` only if you control what is surfaced, and do not leak internal exception detail to clients.
-- **A refusal names the field and nothing else.** A valibot issue embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and under a strict object the caller's own key lands in the issue path. The default refusal reproduces none of it: `abortEarly` bounds the issue count and `describeValidationIssue` bounds the description, so a 50,000-character value and a 5-character one produce the same response and extra fields cannot multiply it. **`onValidationError` opts out of that bound** — it receives the raw issues, so an app rendering more than the field name is choosing to. `formatValidationIssues` reproduces `issue.message` and is an internal diagnostic; never put its output in a response.
-- **A tripped bot guard is indistinguishable from a schema refusal.** Same status, same single `<li>`, naming a field the schema declares rather than the decoy — so a bot learns neither which guard it tripped nor that one is there. `onBotDetected` receives the reason for logging or banning without changing what the caller sees.
+- **A refusal names the field and nothing else**, and **`onValidationError` opts out of that bound** — it receives the raw issues, so an app rendering more than the field name is choosing to. What the default refusal refuses to reproduce, and why, is [`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1b.
+- **A tripped bot guard is indistinguishable from a schema refusal**, and `onBotDetected` receives the reason for logging or banning without changing what the caller sees. The residual that shape leaves is [`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §4c.
 - **Validate bindings at the edge.** Use `validateEnv`/`validateBindings` so a missing or malformed secret (e.g. `CSRF_SECRET`) fails loudly at startup or on the first request, never silently downstream.
 - **Asset method gating.** `serveAssets` answers only `GET`/`HEAD`; every other method falls through to `notFoundView`, so the asset catch-all cannot be used as a write surface.
 
@@ -468,14 +468,14 @@ expect(res.status).toBe(200);
 
 ## Architecture
 
-`app` is an **integration namespace**: it composes `form` (form parsing for `defineAction`), `http` (fragment/error responses, cache headers), `logging` (the error logger), `result` (`ValidationResult`, `toError`), `router` (the underlying `@remix-run/fetch-router`), `security`, and `validation` (`validateEnv` schemas). Consumers reach all of it through `@y-core/forge/app` and never import `@remix-run/*` directly — the facade isolates version churn ([`.decisions/LIBRARY_ARCHITECTURE.md`](../../.decisions/LIBRARY_ARCHITECTURE.md) §1a, §2b).
+`app` is an **integration namespace**: it composes `form` (form parsing for `defineAction`), `http` (fragment/error responses, cache headers), `logging` (the error logger), `result` (`ValidationResult`, `toError`), `router` (the underlying `@remix-run/fetch-router`), `security`, and `validation` (`validateEnv` schemas). Consumers reach all of it through `@y-core/forge/app` and never import `@remix-run/*` directly — the facade isolates version churn ([`.decisions/governance/LIBRARY_ARCHITECTURE.md`](../../.decisions/governance/LIBRARY_ARCHITECTURE.md) §1a).
 
 Per the Workers runtime model, `createApp` is a factory that captures bindings at request time, not at module evaluation — module-level state stays request-independent across V8 isolates. Use `c.executionCtx.waitUntil` for work that should outlive the response.
 
 Related docs:
 
-- [`.decisions/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/ROUTING_AND_MIDDLEWARE.md) — route map, controller, middleware ordering, `definePage`/`defineAction` lifecycle.
-- [`.decisions/LIBRARY_ARCHITECTURE.md`](../../.decisions/LIBRARY_ARCHITECTURE.md) — facade pattern, namespace tiers, Workers runtime constraints.
+- [`.decisions/implementation/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) — route map, controller, middleware ordering, `definePage`/`defineAction` lifecycle.
+- [`.decisions/implementation/LIBRARY_ARCHITECTURE.md`](../../.decisions/implementation/LIBRARY_ARCHITECTURE.md) — facade pattern, namespace tiers, Workers runtime constraints.
 
 ---
 

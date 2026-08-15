@@ -253,16 +253,14 @@ describe("mountViewportCollapse", () => {
     expect(second).not.toBe(first);
   });
 
-  it("no-ops when there is no element", () => {
-    const dispose = mountViewportCollapse({ element: null });
-
-    expect(() => dispose()).not.toThrow();
+  // A target the call named and that did not resolve is deterministic for that call site, so it
+  // throws rather than returning a disposer that quietly does nothing.
+  it("throws when there is no element", () => {
+    expect(() => mountViewportCollapse({ element: null })).toThrow("did not resolve to a disclosure");
   });
 
-  it("no-ops when the element is not a disclosure", () => {
-    const dispose = mountViewportCollapse({ element: { nodeType: 1 } as unknown as Element });
-
-    expect(() => dispose()).not.toThrow();
+  it("throws when the element is not a disclosure", () => {
+    expect(() => mountViewportCollapse({ element: { nodeType: 1 } as unknown as Element })).toThrow("did not resolve to a disclosure");
   });
 
   it("no-ops when the realm has no matchMedia", () => {

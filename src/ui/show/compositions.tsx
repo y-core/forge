@@ -33,15 +33,15 @@ const FEEDBACK_ROWS = [
 const RowTable: FC = () => (
   <table class='w-full border-collapse text-sm'>
     <thead>
-      <tr class='border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
-        <th class='py-2 pr-4'>Component</th>
+      <tr class='border-b border-border text-start text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+        <th class='py-2 pe-4'>Component</th>
         <th class='py-2'>Subpath</th>
       </tr>
     </thead>
     <tbody>
       {FEEDBACK_ROWS.map((row) => (
         <tr key={row.name} class='border-b border-border'>
-          <td class='py-2 pr-4 font-medium text-foreground'>{row.name}</td>
+          <td class='py-2 pe-4 font-medium text-foreground'>{row.name}</td>
           <td class='py-2'>
             <Badge variant='outline'>{row.subpath}</Badge>
           </td>
@@ -74,7 +74,9 @@ export const CollectionSurface: FC = () => (
           <Card.Description>A state, not an absence.</Card.Description>
         </Card.Header>
         <Card.Content class='space-y-3'>
-          <p class='max-w-prose text-sm text-muted-foreground'>No components are pinned yet. Pin one from the catalog to start the list.</p>
+          <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+            No components are pinned yet. Pin one from the catalog to start the list.
+          </p>
           <Button variant='secondary' size='sm'>
             Pin a component
           </Button>

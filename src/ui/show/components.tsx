@@ -44,78 +44,149 @@ import { Tooltip } from "../core/tooltip";
 import { Turnstile } from "../core/turnstile";
 import { FlashContainer } from "../server/flash";
 import { Resumable } from "../server/resumable";
-import type { ShowcaseData } from "./route";
+import { ChromeDemos } from "./chrome-demos";
+import { ControlsDemos } from "./controls-demos";
+import { FlashSection, LazySection } from "./extra-demos";
+import type { ShowcaseData, ShowcasePaths } from "./route";
 import { DependentSection, PaginateSection, PreviewSection, SearchSection, ToastSection, ValidateSection } from "./sections";
 
-/** The showcase's bound sprite. Named once because a dozen section signatures take it. */
-type ShowIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close">;
+/** The showcase's bound sprite. Named once because a dozen section signatures take it. @internal */
+export type ShowIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close" | "panel-open" | "panel-close">;
 
 /** The bands the table of contents reads in — a catalog entry names one, and nothing else groups. */
-type ShowcaseGroup = "Primitives" | "Forms & Controls" | "Interaction & Overlay" | "Feedback" | "Chrome" | "Behaviour";
+type ShowcaseGroup = "Primitives" | "Forms & Controls" | "Bound Controls" | "Interaction & Overlay" | "Feedback" | "Chrome" | "Behaviour";
+
+/** The route a catalog entry is served on — pages are cut by what a consumer must wire up. */
+export type ShowcasePage = "index" | "interactive" | "runtime" | "htmx" | "chrome";
 
 /** Every catalog entry, keyed by the kebab-cased name of the component it shows. */
-export const SECTIONS: { id: string; label: string; group: ShowcaseGroup }[] = [
-  { id: "accordion", label: "Accordion", group: "Behaviour" },
-  { id: "alert", label: "Alert", group: "Feedback" },
-  { id: "avatar", label: "Avatar", group: "Primitives" },
-  { id: "badge", label: "Badge", group: "Primitives" },
-  { id: "button", label: "Button", group: "Primitives" },
-  { id: "card", label: "Card", group: "Primitives" },
-  { id: "dialog", label: "Dialog", group: "Interaction & Overlay" },
-  { id: "field", label: "Field", group: "Forms & Controls" },
-  { id: "form", label: "Form", group: "Forms & Controls" },
-  { id: "form-field", label: "FormField", group: "Forms & Controls" },
-  { id: "honeypot", label: "Honeypot", group: "Forms & Controls" },
-  { id: "icon", label: "Icon", group: "Primitives" },
-  { id: "input", label: "Input", group: "Forms & Controls" },
-  { id: "label", label: "Label", group: "Forms & Controls" },
-  { id: "popover", label: "Popover", group: "Interaction & Overlay" },
-  { id: "progress", label: "Progress", group: "Primitives" },
-  { id: "select", label: "Select", group: "Forms & Controls" },
-  { id: "separator", label: "Separator", group: "Primitives" },
-  { id: "skeleton", label: "Skeleton", group: "Primitives" },
-  { id: "slider", label: "Slider", group: "Forms & Controls" },
-  { id: "spinner", label: "Spinner", group: "Primitives" },
-  { id: "switch", label: "Switch", group: "Forms & Controls" },
-  { id: "textarea", label: "Textarea", group: "Forms & Controls" },
-  { id: "toast", label: "Toast", group: "Feedback" },
-  { id: "toggle", label: "Toggle", group: "Forms & Controls" },
-  { id: "toggle-group", label: "ToggleGroup", group: "Forms & Controls" },
-  { id: "toolbar", label: "Toolbar", group: "Chrome" },
-  { id: "menu", label: "Menu", group: "Interaction & Overlay" },
-  { id: "tabs", label: "Tabs", group: "Behaviour" },
-  { id: "collapsible", label: "Collapsible", group: "Behaviour" },
-  { id: "tooltip", label: "Tooltip", group: "Interaction & Overlay" },
-  { id: "checkbox-group", label: "CheckboxGroup", group: "Forms & Controls" },
-  { id: "radio-group", label: "RadioGroup", group: "Forms & Controls" },
-  { id: "meter", label: "Meter", group: "Primitives" },
-  { id: "number-field", label: "NumberField", group: "Forms & Controls" },
-  { id: "scroll-area", label: "ScrollArea", group: "Behaviour" },
-  { id: "turnstile", label: "Turnstile", group: "Forms & Controls" },
-  { id: "htmx-demos", label: "HTMX Demos", group: "Behaviour" },
-  { id: "theme", label: "Theme", group: "Chrome" },
-  { id: "resumable", label: "Resumable", group: "Behaviour" },
+export const SECTIONS: { id: string; label: string; group: ShowcaseGroup; page: ShowcasePage }[] = [
+  { id: "accordion", label: "Accordion", group: "Behaviour", page: "index" },
+  { id: "alert", label: "Alert", group: "Feedback", page: "interactive" },
+  { id: "avatar", label: "Avatar", group: "Primitives", page: "index" },
+  { id: "badge", label: "Badge", group: "Primitives", page: "index" },
+  { id: "button", label: "Button", group: "Primitives", page: "index" },
+  { id: "card", label: "Card", group: "Primitives", page: "index" },
+  { id: "dialog", label: "Dialog", group: "Interaction & Overlay", page: "interactive" },
+  { id: "field", label: "Field", group: "Forms & Controls", page: "index" },
+  { id: "form", label: "Form", group: "Forms & Controls", page: "index" },
+  { id: "form-field", label: "FormField", group: "Forms & Controls", page: "index" },
+  { id: "honeypot", label: "Honeypot", group: "Forms & Controls", page: "index" },
+  { id: "icon", label: "Icon", group: "Primitives", page: "index" },
+  { id: "input", label: "Input", group: "Forms & Controls", page: "index" },
+  { id: "label", label: "Label", group: "Forms & Controls", page: "index" },
+  { id: "popover", label: "Popover", group: "Interaction & Overlay", page: "interactive" },
+  { id: "progress", label: "Progress", group: "Primitives", page: "index" },
+  { id: "select", label: "Select", group: "Forms & Controls", page: "index" },
+  { id: "separator", label: "Separator", group: "Primitives", page: "index" },
+  { id: "skeleton", label: "Skeleton", group: "Primitives", page: "index" },
+  { id: "slider", label: "Slider", group: "Forms & Controls", page: "interactive" },
+  { id: "spinner", label: "Spinner", group: "Primitives", page: "index" },
+  { id: "switch", label: "Switch", group: "Forms & Controls", page: "index" },
+  { id: "textarea", label: "Textarea", group: "Forms & Controls", page: "index" },
+  { id: "toast", label: "Toast", group: "Feedback", page: "interactive" },
+  { id: "toggle", label: "Toggle", group: "Forms & Controls", page: "index" },
+  { id: "toggle-group", label: "ToggleGroup", group: "Forms & Controls", page: "interactive" },
+  { id: "toolbar", label: "Toolbar", group: "Chrome", page: "interactive" },
+  { id: "menu", label: "Menu", group: "Interaction & Overlay", page: "interactive" },
+  { id: "tabs", label: "Tabs", group: "Behaviour", page: "interactive" },
+  { id: "collapsible", label: "Collapsible", group: "Behaviour", page: "index" },
+  { id: "tooltip", label: "Tooltip", group: "Interaction & Overlay", page: "interactive" },
+  { id: "checkbox-group", label: "CheckboxGroup", group: "Forms & Controls", page: "index" },
+  { id: "radio-group", label: "RadioGroup", group: "Forms & Controls", page: "index" },
+  { id: "meter", label: "Meter", group: "Primitives", page: "index" },
+  { id: "number-field", label: "NumberField", group: "Forms & Controls", page: "interactive" },
+  { id: "scroll-area", label: "ScrollArea", group: "Behaviour", page: "index" },
+  { id: "turnstile-widget", label: "Turnstile", group: "Forms & Controls", page: "interactive" },
+  { id: "htmx-demos", label: "HTMX Demos", group: "Behaviour", page: "htmx" },
+  { id: "theme", label: "Theme", group: "Chrome", page: "chrome" },
+  { id: "resumable", label: "Resumable", group: "Behaviour", page: "runtime" },
+  { id: "native-and-reactive", label: "Native vs Bound", group: "Bound Controls", page: "runtime" },
+  { id: "controls-input", label: "Bound Input", group: "Bound Controls", page: "runtime" },
+  { id: "controls-select", label: "Bound Select", group: "Bound Controls", page: "runtime" },
+  { id: "controls-slider", label: "Bound Slider", group: "Bound Controls", page: "runtime" },
+  { id: "controls-switch", label: "Bound Switch", group: "Bound Controls", page: "runtime" },
+  { id: "controls-textarea", label: "Bound Textarea", group: "Bound Controls", page: "runtime" },
+  { id: "controls-toggle-group", label: "Bound ToggleGroup", group: "Bound Controls", page: "runtime" },
+  { id: "controls-toggle", label: "Bound Toggle", group: "Bound Controls", page: "runtime" },
+  { id: "controls-number-field", label: "Bound NumberField", group: "Bound Controls", page: "runtime" },
+  { id: "controls-radio-group", label: "Bound RadioGroup", group: "Bound Controls", page: "runtime" },
+  { id: "controls-checkbox-group", label: "Bound CheckboxGroup", group: "Bound Controls", page: "runtime" },
+  { id: "chrome-navbar", label: "Chrome Navbar", group: "Chrome", page: "chrome" },
+  { id: "chrome-toolbar", label: "Chrome Toolbar", group: "Chrome", page: "chrome" },
+  { id: "flash", label: "Flash", group: "Feedback", page: "htmx" },
+  { id: "lazy", label: "Lazy", group: "Behaviour", page: "runtime" },
 ];
 
-/** The order the groups are read in — plainest primitives first, page-level behaviour last. */
-const GROUP_ORDER: ShowcaseGroup[] = ["Primitives", "Forms & Controls", "Interaction & Overlay", "Feedback", "Chrome", "Behaviour"];
-
-/** The catalog as a navbar configuration: one section holding one group per band. */
-const TOC_CONFIG: NavDefinition = {
-  sections: [
-    {
-      items: GROUP_ORDER.map((heading) => ({
-        heading,
-        group: SECTIONS.filter((section) => section.group === heading)
-          .sort((a, b) => a.label.localeCompare(b.label))
-          .map(({ id, label }) => ({ label, href: id })),
-      })),
-    },
-  ],
+/** Every showcase page, with the prerequisite a consumer must install for that page's demos to work. */
+export const SHOWCASE_PAGES: Record<ShowcasePage, { slug: string; label: string; needs: string }> = {
+  index: {
+    slug: "",
+    label: "Catalog",
+    needs: "Nothing beyond the stylesheet — every section here is server-rendered markup and native behaviour, and works with JavaScript disabled.",
+  },
+  interactive: {
+    slug: "interactive",
+    label: "Interactive",
+    needs:
+      'Import "@y-core/forge/ui/core/client" and call resume() — each section here registers a scope that is inert until you do. Toolbar is the ui/core primitive; the configuration-driven chrome Toolbar is on the Chrome page.',
+  },
+  runtime: {
+    slug: "runtime",
+    label: "Runtime",
+    needs:
+      'Import "@y-core/forge/ui/show/client" and call resume() — signals drive the bound controls through bindControls, and lazy() holds the panel module back until its anchor is seen.',
+  },
+  htmx: {
+    slug: "htmx",
+    label: "HTMX",
+    needs:
+      'Import "@y-core/forge/ui/client/htmx" and serve the seven api.* endpoints registerShowcase mounts. Flash reads here because its message links the toast demo in the HTMX band.',
+  },
+  chrome: {
+    slug: "chrome",
+    label: "Chrome",
+    needs: 'Import "@y-core/forge/ui/chrome/client", call resume(), and supply the NavDefinition and ToolbarDefinition these sections render from.',
+  },
 };
 
-/** The rail's `href`s are page fragments: `resolveHref` takes a key, and nothing says it is a route. */
-const tocHref = (key: string) => `#${key}`;
+/** The order the pages are offered in — the rail lists them, and nothing else orders pages. */
+export const PAGE_ORDER: ShowcasePage[] = ["index", "interactive", "runtime", "htmx", "chrome"];
+
+/** The order the groups are read in — plainest primitives first, page-level behaviour last. */
+const GROUP_ORDER: ShowcaseGroup[] = [
+  "Primitives",
+  "Forms & Controls",
+  "Bound Controls",
+  "Interaction & Overlay",
+  "Feedback",
+  "Chrome",
+  "Behaviour",
+];
+
+const pageUrl = (pagePath: string, slug: string) => (slug === "" ? pagePath : `${pagePath}/${slug}`);
+
+/** The leading rail: where the reader can go — every showcase page, as a route. */
+function pagesConfig(pagePath: string): NavDefinition {
+  const pages = PAGE_ORDER.map((key) => ({ label: SHOWCASE_PAGES[key].label, href: pageUrl(pagePath, SHOWCASE_PAGES[key].slug) }));
+  return { sections: [{ items: [{ heading: "Pages", group: pages }] }] };
+}
+
+/** The trailing rail: what is on the page being read — that page's own bands, as anchors. */
+function sectionsConfig(page: ShowcasePage): NavDefinition {
+  const bands = GROUP_ORDER.map((heading) => ({
+    heading,
+    group: SECTIONS.filter((section) => section.group === heading && section.page === page)
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map(({ id, label }) => ({ label, href: id })),
+  })).filter((band) => band.group.length > 0);
+
+  return { sections: [{ items: bands }] };
+}
+
+const pageHref = (key: string) => key;
+
+const anchorHref = (key: string) => `#${key}`;
 
 interface CatalogSectionProps {
   id: string;
@@ -123,10 +194,28 @@ interface CatalogSectionProps {
   children: unknown;
 }
 
-const CatalogSection: FC<CatalogSectionProps> = ({ id, title, children }) => (
+/** One catalog band: an anchored section headed by its component's name. @internal */
+export const CatalogSection: FC<CatalogSectionProps> = ({ id, title, children }) => (
   <section id={id} class='scroll-mt-24 space-y-4'>
     <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>{title}</h2>
     <div class='flex flex-wrap items-start gap-4'>{children}</div>
+  </section>
+);
+
+interface CatalogPanelProps extends CatalogSectionProps {
+  description: string;
+}
+
+// A sibling of `CatalogSection`, not a flag on it: a band that is a card and carries a description
+// is a different shape, and the alternative is the four-flag component the design corpus warns about.
+/** A card-shaped band: a heading, a line saying what it demonstrates, and the demo itself. @internal */
+export const CatalogPanel: FC<CatalogPanelProps> = ({ id, title, description, children }) => (
+  <section id={id} class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
+    <div>
+      <h2 class='text-base font-semibold text-foreground'>{title}</h2>
+      <p class='mt-1 text-sm text-muted-foreground'>{description}</p>
+    </div>
+    {children}
   </section>
 );
 
@@ -155,8 +244,11 @@ const AlertSection: FC = () => (
   </CatalogSection>
 );
 
-const AvatarSection: FC = () => (
+const AvatarSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
   <CatalogSection id='avatar' title='Avatar'>
+    <Avatar size='lg'>
+      <Avatar.Image src={paths.avatar} alt='Ada Lovelace' />
+    </Avatar>
     <Avatar size='sm'>
       <Avatar.Fallback>AB</Avatar.Fallback>
     </Avatar>
@@ -175,10 +267,13 @@ const BadgeSection: FC = () => (
     <Badge variant='secondary'>Secondary</Badge>
     <Badge variant='outline'>Outline</Badge>
     <Badge variant='destructive'>Destructive</Badge>
+    <Badge variant='info'>Info</Badge>
+    <Badge variant='success'>Success</Badge>
+    <Badge variant='warning'>Warning</Badge>
   </CatalogSection>
 );
 
-const ButtonSection: FC = () => (
+const ButtonSection: FC<{ icon: ShowIcon }> = ({ icon: Icon }) => (
   <CatalogSection id='button' title='Button'>
     <Button variant='primary' size='sm'>
       Primary sm
@@ -198,15 +293,34 @@ const ButtonSection: FC = () => (
     <Button variant='primary' size='md' disabled>
       Disabled
     </Button>
+    <Button variant='destructive' size='md'>
+      Destructive
+    </Button>
+    <Button variant='secondary' size='icon' aria-label='Close panel'>
+      <Icon name='close' width={16} height={16} />
+    </Button>
+    <Button variant='secondary' size='icon-sm' aria-label='Open menu'>
+      <Icon name='hamburger' width={16} height={16} />
+    </Button>
+    <div class='w-16'>
+      <Button variant='secondary' size='square' aria-label='More options'>
+        <Icon name='chevron-down' width={16} height={16} />
+      </Button>
+    </div>
   </CatalogSection>
 );
 
-const CardSection: FC = () => (
+const CardSection: FC<{ icon: ShowIcon }> = ({ icon: Icon }) => (
   <CatalogSection id='card' title='Card'>
     <Card class='w-64'>
       <Card.Header>
         <Card.Title>Card Title</Card.Title>
         <Card.Description>A short description of this card.</Card.Description>
+        <Card.Action>
+          <Button variant='ghost' size='icon-sm' aria-label='Card options'>
+            <Icon name='chevron-down' width={16} height={16} />
+          </Button>
+        </Card.Action>
       </Card.Header>
       <Card.Content>
         <p class='text-sm text-muted-foreground'>Card body content goes here.</p>
@@ -239,11 +353,28 @@ const FormFieldSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
           <Select.Option value='b'>Option B</Select.Option>
         </Select>
       </FormField>
+      <FormField.Set>
+        <FormField.Legend>Notifications</FormField.Legend>
+        <FormField.Set>
+          <FormField.Legend variant='label'>Email</FormField.Legend>
+          <FormField.Content>
+            <FormField.Title>Frequency</FormField.Title>
+            <Switch name='digest-weekly' checked>
+              Weekly digest
+            </Switch>
+          </FormField.Content>
+          <FormField.Separator>or</FormField.Separator>
+          <FormField.Content>
+            <FormField.Title>Silence</FormField.Title>
+            <Switch name='digest-none'>No email at all</Switch>
+          </FormField.Content>
+        </FormField.Set>
+      </FormField.Set>
     </div>
   </CatalogSection>
 );
 
-const IconSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon: Icon }) => (
+const IconSection: FC<{ icon: ShowIcon }> = ({ icon: Icon }) => (
   <CatalogSection id='icon' title='Icon'>
     <div class='flex items-center gap-4'>
       <Icon name='spinner' width={20} height={20} />
@@ -251,6 +382,10 @@ const IconSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "mo
       <Icon name='sun' width={20} height={20} />
       <Icon name='moon' width={20} height={20} />
       <Icon name='monitor' width={20} height={20} />
+      <Icon name='hamburger' width={20} height={20} />
+      <Icon name='close' width={20} height={20} />
+      {/* An icon carrying its own meaning: `aria-label` swaps the default `aria-hidden` for `role="img"`. */}
+      <Icon name='spinner' width={20} height={20} aria-label='Loading' />
     </div>
   </CatalogSection>
 );
@@ -261,6 +396,11 @@ const InputSection: FC = () => (
     <Input type='email' name='email-input' placeholder='Email input' class='max-w-xs' />
     <Input type='password' name='pw-input' placeholder='Password input' class='max-w-xs' />
     <Input type='text' name='disabled-input' placeholder='Disabled' disabled class='max-w-xs' />
+    {/* The descriptor, not the raw attribute: `field` is what derives the id, the name and
+        `aria-invalid` together, so the control and its label cannot disagree. */}
+    <Input type='text' field={{ name: "invalid-input", invalid: true }} placeholder='Invalid' class='max-w-xs' />
+    <Input type='text' name='readonly-input' value='Read only' readonly class='max-w-xs' />
+    <Input type='text' name='required-input' placeholder='Required' required class='max-w-xs' />
   </CatalogSection>
 );
 
@@ -268,6 +408,10 @@ const LabelSection: FC = () => (
   <CatalogSection id='label' title='Label'>
     <Label for='demo-label-input'>Standalone Label</Label>
     <Input id='demo-label-input' type='text' name='demo-label' placeholder='Paired input' class='max-w-xs' />
+    <Label for='demo-label-required-input' required>
+      Required Label
+    </Label>
+    <Input id='demo-label-required-input' type='text' name='demo-label-required' placeholder='Required input' class='max-w-xs' />
   </CatalogSection>
 );
 
@@ -279,6 +423,10 @@ const ProgressSection: FC = () => (
       <Progress value={66} max={100} />
       <Progress value={100} max={100} />
     </div>
+    <div class='flex h-40 items-stretch gap-4'>
+      <Progress value={25} max={100} orientation='vertical' label='Vertical, 25%' />
+      <Progress value={75} max={100} orientation='vertical' label='Vertical, 75%' />
+    </div>
   </CatalogSection>
 );
 
@@ -288,6 +436,11 @@ const SeparatorSection: FC = () => (
       <p class='text-sm text-muted-foreground'>Above</p>
       <Separator />
       <p class='text-sm text-muted-foreground'>Below</p>
+    </div>
+    <div class='flex h-10 items-center gap-3 text-sm text-muted-foreground'>
+      <span>Left</span>
+      <Separator orientation='vertical' />
+      <span>Right</span>
     </div>
   </CatalogSection>
 );
@@ -302,11 +455,11 @@ const SkeletonSection: FC = () => (
   </CatalogSection>
 );
 
-const SpinnerSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => (
+const SpinnerSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
   <CatalogSection id='spinner' title='Spinner'>
     <Spinner icon={icon} size='sm' />
     <Spinner icon={icon} size='md' />
-    <Spinner icon={icon} size='lg' />
+    <Spinner icon={icon} size='lg' label='Fetching results…' />
   </CatalogSection>
 );
 
@@ -314,6 +467,11 @@ const TextareaSection: FC = () => (
   <CatalogSection id='textarea' title='Textarea'>
     <Textarea name='demo-textarea' placeholder='Write something…' rows={3} class='max-w-sm' />
     <Textarea name='disabled-textarea' placeholder='Disabled' disabled rows={3} class='max-w-sm' />
+    <Textarea field={{ name: "invalid-textarea", invalid: true }} placeholder='Invalid' rows={3} class='max-w-sm' />
+    <Textarea name='readonly-textarea' readonly rows={3} class='max-w-sm'>
+      Read only
+    </Textarea>
+    <Textarea name='required-textarea' placeholder='Required' required rows={3} class='max-w-sm' />
   </CatalogSection>
 );
 
@@ -335,6 +493,18 @@ const CheckboxGroupSection: FC = () => (
         Chilli
       </CheckboxGroup.Item>
     </CheckboxGroup>
+    <CheckboxGroup name='alerts' orientation='vertical'>
+      <CheckboxGroup.Label>Alerts</CheckboxGroup.Label>
+      <CheckboxGroup.Item name='alerts' value='deploys' checked>
+        Deploys
+      </CheckboxGroup.Item>
+      <CheckboxGroup.Item name='alerts' value='errors'>
+        Errors
+      </CheckboxGroup.Item>
+      <CheckboxGroup.Item name='alerts' value='digest'>
+        Weekly digest
+      </CheckboxGroup.Item>
+    </CheckboxGroup>
   </CatalogSection>
 );
 
@@ -349,6 +519,18 @@ const RadioGroupSection: FC = () => (
         Pro
       </RadioGroup.Item>
     </RadioGroup>
+    <RadioGroup name='billing' orientation='vertical'>
+      <RadioGroup.Label>Billing period</RadioGroup.Label>
+      <RadioGroup.Item name='billing' value='monthly' checked>
+        Monthly
+      </RadioGroup.Item>
+      <RadioGroup.Item name='billing' value='yearly'>
+        Yearly
+      </RadioGroup.Item>
+      <RadioGroup.Item name='billing' value='lifetime'>
+        Lifetime
+      </RadioGroup.Item>
+    </RadioGroup>
   </CatalogSection>
 );
 
@@ -358,6 +540,17 @@ const MeterSection: FC = () => (
       <Meter.Label for='show-meter-disk'>Disk usage</Meter.Label>
       <Meter.Track id='show-meter-disk' value={0.72} low={0.3} high={0.8} optimum={0.2} />
       <Meter.Value>72% of 500 GB</Meter.Value>
+    </Meter>
+    {/* No thresholds at all: the bare track, which is what a plain quantity looks like. */}
+    <Meter>
+      <Meter.Label for='show-meter-bare'>Battery</Meter.Label>
+      <Meter.Track id='show-meter-bare' value={0.41} />
+      <Meter.Value>41%</Meter.Value>
+    </Meter>
+    <Meter>
+      <Meter.Label for='show-meter-over'>Quota</Meter.Label>
+      <Meter.Track id='show-meter-over' value={0.94} low={0.3} high={0.8} optimum={0.2} />
+      <Meter.Value>94% — over the high threshold</Meter.Value>
     </Meter>
   </CatalogSection>
 );
@@ -369,16 +562,39 @@ const NumberFieldSection: FC = () => (
       <NumberField.Input name='show-count' value='1' min='0' max='10' />
       <NumberField.Increment />
     </NumberField>
+    {/* `step` and a stepper `label` are both the caller's: the steppers name what they move, which
+        "Increment" alone does not when two fields sit side by side. */}
+    <NumberField>
+      <NumberField.Decrement label='Decrease quantity' />
+      <NumberField.Input name='show-quantity' value='10' min='0' max='100' step='5' />
+      <NumberField.Increment label='Increase quantity' />
+    </NumberField>
+    <NumberField>
+      <NumberField.Decrement disabled />
+      <NumberField.Input name='show-locked' value='3' min='0' max='10' disabled />
+      <NumberField.Increment disabled />
+    </NumberField>
   </CatalogSection>
 );
 
 const ScrollAreaSection: FC = () => (
   <CatalogSection id='scroll-area' title='ScrollArea'>
     <ScrollArea class='h-40 w-64 rounded-md border border-border'>
-      <ScrollArea.Viewport class='p-3'>
+      <ScrollArea.Viewport label='Vertical sample rows' class='p-3'>
         <div class='space-y-2 text-sm text-muted-foreground'>
           {SCROLL_ROWS.map((row) => (
             <p key={row}>{row}</p>
+          ))}
+        </div>
+      </ScrollArea.Viewport>
+    </ScrollArea>
+    <ScrollArea orientation='horizontal' class='w-64 rounded-md border border-border'>
+      <ScrollArea.Viewport label='Horizontal sample rows' class='p-3'>
+        <div class='flex w-max gap-2'>
+          {SCROLL_ROWS.map((row) => (
+            <span key={row} class='shrink-0 rounded-md border border-border px-2 py-1 text-sm text-muted-foreground'>
+              {row}
+            </span>
           ))}
         </div>
       </ScrollArea.Viewport>
@@ -395,19 +611,30 @@ const ToggleSection: FC = () => (
 );
 
 const AccordionSection: FC<{ icon: ShowIcon }> = ({ icon }) => {
-  const wide = icon as unknown as ForgeIcon<string>;
   return (
     <CatalogSection id='accordion' title='Accordion'>
       <Accordion class='w-full max-w-md gap-2'>
         <Accordion.Item open>
-          <Accordion.Trigger icon={wide}>What is a resumable scope?</Accordion.Trigger>
+          <Accordion.Trigger icon={icon}>What is a resumable scope?</Accordion.Trigger>
           <Accordion.Content>A server-stamped region whose state is rehydrated on the first interaction inside it.</Accordion.Content>
         </Accordion.Item>
         <Accordion.Item>
-          <Accordion.Trigger icon={wide}>Why native disclosure?</Accordion.Trigger>
+          <Accordion.Trigger icon={icon}>Why native disclosure?</Accordion.Trigger>
           <Accordion.Content hint='No JavaScript required'>
             Open and closed belong to the platform; the controller only publishes them for CSS to react to.
           </Accordion.Content>
+        </Accordion.Item>
+      </Accordion>
+      {/* A shared `name` is what makes a native disclosure group exclusive — opening one closes the
+          others, with no controller involved at all. */}
+      <Accordion class='w-full max-w-md gap-2'>
+        <Accordion.Item name='exclusive-demo' open>
+          <Accordion.Trigger icon={icon}>Exclusive: first</Accordion.Trigger>
+          <Accordion.Content>Opening a sibling closes this one, because they share a name.</Accordion.Content>
+        </Accordion.Item>
+        <Accordion.Item name='exclusive-demo'>
+          <Accordion.Trigger icon={icon}>Exclusive: second</Accordion.Trigger>
+          <Accordion.Content>The platform enforces it — this is the `name` attribute on `&lt;details&gt;`.</Accordion.Content>
         </Accordion.Item>
       </Accordion>
     </CatalogSection>
@@ -416,17 +643,44 @@ const AccordionSection: FC<{ icon: ShowIcon }> = ({ icon }) => {
 
 const DialogSection: FC = () => (
   <CatalogSection id='dialog' title='Dialog'>
-    <Dialog.Trigger for='show-dialog' class='rounded-md border border-border px-3 py-1.5 text-sm data-[popup-open]:bg-accent'>
+    <Dialog.Trigger for='show-dialog' class='rounded-md border border-border px-3 py-1.5 text-sm'>
       Open dialog
     </Dialog.Trigger>
     <Dialog id='show-dialog' class='max-w-sm'>
-      <h3 class='text-base font-semibold text-foreground'>A native modal</h3>
-      <p class='mt-2 text-sm text-muted-foreground'>
-        Opened and closed by Invoker commands — the top layer, the backdrop and Escape are the platform's.
-      </p>
-      <div class='mt-4 flex justify-end gap-2'>
-        <Dialog.Close for='show-dialog'>Close</Dialog.Close>
-      </div>
+      <Dialog.Header>
+        <h3 class='text-base font-semibold text-foreground'>A native modal</h3>
+        <Dialog.Close for='show-dialog' aria-label='Close dialog' class='size-8 rounded p-1 text-muted-foreground'>
+          ×
+        </Dialog.Close>
+      </Dialog.Header>
+      <Dialog.Body>
+        <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+          Opened and closed by Invoker commands — the top layer, the backdrop and Escape are the platform's.
+        </p>
+      </Dialog.Body>
+      <Dialog.Footer class='justify-end'>
+        <Dialog.Close for='show-dialog' class='rounded-md border border-border px-3 py-1.5 text-sm'>
+          Close
+        </Dialog.Close>
+      </Dialog.Footer>
+    </Dialog>
+    {/* `open` is the platform's non-modal spelling — no backdrop, no top layer, the page stays live —
+        which is why it sits in the band rather than over the catalog. */}
+    <Dialog id='show-dialog-inline' open class='max-w-sm'>
+      <Dialog.Header>
+        <h3 class='text-base font-semibold text-foreground'>Open and non-modal</h3>
+      </Dialog.Header>
+      <Dialog.Body>
+        <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+          The close below runs <code>request-close</code>, the cancelable algorithm — a <code>cancel</code> listener can keep it open, which plain{" "}
+          <code>close</code> cannot.
+        </p>
+      </Dialog.Body>
+      <Dialog.Footer class='justify-end'>
+        <Dialog.Close for='show-dialog-inline' request class='rounded-md border border-border px-3 py-1.5 text-sm'>
+          Request close
+        </Dialog.Close>
+      </Dialog.Footer>
     </Dialog>
   </CatalogSection>
 );
@@ -434,13 +688,35 @@ const DialogSection: FC = () => (
 const PopoverSection: FC = () => (
   <CatalogSection id='popover' title='Popover'>
     <Popover>
-      <Popover.Trigger
-        id='show-popover'
-        class='rounded-md border border-border px-3 py-1.5 text-sm data-[popup-open]:bg-accent data-[popup-open]:text-accent-foreground'>
+      <Popover.Trigger id='show-popover' class='rounded-md border border-border px-3 py-1.5 text-sm'>
         Details
       </Popover.Trigger>
       <Popover.Content id='show-popover' class='p-3 text-sm text-muted-foreground'>
         An anchored surface with light-dismiss, and no JavaScript to open it.
+      </Popover.Content>
+    </Popover>
+    <Popover>
+      <Popover.Trigger id='show-popover-top' class='rounded-md border border-border px-3 py-1.5 text-sm'>
+        side=top
+      </Popover.Trigger>
+      <Popover.Content id='show-popover-top' side='top' class='p-3 text-sm text-muted-foreground'>
+        Opens above the trigger instead of below it.
+      </Popover.Content>
+    </Popover>
+    <Popover>
+      <Popover.Trigger id='show-popover-center' class='rounded-md border border-border px-3 py-1.5 text-sm'>
+        align=center
+      </Popover.Trigger>
+      <Popover.Content id='show-popover-center' align='center' class='p-3 text-sm text-muted-foreground'>
+        Centred on the trigger along the bottom side.
+      </Popover.Content>
+    </Popover>
+    <Popover>
+      <Popover.Trigger id='show-popover-end' class='rounded-md border border-border px-3 py-1.5 text-sm'>
+        align=end
+      </Popover.Trigger>
+      <Popover.Content id='show-popover-end' align='end' class='p-3 text-sm text-muted-foreground'>
+        Right edges aligned, so it grows leftward.
       </Popover.Content>
     </Popover>
   </CatalogSection>
@@ -455,6 +731,16 @@ const SelectSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
     </Select>
     <Select name='show-select-disabled' class='max-w-xs' icon={icon} disabled>
       <Select.Option value='mm'>Disabled</Select.Option>
+    </Select>
+    <Select name='show-select-groups' class='max-w-xs' icon={icon} aria-label='Units'>
+      <Select.OptGroup label='Metric'>
+        <Select.Option value='mm'>Millimetres</Select.Option>
+        <Select.Option value='cm'>Centimetres</Select.Option>
+      </Select.OptGroup>
+      <Select.OptGroup label='Imperial'>
+        <Select.Option value='in'>Inches</Select.Option>
+        <Select.Option value='ft'>Feet</Select.Option>
+      </Select.OptGroup>
     </Select>
   </CatalogSection>
 );
@@ -494,6 +780,19 @@ const FormSection: FC = () => (
       </Field>
       <Button type='submit'>Save</Button>
     </Form>
+    {/* A `get` form carries no CSRF field: the token guards state change, and a search does none. */}
+    <Form action='#' method='get' class='w-full max-w-xs space-y-3'>
+      <Field label='Search'>
+        <Input type='search' name='q' placeholder='Anything' />
+      </Field>
+      <Button type='submit'>Search</Button>
+    </Form>
+    <Form action='#' method='post' csrfToken='demo-token' csrfField='_token' class='w-full max-w-xs space-y-3'>
+      <Field label='Renamed CSRF field'>
+        <Input type='text' name='note' placeholder='The hidden field is `_token`' />
+      </Field>
+      <Button type='submit'>Save</Button>
+    </Form>
   </CatalogSection>
 );
 
@@ -503,6 +802,12 @@ const HoneypotSection: FC = () => (
       <Honeypot />
       <Input type='email' name='newsletter-email' placeholder='you@example.com' />
       <Button type='submit'>Subscribe</Button>
+    </Form>
+    {/* The decoy's name is the whole of its disguise, so it is the caller's to pick. */}
+    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
+      <Honeypot field='company-website' />
+      <Input type='email' name='waitlist-email' placeholder='you@example.com' />
+      <Button type='submit'>Join the waitlist</Button>
     </Form>
   </CatalogSection>
 );
@@ -527,11 +832,25 @@ const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
 // The field is not decoration: `mountTurnstile` gates Cloudflare's script on the first `focusin`
 // within the enclosing form, so a form with nothing to focus never loads the widget.
 const TurnstileSection: FC = () => (
-  <CatalogSection id='turnstile' title='Turnstile'>
-    <Form action='#' method='post' data-scope='show-turnstile' class='w-full max-w-xs space-y-3'>
+  // Not `turnstile`: the DOM publishes every `id` on `window`, and Cloudflare's `api.js` reads
+  // `window.turnstile`'s truthiness to decide it has already loaded.
+  <CatalogSection id='turnstile-widget' title='Turnstile'>
+    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
       <Honeypot />
       <Input type='email' name='turnstile-email' placeholder='you@example.com' />
       <Turnstile siteKey={TURNSTILE_TEST_KEY} size='normal' />
+      <Button type='submit'>Submit</Button>
+    </Form>
+    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
+      <Honeypot />
+      <Input type='email' name='turnstile-email-compact' placeholder='you@example.com' />
+      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='compact' />
+      <Button type='submit'>Submit</Button>
+    </Form>
+    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
+      <Honeypot />
+      <Input type='email' name='turnstile-email-flexible' placeholder='you@example.com' />
+      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='flexible' />
       <Button type='submit'>Submit</Button>
     </Form>
   </CatalogSection>
@@ -551,7 +870,20 @@ const ToolbarSection: FC = () => (
       </Toolbar.Group>
       <Toolbar.Separator />
       <Toolbar.Link href='#toolbar'>Help</Toolbar.Link>
+      <Toolbar.Button asChild>
+        <a href='#toolbar'>Docs</a>
+      </Toolbar.Button>
     </Toolbar>
+    <Toolbar orientation='vertical' aria-label='Formatting (vertical)'>
+      <Toolbar.Button pressed>Bold</Toolbar.Button>
+      <Toolbar.Button pressed={false}>Italic</Toolbar.Button>
+      <Toolbar.Separator orientation='horizontal' />
+      <Toolbar.Link href='#toolbar'>Help</Toolbar.Link>
+    </Toolbar>
+    <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+      <code>Toolbar.Link</code> renders forge's own anchor; <code>Toolbar.Button asChild</code> takes the caller's anchor and lends it the toolbar
+      item's styling and roving-focus wiring.
+    </p>
   </CatalogSection>
 );
 
@@ -575,16 +907,39 @@ const MenuSection: FC = () => (
           Autosave
         </Menu.CheckboxItem>
         <Menu.RadioItem for={false}>Compact view</Menu.RadioItem>
+        <Menu.Separator />
+        <Menu.LinkItem href='#menu'>Open recent…</Menu.LinkItem>
+        <Menu.SubmenuTrigger id='show-file-export'>Export as</Menu.SubmenuTrigger>
+        <Menu.Popup id='show-file-export' side='inline-end'>
+          <Menu.Item for='show-file-export'>PNG</Menu.Item>
+          <Menu.Item for='show-file-export'>SVG</Menu.Item>
+          <Menu.Item for='show-file-export'>PDF</Menu.Item>
+        </Menu.Popup>
       </Menu.Popup>
     </Menu>
 
-    <div
-      data-ref='context-surface'
-      data-scope='show-context-menu'
-      data-state='{"target":"show-context-menu-popup"}'
+    <Menu>
+      <Menu.Trigger id='show-view-menu' class='rounded-md border border-input px-3 py-1.5 text-sm'>
+        View
+      </Menu.Trigger>
+      <Menu.Popup id='show-view-menu' side='top' align='end'>
+        <Menu.Item for='show-view-menu'>Zoom in</Menu.Item>
+        <Menu.Item for='show-view-menu'>Zoom out</Menu.Item>
+        <Menu.Item for='show-view-menu'>Actual size</Menu.Item>
+      </Menu.Popup>
+    </Menu>
+
+    <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+      The View menu sets <code>side=top</code> and <code>align=end</code>: it opens upward, with its right edge on the trigger's.
+    </p>
+
+    <Resumable
+      name='show-context-menu'
+      state={{ target: "show-context-menu-popup" }}
+      ref='context-surface'
       class='mt-2 flex h-24 w-full max-w-md items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground'>
       Right-click anywhere in this box
-    </div>
+    </Resumable>
     <Menu.Popup id='show-context-menu-popup' coords>
       <Menu.Item for='show-context-menu-popup'>Cut</Menu.Item>
       <Menu.Item for='show-context-menu-popup'>Copy</Menu.Item>
@@ -613,21 +968,44 @@ const TabsSection: FC = () => (
         <p class='text-sm text-muted-foreground'>Home and End reach the ends.</p>
       </Tabs.Panel>
     </Tabs>
+    <Tabs orientation='vertical' class='w-full max-w-md'>
+      <Tabs.List orientation='vertical' aria-label='Vertical panels'>
+        <Tabs.Tab for='show-vtab-a' selected>
+          General
+        </Tabs.Tab>
+        <Tabs.Tab for='show-vtab-b'>Advanced</Tabs.Tab>
+      </Tabs.List>
+      <Tabs.Panel id='show-vtab-a' selected>
+        <p class='text-sm text-muted-foreground'>The list runs down the side, and arrow keys follow it.</p>
+      </Tabs.Panel>
+      <Tabs.Panel id='show-vtab-b'>
+        <p class='text-sm text-muted-foreground'>Orientation is set on the root and the list alike.</p>
+      </Tabs.Panel>
+    </Tabs>
   </CatalogSection>
 );
 
 const CollapsibleSection: FC<{ icon: ShowIcon }> = ({ icon }) => {
-  const wide = icon as unknown as ForgeIcon<string>;
   return (
     <CatalogSection id='collapsible' title='Collapsible'>
       <div class='w-full max-w-md space-y-2'>
         <Collapsible>
-          <Collapsible.Trigger icon={wide}>Advanced options</Collapsible.Trigger>
+          <Collapsible.Trigger icon={icon}>Advanced options</Collapsible.Trigger>
           <Collapsible.Panel>Native &lt;details&gt;: open and closed belong to the platform.</Collapsible.Panel>
         </Collapsible>
         <Collapsible open>
-          <Collapsible.Trigger icon={wide}>Already open</Collapsible.Trigger>
+          <Collapsible.Trigger icon={icon}>Already open</Collapsible.Trigger>
           <Collapsible.Panel>Rendered open by the server, with no client work at all.</Collapsible.Panel>
+        </Collapsible>
+        {/* `name` reaches `<details>` through the root's rest props: exclusivity without Accordion,
+            for two disclosures that are siblings but not a list. */}
+        <Collapsible name='collapsible-exclusive' open>
+          <Collapsible.Trigger icon={icon}>Exclusive: first</Collapsible.Trigger>
+          <Collapsible.Panel>A shared `name` makes the platform close the other one.</Collapsible.Panel>
+        </Collapsible>
+        <Collapsible name='collapsible-exclusive'>
+          <Collapsible.Trigger icon={icon}>Exclusive: second</Collapsible.Trigger>
+          <Collapsible.Panel>Opening this closes the one above, with no script.</Collapsible.Panel>
         </Collapsible>
       </div>
     </CatalogSection>
@@ -642,32 +1020,96 @@ const TooltipSection: FC = () => (
       </Tooltip.Trigger>
       <Tooltip.Content id='show-tooltip-save'>Writes the file to disk</Tooltip.Content>
     </Tooltip>
+    <Tooltip>
+      <Tooltip.Trigger for='show-tooltip-bottom' class='rounded-md border border-input px-3 py-1.5 text-sm'>
+        side=bottom align=start
+      </Tooltip.Trigger>
+      <Tooltip.Content id='show-tooltip-bottom' side='bottom' align='start'>
+        Below the trigger, left edges aligned
+      </Tooltip.Content>
+    </Tooltip>
+    <Tooltip>
+      <Tooltip.Trigger for='show-tooltip-right' class='rounded-md border border-input px-3 py-1.5 text-sm'>
+        side=right
+      </Tooltip.Trigger>
+      <Tooltip.Content id='show-tooltip-right' side='right'>
+        To the right of the trigger
+      </Tooltip.Content>
+    </Tooltip>
+    <Tooltip>
+      <Tooltip.Trigger for='show-tooltip-left' class='rounded-md border border-input px-3 py-1.5 text-sm'>
+        side=left align=end
+      </Tooltip.Trigger>
+      <Tooltip.Content id='show-tooltip-left' side='left' align='end'>
+        Left of the trigger, bottom edges aligned
+      </Tooltip.Content>
+    </Tooltip>
+    <Tooltip>
+      <Tooltip.Trigger for='show-tooltip-link' asChild>
+        <a href='#tooltip' class='text-sm underline underline-offset-4'>
+          asChild anchor
+        </a>
+      </Tooltip.Trigger>
+      <Tooltip.Content id='show-tooltip-link'>Jumps back to this section</Tooltip.Content>
+    </Tooltip>
   </CatalogSection>
 );
 
 const ToggleGroupSection: FC = () => (
   <CatalogSection id='toggle-group' title='ToggleGroup'>
     <ToggleGroup aria-label='Camera projection'>
-      <ToggleGroup.Item pressed title='Perspective' aria-label='Perspective'>
+      <ToggleGroup.Item name='projection' value='perspective' pressed title='Perspective'>
         Perspective
       </ToggleGroup.Item>
-      <ToggleGroup.Item title='Parallel' aria-label='Parallel'>
+      <ToggleGroup.Item name='projection' value='parallel' title='Parallel'>
         Parallel
       </ToggleGroup.Item>
     </ToggleGroup>
     <ToggleGroup aria-label='Alignment'>
-      <ToggleGroup.Item title='Left' aria-label='Left'>
+      <ToggleGroup.Item name='align' value='left' title='Left'>
         L
       </ToggleGroup.Item>
-      <ToggleGroup.Item pressed title='Center' aria-label='Center'>
+      <ToggleGroup.Item name='align' value='center' pressed title='Center'>
         C
       </ToggleGroup.Item>
-      <ToggleGroup.Item title='Right' aria-label='Right'>
+      <ToggleGroup.Item name='align' value='right' title='Right'>
         R
+      </ToggleGroup.Item>
+    </ToggleGroup>
+    <ToggleGroup type='multiple' aria-label='Overlays'>
+      <ToggleGroup.Item type='multiple' name='overlay' value='grid' pressed title='Grid'>
+        Grid
+      </ToggleGroup.Item>
+      <ToggleGroup.Item type='multiple' name='overlay' value='rulers' pressed title='Rulers'>
+        Rulers
+      </ToggleGroup.Item>
+      <ToggleGroup.Item type='multiple' name='overlay' value='safe-area' title='Safe area'>
+        Safe area
+      </ToggleGroup.Item>
+    </ToggleGroup>
+    <ToggleGroup orientation='vertical' aria-label='Snap mode'>
+      <ToggleGroup.Item name='snap' value='grid' pressed title='Grid'>
+        Grid
+      </ToggleGroup.Item>
+      <ToggleGroup.Item name='snap' value='guides' title='Guides'>
+        Guides
+      </ToggleGroup.Item>
+      <ToggleGroup.Item name='snap' value='pixels' title='Pixels'>
+        Pixels
+      </ToggleGroup.Item>
+    </ToggleGroup>
+    <ToggleGroup aria-label='Disabled sample'>
+      <ToggleGroup.Item name='disabled-sample' value='on' pressed disabled title='On'>
+        On
+      </ToggleGroup.Item>
+      <ToggleGroup.Item name='disabled-sample' value='off' disabled title='Off'>
+        Off
       </ToggleGroup.Item>
     </ToggleGroup>
   </CatalogSection>
 );
+
+const TOAST_POSITIONS = ["top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right"] as const;
 
 const ToastCatalog: FC = () => (
   <CatalogSection id='toast' title='Toast'>
@@ -691,34 +1133,62 @@ const ToastCatalog: FC = () => (
       <Toast.Title>Info</Toast.Title>
       <Toast.Description>Dismissible informational toast.</Toast.Description>
     </Toast>
+
+    <div class='w-full space-y-3'>
+      <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+        Each box is one Toast.Container. The shipped container is fixed to the viewport — the flash container at the bottom right of this page is
+        one — so these are demoted to absolute inside a bounded box.
+      </p>
+      <div class='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
+        {TOAST_POSITIONS.map((position) => (
+          <div key={position} class='relative h-32 rounded-lg border border-dashed border-border'>
+            <Toast.Container position={position} aria-label={`Notifications (${position})`} aria-live='off' class='absolute w-auto max-w-none p-2'>
+              <Toast variant='default' class='w-auto'>
+                <Toast.Description>{position}</Toast.Description>
+              </Toast>
+            </Toast.Container>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div class='w-full space-y-3'>
+      <Toast variant='info' dismissible duration={600000} class='max-w-sm'>
+        <Toast.Title>Long-lived by design</Toast.Title>
+        <Toast.Description>duration=600000 — the runtime removes this toast when it elapses.</Toast.Description>
+      </Toast>
+      <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+        The duration is serialised into <code>data-state</code> and read by the eager toast scope. Flash ships 5000; this exemplar is deliberately
+        long so it stays on the page.
+      </p>
+    </div>
   </CatalogSection>
 );
 
-const ThemeSection: FC<{ icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close"> }> = ({ icon }) => (
-  <section id='theme' class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
-    <div>
-      <h2 class='text-base font-semibold text-foreground'>Theme</h2>
-      <p class='mt-1 text-sm text-muted-foreground'>Cycle light → dark → system. Preference is stored in localStorage.</p>
-    </div>
+const ThemeSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
+  <CatalogPanel id='theme' title='Theme' description='Cycle light → dark → system. Preference is stored in localStorage.'>
     <div class='flex items-center gap-4'>
       <ThemeToggle icon={icon} />
       <span class='text-sm text-muted-foreground'>Click to cycle themes</span>
     </div>
-  </section>
+    {/* `size` is the icon's pixel size, not a variant token: the control's own box is unchanged, so
+        the hit target holds at every size the caller picks. */}
+    <div class='flex items-center gap-4'>
+      <ThemeToggle icon={icon} size={16} />
+      <ThemeToggle icon={icon} size={24} />
+      <span class='text-sm text-muted-foreground'>The same toggle at 16px and 24px</span>
+    </div>
+  </CatalogPanel>
 );
 
 const FILTER_ITEMS = ["Alert", "Avatar", "Badge", "Button", "Card", "Input", "Spinner", "Textarea", "Toast"];
 
 const ResumableSection: FC = () => (
-  <section id='resumable' class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
-    <div>
-      <h2 class='text-base font-semibold text-foreground'>Resumable</h2>
-      <p class='mt-1 text-sm text-muted-foreground'>
-        Live-filtering list. State serialised into <code>data-state</code>; the scope resumes on first interaction, never on page load. The result
-        count is a <code>computed()</code>-derived value — no server roundtrip needed.
-      </p>
-    </div>
-    <div data-scope='show-filter' data-state='{"query":""}'>
+  <CatalogPanel
+    id='resumable'
+    title='Resumable'
+    description='Live-filtering list. State is serialised into data-state; the scope resumes on first interaction, never on page load, and the result count is a computed() value with no server roundtrip.'>
+    <Resumable name='show-filter' state={{ query: "" }}>
       <div class='space-y-3'>
         <div>
           <Label for='filter-input'>Filter components</Label>
@@ -735,97 +1205,146 @@ const ResumableSection: FC = () => (
           ))}
         </ul>
       </div>
-    </div>
-  </section>
+    </Resumable>
+  </CatalogPanel>
 );
 
-/** Full showcase page content — Layout-less; the consuming app wraps this in its own Layout. @public */
-export const ShowcaseContent: FC<{
-  data: ShowcaseData;
-  icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close">;
-}> = ({ data, icon }) => {
+interface PageBodyProps {
+  paths: ShowcasePaths;
+  icon: ShowIcon;
+}
+
+const IndexBody: FC<PageBodyProps> = ({ paths, icon }) => (
+  <div class='space-y-10'>
+    <AccordionSection icon={icon} />
+    <AvatarSection paths={paths} />
+    <BadgeSection />
+    <ButtonSection icon={icon} />
+    <CardSection icon={icon} />
+    <CheckboxGroupSection />
+    <CollapsibleSection icon={icon} />
+    <FieldStackSection />
+    <FormSection />
+    <FormFieldSection icon={icon} />
+    <HoneypotSection />
+    <IconSection icon={icon} />
+    <InputSection />
+    <LabelSection />
+    <MeterSection />
+    <ProgressSection />
+    <RadioGroupSection />
+    <ScrollAreaSection />
+    <SelectSection icon={icon} />
+    <SeparatorSection />
+    <SkeletonSection />
+    <SpinnerSection icon={icon} />
+    <SwitchSection />
+    <TextareaSection />
+    <ToggleSection />
+  </div>
+);
+
+const InteractiveBody: FC<PageBodyProps> = () => (
+  <div class='space-y-10'>
+    <AlertSection />
+    <DialogSection />
+    <MenuSection />
+    <NumberFieldSection />
+    <PopoverSection />
+    <SliderSection />
+    <TabsSection />
+    <ToastCatalog />
+    <ToggleGroupSection />
+    <ToolbarSection />
+    <TooltipSection />
+    <TurnstileSection />
+  </div>
+);
+
+const RuntimeBody: FC<PageBodyProps> = ({ icon }) => (
+  <div class='space-y-10'>
+    <ControlsDemos icon={icon} />
+    <ResumableSection />
+    <LazySection />
+  </div>
+);
+
+const HtmxBody: FC<PageBodyProps> = ({ paths, icon }) => (
+  <div class='space-y-10'>
+    <section id='htmx-demos' class='scroll-mt-24 space-y-6'>
+      <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>HTMX Demos</h2>
+      <PreviewSection paths={paths} icon={icon} />
+      <ValidateSection paths={paths} icon={icon} />
+      <SearchSection paths={paths} />
+      <PaginateSection paths={paths} />
+      <DependentSection paths={paths} icon={icon} />
+      <ToastSection paths={paths} />
+    </section>
+    <FlashSection paths={paths} />
+  </div>
+);
+
+const ChromeBody: FC<PageBodyProps> = ({ icon }) => (
+  <div class='space-y-10'>
+    <ChromeDemos icon={icon} />
+    <ThemeSection icon={icon} />
+  </div>
+);
+
+const PAGE_BODY: Record<ShowcasePage, FC<PageBodyProps>> = {
+  index: IndexBody,
+  interactive: InteractiveBody,
+  runtime: RuntimeBody,
+  htmx: HtmxBody,
+  chrome: ChromeBody,
+};
+
+/** One showcase page — Layout-less; the consuming app wraps this in its own Layout. @public */
+export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ShowIcon; page?: ShowcasePage }> = ({ data, icon, page = "index" }) => {
   const { paths } = data;
+  const { label, needs } = SHOWCASE_PAGES[page];
+  const Body = PAGE_BODY[page];
   return (
     <div class='flex min-h-dvh'>
-      {/* The collapsed shape is the override, never the base: a browser without `:has()` then keeps
-          the full column rather than pinning a shrunken one that would clip the open panel. */}
       <Resumable
-        name='show-toc'
-        class='w-64 shrink-0 border-r border-border has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-r-0'>
+        name='navbar'
+        class='w-64 shrink-0 border-e border-border max-md:w-auto has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-e-0'>
         <Navbar
-          config={TOC_CONFIG}
-          resolveHref={tocHref}
+          config={pagesConfig(paths.page)}
+          resolveHref={pageHref}
           icon={icon}
           collapsible='always'
+          collapsedAs='drawer'
           defaultOpen
-          id='showcase-toc'
-          aria-label='Component catalog'
+          id='showcase-pages'
+          aria-label='Showcase pages'
         />
       </Resumable>
       <main id='main-content' class='flex-1 min-w-0 mx-auto max-w-4xl px-6 py-10 lg:px-10 space-y-12'>
         <div>
-          <h1 class='text-3xl font-bold text-foreground'>UI Component Showcase</h1>
-          <p class='mt-2 text-muted-foreground'>
-            Living reference for every <code>@y-core/forge</code> UI component — static catalog, HTMX demos, theme toggle, and resumability island.
-          </p>
+          <h1 class='text-3xl font-bold text-foreground text-balance'>UI Component Showcase — {label}</h1>
+          <p class='mt-2 text-muted-foreground'>{needs}</p>
         </div>
 
-        <div class='space-y-10'>
-          <AccordionSection icon={icon} />
-          <AlertSection />
-          <AvatarSection />
-          <BadgeSection />
-          <ButtonSection />
-          <CardSection />
-          <DialogSection />
-          <FieldStackSection />
-          <FormSection />
-          <HoneypotSection />
-          <FormFieldSection icon={icon} />
-          <IconSection icon={icon} />
-          <InputSection />
-          <LabelSection />
-          <PopoverSection />
-          <ProgressSection />
-          <SelectSection icon={icon} />
-          <SeparatorSection />
-          <SkeletonSection />
-          <SliderSection />
-          <SpinnerSection icon={icon} />
-          <SwitchSection />
-          <TextareaSection />
-          <ToastCatalog />
-          <ToggleSection />
-          <ToggleGroupSection />
-          <ToolbarSection />
-          <MenuSection />
-          <TabsSection />
-          <CollapsibleSection icon={icon} />
-          <TooltipSection />
-          <CheckboxGroupSection />
-          <RadioGroupSection />
-          <MeterSection />
-          <NumberFieldSection />
-          <ScrollAreaSection />
-          <TurnstileSection />
-        </div>
-
-        <section id='htmx-demos' class='scroll-mt-24 space-y-6'>
-          <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>HTMX Demos</h2>
-          <PreviewSection paths={paths} icon={icon} />
-          <ValidateSection paths={paths} icon={icon} />
-          <SearchSection paths={paths} />
-          <PaginateSection paths={paths} />
-          <DependentSection paths={paths} icon={icon} />
-          <ToastSection paths={paths} />
-        </section>
-
-        <ThemeSection icon={icon} />
-
-        <ResumableSection />
+        <Body paths={paths} icon={icon} />
 
         <FlashContainer />
       </main>
+      <Resumable
+        name='show-toc'
+        class='w-64 shrink-0 border-s border-border max-md:w-auto has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-s-0'>
+        <Navbar
+          config={sectionsConfig(page)}
+          resolveHref={anchorHref}
+          icon={icon}
+          placement='right'
+          collapsible='always'
+          collapsedAs='drawer'
+          defaultOpen
+          id='showcase-toc'
+          aria-label='On this page'
+        />
+      </Resumable>
     </div>
   );
 };

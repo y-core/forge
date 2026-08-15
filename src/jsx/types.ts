@@ -101,7 +101,7 @@ export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   spellcheck?: boolean;
   contenteditable?: boolean | "true" | "false" | "plaintext-only";
   draggable?: boolean | "true" | "false";
-  popover?: "" | "auto" | "manual";
+  popover?: "" | "auto" | "manual" | "hint";
   accesskey?: string;
   autocapitalize?: "none" | "off" | "on" | "sentences" | "words" | "characters";
   children?: JSXNode;
@@ -318,6 +318,8 @@ interface DetailsAttributes extends HTMLAttributes {
 
 interface DialogAttributes extends HTMLAttributes {
   open?: boolean;
+  /** Which dismissal requests close the dialog; `"any"` is declarative light-dismiss. */
+  closedby?: "none" | "closerequest" | "any";
 }
 
 interface IframeAttributes extends HTMLAttributes {

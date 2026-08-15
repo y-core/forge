@@ -43,7 +43,7 @@ Each suppression utility deletes something the browser drew, and forge names wha
 place. `appearance-none` on a `type='range'` leaves no track and no thumb — `Slider` redraws both as
 authored `::-webkit-slider-runnable-track` / `::-moz-range-track` and thumb rules in
 `forge-ui.css`, because no utility class reaches a UA pseudo-element. On a `<select>` it leaves no
-arrow — `Select` reserves `pr-10` and positions its own `aria-hidden` `chevron-down` `Icon`. On a
+arrow — `Select` reserves `pe-10` and positions its own `aria-hidden` `chevron-down` `Icon`. On a
 checkbox or radio it leaves nothing to mark checked — and it also gives up the exemption 1.4.11
 grants a control the author has not modified, so `CheckboxGroup` and `RadioGroup` replace *two*
 things: the box, with an explicit `border-input` boundary and a `checked:bg-primary` fill, and the
@@ -67,8 +67,8 @@ that id.
 `square`). A control does not shrink below it to make a layout fit; the layout gives way.
 
 **Honour `prefers-reduced-motion` on every authored motion.** <!-- rule:forge-ui-reduced-motion -->
-Applies to `motion-safe:` / `motion-reduce:` classes and to anything driven by
-`mountTransitionState` or `mountPopupTriggerState` from `@y-core/forge/ui/client`.
+Applies to `motion-safe:` / `motion-reduce:` classes and to every declarative state transition —
+`starting:`, `open:`, `not-open:`, `transition-discrete` — alike.
 
 **Ship a designed empty state on every collection surface.** <!-- rule:forge-ui-empty-state -->
 An empty list is a state, not an absence: a line of text saying what would be here, and the action
@@ -168,7 +168,7 @@ is a hierarchy you are asserting with color that weight, size, or spacing should
 per-component radius override, and never square corners next to round ones on one surface.
 
 **Take icons from the sprite.** <!-- rule:forge-ui-real-icons -->
-`Icon` or a `createIcon` binding from `@y-core/forge/ui/core`, typed `ForgeIcon`. Never an emoji,
+`Icon` or a `createIcon` binding from `@y-core/forge/ui/core`, typed `ForgeIcon<Name>`. Never an emoji,
 never a hand-rolled inline `<svg>`. Forge's own seven glyphs are enumerated by
 `FORGE_UI_ICON_NAMES` in `@y-core/forge/ui/assets`; an app sprite extends that set through the same
 factory.

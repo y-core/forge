@@ -110,10 +110,13 @@ async function generateAssetsModule(
       .map(([key, group]) => {
         const constName = toConstName(key);
         const exportName = `${toPascalCase(key)}Icon`;
+        const nameTypeName = `${toPascalCase(key)}IconName`;
         const metaEntries = Object.entries(group.meta)
           .map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`)
           .join("\n");
-        return `const ${constName} = {\n${metaEntries}\n} as const;\n\nexport const ${exportName} = createIcon(assets.path(${JSON.stringify(group.spriteKey)}), ${constName}, ${JSON.stringify(group.prefix)});`;
+        const glyphNames = Object.keys(group.meta).map((k) => (k.startsWith(group.prefix) ? k.slice(group.prefix.length) : k));
+        const nameUnion = glyphNames.length > 0 ? glyphNames.map((n) => JSON.stringify(n)).join(" | ") : "never";
+        return `const ${constName} = {\n${metaEntries}\n} as const;\n\nexport type ${nameTypeName} = ${nameUnion};\n\nexport const ${exportName} = createIcon(assets.path(${JSON.stringify(group.spriteKey)}), ${constName}, ${JSON.stringify(group.prefix)});`;
       })
       .join("\n\n");
 

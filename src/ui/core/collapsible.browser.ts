@@ -30,15 +30,15 @@ test.describe("Collapsible", () => {
   function state(page: Page) {
     return page.evaluate(() => {
       const el = document.querySelector<HTMLDetailsElement>("#adv");
-      return { nativeOpen: el?.open, open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
+      return { nativeOpen: el?.open };
     });
   }
 
-  test("starts closed, with the state attribute matching the element's own", async ({ page }) => {
+  test("starts closed", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
-    expect(await state(page)).toEqual({ nativeOpen: false, open: false, closed: true });
+    expect(await state(page)).toEqual({ nativeOpen: false });
   });
 
   test("the summary opens it and the state attributes follow the platform", async ({ page }) => {
@@ -47,7 +47,7 @@ test.describe("Collapsible", () => {
 
     await page.click("#adv-trigger");
 
-    await expect.poll(() => state(page)).toEqual({ nativeOpen: true, open: true, closed: false });
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: true });
   });
 
   test("closing again flips the pair back", async ({ page }) => {
@@ -55,15 +55,15 @@ test.describe("Collapsible", () => {
     await start(page);
 
     await page.click("#adv-trigger");
-    await expect.poll(async () => (await state(page)).open).toBe(true);
+    await expect.poll(async () => (await state(page)).nativeOpen).toBe(true);
     await page.click("#adv-trigger");
 
-    await expect.poll(() => state(page)).toEqual({ nativeOpen: false, open: false, closed: true });
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: false });
   });
 
   test("a server-rendered open disclosure needs no client work to be correct", async ({ page }) => {
     await mount(page, await render(Collapsible({ id: "adv", open: true, children: Collapsible.Trigger({ icon, children: "Advanced" }) })), EXPOSE);
 
-    expect(await state(page)).toEqual({ nativeOpen: true, open: true, closed: false });
+    expect(await state(page)).toEqual({ nativeOpen: true });
   });
 });

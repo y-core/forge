@@ -2,9 +2,8 @@
 
 Forge's colour system is two layers, and it used to be three.
 
-Underneath is the **scale** in a scheme file — twelve numbered steps, `--gray-1` through `--gray-12`,
-and their twelve translucent siblings `--gray-a1` through `--gray-a12` — alongside the fixed status
-hues in `theme-colors.css`. Each step holds a **literal value** covering both modes, and names a
+Underneath is the **scale** in a scheme file — twelve numbered steps, `--gray-1` through `--gray-12`
+— alongside the fixed status hues in `theme-colors.css`. Each step holds a **literal value** covering both modes, and names a
 *position in the system*: the app background, a subtle border, a low-contrast text colour.
 
 On top is the semantic layer in `theme-base.css`, which maps a step onto a name describing a
@@ -17,8 +16,7 @@ the steps pointed at. It is gone rather than renamed. It existed only because th
 the time needed something mode-agnostic to point at, and the step layer does that job, so keeping
 both meant two indirections answering one question.
 
-**A theme file re-declares the twelve steps and their alpha siblings, once each, and nothing
-else.** Four schemes ship and none is mandatory: `theme-neutral.css` is the default, which
+**A theme file re-declares the twelve steps, once each, and nothing else.** Four schemes ship and none is mandatory: `theme-neutral.css` is the default, which
 `forge.css` imports, so forge renders correctly with no theme file of the application's own, and
 `theme-stone.css` (warm), `theme-gray.css` (cool) and `theme-slate.css` (strongly cool) override the
 steps to change the tint. Tailwind's ramp named `gray` is blue-tinted, so the achromatic scheme is
@@ -95,21 +93,21 @@ whole identification.
 
 Default: a surface that needs "slightly lighter" or "slightly darker" moves one step along the scale
 rather than applying an opacity modifier to the current colour, unless the element is genuinely
-translucent over content it must not hide — a scrim or an overlay, which is what the alpha steps
-and `--overlay` are for. <!-- rule:forge-ui-color-scale-no-adhoc-tint -->
+translucent over content it must not hide — a scrim or an overlay, which is what `--overlay` and the
+absolute `--black-a1` … `--black-a12` and `--white-a1` … `--white-a12` ramps are
+for. <!-- rule:forge-ui-color-scale-no-adhoc-tint -->
 
 Opacity tinting looks equivalent and is not: it composites against whatever is behind, so the same
 class produces a different result on `--background` than on `--card`, and a different result again
 under `.dark`.
 
-**The alpha steps are the sanctioned form of translucency, and they are not derived.** `--gray-a1`
-through `--gray-a12` are the same twelve positions as translucent tints, per scheme and per mode,
-alongside `--black-a1` through `--black-a12` and `--white-a1` through `--white-a12`, which are
-absolute and identical in both modes. Each one is hand-authored upstream so that it appears visually
-the same when placed over the page background, which no `color-mix` formula reproduces: Radix Colors
-2.0.1 shipped a correction for dark `--gray-a2` being too opaque, and a computed ramp would have
-carried that error with nothing to notice it by. One token consumes them today — `--overlay` is
-`--black-a6`, the dialog backdrop, where a hardcoded literal used to sit inline in a component rule.
+**The absolute alpha ramps are the sanctioned form of translucency, and a per-scheme one cannot
+be.** `--black-a1` through `--black-a12` and `--white-a1` through `--white-a12` are identical in both
+modes, and that mode-stability is the whole point. A per-scheme alpha step composites over its own
+scheme's step 1, which makes it page-relative and so mode-inverting — black over a light page, white
+over a dark one. A scrim has to darken whatever is behind it in *both* modes, so a page-relative step
+cannot express one, which is why forge ships no per-scheme alpha scale. `--overlay` is `--black-a6`,
+the dialog backdrop, where a hardcoded literal used to sit inline in a component rule.
 
 ## The scale, and what a step means
 
@@ -158,7 +156,6 @@ The scale runs in namespaces, and each is declared in full:
 - `--gray-1` … `--gray-12` — every neutral surface, border and text colour. All twelve are declared
   even where forge consumes only some, because a scale is a complete artifact: a consuming theme has
   to know what the contract is, and a gap in the middle of one is an anomaly rather than a saving.
-- `--gray-a1` … `--gray-a12` — the same twelve positions as translucent tints, per scheme and mode.
 - `--black-a1` … `--black-a12` and `--white-a1` … `--white-a12` — absolute alphas, declared once
   because a scrim has to darken whatever is behind it in both modes and so cannot be a gray step.
 - `--accent-12` — an alias of `--gray-12`. Forge ships no brand hue, so the accent is the gray, and
@@ -379,8 +376,8 @@ brand hue has to author them, and forge gives that job a shape that most colour 
 steps are not decoration, they are the operands of a mapping `theme-base.css` has already written.
 Read the mapping first, then pick values that survive it.
 
-The four shipped schemes are worked examples of the *shape* — twelve solid steps and twelve alpha
-steps, in both blocks, and nothing else — but not of the authoring, because each of them sidesteps
+The four shipped schemes are worked examples of the *shape* — twelve solid steps, once each, and
+nothing else — but not of the authoring, because each of them sidesteps
 the hard half the same way: every step's lightness is Radix's, so no lightness in them was chosen
 against forge's mapping. Only the hue was chosen. The example of a scale with *authored* values in it
 is in `src/ui/README.md`, and it is written in `oklch()`.
@@ -533,11 +530,7 @@ anywhere in application markup is a value that will not move when the theme does
 `theme-neutral.css`. It is `@radix-ui/colors` 3.0.0, MIT-licensed. The default scheme is achromatic,
 so its twelve solid steps are Radix's `gray` verbatim except for the light-mode 1↔2 swap described
 above; `theme-stone.css`, `theme-gray.css` and `theme-slate.css` keep those lightnesses and replace
-the chroma and hue. All four schemes' **alpha** steps are Radix's, kept as authored — `theme-stone.css`
-names `sandA`, and `theme-slate.css` and `theme-gray.css` both name `slateA`. They are low-opacity
-overlays whose hue only has to be in the right family, which is why the cool pair share one ramp: at
-`a3` opacity a second, weaker blue would be a distinction no eye could resolve. The theme files say
-why they are not derived.
+the chroma and hue.
 
 **Tailwind CSS** supplies the **chroma and hue** of the three tinted schemes: `theme-stone.css` takes
 Tailwind's `stone`, `theme-gray.css` its `gray` and `theme-slate.css` its `slate`, each resampled at

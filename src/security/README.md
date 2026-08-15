@@ -29,7 +29,7 @@ All middleware factories return a Forge `Middleware` (`@remix-run/fetch-router`)
 
 Register `createSecurityHeaders` and `requestId` once at the app level; apply route-specific guards (`cors`, `originGuard`, `rateLimit`, `requireFormContentType`) only where needed.
 
-> Apps composing the full global chain should prefer `applyMiddlewareChain` (`@y-core/forge/app`) — it registers these in the canonical order automatically (see [ROUTING_AND_MIDDLEWARE.md](../../.decisions/ROUTING_AND_MIDDLEWARE.md) §3e). The manual registrations below remain valid; the one ordering rule is that `createSecurityHeaders` precedes any nonce consumer (`requestId`/logging may come first).
+> Apps composing the full global chain should prefer `applyMiddlewareChain` (`@y-core/forge/app`) — it registers these in the canonical order automatically (see [ROUTING_AND_MIDDLEWARE.md](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §3e). The manual registrations below remain valid; the one ordering rule is that `createSecurityHeaders` precedes any nonce consumer (`requestId`/logging may come first).
 
 ```typescript
 import {
@@ -146,7 +146,7 @@ There are exactly two supported paths, depending on whether the response passes 
    return applySecurityHeaders(page, { nonce });
    ```
 
-**Failure mode:** `getNonce` never throws. If `createSecurityHeaders` did not run, it returns `""` — the empty `nonce` attribute will not satisfy the CSP, so the affected script fails closed (blocked) instead of executing unnonced. If scripts are unexpectedly blocked, check the middleware registration order first (see [ROUTING_AND_MIDDLEWARE.md §3d](../../.decisions/ROUTING_AND_MIDDLEWARE.md)).
+**Failure mode:** `getNonce` never throws. If `createSecurityHeaders` did not run, it returns `""` — the empty `nonce` attribute will not satisfy the CSP, so the affected script fails closed (blocked) instead of executing unnonced. If scripts are unexpectedly blocked, check the middleware registration order first (see [ROUTING_AND_MIDDLEWARE.md §3d](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md)).
 
 ### `applySecurityHeaders(response, options?)`
 
@@ -240,9 +240,10 @@ Middleware that enforces a Cloudflare Workers Rate Limiting binding. Resolves th
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `limiter` | `(c) => RateLimitBinding \| undefined` | — (required) | Resolves the binding from app context |
-| `key` | `(c) => string` | `CF-Connecting-IP` header | The rate-limit key; **supply your own off Cloudflare** |
+| `key` | `(c) => string` | see `trustCfHeaders` | The rate-limit key. Always overrides the default, whatever `trustCfHeaders` says |
 | `onLimit` | `(c) => Response \| Promise<Response>` | `429 Too many requests` | Response when the limit is exceeded |
 | `required` | `boolean` | `true` | When `true`, returns `503` if the binding is absent; `false` skips the check |
+| `trustCfHeaders` | `boolean` | `false` | Opts the **default** key into reading `CF-Connecting-IP`. Left at `false` with no custom `key`, the default resolver throws and the request fails closed with `503` |
 
 ```typescript
 import { rateLimit, type RateLimitBinding } from "@y-core/forge/security";
@@ -253,7 +254,8 @@ interface AppEnv {
 
 const rateLimitGuard = rateLimit<AppEnv>({
   limiter: (c) => c.env.RATE_LIMITER,
-  required: false, // dev-graceful: skip when the binding is absent
+  trustCfHeaders: true, // this Worker runs behind Cloudflare — key by CF-Connecting-IP
+  required: false,      // dev-graceful: skip when the binding is absent
 });
 ```
 
@@ -265,7 +267,7 @@ Declare the binding in `wrangler.jsonc`:
 ]
 ```
 
-> The default key (`CF-Connecting-IP`) is only trustworthy when the Worker runs behind Cloudflare. On other platforms a client can forge it — always supply a custom `key`. If the default key throws because the header is absent, the request fails closed with `503`.
+Under `trustCfHeaders: true` an **absent** `CF-Connecting-IP` still fails closed with `503`. The trust boundary itself — which surfaces carry the flag, and how `applyMiddlewareChain` threads one value to all of them — is [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §5c's.
 
 #### Choosing a rate-limit key
 
@@ -273,7 +275,7 @@ The key defines *what* gets throttled — pick it to match the abuse you are def
 
 | Strategy | Key | When |
 |---|---|---|
-| Per-IP (default) | `CF-Connecting-IP` header | Anonymous endpoints behind Cloudflare. Coarse: NAT/CGNAT users share an IP; botnets rotate IPs. |
+| Per-IP (the default, under `trustCfHeaders: true`) | `CF-Connecting-IP` header | Anonymous endpoints behind Cloudflare. Coarse: NAT/CGNAT users share an IP; botnets rotate IPs. |
 | Per-session | `key: (c) => sessionCtx.get(c).id` | Session-bearing apps — throttles the actor, not the network. The `sessionCtx` import couples *your app* (not forge) to `@y-core/forge/session`. |
 | Route-scoped composite | `key: (c) => \`${c.url.pathname}:${c.request.headers.get("CF-Connecting-IP")}\`` | One shared binding across several routes, each with an independent budget per client. |
 
@@ -290,20 +292,20 @@ A `key` function that throws (e.g. `sessionCtx.get` before the session middlewar
 
 ### `requestId()` / `requestIdCtx`
 
-`requestId()` is middleware that propagates the `CF-Ray` header (or a generated `crypto.randomUUID()` when absent) as the request ID: it stores the value in `requestIdCtx` and sets the `x-request-id` response header. `requestIdCtx` is the typed context accessor for reading it back.
+`requestId(options?)` is middleware that assigns a request ID, stores it in `requestIdCtx`, and sets the `x-request-id` response header. `requestIdCtx` is the typed context accessor for reading it back.
+
+By default it always mints a `crypto.randomUUID()` and **ignores** any inbound `CF-Ray`. Pass `trustCfHeaders: true` to adopt `CF-Ray` instead, falling back to a UUID when it is absent, empty, or whitespace-only:
 
 ```typescript
 import { requestId, requestIdCtx } from "@y-core/forge/security";
 
-app.use("*", requestId());
+app.use("*", requestId({ trustCfHeaders: true })); // behind Cloudflare — adopt CF-Ray
 
 // Later, in a handler or logger:
 const id = requestIdCtx.getOptional(c); // string | undefined
 ```
 
-Register at the top of the middleware stack so downstream middleware (e.g. `requestLogger`) can correlate by request ID.
-
-> Off Cloudflare, `CF-Ray` is client-supplied and untrusted — treat the echoed value as a correlation hint, not a verified identifier.
+Register at the top of the middleware stack so downstream middleware (e.g. `requestLogger`) can correlate by request ID. Off Cloudflare, `CF-Ray` is client-supplied — which is why adopting it is opt-in ([`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §5c).
 
 ### `requireFormContentType()`
 
@@ -381,11 +383,9 @@ app.use("/form/*", crossOriginProtection());
 
 #### `originProtection(options)`
 
-A combined guard for mutating routes: Fetch Metadata **and** an `Origin`/`Referer` allowlist, both applied. Safe methods are always exempt.
+A combined guard for mutating routes: Fetch Metadata **and** an `Origin`/`Referer` allowlist, both applied. Safe methods are always exempt. It is the **recommended default** of the three origin guards; which tier to reach for, and why `Sec-Fetch-Site` is a veto rather than a pass, are [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §3e's.
 
-`Sec-Fetch-Site` acts as a **veto, not a pass**. A value other than `same-origin`/`none` rejects outright, but a good value does *not* short-circuit the allowlist — `allowedOrigins` is consulted on every mutating request that carries an `Origin` or `Referer`. Only when both of those are absent does the guard fall back to the browser's Fetch-Metadata vouching (`Sec-Fetch-Site` is a forbidden header name, so web content cannot set it and a `same-origin` value there was written by the browser itself). With no signal at all, it fails closed.
-
-> **Breaking (0.0.80):** the app's **own origin must appear in `allowedOrigins`**, or its own same-origin mutations are rejected. Previously a present `Sec-Fetch-Site` returned early and skipped the allowlist entirely, which let any non-browser client bypass it with one forged header and let this tier disagree with `originGuard`. The new behaviour is fail-closed and consistent across tiers.
+> **List the app's own origin in `allowedOrigins`**, or its own same-origin mutations are rejected.
 
 `OriginProtectionOptions`:
 
@@ -400,10 +400,6 @@ app.use("/api/*", originProtection({
   allowedOrigins: (c) => c.var.config.allowedOrigins,
 }));
 ```
-
-### Rate-limit key trust
-
-The default `rateLimit` key (`CF-Connecting-IP`) is forgeable off Cloudflare. Off-Cloudflare deployments must pass a custom `key`; use `required: true` (default) on production-only routes so a misconfigured binding fails closed with `503` rather than silently disabling the limit.
 
 ### Out-of-scope (do not look for it here)
 
@@ -454,4 +450,6 @@ The hash cannot reach production because production never imports the dev entry.
 - [`@y-core/forge/form`](../form/) — CSRF tokens, form parsing with byte caps
 - [`@y-core/forge/session`](../session/) — session cookies and middleware
 - [`@y-core/forge/http`](../http/) — `safeUrl` URL sanitization, response fragments
-- `.decisions/SECURITY_HARDENING.md` — governing architecture and defense-in-depth posture
+- [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) — the header
+  factory and its nonce contract (§2), origin-guard tiering (§3e), rate-limit key selection (§4d),
+  and the Cloudflare header trust boundary (§5c)

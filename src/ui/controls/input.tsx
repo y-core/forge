@@ -3,5 +3,5 @@
 import { Input as CoreInput } from "../core/input";
 import { createBoundControl } from "./create-bound-control";
 
-/** Pre-bound `Input` that stamps `data-on-input` + `data-field` for the `bindField` action. @public */
-export const Input = createBoundControl(CoreInput, { event: "onInput", defaultAction: "bindField" });
+/** Pre-bound `Input` that stamps `data-field`. @public */
+export const Input = createBoundControl(CoreInput);

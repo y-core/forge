@@ -54,16 +54,25 @@ function resolveEntries(root: Element, linkSelector: string): SpyEntry[] {
 export function mountScrollSpy(options: ScrollSpyOptions): () => void {
   const noop = () => {};
   const { root, linkSelector = "a[href^='#']", rootMargin = DEFAULT_ROOT_MARGIN } = options;
-  if (!root) return noop;
+  // Deterministic for a given call site and impossible to discover later, so it throws.
+  if (!root) throw new Error("mountScrollSpy: `root` is required — pass the nav subtree holding the fragment links");
 
   const existing = mountedSpies.get(root);
   if (existing) return existing;
 
   const entries = resolveEntries(root, linkSelector);
-  if (entries.length === 0) return noop;
+  // A property of the page's markup, not of the call: a nav can legitimately render with no
+  // in-page links yet. Reported so a mis-typed selector is not mistaken for an empty nav.
+  if (entries.length === 0) {
+    console.warn(`[scroll-spy] no links matching "${linkSelector}" resolve to an element in this document; nothing to spy on`);
+    return noop;
+  }
 
   const observerCtor = (ownerWindow(root) as Window & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver;
-  if (typeof observerCtor !== "function") return noop;
+  if (typeof observerCtor !== "function") {
+    console.warn("[scroll-spy] IntersectionObserver is unavailable in this realm; links will not be marked current");
+    return noop;
+  }
 
   const visible = new Set<Element>();
 

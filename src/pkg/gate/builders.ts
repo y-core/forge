@@ -4,13 +4,16 @@
 
 import { hasChromium } from "./checks/browser";
 import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
+import { type CoLocationCheckConfig, checkCoLocation } from "./checks/co-location";
 import { type ContrastCheckConfig, checkContrast } from "./checks/contrast";
 import { type CssSourcesCheckConfig, checkCssSources } from "./checks/css-sources";
 import { checkDesign, type DesignCheckConfig } from "./checks/design";
 import { checkDocs, type DocsCheckConfig } from "./checks/docs";
 import { checkExports, type ExportsCheckConfig } from "./checks/exports";
 import { checkJsx, type JsxCheckConfig } from "./checks/jsx";
+import { checkModernCss, type ModernCssCheckConfig } from "./checks/modern-css";
 import { checkNamespaceGraph, type NamespaceGraphCheckConfig } from "./checks/namespace-graph";
+import { checkSsrBoundary, type SsrBoundaryCheckConfig } from "./checks/ssr-boundary";
 import type { CheckStep, CommandStep } from "./steps";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
@@ -44,7 +47,8 @@ export function lintStep(options: SourceStepOptions = {}): CommandStep {
   return {
     label: "lint",
     tail: 20,
-    cmd: ["biome", "check", ...sources],
+    // Biome exits 0 on `warn`, so without this a green gate would not mean a clean tree.
+    cmd: ["biome", "check", "--error-on-warnings", ...sources],
     fix: ["biome", "check", "--write", ...sources],
     ...mode(options.fullOnly),
   };
@@ -56,10 +60,12 @@ export function testStep(options: SourceStepOptions = {}): CommandStep {
 }
 
 /** `playwright test`, always `--full`: it needs a downloaded browser. @public */
-export function browserStep(options: { hint?: string } = {}): CommandStep {
+export function browserStep(options: { hint?: string } & StepOptions = {}): CommandStep {
   return {
     label: "test:browser",
-    fullOnly: true,
+    // Defaults to `--full` — it needs a downloaded browser — but the caller may state it, so the
+    // step table can be read for which steps run in which mode without opening this file.
+    ...mode(options.fullOnly, true),
     tail: 120,
     cmd: ["playwright", "test"],
     // The prerequisite probed is the downloaded browser, not the `playwright` CLI: the CLI is a
@@ -77,6 +83,18 @@ export function exportsStep(config: ExportsCheckConfig, options: StepOptions = {
 /** Diffs the observed cross-namespace imports against the declared graph. @public */
 export function namespaceGraphStep(config: NamespaceGraphCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-namespace-graph", () => checkNamespaceGraph(config), options);
+}
+
+/** Checks every source module has a test beside it, so deleting one is loud rather than silent. @public */
+export function coLocationStep(config: CoLocationCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-co-location", () => checkCoLocation(config), options);
+}
+
+/** Checks that no server-rendered file imports the browser-only runtime. Runs in every mode: the
+ *  namespace graph declares this edge once for a whole namespace, so only a file-granular check can
+ *  tell the one registration entry point apart from a component that would throw in a Worker. @public */
+export function ssrBoundaryStep(config: SsrBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-ssr-boundary", () => checkSsrBoundary(config), options);
 }
 
 /** Checks every shipped `.tsx` file carries the runtime pragmas and clobbers no slot. @public */
@@ -103,6 +121,11 @@ export function designStep(config: DesignCheckConfig, options: StepOptions = {})
 /** Measures every audited foreground/background pair against its contrast criterion. @public */
 export function contrastStep(config: ContrastCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-contrast", () => checkContrast(config), options);
+}
+
+/** Checks stylesheets and class literals for patterns the platform now expresses directly. @public */
+export function modernCssStep(config: ModernCssCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-modern-css", () => checkModernCss(config), options);
 }
 
 /** Checks every class-bearing directory is reached by an `@source` directive. @public */

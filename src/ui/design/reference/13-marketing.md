@@ -6,7 +6,7 @@ user visits repeatedly to finish a task. A landing page is the opposite case: se
 who has not decided anything yet, where variance earns attention rather than costing recognition.
 
 So read this file as a **standing case for a written brief**, in the sense of
-`.decisions/UI_DESIGN_GUIDANCE.md` §2c, raising the three dials of `12-density.md` from their
+`.decisions/implementation/UI_DESIGN_GUIDANCE.md` §2c, raising the three dials of `12-density.md` from their
 ratified app-UI defaults (§8) toward roughly density 3, variance 7, motion 5.
 
 Default: marketing dial settings apply only when a written brief identifies the surface as a
@@ -155,6 +155,6 @@ The raised motion dial buys entrance transitions on scroll and a longer duration
 It does not buy anything that moves without the user causing it.
 
 Default: marketing motion is limited to one entrance transition per section and the state
-transitions already published by `mountTransitionState` from `@y-core/forge/ui/client`, and never
-includes a looping animation, an auto-advancing carousel, or a parallax effect, unless the brief
-names the effect specifically. <!-- rule:forge-ui-marketing-motion-ceiling -->
+transitions the platform's own selectors already express, and never includes a looping animation, an
+auto-advancing carousel, or a parallax effect, unless the brief names the effect
+specifically. <!-- rule:forge-ui-marketing-motion-ceiling -->

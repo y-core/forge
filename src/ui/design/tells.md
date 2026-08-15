@@ -233,7 +233,7 @@ available without a sprite, a fetch, or a name — but it renders in the reader'
 the same glyph is a different drawing on every OS, and it carries a name in the accessibility tree
 that nobody chose.
 Default: a glyph comes from the sprite through `Icon`, or through a `createIcon` binding typed
-`ForgeIcon`, both from `@y-core/forge/ui/core`; forge's own glyph set is enumerated by
+`ForgeIcon<Name>`, both from `@y-core/forge/ui/core`; forge's own glyph set is enumerated by
 `FORGE_UI_ICON_NAMES` in `@y-core/forge/ui/assets`, and an app sprite extends it through the same
 factory. <!-- rule:forge-ui-tell-emoji-icon -->
 Override never; see the Floor rule.

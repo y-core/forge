@@ -17,7 +17,7 @@ describe("Label", () => {
 
   it("renders required marker when required=true", async () => {
     expect(await render(<Label required>Email</Label>)).toBe(
-      '<label data-slot="label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50">Email<span data-slot="label-required" aria-hidden="true" class="ml-0.5 text-destructive">*</span></label>',
+      '<label data-slot="label" class="flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50">Email<span data-slot="label-required" aria-hidden="true" class="ms-0.5 text-destructive">*</span></label>',
     );
   });
 

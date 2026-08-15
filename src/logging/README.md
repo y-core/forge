@@ -351,10 +351,10 @@ scope; they are distinguishable by `message === "unhandled error"`.
 
 ### No PII in logs
 
-Records (across all channels — worker `console` output is retained and searchable) must never
-contain user-identifiable or credential data: emails, display names, passwords, API keys,
-tokens, request bodies, or credential headers (`Authorization`, `Cookie`, `Set-Cookie`).
-Reference users only by an opaque internal id. Prefer structured fields over interpolation:
+The prohibited field classes are [`BOUNDARIES.md`](../../.decisions/governance/BOUNDARIES.md) §4a's,
+and they bind every channel — worker `console` output is retained and searchable exactly as a
+persisted channel is. The call-site half is to keep the message a static label and put variable data
+in fields:
 
 ```ts
 // BAD — interpolates a value into the message
@@ -427,11 +427,10 @@ level — forgetting a guard is a compile error.
 #### Why `layout` is required
 
 The document is where the theme lives: `<html>` carries the dark class, the head carries the script
-that sets it before first paint, and `<body>` carries `bg-background`. The viewer used to build its
-own bare `<html>`/`<head>`/`<body>` with none of those, so **dark mode was unreachable** no matter
-what classes its components carried. Handing the shell to the consumer is the move `registerShowcase`
-has always made, and it is what lets the viewer render inside your chrome, with your nav and your
-theme toggle, rather than as an unstyled island.
+that sets it before first paint, and `<body>` carries `bg-background`. A viewer that built its own
+bare `<html>`/`<head>`/`<body>` would put dark mode out of reach whatever classes its components
+carried. Handing the shell to the consumer — the same move `registerShowcase` makes — is what lets
+the viewer render inside your chrome, with your nav and your theme toggle.
 
 ### Mounting the viewer
 
@@ -480,15 +479,10 @@ from the main entry `@y-core/forge/logging`, not from `show`.
 
 ### Flush semantics
 
-Async channel writes (KV) return promises that the logger tracks in a pending queue capped at
-1000 entries; the oldest is dropped if the cap is exceeded, bounding memory in long-lived
-loggers. `flush()` awaits and clears the queue, and **settles rather than rejects**: it uses
-`allSettled`, so a channel whose write fails neither hides the other channels' completion nor
-reaches the caller as an error.
-
-Because nothing about a failed write reaches the caller, `onChannelError` is the only place one is
-observable — with no hook configured it prints one structured `console.error` line, so a `LOGS_KV`
-outage shows up in `wrangler tail` unconfigured. Pass a hook to route failures somewhere else:
+`flush()` awaits and clears the pending queue and **never rejects** — a failed channel write is
+absorbed, so `onChannelError` is the only observer of one. With no hook configured it prints a
+single structured `console.error` line, so a `LOGS_KV` outage is visible in `wrangler tail` with no
+configuration. Pass a hook to route failures somewhere else:
 
 ```ts
 let droppedWrites = 0;
@@ -502,17 +496,11 @@ const log = createLogger("billing", {
 });
 ```
 
-The hook is attached where the write is dispatched, alongside the promise `flush()` tracks rather
-than in front of it, so it also fires for writes evicted by the pending cap — the ones `flush()`
-never awaits.
-
-`requestLogger` calls `flush()` in a `finally` block and hands the promise — already
-`.catch()`-guarded — to `executionCtx.waitUntil` so writes complete after the response is returned,
-falling back to awaiting inline if no execution context is available. The guard is what keeps that
-`finally` harmless: a `finally` that throws **replaces** whatever was propagating, so an unguarded
-flush failure would discard a successful response, or mask the handler error being rethrown, with an
-error about logging. It holds independently of how `flush` is implemented — a log flush can never
-change the request's outcome.
+`requestLogger` flushes in a `finally` and hands the guarded promise to `executionCtx.waitUntil`,
+falling back to an inline await when no execution context is available. Why the contract is
+best-effort, what the hook observes that `flush` does not, and the pending-queue cap it covers are
+[`STRUCTURED_LOGGING.md`](../../.decisions/implementation/STRUCTURED_LOGGING.md) §2f's; the cap and
+its eviction policy are `src/logging/logger.ts`'s.
 
 ### KV key layout and retention
 
@@ -548,8 +536,10 @@ returns `complete` plus an optional `cursor` for the next page. Because filterin
 a narrow `level`/`q` filter may return fewer than `limit` rows even when more matching entries
 exist on later pages — follow the cursor to continue.
 
-## Architecture
+## See also
 
-For the design rationale — the symmetric read/write channel contract, status-to-level
-mapping, KV storage layout, and the no-PII rule — see
-[`.decisions/STRUCTURED_LOGGING.md`](../../.decisions/STRUCTURED_LOGGING.md).
+- [`STRUCTURED_LOGGING.md`](../../.decisions/implementation/STRUCTURED_LOGGING.md) — the channel
+  contract and its wrappers (§2), the flush contract (§2f), `requestLogger` and its ordering (§3),
+  the status-to-level mapping (§4), and the log viewer's ordered contract (§5).
+- [`BOUNDARIES.md`](../../.decisions/governance/BOUNDARIES.md) §4 — the no-PII rule, the prohibited
+  field classes, and structured fields over interpolation.

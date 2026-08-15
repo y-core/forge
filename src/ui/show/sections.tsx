@@ -9,6 +9,7 @@ import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Select } from "../core/select";
 import { FlashOob } from "../server/flash";
+import { CatalogPanel } from "./components";
 import type { DependentData, PaginateData, PreviewData, SearchData, ShowcasePaths, ToastData, ValidateData } from "./route";
 
 /** @public */ export const SHOW_SEARCH_ID = "show-search-results";
@@ -152,18 +153,18 @@ export const PaginateFragment: FC<{ data: PaginateData }> = ({ data }) => {
     <div id={SHOW_PAGINATE_ID}>
       <table class='w-full border-collapse text-sm'>
         <thead>
-          <tr class='border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
-            <th class='py-2 pl-4 pr-4'>#</th>
-            <th class='py-2 pr-4'>Component</th>
-            <th class='py-2 pr-4'>Category</th>
+          <tr class='border-b border-border text-start text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+            <th class='py-2 ps-4 pe-4'>#</th>
+            <th class='py-2 pe-4'>Component</th>
+            <th class='py-2 pe-4'>Category</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.id} class='border-b border-border hover:bg-accent'>
-              <td class='py-2 pl-4 pr-4 font-mono text-xs text-muted-foreground'>{row.id}</td>
-              <td class='py-2 pr-4 font-medium text-foreground'>{row.name}</td>
-              <td class='py-2 pr-4 text-muted-foreground'>{row.category}</td>
+              <td class='py-2 ps-4 pe-4 font-mono text-xs text-muted-foreground'>{row.id}</td>
+              <td class='py-2 pe-4 font-medium text-foreground'>{row.name}</td>
+              <td class='py-2 pe-4 text-muted-foreground'>{row.category}</td>
             </tr>
           ))}
         </tbody>
@@ -220,29 +221,12 @@ export const ToastFragment: FC<{ data: ToastData }> = ({ data }) => {
   return <FlashOob messages={messages} />;
 };
 
-interface SectionProps {
-  id: string;
-  title: string;
-  description: string;
-  children: unknown;
-}
-
-const Section: FC<SectionProps> = ({ id, title, description, children }) => (
-  <section id={id} class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
-    <div>
-      <h2 class='text-lg font-semibold text-foreground'>{title}</h2>
-      <p class='mt-1 text-sm text-muted-foreground'>{description}</p>
-    </div>
-    {children}
-  </section>
-);
-
 /** Preview demo: choose variant + size, see a live Button. @public */
 export const PreviewSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
   paths,
   icon: Icon,
 }) => (
-  <Section id='demo-preview' title='Live Preview' description='Choose variant and size — the button updates live via HTMX GET.'>
+  <CatalogPanel id='demo-preview' title='Live Preview' description='Choose variant and size — the button updates live via HTMX GET.'>
     <form class='flex flex-wrap items-end gap-3' hx-get={paths.preview} hx-target={`#${SHOW_PREVIEW_ID}`} hx-swap='outerHTML' hx-trigger='change'>
       <FormField name='variant' class='w-auto gap-1.5'>
         <FormField.Label for='preview-variant'>Variant</FormField.Label>
@@ -264,12 +248,12 @@ export const PreviewSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner
       </FormField>
     </form>
     <PreviewFragment data={{ variant: "primary", size: "md" }} icon={Icon} />
-  </Section>
+  </CatalogPanel>
 );
 
 /** Validate demo: inline email validation. @public */
 export const ValidateSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"close"> }> = ({ paths, icon }) => (
-  <Section
+  <CatalogPanel
     id='demo-validate'
     title='Inline Validation'
     description='Type an email — validation runs on blur via HTMX GET, swapping only the field.'>
@@ -279,12 +263,12 @@ export const ValidateSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"close"
     <p class='text-xs text-muted-foreground'>
       Uses <code>inlineValidation()</code> from <code>@y-core/forge/html/htmx</code>.
     </p>
-  </Section>
+  </CatalogPanel>
 );
 
 /** Search demo: live-filtered component list. @public */
 export const SearchSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
-  <Section id='demo-search' title='Live Search' description='Filter components by name — results update as you type via HTMX GET.'>
+  <CatalogPanel id='demo-search' title='Live Search' description='Filter components by name — results update as you type via HTMX GET.'>
     <div class='space-y-4'>
       <FormField name='q' class='max-w-sm gap-1.5'>
         <FormField.Label name='q'>Search components</FormField.Label>
@@ -300,19 +284,19 @@ export const SearchSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
     <p class='text-xs text-muted-foreground'>
       Uses <code>liveSearch()</code> with 300 ms debounce.
     </p>
-  </Section>
+  </CatalogPanel>
 );
 
 /** Paginate demo: table with next/prev navigation. @public */
 export const PaginateSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
-  <Section id='demo-paginate' title='Paginated Table' description='Navigate pages — the table body swaps via HTMX GET.'>
+  <CatalogPanel id='demo-paginate' title='Paginated Table' description='Navigate pages — the table body swaps via HTMX GET.'>
     <div class='overflow-x-auto rounded-xl border border-border'>
       <PaginateFragment data={{ page: 1, paths }} />
     </div>
     <p class='text-xs text-muted-foreground'>
       Uses <code>paginatedTableLink()</code> helper on each page button.
     </p>
-  </Section>
+  </CatalogPanel>
 );
 
 /** Dependent select demo: category drives items. @public */
@@ -320,7 +304,7 @@ export const DependentSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinn
   paths,
   icon: Icon,
 }) => (
-  <Section id='demo-dependent' title='Dependent Select' description='Choose a food category — the items select repopulates via HTMX GET.'>
+  <CatalogPanel id='demo-dependent' title='Dependent Select' description='Choose a food category — the items select repopulates via HTMX GET.'>
     <div class='flex flex-wrap gap-6 max-w-sm'>
       <FormField name='category' class='flex-1 min-w-32 gap-1.5'>
         <FormField.Label for='dependent-category'>Category</FormField.Label>
@@ -337,12 +321,12 @@ export const DependentSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinn
     <p class='text-xs text-muted-foreground'>
       Uses <code>dependentSelect()</code> helper.
     </p>
-  </Section>
+  </CatalogPanel>
 );
 
 /** Toast demo: trigger OOB flash toasts. @public */
 export const ToastSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
-  <Section id='demo-toast' title='Flash Toast (OOB)' description='Click a type — a toast is injected OOB into #flash-container via HTMX GET.'>
+  <CatalogPanel id='demo-toast' title='Flash Toast (OOB)' description='Click a type — a toast is injected OOB into #flash-container via HTMX GET.'>
     <div class='flex flex-wrap gap-3'>
       {(["success", "info", "warning", "error"] as const).map((type) => (
         <Button key={type} variant='secondary' size='sm' hx-get={`${paths.toast}?type=${type}`} hx-swap='none'>
@@ -353,5 +337,5 @@ export const ToastSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
     <p class='text-xs text-muted-foreground'>
       Uses <code>FlashOob</code> with <code>hx-swap-oob</code> targeting <code>#flash-container</code>.
     </p>
-  </Section>
+  </CatalogPanel>
 );

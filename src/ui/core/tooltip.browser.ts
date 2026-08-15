@@ -100,7 +100,7 @@ test.describe("Tooltip", () => {
     await start(page);
 
     await page.hover("#save");
-    await expect.poll(() => page.evaluate(() => document.querySelector("#save-tip")?.hasAttribute("data-open")), { timeout: 3000 }).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.querySelector("#save-tip")?.matches(":popover-open")), { timeout: 3000 }).toBe(true);
   });
 });
 

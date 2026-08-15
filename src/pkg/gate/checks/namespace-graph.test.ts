@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { resolveNamespaces, validateNoEnumeration, validateNoMutualValuePairs } from "./namespace-graph";
 import type { EdgeKind } from "./namespace-graph-parse";
 
-const DOC = ".decisions/NAMESPACE_DESIGN.md";
+const DOC = ".decisions/implementation/NAMESPACES.md";
 
 describe("resolveNamespaces() — the namespace set is derived, never listed", () => {
   it("takes the directory of every mod.ts the exports map names", () => {

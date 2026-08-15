@@ -1,8 +1,9 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { MENU_ITEM_CLASS, MENU_SCOPE } from "../contracts/menu-contract";
-import { POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
+import { MENU_ITEM_CLASS, MENU_SCOPE, type MenuAction } from "../contracts/menu-contract";
+import { invokerAttrs, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
+import { scopeAttrs } from "../contracts/scope-attrs";
 import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
 import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
@@ -76,6 +77,7 @@ const MenuTrigger: FC<MenuTriggerProps> = ({ id, class: cls, children, "data-slo
     command='toggle-popover'
     commandfor={id}
     aria-haspopup='menu'
+    {...invokerAttrs(id)}
     class={cn("cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls))}
     {...rest}>
     {children}
@@ -100,7 +102,7 @@ const MenuPopup: FC<MenuPopupProps> = ({
     data-scope={MENU_SCOPE}
     popover='auto'
     {...(coords ? { [POPOVER_COORDS_ATTR]: "" } : {})}
-    {...stateAttrs({ open: false, side, align })}
+    {...stateAttrs({ side, align })}
     class={cn(POPUP_BASE, asClass(cls))}
     {...rest}>
     {children}
@@ -131,6 +133,7 @@ const MenuCheckboxItem: FC<MenuCheckboxItemProps> = ({ for: target, checked = fa
     data-slot={slotToken("menu-checkbox-item", inherited)}
     aria-checked={checked}
     {...stateAttrs({ checked })}
+    {...scopeAttrs<MenuAction>({ onClick: "check" })}
     {...closeAttrs(target)}
     class={cn(ITEM_BASE, asClass(cls))}
     {...rest}>
@@ -145,6 +148,7 @@ const MenuRadioItem: FC<MenuRadioItemProps> = ({ for: target, checked = false, c
     data-slot={slotToken("menu-radio-item", inherited)}
     aria-checked={checked}
     {...stateAttrs({ checked })}
+    {...scopeAttrs<MenuAction>({ onClick: "select" })}
     {...closeAttrs(target)}
     class={cn(ITEM_BASE, asClass(cls))}
     {...rest}>
@@ -168,6 +172,7 @@ const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ id, class: cls, child
     command='toggle-popover'
     commandfor={id}
     aria-haspopup='menu'
+    {...invokerAttrs(id)}
     class={cn(ITEM_BASE, asClass(cls))}
     {...rest}>
     {children}

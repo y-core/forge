@@ -13,7 +13,7 @@ The namespace splits into three import paths plus one CLI binary:
 | `@y-core/forge/assets/manifest` | `src/assets/manifest/mod.ts` | Runtime manifest + sprite lookups (`createManifest`, `createSpriteRegistry`) |
 | `forge-assets` (bin) | `src/assets/cli/bin.ts` | CLI wrapper around the build pipeline |
 
-See [`.decisions/ASSET_AND_BUILD_TOOLING.md`](../../.decisions/ASSET_AND_BUILD_TOOLING.md) for the authoritative architecture.
+See [`.decisions/implementation/ASSET_AND_BUILD_TOOLING.md`](../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) for the authoritative architecture.
 
 ---
 
@@ -115,7 +115,14 @@ import { assets } from "@assets";
 const cssHref = assets.path("styles.css"); // "/assets/styles.abc12345.css"
 ```
 
-When the config has sprite groups, the generated module also exports a typed icon component per group (e.g. a `ui` group → `UiIcon`), bound to the sprite path and its `viewBox` metadata.
+When the config has sprite groups, the generated module also exports a typed icon component per group (e.g. a `ui` group → `UiIcon`), bound to the sprite path and its `viewBox` metadata, plus the glyph-name union that component accepts:
+
+```ts
+export type UiIconName = "spinner" | "chevron-down";
+export const UiIcon = createIcon(assets.path("sprites/ui.svg"), UI_META, "icon-");
+```
+
+Pass the union wherever a component is generic over its glyph names — `Toolbar<MyActions, UiIconName>`, `ToolbarDefinition<A, UiIconName>`.
 
 ---
 
@@ -298,7 +305,7 @@ Everything that carries **type** information is config-derived and reproduced ex
 |---|---|
 | every manifest key — `css[].output`, `<outdir>/<entry>.js`, `sprites.<group>.target` | every manifest value (the content hash) |
 | every icon name — `basename(file, ".svg")` or the explicit `key`, plus the group `prefix` | each symbol's `viewBox`, scraped from the assembled sprite |
-| sprite group → `*Icon` export names, `publicPrefix`, cursor and theme keys | the baked cursor data-URIs |
+| sprite group → `*Icon` and `*IconName` export names, `publicPrefix`, cursor and theme keys | the baked cursor data-URIs |
 
 So the emitted module is shape-identical to a real build — same exports, same `createIcon` calls, and
 critically the same `*_META` literal keys, which are what give `createIcon` its icon-name union and

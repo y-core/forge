@@ -25,69 +25,57 @@ function markup(open = false): Promise<string> {
 function state(page: Page) {
   return page.evaluate(() => {
     const dialog = document.querySelector<HTMLDialogElement>("#confirm");
-    return {
-      nativeOpen: dialog?.open,
-      open: dialog?.hasAttribute("data-open"),
-      closed: dialog?.hasAttribute("data-closed"),
-      triggerLit: document.querySelector("#open-it")?.hasAttribute("data-popup-open"),
-    };
+    return { nativeOpen: dialog?.open };
   });
 }
 
 test.describe("Dialog", () => {
-  test("starts closed, with the trigger unlit", async ({ page }) => {
+  test("starts closed", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
-    expect(await state(page)).toEqual({ nativeOpen: false, open: false, closed: true, triggerLit: false });
+    expect(await state(page)).toEqual({ nativeOpen: false });
   });
 
-  test("the trigger opens it and both the dialog and the trigger publish it", async ({ page }) => {
+  test("the trigger opens it", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
     await page.click("#open-it");
 
-    await expect.poll(() => state(page)).toEqual({ nativeOpen: true, open: true, closed: false, triggerLit: true });
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: true });
   });
 
-  test("closing flips the dialog's pair and unlights the trigger", async ({ page }) => {
+  test("closing clears the platform's own open state", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
     await page.click("#open-it");
-    await expect.poll(async () => (await state(page)).open).toBe(true);
+    await expect.poll(async () => (await state(page)).nativeOpen).toBe(true);
     await page.click("#close-it");
 
-    await expect.poll(() => state(page)).toEqual({ nativeOpen: false, open: false, closed: true, triggerLit: false });
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: false });
   });
 
-  test("Escape closes it, and the state attributes follow the platform's own cancel", async ({ page }) => {
+  test("Escape closes it through the platform's own cancel", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
     await page.click("#open-it");
-    await expect.poll(async () => (await state(page)).open).toBe(true);
+    await expect.poll(async () => (await state(page)).nativeOpen).toBe(true);
     await page.keyboard.press("Escape");
 
-    await expect.poll(() => state(page)).toEqual({ nativeOpen: false, open: false, closed: true, triggerLit: false });
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: false });
   });
 
-  test("a Close button is not mistaken for a trigger", async ({ page }) => {
-    await mount(page, await markup(), EXPOSE);
-    await start(page);
-
-    await page.click("#open-it");
-    await expect.poll(async () => (await state(page)).open).toBe(true);
-
-    expect(await page.evaluate(() => document.querySelector("#close-it")?.hasAttribute("data-popup-open"))).toBe(false);
-  });
-
-  test("a server-rendered open dialog is already correct when the scope resumes", async ({ page }) => {
+  test("a server-rendered open dialog is non-modal, which is the only thing the attribute can mean", async ({ page }) => {
     await mount(page, await markup(true), EXPOSE);
     await start(page);
 
-    expect(await state(page)).toEqual({ nativeOpen: true, open: true, closed: false, triggerLit: true });
+    // `dialog.open` alone cannot tell the two apart, which is what let the old divergence hide:
+    // the trigger opened a modal while `open` rendered a non-modal, and both reported `open: true`.
+    expect(await page.evaluate(() => document.querySelector<HTMLDialogElement>("#confirm")?.matches(":modal"))).toBe(false);
+    expect(await state(page)).toEqual({ nativeOpen: true });
   });
 });
 

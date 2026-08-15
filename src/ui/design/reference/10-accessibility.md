@@ -51,7 +51,7 @@ failure looks like when contrast and `forge-ui-not-color-alone` are both deferre
 This is the section most specific to forge, and the mistake it names is invisible in a screenshot.
 
 Forge publishes state twice, on purpose. `stateAttrs` (SSR) and `applyStateAttrs` (browser) write
-the `data-*` attributes registered in `STATE_ATTRS` — `data-open`, `data-pressed`, `data-selected`,
+the `data-*` attributes registered in `STATE_ATTRS` — `data-pressed`, `data-selected`, `data-checked`,
 `data-invalid` and the rest — and those drive **styling and the client runtime**. The ARIA attribute
 beside them drives **assistive technology**. They are not alternatives, and neither substitutes.
 
@@ -60,7 +60,7 @@ looks right in every review that is conducted by looking.
 
 | What you are expressing | The styling hook | The ARIA counterpart |
 |---|---|---|
-| A disclosure or popup is open | `data-open` / `data-closed` | `aria-expanded` on the trigger |
+| A disclosure or popup is open | the native state — `[open]` on `<details>` / `<dialog>`, `:popover-open` on a popover | the platform's own, since `<summary>` and an invoker button both carry it |
 | A toggle is pressed | `data-pressed` | `aria-pressed` |
 | A tab is the current one | `data-selected` | `aria-selected` |
 | A checkable control is checked | `data-checked` | `aria-checked`, or the native `checked` |
@@ -73,7 +73,7 @@ purely decorative and carries no state a reader can act on. <!-- rule:forge-ui-a
 
 Default: read state in CSS from the `data-*` attribute, not from the `aria-*` one — unless no
 `data-*` exists for that state, in which case add it to `STATE_ATTRS` first. <!-- rule:forge-ui-a11y-state-attrs-source -->
-Boolean `data-*` states are presence flags with an empty value, so the selector is `[data-open]`;
+Boolean `data-*` states are presence flags with an empty value, so the selector is `[data-pressed]`;
 `aria-*` keeps its `"true"` / `"false"` string form because WAI-ARIA requires it. Selecting on ARIA
 is what eventually produces an element whose styling and whose announcement disagree.
 

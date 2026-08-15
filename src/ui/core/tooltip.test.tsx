@@ -73,7 +73,7 @@ describe("Tooltip.Trigger asChild — the three-way token composition", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger my-thing" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-haspopup="menu" class="${MENU_TRIGGER_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-haspopup="menu" aria-controls="file-menu" aria-expanded="false" class="${MENU_TRIGGER_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
     );
   });
 });
@@ -81,7 +81,7 @@ describe("Tooltip.Trigger asChild — the three-way token composition", () => {
 describe("Tooltip.Content — data-slot", () => {
   it("emits its own token alone when none was inherited", async () => {
     expect(await render(<Tooltip.Content id='tip'>Hint</Tooltip.Content>)).toBe(
-      '<div id="tip" role="tooltip" data-slot="tooltip-content" popover="manual" data-closed="" data-side="top" data-align="center" ' +
+      '<div id="tip" role="tooltip" data-slot="tooltip-content" popover="hint" data-side="top" data-align="center" ' +
         `class="${CONTENT_CLASS}">Hint</div>`,
     );
   });
@@ -94,7 +94,7 @@ describe("Tooltip.Content — data-slot", () => {
         </Tooltip.Content>,
       ),
     ).toBe(
-      '<div id="tip" role="tooltip" data-slot="tooltip-content rail-tip-body" popover="manual" data-closed="" data-side="top" ' +
+      '<div id="tip" role="tooltip" data-slot="tooltip-content rail-tip-body" popover="hint" data-side="top" ' +
         `data-align="center" class="${CONTENT_CLASS}">Hint</div>`,
     );
   });
@@ -147,7 +147,7 @@ describe("Tooltip — a non-string inherited token contributes nothing", () => {
   it("renders the bare literal on the root and the content for every non-string value", async () => {
     const root = `<div data-slot="tooltip" data-scope="tooltip" class="${ROOT_CLASS}">x</div>`;
     const content =
-      '<div id="tip" role="tooltip" data-slot="tooltip-content" popover="manual" data-closed="" data-side="top" data-align="center" ' +
+      '<div id="tip" role="tooltip" data-slot="tooltip-content" popover="hint" data-side="top" data-align="center" ' +
       `class="${CONTENT_CLASS}">Hint</div>`;
 
     const actual = await Promise.all(

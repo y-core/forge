@@ -23,7 +23,7 @@ export const Badge: FC<BadgeProps> = ({ variant = "default", class: cls, childre
   <span
     data-slot={slotToken("badge", inherited)}
     data-variant={variant}
-    class={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors", variantClasses[variant], cls)}
+    class={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", variantClasses[variant], cls)}
     {...rest}>
     {children}
   </span>

@@ -3,19 +3,24 @@
 
 import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
-import { scalePairs } from "../contracts/contrast-pairs";
+import { scalePairs } from "../contracts/theme/contrast-pairs";
 import {
   buildTheme,
+  COPY_ACTION,
+  COPY_SCOPE,
+  COPY_STATUS_ATTR,
+  COPY_TARGET_ATTR,
+  COPY_TARGETS,
   CUSTOMISE_SCOPE,
   DIALS,
   leverRows,
-  PRESET_FIELD,
-  PRESET_PARAM,
+  PRESET_ACTION,
   SCALE_ROWS,
   SCHEME_PRESETS,
   STEP_SEGMENTS,
   schemeCss,
-} from "../contracts/theme-contract";
+} from "../contracts/theme/theme-contract";
+import { buttonVariants } from "../core/button";
 import { fieldId } from "../core/field";
 import { CustomiseContent, loadCustomise } from "./customise";
 
@@ -91,7 +96,6 @@ describe("CustomiseContent", () => {
     const out = await page("?gh=256&gc=45");
     for (const dial of DIALS) {
       expect(out).toContain(`data-field="${dial.field}"`);
-      expect(out).toContain(`data-on-input="bindField"`);
     }
     expect(out).toContain('max="360"');
     expect(out).toContain('value="256"');
@@ -116,17 +120,26 @@ describe("CustomiseContent", () => {
   it("applies a preset on change rather than on a submit, so it carries no form and no button", async () => {
     const out = await page("?ah=200&ac=120&r=4");
     const levers = out.slice(out.indexOf('id="levers"'), out.indexOf('id="preview"'));
-    expect(levers).toContain(`data-on-change="bindField" data-field="${PRESET_FIELD}"`);
+    expect(levers).toContain(`data-on-change="${PRESET_ACTION}"`);
     expect(levers).not.toContain("<form");
     expect(levers).not.toContain(">Apply<");
     expect(levers).not.toContain('type="hidden"');
+  });
+
+  // Which preset the dials name is derived on every read, so seeding it would be a second source of
+  // truth — and the repaint keeping it current would be a signal write inside an effect.
+  it("seeds the scope with the dials and nothing else", async () => {
+    const out = await page("?gh=120&gc=77");
+    const start = out.indexOf("data-state=");
+    const blob = out.slice(out.indexOf('"', start) + 1, out.indexOf('"', out.indexOf('"', start) + 1));
+    expect(JSON.parse(blob.replaceAll("&quot;", '"'))).toEqual({ grayHue: 120, grayChroma: 77, accentHue: 267, accentChroma: 195, radius: 10 });
   });
 
   it("puts the picker inside the scope, which is what lets its change reach the painter", async () => {
     const out = await page();
     const scope = out.indexOf(`data-scope="${CUSTOMISE_SCOPE}"`);
     expect(scope).toBeGreaterThan(-1);
-    expect(out.indexOf(`data-field="${PRESET_FIELD}"`)).toBeGreaterThan(scope);
+    expect(out.indexOf("data-preset-picker")).toBeGreaterThan(scope);
   });
 
   it("always renders the custom option, since the client selects it the moment a lever moves off a preset", async () => {
@@ -167,15 +180,27 @@ describe("CustomiseContent", () => {
 
   it("draws no crossed scale/surface row, because the cascade cannot produce one", async () => {
     const out = await page();
-    expect(SCALE_ROWS).toHaveLength(2);
     expect(out).not.toContain("light-on-dark");
     expect(out).not.toContain("dark-on-light");
   });
 
+  // Uniform ids, gray included: nothing may recover a row's family by parsing its id.
+  it("names every row family-then-mode, with the accent family first to match the levers", async () => {
+    expect(SCALE_ROWS.map((row) => row.id)).toEqual(SCALE_ROWS.map((row) => `${row.family}-${row.mode}`));
+    expect(SCALE_ROWS.map((row) => row.family)).toEqual(["accent", "accent", "gray", "gray"]);
+    expect(new Set(SCALE_ROWS.map((row) => row.id)).size).toBe(SCALE_ROWS.length);
+  });
+
+  it("labels each row visibly, since four rows of near-white step 1 are otherwise indistinguishable", async () => {
+    const out = await page();
+    for (const row of SCALE_ROWS) expect(out).toContain(`>${row.label}</td>`);
+    expect(out).not.toContain('<tbody aria-hidden="true">');
+  });
+
   it("asks for no mode on a preview row, because a nested one cannot work", async () => {
     const out = await page();
-    const dark = out.match(/<tbody data-scale-row="dark"[^>]*>/)?.[0] ?? "";
-    expect(dark).toBe('<tbody data-scale-row="dark">');
+    const dark = out.match(/<tbody data-scale-row="gray-dark"[^>]*>/)?.[0] ?? "";
+    expect(dark).toBe('<tbody data-scale-row="gray-dark">');
     expect(out).not.toContain('class="dark"');
   });
 
@@ -184,8 +209,8 @@ describe("CustomiseContent", () => {
     const previewTable = out.slice(out.indexOf('id="preview"')).match(/<table[^>]*>/)?.[0] ?? "";
     expect(previewTable).toContain("border-separate border-spacing-0");
     expect(previewTable).not.toContain("border-collapse");
-    for (const corner of ["rounded-tl-md", "rounded-tr-md", "rounded-bl-md", "rounded-br-md"]) {
-      expect(out.split(corner).length - 1).toBe(2);
+    for (const corner of ["rounded-ss-md", "rounded-se-md", "rounded-es-md", "rounded-ee-md"]) {
+      expect(out.split(corner).length - 1).toBe(SCALE_ROWS.length);
     }
   });
 
@@ -194,7 +219,7 @@ describe("CustomiseContent", () => {
     for (const hex of ["#f9f9f9", "#646464", "#202020", "#111111", "#b4b4b4", "#eeeeee"]) {
       expect(out).toContain(hex);
     }
-    expect(out.split("data-hex=").length - 1).toBe(24);
+    expect(out.split("data-hex=").length - 1).toBe(SCALE_ROWS.length * 12);
   });
 
   it("derives every control id through the field helpers", async () => {
@@ -228,7 +253,7 @@ describe("CustomiseContent", () => {
   it("lists only the pairs a generated scheme can be measured on", async () => {
     const out = await page();
     expect(out.split("data-pair=").length - 1).toBe(scalePairs().length);
-    expect(scalePairs()).toHaveLength(6);
+    expect(scalePairs()).toHaveLength(7);
     expect(out).not.toContain("not generated");
     expect(out).not.toContain("data-live");
     expect(out.split("data-ratio=").length - 1).toBe(scalePairs().length * 2);
@@ -246,6 +271,30 @@ describe("CustomiseContent", () => {
     expect(out).not.toContain("✗");
   });
 
+  it("measures the accent pair too, so the accent dials move a number", async () => {
+    const out = await page();
+    expect(out).toContain('data-pair="--primary-foreground"');
+    expect(out).toContain('data-ratio="--primary-foreground|--accent-9:light"');
+    expect(out).toContain('data-ratio="--primary-foreground|--accent-9:dark"');
+  });
+
+  // `--accent-contrast` re-points from `--gray-1` to the darker `--gray-12`, so dark reads lower than
+  // light at every dial position. This is the tightest the accent dials get, and it now clears 4.5.
+  it("keeps both accent cells above the floor in the green band that once broke dark", async () => {
+    const out = await page("?ah=144&ac=170");
+    const row = out.slice(out.indexOf('data-pair="--primary-foreground"'));
+    const cells = row.slice(0, row.indexOf("</tr>"));
+    expect(cells).toContain("4.86:1 ✓");
+    expect(cells).toContain("4.65:1 ✓");
+  });
+
+  it("gives the scale preview a heading, so h1 is followed by h2 with no skip", async () => {
+    const out = await page();
+    const preview = out.slice(out.indexOf('id="preview"'), out.indexOf('id="wcag"'));
+    expect(preview).toContain("<h2");
+    expect(out.indexOf("<h2")).toBeGreaterThan(out.indexOf("<h1"));
+  });
+
   it("emits a scheme file whose shape is a scheme file", async () => {
     const out = await page("?gh=256&gc=45");
     expect(out).toContain("data-scheme-output");
@@ -260,6 +309,39 @@ describe("CustomiseContent", () => {
     expect(out).toContain("gc=45");
   });
 
+  it("puts a copy control beside each thing it hands you, inside a scope that can hear it", async () => {
+    const out = await page();
+    const scope = out.indexOf(`data-scope="${COPY_SCOPE}"`);
+    expect(scope).toBeGreaterThan(-1);
+    for (const target of COPY_TARGETS) {
+      expect(out).toContain(`${COPY_TARGET_ATTR}="${target.id}"`);
+      expect(out).toContain(`>${target.label}</span>`);
+      expect(out).toContain(`role="status" class="sr-only" ${COPY_STATUS_ATTR}="${target.id}"`);
+      expect(out.indexOf(`${COPY_TARGET_ATTR}="${target.id}"`)).toBeGreaterThan(scope);
+    }
+    expect(out).toContain(`data-on-click="${COPY_ACTION}"`);
+  });
+
+  // Floor #6 is satisfied by using the primitive at the floor of its own scale, which is what the
+  // classes prove — the harness runs no Tailwind build, so a measured box would be 0.
+  it("builds each copy control out of Button at the smallest size the scale offers", async () => {
+    const out = await page();
+    const classes = buttonVariants({ variant: "secondary", size: "sm" });
+    for (const button of out.match(/<button[^>]*data-copy-target[^>]*>/g) ?? []) {
+      expect(button).toContain(`class="${classes}"`);
+    }
+    expect(out.match(/<button[^>]*data-copy-target[^>]*>/g) ?? []).toHaveLength(COPY_TARGETS.length);
+  });
+
+  // Swapping the visible label to "Copied" under a static `aria-label` reading "Copy CSS" is exactly
+  // what WCAG 2.5.3 Label in Name forbids; the announcement rides the status span instead.
+  it("names each copy control by its own visible text and nothing else", async () => {
+    const out = await page();
+    for (const button of out.match(/<button[^>]*data-copy-target[^>]*>/g) ?? []) {
+      expect(button).not.toContain("aria-label");
+    }
+  });
+
   it("carries no style attribute anywhere, which the renderer would drop in any case", async () => {
     const out = await page("?gc=45&gh=256");
     expect(out).not.toContain("style=");
@@ -268,7 +350,7 @@ describe("CustomiseContent", () => {
 });
 
 describe("schemeCss", () => {
-  it("declares twelve solid and twelve alpha steps per family, once each", () => {
+  it("declares twelve solid steps per family, once each", () => {
     const css = schemeCss(buildTheme({ grayHue: 256, grayChroma: 45, accentHue: 267, accentChroma: 195, radius: 10 }), {
       grayHue: 256,
       grayChroma: 45,
@@ -279,7 +361,6 @@ describe("schemeCss", () => {
     for (const family of ["gray", "accent"]) {
       for (let step = 1; step <= 12; step++) {
         expect(css.split(`--${family}-${step}:`).length - 1).toBe(1);
-        expect(css.split(`--${family}-a${step}:`).length - 1).toBe(1);
       }
     }
     expect(css.split(":root {").length - 1).toBe(1);
@@ -297,7 +378,7 @@ describe("schemeCss", () => {
     expect(css).toContain("--gray-1: light-dark(oklch(98.21% 0 0), oklch(17.76% 0 0));");
     expect(css).toContain("--gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));");
     expect(css).toContain("--gray-12: light-dark(oklch(24.35% 0 0), oklch(94.91% 0 0));");
-    expect(css).toContain("--accent-9: oklch(52.00% 0.1950 267.0);");
+    expect(css).toContain("--accent-9: light-dark(oklch(52.00% 0.1950 267.0), oklch(50.75% 0.1950 267.0));");
   });
 
   it("records the dials it was generated from, so a pasted file can be traced back", () => {

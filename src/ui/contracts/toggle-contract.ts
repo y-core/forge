@@ -1,14 +1,14 @@
-/** Resumable-scope name the Toggle button stamps. Lazy. @public */
-export const TOGGLE_SCOPE = "toggle";
+// `Toggle` itself has no scope any more: it is a native checkbox whose `:checked` the CSS keys on,
+// so there is no state for a controller to maintain and no bespoke runtime to keep in step with
+// `ToggleGroup`'s.
+/** Resumable-scope name a `ToggleGroup` stamps, for the roving focus a checkbox group lacks. Eager. @public */
+export const TOGGLE_GROUP_SCOPE = "toggle-group";
 
-/** The action the Toggle button names in `data-on-click` and the client scope handles. @public */
-export type ToggleAction = "toggle";
-
-/** Resumable-scope name the Collapsible `<details>` stamps. Eager. @public */
-export const COLLAPSIBLE_SCOPE = "collapsible";
-
-/** Resumable-scope name each Accordion `<details>` item stamps. Eager. @public */
-export const ACCORDION_SCOPE = "accordion";
+/** The focusable element inside each `ToggleGroup.Item`, which roving focus moves between. @public */
+export const TOGGLE_GROUP_ITEM_SELECTOR = "[data-slot~='toggle-group-input']";
 
 /** Resumable-scope name the Tooltip root stamps. Eager. @public */
 export const TOOLTIP_SCOPE = "tooltip";
+
+/** Marks a tooltip whose controller has mounted, retiring the CSS-only hover fallback. @public */
+export const TOOLTIP_MOUNTED_ATTR = "data-tooltip-mounted";

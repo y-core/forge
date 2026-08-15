@@ -35,9 +35,9 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   if (options.wranglerTypes !== false) {
     steps.push(
-      { label: "cf:types:runtime", tail: 20, cmd: ["wrangler", "types", RUNTIME_TYPES, "--no-include-env"] },
+      { label: "types:cf-runtime", tail: 20, cmd: ["wrangler", "types", RUNTIME_TYPES, "--no-include-env"] },
       {
-        label: "cf:types:bindings",
+        label: "types:cf-bindings",
         tail: 20,
         cmd:
           options.workerConfig === undefined

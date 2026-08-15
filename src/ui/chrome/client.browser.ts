@@ -9,13 +9,25 @@ import { ThemeToggle } from "./theme-toggle";
 declare global {
   interface Window {
     forgeResume: typeof import("../client/resume");
+    /** Calls to `window.matchMedia` since the counter was installed. */
+    forgeMatchMediaCalls: number;
+    /** `localStorage.setItem` calls for the theme key since the counter was installed. */
+    forgeThemeWrites: number;
+    /** Disposers parked so a later evaluate can release one `resume()` at a time. */
+    forgeThemeDisposers: Array<() => void>;
   }
 }
 
 const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeChromeClient: "./ui/chrome/client" } };
 
 const icon = createIcon("/sprite.svg", { "icon-sun": "0 0 24 24", "icon-moon": "0 0 24 24", "icon-monitor": "0 0 24 24" });
-const navIcon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16", "icon-hamburger": "0 0 22 22", "icon-close": "0 0 22 22" });
+const navIcon = createIcon("/sprite.svg", {
+  "icon-chevron-down": "0 0 16 16",
+  "icon-hamburger": "0 0 22 22",
+  "icon-close": "0 0 22 22",
+  "icon-panel-open": "0 0 24 24",
+  "icon-panel-close": "0 0 24 24",
+});
 
 /** The FOUC script's job, done inline: the preference is on `<html>` before anything resumes. */
 async function seed(page: Page, pref: string): Promise<void> {
@@ -109,6 +121,114 @@ test.describe("theme scope — the system preference", () => {
   });
 });
 
+test.describe("theme scope — two toggles on one page", () => {
+  /** Two `ThemeToggle`s, exactly as a navbar toggle beside a settings toggle would render. */
+  async function mountThemePair(page: Page, pref: string): Promise<void> {
+    const one = await render(ThemeToggle({ icon }));
+    await mount(page, `${one}${one}`, EXPOSE);
+    await seed(page, pref);
+  }
+
+  /** Nth toggle button, in document order. */
+  const toggle = (page: Page, index: number) => page.locator("[data-on-click='cycleTheme']").nth(index);
+
+  test("either toggle advances the one preference, so alternating clicks never repeat a step", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await mountThemePair(page, "light");
+    await page.evaluate(() => window.forgeResume.resume());
+
+    await toggle(page, 0).click();
+    expect(await themeState(page)).toEqual({ pref: "dark", dark: true, stored: "dark" });
+
+    // The regression: the second toggle used to hold its own signal, still on `light`.
+    await toggle(page, 1).click();
+    expect(await themeState(page)).toEqual({ pref: "system", dark: false, stored: "system" });
+
+    await toggle(page, 0).click();
+    expect(await themeState(page)).toEqual({ pref: "light", dark: false, stored: "light" });
+  });
+
+  test("resuming a second theme scope reports nothing", async ({ page }) => {
+    const warnings: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "warning") warnings.push(message.text());
+    });
+
+    await mountThemePair(page, "light");
+    await page.evaluate(() => window.forgeResume.resume());
+    await toggle(page, 1).click();
+
+    expect(warnings.filter((warning) => /second theme scope/.test(warning))).toEqual([]);
+  });
+
+  test("persists one write per change, not one per mounted toggle", async ({ page }) => {
+    await mountThemePair(page, "light");
+    await page.evaluate((key) => {
+      window.forgeThemeWrites = 0;
+      const storage = window.localStorage;
+      const write = storage.setItem.bind(storage);
+      storage.setItem = (name: string, value: string) => {
+        if (name === key) window.forgeThemeWrites += 1;
+        write(name, value);
+      };
+      window.forgeResume.resume();
+      window.forgeThemeWrites = 0;
+    }, THEME_STORAGE_KEY);
+
+    await toggle(page, 0).click();
+
+    expect(await page.evaluate(() => window.forgeThemeWrites)).toBe(1);
+  });
+
+  test("asks the realm for the colour-scheme query once, and follows it live", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await mountThemePair(page, "system");
+    await page.evaluate(() => {
+      window.forgeMatchMediaCalls = 0;
+      const ask = window.matchMedia.bind(window);
+      window.matchMedia = (query: string) => {
+        window.forgeMatchMediaCalls += 1;
+        return ask(query);
+      };
+      window.forgeResume.resume();
+    });
+
+    expect(await page.evaluate(() => window.forgeMatchMediaCalls)).toBe(1);
+
+    await page.emulateMedia({ colorScheme: "dark" });
+
+    await expect.poll(async () => (await themeState(page)).dark).toBe(true);
+  });
+
+  test("releasing one resume leaves the surviving toggle live; releasing both stops tracking", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    // Staged, so each `resume()` owns exactly one scope — a single call would own both and release
+    // the document's theme in one go, which is the case the test above already covers.
+    await mount(page, await render(ThemeToggle({ icon })), EXPOSE);
+    await seed(page, "system");
+    await page.evaluate(
+      (html) => {
+        window.forgeThemeDisposers = [window.forgeResume.resume()];
+        document.body.insertAdjacentHTML("beforeend", html);
+        window.forgeThemeDisposers.push(window.forgeResume.resume());
+      },
+      await render(ThemeToggle({ icon })),
+    );
+
+    await page.evaluate(() => window.forgeThemeDisposers[0]?.());
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect.poll(async () => (await themeState(page)).dark).toBe(true);
+
+    await toggle(page, 1).click();
+    expect((await themeState(page)).pref).toBe("light");
+
+    await page.evaluate(() => window.forgeThemeDisposers[1]?.());
+    await page.emulateMedia({ colorScheme: "light" });
+    await toggle(page, 1).click();
+    expect((await themeState(page)).pref).toBe("light");
+  });
+});
+
 test.describe("theme toggle — the accessible name follows the theme", () => {
   /** The rendered name, which is exactly what a screen reader would announce. */
   function buttonName(page: Page): Promise<string | undefined> {
@@ -187,6 +307,21 @@ test.describe("navbar scope — auth filters", () => {
     await mountNavbar(page, ["user"]);
 
     await page.evaluate(() => document.dispatchEvent(new CustomEvent("navbar:filters", { detail: "user" })));
+
+    expect(await visible(page)).toEqual(["Account"]);
+  });
+
+  test("teardown stops the filter effect writing hidden on a later state write", async ({ page }) => {
+    const html = await render(Navbar({ config: CONFIG, resolveHref: (k: string) => `/${k}`, icon: navIcon, activeFilters: ["user"] }));
+    await mount(page, html, EXPOSE);
+
+    await page.evaluate(() => {
+      const teardown = window.forgeResume.resume();
+      const root = document.querySelector<HTMLElement>("[data-scope='navbar']");
+      const filters = root ? window.forgeResume.resumeScope(root)?.filters : undefined;
+      teardown();
+      if (filters) filters.value = ["admin"];
+    });
 
     expect(await visible(page)).toEqual(["Account"]);
   });

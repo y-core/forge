@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { resumeScope } from "../client/resume";
+import { resume, resumeScope } from "../client/resume";
+import { FakeEvent, fakeTree } from "../client/test-dom";
 
 // Import client.ts to register the toast and alert scopes as a side effect.
 import "./client";
@@ -72,10 +73,20 @@ describe("alert scope", () => {
     expect(state).toBeDefined();
   });
 
-  it("removes root when remove is called (dismiss contract)", () => {
-    const root = new FakeEl("alert") as unknown as HTMLElement;
-    resumeScope(root);
-    root.remove();
-    expect((root as unknown as FakeEl).removed).toBe(true);
+  // Drives the registered handler through a real click and the delegated runtime, rather than
+  // calling `root.remove()` by hand: the old spelling passed whether or not `client.ts` registered
+  // a `dismiss` action at all, which is the one thing this test exists to prove.
+  it("removes the alert when its dismiss button is clicked", () => {
+    const { doc, el } = fakeTree();
+    const root = el("DIV", { "data-scope": "alert", id: "alert" });
+    const close = el("BUTTON", { "data-slot": "alert-dismiss", "data-on-click": "dismiss" });
+    root.append(close);
+    doc.root.append(root);
+
+    const release = resume(doc as never);
+    close.dispatchEvent(new FakeEvent("click"));
+    release();
+
+    expect(doc.root.querySelector("#alert")).toBe(null);
   });
 });

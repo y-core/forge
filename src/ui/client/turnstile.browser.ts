@@ -8,6 +8,7 @@ import { mount } from "./browser-test-helper";
 declare global {
   interface Window {
     forgeTurnstile: typeof import("./turnstile");
+    forgeResume: typeof import("./resume");
     /** Recorder installed by the fake Cloudflare script. */
     turnstileCalls: {
       renders: Array<{ sitekey: unknown; size: unknown; theme: unknown }>;
@@ -45,6 +46,13 @@ function formMarkup(): Promise<string> {
   );
 }
 
+/** Two independent forms, each with its own `<Turnstile>` — what a page with two widgets renders. */
+function twoFormsMarkup(): Promise<string> {
+  const form = (id: string, field: string, siteKey: string, size: "compact" | "normal") =>
+    jsx("form", { id, children: [jsx("input", { id: field, name: "email" }), Turnstile({ siteKey, size })] });
+  return render(jsx("div", { children: [form("form", "field", "key-a", "normal"), form("form-b", "field-b", "key-b", "compact")] }));
+}
+
 /** Serve the fake Cloudflare script, and seed the recorder so assertions never read `undefined`. */
 async function serveScript(page: Page, outcome: "ok" | "abort" | "hang" = "ok"): Promise<void> {
   await page.route(TURNSTILE_SCRIPT_SRC, async (route) => {
@@ -62,10 +70,10 @@ async function seedRecorder(page: Page): Promise<void> {
   });
 }
 
-async function mountController(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    window.turnstileCleanup = window.forgeTurnstile.mountTurnstile();
-  });
+async function mountController(page: Page, selector = "#form"): Promise<void> {
+  await page.evaluate((root) => {
+    window.turnstileCleanup = window.forgeTurnstile.mountTurnstile(document.querySelector(root) as HTMLElement);
+  }, selector);
 }
 
 /** Real engagement: a bubbling `focusin` from the form's own field, which is what gates the load. */
@@ -74,6 +82,9 @@ async function engage(page: Page): Promise<void> {
 }
 
 const EXPOSE = { expose: { forgeTurnstile: "./ui/client/turnstile" } };
+
+/** The wiring a consuming app actually has: the core registrations plus `resume()`, no mount call. */
+const EXPOSE_SCOPE = { expose: { forgeCoreClient: "./ui/core/client", forgeResume: "./ui/client/resume" } };
 
 /** Count of `<script>` tags the controller injected for Cloudflare's API. */
 function scriptCount(page: Page): Promise<number> {
@@ -327,14 +338,110 @@ test.describe("mountTurnstile — fails visible", () => {
   });
 });
 
+test.describe("the turnstile scope — the capability arrives with the component", () => {
+  /** Exactly what a consuming app's client entry does: side-effect import, then `resume()`. */
+  const resumeOnly = (page: Page) => page.evaluate(() => window.forgeResume.resume());
+
+  test("mounts with no mount call at all, from the widget's own data-scope", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await formMarkup(), EXPOSE_SCOPE);
+
+    await resumeOnly(page);
+    await engage(page);
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+
+    expect(await page.evaluate(() => window.turnstileCalls.renders[0])).toEqual({ sitekey: "site-key", size: "normal", theme: "light" });
+  });
+
+  test("a page that renders no widget resumes nothing, loads nothing and reports nothing", async ({ page }) => {
+    const warnings: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "warning") warnings.push(message.text());
+    });
+    await serveScript(page);
+    // A page of the 598 that have no CAPTCHA: no widget markup, so no scope, so no controller.
+    await mount(page, await render(jsx("form", { id: "form", children: jsx("input", { id: "field" }) })), EXPOSE_SCOPE);
+
+    await resumeOnly(page);
+    await engage(page);
+
+    expect(warnings.filter((warning) => /\[turnstile\]/.test(warning))).toEqual([]);
+    expect(await scriptCount(page)).toBe(0);
+  });
+
+  test("resume teardown disposes the widget the scope mounted", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await formMarkup(), EXPOSE_SCOPE);
+
+    await page.evaluate(() => {
+      window.turnstileCleanup = window.forgeResume.resume();
+    });
+    await engage(page);
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+
+    const after = await page.evaluate(() => {
+      window.turnstileCleanup?.();
+      document.querySelector("#form")?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful: true } }));
+      return { removes: window.turnstileCalls.removes, resets: window.turnstileCalls.resets };
+    });
+
+    expect(after).toEqual({ removes: 1, resets: 0 });
+  });
+});
+
+test.describe("mountTurnstile — scoped to the node it is given", () => {
+  /** A bubbling `focusin` from the named field, which is what gates that form's load. */
+  const engageField = (page: Page, id: string) =>
+    page.evaluate((field) => document.querySelector(`#${field}`)?.dispatchEvent(new FocusEvent("focusin", { bubbles: true })), id);
+
+  test("mounts only the widget inside the form it was passed", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await twoFormsMarkup(), EXPOSE);
+    await page.evaluate(() => {
+      window.turnstileCleanup = window.forgeTurnstile.mountTurnstile(document.querySelector("#form") as HTMLElement);
+    });
+
+    await engageField(page, "field");
+    await engageField(page, "field-b");
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+
+    expect(await page.evaluate(() => window.turnstileCalls.renders)).toEqual([{ sitekey: "key-a", size: "normal", theme: "light" }]);
+  });
+
+  test("disposing one form's controller leaves the other form's widget mounted", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await twoFormsMarkup(), EXPOSE);
+    await page.evaluate(() => {
+      window.turnstileCleanup = window.forgeTurnstile.mountTurnstile(document.querySelector("#form") as HTMLElement);
+      window.forgeTurnstile.mountTurnstile(document.querySelector("#form-b") as HTMLElement);
+    });
+
+    await engageField(page, "field");
+    await engageField(page, "field-b");
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 2);
+    expect(await page.evaluate(() => window.turnstileCalls.renders.map((entry) => entry.sitekey))).toEqual(["key-a", "key-b"]);
+
+    const after = await page.evaluate(() => {
+      window.turnstileCleanup?.();
+      document.querySelector("#form")?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful: true } }));
+      document.querySelector("#form-b")?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful: true } }));
+      return { removes: window.turnstileCalls.removes, resets: window.turnstileCalls.resets };
+    });
+
+    // One removal and one reset: A's controller is gone, and only B's still answers a submission.
+    expect(after).toEqual({ removes: 1, resets: 1 });
+  });
+});
+
 test.describe("mountTurnstile — lifecycle", () => {
   test("is idempotent for the same widget", async ({ page }) => {
     await serveScript(page);
     await mount(page, await formMarkup(), EXPOSE);
 
     const same = await page.evaluate(() => {
-      const first = window.forgeTurnstile.mountTurnstile();
-      const second = window.forgeTurnstile.mountTurnstile();
+      const form = document.querySelector("#form") as HTMLElement;
+      const first = window.forgeTurnstile.mountTurnstile(form);
+      const second = window.forgeTurnstile.mountTurnstile(form);
       window.turnstileCleanup = first;
       return first === second;
     });
@@ -425,7 +532,7 @@ test.describe("mountTurnstile — lifecycle", () => {
 
     const threw = await page.evaluate(() => {
       try {
-        window.forgeTurnstile.mountTurnstile()();
+        window.forgeTurnstile.mountTurnstile(document.querySelector("#form") as HTMLElement)();
         return false;
       } catch {
         return true;
@@ -440,9 +547,10 @@ test.describe("mountTurnstile — lifecycle", () => {
     await serveScript(page);
     await mount(page, await render(Turnstile({ siteKey: "site-key" })), EXPOSE);
 
+    // The scope root *is* the widget, so this also covers the self-match the scope wiring relies on.
     const threw = await page.evaluate(() => {
       try {
-        window.forgeTurnstile.mountTurnstile()();
+        window.forgeTurnstile.mountTurnstile(document.querySelector("[data-ref='turnstile']") as HTMLElement)();
         return false;
       } catch {
         return true;

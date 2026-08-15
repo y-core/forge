@@ -376,7 +376,7 @@ export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"
             `max-h-dvh` is the fallback for a consumer whose layout is not a flex column, where `flex-1`
             is inert: the table then scrolls in a viewport-tall box rather than growing without bound. */}
         <ScrollArea class='flex min-h-0 max-h-dvh flex-1 flex-col'>
-          <ScrollArea.Viewport class='min-h-0 flex-1'>
+          <ScrollArea.Viewport label='Log entries' class='min-h-0 flex-1'>
             <LogTable
               rows={data.rows}
               {...(data.cursor !== undefined ? { cursor: data.cursor } : {})}

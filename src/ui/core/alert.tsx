@@ -15,23 +15,36 @@ const variantClasses = {
 
 export type AlertVariant = keyof typeof variantClasses;
 
-type AlertProps = JSX.IntrinsicElements["div"] & { variant?: AlertVariant; dismissible?: boolean };
+type AlertProps = JSX.IntrinsicElements["div"] & {
+  variant?: AlertVariant;
+  dismissible?: boolean;
+  /** Accessible name for the dismiss button. @default "Dismiss" */
+  dismissLabel?: string;
+};
 
-const AlertRoot: FC<AlertProps> = ({ variant = "default", dismissible = false, class: cls, children, "data-slot": inherited, ...rest }) => (
+const AlertRoot: FC<AlertProps> = ({
+  variant = "default",
+  dismissible = false,
+  dismissLabel = "Dismiss",
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <div
     data-slot={slotToken("alert", inherited)}
     data-variant={variant}
     {...(dismissible ? { "data-scope": "alert" } : {})}
-    class={cn("relative grid gap-1.5 rounded-2xl border px-4 py-3 text-sm", variantClasses[variant], dismissible && "pr-8", cls)}
+    class={cn("relative grid gap-1.5 rounded-2xl border ps-4 pe-4 py-3 text-sm", variantClasses[variant], dismissible && "pe-8", cls)}
     {...rest}>
     {children}
     {dismissible ? (
       <button
         type='button'
         data-slot='alert-dismiss'
-        aria-label='Dismiss'
+        aria-label={dismissLabel}
         {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-        class='absolute right-2 top-2 rounded opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
+        class='absolute end-2 top-2 rounded opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
         <span aria-hidden='true' class='text-base leading-none'>
           ×
         </span>
@@ -47,7 +60,7 @@ const AlertTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "d
 );
 
 const AlertDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("alert-description", inherited)} class={cn("text-sm leading-relaxed opacity-90", cls)} {...rest}>
+  <div data-slot={slotToken("alert-description", inherited)} class={cn("text-sm leading-relaxed text-pretty opacity-90", cls)} {...rest}>
     {children}
   </div>
 );

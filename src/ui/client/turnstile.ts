@@ -15,19 +15,34 @@ declare global {
 
 const mounted = new WeakMap<HTMLElement, () => void>();
 
-const ref = (name: string, doc: Document) => doc.querySelector<HTMLElement>(`[data-ref='${CSS.escape(name)}']`);
+const ref = (name: string, scope: ParentNode) => scope.querySelector<HTMLElement>(`[data-ref='${name}']`);
+
+/** The widget at or below `root`. The scope root *is* the widget, and `querySelector` reports
+ * descendants only, so the root has to be tested separately — as `resume.ts` does for `data-scope`. @internal */
+export function findWidget(root: HTMLElement): HTMLElement | null {
+  if (root.getAttribute("data-ref") === TURNSTILE.widget) return root;
+  return ref(TURNSTILE.widget, root);
+}
 
 /** Whether Cloudflare's API is present, asked as a capability rather than as truthiness: the DOM
- * exposes any element with `id="turnstile"` as `window.turnstile`, which would answer truthy. */
-const hasApi = (win: Window): win is Window & { turnstile: TurnstileAPI } => typeof win.turnstile?.render === "function";
+ * exposes any element with `id="turnstile"` as `window.turnstile`, which would answer truthy. @internal */
+export const hasApi = (win: Window): win is Window & { turnstile: TurnstileAPI } => typeof win.turnstile?.render === "function";
 
-/** Mounts a resilient Cloudflare Turnstile controller for the `<Turnstile>` widget and returns a cleanup function. @public */
-export function mountTurnstile(within?: Node): () => void {
-  const doc = ownerDocument(within);
-  const container = ref(TURNSTILE.widget, doc);
-  if (!container) return () => {};
+/** Mounts a resilient Cloudflare Turnstile controller for a `<Turnstile>` widget and returns a cleanup function. */
+export function mountTurnstile(root: HTMLElement): () => void {
+  const doc = ownerDocument(root);
+  // Both misses report rather than throw: the caller pointed at this tree expecting a widget in it,
+  // so a miss is an authoring error, not a page that simply has no CAPTCHA.
+  const container = findWidget(root);
+  if (!container) {
+    console.warn(`[turnstile] no [data-ref="${TURNSTILE.widget}"] under the mount root; the widget will not mount`);
+    return () => {};
+  }
   const form = container.closest("form");
-  if (!form) return () => {};
+  if (!form) {
+    console.warn("[turnstile] the widget is not inside a <form>; the token would have nowhere to submit");
+    return () => {};
+  }
 
   const existing = mounted.get(container);
   if (existing) return existing;
@@ -51,7 +66,7 @@ export function mountTurnstile(within?: Node): () => void {
 
   const showFallback = () => {
     if (disposed) return;
-    const fallback = ref(TURNSTILE.fallback, doc);
+    const fallback = ref(TURNSTILE.fallback, container);
     if (fallback) fallback.hidden = false;
   };
 
@@ -92,7 +107,7 @@ export function mountTurnstile(within?: Node): () => void {
       return;
     }
 
-    if (doc.querySelector(`script[src="${CSS.escape(TURNSTILE_SCRIPT_SRC)}"]`)) {
+    if (doc.querySelector(`script[src="${TURNSTILE_SCRIPT_SRC}"]`)) {
       pollId = win.setInterval(() => {
         if (hasApi(win)) {
           clearTimers();

@@ -1,5 +1,5 @@
 import { applyStateAttrs } from "../contracts/state-attrs";
-import { TAB_SELECTOR, TABLIST_SELECTOR } from "../contracts/tabs-contract";
+import { TAB_SELECTOR, TABLIST_SELECTOR, TABS_MOUNTED_ATTR } from "../contracts/tabs-contract";
 import { mountRovingFocus } from "./composite";
 import { closestAcross, elementById, eventTarget } from "./dom";
 
@@ -28,7 +28,7 @@ function select(root: HTMLElement, chosen: HTMLElement): void {
   }
 }
 
-/** Mounts a `Tabs` root and returns a disposer. @public */
+/** Mounts a `Tabs` root and returns a disposer. */
 export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => void {
   const list = root.querySelector<HTMLElement>(TABLIST_SELECTOR) ?? root;
   const vertical = root.getAttribute("data-orientation") === "vertical";
@@ -38,15 +38,33 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
 
   const onActivate = (event: Event) => {
     const tab = closestAcross(eventTarget(event) as Node | null, TAB_SELECTOR);
-    if (tab && list.contains(tab)) select(root, tab);
+    if (!tab || !list.contains(tab)) return;
+    if (tab.getAttribute("aria-disabled") === "true") return;
+    select(root, tab);
+  };
+
+  // The tab is an `<a href="#panel">` so that it works with no script; once this controller is live
+  // the fragment must not be followed, or every activation would push a history entry and scroll the
+  // panel into view. Registered separately from `onActivate` because automatic activation rides
+  // `focusin` and would otherwise never see the click at all.
+  const onClick = (event: Event) => {
+    const tab = closestAcross(eventTarget(event) as Node | null, TAB_SELECTOR);
+    if (tab && list.contains(tab)) event.preventDefault();
   };
 
   // Automatic activation rides `focusin`, which the arrow keys already produce, so the selection
   // follows the roving focus without this controller knowing which key moved it.
-  list.addEventListener(activation === "automatic" ? "focusin" : "click", onActivate);
+  const activateOn = activation === "automatic" ? "focusin" : "click";
+  list.addEventListener(activateOn, onActivate);
+  list.addEventListener("click", onClick);
+
+  // Retires the `:target` fallback, which exists only for the no-script case.
+  root.setAttribute(TABS_MOUNTED_ATTR, "");
 
   return () => {
-    list.removeEventListener(activation === "automatic" ? "focusin" : "click", onActivate);
+    root.removeAttribute(TABS_MOUNTED_ATTR);
+    list.removeEventListener(activateOn, onActivate);
+    list.removeEventListener("click", onClick);
     disposeFocus();
   };
 }

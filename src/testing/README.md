@@ -2,7 +2,7 @@
 
 Shared test utilities for apps built on forge — the fixtures every consumer previously hand-rolled: a pre-loaded request context, real CSRF token minting, typed in-memory storage fakes, an SSR render helper, a `Request` builder, and a single-route registrar.
 
-This is an **integration namespace** (composes `context`, `app`, `jsx`, `logging`, `form`, and `storage/db`/`storage/kv`/`storage/r2` types). Reaching into `app` and `jsx` is the declared, acceptable edge for a test-only namespace — see [.decisions/TESTING.md](../../.decisions/TESTING.md) §7a. It is intended for **test code only** — never import it from Worker source files.
+This is an **integration namespace** (composes `context`, `app`, `jsx`, `logging`, `form`, and `storage/db`/`storage/kv`/`storage/r2` types). Reaching into `app` and `jsx` is the declared, acceptable edge for a test-only namespace — see [.decisions/implementation/TESTING.md](../../.decisions/implementation/TESTING.md) §7a. It is intended for **test code only** — never import it from Worker source files.
 
 ---
 
@@ -75,6 +75,6 @@ const res = await app.request("/settings", req, TEST_ENV);
 
 ## Design rules
 
-- **Real primitives, typed fakes.** `mintTestCsrfToken` wraps the production `importCsrfKey`/`createCsrfToken`; the fakes implement the real structural contracts (`KVNamespace`, `D1DatabaseLike`, `R2BucketLike`, `AssetsFetcher`) so interface drift breaks tests at compile time. No mock libraries (see [.decisions/TESTING.md](../../.decisions/TESTING.md) §4).
+- **Real primitives, typed fakes.** `mintTestCsrfToken` wraps the production `importCsrfKey`/`createCsrfToken`; the fakes implement the real structural contracts (`KVNamespace`, `D1DatabaseLike`, `R2BucketLike`, `AssetsFetcher`) so interface drift breaks tests at compile time. No mock libraries (see [.decisions/implementation/TESTING.md](../../.decisions/implementation/TESTING.md) §4).
 - **No wall-clock behavior.** `fakeKV` accepts TTLs but does not enforce expiry — tests must not depend on time passing.
-- **Render once, assert once.** Use `render()` with a single entity-aware `toBe` on the full markup — never substring `toContain`/`toMatch` (see [.decisions/TESTING.md](../../.decisions/TESTING.md) §3, §7c).
+- **Render once, assert once.** Use `render()` with a single entity-aware `toBe` on the full markup — never substring `toContain`/`toMatch` (see [.decisions/implementation/TESTING.md](../../.decisions/implementation/TESTING.md) §3, §7c).

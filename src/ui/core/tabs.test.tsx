@@ -3,9 +3,9 @@ import { render } from "../../testing/render";
 import { Tabs } from "./tabs";
 
 const TAB_BASE =
-  "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground bg-transparent border-0 cursor-pointer outline-none " +
+  "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground bg-transparent border-0 cursor-pointer outline-none no-underline " +
   "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring " +
-  "aria-selected:bg-accent aria-selected:text-accent-foreground disabled:pointer-events-none disabled:opacity-50";
+  "aria-selected:bg-accent aria-selected:text-accent-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
 const PANEL_BASE = "outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -62,9 +62,9 @@ describe("Tabs", () => {
       '<div data-slot="tabs" data-scope="tabs" data-activation="automatic" data-orientation="horizontal" class="flex flex-col gap-3">' +
         '<div role="tablist" data-slot="tabs-list" aria-orientation="horizontal" data-orientation="horizontal" ' +
         'class="flex gap-1 border-b border-border pb-1">' +
-        `<button type="button" role="tab" data-slot="tab" aria-selected="true" aria-controls="panel-a" data-selected="" ` +
-        `data-composite-item-active="" class="${TAB_BASE}">A</button>` +
-        `<button type="button" role="tab" data-slot="tab" aria-selected="false" aria-controls="panel-b" class="${TAB_BASE}">B</button>` +
+        `<a href="#panel-a" role="tab" data-slot="tab" aria-selected="true" aria-controls="panel-a" data-selected="" ` +
+        `data-composite-item-active="" class="${TAB_BASE}">A</a>` +
+        `<a href="#panel-b" role="tab" data-slot="tab" aria-selected="false" aria-controls="panel-b" class="${TAB_BASE}">B</a>` +
         "</div>" +
         `<div id="panel-a" role="tabpanel" data-slot="tabs-panel" tabindex="0" data-selected="" class="${PANEL_BASE}">First</div>` +
         `<div id="panel-b" role="tabpanel" data-slot="tabs-panel" tabindex="0" hidden class="${PANEL_BASE}">Second</div>` +
@@ -84,7 +84,7 @@ describe("Tabs.List", () => {
   it("turns the rule down the side for a vertical strip", async () => {
     expect(await render(<Tabs.List orientation='vertical' />)).toBe(
       '<div role="tablist" data-slot="tabs-list" aria-orientation="vertical" data-orientation="vertical" ' +
-        'class="flex gap-1 flex-col border-r border-border pr-2"></div>',
+        'class="flex gap-1 flex-col border-e border-border pe-2"></div>',
     );
   });
 
@@ -99,7 +99,7 @@ describe("Tabs.List", () => {
 describe("Tabs.Tab", () => {
   it("renders an unselected tab wired to the panel it controls", async () => {
     expect(await render(<Tabs.Tab for='panel-a'>A</Tabs.Tab>)).toBe(
-      `<button type="button" role="tab" data-slot="tab" aria-selected="false" aria-controls="panel-a" class="${TAB_BASE}">A</button>`,
+      `<a href="#panel-a" role="tab" data-slot="tab" aria-selected="false" aria-controls="panel-a" class="${TAB_BASE}">A</a>`,
     );
   });
 
@@ -111,8 +111,8 @@ describe("Tabs.Tab", () => {
         </Tabs.Tab>,
       ),
     ).toBe(
-      '<button type="button" role="tab" data-slot="tab" aria-selected="true" aria-controls="panel-a" data-selected="" ' +
-        `data-composite-item-active="" class="${TAB_BASE}">A</button>`,
+      '<a href="#panel-a" role="tab" data-slot="tab" aria-selected="true" aria-controls="panel-a" data-selected="" ' +
+        `data-composite-item-active="" class="${TAB_BASE}">A</a>`,
     );
   });
 
@@ -124,15 +124,15 @@ describe("Tabs.Tab", () => {
         </Tabs.Tab>,
       ),
     ).toBe(
-      '<button type="button" role="tab" data-slot="tab" aria-selected="false" aria-controls="panel-c" ' +
-        `class="${TAB_BASE} grow" disabled>C</button>`,
+      '<a href="#panel-c" role="tab" data-slot="tab" aria-selected="false" aria-controls="panel-c" ' +
+        `aria-disabled="true" data-disabled="" class="${TAB_BASE} grow">C</a>`,
     );
   });
 
   it("keeps its own slot token ahead of an inherited one and escapes its children", async () => {
     expect(await render(<Tabs.Tab for='panel-a' data-slot='settings-tab'>{`R&D's <view>`}</Tabs.Tab>)).toBe(
-      '<button type="button" role="tab" data-slot="tab settings-tab" aria-selected="false" aria-controls="panel-a" ' +
-        `class="${TAB_BASE}">R&amp;D&#39;s &lt;view&gt;</button>`,
+      '<a href="#panel-a" role="tab" data-slot="tab settings-tab" aria-selected="false" aria-controls="panel-a" ' +
+        `class="${TAB_BASE}">R&amp;D&#39;s &lt;view&gt;</a>`,
     );
   });
 });

@@ -4,6 +4,7 @@
 import { describe, expect, it } from "bun:test";
 import { Forge } from "../../app/forge-app";
 import type { FC } from "../../jsx/types";
+import { PAGE_ORDER, SHOWCASE_PAGES } from "./components";
 import { registerShowcase, showcaseRoutes } from "./register";
 
 // biome-ignore lint/suspicious/noExplicitAny: test-only stub
@@ -19,9 +20,19 @@ const Layout: FC<{ ctx: { title: string } }> = ({ ctx, children }) => (
 );
 
 describe("showcaseRoutes", () => {
-  it("derives the index href, the theme href and six API hrefs from the default base", () => {
+  it("registers exactly one route per catalog page, plus the theme customiser", () => {
+    const { api, ...pages } = showcaseRoutes().ui;
+    expect(api).toBeDefined();
+    expect(Object.keys(pages).sort()).toEqual([...PAGE_ORDER, "theme"].sort());
+  });
+
+  it("derives a href per page from the default base, from the page's own slug", () => {
     const r = showcaseRoutes();
     expect(r.ui.index.href()).toBe("/showcase/ui");
+    expect(r.ui.interactive.href()).toBe(`/showcase/ui/${SHOWCASE_PAGES.interactive.slug}`);
+    expect(r.ui.runtime.href()).toBe(`/showcase/ui/${SHOWCASE_PAGES.runtime.slug}`);
+    expect(r.ui.htmx.href()).toBe(`/showcase/ui/${SHOWCASE_PAGES.htmx.slug}`);
+    expect(r.ui.chrome.href()).toBe(`/showcase/ui/${SHOWCASE_PAGES.chrome.slug}`);
     expect(r.ui.theme.href()).toBe("/showcase/ui/theme");
     expect(r.ui.api.preview.href()).toBe("/showcase/ui/api/preview");
     expect(r.ui.api.validate.href()).toBe("/showcase/ui/api/validate");
@@ -29,6 +40,7 @@ describe("showcaseRoutes", () => {
     expect(r.ui.api.paginate.href()).toBe("/showcase/ui/api/paginate");
     expect(r.ui.api.dependent.href()).toBe("/showcase/ui/api/dependent");
     expect(r.ui.api.toast.href()).toBe("/showcase/ui/api/toast");
+    expect(r.ui.api.avatar.href()).toBe("/showcase/ui/api/avatar");
   });
 
   it("honours a custom base path", () => {
@@ -46,12 +58,17 @@ describe("registerShowcase", () => {
     return app;
   }
 
-  it("wires the index route wrapped in the consumer layout", async () => {
-    const res = await makeApp().request("/showcase/ui");
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain('data-ctx="chrome"');
-    expect(body).toContain("UI Component Showcase");
+  it("wires every catalog page in the consumer layout, each headed by its own prerequisite", async () => {
+    const app = makeApp();
+    for (const key of PAGE_ORDER) {
+      const { slug, label, needs } = SHOWCASE_PAGES[key];
+      const res = await app.request(slug === "" ? "/showcase/ui" : `/showcase/ui/${slug}`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain('data-ctx="chrome"');
+      expect(body).toContain(`UI Component Showcase — ${label}`);
+      expect(body).toContain(needs.replace(/"/g, "&quot;"));
+    }
   });
 
   it("wires the theme customiser in the same layout, defaulting every dial", async () => {
@@ -79,7 +96,7 @@ describe("registerShowcase", () => {
     expect(body).toContain("0°");
   });
 
-  it("wires each of the six HTMX API sub-routes", async () => {
+  it("wires each of the seven API sub-routes", async () => {
     const app = makeApp();
     const cases: [string, string][] = [
       ["/showcase/ui/api/preview", "show-preview-button"],
@@ -88,6 +105,7 @@ describe("registerShowcase", () => {
       ["/showcase/ui/api/paginate?page=1", "show-paginate-table"],
       ["/showcase/ui/api/dependent?category=fruit", "show-dependent-select"],
       ["/showcase/ui/api/toast?type=success", "flash-container"],
+      ["/showcase/ui/api/avatar", "<svg"],
     ];
     for (const [path, marker] of cases) {
       const res = await app.request(path);

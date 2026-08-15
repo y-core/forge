@@ -1,14 +1,22 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { DIALOG_SCOPE } from "../contracts/overlay-contract";
-import { stateAttrs } from "../contracts/state-attrs";
+import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contract";
 import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
 
 interface DialogProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> {
   /** Element id — the `commandfor` target named by `Dialog.Trigger` / `Dialog.Close`. */
   id: string;
+  // `open` and `openModal` are separate props because the platform gives them separate meanings that
+  // markup alone cannot express: the `open` attribute always yields a *non-modal* dialog — no
+  // backdrop, no inertness, no top layer — while `Dialog.Trigger`'s `show-modal` command yields a
+  // modal one. Rendering `openModal` as `open` was the divergence: the CSS above styles a backdrop
+  // that a non-modal dialog never gets.
+  /** Render open and *non-modal* — no backdrop, the rest of the page stays interactive. */
+  open?: boolean;
+  /** Open as a modal on resume. Requires the client runtime; `showModal()` has no markup spelling. */
+  openModal?: boolean;
   children?: JSXNode;
 }
 
@@ -28,13 +36,13 @@ interface DialogCloseProps extends Omit<JSX.IntrinsicElements["button"], "childr
   children?: JSXNode;
 }
 
-const DialogRoot: FC<DialogProps> = ({ id, open, class: cls, children, "data-slot": inherited, ...props }) => (
+const DialogRoot: FC<DialogProps> = ({ id, open, openModal, class: cls, children, "data-slot": inherited, ...props }) => (
   <dialog
     id={id}
     data-slot={slotToken("dialog", inherited)}
-    data-scope={DIALOG_SCOPE}
-    {...(open ? { open } : {})}
-    {...stateAttrs({ open: open === true })}
+    {...(open ? { open: true } : {})}
+    {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
+    closedby='any'
     class={cn("rounded-xl border border-border bg-popover text-popover-foreground shadow-lg", asClass(cls))}
     {...props}>
     {children}

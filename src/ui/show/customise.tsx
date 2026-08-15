@@ -7,12 +7,18 @@
 
 import type { AppContext } from "../../context/types";
 import type { FC } from "../../jsx/types";
-import type { Mode, Scale } from "../contracts/color";
-import { CRITERION, scalePairs } from "../contracts/contrast-pairs";
+import type { Mode, Scale } from "../contracts/theme/color";
+import { CRITERION, type ScalePair, scalePairs } from "../contracts/theme/contrast-pairs";
 import {
   buildTheme,
+  COPY_ACTION,
+  COPY_LABEL_ATTR,
+  COPY_SCOPE,
+  COPY_STATUS_ATTR,
+  COPY_TARGET_ATTR,
+  COPY_TARGETS,
+  type CopyTarget,
   CUSTOMISE_SCOPE,
-  customiseState,
   DIALS,
   type Dial,
   type DialValues,
@@ -23,8 +29,8 @@ import {
   leverRows,
   liveRatios,
   matchPreset,
+  PRESET_ACTION,
   PRESET_CUSTOM,
-  PRESET_FIELD,
   PRESET_PARAM,
   ratioKey,
   SCALE_ROW_ATTR,
@@ -32,12 +38,13 @@ import {
   SCHEME_PRESETS,
   STEP_SEGMENTS,
   schemeCss,
-} from "../contracts/theme-contract";
-import { Select } from "../controls/select";
+} from "../contracts/theme/theme-contract";
 import { Slider } from "../controls/slider";
+import { Button } from "../core/button";
 import { fieldId } from "../core/field";
 import type { ForgeIcon } from "../core/icon";
 import { Label } from "../core/label";
+import { Select } from "../core/select";
 import { Resumable } from "../server/resumable";
 import { CompositionsSection } from "./compositions";
 
@@ -131,7 +138,10 @@ const PresetPicker: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, i
   return (
     <div class='w-64 space-y-1.5'>
       <Label for={fieldId(PRESET_PARAM)}>Theme preset</Label>
-      <Select bind={PRESET_FIELD} field={{ name: PRESET_PARAM }} icon={icon}>
+      {/* Deliberately not a bound control. Which preset the dials name is *derived*, so it is painted
+          from `matchPreset` and never stored — a signal behind it would have to be written from the
+          repaint effect, which the reactive rule forbids. As an input it commands, via the action. */}
+      <Select data-on-change={PRESET_ACTION} data-preset-picker='' field={{ name: PRESET_PARAM }} icon={icon}>
         <Select.Option value={PRESET_CUSTOM} disabled {...(current === undefined ? { selected: true } : {})}>
           custom
         </Select.Option>
@@ -149,7 +159,7 @@ const LeversSection: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, 
   <section id='levers' class='scroll-mt-24 space-y-4'>
     <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>Levers</h2>
     <p class='text-sm text-muted-foreground'>Hue and chroma over a fixed lightness ramp ensuring contrast ratios remain WCAG compliant.</p>
-    <Resumable name={CUSTOMISE_SCOPE} state={customiseState(dials)} class='space-y-4'>
+    <Resumable name={CUSTOMISE_SCOPE} state={dials} class='space-y-4'>
       <PresetPicker dials={dials} icon={icon} />
       <p class='text-sm text-muted-foreground'>
         Each preset sets the gray dials to the values that reproduce a scheme forge ships, and the page repaints as you pick one.{" "}
@@ -173,8 +183,8 @@ const STEPS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 // collapsing model, and a row group may not carry a border at all in the separated one.
 function boxEdge(step: number, edge: "top" | "bottom"): string {
   const parts = [edge === "top" ? "border-t" : "border-b"];
-  if (step === 0) parts.push("border-l", edge === "top" ? "rounded-tl-md" : "rounded-bl-md");
-  if (step === STEPS.length - 1) parts.push("border-r", edge === "top" ? "rounded-tr-md" : "rounded-br-md");
+  if (step === 0) parts.push("border-s", edge === "top" ? "rounded-ss-md" : "rounded-es-md");
+  if (step === STEPS.length - 1) parts.push("border-e", edge === "top" ? "rounded-se-md" : "rounded-ee-md");
   return `${parts.join(" ")} border-border`;
 }
 
@@ -205,8 +215,14 @@ const BANDS = STEP_SEGMENTS.map((segment, i) => {
   return { ...segment, from, to: from + segment.span - 1 };
 });
 
-const PreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
+// Module-local, and named apart from `sections.tsx`'s `@public` `PreviewSection`: two exports of one
+// name in one namespace is the collision, and only one of them is public.
+const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
   <section id='preview' class='scroll-mt-24 space-y-4'>
+    <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>Scales</h2>
+    <p class='text-sm text-muted-foreground'>
+      Both generated families, each drawn on the surface it belongs to. Every semantic token resolves through one of these forty-eight steps.
+    </p>
     <div class='overflow-x-auto'>
       <table class='w-full table-fixed border-separate border-spacing-0 min-w-[44rem]'>
         <caption class='sr-only'>
@@ -218,7 +234,7 @@ const PreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
               <th
                 scope='colgroup'
                 colspan={band.span}
-                class={`pb-1 text-center text-xs font-medium text-muted-foreground ${i === 0 ? "" : "border-l border-border"}`}>
+                class={`pb-1 text-center text-xs font-medium text-muted-foreground ${i === 0 ? "" : "border-s border-border"}`}>
                 {band.label}
               </th>
             ))}
@@ -231,16 +247,19 @@ const PreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
             ))}
           </tr>
         </thead>
+        {/* The label rides its own `<tbody>`, a sibling of the row's — so every
+            `[data-scale-row] tr:first-child` selector still names a swatch row — and `table-fixed`
+            keeps its `colspan` from touching the column widths the swatches align to. */}
         {SCALE_ROWS.map((row, i) => (
           <>
-            {i === 0 ? null : (
-              <tbody aria-hidden='true'>
-                <tr>
-                  <td colspan={STEPS.length} class='h-4' />
-                </tr>
-              </tbody>
-            )}
-            <ScaleRow id={row.id} scale={theme.gray[row.mode].solid} />
+            <tbody>
+              <tr>
+                <td colspan={STEPS.length} class={`pb-1 text-xs font-medium text-muted-foreground ${i === 0 ? "" : "pt-5"}`}>
+                  {row.label}
+                </td>
+              </tr>
+            </tbody>
+            <ScaleRow id={row.id} scale={theme[row.family][row.mode].solid} />
           </>
         ))}
       </table>
@@ -249,21 +268,21 @@ const PreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
 );
 
 /** One pair's row: its token and criterion, then a ratio cell per mode. */
-const WcagRow: FC<{ pair: ReturnType<typeof scalePairs>[number]; ratios: ReadonlyMap<string, LiveRatio> }> = ({ pair, ratios }) => {
+const WcagRow: FC<{ pair: ScalePair; ratios: ReadonlyMap<string, LiveRatio> }> = ({ pair, ratios }) => {
   const cell = (mode: Mode) => {
     const key = ratioKey(pair.token, pair.background.token, mode);
     return (
-      <td data-ratio={key} class='py-2 pr-4 tabular-nums text-foreground'>
+      <td data-ratio={key} class='py-2 pe-4 tabular-nums text-foreground'>
         {ratios.get(key)?.text}
       </td>
     );
   };
   return (
     <tr data-pair={pair.token} class='border-b border-border last:border-0'>
-      <td class='py-2 pr-4 font-mono text-foreground'>
+      <td class='py-2 pe-4 font-mono text-foreground'>
         {pair.token} <span class='text-muted-foreground'>on {pair.background.token}</span>
       </td>
-      <td class='py-2 pr-4 text-muted-foreground'>{CRITERION[pair.criterion].name}</td>
+      <td class='py-2 pe-4 text-muted-foreground'>{CRITERION[pair.criterion].name}</td>
       {cell("light")}
       {cell("dark")}
     </tr>
@@ -276,18 +295,26 @@ const WcagSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => {
     <section id='wcag' class='scroll-mt-24 space-y-4'>
       <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>WCAG, live</h2>
       <p class='text-sm text-muted-foreground'>
-        The six audited pairs the levers can actually move — both sides generated from the scale above, so each recomputes as you drag. The other
-        seventeen have a side on a fixed palette stop no dial reaches; they are checked against the shipped scheme by forge's own audit rather than
-        reported here. No setting fails: the ramp fixes lightness, and the tightest point in the whole lever range is{" "}
-        <code class='font-mono'>--input</code> at about 3.19:1 against a 3:1 floor.
+        The seven audited pairs the levers can actually move — both sides generated from the scales above, so each recomputes as you drag. The other
+        sixteen have a side on a fixed palette stop no dial reaches; they are checked against the shipped scheme by forge's own audit rather than
+        reported here.
+      </p>
+      <p class='text-sm text-muted-foreground'>
+        No gray setting fails: the ramp fixes lightness, and the tightest point the gray levers reach is <code class='font-mono'>--input</code> at
+        about 3.19:1 against a 3:1 floor. <strong class='font-medium text-foreground'>No accent setting fails either, by 0.09.</strong>{" "}
+        <code class='font-mono'>--accent-contrast</code> is <code class='font-mono'>--gray-1</code> in light but the darker{" "}
+        <code class='font-mono'>--gray-12</code> in dark, so dark carries the smaller headroom at every position. A band of high-chroma greens near
+        hue 145 once put it under the 4.5 floor; the dark ramp's step 9 is lowered to buy the margin back, and sweeping all four colour levers
+        together the tightest point measured is 4.59:1 in dark against 4.84:1 in light. That is a real margin rather than a comfortable one — read
+        the number here rather than trusting the dials.
       </p>
       <div class='overflow-x-auto'>
-        <table class='w-full min-w-[36rem] text-left text-xs'>
+        <table class='w-full min-w-[36rem] text-start text-xs'>
           <thead>
             <tr class='border-b border-border text-muted-foreground'>
-              <th class='py-2 pr-4 font-medium'>Token</th>
-              <th class='py-2 pr-4 font-medium'>Criterion</th>
-              <th class='py-2 pr-4 font-medium'>Light</th>
+              <th class='py-2 pe-4 font-medium'>Token</th>
+              <th class='py-2 pe-4 font-medium'>Criterion</th>
+              <th class='py-2 pe-4 font-medium'>Light</th>
               <th class='py-2 font-medium'>Dark</th>
             </tr>
           </thead>
@@ -302,21 +329,46 @@ const WcagSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => {
   );
 };
 
+// No `aria-label`: the visible label swaps to "Copied", and a static name still reading "Copy CSS"
+// would breach WCAG 2.5.3. The announcement goes through the status span, which is not the name.
+/** One target's control: a `size='sm'` Button — the floor of the scale — and the span it announces through. */
+const CopyButton: FC<{ target: CopyTarget }> = ({ target }) => (
+  <span class='inline-flex items-center gap-2'>
+    <Button variant='secondary' size='sm' data-on-click={COPY_ACTION} {...{ [COPY_TARGET_ATTR]: target.id }}>
+      <span {...{ [COPY_LABEL_ATTR]: "" }}>{target.label}</span>
+    </Button>
+    <span role='status' class='sr-only' {...{ [COPY_STATUS_ATTR]: target.id }} />
+  </span>
+);
+
+const copyTarget = (id: string): CopyTarget => {
+  const target = COPY_TARGETS.find((candidate) => candidate.id === id);
+  if (target === undefined) throw new Error(`no copy target named ${id}`);
+  return target;
+};
+
 const OutputSection: FC<{ theme: GeneratedTheme; dials: DialValues; path: string }> = ({ theme, dials, path }) => {
   const query = dialQuery(dials);
   return (
     <section id='output' class='scroll-mt-24 space-y-4'>
       <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>Take it away</h2>
       <p class='text-sm text-muted-foreground'>
-        A scheme file is exactly twelve steps and twelve alpha steps per mode.This is the scheme. Save it beside <code>theme-neutral.css</code> and
-        import it after.
+        A scheme file is exactly twelve steps per family. This is the scheme. Save it beside <code>theme-neutral.css</code> and import it after.
       </p>
-      <p class='text-sm text-muted-foreground'>
-        Shareable at <code data-share-url>{`${path}?${query}`}</code> — the URL is this page's only state.
-      </p>
-      <pre data-scheme-output class='max-h-96 overflow-auto rounded-lg border border-border bg-muted p-4 text-xs text-foreground'>
-        <code>{schemeCss(theme, dials)}</code>
-      </pre>
+      <Resumable name={COPY_SCOPE} class='space-y-4'>
+        <div class='flex flex-wrap items-center gap-3'>
+          <p class='text-sm text-muted-foreground'>
+            Shareable at <code data-share-url>{`${path}?${query}`}</code> — the URL is this page's only state.
+          </p>
+          <CopyButton target={copyTarget("url")} />
+        </div>
+        <div class='flex items-center gap-3'>
+          <CopyButton target={copyTarget("css")} />
+        </div>
+        <pre data-scheme-output class='max-h-96 overflow-auto rounded-lg border border-border bg-muted p-4 text-xs text-foreground'>
+          <code>{schemeCss(theme, dials)}</code>
+        </pre>
+      </Resumable>
     </section>
   );
 };
@@ -327,11 +379,11 @@ export const CustomiseContent: FC<{ data: CustomiseData; icon: CustomiseIcon }> 
   return (
     <main id='main-content' class='flex-1 min-w-0 mx-auto max-w-4xl px-6 py-10 lg:px-10 space-y-6'>
       <div>
-        <h1 class='text-3xl font-bold text-foreground'>Theme customiser</h1>
+        <h1 class='text-3xl font-bold text-foreground text-balance'>Theme customiser</h1>
       </div>
 
       <LeversSection dials={data.dials} icon={icon} />
-      <PreviewSection theme={theme} />
+      <ScalePreviewSection theme={theme} />
       <WcagSection theme={theme} />
 
       <div class='space-y-4'>

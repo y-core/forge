@@ -12,7 +12,7 @@ type SelectOptionProps = JSX.IntrinsicElements["option"];
 type SelectOptGroupProps = JSX.IntrinsicElements["optgroup"];
 
 const SELECT_WRAPPER = "group/select relative w-full has-[select:disabled]:opacity-50";
-const SELECT_BASE = "w-full appearance-none rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm text-foreground";
+const SELECT_BASE = "w-full appearance-none rounded-lg border border-input bg-background ps-3 py-2 pe-10 text-sm text-foreground";
 const SELECT_FOCUS = "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20";
 const SELECT_DISABLED = "disabled:cursor-not-allowed disabled:pointer-events-none";
 
@@ -26,10 +26,7 @@ const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({ class: cls, field, ico
       <select data-slot={slotToken("select", inherited)} class={`${SELECT_BASE} ${SELECT_FOCUS} ${SELECT_DISABLED}`} {...resolved}>
         {children}
       </select>
-      <span
-        aria-hidden='true'
-        data-slot='select-icon'
-        class='pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground'>
+      <span aria-hidden='true' data-slot='select-icon' class='pointer-events-none absolute inset-y-0 end-3 flex items-center text-muted-foreground'>
         <Icon name='chevron-down' width={16} height={16} stroke='currentColor' stroke-width={1.5} stroke-linecap='round' stroke-linejoin='round' />
       </span>
     </div>

@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+import type { JSX, JSXElement, JSXNode } from "../../jsx/types";
+import { invokerAttrs } from "../contracts/overlay-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
@@ -13,10 +14,10 @@ import { cva } from "../core/utils/cva";
 import { commandAttrs } from "../server/command-attrs";
 
 /** Root rail item that fires a delegated action immediately on click. @public */
-export interface ToolbarAction<A extends string = string> {
+export interface ToolbarAction<A extends string = string, G extends string = string> {
   kind: "action";
   /** Sprite glyph name, rendered via the bound `icon`. */
-  icon: string;
+  icon: G;
   /** Tooltip / aria-label. */
   label: string;
   action: A;
@@ -32,9 +33,9 @@ export interface ToolbarAction<A extends string = string> {
 }
 
 /** An action button rendered inline on a popover's flyout title row. @public */
-export interface ToolbarTitleAction<A extends string = string> {
+export interface ToolbarTitleAction<A extends string = string, G extends string = string> {
   /** App sprite glyph, rendered via the bound `icon`. */
-  icon: string;
+  icon: G;
   /** Tooltip + aria-label. */
   label: string;
   action: A;
@@ -43,10 +44,10 @@ export interface ToolbarTitleAction<A extends string = string> {
 }
 
 /** Root rail item that opens a placement-aware flyout of arbitrary content. @public */
-export interface ToolbarPopover<A extends string = string> {
+export interface ToolbarPopover<A extends string = string, G extends string = string> {
   kind: "popover";
   /** Sprite glyph name for the trigger icon. */
-  icon: string;
+  icon: G;
   /** Trigger aria-label + flyout title-chip text. */
   label: string;
   /** data-ref on the trigger button. */
@@ -55,7 +56,7 @@ export interface ToolbarPopover<A extends string = string> {
   content: JSXNode;
   /** Shrink flyout to content width (no min-w-52 floor). */
   compact?: boolean;
-  titleAction?: ToolbarTitleAction<A>;
+  titleAction?: ToolbarTitleAction<A, G>;
 }
 
 /** @public */
@@ -70,26 +71,30 @@ export interface ToolbarSlot {
 }
 
 /** @public */
-export type ToolbarItem<A extends string = string> = ToolbarAction<A> | ToolbarPopover<A> | ToolbarSeparator | ToolbarSlot;
+export type ToolbarItem<A extends string = string, G extends string = string> =
+  | ToolbarAction<A, G>
+  | ToolbarPopover<A, G>
+  | ToolbarSeparator
+  | ToolbarSlot;
 
 /** A cluster of items; a separator is auto-emitted between sibling groups. @public */
-export interface ToolbarGroup<A extends string = string> {
-  items: ToolbarItem<A>[];
+export interface ToolbarGroup<A extends string = string, G extends string = string> {
+  items: ToolbarItem<A, G>[];
 }
 
 /** Full toolbar configuration. @public */
-export interface ToolbarDefinition<A extends string = string> {
-  groups: ToolbarGroup<A>[];
+export interface ToolbarDefinition<A extends string = string, G extends string = string> {
+  groups: ToolbarGroup<A, G>[];
 }
 
 /** Edge the rail pins to; drives flex direction + flyout direction. @public */
 export type ToolbarPlacement = "left" | "right" | "top" | "bottom";
 
 /** Props for {@link Toolbar}; the tree is built from `config`, so `children` is removed. @public */
-export interface ToolbarProps<A extends string = string> extends Omit<JSX.IntrinsicElements["nav"], "children"> {
-  config: ToolbarDefinition<A>;
+export interface ToolbarProps<A extends string = string, G extends string = string> extends Omit<JSX.IntrinsicElements["nav"], "children"> {
+  config: ToolbarDefinition<A, G>;
   /** App sprite icon — glyph names are app-defined. Required. */
-  icon: ForgeIcon<string>;
+  icon: ForgeIcon<G>;
   /** Edge the rail pins to. Default `"left"`. */
   placement?: ToolbarPlacement;
   /** `commandfor` sink (element id, bare or `#id`) for actions with `dispatch:"command"`. */
@@ -101,9 +106,9 @@ export interface ToolbarProps<A extends string = string> extends Omit<JSX.Intrin
 }
 
 /** Threaded through the item renderers. */
-interface RenderCtx {
+interface RenderCtx<G extends string> {
   placement: ToolbarPlacement;
-  icon: ForgeIcon<string>;
+  icon: ForgeIcon<G>;
   commandTarget: string | undefined;
   /** Namespace prefix for generated flyout ids — the rail's `id` when given, else its placement. */
   idBase: string;
@@ -138,11 +143,11 @@ function separator(placement: ToolbarPlacement): JSXNode {
 }
 
 /** Activation attributes for an action item: native Invoker command or delegated scope event. */
-function actionAttrs<A extends string>(item: ToolbarAction<A>, commandTarget: string | undefined): Record<string, string> {
+function actionAttrs<A extends string, G extends string>(item: ToolbarAction<A, G>, commandTarget: string | undefined): Record<string, string> {
   return item.dispatch === "command" ? commandAttrs<A>(item.action, commandTarget ?? "") : scopeAttrs<A>({ onClick: item.action });
 }
 
-function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSXNode {
+function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>, ctx: RenderCtx<G>): JSXNode {
   const { placement, icon: Icon } = ctx;
   if (item.kind === "separator") return separator(placement);
 
@@ -175,6 +180,7 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
         size='icon'
         command='toggle-popover'
         commandfor={id}
+        {...invokerAttrs(id)}
         data-ref={ref}
         title={label}
         aria-label={label}>
@@ -206,7 +212,7 @@ function renderItem<A extends string>(item: ToolbarItem<A>, ctx: RenderCtx): JSX
   );
 }
 
-function renderGroup<A extends string>(group: ToolbarGroup<A>, ctx: RenderCtx): JSXNode {
+function renderGroup<A extends string, G extends string>(group: ToolbarGroup<A, G>, ctx: RenderCtx<G>): JSXNode {
   const vertical = isVerticalPlacement(ctx.placement);
   return (
     <div data-slot='toolbar-group' class={cn("flex", vertical ? "flex-col items-center gap-0.5 w-full" : "flex-row items-center gap-0.5")}>
@@ -216,7 +222,7 @@ function renderGroup<A extends string>(group: ToolbarGroup<A>, ctx: RenderCtx): 
 }
 
 /** A configuration-driven icon rail with placement-aware flyout panels. @public */
-export const Toolbar: FC<ToolbarProps> = ({
+export const Toolbar = <A extends string = string, G extends string = string>({
   config,
   icon: Icon,
   placement = "left",
@@ -225,8 +231,8 @@ export const Toolbar: FC<ToolbarProps> = ({
   id,
   "data-slot": inherited,
   ...rest
-}) => {
-  const ctx: RenderCtx = { placement, icon: Icon, commandTarget, idBase: id ?? placement, seq: { n: 0 } };
+}: ToolbarProps<A, G>): JSXElement => {
+  const ctx: RenderCtx<G> = { placement, icon: Icon, commandTarget, idBase: id ?? placement, seq: { n: 0 } };
   const children: JSXNode[] = [];
   for (const [i, group] of config.groups.entries()) {
     if (i > 0) children.push(separator(placement));

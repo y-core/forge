@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { POPOVER_SCOPE } from "../contracts/overlay-contract";
+import { invokerAttrs, POPOVER_SCOPE } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
 import { slotToken } from "./utils/as-child";
 import { asClass, cn } from "./utils/cn";
@@ -37,6 +37,7 @@ const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, "da
     data-slot={slotToken("popover-trigger", inherited)}
     command='toggle-popover'
     commandfor={id}
+    {...invokerAttrs(id)}
     class={cn("list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls))}
     {...props}>
     {children}

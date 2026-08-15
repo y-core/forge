@@ -83,7 +83,7 @@ const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({
   return (
     <label data-slot='checkbox-group-item' class={cn("inline-flex items-center gap-2 text-sm text-foreground", asClass(cls))}>
       <input
-        type='checkbox'
+        type='checkbox' /* modern-css-allow: forge-ui-platform-accent-color — `appearance-none` redraws the box entirely, and accent-color only tints the native control's own shape, so it cannot express this design. */
         data-slot={slotToken("checkbox-group-input", inherited)}
         {...(id !== undefined ? { id } : {})}
         name={name}

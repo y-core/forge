@@ -21,6 +21,7 @@ export {
   loadShowcase,
   loadToast,
   loadValidate,
+  renderAvatar,
   renderDependent,
   renderPaginate,
   renderPreview,

@@ -10,43 +10,37 @@ const TRIGGER_BASE =
   "hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring";
 
 const CHEVRON =
-  '<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground transition-transform duration-200 ' +
+  '<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 ' +
   'group-open/collapsible-item:rotate-180" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg>';
 
 describe("Collapsible", () => {
-  it("renders a closed details with the scope and the closed half of the state pair", async () => {
-    expect(await render(<Collapsible />)).toBe(
-      '<details data-slot="collapsible" data-scope="collapsible" data-closed="" class="group/collapsible-item"></details>',
-    );
+  it("renders a closed details carrying only its slot and class", async () => {
+    expect(await render(<Collapsible />)).toBe('<details data-slot="collapsible" class="group/collapsible-item"></details>');
   });
 
   it("stamps the platform `open` attribute and the open half of the pair together", async () => {
-    expect(await render(<Collapsible open />)).toBe(
-      '<details data-slot="collapsible" data-scope="collapsible" open data-open="" class="group/collapsible-item"></details>',
-    );
+    expect(await render(<Collapsible open />)).toBe('<details data-slot="collapsible" open class="group/collapsible-item"></details>');
   });
 
   it("treats an explicit open={false} exactly as the default", async () => {
-    expect(await render(<Collapsible open={false} />)).toBe(
-      '<details data-slot="collapsible" data-scope="collapsible" data-closed="" class="group/collapsible-item"></details>',
-    );
+    expect(await render(<Collapsible open={false} />)).toBe('<details data-slot="collapsible" class="group/collapsible-item"></details>');
   });
 
   it("merges a caller class onto the group base", async () => {
     expect(await render(<Collapsible class='rounded-md border' />)).toBe(
-      '<details data-slot="collapsible" data-scope="collapsible" data-closed="" class="group/collapsible-item rounded-md border"></details>',
+      '<details data-slot="collapsible" class="group/collapsible-item rounded-md border"></details>',
     );
   });
 
   it("keeps its own slot token ahead of one handed down through props", async () => {
     expect(await render(<Collapsible data-slot='filters' />)).toBe(
-      '<details data-slot="collapsible filters" data-scope="collapsible" data-closed="" class="group/collapsible-item"></details>',
+      '<details data-slot="collapsible filters" class="group/collapsible-item"></details>',
     );
   });
 
   it("escapes arbitrary data-* and aria-* values spread onto the root", async () => {
     expect(await render(<Collapsible data-note={`R&D's "advanced" <opts>`} aria-label={`R&D's options`} />)).toBe(
-      '<details data-slot="collapsible" data-scope="collapsible" data-closed="" class="group/collapsible-item" ' +
+      '<details data-slot="collapsible" class="group/collapsible-item" ' +
         'data-note="R&amp;D&#39;s &quot;advanced&quot; &lt;opts&gt;" aria-label="R&amp;D&#39;s options"></details>',
     );
   });
@@ -60,8 +54,8 @@ describe("Collapsible", () => {
         </Collapsible>,
       ),
     ).toBe(
-      '<details data-slot="collapsible" data-scope="collapsible" open data-open="" class="group/collapsible-item">' +
-        `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 pl-1">Advanced</span>${CHEVRON}</summary>` +
+      '<details data-slot="collapsible" open class="group/collapsible-item">' +
+        `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>` +
         '<div data-slot="collapsible-panel" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div>' +
         "</details>",
     );
@@ -71,7 +65,7 @@ describe("Collapsible", () => {
 describe("Collapsible.Trigger", () => {
   it("renders a summary with the trigger base classes, the label slot and the chevron", async () => {
     expect(await render(<Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>)).toBe(
-      `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 pl-1">Advanced</span>${CHEVRON}</summary>`,
+      `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>`,
     );
   });
 
@@ -84,14 +78,21 @@ describe("Collapsible.Trigger", () => {
       ),
     ).toBe(
       `<summary data-slot="collapsible-trigger filters-trigger" class="${TRIGGER_BASE} justify-between">` +
-        `<span class="flex-1 pl-1">Advanced</span>${CHEVRON}</summary>`,
+        `<span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>`,
+    );
+  });
+
+  it("accepts a sheet narrowed to the glyphs it renders, uncast", async () => {
+    const narrowIcon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 24 24", "icon-plus": "0 0 24 24" });
+    expect(await render(<Collapsible.Trigger icon={narrowIcon}>Advanced</Collapsible.Trigger>)).toBe(
+      `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>`,
     );
   });
 
   it("escapes the label without disturbing the chevron beside it", async () => {
     expect(await render(<Collapsible.Trigger icon={icon}>{`R&D's <options>`}</Collapsible.Trigger>)).toBe(
       `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}">` +
-        `<span class="flex-1 pl-1">R&amp;D&#39;s &lt;options&gt;</span>${CHEVRON}</summary>`,
+        `<span class="flex-1 ps-1">R&amp;D&#39;s &lt;options&gt;</span>${CHEVRON}</summary>`,
     );
   });
 });

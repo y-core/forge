@@ -75,4 +75,24 @@ describe("createIcon", () => {
     const narrow: ForgeIcon<"chevron-down"> = wide;
     expect(typeof narrow).toBe("function");
   });
+
+  it("narrows a multi-symbol sheet to the union of its meta names", async () => {
+    const AppIcon = createIcon("/assets/sprite.svg", { "icon-chevron-down": "0 0 24 24", "icon-plus": "0 0 16 16" });
+    const Narrowed: ForgeIcon<"chevron-down" | "plus"> = AppIcon;
+    expect(await render(<Narrowed name='plus' />)).toBe(
+      '<svg data-slot="icon" viewBox="0 0 16 16" class="" aria-hidden="true"><use href="/assets/sprite.svg#icon-plus"></use></svg>',
+    );
+  });
+
+  it("rejects a name absent from the sheet's meta, which would otherwise render an empty symbol", async () => {
+    const AppIcon = createIcon("/assets/sprite.svg", { "icon-chevron-down": "0 0 24 24", "icon-plus": "0 0 16 16" });
+    expect(
+      await render(
+        <AppIcon
+          // @ts-expect-error — "typo" is not a symbol in the bound sheet
+          name='typo'
+        />,
+      ),
+    ).toBe('<svg data-slot="icon" class="" aria-hidden="true"><use href="/assets/sprite.svg#icon-typo"></use></svg>');
+  });
 });

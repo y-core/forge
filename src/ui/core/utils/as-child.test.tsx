@@ -15,23 +15,23 @@ const MESSAGE = "test compound with asChild requires exactly one JSX element chi
 const base = { slot: "probe", class: "probe-class", props: {}, message: MESSAGE };
 
 const BUTTON_BASE =
-  "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none " +
+  "inline-flex items-center justify-center rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none " +
   "focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 const TOOLBAR_ITEM_CLASS = `${BUTTON_BASE} text-foreground hover:bg-accent h-8 px-3 text-sm`;
 
 const MENU_WITH_TOOLTIP_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const POPOVER_WITH_TOOLTIP_CLASS = "list-none cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const TOOLBAR_ITEM_WITH_TOOLTIP_CLASS =
-  "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none " +
+  "inline-flex items-center justify-center rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none " +
   "disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm " +
   "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const MENU_ITEM_WITH_TOOLTIP_CLASS =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-popover-foreground bg-transparent border-0 " +
+  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 " +
   "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
   "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 " +
   "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS =
-  "inline-flex items-center justify-center rounded-lg font-medium transition-colors " +
+  "inline-flex items-center justify-center rounded-lg font-medium motion-safe:transition-colors " +
   "focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent " +
   "h-8 px-3 text-sm cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -134,7 +134,7 @@ describe("Toolbar.Link asChild — the compound that sets neither option", () =>
         </Toolbar.Link>,
       ),
     ).toBe(
-      '<button type="button" data-toolbar-item="" class="inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm underline-offset-4 hover:underline" data-slot="toolbar-link">Docs</button>',
+      '<button type="button" data-toolbar-item="" class="inline-flex items-center justify-center rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm underline-offset-4 hover:underline" data-slot="toolbar-link">Docs</button>',
     );
   });
 });
@@ -177,7 +177,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-haspopup="menu" aria-controls="file-menu" aria-expanded="false" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
     );
   });
 
@@ -190,6 +190,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="popover-trigger tooltip-trigger" command="toggle-popover" commandfor="panel" ' +
+        'aria-controls="panel" aria-expanded="false" ' +
         `class="${POPOVER_WITH_TOOLTIP_CLASS}" aria-describedby="tip">Panel</button>`,
     );
   });
@@ -232,7 +233,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" role="menuitem" data-slot="menu-submenu-trigger tooltip-trigger" command="toggle-popover" ' +
-        `commandfor="more" aria-haspopup="menu" class="${MENU_ITEM_WITH_TOOLTIP_CLASS}" aria-describedby="tip">More</button>`,
+        `commandfor="more" aria-haspopup="menu" aria-controls="more" aria-expanded="false" class="${MENU_ITEM_WITH_TOOLTIP_CLASS}" aria-describedby="tip">More</button>`,
     );
   });
 
@@ -247,7 +248,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger toolbar-button tooltip-trigger" command="toggle-popover" ' +
-        `commandfor="file-menu" aria-haspopup="menu" class="${MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS}" ` +
+        `commandfor="file-menu" aria-haspopup="menu" aria-controls="file-menu" aria-expanded="false" class="${MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS}" ` +
         'data-toolbar-item="" aria-describedby="tip">File</button>',
     );
   });
@@ -261,7 +262,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-haspopup="menu" aria-controls="file-menu" aria-expanded="false" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
     );
   });
 });

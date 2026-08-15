@@ -1,8 +1,7 @@
-import { MENU_ITEM_SELECTOR } from "../contracts/menu-contract";
+import { MENU_GROUP_SELECTOR, MENU_ITEM_SELECTOR, MENU_RADIO_SELECTOR } from "../contracts/menu-contract";
+import { applyStateAttrs } from "../contracts/state-attrs";
 import { mountRovingFocus } from "./composite";
 import { activeElement, asElement, closestAcross, contains, elementById, isRtl, ownerDocument } from "./dom";
-import { mountAnchorBinding } from "./popover-anchor";
-import { mountPopupTriggerState, mountTransitionState } from "./transition";
 
 /** Options for {@link mountMenu}. */
 export interface MenuOptions {
@@ -22,13 +21,29 @@ function isNested(popup: HTMLElement): boolean {
   return closestAcross(popup.parentNode, MENU_POPUP_SELECTOR) != null;
 }
 
-/** Mounts a menu popup's keyboard behaviour, transition state and trigger state, returning a disposer. @public */
+/** Writes a checkable row's state to both the ARIA property and the styling hook. */
+function setChecked(item: HTMLElement, checked: boolean): void {
+  item.setAttribute("aria-checked", String(checked));
+  applyStateAttrs(item, { checked });
+}
+
+/** Flips a checkable menu row, clearing the radio siblings it is mutually exclusive with. */
+export function checkMenuItem(item: HTMLElement, scope: HTMLElement): void {
+  if (item.getAttribute("role") !== "menuitemradio") {
+    setChecked(item, item.getAttribute("aria-checked") !== "true");
+    return;
+  }
+  // Bounded to the scope: a menu rendered inside an unrelated `<fieldset>` would otherwise clear
+  // radio rows belonging to a different menu entirely.
+  const group = closestAcross<HTMLElement>(item, MENU_GROUP_SELECTOR);
+  const within = group && contains(scope, group) ? group : scope;
+  for (const sibling of within.querySelectorAll<HTMLElement>(MENU_RADIO_SELECTOR)) setChecked(sibling, false);
+  setChecked(item, true);
+}
+
+/** Mounts a menu popup's keyboard behaviour, returning a disposer. */
 export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => void {
   const disposeFocus = mountRovingFocus(popup, { items: MENU_ITEM_SELECTOR, orientation: "vertical", loop: options.loop ?? true, typeahead: true });
-  const disposeTransition = mountTransitionState(popup);
-  const disposeTriggers = mountPopupTriggerState(popup);
-  const disposeAnchor = isNested(popup) ? mountAnchorBinding(popup) : () => {};
-
   let opener: HTMLElement | null = null;
 
   const onBeforeToggle = (event: Event) => {
@@ -90,9 +105,6 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     popup.removeEventListener("beforetoggle", onBeforeToggle);
     popup.removeEventListener("toggle", onToggle);
     popup.removeEventListener("keydown", onKeyDown);
-    disposeAnchor();
-    disposeTriggers();
-    disposeTransition();
     disposeFocus();
   };
 }

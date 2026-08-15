@@ -28,7 +28,7 @@ forge ships its TypeScript/TSX **source** directly — there is no build step an
 
 ## Namespace Overview
 
-See [NAMESPACE_DESIGN.md](.decisions/NAMESPACE_DESIGN.md) for the authoritative namespace catalog.
+See [NAMESPACES.md](.decisions/implementation/NAMESPACES.md) for the authoritative namespace catalog.
 Each namespace has its own `README.md` with full API documentation — click a namespace to open it.
 
 | Import path | Concern | Docs |
@@ -44,6 +44,8 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/html/htmx` | HTMX server-side helpers | [src/html/README.md](src/html/README.md) |
 | `@y-core/forge/http` | HTTP output — responses, headers, fragments | [src/http/README.md](src/http/README.md) |
 | `@y-core/forge/jsx` | JSX runtime (`jsxImportSource`); JSX → `HtmlResponse` (`renderPage`) | [src/jsx/README.md](src/jsx/README.md) |
+| `@y-core/forge/jsx/jsx-runtime` | Automatic JSX transform runtime | [src/jsx/README.md](src/jsx/README.md) |
+| `@y-core/forge/jsx/register` | Classic-mode JSX runtime registration | [src/jsx/README.md](src/jsx/README.md) |
 | `@y-core/forge/logging` | Structured logging | [src/logging/README.md](src/logging/README.md) |
 | `@y-core/forge/logging/show` | Log viewer UI & reader | [src/logging/README.md](src/logging/README.md) |
 | `@y-core/forge/pkg` | Project tooling — verification gate & release (Node/Bun only) | [src/pkg/README.md](src/pkg/README.md) |
@@ -56,11 +58,14 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/storage/r2` | R2 object storage | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/testing` | Test fixtures & fakes | [src/testing/README.md](src/testing/README.md) |
 | `@y-core/forge/ui/contracts` | Shared SSR/browser DOM contract as pure data | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/contracts/theme` | Colour-scheme generation and the audited contrast pairs | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/core` | Server-side JSX component library | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/core/client` | Browser island for ui/core scopes (side-effect) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/controls` | Pre-bound signal-binding wrappers | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/assets` | Forge icon asset manifest (`forgeUiSpriteSources`) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/assets/glyphs` | Browser-safe sprite glyph parser | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/assets/css/*.css` | Forge stylesheets by filename — `forge.css` is the entry point | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/design/*.md` | The design corpus as markdown, by filename | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/client` | Browser-side UI scripts | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/client/htmx` | HTMX bundle (side-effect) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/chrome` | SSR app chrome: Navbar, Toolbar, ThemeToggle | [src/ui/README.md](src/ui/README.md) |
@@ -71,6 +76,8 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/validation` | Schema validation (valibot) | [src/validation/README.md](src/validation/README.md) |
 | `@y-core/forge/validation/cli` | `forge-cfgen` env-schema generator | [src/validation/README.md](src/validation/README.md) |
 
+> **There is no aggregate `storage` or `ui` barrel** — each client and each UI surface is imported from its own subpath above.
+>
 > **Internal only:** `src/crypto/` is not a public namespace — it has no export path and its symbols are `@internal`. See [src/crypto/README.md](src/crypto/README.md).
 
 ---
@@ -107,50 +114,6 @@ See [src/context/README.md](src/context/README.md) for the full API.
 
 ---
 
-## Namespace Summaries
-
-Quick one-line orientation for each namespace — see the linked README for complete API docs.
-
-**[`@y-core/forge/app`](src/app/README.md)** — `createApp` returns a `Forge` Workers handler; `definePage` / `defineAction` wire loaders, views, and form pipelines; `healthCheck` validates bindings.
-
-**[`@y-core/forge/assets`](src/assets/README.md)** — `defineAssetsConfig` describes JS bundles, CSS builds, SVG sprites, and font downloads; `buildAll` runs the full pipeline; `forge-assets` is the CLI bin.
-
-**[`@y-core/forge/cli`](src/cli/README.md)** — `createCommand` + `execute` build composable CLI tools with typed flags, subcommands, process execution, and structured errors.
-
-**[`@y-core/forge/config`](src/config/README.md)** — `Config` lazily resolves and caches typed env-var groups per Worker lifetime; `optionalGroup` collapses absent optional integrations to `null`.
-
-**[`@y-core/forge/context`](src/context/README.md)** — `getAppContext` narrows `RequestContext` to typed Workers bindings; `contextVar` creates type-safe per-request accessors.
-
-**[`@y-core/forge/form`](src/form/README.md)** — `csrfProtection` middleware, stateless HMAC tokens with key-ring rotation, honeypot detection, and Cloudflare Turnstile verification.
-
-**[`@y-core/forge/html/htmx`](src/html/README.md)** — HTMX request header parsers, response header builders (`hxHeaders`), JSX attribute helpers (`hxAttrs`), and pre-built interaction patterns.
-
-**[`@y-core/forge/http`](src/http/README.md)** — `htmlResponse` / `fragmentResponse` / `redirect`, typed header builder classes, the `SafeHtml` branded type, and `escapeHtml` / `safeUrl` XSS guards.
-
-**[`@y-core/forge/jsx`](src/jsx/README.md)** — the JSX runtime for `jsxImportSource`; `renderPage` / `renderToString` render JSX to `Response` or `SafeHtml`.
-
-**[`@y-core/forge/logging`](src/logging/README.md)** — `createLogger` fans out structured records to pluggable channels (`consoleChannel`, `kvLogChannel`); `logging/show` adds an admin log-viewer UI.
-
-**[`@y-core/forge/pkg`](src/pkg/README.md)** — Node/Bun-only project tooling, both verbs: `createGateCommand` runs a `check`/`verify` gate over your own step table (`cloudflareWorkerSteps` supplies the shared Worker one), and `createReleaseCommand` resolves the next version from git history, promotes the changelog, commits and tags.
-
-**[`@y-core/forge/result`](src/result/README.md)** — `Result<T, E>` discriminated union; `result.ok(data)` / `result.err(error)` constructors; `ValidationResult<T>` for form/schema results.
-
-**[`@y-core/forge/router`](src/router/README.md)** — `route()` builds a typed route map; `createController` binds handlers; `routePaths` introspects patterns; curated re-exports of `@remix-run/fetch-router`.
-
-**[`@y-core/forge/security`](src/security/README.md)** — `createSecurityHeaders` sets CSP + hardening headers; `cors` / `originGuard` validate origins; `rateLimit` enforces request budgets; `requestId` propagates `CF-Ray`.
-
-**[`@y-core/forge/session`](src/session/README.md)** — `sessionMiddleware` reads/writes sessions conditionally (unchanged requests stay cacheable); `createSignedCookie` enforces `httpOnly`, `secure`, and HMAC signing.
-
-**[`@y-core/forge/storage/db`](src/storage/README.md)** · **[`@y-core/forge/storage/kv`](src/storage/README.md)** · **[`@y-core/forge/storage/r2`](src/storage/README.md)** — typed wrappers over Cloudflare D1, Workers KV, and R2; all operations return `Result<T>`; signed URL support for R2. Each client is imported from its own subpath; there is no aggregate `storage` barrel.
-
-**[`@y-core/forge/ui/core`](src/ui/README.md)** — JSX component library (`Alert`, `Button`, `Card`, `Field`, `Form`, `Input`, …); `ui/controls`: pre-bound signal-binding wrappers (`Switch`, `Slider`, `Select`, `ToggleGroup`); `ui/assets`: `forgeUiSpriteSources()` manifest for forge's 7 icon glyphs; `ui/client`: signals + island hydration; `ui/chrome`: SSR Navbar/Toolbar/ThemeToggle; `ui/contracts`: the DOM contract (scopes, state attrs, selectors) shared by both halves; `ui/server`: SSR Flash/Resumable. Each is its own subpath; there is no aggregate `ui` barrel.
-
-**Design corpus** — `src/ui/design/` ships inside the package as plain markdown teaching which component to reach for and what good looks like, as distinct from how to call one; see [src/ui/README.md](src/ui/README.md) for how to load it and [UI_DESIGN_GUIDANCE.md](.decisions/UI_DESIGN_GUIDANCE.md) for its rule scheme.
-
-**[`@y-core/forge/validation`](src/validation/README.md)** — the `v` valibot namespace + `ValidationResult<T>`; `validation/cli` generates typed Cloudflare env declarations from `wrangler.jsonc` (`forge-cfgen` bin).
-
----
-
 ## Testing
 
 All tests live alongside the source they test (`*.test.ts` / `*.test.tsx`) and run directly under Bun with no bundler. `Forge` provides a `request()` helper that builds a `Request` and dispatches it through the full middleware chain:
@@ -161,7 +124,7 @@ import { Forge } from "@y-core/forge/app";
 const res = await app.request("/api/contact", {
   method: "POST",
   headers: { "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ __csrf: token, name: "Jane" }),
+  body: new URLSearchParams({ _csrf: token, name: "Jane" }),
 }, MINIMUM_ENV);
 
 expect(res.status).toBe(200);
@@ -170,7 +133,7 @@ expect(res.status).toBe(200);
 ```bash
 bun test                    # all tests
 bun test src/form           # one namespace
-bun run check               # typecheck (tsgo) + lint (biome) + tests + validate-exports
+bun run verify              # the gate — typecheck (tsgo), lint (biome), tests, and every validator
 ```
 
 Type checking uses `tsgo` (`@typescript/native-preview`). `validate-exports` verifies, in both directions, that every barrel export resolves at runtime **and** that every `@public`-tagged source symbol is re-exported from its namespace barrel.

@@ -12,13 +12,13 @@ function fixerOf(step: Step | undefined): readonly string[] | undefined {
 
 describe("cloudflareWorkerSteps() — shape", () => {
   it("emits the fleet's order, minus the optional asset step", () => {
-    expect(labelsOf(cloudflareWorkerSteps())).toEqual(["cf:types:runtime", "cf:types:bindings", "typecheck", "lint", "test"]);
+    expect(labelsOf(cloudflareWorkerSteps())).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "test"]);
   });
 
   it("inserts types:assets after the binding types and before the type check", () => {
     expect(labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }))).toEqual([
-      "cf:types:runtime",
-      "cf:types:bindings",
+      "types:cf-runtime",
+      "types:cf-bindings",
       "types:assets",
       "typecheck",
       "lint",
@@ -53,8 +53,8 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
   it("splits `wrangler types` into its two real invocations", () => {
     const steps = cloudflareWorkerSteps();
 
-    expect(steps.find((s) => s.label === "cf:types:runtime")?.cmd).toEqual(["wrangler", "types", "./.types/cloudflare.d.ts", "--no-include-env"]);
-    expect(steps.find((s) => s.label === "cf:types:bindings")?.cmd).toEqual([
+    expect(steps.find((s) => s.label === "types:cf-runtime")?.cmd).toEqual(["wrangler", "types", "./.types/cloudflare.d.ts", "--no-include-env"]);
+    expect(steps.find((s) => s.label === "types:cf-bindings")?.cmd).toEqual([
       "wrangler",
       "types",
       "./.types/worker-configuration.d.ts",
@@ -65,8 +65,8 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
   it("puts --config on the bindings invocation only, because runtime types do not depend on it", () => {
     const steps = cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" });
 
-    expect(steps.find((s) => s.label === "cf:types:runtime")?.cmd).not.toContain("--config");
-    expect(steps.find((s) => s.label === "cf:types:bindings")?.cmd).toEqual([
+    expect(steps.find((s) => s.label === "types:cf-runtime")?.cmd).not.toContain("--config");
+    expect(steps.find((s) => s.label === "types:cf-bindings")?.cmd).toEqual([
       "wrangler",
       "types",
       "./.types/worker-configuration.d.ts",
@@ -103,14 +103,14 @@ describe("cloudflareWorkerSteps() — options", () => {
   it("defaults the linted and tested paths to src/ and tests/", () => {
     const steps = cloudflareWorkerSteps();
 
-    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "src/", "tests/"]);
+    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/", "tests/"]);
     expect(steps.find((step) => step.label === "test")?.cmd).toEqual(["bun", "test", "tests/"]);
   });
 
   it("threads sources through both the lint command and its fixer", () => {
     const lint = cloudflareWorkerSteps({ sources: ["src/", "tests/", "scripts/"] }).find((step) => step.label === "lint");
 
-    expect(lint?.cmd).toEqual(["biome", "check", "src/", "tests/", "scripts/"]);
+    expect(lint?.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/", "tests/", "scripts/"]);
     expect(fixerOf(lint)).toEqual(["biome", "check", "--write", "src/", "tests/", "scripts/"]);
   });
 
@@ -168,14 +168,14 @@ describe("forgeChecks() — options", () => {
   it("defaults lint to src/ and tests the whole project", () => {
     const steps = forgeChecks({ root: "/nowhere", pkg: PKG });
 
-    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "src/"]);
+    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/"]);
     expect(steps.find((step) => step.label === "test")?.cmd).toEqual(["bun", "test"]);
   });
 
   it("threads sources and tests to the two steps that take them", () => {
     const steps = forgeChecks({ root: "/nowhere", pkg: PKG, sources: ["src/", "scripts/"], tests: ["tests/"] });
 
-    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "src/", "scripts/"]);
+    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/", "scripts/"]);
     expect(steps.find((step) => step.label === "test")?.cmd).toEqual(["bun", "test", "tests/"]);
   });
 

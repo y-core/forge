@@ -20,15 +20,23 @@ const STRUCTURAL_ATTRS = new Set([
   "data-label-position",
   "data-theme",
   "data-nav",
+  "data-navbar-drawer",
   "data-setting",
   "data-tool",
   "data-duration",
   "data-composite-item-active",
+  "data-bind-attr",
+  "data-bind-text",
+  "data-open-modal",
+  "data-tabs-mounted",
+  "data-tooltip-mounted",
   "data-multiple",
   "data-toolbar-item",
   "data-activation",
   "data-value",
+  "data-preset-picker",
   "data-filter",
+  "data-filters",
   "data-filter-item",
   "data-theme-preference",
   "data-compact",
@@ -42,6 +50,9 @@ const STRUCTURAL_ATTRS = new Set([
   "data-ratio",
   "data-scheme-output",
   "data-share-url",
+  "data-copy-target",
+  "data-copy-label",
+  "data-copy-status",
 ]);
 
 const STRUCTURAL_PREFIXES = ["data-on-"];
@@ -86,45 +97,23 @@ describe("stateAttrs", () => {
     expect(stateAttrs({})).toEqual({});
   });
 
-  it("treats open as an exhaustive pair: data-open when open, data-closed when not", () => {
-    expect(stateAttrs({ open: true })).toEqual({ "data-open": "" });
-    expect(stateAttrs({ open: false })).toEqual({ "data-closed": "" });
-  });
-
-  it("carries the four valued states through verbatim", () => {
-    expect(stateAttrs({ orientation: "vertical", side: "top", align: "end", transition: "starting" })).toEqual({
+  it("carries the three valued states through verbatim", () => {
+    expect(stateAttrs({ orientation: "vertical", side: "top", align: "end" })).toEqual({
       "data-orientation": "vertical",
       "data-side": "top",
       "data-align": "end",
-      "data-starting-style": "",
     });
-  });
-
-  it("maps the ending transition to its own attribute", () => {
-    expect(stateAttrs({ transition: "ending" })).toEqual({ "data-ending-style": "" });
   });
 
   it("drops an empty valued state rather than emitting it as a presence flag", () => {
     expect(stateAttrs({ orientation: "" as unknown as Orientation, side: "" as unknown as Side, align: "" as unknown as Align })).toEqual({});
   });
 
-  it("declares exactly the thirteen names of the convention", () => {
+  // Open, closed, popup-open and the two transition phases are the platform's now — `:popover-open`,
+  // `[open]`, `:has()` and `@starting-style` express every one of them without an attribute.
+  it("declares exactly the eight names of the convention", () => {
     expect(Object.values(STATE_ATTRS).sort()).toEqual(
-      [
-        "data-align",
-        "data-checked",
-        "data-closed",
-        "data-disabled",
-        "data-ending-style",
-        "data-invalid",
-        "data-open",
-        "data-orientation",
-        "data-popup-open",
-        "data-pressed",
-        "data-selected",
-        "data-side",
-        "data-starting-style",
-      ].sort(),
+      ["data-align", "data-checked", "data-disabled", "data-invalid", "data-orientation", "data-pressed", "data-selected", "data-side"].sort(),
     );
   });
 });
@@ -145,15 +134,8 @@ describe("applyStateAttrs", () => {
 
   it("writes the same attributes the SSR builder would", () => {
     const el = fakeElement();
-    applyStateAttrs(el, { open: true, side: "bottom" });
-    expect(Object.fromEntries(el.attrs)).toEqual(stateAttrs({ open: true, side: "bottom" }));
-  });
-
-  it("reconciles a paired state in one call: closing clears data-open and writes data-closed", () => {
-    const el = fakeElement();
-    applyStateAttrs(el, { open: true });
-    applyStateAttrs(el, { open: false });
-    expect(Object.fromEntries(el.attrs)).toEqual({ "data-closed": "" });
+    applyStateAttrs(el, { pressed: true, side: "bottom" });
+    expect(Object.fromEntries(el.attrs)).toEqual(stateAttrs({ pressed: true, side: "bottom" }));
   });
 
   it("clears a presence state that has become false", () => {

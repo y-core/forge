@@ -21,10 +21,12 @@ interface TabsListProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   children?: JSXNode;
 }
 
-interface TabProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
-  /** id of the `Tabs.Panel` this tab controls. */
+interface TabProps extends Omit<JSX.IntrinsicElements["a"], "children" | "href"> {
+  /** id of the `Tabs.Panel` this tab controls; also the fragment its `href` navigates to. */
   for: string;
   selected?: boolean;
+  /** Keeps the tab in the navigation ring but inert, as `aria-disabled` does — an anchor has no `disabled`. */
+  disabled?: boolean;
   children?: JSXNode;
 }
 
@@ -59,30 +61,35 @@ const TabsList: FC<TabsListProps> = ({ orientation = "horizontal", class: cls, c
     data-slot={slotToken("tabs-list", inherited)}
     aria-orientation={orientation}
     {...stateAttrs({ orientation })}
-    class={cn("flex gap-1", orientation === "vertical" ? "flex-col border-r border-border pr-2" : "border-b border-border pb-1", asClass(cls))}
+    class={cn("flex gap-1", orientation === "vertical" ? "flex-col border-e border-border pe-2" : "border-b border-border pb-1", asClass(cls))}
     {...rest}>
     {children}
   </div>
 );
 
 const TAB_BASE =
-  "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground bg-transparent border-0 cursor-pointer outline-none " +
+  "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground bg-transparent border-0 cursor-pointer outline-none no-underline " +
   "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring " +
-  "aria-selected:bg-accent aria-selected:text-accent-foreground disabled:pointer-events-none disabled:opacity-50";
+  "aria-selected:bg-accent aria-selected:text-accent-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
-const Tab: FC<TabProps> = ({ for: panelId, selected = false, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <button
-    type='button'
+// An `<a href="#panel">`, not a `<button>`: the fragment is what makes a tab set operable with no
+// script at all — the browser navigates, and the `:target` rules in `forge-ui.css` reveal the panel.
+// `mountTabs` then intercepts the click and takes over, so the fragment is a fallback and not the
+// mechanism.
+const Tab: FC<TabProps> = ({ for: panelId, selected = false, disabled = false, class: cls, children, "data-slot": inherited, ...rest }) => (
+  <a
+    href={`#${panelId}`}
     role='tab'
     data-slot={slotToken("tab", inherited)}
     aria-selected={selected}
     aria-controls={panelId}
-    {...stateAttrs({ selected })}
+    {...(disabled ? { "aria-disabled": "true" } : {})}
+    {...stateAttrs({ selected, disabled })}
     {...(selected ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {})}
     class={cn(TAB_BASE, asClass(cls))}
     {...rest}>
     {children}
-  </button>
+  </a>
 );
 
 const TabsPanel: FC<TabsPanelProps> = ({ id, selected = false, class: cls, children, "data-slot": inherited, ...rest }) => (

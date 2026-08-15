@@ -19,7 +19,7 @@ export interface IconProps {
 }
 
 /** Shape of a sprite-bound icon component, as returned by `createIcon`. @public */
-export type ForgeIcon<Name extends string = string> = (props: Omit<IconProps, "symbol" | "sprite"> & { name: Name }) => ReturnType<FC>;
+export type ForgeIcon<Name extends string> = (props: Omit<IconProps, "symbol" | "sprite"> & { name: Name }) => ReturnType<FC>;
 
 /** Renders an SVG `<use>` reference to one symbol in a sprite sheet. @public */
 export const Icon: FC<IconProps> = ({

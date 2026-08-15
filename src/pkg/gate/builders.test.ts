@@ -74,13 +74,22 @@ describe("builders — the tool steps", () => {
   });
 
   it("defaults lint to src/ alone", () => {
-    expect(lintStep().cmd).toEqual(["biome", "check", "src/"]);
+    expect(lintStep().cmd).toEqual(["biome", "check", "--error-on-warnings", "src/"]);
+  });
+
+  // Biome exits 0 on a `warn` diagnostic, so the flag is what makes a green gate mean a clean tree.
+  // The fixer must not carry it: a warning it has no safe fix for would make `--fix` exit non-zero.
+  it("fails lint on a warning, without letting the fixer inherit the flag", () => {
+    const lint = lintStep();
+
+    expect(lint.cmd).toContain("--error-on-warnings");
+    expect(lint.fix).not.toContain("--error-on-warnings");
   });
 
   it("threads sources through both the lint command and its fixer, so the two cannot diverge", () => {
     const lint = lintStep({ sources: ["src/", "scripts/"] });
 
-    expect(lint.cmd).toEqual(["biome", "check", "src/", "scripts/"]);
+    expect(lint.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/", "scripts/"]);
     expect(lint.fix).toEqual(["biome", "check", "--write", "src/", "scripts/"]);
   });
 

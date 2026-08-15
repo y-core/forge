@@ -1,12 +1,29 @@
-import { bindField } from "../client/bind";
+// The showcase's markup names the `theme` and `navbar` scopes from chrome and the `menu`,
+// `toolbar`, `toast`, `number-field`, `slider`, `popover`, `dialog` and `turnstile` scopes from
+// core. `chrome/client` pulls `core/client` itself, but naming both is what keeps this entry honest
+// if that ever stops being true — an app importing only this one would otherwise resume none of them.
+import "../chrome/client";
+import "../core/client";
+import { bindControls } from "../client/bind";
+import { bindAttr, bindText } from "../client/bind-display";
 import { elementById, ownerDocument } from "../client/dom";
+import { lazy } from "../client/lazy";
 import { openPopoverAt } from "../client/popover-anchor";
 import { registerScope } from "../client/resume";
 import { mountScrollSpy } from "../client/scroll-spy";
 import { computed, effect } from "../client/signal";
-import { mountTurnstile } from "../client/turnstile";
+import type { SignalRecord } from "../client/signal-record";
+import { CONTROLS_DEMO_SCOPE, controlsReadout } from "../contracts/controls-demo-contract";
+import { NAVBAR_FILTERS_EVENT } from "../contracts/navbar-contract";
 import {
   buildTheme,
+  COPY_ACTION,
+  COPY_CONFIRM_MS,
+  COPY_LABEL_ATTR,
+  COPY_SCOPE,
+  COPY_STATUS_ATTR,
+  COPY_TARGET_ATTR,
+  COPY_TARGETS,
   CUSTOMISE_SCOPE,
   DIALS,
   type DialValues,
@@ -14,8 +31,8 @@ import {
   HEX_ATTR,
   liveRatios,
   matchPreset,
+  PRESET_ACTION,
   PRESET_CUSTOM,
-  PRESET_FIELD,
   PRESET_FIELDS,
   RADIUS_PROPERTY,
   SCALE_ROW_ATTR,
@@ -23,7 +40,8 @@ import {
   SCHEME_PRESETS,
   scaleVars,
   schemeCss,
-} from "../contracts/theme-contract";
+} from "../contracts/theme/theme-contract";
+import { LAZY_DEMO_REF, LAZY_DEMO_SCOPE, LAZY_RETRY_FAILURES, LAZY_RETRY_REF, LAZY_RETRY_STATUS_REF, lazyRetryAttempt } from "./lazy-contract";
 
 // Eager: `contextmenu` is not a delegated `SCOPE_EVENT`, so there is no `data-on-*` in the markup
 // for a lazy scope to resume on.
@@ -45,8 +63,6 @@ registerScope("show-context-menu", {
 });
 
 registerScope("show-toc", { eager: true, setup: ({ root }) => mountScrollSpy({ root }) });
-
-registerScope("show-turnstile", { eager: true, setup: ({ root }) => mountTurnstile(root) });
 
 // Every property is written through CSSOM rather than a `style` attribute: forge ships
 // `style-src 'self'` with no style nonce, and `render-to-string.ts` drops `style` attributes.
@@ -71,8 +87,11 @@ registerScope(CUSTOMISE_SCOPE, {
     });
     const ratioCells = new Map([...doc.querySelectorAll<HTMLElement>("[data-ratio]")].map((el) => [el.dataset.ratio ?? "", el]));
     const readouts = new Map(DIALS.map((dial) => [dial.field, root.querySelector(`[data-readout="${dial.field}"]`)]));
-    const sliders = new Map(DIALS.map((dial) => [dial.field, root.querySelector<HTMLInputElement>(`input[data-field="${dial.field}"]`)]));
-    const picker = root.querySelector<HTMLSelectElement>(`select[data-field="${PRESET_FIELD}"]`);
+    const picker = root.querySelector<HTMLSelectElement>("select[data-preset-picker]");
+
+    // Both directions, for every dial at once. The thumb now follows a signal moved by anything —
+    // a preset pick, a shared link — with no per-control write-back on this page at all.
+    const unbind = bindControls(root, state as SignalRecord<Record<string, unknown>>);
 
     /** Write and remember, so the disposer can name exactly what it added. */
     const set = (el: HTMLElement, property: string, value: string) => {
@@ -86,7 +105,7 @@ registerScope(CUSTOMISE_SCOPE, {
       return { dials, generated: buildTheme(dials) };
     });
 
-    const stop = effect(() => {
+    effect(() => {
       const { dials, generated } = theme.value;
 
       // One value per property, both modes inside it: the browser picks the branch, so nothing here
@@ -98,7 +117,7 @@ registerScope(CUSTOMISE_SCOPE, {
       // Each row is painted on its own element: the semantic tokens compute on `:root` and inherit
       // as literals, so a nested `.dark` class could never give one row the other mode's scale.
       for (const { row, cells, swatches, hexes } of rows) {
-        const scale = generated.gray[row.mode].solid;
+        const scale = generated[row.family][row.mode].solid;
 
         const page = scale[0];
         const muted = scale[10];
@@ -123,25 +142,16 @@ registerScope(CUSTOMISE_SCOPE, {
       }
 
       for (const dial of DIALS) {
-        const value = dials[dial.field] ?? dial.fallback;
         const readout = readouts.get(dial.field);
-        if (readout != null) readout.textContent = `${value}${dial.unit}`;
-        // `bindField` is one-way, DOM to signal, so a dial moved by anything but its own slider — the
-        // preset effect above — leaves the thumb behind unless the app puts it back. Writing the value
-        // the slider already holds is a no-op, so this does not fight a drag in progress.
-        const slider = sliders.get(dial.field);
-        if (slider != null && slider.value !== String(value)) slider.value = String(value);
+        if (readout != null) readout.textContent = `${dials[dial.field] ?? dial.fallback}${dial.unit}`;
       }
 
       // The picker names the scheme on the page, so a lever dragged off a preset has to move it to
       // `custom` — a control still reading `slate` beside a scheme that is no longer slate is the
-      // same silent disagreement the readouts exist to prevent. The signal is written back beside the
-      // control: one still reading `slate` would swallow the next pick of the scheme just left,
-      // `createSignal` notifying only on a real change.
+      // same silent disagreement the readouts exist to prevent. Painted onto the control and nowhere
+      // else: which preset the dials name is derived, so it is never stored.
       const picked = matchPreset(dials)?.id ?? PRESET_CUSTOM;
       if (picker !== null && picker.value !== picked) picker.value = picked;
-      const chosen = state[PRESET_FIELD];
-      if (chosen !== undefined) chosen.value = picked;
 
       const output = doc.querySelector("[data-scheme-output] code");
       if (output !== null) output.textContent = schemeCss(generated, dials);
@@ -150,26 +160,126 @@ registerScope(CUSTOMISE_SCOPE, {
       if (share !== null) share.textContent = `${doc.location.pathname}?${dialQuery(dials)}`;
     });
 
+    return () => {
+      unbind();
+      for (const property of written) html.style.removeProperty(property);
+    };
+  },
+  on: {
     // What a preset *means* is two gray dials, and that translation is this page's business and not
-    // the control's (`UI_SSR_COMPONENTS.md` §2a). It writes the signals and stops there — the effect
-    // above moves the sliders and repaints, exactly as it does for a drag.
-    const stopPreset = effect(() => {
-      const picked = String(state[PRESET_FIELD]?.value ?? PRESET_CUSTOM);
-      const preset = SCHEME_PRESETS.find((candidate) => candidate.id === picked);
+    // the control's (`UI_SSR_COMPONENTS.md` §2a). It is a command, so it lives in the handler that
+    // the pick fires: the painter above then moves the sliders and repaints, exactly as for a drag.
+    [PRESET_ACTION]: ({ el, state }) => {
+      const preset = SCHEME_PRESETS.find((candidate) => candidate.id === (el as HTMLSelectElement).value);
       if (preset === undefined) return;
       for (const field of PRESET_FIELDS) {
         const dial = state[field];
         if (dial !== undefined) dial.value = preset[field];
       }
-    });
+    },
+  },
+});
 
+// Keyed by the button it belongs to, the way `resume.ts` keys its own live-scope map. This module is
+// browser-only, which `PRODUCTION_TS_RULES.md` §1e exempts from the module-state prohibition.
+const copyTimers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
+
+// Lazy: the button stamps `data-on-click`, which is exactly what a lazy scope resumes on.
+registerScope(COPY_SCOPE, {
+  setup: () => () => {
+    for (const timer of copyTimers.values()) clearTimeout(timer);
+    copyTimers.clear();
+  },
+  on: {
+    [COPY_ACTION]: ({ el }) => {
+      const target = COPY_TARGETS.find((candidate) => candidate.id === el.getAttribute(COPY_TARGET_ATTR));
+      if (target === undefined) return;
+      const doc = ownerDocument(el);
+      const label = el.querySelector<HTMLElement>(`[${COPY_LABEL_ATTR}]`);
+      const status = doc.querySelector<HTMLElement>(`[${COPY_STATUS_ATTR}="${target.id}"]`);
+      // Read off the DOM rather than recomputed from the dials, so what is copied is exactly what
+      // the reader is looking at.
+      const text = doc.querySelector(target.source)?.textContent ?? "";
+
+      /** The label is left alone on failure: a control reading "Copied" over an empty clipboard is worse than one that says nothing. */
+      const fail = () => {
+        if (status !== null) status.textContent = target.failed;
+      };
+
+      const confirm = () => {
+        if (label !== null) label.textContent = target.copied;
+        if (status !== null) status.textContent = target.announce;
+        const previous = copyTimers.get(el);
+        if (previous !== undefined) clearTimeout(previous);
+        copyTimers.set(
+          el,
+          setTimeout(() => {
+            if (label !== null) label.textContent = target.label;
+            copyTimers.delete(el);
+          }, COPY_CONFIRM_MS),
+        );
+      };
+
+      // `navigator.clipboard` is undefined in an insecure context, which every plain-HTTP deploy is.
+      // There is no `execCommand` fallback: it is deprecated, and the failure message is honest.
+      const clipboard = navigator.clipboard as Clipboard | undefined;
+      if (clipboard === undefined || text === "") {
+        fail();
+        return;
+      }
+      // Both branches are handled, so nothing floats — the handler's own signature returns void.
+      void clipboard.writeText(text).then(confirm, fail);
+    },
+  },
+});
+
+// Eager: a bound control stamps `data-field` and no `data-on-*`, so a lazy scope has nothing to
+// resume on.
+registerScope(CONTROLS_DEMO_SCOPE, {
+  eager: true,
+  setup: ({ root, state }) => {
+    const signals = state as SignalRecord<Record<string, unknown>>;
+    const unbind = bindControls(root, signals);
+    const untext = bindText(root, signals, { format: controlsReadout });
+    const unattr = bindAttr(root, signals);
     return () => {
-      stop();
-      stopPreset();
-      for (const property of written) html.style.removeProperty(property);
+      unattr();
+      untext();
+      unbind();
     };
   },
-  on: { bindField: (ctx) => bindField(ctx.state)(ctx) },
+});
+
+const toolbarPanel = (root: HTMLElement) => root.querySelector<HTMLElement>("[data-ref='toolbar-panel']");
+
+registerScope("show-toolbar", {
+  on: {
+    fit: ({ root }) => {
+      toolbarPanel(root)?.classList.toggle("max-w-xs");
+    },
+    toggle: ({ root }) => {
+      const panel = toolbarPanel(root);
+      if (panel) panel.hidden = !panel.hidden;
+    },
+    reset: ({ root }) => {
+      const panel = toolbarPanel(root);
+      if (!panel) return;
+      panel.hidden = false;
+      panel.classList.add("max-w-xs");
+    },
+    closeOptions: ({ root }) => {
+      root.querySelector<HTMLElement>("[data-slot~='toolbar-flyout']")?.hidePopover();
+    },
+  },
+});
+
+registerScope("show-navbar", {
+  on: {
+    setFilters: ({ el }) => {
+      const tokens = (el.dataset.filters ?? "").split(/\s+/).filter(Boolean);
+      ownerDocument(el).dispatchEvent(new CustomEvent(NAVBAR_FILTERS_EVENT, { detail: tokens }));
+    },
+  },
 });
 
 registerScope("show-filter", {
@@ -192,5 +302,37 @@ registerScope("show-filter", {
       const querySignal = state.query;
       if (querySignal) querySignal.value = (el as HTMLInputElement).value;
     },
+  },
+});
+
+// Eager because the deferral belongs to the module, not the scope: the observer has to be
+// watching before the panel is scrolled to, and `lazy` owns the waiting from there.
+registerScope(LAZY_DEMO_SCOPE, {
+  eager: true,
+  setup: ({ root }) => {
+    const stopDemo = lazy({ ref: LAZY_DEMO_REF, within: root, load: () => import("./lazy-panel"), init: (mod, el) => mod.mountLazyPanel(el) });
+
+    // A `load` that rejects its first attempts, so the retry path the prose describes is a path the
+    // page actually walks. The counter is written from `onError`, which is the only place a caller
+    // learns an attempt failed at all.
+    let attempt = 0;
+    const status = root.querySelector(`[data-ref='${LAZY_RETRY_STATUS_REF}']`);
+    const stopRetry = lazy({
+      ref: LAZY_RETRY_REF,
+      within: root,
+      load: () => {
+        attempt += 1;
+        return attempt > LAZY_RETRY_FAILURES ? import("./lazy-panel") : Promise.reject(new Error(`[show] rejected attempt ${attempt}`));
+      },
+      init: (mod, el) => mod.mountRetryPanel(el),
+      onError: () => {
+        if (status !== null) status.textContent = lazyRetryAttempt(attempt);
+      },
+    });
+
+    return () => {
+      stopDemo();
+      stopRetry();
+    };
   },
 });

@@ -83,7 +83,7 @@ const RadioGroupItem: FC<PropsWithChildren<RadioGroupItemProps>> = ({
   return (
     <label data-slot='radio-group-item' class={cn("inline-flex items-center gap-2 text-sm text-foreground", asClass(cls))}>
       <input
-        type='radio'
+        type='radio' /* modern-css-allow: forge-ui-platform-accent-color — `appearance-none` redraws the box entirely, and accent-color only tints the native control's own shape, so it cannot express this design. */
         data-slot={slotToken("radio-group-input", inherited)}
         {...(id !== undefined ? { id } : {})}
         name={name}

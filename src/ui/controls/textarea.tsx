@@ -3,5 +3,5 @@
 import { Textarea as CoreTextarea } from "../core/textarea";
 import { createBoundControl } from "./create-bound-control";
 
-/** Pre-bound `Textarea` that stamps `data-on-input` + `data-field` for the `bindField` action. @public */
-export const Textarea = createBoundControl(CoreTextarea, { event: "onInput", defaultAction: "bindField" });
+/** Pre-bound `Textarea` that stamps `data-field`. @public */
+export const Textarea = createBoundControl(CoreTextarea);

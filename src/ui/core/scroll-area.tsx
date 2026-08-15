@@ -12,7 +12,12 @@ interface ScrollAreaRootProps extends Omit<JSX.IntrinsicElements["div"], "childr
   children?: JSXNode;
 }
 
-interface ScrollAreaViewportProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+interface ScrollAreaViewportProps extends Omit<JSX.IntrinsicElements["section"], "children"> {
+  // Required, not optional: the viewport is an unconditional tab stop, and a focusable element with
+  // no role and no name announces nothing at all when a keyboard user lands on it. The name is also
+  // what gives the `<section>` its `region` role — an unnamed one is a generic box.
+  /** Accessible name for the scrollable region. */
+  label: string;
   children?: JSXNode;
 }
 
@@ -22,9 +27,10 @@ const ScrollAreaRoot: FC<ScrollAreaRootProps> = ({ orientation = "vertical", cla
   </div>
 );
 
-const ScrollAreaViewport: FC<ScrollAreaViewportProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div
+const ScrollAreaViewport: FC<ScrollAreaViewportProps> = ({ label, class: cls, children, "data-slot": inherited, ...rest }) => (
+  <section
     data-slot={slotToken("scroll-area-viewport", inherited)}
+    aria-label={label}
     tabindex={0}
     class={cn(
       // `max-h-[inherit]` is what makes a root bounded by `max-h-*` work: `h-full` resolves to `auto`
@@ -38,7 +44,7 @@ const ScrollAreaViewport: FC<ScrollAreaViewportProps> = ({ class: cls, children,
     )}
     {...rest}>
     {children}
-  </div>
+  </section>
 );
 
 /** A bounded, scrollable region built from CSS alone, with native scrolling retained. @public */

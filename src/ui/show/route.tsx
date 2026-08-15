@@ -17,6 +17,7 @@ export interface ShowcasePaths {
   paginate: string;
   dependent: string;
   toast: string;
+  avatar: string;
 }
 
 /** Returns all showcase paths derived from a base path. Pass `apiPath` to serve API
@@ -32,6 +33,7 @@ export function showcasePaths(basePath: string, apiPath?: string): ShowcasePaths
     paginate: joinPath(api, "paginate"),
     dependent: joinPath(api, "dependent"),
     toast: joinPath(api, "toast"),
+    avatar: joinPath(api, "avatar"),
   };
 }
 
@@ -153,4 +155,16 @@ export function loadToast<Bindings = Record<string, unknown>>(c: AppContext<Bind
 export async function renderToast(data: ToastData): Promise<Response> {
   const body = await renderToString(<ToastFragment data={data} />);
   return fragmentResponse(body);
+}
+
+const AVATAR_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Portrait">' +
+  '<rect width="64" height="64" fill="#6d8bb8"/>' +
+  '<circle cx="32" cy="24" r="12" fill="#f2e2d2"/>' +
+  '<path d="M8 64a24 24 0 0 1 48 0Z" fill="#f2e2d2"/>' +
+  "</svg>";
+
+/** Serves the showcase's own avatar portrait, so the catalog never reaches for a remote image. @public */
+export function renderAvatar(): Response {
+  return new Response(AVATAR_SVG, { headers: { "content-type": "image/svg+xml" } });
 }

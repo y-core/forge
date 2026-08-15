@@ -236,8 +236,17 @@ Use `createCookie` for non-sensitive values. For sensitive cookies, use `createS
 |---|---|---|
 | `createSession` | `@remix-run/session` | Construct a `Session` directly (advanced/test use). |
 | `createSessionId` | `@remix-run/session` | Generate a cryptographically secure session ID (`crypto.randomUUID`). |
-| `SessionStorage` (type) | `@remix-run/session` | The `{ read, save }` storage interface — implement to back sessions with a custom store. |
-| `CookieOptions` (type) | `@remix-run/cookie` | Options accepted by `createCookie`. |
+
+### Types
+
+| Type | Shape / purpose |
+|---|---|
+| `SignedCookieOptions` | `CookieOptions` minus `httpOnly` / `secure` / `secrets`, plus a required `secrets: [string, ...string[]]` and a `sameSite?: "Strict" \| "Lax"`. |
+| `AnonymousSessionOptions` | `createAnonymousSession`'s options — `secret` (required resolver), `cookieName?`, `kv?`, `secure?`, `maxAge?`, and everything `KVSessionStorageOptions` carries. |
+| `KVSessionStorageOptions` | `{ prefix?, ttlSeconds? }` — the key prefix (`${prefix}:${session.id}`) and the sliding TTL refreshed on every save. |
+| `SessionKVBinding` | The minimal structural KV surface the session store calls (`get` / `put` / `delete`); any Workers `KVNamespace` satisfies it. |
+| `SessionStorage` | The `{ read, save }` storage interface — implement it to back sessions with a custom store. |
+| `CookieOptions` | Options accepted by `createCookie`. |
 
 ---
 
@@ -245,25 +254,7 @@ Use `createCookie` for non-sensitive values. For sensitive cookies, use `createS
 
 This namespace handles cookies and session state. Session and cookie management is deliberately **out of scope for `@y-core/forge/security`**, which covers transport-layer hardening only — these primitives live here instead.
 
-### Prefer server-side session storage
-
-With `createKVSessionStorage` (or `createAnonymousSession({ kv })`), the cookie carries only an opaque session id: no session data ever reaches the client, the ~4 KB cookie budget stops mattering, and a session can be revoked server-side by deleting its KV record — none of which cookie storage can offer. Reserve cookie storage for a couple of tiny, non-sensitive values.
-
-### Bind CSRF tokens to the session
-
-When the app also uses CSRF protection (`@y-core/forge/form`), bind tokens to the session id so a token minted in one user's browser cannot be replayed by another — wire `sessionCtx` into `csrfProtection`'s `subject` resolver:
-
-```typescript
-import { csrfProtection } from "@y-core/forge/form";
-import { sessionCtx } from "@y-core/forge/session";
-
-const csrfGuard = csrfProtection({
-  secret: (c) => resolveCsrfKey(c),
-  subject: (c) => sessionCtx.getOptional(c)?.id,
-});
-```
-
-Register `sessionMiddleware` before the CSRF guard. See the "Binding tokens to a session" section in [src/form/README.md](../form/README.md) for the full pattern.
+Bind CSRF tokens to the session id so a token minted in one browser cannot be replayed from another: wire `sessionCtx` into `csrfProtection`'s `subject` resolver, registering `sessionMiddleware` first. The pattern is [src/form/README.md](../form/README.md)'s.
 
 ### Always sign and harden session cookies
 
@@ -295,17 +286,11 @@ After a login or other privilege escalation, regenerate the session ID (`session
 
 ### Cookie-storage payload size
 
-`createCookieSessionStorage()` serializes the full session into the cookie. Keep stored data minimal — store an opaque user ID, not user objects — both to stay under the ~4 KB cookie limit and to avoid placing sensitive data on the client even when signed (signing prevents tampering, not reading once `httpOnly` is bypassed by a non-browser client).
+`createCookieSessionStorage()` serializes the full session into the cookie, so signing prevents tampering but not reading. Store an opaque user id rather than a user object — or reach for `createKVSessionStorage`, where the cookie carries only the id and a session is revocable by deleting its record.
 
 ---
 
 ## Advanced
-
-### Cache-safe persistence model
-
-`sessionMiddleware` writes a `Set-Cookie` header only when `session.dirty || session.destroyed`. A request that reads the session but never mutates it returns with no `Set-Cookie`, so downstream and edge caches are not defeated by a per-request cookie write. This is the intended behaviour for read-only pages.
-
-The trade-off is sliding expiry: an idle session is not re-saved, so its `maxAge` is not refreshed on read-only requests. To implement sliding expiry, touch the session on each request you want to extend (for example `session.set("lastSeen", Date.now())`), which marks it dirty and forces a refreshed cookie.
 
 ### Custom storage backends
 

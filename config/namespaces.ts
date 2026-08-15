@@ -17,6 +17,7 @@ export const LEAF: readonly string[] = [
   "session",
   "storage/r2",
   "ui/contracts",
+  "ui/contracts/theme",
   "validation",
 ];
 
@@ -38,7 +39,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "ui/assets": { assets: "type" },
   "ui/chrome": { jsx: "type", "ui/client": "value", "ui/contracts": "value", "ui/core": "value", "ui/server": "value" },
   "ui/client": { "ui/contracts": "value" },
-  "ui/controls": { jsx: "type", "ui/contracts": "value", "ui/core": "value", "ui/server": "value" },
+  "ui/controls": { jsx: "type", "ui/core": "value", "ui/server": "value" },
   "ui/core": { form: "value", jsx: "value", "ui/client": "value", "ui/contracts": "value" },
   "ui/server": { "html/htmx": "value", jsx: "type", session: "value", "ui/core": "value" },
   "ui/show": {
@@ -49,6 +50,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "ui/chrome": "value",
     "ui/client": "value",
     "ui/contracts": "value",
+    "ui/contracts/theme": "value",
     "ui/controls": "value",
     "ui/core": "value",
     "ui/server": "value",

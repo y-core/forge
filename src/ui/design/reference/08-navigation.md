@@ -52,8 +52,10 @@ behaviour announces a keyboard interface that is not there.
 **Default: one `Navbar` per application, and it holds destinations only.**
 <!-- rule:forge-ui-nav-one-primary -->
 Two primary bars means the user must learn which one holds what before they can navigate at all.
-Override for a documented second axis — a persistent product switcher above a section nav — which is
-a `NavSlot` in the first bar more often than it is a second bar.
+Override for a documented second axis — a persistent product switcher above a section nav, or a
+page-scoped table of contents over the sections of the page currently open, which is a different
+axis from the destinations bar rather than a rival to it. Anything narrower than a documented second
+axis is a `NavSlot` in the first bar more often than it is a second bar.
 
 **Default: build the bar from a `NavDefinition` rather than hand-writing links into a `<nav>`.**
 <!-- rule:forge-ui-nav-config-driven -->
@@ -126,9 +128,12 @@ with the content costs the reader nothing.
 edge; open, it is 16rem with the toggle trailing.**
 <!-- rule:forge-ui-nav-rail-collapsed-width -->
 56px clears `forge-ui-hit-target` for the toggle, which is the only control a collapsed rail still
-shows, and the toggle moves to the trailing edge once open, beside the panel it closes. The rail
-stays in the flow at both widths — no floating, no absolute positioning, nothing escaping its column
-on overflow — so the content beside it reflows rather than being covered. State the narrow width as
+shows, and the toggle moves to the trailing edge once open, beside the panel it closes. **At `md`
+and above** the rail stays in the flow at both widths — no floating, no absolute positioning,
+nothing escaping its column on overflow — so the content beside it reflows rather than being
+covered. The documented override is below `md`, where `collapsedAs="drawer"` takes the panel out of
+the flow deliberately (`forge-ui-nav-drawer-when`); the flex item then wants `max-md:w-auto`, so an
+open rail does not reserve a column for a panel that is no longer in it. State the narrow width as
 the **override over a wide base** (`has-[…]:w-14` on a `w-64` item), never a narrow base widened when
 open: a browser without `:has()` then degrades to the full column rather than pinning a strip that
 clips the open panel. Override under a brief for a collapsed state that shows glyphs with labels,
@@ -157,6 +162,51 @@ import { Resumable } from "@y-core/forge/ui/server";
   <main class='flex-1 min-w-0'>…</main>
 </div>;
 ```
+
+### The collapsed panel below `md`
+
+`collapsedAs` decides what the collapsed panel *does*, where `collapsible` decides *when* it
+collapses. `"inline"`, the default, expands the panel in the document flow, which pushes the page
+down by the panel's height. `"drawer"` takes it out of the flow below `md`: a fixed panel sliding in
+from one edge, over a backdrop, leaving the content behind it exactly where it was.
+
+**Default: a bar whose panel would displace the page on a phone takes `collapsedAs="drawer"`.**
+<!-- rule:forge-ui-nav-drawer-when -->
+
+**Default: the edge is derived from `placement`, never configured.**
+<!-- rule:forge-ui-nav-drawer-edge -->
+
+**Default: a rail that opens off-canvas draws `panel-open`/`panel-close`; a top bar keeps its hamburger.** 
+<!-- rule:forge-ui-nav-drawer-glyphs -->
+
+**Default: a drawer is dismissable four ways — the toggle, the backdrop, Escape, and a link inside it.** 
+<!-- rule:forge-ui-nav-drawer-dismiss -->
+
+**Default: no ancestor of the bar carries `backdrop-filter`, `filter` or `transform`.**
+<!-- rule:forge-ui-nav-drawer-containing-block -->
+
+```tsx
+// Wrong — the blurred header is the panel's containing block, so the drawer opens inside the header.
+<header class='sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-lg'>
+  <Navbar config={nav} resolveHref={hrefFor} icon={AppIcon} collapsedAs='drawer' />
+</header>
+```
+
+Costs: the drawer's `inset-y-0` resolves against the header's own box, so the panel is one header
+tall and clipped, and no amount of `z-index` recovers it — the trap is geometric, not paint order.
+
+```tsx
+// Right — the blur on a sibling layer behind the content, leaving the header itself an ordinary box.
+<header class='sticky top-0 z-50 border-b border-border'>
+  <div class='absolute inset-0 -z-10 bg-background/80 backdrop-blur-lg' aria-hidden='true' />
+  <Navbar config={nav} resolveHref={hrefFor} icon={AppIcon} collapsedAs='drawer' />
+</header>
+```
+
+The slide itself depends on the closed `<details>`'s content being rendered, which forge secures with
+`[data-slot~="navbar"]::details-content { content-visibility: visible }`. An engine without
+`::details-content` shows the panel without animating it — it still overlays correctly, and it is the
+same dependency the desktop bar already has.
 
 **Default: name a destination for what the user wants there, not for the system that serves it.**
 <!-- rule:forge-ui-nav-user-labels -->

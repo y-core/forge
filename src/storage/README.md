@@ -133,9 +133,9 @@ import { sql, uuidv7 } from "@y-core/forge/storage/db";
 await db.execute(sql`INSERT INTO orders (id, customer_id) VALUES (${uuidv7()}, ${customerId})`);
 ```
 
-Store it in a `TEXT` column. Because consecutive IDs share a leading prefix, inserts append to the
-right edge of the primary-key B-tree instead of scattering across it, and `ORDER BY id` doubles as
-creation order — so keyset pagination needs no separate timestamp index:
+Store it in a `TEXT` column. Consecutive IDs share a leading prefix, so inserts append to the right
+edge of the primary-key B-tree and `ORDER BY id` doubles as creation order — keyset pagination needs
+no separate timestamp index:
 
 ```sql
 CREATE TABLE orders (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL);
@@ -143,19 +143,16 @@ CREATE TABLE orders (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL);
 SELECT * FROM orders WHERE id > ?1 ORDER BY id LIMIT 50;
 ```
 
-**IDs stay ordered inside a single request.** On Workers `Date.now()` is frozen between I/O
-operations, so a batch minted in one handler all reads the same millisecond; the generator carries
-a monotonic counter in the `rand_a` field to keep that batch ordered. This is why forge ships its
-own generator rather than deferring to a stock implementation —
-`.decisions/STORAGE_BINDINGS.md` §1e has the full rationale.
-
 **Never use a UUIDv7 as a secret.** It discloses its creation time and mint rate by construction.
 
 ##### Storing the bytes instead — `uuidv7Bytes()`
 
 `uuidv7Bytes()` mints the **same value** as `uuidv7()`, from the same generator, as its raw 16
-octets. SQLite compares a `BLOB` with `memcmp` and the bytes are most-significant first, so
-ordering is identical to the `TEXT` form — this is purely a density trade.
+octets. SQLite compares a `BLOB` with `memcmp` and the bytes are most-significant first, so ordering
+is identical to the `TEXT` form — this is purely a density trade, and one to take per table rather
+than as a schema-wide default. The measured footprint, the intra-request ordering guarantee, and why
+`WITHOUT ROWID` is the wrong lever are
+[`STORAGE_BINDINGS.md`](../../.decisions/implementation/STORAGE_BINDINGS.md) §1e's.
 
 ```ts
 import { sql, uuidFromBytes, uuidToBytes, uuidv7Bytes } from "@y-core/forge/storage/db";
@@ -171,28 +168,10 @@ if (row.ok && row.data) console.log(uuidFromBytes(row.data.id)); // "0192f8a1-b2
 await db.queryOne(sql`SELECT * FROM events WHERE id = ${uuidToBytes(id)}`);
 ```
 
-**What it buys, measured** — 100k rows, 4 KB pages, two secondary indexes:
-
-| Primary key | table + PK index | secondary indexes | total |
-|---|---|---|---|
-| `TEXT` uuidv7 | 11,684 KB | 4,240 KB | **15,924 KB** |
-| `BLOB` uuidv7 | 7,400 KB | 4,240 KB | **11,640 KB** |
-| `INTEGER` rowid | 3,060 KB | 4,240 KB | 7,300 KB |
-
-About 27% off the total, or ~43 MB per million rows — which matters against D1's 10 GB
-per-database ceiling far more than it matters on the bill.
-
-**What it costs:** byte arrays in every `wrangler d1 execute` result, dashboard query, log line and
-error message; `x'0192…'` literals in hand-written SQL; no `LIKE` or prefix matching on the id; and
-`json_object('id', id)` no longer produces anything you can send to a client. Take it per table, on
-tables you do not hand-query — not as a schema-wide default.
-
-**Note what the secondary-index column does *not* show.** It is identical across all three: in an
-ordinary rowid table, index entries carry the implicit integer rowid, never the primary key. A
-36-character id costs two fixed copies per row — the column and its automatic unique index —
-however many indexes the table has. This is also why **`WITHOUT ROWID` is the wrong lever here**:
-it makes the id the table key, appending it to every secondary index entry, and past a single
-index it comes out larger than the rowid table it replaced.
+The cost of the `BLOB` form is legibility: byte arrays in every `wrangler d1 execute` result,
+dashboard query, log line and error message; `x'0192…'` literals in hand-written SQL; no `LIKE` or
+prefix matching on the id; and a `json_object('id', id)` that no longer produces anything sendable
+to a client.
 
 | Export | Description |
 |---|---|
@@ -547,11 +526,10 @@ boundary stays unambiguous even when the object key contains the `|` delimiter.
 - **Signing secrets come from a secret binding** (`c.env.SIGNING_SECRET`), never source code. Always
   call `verifySignedObjectUrl` before serving from a signed-URL route — a missing or invalid
   signature must fail closed (`403`).
-- **`Content-Disposition` is sanitized.** When you set `contentDisposition`, `serveObject` emits both
-  an RFC 5987 `filename*=UTF-8''…` parameter carrying the exact name and an ASCII `filename="…"`
-  fallback for clients that ignore it. The fallback folds accents to their base letter, collapses
-  every other run of non-printable-ASCII to a single `_` (keeping the extension), and emits quotes
-  and backslashes as quoted-pairs, so a crafted filename cannot break out of the quoted string.
+- **`Content-Disposition` is sanitized** — an RFC 5987 `filename*=UTF-8''…` parameter carrying the
+  exact name plus an ASCII `filename="…"` fallback, so a crafted object key cannot break out of the
+  quoted string. The fallback's exact folding rules are
+  [`STORAGE_BINDINGS.md`](../../.decisions/implementation/STORAGE_BINDINGS.md) §3b's.
 
 ---
 
@@ -577,26 +555,23 @@ app.use("*", validateR2Binding("ASSETS_BUCKET"));
 ### Cast-free platform bindings
 
 Each namespace publishes a structural contract — `D1DatabaseLike`, `KVNamespaceLike`, `R2BucketLike`
-— that is a **supertype** of both forge's neutral interface and Cloudflare's runtime binding type.
-The resolvers are generic and constrained to these contracts (`resolveObjectStore<Bindings, B extends
-R2BucketLike>`, and likewise for KV and D1), so the compiler **infers** the concrete binding type
-from your selector and **proves** it satisfies the contract — no `as unknown as` cast at the call
-site:
+and R2's object and list satellites — and each resolver is generic and constrained to the matching
+one. The compiler therefore **infers** the concrete binding type from your selector and **proves**
+it satisfies the contract, so no call site needs `as unknown as`:
 
 ```ts
 // `B` is inferred as Cloudflare's R2Bucket and proven to satisfy R2BucketLike.
 const store = resolveObjectStore(c, { binding: (c) => c.env.DOCUMENTS });
 ```
 
-The `*Like` interfaces also enable **testing without real Cloudflare bindings** — an in-memory stub
-that implements the consumed surface satisfies the contract and can be passed to `r2Backend`,
-`createKVStore`, or `createD1Client` directly.
+The same contracts are what let an in-memory stub implementing only the consumed surface be handed
+to `r2Backend`, `createKVStore` or `createD1Client` in a test. Why the supertype is written to the
+consumed surface rather than mirroring the platform's is
+[`STORAGE_BINDINGS.md`](../../.decisions/implementation/STORAGE_BINDINGS.md) §4c's.
 
 ### Local-dev degradation
 
-Running `bun test` or `wrangler dev` without a full binding configuration leaves bindings
-`undefined`. For **non-critical** features, pass `required: false` to a resolver to receive `null`
-and fall back gracefully:
+Pass `required: false` to a resolver to receive `null` instead of a throw when a binding is absent:
 
 ```ts
 const logStore = resolveKVStore(c, {
@@ -606,13 +581,70 @@ const logStore = resolveKVStore(c, {
 });
 ```
 
-**Security-critical** features (auth sessions, CSRF token stores, user-data D1) must **fail closed** —
-keep `required` at its default so a missing binding throws rather than silently disabling enforcement.
+Which features may degrade and which must fail closed is
+[`STORAGE_BINDINGS.md`](../../.decisions/implementation/STORAGE_BINDINGS.md) §5a/§5b's — a
+security-critical binding keeps `required` at its default.
 
 ---
 
-## Related documentation
+## Types
 
-- [`.decisions/STORAGE_BINDINGS.md`](../../.decisions/STORAGE_BINDINGS.md) — architecture and rationale
-  for the three storage namespaces, the resolve/validate pattern, cast-free structural contracts, and
-  dev-degradation policy.
+Every type each sub-path's barrel exports, and what it is for.
+
+### `storage/db`
+
+| Type | Shape / purpose |
+|---|---|
+| `D1Client` | The four-method client `createD1Client` returns. |
+| `D1ClientOptions` | `{ logger? }` for `createD1Client`. |
+| `D1Database`, `D1DatabaseLike` | Forge's neutral D1 binding, and the structural supertype resolvers constrain to. |
+| `D1PreparedStatement` | The prepared-statement surface `D1Database.prepare` returns. |
+| `D1Result` | One statement's result — what `batch` resolves to, one entry per statement. |
+| `SqlFragment` | Branded `{ text, params }` — the only value `D1Client` accepts. |
+| `D1BindingOptions` | `{ binding, required?, client? }` for `resolveD1Client`. |
+| `Uuidv7Options`, `UuidByteInput` | The generator options, and the accepted byte encodings for `uuidFromBytes`. |
+
+### `storage/kv`
+
+| Type | Shape / purpose |
+|---|---|
+| `KVStore` | The typed store `createKVStore` returns. |
+| `KVStoreOptions` | `{ codec?, prefix?, defaultTtl?, logger? }` for `createKVStore`. |
+| `KVSetOptions` | `{ ttl?, expiration?, metadata? }` for `set` / `getOrSet`. |
+| `KVPutOptions` | The raw put options passed through to the binding. |
+| `KVEntry` | `{ value, metadata }` — what `getWithMeta` resolves to. |
+| `KVListOptions`, `KVListResult`, `KVListEntry` | `{ prefix?, limit?, cursor? }`, the page it returns, and one key in that page. |
+| `KvCodec`, `KvValueType` | `{ type, encode, decode }`, and the `"text" \| "arrayBuffer"` wire selector. |
+| `KVNamespace`, `KVNamespaceLike` | Forge's neutral KV binding, and the structural supertype. |
+| `KVBindingOptions` | `{ binding, required?, store? }` for `resolveKVStore`. |
+
+### `storage/r2`
+
+| Type | Shape / purpose |
+|---|---|
+| `ObjectStore` | The typed store `createObjectStore` returns. |
+| `ObjectStoreOptions` | `{ prefix?, logger? }` for `createObjectStore`. |
+| `ObjectStorageBackend` | The adapter surface every R2 helper consumes; `r2Backend` produces one. |
+| `StoredObject`, `ObjectBody` | Metadata only, and metadata plus a streamable body. |
+| `StorePutOptions` | `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`, `cacheControl`, `metadata`. |
+| `StoreGetOptions` | `{ range? }`. |
+| `StoreListOptions`, `ListObjectsResult` | `{ prefix?, limit?, cursor?, delimiter? }`, and the page it returns. |
+| `ServeOptions` | `{ cacheControl?, contentDisposition? }` for `serveObject`. |
+| `SignedUrlOptions` | `{ expiresInSeconds? }` for `createSignedObjectUrl`. |
+| `SignedUrlOk`, `SignedUrlError` | The two arms of `verifySignedObjectUrl`'s verdict. |
+| `R2Bucket`, `R2BucketLike` | Forge's neutral bucket, and the structural supertype. |
+| `R2Object`, `R2ObjectBody`, `R2ObjectLike`, `R2ObjectBodyLike` | Object metadata and body, neutral and structural forms. |
+| `R2GetOptions`, `R2PutOptions`, `R2PutLike` | Pass-through get and put options, and the put shape the adapter constructs. |
+| `R2ListOptions`, `R2ListResult`, `R2ListLike` | List options, its result, and the structural list surface. |
+| `R2HttpMetadata` | The HTTP header fields stored alongside an object. |
+| `R2BindingOptions` | `{ binding, required?, store? }` for `resolveObjectStore`. |
+
+---
+
+## See also
+
+- [`STORAGE_BINDINGS.md`](../../.decisions/implementation/STORAGE_BINDINGS.md) — the three clients,
+  the resolve/validate lifecycle (§4), the structural contracts (§4c), and the degradation policy
+  (§5).
+- [`ERROR_HANDLING.md`](../../.decisions/implementation/ERROR_HANDLING.md) — the `Result` primitive
+  every operation here returns, and the `serveObject` exception to it.

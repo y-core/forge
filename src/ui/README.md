@@ -1,314 +1,117 @@
 # `@y-core/forge/ui`
 
-Source-distributed UI primitives for forge apps, split across fourteen import sub-paths. The family
-covers server-rendered JSX primitives (`@y-core/forge/ui/core`) with their client scopes
-(`@y-core/forge/ui/core/client`), pre-bound signal-binding wrappers (`@y-core/forge/ui/controls`),
-the DOM contract those two halves share (`@y-core/forge/ui/contracts`), forge's self-owned icon asset
-manifest (`@y-core/forge/ui/assets`) and its browser-safe glyph parser
-(`@y-core/forge/ui/assets/glyphs`), browser-side controllers and a framework-free reactive runtime
-(`@y-core/forge/ui/client`), SSR-only stateful components (`@y-core/forge/ui/server`),
-configuration-driven app chrome — navbar, toolbar, theme toggle — (`@y-core/forge/ui/chrome`) with
-its client island (`@y-core/forge/ui/chrome/client`), the pinned HTMX bundle
-(`@y-core/forge/ui/client/htmx`), a ready-made component showcase (`@y-core/forge/ui/show`,
-`@y-core/forge/ui/show/client`), and the addressable stylesheets and optional themes
-(`@y-core/forge/ui/assets/css/*.css`) — a subpath **pattern**, so it names a family rather than one
-file, and each real `.css` in that directory is reachable.
+Source-distributed UI primitives for forge apps. Every component is a thin wrapper over a native element with default
+Tailwind styling, predictable prop pass-through, and explicit composition. Field state and icon sprites are owned
+through composition, not configuration.
 
-Every component is a thin wrapper over a native element with default Tailwind styling, predictable prop
-pass-through, and explicit composition. Field state and icon sprites are owned through composition, not
-configuration.
+> **Architecture reference:** the SSR-vs-client split, the island pattern, field binding and the
+> colour-scheme contract are owned by
+> [`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md),
+> [`UI_CLIENT_RUNTIME.md`](../../.decisions/implementation/UI_CLIENT_RUNTIME.md) and
+> [`THEME_GENERATION.md`](../../.decisions/implementation/THEME_GENERATION.md).
 
-> **Architecture reference:** the authoritative design rationale (SSR-vs-client split, the resumability
-> island pattern, field binding) lives in [`UI_SSR_COMPONENTS.md`](../../.decisions/UI_SSR_COMPONENTS.md)
-> and [`UI_CLIENT_RUNTIME.md`](../../.decisions/UI_CLIENT_RUNTIME.md).
-
----
-
-## Table of Contents
-
-- [Design guidance](#design-guidance) — the shipped design corpus: which component to reach for, and what good looks like
-- [`@y-core/forge/ui/core`](#y-coreforgeuicore) — server-side JSX component library
-- [`@y-core/forge/ui/core/client`](#y-coreforgeuicoreclient) — toast + alert scopes island (side-effect import)
-- [`@y-core/forge/ui/controls`](#y-coreforgeuicontrols) — pre-bound signal-binding wrapper layer
-- [`@y-core/forge/ui/contracts`](#y-coreforgeuicontracts) — the shared DOM contract as pure data
-- [`@y-core/forge/ui/assets`](#y-coreforgeuiassets) — forge's self-owned icon asset manifest
-- [`@y-core/forge/ui/assets/glyphs`](#y-coreforgeuiassetsglyphs) — browser-safe sprite glyph parser
-- [`@y-core/forge/ui/assets/css/*.css`](#the-stylesheet--one-import-no-theme-required) — the entry stylesheet and the optional themes
-- [`@y-core/forge/ui/client`](#y-coreforgeuiclient) — browser controllers + signals runtime
-- [`@y-core/forge/ui/server`](#y-coreforgeuiserver) — SSR-only Flash and Resumable
-- [`@y-core/forge/ui/chrome`](#y-coreforgeuichrome) — SSR Navbar, Toolbar, ThemeToggle + theme constants
-- [`@y-core/forge/ui/chrome/client`](#y-coreforgeuichromeclient) — chrome scopes island (side-effect import)
-- [`@y-core/forge/ui/client/htmx`](#y-coreforgeuiclienthtmx) — HTMX bundle (side-effect import)
-- [`@y-core/forge/ui/show`](#y-coreforgeuishow) — component showcase route helpers
-- [`@y-core/forge/ui/show/client`](#y-coreforgeuishowclient) — showcase filter island script
+| Sub-path | What it is |
+|---|---|
+| [`ui/core`](#y-coreforgeuicore) | Server-rendered JSX component library |
+| [`ui/core/client`](#y-coreforgeuicoreclient) | The scopes `ui/core` markup names (side-effect import) |
+| [`ui/controls`](#y-coreforgeuicontrols) | Pre-bound signal-binding wrappers over `ui/core` |
+| [`ui/contracts`](#y-coreforgeuicontracts) | The DOM contract both halves write, as pure data |
+| [`ui/contracts/theme`](#y-coreforgeuicontractstheme) | Colour-scheme generation and the audited contrast pairs |
+| [`ui/assets`](#y-coreforgeuiassets) | Forge's self-owned icon asset manifest |
+| [`ui/assets/glyphs`](#y-coreforgeuiassetsglyphs) | Browser-safe sprite glyph parser |
+| [`ui/assets/css/*.css`](#the-stylesheet) | The entry stylesheet and the optional themes (a subpath **pattern**) |
+| [`ui/client`](#y-coreforgeuiclient) | Browser controllers, signals, and the island runtime |
+| [`ui/client/htmx`](#y-coreforgeuiclienthtmx) | The pinned HTMX bundle (side-effect import) |
+| [`ui/server`](#y-coreforgeuiserver) | SSR-only Flash and Resumable |
+| [`ui/chrome`](#y-coreforgeuichrome) | SSR Navbar, Toolbar, ThemeToggle + theme constants |
+| [`ui/chrome/client`](#y-coreforgeuichromeclient) | The chrome scopes island (side-effect import) |
+| [`ui/show`](#y-coreforgeuishow) | Component showcase and theme customiser route helpers |
+| [`ui/show/client`](#y-coreforgeuishowclient) | The showcase's scopes island (side-effect import) |
+| [`ui/design/*.md`](#design-guidance) | The design corpus as markdown (a subpath **pattern**) |
 
 ---
 
 ## Prerequisites
 
-forge ships TypeScript/TSX **source** — there is no build step and no emitted `.d.ts`. To consume any
-component you need a TypeScript-aware bundler (esbuild, Bun, Vite, or Wrangler) configured with the
-forge JSX runtime:
-
-```jsonc
-// tsconfig.json
-{
-  "compilerOptions": {
-    "jsx": "react-jsx",
-    "jsxImportSource": "@y-core/forge/jsx"
-  }
-}
-```
-
-Without `jsxImportSource: "@y-core/forge/jsx"`, JSX in component files compiles against the wrong
-runtime and fails. Each forge `.tsx` file also self-declares the runtime with a
+forge ships TypeScript/TSX **source** — no build step, no emitted `.d.ts`. Consuming any component needs a
+TypeScript-aware bundler (esbuild, Bun, Vite, or Wrangler) configured with `"jsx": "react-jsx"` and
+`"jsxImportSource": "@y-core/forge/jsx"`. Each forge `.tsx` file also self-declares the runtime with a
 `/** @jsxImportSource @y-core/forge/jsx */` pragma, so per-file overrides are unnecessary.
 
-### The stylesheet — one import, no theme required
+### The stylesheet
 
-forge's components are Tailwind utilities over semantic tokens, so an app needs **two** things from
-this package: the tokens, and the *generated rules* for the utility classes the components emit.
-A single import supplies both:
+Components are Tailwind utilities over semantic tokens, so an app needs both the tokens and the generated rules for
+the classes those components emit. One import supplies both:
 
 ```css
-/* your app's stylesheet */
 @import "tailwindcss";
 @import "@y-core/forge/ui/assets/css/forge.css";
 ```
 
-**Why one import rather than importing the token files directly.** Tailwind v4's automatic content
-scan **ignores `node_modules`**, so without help none of forge's classes are ever generated — the
-markup renders and every class on it has no rule. `forge.css` fixes that from inside the package: it
-carries an `@source` path for **every directory under `src/ui/` whose files declare a utility
-class** — components and published class strings alike — and the gate's `validate-css-sources` step
-enforces exactly that scope, in both directions: a directory under `src/ui/` that is neither scanned
-nor registered as class-free fails the gate, and so does an `@source` path that resolves outside
-`src/ui/`. Read `forge.css` for the current list. The paths resolve **relative to
-itself**, which is the only form that survives pnpm, a workspace, a git dependency and a monorepo
-alike. Writing them consumer-side would mean hardcoding `../../node_modules/@y-core/forge/…`, which
-is wrong under most of those.
+Tailwind v4's content scan ignores `node_modules`, so `forge.css` carries an `@source` path for every directory under
+`src/ui/` whose files declare a utility class — resolved relative to itself, the only form that survives pnpm, a
+workspace, a git dependency and a monorepo alike. Read `forge.css` for the current list; the gate's
+`validate-css-sources` step enforces that scope in both directions.
 
-An app that mounts [`@y-core/forge/ui/show`](#y-coreforgeuishow) adds one more line of its own, the
-same way it does for the log viewer — the showcase is demo markup, so its utilities are opt-in and an
-app that does not mount it pays nothing:
+An app that mounts [`ui/show`](#y-coreforgeuishow) adds one line of its own — the showcase is demo markup, so its
+utilities are opt-in:
 
 ```css
 @source "../../node_modules/@y-core/forge/src/ui/show";
 ```
 
-**`forge.css` scans `ui/` and nothing else.** Other namespaces ship server-rendered markup of their
-own, and whether an app mounts one is the app's decision rather than this package's — so their
-classes are the app's to scan. If you import a forge surface outside `ui/` that renders markup, add
-an `@source` for that namespace's directory to your own stylesheet. Each namespace's README says so
-where it applies.
+**`forge.css` scans `ui/` and nothing else.** Other namespaces ship server-rendered markup whose classes are the app's
+to scan; each says so in its own README where it applies.
 
-#### A theme is optional — a scheme is twelve steps
+### Themes and schemes
 
-**`theme-neutral.css` is the default scheme**, and `forge.css` imports it, so forge renders
-correctly with no theme file of your own. Three alternatives ship beside it — `theme-stone.css`
-(warm), `theme-gray.css` (cool) and `theme-slate.css` (strongly cool) — each imported *after*
-`forge.css`:
+`theme-neutral.css` is the default scheme and `forge.css` imports it, so forge renders correctly with no theme file of
+your own. Three alternatives ship beside it — `theme-stone.css` (warm), `theme-gray.css` (cool) and `theme-slate.css`
+(strongly cool) — each `@import`ed *after* `forge.css`. Tailwind's ramp named `gray` is blue-tinted, so
+`theme-gray.css` is the cool scheme and `theme-neutral.css` the achromatic one; the names invite the opposite reading.
 
-```css
-@import "tailwindcss";
-@import "@y-core/forge/ui/assets/css/forge.css";
-@import "@y-core/forge/ui/assets/css/theme-stone.css";   /* optional — or theme-gray.css, or theme-slate.css */
-```
+A scheme file re-declares `--gray-1` … `--gray-12` in one `:root` block and **nothing else** — every semantic token
+resolves through those steps. A step whose value differs by mode is written with `light-dark()` and the branch is
+selected by `color-scheme`, which `theme-base.css` sets; a step that is the same colour in both modes is written bare.
+Author your own the same way, after the forge imports. To re-point a single token instead — a brand hue is
+`--primary`, not `--accent` — declare it once; it then applies in **both** modes, so anything that must differ by mode
+is a *step* override, and steps carrying text or a control boundary have measured contrast behind them. The
+one-declaration-site rule is [`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §5; the
+ramps, dials and audited pairs are [`ui/contracts/theme`](#y-coreforgeuicontractstheme)'s.
 
-**Tailwind's ramp named `gray` is blue-tinted, so `theme-gray.css` is the cool scheme and
-`theme-neutral.css` is the achromatic one.** The names invite the opposite reading.
+**Status colours are tokens, not palette utilities.** `Alert`, `Toast`, `Badge` and the banners `@y-core/forge/http`
+renders take their colour from a `--status-*` family — four intents (`danger`, `warning`, `success`, `info`) by five
+roles (`-subtle`, `-subtle-foreground`, `-strong`, `-strong-foreground`, `-border`), each bridged to a Tailwind
+utility such as `bg-status-danger-subtle`. They are deliberately separate from `--destructive` / `--success` /
+`--warning`, which are fills your app owns
+([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §5c).
 
-A theme file re-declares `--gray-1` … `--gray-12` and their translucent siblings `--gray-a1` …
-`--gray-a12`, in one `:root` block, and **nothing else**. Every semantic token —
-`--background`, `--primary`, `--border` and the rest — resolves through those steps, so there is
-nothing else for a scheme to override, and an app's own scheme is structurally identical to
-`theme-slate.css`.
+**Component rules sit in `@layer components`**, so a utility passed at the call site wins over a component default —
+`<Dialog class="max-w-sm">` narrows the dialog, as it reads. The consequence runs the other way too: a rule your app
+puts in `@layer components` loses to every forge utility in `@layer utilities`, whatever its specificity, so declare
+`@layer app;` *after* the forge imports and put your chrome rules there.
 
-The mapping is two hops, and knowing which hop you are looking at is what makes the rest of this
-section make sense:
+### Dark mode
 
-```css
---muted-foreground: var(--gray-11);                        /* semantic token — one value, both modes */
---gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));  /* scale step — one declaration, both modes */
-```
-
-**A step is declared once, and the mode is selected by `color-scheme`, which `theme-base.css` sets on
-the light and dark roots.** A second `.dark` block would weigh the same 0-1-0 as `:root` and match the
-same element, so a scheme of your own — imported after forge's — would replace one half and silently
-keep forge's other one. One declaration site removes that by construction; the gate fails any `.dark`
-rule that declares a custom property.
-
-The step numbering is a twelve-step scale, and so is the lightness of every step forge ships: 1
-app background, 2 subtle background, 3 UI element background, 4 hovered UI element background, 5
-active/selected, 6 subtle borders and separators, 7 UI element border and focus rings, 8 hovered UI
-element border, 9 solid backgrounds, 10 hovered solid backgrounds, 11 low-contrast text, 12
-high-contrast text. The scheme file is where the literals live — `theme-neutral.css` for the default
-— along with the light-mode 1↔2 swap that keeps a `Card` raised above the page, which is a value
-rather than a mapping. `theme-base.css` owns the mapping, where `--input` and `--ring` sit at steps 10
-and 11 so they clear WCAG 1.4.11's 3:1.
-
-**The four schemes share that one lightness ramp and differ only in hue.** `theme-neutral.css` is
-achromatic; `theme-stone.css`, `theme-gray.css` and `theme-slate.css` take their chroma and hue from
-Tailwind's `stone`, `gray` and `slate`, resampled at each lightness. How far each leans is the
-whole difference between them — measured as max−min across R/G/B at step 11, the muted-text step:
-neutral 0, stone 12, gray 20, slate 42. Two consequences are worth knowing before you pick one:
-swapping schemes is a visible change of tint rather than a one-unit nudge, and every contrast ratio
-forge audits holds across all four to within 0.05 — widest at `--muted-foreground` in light, 5.17
-through 5.22 — so a scheme swap cannot drop a pair below its floor. That is the shared ramp rather
-than four measurements: `theme-gray.css` was added without re-pinning a single contract row, and it
-scales its chroma to 0.8 — a dial the same property makes free, since every audited ratio depends on
-lightness alone. A scheme *you* author is on its own ramp and carries no such guarantee — re-measure.
-The
-attribution and the reasoning are in
-[`ui/design/reference/04-color.md`](./design/reference/04-color.md); the values are in the theme
-files.
-
-**Author your own scheme** by declaring the same twelve steps once each, after the forge imports.
-Write them in a space that carries lightness as its own coordinate, so a step can be moved lighter or
-darker without dragging its hue and chroma with it — which is why forge's own schemes ship in OKLCh:
-
-```css
-:root {
-  --gray-1:  light-dark(oklch(99.00% 0.003 250), oklch(17.00% 0.008 250));
-  /* … through … */
-  --gray-12: light-dark(oklch(18.00% 0.010 250), oklch(95.00% 0.004 250));
-}
-```
-
-A step that is the same colour in both modes is written bare, with no `light-dark()` around it. The
-translucent `--gray-a*` siblings stay eight-digit hex: an overlay is fitted to sRGB bytes rather than
-authored, so OKLCh would restate a solved result as an authored colour.
-
-**Override an individual token on top of the scheme** for the cases a scale cannot express — a brand
-hue is one, and in forge's vocabulary a brand hue is `--primary`, not `--accent`:
-
-```css
-:root { --primary: var(--color-brand-accent); }
-```
-
-**Override a *step* for anything that must differ between the two modes.** Every semantic token is
-declared exactly once and means the same thing in both modes, so a `:root { --primary: … }` of your
-own applies in **both**. Only a scale step carries a mode difference — re-point the step instead:
-
-```css
-/* after the forge imports */
-:root { --gray-6: light-dark(#cccccc, #454545); }   /* a stronger hairline, both modes */
-```
-
-Steps that carry text or a control boundary — 6 is neither — have measured contrast ratios behind
-them, so re-measure the pair in both modes before shipping a step override. `--muted-foreground` on
-`--muted` is the pair with the least headroom in the system.
-
-That is the supported extension point in three directions: the scheme is the general case, a
-per-token override is the tail, and a per-mode override is a step. There is no `unstyled` escape
-hatch, deliberately — see the note on layers below for why one would not solve the problem it looks
-like it solves.
-
-#### Status colours are tokens, not palette utilities
-
-`Alert`, `Toast`, `Badge` and the banners `@y-core/forge/http` renders take their colour from a
-`--status-*` family: four intents (`danger`, `warning`, `success`, `info`) by five roles
-(`-subtle`, `-subtle-foreground`, `-strong`, `-strong-foreground`, `-border`), each bridged to a
-Tailwind utility — `bg-status-danger-subtle`, `text-status-success-strong-foreground`.
-
-These are deliberately **not** `--destructive` / `--success` / `--warning`. Those three are fills
-your app owns and may re-point to its brand; the `--status-*` hues are forge's, so a failure panel
-keeps meaning "failed" whatever `--destructive` has been pointed at. Re-point a status hue only if
-you mean to change what "failed" looks like — and do it on the step (`--red-2`, `--red-12`, and
-their siblings), for the reason above.
-
-#### Component rules are in `@layer components`
-
-Every rule in `forge-ui.css` is layered, so **a utility you pass at the call site wins over a
-component default** — `<Dialog class="max-w-sm">` narrows the dialog, as it reads.
-(These rules were unlayered before `v0.0.74`, and unlayered CSS outranks *all* layered CSS whatever
-its selector weight, so such a `max-w-sm` silently did nothing.)
-
-**If your app's own component rules lose to forge's utilities, the fight is between layers, not
-selectors.** `@import "tailwindcss"` declares `@layer theme, base, components, utilities;`, so rules
-you put in `@layer components` lose to every forge utility in `@layer utilities` regardless of
-specificity. Declare a layer of your own *after* `utilities` and put them there:
-
-```css
-@import "tailwindcss";
-@import "@y-core/forge/ui/assets/css/forge.css";
-
-@layer app;              /* declared last — so it wins */
-@layer app { /* your chrome rules */ }
-```
-
-#### Dark mode with Tailwind v4
-
-Forge's colours are CSS custom properties whose mode `.dark` on `<html>` selects: the class sets
-`color-scheme`, `color-scheme` picks each role step's `light-dark()` branch, and every semantic token
-resolves through those steps at runtime via `@theme inline`. **So every forge
-component works in dark mode with no extra setup**: `bg-popover`, `text-muted-foreground`,
-`bg-status-danger-subtle` and the rest all follow the class the theme scope toggles, and forge's own
-source contains no `dark:` utility at all.
-
-**`forge.css` declares the `dark:` variant for you, and that is a takeover worth knowing about.**
-Tailwind v4 defaults `dark:` to `prefers-color-scheme`, so a `dark:` utility would follow the
-*operating system* while every forge token follows the *user's choice* — and the two disagree the
-moment someone picks a theme that is not `system`. `forge.css` therefore ships the class-driven
-definition:
-
-```css
-@custom-variant dark (&:where(.dark, .dark *));
-```
-
-You no longer add that line. But it reconfigures **your** `dark:` utilities too, not only forge's:
-an app relying on `prefers-color-scheme` for its own dark styling loses the automatic switch here,
-with no error and nothing in any gate to catch it — forge has no Tailwind dependency, so nothing in
-this repository ever compiles CSS.
-
-The escape hatch is the cascade. `@custom-variant` is last-declaration-wins, so an app that wants
-the media query back re-declares the variant *after* the import:
-
-```css
-@import "@y-core/forge/ui/assets/css/forge.css";
-@custom-variant dark (@media (prefers-color-scheme: dark));
-```
+Forge's colours are custom properties whose mode `.dark` on `<html>` selects, so **every forge component works in dark
+mode with no extra setup** and forge's own source contains no `dark:` utility. `forge.css` redefines the `dark:`
+variant to follow that class rather than `prefers-color-scheme` — a takeover that reconfigures **your** `dark:`
+utilities too. The consumer-facing account, including how to get the media query back, is
+[MIGRATION.md](../../MIGRATION.md); the ruling is
+[`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §5d.
 
 ---
 
 ## Design guidance
 
-A pure-markdown **design corpus** ships inside this package at `src/ui/design/`. It is the
-companion to this README, and the boundary between the two is one sentence: **this README says
-how to call a component; the corpus says which one to reach for, and what good looks like once
-it is composed.**
-
-Its rules occupy two tiers:
-
-- **Floor** — invariants. Never overridden, by any brief, and stated so a reviewer can check them
-  mechanically against a named forge component, token, or class.
-- **Defaults** — rebuttable aesthetic guidance, each opening with the literal token `Default:` and
-  ending with the condition under which departing is correct. Only an explicit written brief
-  rebuts one.
-
-Every normative sentence carries a stable `<!-- rule:forge-ui-… -->` identifier, so a review
-finding can cite the exact sentence that justifies it rather than a paragraph.
-
-### Loading it — no install, no dependency
-
-The corpus is plain markdown already sitting in `node_modules`, so there is nothing to add to your
-dependency tree. Two ways in:
-
-- **Claude Code** — point a skills directory at
-  `node_modules/@y-core/forge/src/ui/design`; `SKILL.md` is the entry and carries the routing
-  table.
-- **Any other agent, or a human** — read `src/ui/design/index.md`. It is harness-neutral markdown
-  with the same routing table, and every file it routes to is reachable through this package's
-  `./ui/design/*.md` export subpath.
-
-**Load `src/ui/design/floor.md` before any UI work.** It is the shortest file in the corpus and
-the only one that is unconditional; `src/ui/design/catalog.md` answers which component fits a
-given job, and `src/ui/design/reference/` holds one file per design dimension for the cases the
-catalog does not settle.
-
-The tier scheme, the identifier scheme, and the boundary between this README and the corpus are
-owned by [`UI_DESIGN_GUIDANCE.md`](../../.decisions/UI_DESIGN_GUIDANCE.md) — read it to change the
-corpus, not to use it.
+A pure-markdown **design corpus** ships inside this package at `src/ui/design/`. The boundary between it and this
+README is one sentence: **this README says how to call a component; the corpus says which one to reach for, and what
+good looks like once it is composed.** It is already sitting in `node_modules`, so point a Claude Code skills
+directory at `node_modules/@y-core/forge/src/ui/design` (`SKILL.md` is the entry) or read the harness-neutral
+`src/ui/design/index.md`, which carries the same routing table; every file it routes to is reachable through the
+`./ui/design/*.md` subpath. **Load `src/ui/design/floor.md` before any UI work** — it is the only unconditional file;
+`catalog.md` answers which component fits a job, and `reference/` holds one file per design dimension. The tier scheme
+and rule identifiers are [`UI_DESIGN_GUIDANCE.md`](../../.decisions/implementation/UI_DESIGN_GUIDANCE.md)'s.
 
 ---
 
@@ -316,298 +119,140 @@ corpus, not to use it.
 
 > Import path: `@y-core/forge/ui/core` → `src/ui/core/mod.ts`
 
-### Features
-
-- Server-rendered JSX components — produce static HTML via `renderToString`, with no required browser
-  JavaScript.
-- Compound components (`Card.Header`, `Alert.Title`, `Select.Option`, `Toast.Description`) for explicit
-  composition.
-- Variant-driven styling through `cva`, conditional class merging through `cn` — with Tailwind
-  conflict resolution, so a caller's `class` overrides a component's base rather than racing it in
-  the stylesheet.
-- An accessible field system: controls inside a `FormField` inherit `id`, `name`, `aria-invalid`, and
-  `aria-describedby`.
-- Sprite-backed icons via `createIcon`; icon-consuming components accept an `icon` prop directly.
-- A `Turnstile` CAPTCHA mount point that pairs with the arg-less `mountTurnstile()` controller
-  (`@y-core/forge/ui/client`) for a resilient, engagement-gated challenge lifecycle.
-
 ### Attribute pass-through contract
 
-Every component forwards **unrecognized props** — including arbitrary `data-*` and `aria-*` attributes — onto its root (or designated inner) element. Each component destructures only its own declared props and spreads the rest, so client-side binding conventions (`data-ref`, `data-on-click`, custom hooks for test selectors) attach without re-wrapping forge components:
-
-```tsx
-<Button data-ref='save-btn' data-on-click='saveDoc'>Save</Button>
-// → <button … data-ref="save-btn" data-on-click="saveDoc">Save</button>
-```
-
-Two renderer-level rules apply to forwarded attributes (see `src/jsx/render-to-string.ts`):
-
-- Values are **HTML-escaped** (`data-note="a&b"` renders `data-note="a&amp;b"`); URL-bearing attributes (`href`, `src`, …) are additionally scheme-sanitized via `safeUrl`.
-- `style` is **dropped** — forge's CSP has no `style-src 'unsafe-inline'`, so inline styles would be blocked by the browser and must not ship.
-
-This contract is pinned by pass-through tests in `ui/controls/controls.test.tsx`, `ui/core/button.test.tsx`, and `ui/core/field.test.tsx`.
+Every component forwards **unrecognized props** — including arbitrary `data-*` and `aria-*` — onto its root (or
+designated inner) element, so client-side binding conventions attach without re-wrapping. Two renderer rules apply
+([`src/jsx/render-to-string.ts`](../jsx/render-to-string.ts)): values are HTML-escaped and URL-bearing attributes
+additionally scheme-sanitized via `safeUrl`; `style` is **dropped**, because forge's CSP carries no
+`style-src 'unsafe-inline'` ([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §1a).
 
 ### Usage
 
 ```tsx
-import {
-  Card, Button, Form, FormField, Input, Textarea, Alert,
-} from "@y-core/forge/ui/core";
+import { Button, Form, FormField, Input } from "@y-core/forge/ui/core";
 
-const ContactCard = ({ errors }: { errors: { name?: string; message?: string } }) => (
-  <Card class="w-96">
-    <Card.Header>
-      <Card.Title>Contact us</Card.Title>
-      <Card.Description>We reply within one business day.</Card.Description>
-    </Card.Header>
-    <Card.Content>
-      <Form hx-post="/api/contact" hx-target="#contact-result">
-        <FormField name="name" invalid={Boolean(errors.name)}>
-          <FormField.Label name="name">Your name</FormField.Label>
-          <Input name="name" field={{ name: "name", invalid: Boolean(errors.name) }} required />
-          {errors.name && <FormField.Error name="name">{errors.name}</FormField.Error>}
-        </FormField>
-        <Button type="submit" variant="primary">Send message</Button>
-      </Form>
-    </Card.Content>
-  </Card>
-);
+<Form hx-post="/api/contact" hx-target="#contact-result">
+  <FormField name="name" invalid={Boolean(errors.name)}>
+    <FormField.Label name="name">Your name</FormField.Label>
+    <Input name="name" field={{ name: "name", invalid: Boolean(errors.name) }} required />
+    {errors.name && <FormField.Error name="name">{errors.name}</FormField.Error>}
+  </FormField>
+  <Button type="submit" variant="primary">Send message</Button>
+</Form>
 ```
 
-### Core Components & APIs
+Render trees inside a route handler with `renderToString` (`@y-core/forge/jsx`) and return them through
+`fragmentResponse` or `htmlResponse` (`@y-core/forge/http`).
+
+### Exports
 
 | Export | Renders | Notes |
 |---|---|---|
 | `Form` | `<form>` | HTMX attributes pass through; no client submission logic. Renders **no honeypot** — compose `Honeypot` yourself. |
-| `Honeypot` | off-screen `<input>` | Decoy field paired with `isHoneypotFilled` (`@y-core/forge/form`). `field` defaults to `HONEYPOT_FIELD_DEFAULT`. Put it in mutation forms only. |
-| `FormField` | `<fieldset>` | Accessible form field with `name` / `invalid` / `disabled`. Compounds: `FormField.Label`, `FormField.Description`, `FormField.Error`. |
-| `Field` | layout row | Lightweight label + control row — no form semantics. |
-| `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` prop (a `ForgeIcon`). |
-| `Button` | `<button>` | `variant`: `"primary" | "secondary" | "ghost"`; `size`: `"sm" | "md" | "lg" | "icon" | "icon-sm" | "square"`. `asChild` renders onto a single element child instead of a `<button>`. |
-| `Alert` | `<div role="alert">` | `variant`: `AlertVariant`. Compounds: `Alert.Title`, `Alert.Description`. |
-| `Card` | bordered container | Compounds: `Card.Header`, `Card.Title`, `Card.Description`, `Card.Action`, `Card.Content`, `Card.Footer`. |
-| `Toast` | notification | `variant`: `ToastVariant`; `position`: `ToastPosition`. Compounds: `Toast.Title`, `Toast.Description`, `Toast.Container`. |
+| `Honeypot` | off-screen `<input>` | Decoy field paired with `isHoneypotFilled` (`@y-core/forge/form`). `field` defaults to `HONEYPOT_FIELD_DEFAULT`. Mutation forms only. |
+| `FormField` | `<fieldset>` | Accessible field with `name` / `invalid` / `disabled`. Compounds: `.Label`, `.Description`, `.Error`, `.Set`, `.Legend`, `.Group`, `.Content`, `.Title`, `.Separator`. |
+| `Field` | layout row | Lightweight label + control row — no form semantics. `orientation` is `"vertical"` (default) or `"horizontal"`. |
+| `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`. `Select` requires an `icon` prop (a `ForgeIcon<"chevron-down">`) and compounds `.Option`, `.OptGroup`. |
+| `Button` | `<button>` | `variant`: `"primary" \| "secondary" \| "ghost" \| "destructive"`; `size`: `"sm" \| "md" \| "lg" \| "icon" \| "icon-sm" \| "square"`. `asChild` renders onto a single element child instead. |
+| `Alert` | `<div role="alert">` | `variant`: `AlertVariant`. Compounds: `.Title`, `.Description`. |
+| `Card` | bordered container | Compounds: `.Header`, `.Title`, `.Description`, `.Action`, `.Content`, `.Footer`. |
+| `Toast` | notification | `variant`: `ToastVariant`; `position`: `ToastPosition`. Compounds: `.Title`, `.Description`, `.Container`. |
 | `Badge` | `<span>` | `variant`: `BadgeVariant`. |
-| `Avatar` | avatar | Compound: `Avatar.Fallback`. |
-| `Switch`, `Slider` | styled `<input>` | CSS-only toggle / native range; accept an optional `field` descriptor. `Switch` publishes `data-label-position` (`before` / `after`). |
-| `ToggleGroup`, `ToggleGroup.Item` | `<fieldset>` of buttons | Segmented control. `type`: `"single" | "multiple"` — published as `data-multiple` and read by `bindGroup`. `Item` takes `pressed` for initial state. **No `role`** — a `<fieldset>` is already a `group`. |
-| `Toolbar` | `<div role="toolbar">` | One tab stop, arrow-key navigation. Compounds: `Toolbar.Button`, `Toolbar.Link`, `Toolbar.Input`, `Toolbar.Group`, `Toolbar.Separator`. Items are marked with `data-toolbar-item`; a foreign element opts in by carrying it. |
-| `Menu` | native popover, `role="menu"` | Trigger + popup on the Popover and Invoker Commands APIs — open, close, light-dismiss and Escape need no JavaScript. Compounds: `Menu.Trigger`, `Menu.Popup`, `Menu.Item`, `Menu.LinkItem`, `Menu.SubmenuTrigger`, `Menu.CheckboxItem`, `Menu.RadioItem`, `Menu.Group`, `Menu.GroupLabel`, `Menu.Separator`. |
-| `Tabs` | tablist + panels | `orientation`; `activation`: `"automatic" | "manual"`. Compounds: `Tabs.List`, `Tabs.Tab`, `Tabs.Panel`. An unselected panel is `hidden`, so the first render is correct with no JS. |
+| `Avatar` | avatar | Compounds: `Avatar.Image` (requires `alt`), `Avatar.Fallback`. |
+| `Switch`, `Slider` | styled `<input>` | CSS-only toggle / native range; accept an optional `field`. `Switch`'s `orientation` (`"label-before"` / `"label-after"`) publishes `data-label-position`. A `Slider` with an `<output>` readout stamps the `slider` scope. |
+| `ToggleGroup`, `ToggleGroup.Item` | `<fieldset>` of buttons | Segmented control. `type`: `"single" \| "multiple"`, published as `data-multiple`. `Item` takes `pressed`. **No `role`** — a `<fieldset>` is already a `group`. |
 | `Toggle` | `<button aria-pressed>` | A single two-state pressable button. `pressed` for initial state. |
-| `Collapsible` | native `<details>` | Compounds: `Collapsible.Trigger`, `Collapsible.Panel`. `<details>` owns open and closed; the controller only publishes them. |
-| `Accordion` | stack of `<details>` | Compounds: `Accordion.Item`, `Accordion.Trigger`, `Accordion.Content`. Each item is its own disclosure and its own tab stop. |
-| `Tooltip` | `popover="hint"` | Compounds: `Tooltip.Trigger`, `Tooltip.Content`. A hint does not dismiss the `auto` popover beneath it. |
-| `CheckboxGroup`, `RadioGroup` | `<fieldset>` of native inputs | Real `<input type="checkbox">` / `<input type="radio">`. Radio grouping and its roving focus are the platform's. Compound: `.Item` on each. `description` and `scope` behave as on `FormField` — `scope` must be repeated on every `.Item`, since each item derives its own id from `name`, `scope` and its `value` — and derives none if any of them contains whitespace. |
-| `Meter` | `<meter>` | A measurement in a known range — distinct from `Progress`, which is task completion. |
-| `NumberField` | numeric `<input>` + steppers | `min` / `max` / `step` enforced natively via `stepUp` / `stepDown`. Compounds: `NumberField.Input`, `NumberField.Increment`, `NumberField.Decrement`. |
-| `ScrollArea` | scroll container | Almost entirely CSS — no scroll hijacking, no synthetic thumb. Compound: `ScrollArea.Viewport`. |
-| `Dialog` | native `<dialog>` | Compounds: `Dialog.Trigger`, `Dialog.Close`. Top layer, backdrop and Escape are the platform's. |
-| `Progress`, `Separator`, `Skeleton`, `Spinner`, `Popover`, `Label` | misc primitives | `Spinner` requires an `icon` prop. |
+| `Toolbar` | `<div role="toolbar">` | One tab stop, arrow-key navigation. Compounds: `.Button`, `.Link`, `.Input`, `.Group`, `.Separator`. Items carry `data-toolbar-item`; a foreign element opts in by carrying it. |
+| `Menu` | native popover, `role="menu"` | Trigger + popup on the Popover and Invoker Commands APIs — open, close, light-dismiss and Escape need no JavaScript. Compounds: `.Trigger`, `.Popup`, `.Item`, `.LinkItem`, `.SubmenuTrigger`, `.CheckboxItem`, `.RadioItem`, `.Group`, `.GroupLabel`, `.Separator`. |
+| `Tabs` | tablist + panels | `orientation`; `activation`: `"automatic" \| "manual"`. Compounds: `.List`, `.Tab`, `.Panel`. An unselected panel is `hidden`, so the first render is correct with no JS. |
+| `Collapsible` | native `<details>` | Compounds: `.Trigger`, `.Panel`. `<details>` owns open and closed. |
+| `Accordion` | stack of `<details>` | Compounds: `.Item`, `.Trigger`, `.Content`. Each item is its own disclosure and its own tab stop. |
+| `Tooltip` | `popover="hint"` | Compounds: `.Trigger`, `.Content`. A hint does not dismiss the `auto` popover beneath it. |
+| `CheckboxGroup`, `RadioGroup` | `<fieldset>` of native inputs | Real `<input type="checkbox">` / `<input type="radio">`; radio grouping and roving focus are the platform's. Compounds on each: `.Label`, `.Item`, `.Description`, `.Error`. `scope` must be repeated on every `.Item`, since each derives its own id from `name`, `scope` and its `value`. |
+| `Meter` | `<meter>` | A measurement in a known range — distinct from `Progress`, which is task completion. Compounds: `.Label`, `.Value`, `.Track`. |
+| `NumberField` | numeric `<input>` + steppers | `min` / `max` / `step` enforced natively via `stepUp` / `stepDown`. Compounds: `.Input`, `.Increment`, `.Decrement`. |
+| `ScrollArea` | scroll container | Almost entirely CSS — no scroll hijacking, no synthetic thumb. Compound: `.Viewport`. |
+| `Dialog` | native `<dialog>` | Compounds: `.Trigger`, `.Close`, `.Header`, `.Body`, `.Footer`. Top layer, backdrop and Escape are the platform's. `openModal` centres in the viewport; `open` is the platform's non-modal mode and flows inline. |
+| `Popover` | native popover | Compounds: `.Trigger`, `.Content`. Stamps `POPOVER_SCOPE`, so its invokers' `aria-expanded` is maintained. |
+| `Progress`, `Separator`, `Skeleton`, `Spinner`, `Label` | misc primitives | `Spinner` requires an `icon` prop; its `size` is `"sm" \| "md" \| "lg"`. |
+| `Turnstile` | CAPTCHA mount point | See below. |
 | `Icon`, `createIcon` | `<svg><use>` | Sprite-backed icon and its factory. |
-| `cn`, `asClass`, `cva` | class utilities | Class merging, `class`-prop narrowing, and class-variance authority (all `@public`). |
+| `cn`, `asClass`, `cva` | class utilities | Class merging, `class`-prop narrowing, and class-variance authority. |
+| `buttonVariants` | cva function | `Button`'s own variant resolver, for markup that must wear the button classes without being one. |
+| `fieldId`, `fieldDescriptionId`, `fieldErrorId`, `fieldDescribedBy`, `fieldControlProps`, `FIELD_LABEL_CLASSES` | field helpers | See below. |
 
-Components that need a keyboard — `Toolbar`, `Menu`, `Tabs`, `Tooltip`, `Collapsible`,
-`NumberField` — render a `data-scope` and are inert until `@y-core/forge/ui/core/client` is imported.
-The markup stays valid and accessible without it; what is missing is the arrow keys.
+Components that need a keyboard — `Toolbar`, `Menu`, `Tabs`, `Tooltip`, `NumberField`, `ToggleGroup`, a modal
+`Dialog`, a `Popover.Content`, a readout `Slider` — render a `data-scope` and are inert until
+`@y-core/forge/ui/core/client` is imported: the markup stays valid and accessible, but the arrow keys are missing.
 
-#### `FormField` — accessible form fields
+**Types:** `AlertVariant`, `BadgeVariant`, `ToastVariant`, `ToastPosition`, `ToggleGroupType`, `ButtonProps`,
+`ButtonSize`, `FieldDescriptor`, `FieldDescribedByOptions`, `ForgeIcon<Name>`, `IconProps`, `TurnstileProps`.
 
-`FormField` is the `<fieldset>`-based accessible field. Its compound members auto-wire `for` / `id` /
-`aria-describedby` from the field `name` via the ID helpers — pass the same `name` to each member:
+### `FormField` — accessible form fields
+
+`FormField`'s compound members auto-wire `for` / `id` / `aria-describedby` from the field `name` via the ID helpers —
+pass the same `name` to each member.
 
 | Helper | Returns |
 |---|---|
 | `fieldId(name, scope?)` | `field-${name}` — the control ID; `field-${scope}-${name}` when scoped |
 | `fieldDescriptionId(name, scope?)` | the control ID plus `-description` |
 | `fieldErrorId(name, scope?)` | the control ID plus `-error` |
+| `fieldDescribedBy(name, opts)` | the `aria-describedby` value, or `undefined` when nothing to point at renders |
+| `fieldControlProps(props, field)` | merges a `FieldDescriptor` into control props — what `Input` / `Select` / `Textarea` call internally |
+| `FIELD_LABEL_CLASSES` | the shared label class string |
 
-**`scope` separates two fields that share a `name` on one page** — two forms each with an `email`
-field would otherwise emit colliding ids and cross-wired `for` / `aria-describedby`. It is
-**caller-opt-in**: deriving a unique id automatically would require module-level mutable state,
-which [`PRODUCTION_TS_RULES.md`](../../.decisions/PRODUCTION_TS_RULES.md) §1 forbids. Omit it and
-the output is byte-identical to an unscoped field.
+**`scope` separates two fields that share a `name` on one page**, and is caller-opt-in because deriving one
+automatically would need module-level mutable state
+([`PRODUCTION_TS_RULES.md`](../../.decisions/governance/PRODUCTION_TS_RULES.md) §1). **`description` declares that a
+description element actually renders** and defaults to `false`, so `aria-describedby` is emitted only when something
+really describes the field. A blank or whitespace-bearing `name` or `scope` derives no wiring at all, while the `name`
+**attribute** still renders exactly as given
+([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §1j). `FormField.Error` renders
+nothing when its child is `null`, `false` or empty; `CheckboxGroup` and `RadioGroup` share `.Description` and `.Error`
+with it. Use `Field` for settings rows and labelled controls that are **not** validated form fields.
 
-`fieldControlProps(props, field)` is the pure function that merges a `FieldDescriptor`
-(`{ name, scope?, description?, invalid?, disabled? }`) into control props — it is what `Input` /
-`Select` / `Textarea` call internally when given a `field` prop. `FIELD_LABEL_CLASSES` is the shared
-label class string.
+### `Button` — `asChild`
 
-**`description` declares that a description element actually renders**, and defaults to `false`.
-`aria-describedby` is emitted **only** when something really describes the field: naming an element
-that does not exist is a dangling IDREF, which assistive technology treats as an error rather than
-ignoring. An empty or whitespace-only `name` is likewise treated as **no name** — no `id`, no `for`
-and no `aria-describedby` is derived from it, matching HTML's own reading of such a value, so a
-control and its compound members never disagree about whether an element exists.
+`asChild` merges the button's classes and forwarded props onto a single JSX element child via `cloneElement` instead
+of rendering a `<button>` — `<Button asChild variant="ghost"><a href="/docs">Docs</a></Button>`. It requires **exactly
+one JSX element child**; a string, number, fragment, array or empty child is a programming error and `Button`
+**throws** rather than silently degrading.
 
-**A field `name`, and any non-blank `scope`, must be a single id token** — no spaces, tabs or
-newlines. One containing any of those derives no `id`, no `for` and no `aria-describedby`, because an
-id may not contain whitespace and the browser splits `for` and `aria-describedby` on it, so the
-reference could never resolve. The `name` **attribute** is unaffected and still renders exactly as
-given; only the wiring is withheld. Other characters need no escaping on your part: the renderer
-escapes the id and the reference identically, so they still match. A blank `scope` is simply no
-scope, and falls back to the unscoped id.
+### Icons — `createIcon`
 
-`fieldDescribedBy(name, { scope?, description?, invalid?, existing? })` is that computation on its
-own, returning `undefined` when nothing to point at renders. `fieldControlProps` uses it, and so do
-`CheckboxGroup` and `RadioGroup` — a `<fieldset>` is not a labelable control, so those groups cannot
-take `fieldControlProps` wholesale (its `id` / `name` / `aria-invalid` outputs are shaped for an
-`<input>`, and the groups route invalid through `stateAttrs` instead), but the `aria-describedby`
-half is not structural and is shared rather than restated.
+`Select`, `Spinner`, and the chrome `ThemeToggle` / `Navbar` / `Toolbar` take an `icon` prop typed `ForgeIcon<Name>`.
+Bind the sprite once with `createIcon("/assets/icons.svg")`; without a `meta` map that yields a permissive
+`ForgeIcon<string>`, assignable to any narrower `ForgeIcon<Name>` by contravariance, so one `AppIcon` satisfies every
+call site. An icon is decorative by default (`aria-hidden="true"`); pass `aria-label` and the `<svg>` emits
+`role="img"` with that label instead.
 
-```tsx
-import { fieldErrorId } from "@y-core/forge/ui/core";
+### `cn`, `asClass`, and `cva`
 
-<Input name="email" type="email" aria-describedby={fieldErrorId("email")} />
-```
-
-`FormField.Error` renders nothing when its child is `null`, `false`, or empty, so it is safe to include
-unconditionally.
-
-#### `Field` — layout primitive
-
-`Field` is distinct from `FormField`. Use `Field` for settings rows and labelled controls that are not
-validated form fields; use `FormField` when you need `name` / `invalid` / error / description wiring.
+`cn(...classes)` is variadic over `string | false | null | undefined` — it drops falsy entries, resolves conflicting
+Tailwind utilities in favour of the later argument, and joins the rest with a space. `cn("h-full", "h-5")` is `"h-5"`;
+`cn("h-full", "hover:h-5")` keeps both, because a modifier is part of the conflict key. Utilities outside forge's
+conflict table pass through untouched ([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md)
+§3d). `asClass(cls)` narrows an untyped JSX `class` prop to `string | undefined`. `cva(config)` builds a variant
+function from `{ base?, variants?, defaultVariants? }`, callable with a variant map plus an optional `class` override
+that composes last through `cn`:
 
 ```tsx
-import { Field, Slider, Select } from "@y-core/forge/ui/core";
-
-<Field label="Field of view"><Slider min={10} max={120} value={50} output /></Field>
-<Field label="Device" orientation="horizontal"><Select name="device" icon={icon}>…</Select></Field>
+<button class={cn(button({ variant: "primary" }), asClass(className), isLoading && "opacity-50")}>Click</button>
 ```
 
-`orientation` is `"vertical"` (default), `"horizontal"`, or `"responsive"`.
+### `Turnstile` — server-rendered CAPTCHA mount point
 
-#### `Button` — `asChild`
-
-Pass `asChild` to merge the button's classes and forwarded props onto a single JSX element child (an
-`<a>`, for example) via `cloneElement`, instead of rendering a `<button>`:
-
-```tsx
-import { Button } from "@y-core/forge/ui/core";
-
-<Button asChild variant="ghost"><a href="/docs">Docs</a></Button>
-```
-
-`asChild` requires **exactly one JSX element child**. A string, number, fragment, array, or empty
-child is a programming error and `Button` **throws** — it does not silently degrade. Keep the child a
-single element (wrap dynamic content yourself before passing it).
-
-#### Icons — `createIcon`
-
-Several components (`Select`, `Spinner`, and the chrome `ThemeToggle`, `Navbar`, and `Toolbar`) render
-an icon and accept an `icon` prop typed as `ForgeIcon<Name>`. Bind your app's sprite once with
-`createIcon` and pass it at each call site:
-
-```tsx
-import { createIcon, Select, Spinner } from "@y-core/forge/ui/core";
-
-// Bind the sprite URL once. Without a meta map, `name` is `string` (permissive).
-const AppIcon = createIcon("/assets/icons.svg");
-
-<Select name="country" icon={AppIcon}>
-  <Select.Option value="us">United States</Select.Option>
-  <Select.OptGroup label="Europe">
-    <Select.Option value="uk">United Kingdom</Select.Option>
-  </Select.OptGroup>
-</Select>
-<Spinner icon={AppIcon} size="md" />
-```
-
-`createIcon(sprite)` without a `meta` map yields a permissive `ForgeIcon<string>` for apps whose icon
-set is dynamic; a `ForgeIcon<string>` is assignable to any narrower `ForgeIcon<Name>` by
-contravariance, so the same `AppIcon` can satisfy `ThemeToggle`'s `ForgeIcon<"sun"|"moon"|"monitor">`
-or `Select`'s `ForgeIcon<"chevron-down">`.
-
-By default an icon is decorative (`aria-hidden="true"`, no accessible name). Pass `aria-label` to turn
-it into a labelled graphic — the `<svg>` then emits `role="img"` with that label and drops
-`aria-hidden`, so screen readers announce it:
-
-```tsx
-<AppIcon name="download" aria-label="Download report" />
-// → <svg role="img" aria-label="Download report">…</svg>
-```
-
-#### `cn`, `asClass`, and `cva` — class utilities
-
-`cn`, `asClass`, and `cva` are ratified `@public` utilities. `cn(...classes)` is variadic over
-`string | false | null | undefined` — it drops falsy entries, resolves conflicting Tailwind
-utilities in favour of the later argument, and joins what survives with a space (use short-circuit
-expressions for conditionals; it does not interpret arrays or objects). So `cn("h-full", "h-5")` is
-`"h-5"`, while `cn("h-full", "hover:h-5")` keeps both — a modifier is part of the conflict key.
-Utilities outside forge's conflict table pass through untouched and stylesheet order still decides
-between them; see [`UI_SSR_COMPONENTS.md`](../../.decisions/UI_SSR_COMPONENTS.md) §3d for the
-coverage boundary. `asClass(cls)` narrows an untyped JSX `class` prop to `string | undefined` — a
-type guarantee only, independent of precedence. `cva(config)` is the class-variance authority —
-build a variant function once from a `{ base?, variants?, defaultVariants? }` object, then call it
-with a variant map (plus an optional `class` override, which composes last through `cn` and
-therefore genuinely overrides) to resolve a class string:
-
-```tsx
-import { cn, asClass, cva } from "@y-core/forge/ui/core";
-
-const button = cva({
-  base: "inline-flex items-center rounded-md font-medium",
-  variants: {
-    variant: { primary: "bg-primary text-white", outline: "border border-input bg-transparent" },
-    size: { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-base" },
-  },
-  defaultVariants: { variant: "primary", size: "md" },
-});
-
-<button class={cn(button({ variant: "outline" }), asClass(className), isLoading && "opacity-50")}>Click</button>
-```
-
-#### `Turnstile` — server-rendered CAPTCHA mount point
-
-`Turnstile` renders a `[data-ref='turnstile']` container (with `data-sitekey` / `data-size`) holding a
-hidden `[data-ref='turnstile-fallback']` alert. Place it **inside** the `<form>` so the token input
-Cloudflare injects is submitted with it, then pair it with the arg-less `mountTurnstile()` controller
-from `@y-core/forge/ui/client`, which owns rendering and the widget lifecycle. It deliberately omits
-Cloudflare's `cf-turnstile` auto-render class so the lifecycle stays deterministic.
-
-```tsx
-import { Form, Turnstile, Button } from "@y-core/forge/ui/core";
-
-<Form hx-post="/api/contact" hx-target="#result">
-  {/* form fields */}
-  <Turnstile siteKey={turnstileSiteKey} size="normal" />
-  <Button type="submit">Send</Button>
-</Form>
-```
+`Turnstile` renders a `[data-ref='turnstile']` container (with `data-sitekey` / `data-size`) holding a hidden fallback
+alert. Place it **inside** the `<form>` so the token input Cloudflare injects is submitted with it; nothing else is
+required, because the container stamps `TURNSTILE_SCOPE` and `resume()` mounts the controller.
 
 | Prop | Type | Default | Notes |
 |---|---|---|---|
 | `siteKey` | `string` | — | Required; injected server-side from the Worker env, never hardcoded. |
 | `size` | `"compact" \| "flexible" \| "normal"` | `"normal"` | Widget size hint (`data-size`). |
 | `children` | `JSXNode` | generic prompt | Optional; overrides the default hidden fallback message. |
-
-### Integration Guide
-
-Render component trees inside a route handler with `renderToString` (`@y-core/forge/jsx`) and return
-them through `fragmentResponse` or `htmlResponse` (`@y-core/forge/http`):
-
-```tsx
-import { renderToString } from "@y-core/forge/jsx";
-import { fragmentResponse } from "@y-core/forge/http";
-import { Alert } from "@y-core/forge/ui/core";
-
-// HTMX fragment — no DOCTYPE, swapped into an existing document.
-return fragmentResponse(await renderToString(
-  <Alert variant="destructive">
-    <Alert.Title>Submission Failed</Alert.Title>
-    <Alert.Description>{message}</Alert.Description>
-  </Alert>,
-));
-```
-
-URL-valued attributes (`href`, `src`, `action`, `formaction`, …) are scheme-sanitized by the renderer,
-so a `javascript:`-style value collapses to `"#"` in the emitted HTML.
-
-### Types
-
-`AlertVariant`, `BadgeVariant`, `ToastVariant`, `ToastPosition`, `FieldDescriptor`, `ForgeIcon`,
-`IconProps`, `TurnstileProps`.
 
 ---
 
@@ -616,46 +261,36 @@ so a `javascript:`-style value collapses to `"#"` in the emitted HTML.
 > Import path: `@y-core/forge/ui/core/client` → `src/ui/core/client.ts`
 > **Browser-only, side-effect import.** esbuild entry points only. No exports.
 
-### Features
-
-- Registers the `toast` and `alert` resumable scopes — the client halves of the `Toast` and `Alert`
-  primitives, and of every flash message rendered through `Flash` / `FlashContainer` / `FlashOob`.
-- Registers the six **setup-only** scopes that give the keyboard-driven primitives their behaviour:
-  `toolbar`, `menu`, `tabs`, `tooltip`, `collapsible` and `number-field`, plus the `toggle` action
-  scope.
-
-### Usage
-
 ```typescript
-// src/client/main.ts (esbuild entry point):
-import "@y-core/forge/ui/core/client";  // side-effect: registers the scopes
+// src/client/main.ts (esbuild entry point) — every island is imported this way:
+import "@y-core/forge/ui/core/client";   // side-effect: registers the scopes
 import { resume } from "@y-core/forge/ui/client";
 
 resume();
 ```
 
-**This import is not optional if the app renders toasts or dismissible alerts.** Without it the
-components render correctly but never dismiss, and `resume()` `console.warn`s about the unregistered
-`data-scope` — the failure is silent in the markup and loud only in the console.
-
-### Core Components & APIs
+**This import is not optional if the app renders any scoped component.** Without it the components render correctly
+but never behave, and `resume()` `console.warn`s about the unregistered `data-scope` — silent in the markup, loud only
+in the console.
 
 | Scope | Contract |
 |---|---|
-| `toast` | `eager: true` — hydrates at `resume()` so a server-rendered toast can auto-close without waiting for a click. State key `duration` (milliseconds, serialized into `data-state` by `Toast`); a positive value schedules removal. One action, `dismiss`, which removes the toast root. |
+| `toast` | `eager: true`. State key `duration` (ms, serialized by `Toast`); a positive value schedules removal on the toast's own realm clock. One action, `dismiss`, which removes the toast root. |
 | `alert` | Lazy. No state. One action, `dismiss`, which removes the alert root. |
-| `toolbar` | `eager: true`. Mounts roving focus over `[data-toolbar-item]`. Reads the root's `data-orientation` to choose which arrows navigate, so a vertical rail needs no second declaration on the client. |
-| `menu` | `eager: true`. Mounts the menu keyboard layer and transition state on the popup. |
-| `tabs` | `eager: true`. Mounts selection, panel visibility and roving focus over the tablist. |
-| `tooltip` | `eager: true`. Hover and focus intent on a `popover="hint"` surface. |
-| `collapsible` | `eager: true`. Publishes the `<details>` element's own open state as state attributes — it never decides it. |
-| `number-field` | `eager: true`. Wires the steppers to the input's native `stepUp` / `stepDown`. |
-| `toggle` | Lazy. One action, `toggle`, which flips `aria-pressed` and `data-pressed` together. |
+| `toolbar` | `eager`. Roving focus over `[data-toolbar-item]`, reading the root's `data-orientation`, plus its triggers' expanded state. |
+| `menu` | `eager`. The popup's keyboard layer: roving focus with typeahead, ArrowRight/ArrowLeft into and out of a submenu, and focus returned to the opener on close. |
+| `popover` | `eager`. Maintains each invoker's `aria-expanded` against the popup it names. |
+| `tabs` | `eager`. Selection, panel visibility and roving focus over the tablist. |
+| `tooltip` | `eager`. Hover and focus intent on a `popover="hint"` surface. |
+| `toggle-group` | `eager`. The roving focus a checkbox group lacks, over `TOGGLE_GROUP_ITEM_SELECTOR`. |
+| `number-field` | `eager`. Wires the steppers to the input's native `stepUp` / `stepDown`. |
+| `slider` | Lazy. One action, `sync`, which writes the `<output>` readout from the input. |
+| `dialog` | `eager`. Opens a `[data-open-modal]` dialog with `showModal()` on resume. |
+| `turnstile` | `eager`, and the scope root *is* the widget. `setup` mounts the CAPTCHA controller on it ([`UI_CLIENT_RUNTIME.md`](../../.decisions/implementation/UI_CLIENT_RUNTIME.md) §2c). |
 
-`toast` and `alert` remove their own root element, so there is nothing to tear down and no handle to
-hold. **Every other scope here is `eager` out of necessity, not preference:** its markup carries no
-`data-on-*` action, so a lazy scope would have nothing that could ever resume it and the widget
-would sit inert on the page.
+`toast` and `alert` remove their own root, so there is nothing to tear down. **Every other scope here is `eager` out
+of necessity, not preference:** its markup carries no `data-on-*` action, so a lazy scope would have nothing that
+could ever resume it.
 
 ---
 
@@ -663,72 +298,46 @@ would sit inert on the page.
 
 > Import path: `@y-core/forge/ui/controls` → `src/ui/controls/mod.ts`
 
-### Features
-
-Pre-bound wrappers over the `ui/core` primitives — the "bound decoration" layer. The barrel exports
-`Input`, `Textarea`, `Select`, `Slider`, `Switch`, and `ToggleGroup`. Each control mirrors its
-`ui/core` sibling in name and prop shape, adding only a required `bind` prop (`data-field`) and an
-optional `action` prop (`data-on-<event>` value). This static barrel is the **only** bound-control
-API — there is no runtime factory to call. The five single-element wrappers are built from an
-**internal** `createBoundControl(Core, { event, defaultAction })` helper (`@internal`, not exported);
-`ToggleGroup` is bespoke because its binding lives on the `.Item` sub-component. Import `Switch` from
-`@y-core/forge/ui/controls` and it's already decorated; import from `@y-core/forge/ui/core` for the
-undecorated primitive. Alias to disambiguate if both are in scope:
-
-```tsx
-import { Switch } from "@y-core/forge/ui/controls";
-import { Switch as SwitchPrimitive } from "@y-core/forge/ui/core";
-```
+Pre-bound wrappers over the `ui/core` primitives — the "bound decoration" layer. Each mirrors its `ui/core` sibling in
+name and prop shape, adding a required `bind` prop (`data-field`) and an optional `action` prop (`data-on-<event>`
+value). This static barrel is the **only** bound-control API; there is no runtime factory
+([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §2c). Alias on import to disambiguate
+when a bound control and its primitive are both in scope.
 
 ### Usage
 
 ```tsx
-import { Switch, Slider, Select, ToggleGroup } from "@y-core/forge/ui/controls";
-import { bindField, bindGroup, registerScope, signalRecord } from "@y-core/forge/ui/client";
+import { Slider, Switch } from "@y-core/forge/ui/controls";
+import { bindControls, registerScope, signalRecord } from "@y-core/forge/ui/client";
 import { Resumable } from "@y-core/forge/ui/server";
 
-// --- Server (SSR view) ---
+// Server:
 <Resumable name="chrome" state={settings}>
   <Switch bind="gridVisible" checked={settings.gridVisible}>Grid</Switch>
   <Slider bind="fov" min={1} max={120} value={settings.fov} output />
-  <Select bind="language" icon={AppIcon}>
-    <Select.Option value="en">English</Select.Option>
-  </Select>
-  <ToggleGroup aria-label="Projection">
-    <ToggleGroup.Item bind="projection" value="perspective" pressed={settings.projection === "perspective"}>
-      Perspective
-    </ToggleGroup.Item>
-    <ToggleGroup.Item bind="projection" value="parallel" pressed={settings.projection === "parallel"}>
-      Parallel
-    </ToggleGroup.Item>
-  </ToggleGroup>
 </Resumable>
 
-// --- Client ---
+// Client:
 const sig = signalRecord(settings);
-registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
+registerScope("chrome", { eager: true, setup: ({ root }) => bindControls(root, sig) });
 ```
 
-### Core Components & APIs
+### Exports
 
 | Export | Wraps | Binding |
 |---|---|---|
-| `Input` | `core/Input` | `bind` → `data-field`; `onInput` → `action` (default `"bindField"`) |
-| `Textarea` | `core/Textarea` | `bind` → `data-field`; `onInput` → `action` (default `"bindField"`) |
-| `Switch` | `core/Switch` | `bind` → `data-field`; `onChange` → `action` (default `"bindField"`) |
-| `Slider` | `core/Slider` | `bind` → `data-field`; `onInput` → `action` (default `"bindField"`) |
-| `Select` | `core/Select` | `bind` → `data-field`; `onChange` → `action` (default `"bindField"`); forwards required `icon`; re-exports `.Option`, `.OptGroup` |
-| `ToggleGroup` | `core/ToggleGroup` | Bespoke (not `createBoundControl`-built): pass-through root; `.Item` adds `bind` → `data-field`, `value` → `data-value`, `onClick` → `action` (default `"bindGroup"`) |
+| `Input` | `core/Input` | `bind` → `data-field` |
+| `Textarea` | `core/Textarea` | `bind` → `data-field` |
+| `Switch` | `core/Switch` | `bind` → `data-field` |
+| `Slider` | `core/Slider` | `bind` → `data-field` |
+| `Select` | `core/Select` | `bind` → `data-field`; forwards required `icon`; re-exports `.Option`, `.OptGroup` |
+| `ToggleGroup` | `core/ToggleGroup` | Bespoke: pass-through root; `.Item` adds `bind` → `data-field`, `value` → `data-value` |
 
-**`bind` vs `field`:** the `bind` prop is orthogonal to the existing `field?: FieldDescriptor`. `field`
-wires `id` / `name` / `aria-*` for form accessibility; `bind` wires `data-field` + `data-on-<event>`
-for signal binding. Both may coexist on one control.
-
-**`ToggleGroup.Item` + `bindGroup`:** the `.Item` takes a required `value` prop stamped as `data-value`.
-Pair it with the client-side `bindGroup(signals)` action, which reads `data-field` + `data-value` on
-click and writes the raw string into the matching signal, bypassing `parseControlValue` (button groups
-can't express boolean/number values). The `bindField` action handles `Input` / `Textarea` / `Switch`
-/ `Slider` / `Select`.
+**No control stamps a `data-on-*` action.** `bindControls` listens once on the scope root, so a bound control's markup
+names its field and nothing else — which is why the scope must be `eager: true`. **`bind` vs `field`:** `field` wires
+`id` / `name` / `aria-*` for form accessibility, `bind` wires `data-field` for signal binding, and both may coexist.
+`ToggleGroup.Item`'s required `value` is stamped as `data-value`, which is how `bindControls` tells one member from
+another.
 
 ---
 
@@ -736,67 +345,116 @@ can't express boolean/number values). The `bindField` action handles `Input` / `
 
 > Import path: `@y-core/forge/ui/contracts` → `src/ui/contracts/mod.ts`
 > **Runtime-neutral.** Pure data and pure functions — no DOM, no Node built-ins, no side effects.
-> Safe in a Worker, a browser bundle, or a build script.
 
-### Features
+The names forge's SSR components and its browser controllers **both** write, declared once so they cannot drift. They
+are published rather than internal because an app consuming forge's components addresses the same DOM, and its only
+other option is to re-type each name as a string literal in a repository forge's gate cannot see. **Import the
+modules, not the barrel, in code you bundle** — forge's own components import each module directly, so a bundle
+retains one table rather than fifteen.
 
-The names forge's SSR components and its browser controllers **both** write, declared once so they
-cannot drift. A state attribute or a scope name is written in two places that cannot see each other —
-a `.tsx` running on the Worker and a `.ts` running in the browser — and drift between them is
-*silent*: the selector stops matching, so the component looks unstyled rather than broken.
-
-**That argument reaches one step further out, which is why these are published rather than internal.**
-An app consuming forge's components has to address the same DOM — stamp a `data-scope`, select on
-`data-open`, mark an element `data-toolbar-item`. With no export its only option is to re-type each
-name as a string literal, making it a third writer of the same attribute, in a repository forge's gate
-cannot see.
-
-### Usage
-
-```typescript
-import { applyStateAttrs, MENU_ITEM_SELECTOR, SCOPE_EVENTS, TOOLBAR_ITEM_ATTR } from "@y-core/forge/ui/contracts";
-
-// Reconcile a live element's published state — never hand-write `data-open` / `data-closed`.
-applyStateAttrs(panel, { open: true });
-
-// Build a row the Menu controller will navigate, with nothing forge-specific to remember.
-row.setAttribute("role", "menuitem");
-row.matches(MENU_ITEM_SELECTOR);   // → true
-```
-
-**Import the modules, not the barrel, in code you bundle.** `@y-core/forge/ui/contracts` is a
-convenience for a consumer; forge's own components import each module directly
-(`../contracts/state-attrs`) so a bundle retains one table rather than eight.
-
-### Core Components & APIs
+### Exports
 
 | Export | Kind | Description |
 |---|---|---|
-| `STATE_ATTRS` | `const` | Every state attribute forge emits, keyed by state name. Adding a styling hook means adding it here first — a component emitting one outside the table fails a conformance test. |
-| `stateAttrs(state)` | function | Builds the attributes for an SSR element: `<div {...stateAttrs({ open, side, align })}>`. A falsy presence state emits nothing at all. |
-| `applyStateAttrs(el, state)` | function | The browser half. Only the keys present in `state` are touched, and within a touched key reconciliation is total — `open: false` clears `data-open` **and** writes `data-closed` in one call. |
-| `SCOPE_EVENTS` | `const` tuple | `["click", "input", "change", "submit"]` — the events a resumable scope delegates on. **There is no `keydown`, by decision:** a composite controller owns keyboard at its own widget root, because arrow keys are scoped to a widget, not to a page region. |
-| `scopeAttrs(props)` | function | Builds typed `data-on-<event>` delegation attributes for a scope — the emitter half of `SCOPE_EVENTS`, one attribute per entry. |
-| `MENU_SCOPE`, `MENU_ITEM_SELECTOR` | `const` | The Menu popup's scope name, and its items **by ARIA role** rather than by a forge marker — so a row built in the browser is navigable the moment it is correctly roled. |
-| `TOOLBAR_SCOPE`, `TOOLBAR_ITEM_ATTR`, `TOOLBAR_ITEM_SELECTOR` | `const` | The Toolbar root's scope name and its roving-focus stop marker. An explicit marker rather than a `data-slot^='toolbar-'` prefix match, because `Toolbar.Group` and `Toolbar.Separator` are toolbar slots that must **not** be focus stops. |
-| `TABS_SCOPE`, `TAB_SELECTOR`, `TABLIST_SELECTOR` | `const` | Tabs' scope name and its two role selectors. |
-| `TOGGLE_SCOPE`, `COLLAPSIBLE_SCOPE`, `TOOLTIP_SCOPE`, `NUMBER_FIELD_SCOPE` | `const` | The remaining scope names registered by `@y-core/forge/ui/core/client`. |
-| `TURNSTILE`, `TURNSTILE_SCRIPT_SRC`, `TURNSTILE_SCRIPT_TIMEOUT_MS` | `const` | The `data-ref` values, script URL and load budget shared by `<Turnstile>` and `mountTurnstile()`. |
+| `STATE_ATTRS` | const | Every state attribute forge emits, keyed by state name. A component emitting one outside the table fails a conformance test. |
+| `stateAttrs(state)` | function | Builds the attributes for an SSR element: `<div {...stateAttrs({ selected, side, align })}>`. A falsy presence state emits nothing. |
+| `applyStateAttrs(el, state)` | function | The browser half. Only keys present in `state` are touched, and a touched key is reconciled in full. |
+| `StateAttrName`, `StateAttrsProps` | types | One declared attribute name, and the states a component may declare. |
+| `Orientation`, `Side`, `Align` | types | Layout axis (`responsive` = vertical until wide enough), popup side (physical or logical spelling), popup alignment. |
+| `SCOPE_EVENTS` | const tuple | `["click", "input", "change", "submit"]` — the events a resumable scope delegates on. **There is no `keydown`, by decision:** a composite controller owns keyboard at its own widget root. |
+| `ScopeEvent` | type | One of the delegated events. |
+| `scopeAttrs(props)`, `ScopeAttrsProps` | function, type | Typed `data-on-<event>` delegation attributes for a scope, keyed by action name. |
+| `BIND_TEXT_ATTR`, `bindTextAttr(field)` | const, function | Names an element's text content as a view of one signal, and builds the attribute. |
+| `BIND_ATTR_ATTR`, `bindAttrAttr(attr, field)` | const, function | Names one attribute as a view of one signal, spelled `attribute:field`. |
+| `parseBindAttr(value)` | function | Splits a `data-bind-attr` value into `{ attribute, field }`, or `null` when malformed. |
+| `ACTIVE_COMPOSITE_ITEM` | const | Marks which item of a roving-focus composite holds the tab stop on mount. |
+| `MENU_SCOPE`, `MENU_ITEM_SELECTOR`, `MENU_RADIO_SELECTOR`, `MENU_GROUP_SELECTOR` | const | The Menu popup's scope, and its rows **by ARIA role** rather than a forge marker — so a row built in the browser is navigable the moment it is correctly roled. |
+| `MENU_ITEM_CLASS`, `menuItemAttrs(opts)`, `MenuItemAttrsOptions`, `MenuAction` | const, function, types | The class every menu row wears, every attribute a client-built row needs (the element must be a `<button>`), and the actions a checkable row names. |
+| `TOOLBAR_SCOPE`, `TOOLBAR_ITEM_ATTR`, `TOOLBAR_ITEM_SELECTOR` | const | The Toolbar root's scope and its roving-focus stop marker — an explicit marker, because `Toolbar.Group` and `Toolbar.Separator` are toolbar slots that must **not** be focus stops. |
+| `TABS_SCOPE`, `TAB_SELECTOR`, `TABLIST_SELECTOR`, `TABS_MOUNTED_ATTR` | const | Tabs' scope, its two role selectors, and the marker retiring the `:target` fallback once the controller mounts. |
+| `TOGGLE_GROUP_SCOPE`, `TOGGLE_GROUP_ITEM_SELECTOR` | const | The ToggleGroup scope, and the focusable element inside each `.Item`. |
+| `TOOLTIP_SCOPE`, `TOOLTIP_MOUNTED_ATTR` | const | The Tooltip scope, and the marker retiring the CSS-only hover fallback. |
+| `DIALOG_SCOPE`, `DIALOG_OPEN_MODAL_ATTR` | const | The Dialog scope, and the marker for a dialog the client opens with `showModal()`. |
+| `POPOVER_SCOPE`, `POPOVER_COORDS_ATTR`, `ANCHOR_X_PROPERTY`, `ANCHOR_Y_PROPERTY`, `invokerAttrs(id)` | const, function | The Popover scope, the marker for a coordinate-placed popup, the two custom properties `openPopoverAt` writes, and an invoker's SSR expanded-state attributes. |
+| `SLIDER_SCOPE`, `SliderAction` | const, type | The scope a readout `Slider` stamps, and the action its input names. |
+| `NUMBER_FIELD_SCOPE` | const | The NumberField root's scope. |
+| `NAVBAR_FILTERS_EVENT` | const | The document event the `navbar` scope listens for to re-sync its auth filters — dispatch it with the new token array as `detail`. |
+| `TURNSTILE`, `TURNSTILE_SCOPE`, `TURNSTILE_SCRIPT_SRC`, `TURNSTILE_SCRIPT_TIMEOUT_MS` | const | The `data-ref` values, the scope name, the script URL and the load budget shared by `<Turnstile>` and its controller. |
 
-**Boolean states are emitted by presence with an empty value — `data-open=""`, never `"true"`.**
-`[data-open]` is a cheaper and more honest selector than `[data-open="true"]`. `aria-*` keeps its
-`"true"` / `"false"` string form because WAI-ARIA requires it; the whole point of `data-pressed`
-beside `aria-pressed` is that CSS should not have to read ARIA.
+**Boolean states are emitted by presence with an empty value — `data-selected=""`, never `"true"`;** `aria-*` keeps
+its string form because WAI-ARIA requires it
+([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §4a/§4b). **Open state is deliberately
+absent:** `Dialog`, `Popover`, `Accordion` and `Collapsible` are native, so `[open]` and `:popover-open` are the
+platform's and forge neither mirrors nor republishes them. Consuming apps and their tests should match that grammar —
+assert on presence (`toHaveAttribute("data-selected", "")`) and on the platform's own state.
 
-> **Consuming apps: match that grammar.** An app that writes `data-open="true"` onto a forge component
-> puts one attribute name with two value grammars into a single document — precisely the drift this
-> namespace exists to prevent, re-created one repository further out. Assert on presence
-> (`toHaveAttribute("data-open", "")`), and pair it with the platform's own state
-> (`toHaveJSProperty("open", true)`) where the element has one.
+---
 
-### Types
+## `@y-core/forge/ui/contracts/theme`
 
-`StateAttrName`, `StateAttrsProps`, `Orientation`, `Side`, `Align`, `TransitionState`, `ScopeEvent`, `ScopeAttrsProps`.
+> Import path: `@y-core/forge/ui/contracts/theme` → `src/ui/contracts/theme/mod.ts`
+> **Runtime-neutral.** Pure data and pure functions — safe in a Worker, a browser bundle, or a
+> build script.
+
+The colour model a forge scheme is generated from, and the contrast audit the gate and the theme customiser share. It
+sits in `ui/contracts` because three consumers read the same declarations: the customiser page, the gate's contrast
+check ([`config/steps.ts`](../../config/steps.ts)), and the scheme files. Chroma travels in **thousandths** through
+`DIALS` and `DialValues`, and `buildTheme` converts; a dial's own range is on its `Dial` record, so a reader clamps
+against the declaration. The generation pipeline is
+[`THEME_GENERATION.md`](../../.decisions/implementation/THEME_GENERATION.md)'s.
+
+```typescript
+const theme = buildTheme(dials);   // both families, both modes
+const css = schemeCss(theme, dials);  // a paste-ready theme-*.css
+const ratios = liveRatios(theme);     // every audited pair, measured
+```
+
+### Exports
+
+Declared across [`color.ts`](./contracts/theme/color.ts), [`contrast-pairs.ts`](./contracts/theme/contrast-pairs.ts),
+[`contrast-accepted.ts`](./contracts/theme/contrast-accepted.ts) and
+[`theme-contract.ts`](./contracts/theme/theme-contract.ts).
+
+| Export | Kind | Description |
+|---|---|---|
+| `Mode` | type | `"light" \| "dark"` — the two blocks a scheme file declares. |
+| `Scale<T>` | type | A twelve-position scale, as a tuple rather than an array. |
+| `Oklch` | type | A colour in OKLCh: lightness 0–1, chroma, hue in degrees. |
+| `Ramp` | type | The fixed half of a scale — per-step lightness, and per-step chroma as weights in 0–1. |
+| `Dials` | type | The two free parameters: `hue` in degrees, `chroma` as the ramp's **peak**. |
+| `ScaleFamily` | type | `"gray" \| "accent"` — the two scales a generated scheme declares. |
+| `GRAY_RAMP` | const | The neutral scale's lightness, and the tint shape every scheme applies over it, per mode. |
+| `ACCENT_RAMP` | const | The accent scale's lightness, and the chroma shape a scheme's accent dials apply over it. |
+| `CHROMA_MAX` | const | The highest peak chroma each family's dial reaches. |
+| `buildScale(ramp, dials)` | function | Twelve hex steps: the ramp's fixed lightness, its shape scaled by the chroma dial, at one hue. |
+| `toSrgbGamut(l, c, h)` | function | The nearest OKLCh coordinate sRGB can represent, reached by reducing chroma alone. |
+| `oklchCss(color)` | function | An OKLCh coordinate as the `oklch()` a scheme file carries. |
+| `oklchToHex(l, c, h)` / `hexToOklch(hex)` | function | The two directions; hue is noise as chroma nears zero. |
+| `relativeLuminance(hex)` | function | WCAG relative luminance of a `#rrggbb` colour. |
+| `contrastRatio(a, b)` | function | The order-independent WCAG contrast ratio between two opaque `#rrggbb` colours, 1–21. |
+| `CONTRAST_PAIRS` | const | Every foreground/background token pair forge measures, with the criterion each is bound by. |
+| `ContrastPair`, `ContrastSide` | types | One audited pair, and one side of it. |
+| `Criterion`, `CRITERION` | type, const | `"1.4.3" \| "1.4.11"`, and each criterion's floor and title. |
+| `ScaleSide`, `ScalePair`, `scalePairs()` | type, type, function | A side — and a pair — resolvable on a generated scale, and the narrowed subset. |
+| `SideStep`, `sideStep(side, mode)` | type, function | A step index, or one per mode where the token re-points, and the step a side resolves to in one mode. |
+| `ACCENT_CONTRAST` | const | `--accent-contrast`: the gray ramp's first step in light and its last in dark, one token either way. |
+| `ACCEPTED_CONTRAST`, `AcceptedContrastRow` | const, type | The decorative pairs WCAG 1.4.11 does not bind, each pinned at its measured value with a mandatory reason. |
+| `DIALS`, `Dial`, `DialValues` | const, type, type | The five levers in render order, one lever's declaration (what it writes, what it is called, where it may travel), and every dial's value keyed by field. |
+| `leverRows(dials?)` | function | Groups `DIALS` into rows: consecutive dials sharing a `group` ride one row. |
+| `dialQuery(dials)` | function | The dials as a query string — the customiser's whole state, so a scheme is shareable as a link. |
+| `buildTheme(dials)` | function | Both families in both modes — everything a scheme declares, from the five numbers. |
+| `GeneratedTheme` | type | What `buildTheme` produces. |
+| `schemeCss(theme, dials)` | function | The scheme as a `theme-*.css` file, ready to paste and standalone-complete. |
+| `scaleVars(family, scales)` | function | One family's twelve declarations as `[property, value]` pairs, each already mode-complete. |
+| `stepProperty(family, step)` | function | The custom property a 0-indexed step is declared under — `--gray-11`. |
+| `lightDark(light, dark)` | function | One value covering both modes, collapsed to a bare value where the two agree. |
+| `RADIUS_PROPERTY` | const | `--radius`, which the customiser drives directly rather than through a scale. |
+| `SCHEME_PRESETS`, `SchemePreset`, `matchPreset(dials)`, `PRESET_FIELDS` | const, type, function, const | The four shipped schemes as dial positions, the shipped scheme a set of dials reproduces (or `undefined` between presets), and the only fields the picker drives. |
+| `PRESET_PARAM`, `PRESET_ACTION`, `PRESET_CUSTOM` | const | The input-only query parameter a preset travels under (an explicit `gh`/`gc` beside it wins), the scope action a pick fires, and the option value standing for "no shipped scheme reproduces these dials". |
+| `liveRatios(theme)`, `LiveRatio`, `ratioKey(token, bg, mode)` | function, type, function | Every audited pair a generated scheme can actually be measured on, in both modes; one computed cell; and the `data-ratio` value that cell carries. |
+| `SCALE_ROWS`, `SCALE_ROW_ATTR`, `STEP_SEGMENTS`, `HEX_ATTR` | const | The four preview rows (each generated scale on the surface it belongs to), the attribute marking one, the five bands the twelve steps are drawn under, and the attribute on a printed hex. |
+| `CUSTOMISE_SCOPE`, `COPY_SCOPE`, `COPY_ACTION`, `COPY_TARGETS`, `CopyTarget` | const, type | The lever panel's scope, the output block's scope, the action every copy button fires, and the copy controls with the element each reads. |
+| `COPY_TARGET_ATTR`, `COPY_LABEL_ATTR`, `COPY_STATUS_ATTR`, `COPY_CONFIRM_MS` | const | A copy button's target id, its swappable label span, its `role='status'` span, and how long it reads "Copied". |
 
 ---
 
@@ -804,84 +462,43 @@ beside `aria-pressed` is that CSS should not have to read ARIA.
 
 > Import path: `@y-core/forge/ui/assets` → `src/ui/assets/mod.ts`
 
-### Features
-
-Forge owns all 7 of its UI glyphs: `spinner`, `chevron-down`, `hamburger`, `close` (in
-`src/ui/assets/core/`) plus `sun`, `moon`, `monitor` (in `src/ui/assets/theme/`). The asset manifest
-exposes them as a `SpriteSource[]` so the consumer's build config never has to hand-list forge's
-internal filenames or reach into `node_modules` paths.
-
-### Usage
-
-```typescript
-import { forgeUiSpriteSources } from "@y-core/forge/ui/assets";
-import { defineAssets } from "@y-core/forge/assets";
-
-export default defineAssets({
-  spriteSources: [
-    ...forgeUiSpriteSources(),          // forge's 7 glyphs, self-described
-    { path: "./src/assets/icons", files: ["tool-select.svg", "tool-push-pull.svg", ...] },
-  ],
-  // …
-});
-```
-
-`forgeUiSpriteSources()` returns two `SpriteSource` objects with absolute paths resolved via
-`import.meta.url` — safe regardless of where forge is installed in `node_modules`.
-
-### Core Components & APIs
+Forge owns all of its UI glyphs — `spinner`, `chevron-down`, `hamburger`, `close`, `panel-open`, `panel-close` in `src/ui/assets/core/`, plus
+`sun`, `moon`, `monitor` in `src/ui/assets/theme/` — and the manifest exposes them as a `SpriteSource[]`, so a
+consumer's build config never hand-lists forge's internal filenames:
+`defineAssets({ spriteSources: [...forgeUiSpriteSources(), myOwnSprites] })`.
 
 | Export | Kind | Description |
 |---|---|---|
-| `forgeUiSpriteSources()` | function | Returns `SpriteSource[]` for all forge UI glyphs. Spread into `spriteSources` in your assets config. |
-| `FORGE_UI_ICON_NAMES` | `const` tuple | The 7 glyph names as a `readonly` tuple — use for type narrowing or validation. |
-| `ForgeUiIconName` | type | `"spinner" | "chevron-down" | "hamburger" | "close" | "sun" | "moon" | "monitor"`. |
-| `parseSpriteGlyphs`, `loadSpriteGlyphs` | functions | Re-exported from `ui/assets/glyphs` — see below for when to import them from the direct subpath instead. |
+| `forgeUiSpriteSources()` | function | `SpriteSource[]` for every forge UI glyph, with absolute paths resolved via `import.meta.url`. |
+| `FORGE_UI_ICON_NAMES` | const tuple | The glyph names as a `readonly` tuple — use for type narrowing or validation. |
+| `ForgeUiIconName` | type | The union of those names. |
+| `parseSpriteGlyphs`, `loadSpriteGlyphs` | functions | Re-exported from `ui/assets/glyphs` — import them from the direct subpath in client code. |
 
 ---
 
 ## `@y-core/forge/ui/assets/glyphs`
 
 > Import path: `@y-core/forge/ui/assets/glyphs` → `src/ui/assets/glyphs.ts`
-> **Runtime-neutral.** No DOM and no Node built-ins — safe in a browser bundle, a Worker, or a build
-> script. `loadSpriteGlyphs` needs a `fetch` implementation.
+> **Runtime-neutral.** No DOM and no Node built-ins. `loadSpriteGlyphs` needs a `fetch`.
 
-### Features
+Parses a build-generated SVG sprite into a name-keyed glyph map, so an app can read a glyph's `viewBox` and inner
+markup at runtime — for a CSS custom cursor, an inline `<svg>`, or a canvas draw, none of which can use the
+`<use href="#icon-…">` indirection a `ForgeIcon<Name>` renders. `await loadSpriteGlyphs("/assets/icons.svg")` returns
+`{ [name]: { viewBox, markup } }`.
 
-- Parses a build-generated SVG sprite into a name-keyed glyph map, so an app can read a glyph's
-  `viewBox` and inner markup at runtime — for a CSS custom cursor, an inline `<svg>`, or a canvas
-  draw, none of which can use the `<use href="#icon-…">` indirection a `ForgeIcon` renders.
-
-### Usage
-
-```typescript
-import { loadSpriteGlyphs } from "@y-core/forge/ui/assets/glyphs";
-
-const glyphs = await loadSpriteGlyphs("/assets/icons.svg");   // {} on any failure
-const move = glyphs.move;                                      // { viewBox, markup } | undefined
-```
-
-**Why this subpath exists.** These two functions are also re-exported from
-[`@y-core/forge/ui/assets`](#y-coreforgeuiassets) — but that barrel also exports
-`forgeUiSpriteSources()`, whose module imports `node:path` and `node:url`. Importing the parser from
-the barrel therefore drags Node built-ins into a browser bundle. Import from
-`@y-core/forge/ui/assets/glyphs` in client code and from `@y-core/forge/ui/assets` in build config.
-
-### Core Components & APIs
+**Why this subpath exists.** Both functions are also re-exported from
+[`@y-core/forge/ui/assets`](#y-coreforgeuiassets), whose barrel additionally exports `forgeUiSpriteSources()` — a
+module importing `node:path` and `node:url`. Import the parser here in client code, and from `ui/assets` in build
+config.
 
 | Export | Signature | Description |
 |---|---|---|
-| `parseSpriteGlyphs(svgText, prefix?)` | `GlyphSource` | Parses sprite text into `{ [name]: { viewBox, markup } }`. Only `<symbol>` ids starting with `prefix` (default `"icon-"`) are included, and the key is the bare name (`"move"` for `id="icon-move"`). |
+| `parseSpriteGlyphs(svgText, prefix?)` | `GlyphSource` | Parses sprite text into `{ [name]: { viewBox, markup } }`. Only `<symbol>` ids starting with `prefix` (default `"icon-"`) are included, keyed by the bare name. |
 | `loadSpriteGlyphs(url, prefix?)` | `Promise<GlyphSource>` | Fetches `url` and parses it. |
 
-**Both degrade to `{}` and never throw** — on empty input, unparseable markup, a non-`ok` response,
-or a network error. That is deliberate: a missing glyph map must leave the app on its stylesheet
-default (e.g. the default cursor), not break boot. Callers must handle an absent key rather than
-relying on a rejection.
-
-### Types
-
-`GlyphEntry` (`{ viewBox, markup }`), `GlyphSource` (`Record<string, GlyphEntry>`).
+**Both degrade to `{}` and never throw** — on empty input, unparseable markup, a non-`ok` response, or a network error
+— because a missing glyph map must leave the app on its stylesheet default rather than break boot. **Types:**
+`GlyphEntry` (`{ viewBox, markup }`), `GlyphSource`.
 
 ---
 
@@ -889,300 +506,185 @@ relying on a rejection.
 
 > Import path: `@y-core/forge/ui/client` → `src/ui/client/mod.ts`
 > **Browser-only.** These exports reference `document` / `window` / `localStorage` and throw if
-> imported in Worker-executed SSR code. Restrict imports to your client esbuild entry (`src/client/`).
-
-### Features
-
-- A framework-free reactive signals runtime (`createSignal`, `computed`, `effect`).
-- The resumability-lite island runtime (`registerScope`, `resume`, `resumeScope`) — server-stamped
-  state hydrated on first interaction, zero work at page load.
-- DOM controllers (`mountTurnstile`, `mountScrollSpy`, `mountViewportCollapse`) — each
-  idempotent and returning a cleanup function. `mountTurnstile()` is arg-less and drives the
-  `<Turnstile>` ui/core mount point with a resilient, engagement-gated lifecycle.
-- Navigation runtime for what the server cannot render — `mountScrollSpy` marks the section being
-  read on a fragment nav, `mountViewportCollapse` drives a `<details>` rail from a media query.
-- Generic control↔signal field binding (`bindField`, `bindGroup`, `parseControlValue`, `applyControlValue`).
-- Lazy resource loading (`lazy`, `loadScriptOnEvent`, `loadStylesheet`).
-
-### Usage
+> imported in Worker-executed SSR code. Restrict imports to your client esbuild entry.
 
 ```typescript
-import { mountTurnstile, resume } from "@y-core/forge/ui/client";
+import { resume } from "@y-core/forge/ui/client";
 
-mountTurnstile();         // resilient Cloudflare Turnstile (renders the <Turnstile> mount point)
-resume();                 // install the single delegated island listener
+resume();   // install the delegated island listener, and hydrate every eager scope
 ```
 
 Theme is **not** a controller here — it is a resumable scope registered by
 [`@y-core/forge/ui/chrome/client`](#y-coreforgeuichromeclient).
 
-### Core Components & APIs
+### Exports
 
-#### Signals runtime
-
-```typescript
-import { createSignal, computed, effect } from "@y-core/forge/ui/client";
-
-const count = createSignal(0);
-const doubled = computed(() => count.value * 2);
-effect(() => console.log("doubled:", doubled.value)); // runs immediately, then on change
-count.value = 5;                                       // logs "doubled: 10"
-```
-
-| Export | Signature | Description |
+| Export | Kind | Description |
 |---|---|---|
-| `createSignal<T>(initial)` | `Signal<T>` | Reactive cell; reading `.value` inside an `effect`/`computed` subscribes. |
-| `computed<T>(fn)` | `ReadonlySignal<T>` | Derived read-only signal, recomputed on dependency change. |
-| `effect(fn)` | `() => void` | Runs `fn` immediately, re-runs on change; returns a disposer. |
-| `signalRecord(initial)` | `SignalRecord<T>` | One independent signal per key of `initial`. |
-| `writeSignal(rec, key, value)` | `void` | Typed per-key writer for a `SignalRecord`. |
+| `createSignal(initial)` | function | Reactive cell; reading `.value` inside an `effect`/`computed` subscribes. |
+| `computed(fn)` | function | Derived read-only signal — lazy: its body runs on read, and only when a dependency has moved. |
+| `effect(fn)` | function | Runs `fn` immediately, re-runs on change; returns a disposer. |
+| `Signal`, `ReadonlySignal` | types | The writable and read-only cell shapes. |
+| `signalRecord(initial)`, `writeSignal(rec, key, value)`, `SignalRecord` | function, function, type | One independent signal per key of `initial`, and the typed per-key writer. |
+| `registerScope(name, def)`, `ScopeDefinition`, `ResumeContext` | function, types | Registers a scope's `setup` + `on` action map under a `data-scope` name. |
+| `resume(within?)` | function | Installs the delegated listeners once per document — refcounted across calls — and runs the eager pass. Returns a disposer for the scopes *this* call resumed. |
+| `resumeScope(root)` | function | Resumes a single scope element now; returns its signal state. |
+| `bindControls(root, signals)` | function | Two-way-binds every `[data-field]` under one root to a `SignalRecord`. Returns a disposer. |
+| `bindText(root, signals, opts?)`, `BindTextOptions` | function, type | Binds every `[data-bind-text]` under `root` to the signal it names. Returns a disposer. |
+| `bindAttr(root, signals)` | function | Binds every `[data-bind-attr]` under `root` to the signal it names. Returns a disposer. |
+| `ownerDocument(node)` / `ownerWindow(node)` | function | The document and window **that node belongs to**. |
+| `activeElement(node)` | function | The *deeply* focused element, descending through open shadow roots. |
+| `eventTarget(event)` | function | The element actually hit, via `composedPath()`, before shadow retargeting rewrote `event.target`. |
+| `asElement(target)` | function | Narrows without `instanceof`, so an element from another realm is accepted rather than discarded. |
+| `closestAcross(node, sel)` / `contains(parent, child)` / `queryAcross(root, sel)` | function | `closest`, `contains` and `querySelectorAll` that step over shadow boundaries. |
+| `isRtl(el)` | function | Whether an element resolves to right-to-left writing direction. |
+| `safeStorage(win)` | function | That realm's `localStorage`, or `null` — a private-mode `getItem` throws even though the property is present, so only a real access answers. |
+| `openPopoverAt(el, x, y, opts?)`, `OpenPopoverAtOptions` | function, type | Opens a native popover at a viewport coordinate, clamped on screen. Returns a disposer. |
+| `mountRovingFocus(root, opts)`, `RovingFocusOptions` | function, type | Makes a composite you render one tab stop with arrow-key navigation. Returns a disposer. |
+| `mountScrollSpy(opts)`, `ScrollSpyOptions` | function, type | Marks the section being read on a fragment nav. Returns a disposer. |
+| `mountViewportCollapse(opts?)`, `ViewportCollapseOptions` | function, type | Drives a `<details>` rail from a media query. Returns a disposer. |
+| `lazy(opts)`, `LazyImportOptions` | function, type | Defers a dynamic import until its anchor element scrolls into view. Returns a disposer. |
 
-A write flushes the graph before it returns, so every dependent — including one fed by another
-effect's write — has already observed the settled value on the next line.
+Each option type's fields and defaults are declared beside its controller, in
+[`client/scroll-spy.ts`](./client/scroll-spy.ts), [`client/viewport-collapse.ts`](./client/viewport-collapse.ts),
+[`client/composite.ts`](./client/composite.ts), [`client/popover-anchor.ts`](./client/popover-anchor.ts),
+[`client/bind-display.ts`](./client/bind-display.ts) and [`client/lazy.ts`](./client/lazy.ts).
 
-#### Resumable islands
+### Signals
 
-The island pattern: the server marks an interactive region with a `data-scope` name and serialized
-`data-state` (via the `Resumable` component from `@y-core/forge/ui/server`); the client registers the
-scope's setup + action handlers and installs one delegated listener. A scope resumes on the **first**
-interaction with any descendant carrying a `data-on-<event>` attribute — `data-state` is rebuilt into
-signals, `setup` runs once, then the named action fires.
+A write flushes the graph before it returns, so every dependent has already observed the settled value on the next
+line. A `computed` derives on **read**, never on write: its body never runs if nothing reads it, and no reader can
+observe a derived value assembled before one of its sources moved.
+
+### Resumable islands
+
+The server marks an interactive region with a `data-scope` name and serialized `data-state` (via `Resumable`); the
+client registers the scope's handlers and installs one delegated listener. A scope resumes on the **first**
+interaction with any descendant carrying a `data-on-<event>` attribute — `data-state` is rebuilt into signals, `setup`
+runs once, then the named action fires.
 
 ```typescript
-import { registerScope, resume, effect } from "@y-core/forge/ui/client";
-
 registerScope("counter", {
   setup: ({ root, state }) => {
     const out = root.querySelector("[data-ref='out']");
     effect(() => { if (out) out.textContent = String(state.count.value); });
   },
-  on: {
-    inc: ({ state }) => { (state.count.value as number)++; },
-  },
+  on: { inc: ({ state }) => { (state.count.value as number)++; } },
 });
 
-resume(); // idempotent — a second call is a no-op and returns the same teardown
+resume(); // returns a disposer for the scopes this call resumed
 ```
 
-| Export | Signature | Description |
-|---|---|---|
-| `registerScope<A>(name, def)` | `void` | Registers a scope's `setup` + `on` action map under a `data-scope` name. |
-| `resume()` | `() => void` | Installs one delegated listener per supported event; returns a teardown. Idempotent. |
-| `resumeScope(root)` | `Record<string, Signal<unknown>> \| undefined` | Resumes a single scope element now; returns its signal state. |
+**The effect above needs no disposer, and that is the contract, not an omission.** Every effect created while a
+`setup` runs is owned by the runtime and disposed with the scope; a `setup` returns a disposer only for what the
+runtime cannot see — listeners, observers, timers, controller handles — and it runs *after* the scope's effects are
+disposed. An effect created in an `on` handler, or after an `await`, belongs to whoever created it.
 
-A `ScopeDefinition` has `eager?` (resume at `resume()` time, not on first interaction), `setup?` (bind
-DOM effects once), and `on` (action handlers keyed by `data-on-<event>` value). Handlers receive a
-`ResumeContext` (`{ root, el, state }`).
+### Field binding
 
-#### Field binding
+Pair the SSR `fieldAttr` helper (from `@y-core/forge/ui/server`) with `bindControls` to two-way-bind every control
+under a scope root to a `SignalRecord`, with no per-field wiring — one listener on the root, one effect per field. DOM
+→ signal resolves the nearest `[data-field]` across shadow boundaries, absorbing a click that landed on an inner
+`<svg>`, and infers the value's type from what the signal currently holds: `boolean` reads `checked`, `number` goes
+through `Number()`, a `string[]` toggles membership of `data-value`, anything else is the string. Signal → DOM paints
+`checked` / `value` and `aria-pressed` / `data-pressed`, guarded by a differs-check so a paint never fights a drag in
+progress.
 
-Pair the SSR `fieldAttr` (from `@y-core/forge/ui/server`) and `scopeAttrs` (from
-`@y-core/forge/ui/contracts`) helpers with `bindField` to
-two-way-bind controls to a `SignalRecord` with no per-field wiring. forge owns the generic glue; the app
-layers its own effects (persist, render) on the same signals.
+**The signal is the state and the DOM is a paint of it**, so `aria-pressed` is never read back — which is what lets a
+repaint restore a group after its markup was replaced wholesale
+([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §2a). The scope must be `eager: true`,
+since a bound control stamps no `data-on-*` action. A `data-field` naming no signal in the record reports and is
+skipped. `bindText` and `bindAttr` are the one-way siblings, for markup that only *displays* a signal.
 
-```typescript
-import { bindField, signalRecord, registerScope } from "@y-core/forge/ui/client";
+### Controller primitives
 
-const sig = signalRecord({ gridVisible: true, fov: 50 });
-registerScope("settings", { on: { bindField: bindField(sig) } });
-```
+The global reflexes a controller may not reach for, and their node-resolved replacements. They are `@public` because
+an app writing its own controller needs the same guarantees. Each reflex has a failure mode that is invisible in the
+common case and total in the uncommon one:
 
-`bindField(signals)` reads the control's `data-field` attribute, parses its value by the target signal's
-current type, and writes `signals[field]`. `parseControlValue(el, current)` does the typed parse
-(boolean → `checked`, number → `Number(value)`, else `value` string); `applyControlValue(el, value)` is
-the inverse — seed an uncontrolled input from a typed value after a programmatic reset.
-
-`bindGroup(signals)` is the companion action for button-group (segmented) controls stamped by
-`controls/` `ToggleGroup.Item`. On click it resolves the nearest ancestor with both
-`data-field` and `data-value` via `closest("[data-field][data-value]")` — handling clicks on inner
-`<svg>` or `<span>` — then writes the raw `data-value` string into `signals[field]`, bypassing
-`parseControlValue` (button groups can't express boolean or numeric values). Register it alongside
-`bindField`:
-
-```typescript
-import { bindField, bindGroup, signalRecord, registerScope } from "@y-core/forge/ui/client";
-
-const sig = signalRecord({ gridVisible: true, fov: 50, projection: "perspective" });
-registerScope("chrome", { on: { bindField: bindField(sig), bindGroup: bindGroup(sig) } });
-```
-
-#### Controller primitives
-
-Three modules no consumer mounts directly, and every controller above is built out of. They are
-`@public` because an app writing its own controller needs the same guarantees.
-
-| Export | What it gives you |
+| Reflex | What breaks |
 |---|---|
-| `ownerDocument(node)` / `ownerWindow(node)` | the document and window **that node belongs to** — a controller inside an iframe must not install listeners on the top-level document |
-| `activeElement(node)` | the *deeply* focused element, descending through open shadow roots. `document.activeElement` stops at the host |
-| `eventTarget(event)` | the element actually hit, via `composedPath()`, before shadow retargeting rewrote `event.target` to the host |
-| `asElement(target)` | narrows without `instanceof`, so an element from another realm is accepted rather than silently discarded |
-| `closestAcross(node, sel)` / `contains(parent, child)` | `closest` and `contains` that step over shadow boundaries |
-| `mountRovingFocus(root, opts)` | the composite controller — one tab stop, arrow keys, Home/End, typeahead, RTL, disabled-item skip, focus restoration. Returns a disposer |
-| `mountTransitionState(el)` | publishes `data-starting-style` / `data-ending-style` around an open or close, reconciled with `data-open` / `data-closed`. One controller, never per-component animation code |
-| `mountPopupTriggerState(popup)` | the same observation pointed the other way — publishes `data-popup-open` on the popup's **invokers** while it is open |
-| `openPopoverAt(el, x, y, opts?)` | opens a native popover at a viewport coordinate, clamped on screen, for a popup that has no invoker to anchor to |
+| bare `document` / `window` | they name the **top-level** realm — a controller mounted in an iframe installs its listeners on a document its element is not in, and reads its platform constructors off a realm that need not have them |
+| `event.target` | retargeted at a shadow boundary: for an event that crossed one it reports the **host**, not the element hit |
+| `document.activeElement` | the same problem in reverse — it stops at the host and never reports the focused item inside an open shadow root |
+| `instanceof HTMLElement` | `false` for an element from another realm, because every realm has its own constructor. It compiles, it type-narrows, and it rejects a perfectly good element |
+| `document.getElementById` | searches the document only, and an id inside a shadow root is not in it — a `commandfor` or `aria-controls` naming a sibling in the same shadow tree resolves to `null` |
+| bare `getComputedStyle` | the top-level window's again, and a *global* direction read cannot see that one subtree of an LTR page is RTL |
 
-`mountRovingFocus` takes `{ items, orientation?, loop?, typeahead?, typeaheadTimeout? }` and resolves
-its items **live from the DOM on every interaction**, so a widget whose rows are rebuilt between
-openings needs no re-mounting. Mark the item that should hold the tab stop on mount with
-`ACTIVE_COMPOSITE_ITEM` (`data-composite-item-active`) — the pressed tool, the selected tab, the
-checked radio.
+**Every controller returns a disposer, and that is a contract.** Return it from a scope's `setup` and `resume()`'s
+teardown runs it. The runtime owns effects, not listeners, so a `setup`'s own disposer covers the controllers and
+listeners it installed and never the effects it created.
 
-Three behaviours are worth knowing because they are easy to assume away: arrow keys inside a **text
-field** belong to the caret until it reaches the edge of the text; direction is read from the
-**element**, not from a global, so an RTL island inside an LTR page navigates as RTL; and an item
-that is in the DOM but not rendered — a closed submenu's row, a filtered-out link — is not in the
-ring at all.
+**A platform constructor is read off the resolved window too**, for two reasons the obvious regression test cannot see
+— intersection geometry is realm-*insensitive*, so mounting into an iframe and asserting the observer fires **passes
+on a revert**. A realm **may not have the constructor at all**, and reading it off the resolved window doubles as the
+feature check, so the controller degrades to a no-op disposer rather than throwing; and an observer, timer id or
+media-query list held past the teardown of the realm that minted it is a **cross-realm retention**. Both are testable
+by pruning the constructor from one realm and asserting which side notices. **Direction is resolved where it is
+consumed, never cached at mount**, and **an id reference is resolved in the tree that declares it**, because ids do
+not cross a shadow boundary.
 
-**Every controller returns a disposer, and that is a contract.** Return it from a scope's `setup`
-and `resume()`'s teardown runs it; a controller that cannot be disposed leaks a listener on every
-re-resume.
+### Coordinate placement — `openPopoverAt`
 
-#### Menu, tabs, tooltip and number-field controllers
+Every other popup in forge is positioned by CSS Anchor Positioning against its invoker. **A context menu has no
+invoker** — it opens where a right-click landed — so every anchored rule resolves to nothing and the UA's `[popover]`
+default centres the panel in the viewport. 
+`openPopoverAt(menu, event.clientX, event.clientY, { afterPointerUp: event.buttons !== 0 })` is the whole call
+from a `contextmenu` handler.
 
-`mountMenu(popup, opts?)`, `mountTabs(root, opts?)`, `mountTooltip(root)` and
-`mountNumberField(root)` are the controllers the `ui/core/client` scopes mount. Call them directly
-only when the markup is somewhere `resume()` cannot reach — inside a shadow root, say.
+**`afterPointerUp` is not optional there**: the event fires *between* `pointerdown` and `pointerup`, and the platform
+light-dismisses the menu on that trailing release, so it flashes and vanishes. Pass `event.buttons !== 0` rather than
+`true` — a `contextmenu` raised from the keyboard reports no buttons and is followed by no release. The popup opts in
+with `Menu.Popup`'s `coords` prop (or `POPOVER_COORDS_ATTR`); coordinates travel as `ANCHOR_X_PROPERTY` /
+`ANCHOR_Y_PROPERTY` written through **CSSOM**, never a generated `style` attribute. Calling it again with a new point
+**repositions** an open popup.
 
-`mountMenu` **opens and closes nothing**: the Popover API owns that, and an item closes the menu
-through `command="hide-popover"` in the markup. What it adds is what ARIA's menu pattern asks for
-and the platform does not supply — arrow navigation, typeahead, focus on the first item at open, and
-focus back on the opener at close. The opener is *captured* rather than derived from `commandfor`,
-because a context menu has no single trigger button, and focus is only reclaimed when the close
-actually stranded it.
-
-#### Coordinate placement — `openPopoverAt`
-
-Every other popup in forge is positioned by CSS Anchor Positioning against its invoker: a popover's
-implicit anchor is the button its `commandfor` names, and the whole placement set in `theme-base.css`
-is keyed off `anchor()`. **A context menu has no invoker** — it opens where a right-click landed, on
-an element that is not a trigger — so every anchored rule resolves to nothing and the UA's `[popover]`
-default centres the panel in the viewport.
+### Scroll spy, viewport collapse, roving focus, lazy loading
 
 ```typescript
-import { openPopoverAt } from "@y-core/forge/ui/client";
-
-canvas.addEventListener("contextmenu", (event) => {
-  event.preventDefault();
-  openPopoverAt(menu, event.clientX, event.clientY, { afterPointerUp: event.buttons !== 0 });
-});                                                    // { margin } keeps a gap at each edge
-```
-
-**`afterPointerUp` is not optional on a `contextmenu` handler.** The event fires *between*
-`pointerdown` and `pointerup`, and the platform light-dismisses the menu on that trailing release —
-neither the pointerdown nor the pointerup target is inside a popup, so the dismiss pass sees no
-popover on either side of the gesture and hides the one that just opened. The menu flashes and
-vanishes. The option defers the show past the release, one shot, so the *next* click dismisses the
-menu exactly as it always did. Pass `event.buttons !== 0` rather than `true`: a `contextmenu` raised
-from the keyboard (the Menu key, `Shift+F10`) reports no buttons and is followed by no release, so an
-unconditional guard would wait for a `pointerup` that only an unrelated later click supplies.
-
-The popup opts in with `Menu.Popup`'s `coords` prop (or the `data-coords` attribute directly), which
-selects the coordinate rule; `openPopoverAt` also stamps it, so a popup that opens both ways needs no
-second markup variant. Coordinates travel as `--anchor-x` / `--anchor-y` written through **CSSOM**,
-never as a generated `style` attribute — forge's CSP carries no `style-src 'unsafe-inline'`, and the
-JSX renderer drops `style` outright. Calling it again with a new point **repositions** an open popup
-rather than closing and reopening it. The position is clamped to the viewport, so a menu opened at any
-edge is fully on screen.
-
-#### Turnstile controller
-
-`mountTurnstile()` is **arg-less** and returns a cleanup function. It drives the `<Turnstile>` ui/core
-component (rendered inside a `<form>`), finding the `[data-ref='turnstile']` widget and its enclosing
-form via `widget.closest("form")` — no selectors or options to configure. It is **engagement-gated**
-(loads Cloudflare's script once on the first `focusin` within the form, then explicitly renders the
-widget — no auto-render, no global callbacks), **self-healing** (resets the single-use token after
-every completed submission via `htmx:afterRequest` and on expiry/timeout, clearing the form only on
-success), and **fails visible** (reveals the widget's hidden fallback message on load/render failure).
-The submit button is intentionally **not** gated — the server `verifyTurnstile` is the single
-fail-closed enforcement point. The site key and size are read from the widget's `data-sitekey` /
-`data-size` attributes (injected server-side, never hardcoded); the theme follows the app's resolved
-theme (`.dark` on `<html>`) at render time. Pair it with the `<Turnstile siteKey=… />` component from
-`@y-core/forge/ui/core`.
-
-#### Scroll spy and viewport collapse
-
-```typescript
-import { mountScrollSpy, mountViewportCollapse } from "@y-core/forge/ui/client";
-
-// Mark the section being read on an in-page table of contents.
-const disposeSpy = mountScrollSpy({ root: document.querySelector("[data-slot~='navbar']") as Element });
-
-// Collapse a left rail while the viewport is narrow.
-const disposeRail = mountViewportCollapse({ selector: "#app-rail" });
-```
-
-`mountScrollSpy(options)` takes a `ScrollSpyOptions` object and returns a disposer.
-
-| Option | Type | Default | Meaning |
-|---|---|---|---|
-| `root` | `Element` | — | Required. The nav subtree holding the fragment links. |
-| `linkSelector` | `string` | `"a[href^='#']"` | Which links to spy on. |
-| `rootMargin` | `string` | top-slice band | `IntersectionObserver` `rootMargin`; the default biases toward the section at the top of the viewport rather than one merely visible. |
-
-It stamps `aria-current="location"` — never `"page"`, since the page did not change — on exactly one
-link, and emits no `data-*` state, so the visible cue is the stylesheet's alone. **Entries are
-ordered by the targets' document position, not by link order**, because a nav may list its links in
-any order (a grouped table of contents is often alphabetical within a group) while "which section am
-I reading" is a question about the page. Ids resolve in the tree that declares them, so a nav inside
-a shadow root finds its own sections; a link resolving to nothing is skipped. No links, no resolvable
-targets, or no `IntersectionObserver` returns a no-op disposer — the links navigate on their own
-regardless. The disposer clears the attribute as well as disconnecting the observer.
-
-`mountViewportCollapse(options?)` takes a `ViewportCollapseOptions` object and returns a disposer.
-
-| Option | Type | Default | Meaning |
-|---|---|---|---|
-| `element` | `Element \| null` | — | The disclosure to drive. Takes precedence over `selector`. |
-| `selector` | `string` | — | Resolved in `within`'s document when no `element` is given. |
-| `within` | `Node` | top-level document | Any node in the document to search. |
-| `query` | `string` | below the `md` breakpoint | While it matches, the disclosure stays collapsed. |
-
-Render the `<details>` **open** — with scripting unavailable the navigation is visible, which is the
-safe state, and the controller only ever takes something away. It collapses while `query` matches and
-expands while it does not, and **stops driving the disclosure the moment the user toggles it
-themselves** — a rail that slams shut on every rotation is worse than no controller. That override is
-per mount and not persisted; a fresh load is a fresh question. The disposer restores the state it
-found, except when the user has taken over. Fails quiet when the element is absent, is not a
-disclosure, or the realm has no `matchMedia`.
-
-#### Lazy loading
-
-```typescript
-import { lazy, loadScriptOnEvent, loadStylesheet } from "@y-core/forge/ui/client";
-
-// Defer a dynamic import until its anchor element scrolls into view (IntersectionObserver).
+mountScrollSpy({ root: navEl });                                   // current-section marker
+mountViewportCollapse({ selector: "#app-rail" });                  // width-driven disclosure
+mountRovingFocus(rail, { items: "[data-slot~='rail-item']", orientation: "vertical" });
 lazy({ ref: "map-section", load: () => import("./map"), init: (mod, el) => mod.initMap(el) });
-
-// Inject a <script> on the first occurrence of an event (with optional SRI).
-loadScriptOnEvent({
-  triggerSelector: "[data-ref='widget']",
-  event: "focus",
-  scriptSrc: "https://example.com/widget.js",
-  integrity: false,
-});
-
-// Inject a stylesheet; resolves on load, rejects on error.
-await loadStylesheet("/print.css", false);
 ```
 
-`lazy` takes a `LazyImportOptions<T>` object (`ref`, `load`, `init`, optional `rootMargin` / `threshold`)
-and returns a disposer. `loadScriptOnEvent` takes a `LazyLoadOptions` object; `integrity` is an SRI hash
-string or `false` to opt out (`false` skips `crossOrigin`).
+`mountScrollSpy` stamps `aria-current="location"` — never `"page"`, since the page did not change — on exactly one
+link, and emits no `data-*` state, so the visible cue is the stylesheet's alone. **Entries are ordered by the targets'
+document position, not by link order**, because a nav may list its links in any order while "which section am I
+reading" is a question about the page.
 
-### Integration Guide
+`mountViewportCollapse` wants the `<details>` rendered **open** — with scripting unavailable the navigation is
+visible, which is the safe state — and **stops driving it the moment the user toggles it themselves**, per mount and
+not persisted. It **throws** when the element it was told to drive is absent or is not a disclosure, and **reports**
+when the realm has no `matchMedia`.
 
-This namespace is browser-only. Import it exclusively from your client esbuild entry (e.g.
-`src/client/main.ts`) or from a `<script>` that references the built bundle. Never import it in
-`src/views/`, route handlers, or any code the Worker executes — Cloudflare Workers has no DOM and the
-import throws at runtime.
+`mountRovingFocus` resolves its **items live on every interaction**, so a composite whose items are swapped, filtered
+or reordered needs no re-registration. The ring's rules, each present because omitting it produces a bug: arrow keys
+inside a text field belong to the caret until its edge; direction is read from the element, so an RTL island inside an
+LTR page navigates as RTL; items present but not rendered are out of the ring; a nested composite keeps the key it
+consumed; `disabled` leaves the ring while `aria-disabled` stays in it, focusable but inert. Mark the tab stop with
+`ACTIVE_COMPOSITE_ITEM`. Forge's own composites mount it through their scopes, and a `RadioGroup` has the whole
+contract from the platform, so this is for a composite **you** render.
 
-### Types
+`lazy` retries a rejected `load()` a bounded number of times; a rejection with no `onError`, a throwing `init`, a
+missing anchor and a realm with no `IntersectionObserver` all **report**, because a module that never loads is
+otherwise indistinguishable from one that was never scheduled.
 
-`Signal`, `ReadonlySignal`, `SignalRecord`, `ResumeContext`, `ScopeDefinition`, `LazyImportOptions`,
-`LazyLoadOptions`, `ScrollSpyOptions`, `ViewportCollapseOptions`.
+---
+
+## `@y-core/forge/ui/client/htmx`
+
+> Import path: `@y-core/forge/ui/client/htmx` → `src/ui/client/htmx.ts`
+> **Browser-only, side-effect import.** esbuild entry points only.
+
+```typescript
+import "@y-core/forge/ui/client/htmx"; // side-effect only — no exports used
+```
+
+It imports the htmx bundle, attaches it to `window`, and disables htmx's built-in indicator styles
+(`htmx.config.includeIndicatorStyles = false`). It re-exports `htmx` for the rare call site that needs the instance
+directly, but the bare side-effect import is the canonical usage. Mark the import so esbuild does not tree-shake it,
+and never load htmx from a CDN — this entry pins the version through forge.
 
 ---
 
@@ -1191,50 +693,24 @@ import throws at runtime.
 > Import path: `@y-core/forge/ui/server` → `src/ui/server/mod.ts`
 > **SSR-only.** These run in Workers/SSR contexts; never bundle them into the browser.
 
-### Features
-
-- Flash messages — cookie-backed, one-shot, rendered as toasts (`createFlash`, `Flash`,
-  `FlashContainer`, `FlashOob`).
-- The server half of the resumability island pattern (`Resumable`, `fieldAttr`; the `scopeAttrs`
-  emitter lives in `@y-core/forge/ui/contracts` beside the `SCOPE_EVENTS` it writes).
-
 ### Usage — flash messages
 
-```typescript
-import { createFlash } from "@y-core/forge/ui/server";
-
+```tsx
 const flash = createFlash({ secrets: [env.SESSION_SECRET] });
 
-// In a POST handler — queue a message into the signed cookie:
-await flash.success(c, "Profile saved.");
-// then redirect; the next page reads + clears it.
+await flash.success(c, "Profile saved.");   // in a POST handler, then redirect
+const messages = await flash.get(c);         // in the next loader; clears as it reads
 
-// In the next page's loader:
-const messages = await flash.get(c); // [{ type: "success", text: "Profile saved." }]
-```
-
-Render the messages in the page shell. Use `FlashContainer` for the SSR-on-load case, or `FlashOob` to
-inject toasts via an HTMX out-of-band swap into `#flash-container`:
-
-```tsx
-import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
-
-// On full page render:
-<FlashContainer messages={messages} position="bottom-right" />
-
-// In an HTMX fragment response — swaps toasts into the existing container:
-<FlashOob messages={messages} />
+<FlashContainer messages={messages} position="bottom-right" />   {/* full page render */}
+<FlashOob messages={messages} />                                  {/* HTMX out-of-band swap */}
 ```
 
 > **Flash toasts are scoped components.** `Flash` / `FlashContainer` / `FlashOob` render `Toast`,
-> which drives dismiss and timed auto-close through the `toast` resumable scope. Registering that
-> scope is a **side-effect import** — the app's client entry must
-> `import "@y-core/forge/ui/core/client"` **before** calling `resume()`, or the toasts render but
-> never dismiss and `resume()` `console.warn`s about the unregistered `data-scope`. See
-> [`@y-core/forge/ui/core/client`](#y-coreforgeuicoreclient) and
-> [`UI_SSR_COMPONENTS.md`](../../.decisions/UI_SSR_COMPONENTS.md) §2d.
+> which drives dismiss and timed auto-close through the `toast` resumable scope. The app's client
+> entry must `import "@y-core/forge/ui/core/client"` **before** calling `resume()`
+> ([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §2d).
 
-### Core Components & APIs
+### Exports
 
 | Export | Kind | Description |
 |---|---|---|
@@ -1242,78 +718,37 @@ import { FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 | `Flash` | component | Renders an array of `FlashMessage` as dismissible toasts. |
 | `FlashContainer` | component | A `Toast.Container` wrapping `Flash` — use on full page render. |
 | `FlashOob` | component | Wraps each toast in an HTMX OOB-swap div targeting `#flash-container`. |
-| `Resumable` | component | Wraps children in a `data-scope` + serialized `data-state` island. Optional `id` (a `commandfor` sink) and `class` — the scope root is a real box in its parent's layout, so width, `shrink` and border belong there rather than on a component nested inside it. |
-| `fieldAttr(name)` | helper | Stamps `data-field` so the client `bindField` action knows which signal to write. |
+| `Resumable` | component | Wraps children in a `data-scope` + serialized `data-state` island. Optional `id` (a `commandfor` sink) and `class` — the scope root is a real box in its parent's layout, so width, `shrink` and border belong there. |
+| `fieldAttr(name)` | helper | Stamps `data-field` so `bindControls` knows which signal the control drives. |
 
-`createFlash(options)` takes `FlashCookieOptions` (`secrets`, optional `name` / `path` / `maxAge` /
-`sameSite`); defaults are `name: "flash"`, `path: "/"`, `maxAge: 60`, `sameSite: "Lax"`. `flash.get`
-clears the cookie as it reads — messages are one-shot.
+`createFlash(options)` takes `FlashCookieOptions` — `secrets`, plus optional `name` (`"flash"`), `path` (`"/"`),
+`maxAge` (`60`) and `sameSite` (`"Lax"`).
 
-### Integration Guide — resumable islands
+**Types:** `FlashMessage`, `FlashType`, `FlashCookieOptions`, `Flasher`, `ResumableProps`.
 
-`Resumable` is the SSR half of the island pattern documented under `@y-core/forge/ui/client`. The `name`
-must match the client-side `registerScope`; `state` is the serializable object rehydrated into signals:
+### Resumable islands
 
-```tsx
-import { scopeAttrs } from "@y-core/forge/ui/contracts";
-import { Resumable, fieldAttr } from "@y-core/forge/ui/server";
-
-<Resumable name="settings" state={{ gridVisible: true }}>
-  <Switch {...scopeAttrs({ onChange: "bindField" })} {...fieldAttr("gridVisible")} checked={true} />
-</Resumable>
-```
-
-`scopeAttrs` and `registerScope` are both generic over the action-name union, so a typo in an action
-name is a compile error and client + server share one action namespace. `Resumable` performs no eager
-hydration — the scope resumes on the first interaction with any descendant carrying `data-on-<event>`.
-
-### Types
-
-`FlashMessage`, `FlashType`, `FlashCookieOptions`, `Flasher`, `ResumableProps`.
+`Resumable` is the SSR half of the island pattern: its `name` must match the client-side `registerScope`, and `state`
+is the serializable object rehydrated into signals. `scopeAttrs` (from [`ui/contracts`](#y-coreforgeuicontracts)) and
+`registerScope` are both generic over the action-name union, so a typo in an action name is a compile error and client
+and server share one action namespace. `Resumable` performs no eager hydration of its own.
 
 ---
 
 ## `@y-core/forge/ui/chrome`
 
 > Import path: `@y-core/forge/ui/chrome` → `src/ui/chrome/mod.ts`
-> **SSR-only.** These are JSX components and plain constants rendered in Workers/SSR contexts. Their
-> interactive halves are resumable scopes registered by `@y-core/forge/ui/chrome/client`.
-
-### Features
-
-- `Navbar` — a configuration-driven responsive navbar/menubar built from a nested `NavDefinition`.
-  Desktop renders a horizontal bar of native `Popover` dropdowns (top-layer, light-dismiss, zero JS);
-  mobile collapses to a hamburger-toggled `<details>`. Items may carry auth `filters`.
-- `collapsible="always"` keeps that toggle and a vertical panel at every breakpoint — the rail shape,
-  which is why `placement` defaults to `"left"` under it and usually pairs with `defaultOpen`.
-- `NavGroup` — a heading over destinations that stay **visible**, for the case a `NavMenu` dropdown
-  would hide.
-- `Toolbar` — a configuration-driven icon rail with placement-aware flyouts, built from a
-  `ToolbarDefinition` and generic over the app's action-name union.
-- `ThemeToggle` — a three-icon theme-cycle button wrapped in the `theme` resumable scope.
-- Theme constants shared by the SSR view and the client scope, including the FOUC-prevention inline
-  script `FOUC_SCRIPT`. This module performs no DOM access, so it is safe to import server-side.
+> **SSR-only.** Their interactive halves are scopes registered by `@y-core/forge/ui/chrome/client`.
 
 ### Usage
 
 ```tsx
-import { Navbar, ThemeToggle, Toolbar, type NavDefinition, type ToolbarDefinition } from "@y-core/forge/ui/chrome";
-import { createIcon } from "@y-core/forge/ui/core";
-
-const AppIcon = createIcon("/assets/icons.svg");
+import { Navbar, ThemeToggle, Toolbar, type NavDefinition } from "@y-core/forge/ui/chrome";
 
 const nav: NavDefinition = {
   sections: [
     { items: [{ label: "Home", href: "home" }, { label: "Docs", items: [{ label: "Guides", href: "guides" }] }] },
     { items: [{ slot: "user_name" }, { label: "Sign out", href: "signout", filters: ["user"] }] },
-  ],
-};
-
-const tools: ToolbarDefinition<"selectTool" | "addLayer"> = {
-  groups: [
-    { items: [{ kind: "action", icon: "cursor", label: "Select", action: "selectTool", active: true }] },
-    { items: [{ kind: "popover", icon: "layers", label: "Layers", content: <LayerList />,
-               titleAction: { icon: "plus", label: "Add layer", action: "addLayer" } }] },
   ],
 };
 
@@ -1323,165 +758,95 @@ const tools: ToolbarDefinition<"selectTool" | "addLayer"> = {
 <ThemeToggle icon={AppIcon} />
 ```
 
-A left rail — collapsed behind its toggle at every width, open on first paint, with a headed group of
-destinations that stay visible. The layout classes go on the wrapping box the parent lays out, not on
-`Navbar`, and that box's parent is what supplies the rail's height:
+For a left rail, set `collapsible="always"` and put the layout classes on the wrapping box the parent lays out — not
+on `Navbar` — with that box's parent supplying the definite height the `h-full` chain inside resolves against; write
+the collapsed width as an override on a `w-64` base so a browser without `:has()` keeps the full column. The three
+rulings are `forge-ui-nav-rail-flex-item`, `forge-ui-nav-rail-persists` and `forge-ui-nav-rail-collapsed-width` in
+[`ui/design/reference/08-navigation.md`](./design/reference/08-navigation.md).
 
-```tsx
-import { Resumable } from "@y-core/forge/ui/server";
-
-const rail: NavDefinition = {
-  sections: [
-    { items: [{ heading: "Workspace", group: [{ label: "Projects", href: "projects" }, { label: "Team", href: "team" }] }] },
-  ],
-};
-
-// `min-h-dvh` on the flex row stretches the rail item, which is the definite height the `h-full`
-// chain inside `Navbar` resolves against — the one link forge cannot supply itself.
-<div class="flex min-h-dvh">
-  <Resumable name="app-rail" class="w-64 shrink-0 border-r border-border has-[[data-slot~=navbar]:not([open])]:w-14">
-    <Navbar config={rail} resolveHref={routes.url} icon={AppIcon} collapsible="always" defaultOpen />
-  </Resumable>
-  <main class="flex-1 min-w-0">…</main>
-</div>
-```
-
-The collapsed `w-14` is written as an override on a `w-64` base rather than the reverse, so a browser
-without `:has()` keeps the full column instead of pinning a 56px strip that would clip the open
-panel. Design rationale for all three placements — the flex item, the height chain, and the collapsed
-width — is `forge-ui-nav-rail-flex-item`, `forge-ui-nav-rail-persists` and
-`forge-ui-nav-rail-collapsed-width` in [`ui/design/reference/08-navigation.md`](./design/reference/08-navigation.md).
-
-### Core Components & APIs
+### Exports
 
 | Export | Kind | Description |
 |---|---|---|
-| `Navbar` | component | Renders `NavbarProps.config`. Required: `config`, `resolveHref`, `icon` (`ForgeIcon<"chevron-down" \| "hamburger" \| "close">`). Optional: `slots`, `activeFilters`, `placement` (defaults per collapse mode — `"top"` under `"mobile"`, `"left"` under `"always"`), `collapsible` (default `"mobile"`), `defaultOpen` (default `false`), `id`, `class`, plus `<nav>` pass-through. |
-| `Toolbar` | component | Renders `ToolbarProps.config`. Required: `config`, `icon` (`ForgeIcon<string>`). Optional: `placement` (default `"left"`), `commandTarget`, `id`, `class`, plus `<nav>` pass-through. |
+| `Navbar` | component | Renders `NavbarProps.config`. Required: `config`, `resolveHref`, `icon` (`ForgeIcon<NavGlyph>`, or `ForgeIcon<NavGlyph \| NavDrawerGlyph>` under `collapsedAs="drawer"` **with** `collapsible="always"` — the rail drawer, whose toggle draws the panel pair instead of the hamburger). Optional: `slots`, `activeFilters`, `placement`, `collapsible` (default `"mobile"`), `collapsedAs` (default `"inline"`), `defaultOpen` (default `false`), `id`, `class`, plus `<nav>` pass-through. |
+| `Toolbar` | component | Renders `ToolbarProps.config`. Required: `config`, `icon` (`ForgeIcon<G>`, `G` being the config's glyph-name union). Optional: `placement` (default `"left"`), `commandTarget`, `id`, `class`, plus `<nav>` pass-through. |
 | `ThemeToggle` | component | Theme-cycle button. Required: `icon` (`ForgeIcon<"sun" \| "moon" \| "monitor">`). Optional: `size` (default `20`), `class`. |
-| `FOUC_SCRIPT` | `const` string | Inline script that applies the stored preference before first paint. |
-| `THEME_ATTR` | `const` string | `"data-theme-preference"` — the `<html>` attribute recording the active preference. |
-| `THEME_STORAGE_KEY` | `const` string | `"themePreference"` — the `localStorage` key. |
-| `DARK_CLASS` | `const` string | `"dark"` — the class toggled on `<html>`. |
-| `DEFAULT_PREF` | `const` string | `"system"` — the server default, resolved against the OS preference client-side. |
+| `FOUC_SCRIPT` | const string | Inline script that applies the stored preference before first paint. |
+| `THEME_ATTR` | const string | `"data-theme-preference"` — the `<html>` attribute recording the active preference. |
+| `THEME_STORAGE_KEY` | const string | `"themePreference"` — the `localStorage` key. |
+| `DARK_CLASS` | const string | `"dark"` — the class toggled on `<html>`. |
+| `DEFAULT_PREF` | const string | `"system"` — the server default, resolved against the OS preference client-side. |
 
-**`Navbar` config shape.** A `NavDefinition` is `{ sections: NavSection[] }`; a `NavSection` is
-`{ items: NavSectionItem[] }`; a `NavSectionItem` is a `NavItem` or a `NavGroup`; a `NavItem` is a
-`NavLink` (`label`, `href`, `filters?`), a `NavMenu` (`label`, `items`, `filters?` — recurses for
-nested submenus), or a `NavSlot` (`slot`, `label?`, `filters?`). Sibling sections spread across the
-bar via `justify-between`. `NavPlacement` is `"top" | "bottom" | "left" | "right"`.
+**Types:** `NavbarProps`, `NavDefinition`, `NavSection`, `NavSectionItem`, `NavItem`, `NavLink`, `NavMenu`, `NavSlot`,
+`NavGroup`, `NavPlacement`, `NavCollapsible`, `ToolbarProps`, `ToolbarDefinition`, `ToolbarGroup`, `ToolbarItem`,
+`ToolbarAction`, `ToolbarPopover`, `ToolbarSeparator`, `ToolbarSlot`, `ToolbarTitleAction`, `ToolbarPlacement`,
+`ThemeToggleProps`.
 
-**`NavGroup`** (`heading`, `group`, `filters?`) renders a heading over a set of destinations that
-stay visible — `<div data-slot="navbar-group" role="group" aria-labelledby=…>` wrapping a
-`<p data-slot="navbar-group-heading">` and the group's children as bar links, not menu rows. The
-heading is a `<p>` rather than an `<h2>` because `Navbar` cannot know which heading level it is
-nested under; `role="group"` plus `aria-labelledby` gives the association without asserting one.
-**Only `NavSection.items` widens to accept it — `NavItem` does not**, so a group nested inside a
-`NavMenu` is a compile error rather than a case the renderer degrades at runtime.
+### `Navbar` config
 
-**`collapsible`** (`NavCollapsible`) decides which breakpoints the bar hides behind its toggle.
-`"mobile"`, the default, expands the panel and hides the toggle from `md:` up. `"always"` keeps the
-toggle and the vertical panel at every breakpoint — the rail shape, which is what makes a vertical
-edge collapsible at desktop widths, and why `placement` defaults to `"left"` there rather than
-`"top"`: a full-width strip permanently behind a hamburger is nobody's intent. Pass `placement`
-explicitly for a right-hand rail, or for the rarer horizontal always-collapsed bar. `defaultOpen` renders the underlying
-`<details>` open on first paint; it is attribute-only, with no controller behind it. For a rail whose
-open state should follow viewport width, pair it with `mountViewportCollapse` from
-[`@y-core/forge/ui/client`](#y-coreforgeuiclient).
+A `NavDefinition` is `{ sections: NavSection[] }`; a `NavSection` is `{ items: NavSectionItem[] }`; a `NavSectionItem`
+is a `NavItem` or a `NavGroup`; a `NavItem` is a `NavLink` (`label`, `href`, `filters?`), a `NavMenu` (`label`,
+`items`, `filters?` — recurses), or a `NavSlot` (`slot`, `label?`, `filters?`). Sibling sections spread across the bar
+via `justify-between`. `NavPlacement` is `"top" | "bottom" | "left" | "right"`.
 
-A bar-level link styles `aria-current` itself, shifting background, foreground and weight together —
-so a current-destination cue set at runtime (by `mountScrollSpy`, say) never relies on colour alone.
+**`NavGroup`** (`heading`, `group`, `filters?`) renders a heading over destinations that stay **visible** — a
+`role="group"` wrapper with a `<p>` heading, since `Navbar` cannot know which heading level it is nested under. **Only
+`NavSection.items` widens to accept it**, so a group nested inside a `NavMenu` is a compile error rather than a
+runtime degradation.
 
-**`id` namespaces the generated menu ids** on both `Navbar` and `Toolbar`, falling back to the
-placement each one renders at — `Toolbar`'s given-or-default `placement`, and for `Navbar` the value
-its collapse mode resolves to, so an unnamed rail namespaces on `left`. Supply a distinct value when
-two bars (or two rails) end up at the same placement — otherwise both mint `navbar-menu-top-0`,
-`commandfor` resolves to the first match in the document, and the second bar's trigger toggles the
-first bar's popup.
+**`collapsible`** decides which breakpoints the bar hides behind its toggle: `"mobile"` (the default) expands the
+panel and hides the toggle from `md:` up, while `"always"` keeps both at every breakpoint, which is why `placement`
+defaults to `"left"` there. `defaultOpen` renders the underlying `<details>` open on first paint, attribute-only —
+pair it with `mountViewportCollapse` for a rail that should follow viewport width. **`id` namespaces the generated
+menu ids** on both `Navbar` and `Toolbar`, falling back to the placement each renders at; supply a distinct value when
+two bars share a placement, or both mint the same id and the second bar's trigger toggles the first bar's popup.
 
-Two rules the type does not express: **`href` is a route-map key, never a URL** — it is always passed
-through the required `resolveHref`, so links cannot be hardcoded; and a `NavSlot.slot` that is a
-`string` is looked up in the `slots` map, while a `JSXNode` is rendered inline.
+Two rules the type does not express: **`href` is a route-map key, never a URL**, always passed through the required
+`resolveHref`; and a `NavSlot.slot` that is a `string` is looked up in the `slots` map while a `JSXNode` is rendered
+inline. An item with **`filters`** shows only when one of its tokens is in the active set — `activeFilters` seeds it
+server-side for a flash-free first paint, and at runtime the app dispatches `NAVBAR_FILTERS_EVENT` on `document` with
+the new tokens as `detail`.
 
-**Auth filters.** An item with `filters` shows only when one of its tokens is in the active set.
-`activeFilters` seeds that set server-side for a flash-free first paint; at runtime the app pushes a
-new set by dispatching `new CustomEvent("navbar:filters", { detail: tokens })` on `document`, which
-the `navbar` scope applies to every `[data-filter]` descendant.
+### `Toolbar` config
 
-**`Toolbar` config shape.** A `ToolbarDefinition<A>` is `{ groups: ToolbarGroup<A>[] }` (a separator
-is auto-emitted between sibling groups); a `ToolbarGroup<A>` is `{ items: ToolbarItem<A>[] }`; a
-`ToolbarItem<A>` is a `ToolbarAction<A>` (`kind: "action"` — `icon`, `label`, `action`, optional
-`dispatch`, `ref`, `data`, `active`, `size`), a `ToolbarPopover<A>` (`kind: "popover"` — `icon`,
-`label`, `content`, optional `ref`, `compact`, `titleAction`), a `ToolbarSeparator`
-(`kind: "separator"`), or a `ToolbarSlot` (`kind: "slot"`, `slot`). A `ToolbarTitleAction<A>`
-(`icon`, `label`, `action`, `ref?`) is the button stamped inline on a flyout's title row.
-`ToolbarPlacement` is `"left" | "right" | "top" | "bottom"`.
+A `ToolbarDefinition<A, G>` is `{ groups: ToolbarGroup<A, G>[] }` (a separator is auto-emitted between sibling
+groups); a `ToolbarItem<A, G>` is a `ToolbarAction` (`kind: "action"` — `icon`, `label`, `action`, optional
+`dispatch`, `ref`, `data`, `active`, `size`), a `ToolbarPopover` (`kind: "popover"` — `icon`, `label`, `content`,
+optional `ref`, `compact`, `titleAction`), a `ToolbarSeparator`, or a `ToolbarSlot`. A `ToolbarTitleAction<A, G>` is
+the button stamped inline on a flyout's title row. `ToolbarPlacement` is `"left" | "right" | "top" | "bottom"`.
 
-The generic `A` is the app's action-name union, shared with `registerScope<A>` — a typo in an action
-name is a compile error on both sides. An action item dispatches through the scope (`data-on-click`,
-the default) or through the native Invoker `CommandEvent` bridge with `dispatch: "command"`, which
-emits `command="--action"` against the `commandTarget` element id; both land in the same `on` table.
-Give a rail an explicit `id` when two rails share a `placement` — flyout ids are namespaced by
-`id ?? placement`, and two rails minting the same id would cross-link their `commandfor` triggers.
+The generic `A` is the app's action-name union, shared with `registerScope<A>`; `G` is the app's glyph-name union,
+shared with the `icon` prop — so a typo in either is a compile error rather than a dead button or an empty `<use>`. An
+action item dispatches through the scope (`data-on-click`, the default) or through the native Invoker `CommandEvent`
+bridge with `dispatch: "command"`, which emits `command="--action"` against the `commandTarget` element id; both land
+in the same `on` table.
 
-### Integration Guide
+### Wiring
 
-Chrome is SSR markup plus a client island. Three wiring steps, all required:
-
-1. **Register the scopes.** The app's client entry must side-effect-import
-   `@y-core/forge/ui/chrome/client` **before** calling `resume()`, or `Navbar` renders without runtime
-   auth filtering, `ThemeToggle` does nothing on click, and `resume()` `console.warn`s about the
-   unregistered `data-scope`.
-2. **Stamp `FOUC_SCRIPT` into `<head>`** so the theme is applied before first paint, and add its hash
-   to the CSP `script-src` — it is an inline script and carries no nonce:
-
-   ```tsx
-   import { FOUC_SCRIPT } from "@y-core/forge/ui/chrome";
-   import { rawHtml } from "@y-core/forge/http";
-
-   <script>{rawHtml(FOUC_SCRIPT)}</script>
-   ```
-
+1. **Register the scopes** — the client entry side-effect-imports `@y-core/forge/ui/chrome/client`
+   **before** `resume()`, or `Navbar` renders without runtime auth filtering and `ThemeToggle` does
+   nothing on click.
+2. **Stamp `FOUC_SCRIPT` into `<head>`** — `<script>{rawHtml(FOUC_SCRIPT)}</script>` — so the theme
+   applies before first paint, and add its hash to the CSP `script-src`; it is inline and carries no
+   nonce.
 3. **Ship the theme CSS.** `ThemeToggle` renders its three icons inside `theme-light-icon`,
-   `theme-dark-icon`, and `theme-system-icon` spans; which one is visible is decided entirely by CSS
-   keyed off `html[data-theme-preference]` in `src/ui/assets/css/forge-ui.css`. Those class names are
-   a contract — rename one and the toggle renders all three glyphs at once. The same mechanism gives
-   the button its accessible name: each span carries an `sr-only` label, and the CSS that shows one
-   span hides the other two with `display: none`, which also removes them from the accessible-name
-   computation. So the name says which theme is active, with no JavaScript and no `aria-label` that
-   could disagree with the glyph.
+   `theme-dark-icon` and `theme-system-icon` spans, and which is visible is decided by CSS keyed off
+   `html[data-theme-preference]` in `src/ui/assets/css/forge-ui.css`. Those class names are a
+   contract — rename one and the toggle renders all three glyphs at once. The same mechanism
+   supplies the accessible name: each span carries an `sr-only` label, and `display: none` removes
+   the other two from the accessible-name computation.
 
-#### The contracts chrome's markup carries
-
-| Component | What it stamps |
+| Component | What its markup stamps |
 |---|---|
-| `Toolbar` | `role="toolbar"`, `data-scope="toolbar"`, and `data-orientation` / `aria-orientation` — `vertical` for a `left` or `right` rail, `horizontal` for `top` or `bottom`. Every action and every popover trigger carries `data-toolbar-item`, so the whole rail is **one tab stop**. Separators are `<hr aria-orientation>`, whose axis is *across* the rail. |
-| `Navbar` | Bar-level dropdowns are `core/Menu`; rows below the bar are `Menu.SubmenuTrigger` and `Menu.LinkItem`. Each popup carries `data-scope="menu"`. |
+| `Toolbar` | `role="toolbar"`, `TOOLBAR_SCOPE`, and `data-orientation` / `aria-orientation` — `vertical` for a `left` or `right` rail, `horizontal` for `top` or `bottom`. Every action and popover trigger carries `TOOLBAR_ITEM_ATTR`, so the whole rail is **one tab stop**. Separators are `<hr aria-orientation>`, whose axis is *across* the rail. |
+| `Navbar` | Bar-level dropdowns are `core/Menu`; rows below the bar are `Menu.SubmenuTrigger` and `Menu.LinkItem`. Each popup carries `MENU_SCOPE`. |
 | `ThemeToggle` | `data-scope="theme"`, and three `sr-only` labels rather than one static `aria-label`. |
 
-**A flyout's title action is deliberately *not* a rail stop.** Roving focus queries the whole `<nav>`
-subtree and a flyout is inside it, so marking that button would splice flyout content into the rail's
-arrow-key ring.
-
-**`Navbar` is not a `role="menubar"`,** and that is a decision rather than an omission: a menubar
-owes its triggers a roving tab stop of their own, forge has no menubar controller, and claiming the
-role without the behaviour announces a keyboard interface that is not there. A bar-level link stays a
-plain link for the same reason — a link on a bar is not a menu item.
-
-**The rail carries `data-scope="toolbar"`, so an app action fired from inside it now passes through a
-scope on its way up.** That is safe by design: action routing continues to the enclosing scope when
-the inner one's table does not have the action. It is called out because it is the change most likely
-to look like it should break a consumer's tool buttons, and does not.
-
-The glyphs every chrome component needs (`chevron-down`, `hamburger`, `close`, `sun`, `moon`,
-`monitor`) all ship in `forgeUiSpriteSources()` — see [`@y-core/forge/ui/assets`](#y-coreforgeuiassets).
-
-### Types
-
-`NavbarProps`, `NavDefinition`, `NavSection`, `NavSectionItem`, `NavItem`, `NavLink`, `NavMenu`,
-`NavSlot`, `NavGroup`, `NavPlacement`, `NavCollapsible`, `ToolbarProps`, `ToolbarDefinition`, `ToolbarGroup`, `ToolbarItem`, `ToolbarAction`,
-`ToolbarPopover`, `ToolbarSeparator`, `ToolbarSlot`, `ToolbarTitleAction`, `ToolbarPlacement`,
-`ThemeToggleProps`.
+**`Navbar` is not a `role="menubar"`, and a flyout's title action is not a rail stop** — both rulings, not omissions
+([`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §1l). The rail carrying
+`TOOLBAR_SCOPE` means an app action fired inside it passes through a scope on its way up, which is safe: action
+routing continues to the enclosing scope when the inner table lacks the action. Every glyph chrome needs ships in
+`forgeUiSpriteSources()`.
 
 ---
 
@@ -1490,27 +855,20 @@ The glyphs every chrome component needs (`chevron-down`, `hamburger`, `close`, `
 > Import path: `@y-core/forge/ui/chrome/client` → `src/ui/chrome/client.ts`
 > **Browser-only, side-effect import.** esbuild entry points only.
 
-### Features
+Registers the `theme` and `navbar` scopes at module load; no DOM is touched until a scope resumes. It also
+**side-effect-imports `@y-core/forge/ui/core/client`**, because chrome's markup names the `menu` and `toolbar` scopes
+and a component whose markup names a scope has to guarantee the scope exists. Import it in the client entry **before**
+`resume()`, since the eager pass only hydrates scopes registered by then; registration is idempotent, so importing
+both is harmless.
 
-- Registers the `theme` and `navbar` resumable scopes — the client halves of `ThemeToggle` and
-  `Navbar`. Registration happens at module load; no DOM is touched until a scope resumes.
-- **Side-effect-imports `@y-core/forge/ui/core/client`.** Chrome's markup names the `menu` and
-  `toolbar` scopes, and a component whose markup names a scope has to guarantee the scope exists —
-  otherwise an app importing only this module gets `resume()` warnings and a navbar and toolbar that
-  are dead to the keyboard. Importing both is harmless; registration is idempotent.
-- Exports `isDark`, a `ReadonlySignal<boolean>` tracking the resolved theme.
+| Scope | Contract |
+|---|---|
+| `theme` | `eager`. State key `pref`. One action, `cycleTheme`, advancing `light → dark → system → light`. `setup` acquires the **document's** theme — one `pref` seeded from `localStorage`, one `(prefers-color-scheme: dark)` listener, and the effects keeping `THEME_ATTR`, `localStorage` and `DARK_CLASS` on `<html>` in sync — re-points its own `pref` at it, and releases it on disposal. |
+| `navbar` | `eager`. State key `filters`. No actions — `setup` alone syncs `hidden` on every `[data-filter]` descendant and listens for `NAVBAR_FILTERS_EVENT`. Eager out of necessity: the navbar's markup emits no `data-on-*` anywhere. |
 
-### Usage
-
-```typescript
-// src/client/main.ts (esbuild entry point):
-import "@y-core/forge/ui/chrome/client";  // side-effect: registers the scopes
-import { resume } from "@y-core/forge/ui/client";
-
-resume();  // hydrates the eager `theme` and `navbar` scopes now, plus every core scope
-```
-
-To react to the resolved theme, import the signal by name:
+| Export | Type | Description |
+|---|---|---|
+| `isDark` | `ReadonlySignal<boolean>` | Whether the resolved theme is dark (`pref === "dark"`, or `"system"` with a matching media query). |
 
 ```typescript
 import { isDark } from "@y-core/forge/ui/chrome/client";
@@ -1519,133 +877,90 @@ import { effect } from "@y-core/forge/ui/client";
 effect(() => renderer.setBackground(isDark.value ? "#111" : "#fff"));
 ```
 
-`isDark` is a **stable binding** — a fixed object whose `.value` getter delegates to whichever signal
-the theme scope currently owns — so it is safe to destructure or capture before `resume()` runs. It
-reads `false` until the theme scope resumes.
-
-### Core Components & APIs
-
-| Scope | Contract |
-|---|---|
-| `theme` | `eager: true` — hydrates at `resume()`, not on first interaction, so the preference reconciles without waiting for a click. State key `pref`. One action, `cycleTheme`, advancing `light → dark → system → light`. `setup` reconciles `pref` against `localStorage` (the FOUC script already applied it), then keeps `THEME_ATTR`, `localStorage`, and the `DARK_CLASS` on `<html>` in sync, tracking `(prefers-color-scheme: dark)` for the `system` case. |
-| `navbar` | `eager: true`. State key `filters`. No actions — `setup` alone syncs `hidden` on every `[data-filter]` descendant and listens for the `navbar:filters` document event. Eager out of necessity: the navbar's markup emits no `data-on-*` anywhere (native `<details>`, native popovers, plain links), so a lazy scope would have nothing to resume it and auth filtering would silently never run. |
-
-| Export | Type | Description |
-|---|---|---|
-| `isDark` | `ReadonlySignal<boolean>` | Whether the resolved theme is dark (`pref === "dark"`, or `pref === "system"` with a matching media query). |
-
-### Integration Guide
-
-Both scopes return a disposer from `setup`, and **`resume()` owns teardown** — the disposers it
-collects run when the teardown function `resume()` returned is called. There is nothing for the caller
-to unmount, and no controller handle to hold: importing this module and calling `resume()` is the
-whole lifecycle. The import must come **before** `resume()`, since the eager `theme` pass only
-hydrates scopes registered by then.
-
----
-
-## `@y-core/forge/ui/client/htmx`
-
-> Import path: `@y-core/forge/ui/client/htmx` → `src/ui/client/htmx.ts`
-> **Browser-only, side-effect import.** esbuild entry points only.
-
-### Features
-
-- Pins the `htmx.org` bundle version through the forge package.
-- Attaches `htmx` to `window` and configures it (`htmx.config.includeIndicatorStyles = false`).
-
-### Usage
-
-```typescript
-// src/client/main.ts (esbuild entry point):
-import "@y-core/forge/ui/client/htmx"; // side-effect only — no exports used
-```
-
-This module runs for its side effects: it imports the htmx bundle and disables htmx's built-in indicator
-styles. It also re-exports `htmx` for the rare case a call site needs the instance directly, but the
-canonical usage is the bare side-effect import above. Mark the import so esbuild does **not** tree-shake
-it, and never import htmx from a CDN — this entry pins the version through forge.
+`isDark` is a **stable binding** — a fixed object whose `.value` getter delegates to whichever signal is currently
+live — so it is safe to capture before `resume()` runs, reading `false` until a theme scope resumes. **The preference
+belongs to the document, not to a toggle:** every `theme` scope in a document shares one `pref` signal, and the media
+listener plus the two effects that paint `<html>` are installed once per document by whichever scope resumes first, so
+a navbar toggle beside a settings one is a supported composition. **`resume()` owns teardown** for every scope, so
+there is nothing for the caller to unmount and no handle to hold.
 
 ---
 
 ## `@y-core/forge/ui/show`
 
 > Import path: `@y-core/forge/ui/show` → `src/ui/show/mod.ts`
+> Its markup is opt-in for Tailwind — see [the stylesheet](#the-stylesheet).
 
-### Features
-
-- A drop-in, living reference page for every `@y-core/forge` UI component — static catalog, HTMX demos,
-  theme toggle, and a resumability island.
-- A **theme customiser** at the `theme` route: generates a complete forge colour scheme from hue and
-  chroma over the fixed lightness ramp, previews it on four scale/surface pairs and on a real composed
-  UI, reports live WCAG ratios for every audited pair, and emits a paste-ready scheme file that is
-  standalone-complete — every property a scheme owns, including the contrast step its accent pairs with.
-- Route helpers (`load*` / `render*`) and a single path table (`showcasePaths`) so the page and its API
-  endpoints never drift.
+A drop-in, living reference for every `@y-core/forge` UI component, plus a **theme customiser** that generates a
+complete forge colour scheme from the five dials, previews it on four scale/surface rows and on a real composed UI,
+reports live WCAG ratios for every audited pair, and emits a paste-ready scheme file.
 
 ### Routes
 
-`showcaseRoutes(base)` returns two pages and six HTMX fragment endpoints. Both pages are registered by
-`registerShowcase` and wrapped in your `layout`.
+`showcaseRoutes(base)` returns six pages and seven HTMX fragment endpoints; `registerShowcase` mounts every one,
+wrapped in your `layout`. The catalog is cut by **consumer prerequisite**: the page a demo lands on is what you must
+wire up for it to work.
 
-| Route | Path (default base) | What it is |
-|---|---|---|
-| `ui.index` | `/showcase/ui` | The component catalog. |
-| `ui.theme` | `/showcase/ui/theme` | The theme customiser. Its whole state is the query string — five dials (`ah`, `ac`, `gh`, `gc`, `r`), each clamped to its own range — so a scheme is shareable as a link, with no `localStorage` and no FOUC script. |
-| `ui.api.*` | `/showcase/ui/api/…` | Six HTMX fragment endpoints (`preview`, `validate`, `search`, `paginate`, `dependent`, `toast`). |
+| Route | Path (default base) | What it is | Prerequisite |
+|---|---|---|---|
+| `ui.index` | `/showcase/ui` | Server-rendered primitives. | none — works with JavaScript disabled |
+| `ui.interactive` | `/showcase/ui/interactive` | The `ui/core` components that register a scope. | `import "@y-core/forge/ui/core/client"` + `resume()` |
+| `ui.runtime` | `/showcase/ui/runtime` | Signals, `bindControls`, `lazy()`. | `import "@y-core/forge/ui/show/client"` + `resume()` |
+| `ui.htmx` | `/showcase/ui/htmx` | The fragment demos and the Flash channel. | `import "@y-core/forge/ui/client/htmx"` + the seven `ui.api.*` endpoints |
+| `ui.chrome` | `/showcase/ui/chrome` | The configuration-driven navbar, toolbar and theme toggle. | `import "@y-core/forge/ui/chrome/client"` + a `NavDefinition` you supply |
+| `ui.theme` | `/showcase/ui/theme` | The theme customiser. Its whole state is the query string, each dial clamped to its own range, so a scheme is shareable as a link with no `localStorage` and no FOUC script. | none |
+| `ui.api.*` | `/showcase/ui/api/…` | Seven fragment endpoints (`preview`, `validate`, `search`, `paginate`, `dependent`, `toast`, `avatar`). | — |
 
-The customiser paints through CSSOM rather than server-rendering colour, because forge ships
-`style-src 'self'` with no style nonce and the JSX renderer drops `style` attributes accordingly. Every
-hex is server-rendered **as text**, so the page reads correctly with no JavaScript; only the paint waits
-for the eager `customise` scope. It writes one `light-dark()` per property and never reads the theme
-class, so the browser follows the mode toggle on its own; the preview swatches are painted as literals
-from each row's own mode, which is why a light row and a dark row sit on one page at all.
+**The bundle does not split.** `ui/show/client` registers every scope and side-effect-imports `ui/chrome/client` and
+`ui/core/client`, so each page ships everything; the pages *document* the prerequisite rather than enforcing it. The
+customiser paints through CSSOM rather than server-rendering colour, because forge ships `style-src 'self'` and the
+JSX renderer drops `style` attributes — every hex is server-rendered **as text**, so the page reads correctly with no
+JavaScript ([`THEME_GENERATION.md`](../../.decisions/implementation/THEME_GENERATION.md) §2c).
 
 ### Usage
 
-`ShowcaseContent` is layout-less — wrap it in your app's `Layout`. It needs the showcase data and an
-`icon` prop (a `ForgeIcon` supplying forge's required glyphs — all present if you include
-`forgeUiSpriteSources()` in your assets config):
+`ShowcaseContent` is layout-less — wrap it in your app's `Layout`. It needs the showcase data, an `icon` prop (a
+`ShowcaseIcon`, whose every glyph `forgeUiSpriteSources()` supplies), and the `page` to render (defaults to
+`"index"`):
 
 ```tsx
-import { loadShowcase, ShowcaseContent } from "@y-core/forge/ui/show";
-import { renderPage } from "@y-core/forge/jsx";
-
-export function showcasePage(c, icon) {
-  const data = loadShowcase(c, { basePath: "/showcase" });
-  return renderPage(<Layout><ShowcaseContent data={data} icon={icon} /></Layout>);
-}
+const data = loadShowcase(c, { basePath: "/showcase" });
+return renderPage(<Layout><ShowcaseContent data={data} icon={icon} page='interactive' /></Layout>);
 ```
 
-### Core Components & APIs
+### Exports
 
 | Export | Kind | Description |
 |---|---|---|
-| `ShowcaseContent` | component | The full showcase page body. |
-| `CustomiseContent` | component | The theme customiser page body — levers, the 2×2 scale preview, live WCAG readouts, the composition band, and the generated scheme file. |
-| `loadCustomise` | loader | Builds `CustomiseData` (`{ dials, path }`) by reading the five dials off the query string, clamped and snapped to each dial's own range. |
-| `showcasePaths(basePath, apiPath?)` | helper | Returns all showcase URL paths derived from a base path. |
+| `showcaseRoutes(base?)` | function | Builds the showcase route subtree under `base` (default `"/showcase/ui"`). |
+| `registerShowcase(app, routes, options)` | function | Registers every showcase page and API endpoint on a `Forge` app. |
+| `ShowcaseUiRoutes`, `ShowcaseOptions`, `ShowcaseIcon` | types | The `ui` subtree `showcaseRoutes` returns; `registerShowcase`'s `{ icon, context, layout }`; and the `ForgeIcon` union every section needs. |
+| `ShowcaseContent` | component | One showcase page body, selected by `page`. |
+| `showcasePaths(basePath, apiPath?)` | function | Every showcase URL path derived from a base path — the single source of truth the page and its endpoints share. |
 | `loadShowcase` | loader | Builds `ShowcaseData` (`{ paths }`) for the page. |
+| `CustomiseContent` | component | The theme customiser body — levers, the four-row scale preview, live WCAG readouts, the composition band, and the generated scheme file with its copy controls. |
+| `loadCustomise` | loader | Builds `CustomiseData` (`{ dials, path }`) by reading the five dials off the query string, clamped and snapped to each dial's own range. |
+| `CustomiseData`, `CustomiseIcon` | types | The customiser's loader output, and its icon constraint. |
+| `CompositionsSection` | component | The composition band: the catalog's primitives assembled into the surfaces an application ships. |
+| `CollectionSurface` | component | One collection in its four states — populated, empty, loading and failed — shown as siblings. |
+| `SettingsSurface` | component | A settings form: `FormField` where a value is validated, `Field` where a row is only laid out. |
+| `FeedbackSurface` | component | Two near-neighbour choices made side by side: `Alert` against `Toast`, `Spinner` against `Skeleton`. |
 | `loadPreview` / `renderPreview` | loader / renderer | Variant + size preview demo. |
 | `loadValidate` / `renderValidate` | loader / renderer | Inline validation demo. |
 | `loadSearch` / `renderSearch` | loader / renderer | Live search demo. |
 | `loadPaginate` / `renderPaginate` | loader / renderer | Pagination demo. |
 | `loadDependent` / `renderDependent` | loader / renderer | Dependent-select demo. |
 | `loadToast` / `renderToast` | loader / renderer | Toast trigger demo. |
+| `renderAvatar` | renderer | Serves the showcase's own portrait SVG, so the catalog never reaches for a remote image. The only `render*` with no loader pair — it reads nothing from the request. |
+| `PreviewSection`, `ValidateSection`, `SearchSection`, `PaginateSection`, `DependentSection`, `ToastSection` | components | Each demo's section, for apps composing the demos individually. |
+| `PreviewFragment`, `ValidateFragment`, `SearchFragment`, `PaginateFragment`, `DependentFragment`, `ToastFragment` | components | Each demo's swappable HTMX fragment. |
+| `SHOW_PREVIEW_ID`, `SHOW_VALIDATE_ID`, `SHOW_SEARCH_ID`, `SHOW_PAGINATE_ID`, `SHOW_DEPENDENT_ID` | const | The HTMX target ids each demo's fragment swaps into, for apps composing the demos individually. |
 
-Each `render*` helper serializes its fragment with `renderToString` and returns a `fragmentResponse`.
-The `*Section` and `*Fragment` JSX components (`PreviewSection`, `ValidateSection`, …) and the
-`SHOW_*_ID` target IDs are also exported for apps that compose the demos individually.
-
-### Integration Guide
-
-Wire each route to its `load*` + `render*` pair, using `showcasePaths` as the single source of truth for
-both the page and the HTMX API endpoints. The `render*` helpers that include an icon-bound component
+Each `render*` helper paired with a loader serializes its fragment with `renderToString` and returns a
+`fragmentResponse`; `renderAvatar` returns an `image/svg+xml` response instead. The two taking an icon-bound component
 (`renderPreview`, `renderDependent`) take the same bound icon as `ShowcaseContent`.
 
-### Types
-
-`ShowcaseData`, `ShowcasePaths`, `PreviewData`, `ValidateData`, `SearchData`, `PaginateData`,
+**Types:** `ShowcaseData`, `ShowcasePaths`, `PreviewData`, `ValidateData`, `SearchData`, `PaginateData`,
 `DependentData`, `ToastData`.
 
 ---
@@ -1655,33 +970,26 @@ both the page and the HTMX API endpoints. The `render*` helpers that include an 
 > Import path: `@y-core/forge/ui/show/client` → `src/ui/show/client.ts`
 > **Browser-only, side-effect import.**
 
-### Features
+Import it in the client entry before `resume()`, as `ui/core/client` is imported.
 
-- The browser script for the showcase's resumability island — a live component-filter list.
-
-### Usage
-
-```typescript
-// In the showcase client entry:
-import "@y-core/forge/ui/show/client";
-import { resume } from "@y-core/forge/ui/client";
-
-resume(); // installs the delegated listener that activates the registered scope
-```
-
-This module calls `registerScope("show-filter", …)` for its side effect. The scope filters the catalog
-list against a search input and updates a `computed()`-derived result count with no server roundtrip. It
-demonstrates the island pattern end-to-end: `ShowcaseContent` renders the `data-scope='show-filter'`
-region with serialized `data-state`, and this script resumes it on first interaction.
+It registers `show-filter` — a catalog list filtered against a search input with a `computed()`-derived result count
+and no server roundtrip — and `show-controls`, which runs `bindControls` over every `data-field` control in the demo
+band and writes each `[data-readout]` element from the signal behind it. That scope is `eager`, because a bound
+control stamps no `data-on-*` action for a lazy resume to trigger on.
 
 ---
 
-## Cross-references
+## See also
 
-- [`UI_CLIENT_RUNTIME.md`](../../.decisions/UI_CLIENT_RUNTIME.md) — authoritative design doc for the SSR-vs-client
-  split, the resumability island pattern, and field binding.
-- [`UI_DESIGN_GUIDANCE.md`](../../.decisions/UI_DESIGN_GUIDANCE.md) — the scheme the shipped design corpus is written
-  against: its two rule tiers, its rule identifiers, and the boundary it holds with this README.
-- [`@y-core/forge/jsx`](../../README.md) — `renderToString` / `renderPage` to serialize component trees.
-- [`@y-core/forge/http`](../../README.md) — `fragmentResponse` / `htmlResponse` / `rawHtml` to return rendered HTML.
-- [`@y-core/forge/security`](../../README.md) — CSP `script-src` for the `FOUC_SCRIPT` hash and inline-script nonces.
+- [`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) — the component
+  contract, the signal-binding seam, the class utilities, the state-attribute contract, the scheme
+  declaration contract.
+- [`UI_CLIENT_RUNTIME.md`](../../.decisions/implementation/UI_CLIENT_RUNTIME.md) — mount
+  controllers, the disposer contract, signals, lazy loading, resumable scopes.
+- [`THEME_GENERATION.md`](../../.decisions/implementation/THEME_GENERATION.md) — the dial model, the
+  emission contract, the contrast audit.
+- [`UI_DESIGN_GUIDANCE.md`](../../.decisions/implementation/UI_DESIGN_GUIDANCE.md) — the design
+  corpus's rule tiers and identifiers.
+- [`UI_SHOWCASE.md`](../../.decisions/implementation/UI_SHOWCASE.md) — mounting `ui/show`, and its
+  coverage contract.
+- [MIGRATION.md](../../MIGRATION.md) — the consumer-facing `dark:` variant takeover.

@@ -179,6 +179,10 @@
       "types": "./src/ui/contracts/mod.ts",
       "import": "./src/ui/contracts/mod.ts"
     },
+    "./ui/contracts/theme": {
+      "types": "./src/ui/contracts/theme/mod.ts",
+      "import": "./src/ui/contracts/theme/mod.ts"
+    },
     "./ui/controls": {
       "types": "./src/ui/controls/mod.ts",
       "import": "./src/ui/controls/mod.ts"

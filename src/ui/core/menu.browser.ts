@@ -86,10 +86,10 @@ test.describe("Menu — anatomy", () => {
 
     const state = await page.evaluate(() => {
       const el = document.querySelector("#file-menu");
-      return { open: el?.hasAttribute("data-open"), closed: el?.hasAttribute("data-closed") };
+      return { open: el?.matches(":popover-open") };
     });
 
-    expect(state).toEqual({ open: false, closed: true });
+    expect(state).toEqual({ open: false });
   });
 
   test("a closed popup is actually not rendered, not merely marked closed", async ({ page }) => {
@@ -146,7 +146,7 @@ test.describe("Menu — the platform opens and closes it", () => {
     await page.click("[data-slot~='menu-trigger']");
 
     expect(await isOpen(page)).toBe(true);
-    await expect.poll(() => page.evaluate(() => document.querySelector("#file-menu")?.hasAttribute("data-open"))).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.querySelector("#file-menu")?.matches(":popover-open"))).toBe(true);
   });
 
   test("Escape closes it", async ({ page }) => {
@@ -652,27 +652,6 @@ test.describe("Menu — a submenu across a shadow boundary", () => {
     return page.evaluate(() => document.querySelector("#host")?.shadowRoot?.querySelector("#recent-menu")?.matches(":popover-open") ?? false);
   }
 
-  function armAnchorProbe(page: Page, where: "light" | "shadow"): Promise<string> {
-    return page.evaluate((scope) => {
-      const popup =
-        scope === "shadow"
-          ? document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("#recent-menu")
-          : document.querySelector<HTMLElement>("#file-menu");
-      popup?.style.setProperty("position-anchor", "--probe");
-      return popup?.style.getPropertyValue("position-anchor") ?? "";
-    }, where);
-  }
-
-  function readAnchorProbe(page: Page, where: "light" | "shadow"): Promise<string> {
-    return page.evaluate((scope) => {
-      const popup =
-        scope === "shadow"
-          ? document.querySelector("#host")?.shadowRoot?.querySelector<HTMLElement>("#recent-menu")
-          : document.querySelector<HTMLElement>("#file-menu");
-      return popup?.style.getPropertyValue("position-anchor") ?? "";
-    }, where);
-  }
-
   test("a nested popup whose parent panel is outside its shadow root still reports nested", async ({ page }) => {
     await mount(page, await lightParentShadowSubmenuMarkup(), EXPOSE);
     await page.evaluate(() => {
@@ -692,17 +671,12 @@ test.describe("Menu — a submenu across a shadow boundary", () => {
     });
     expect(shape).toEqual({ parentIsShadowRoot: true, parentElementIsNull: true, hostIsInsidePanel: "file-menu" });
 
-    const armed = await armAnchorProbe(page, "shadow");
-    expect(armed, "position-anchor did not stick, so the anchor-binding probe below asserts nothing").toBe("--probe");
-
     await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
     await page.click("[data-slot~='menu-submenu-trigger']");
     await expect.poll(() => shadowSubmenuOpen(page)).toBe(true);
     expect(await isOpen(page)).toBe(true);
     await expect.poll(() => shadowFocusedId(page)).toBe("r0");
-
-    expect(await readAnchorProbe(page, "shadow")).toBe("");
 
     await page.keyboard.press("ArrowLeft");
 
@@ -714,16 +688,13 @@ test.describe("Menu — a submenu across a shadow boundary", () => {
     await mount(page, await submenuMarkup("ltr", "wrapper"), EXPOSE);
     await start(page);
 
-    const armed = await armAnchorProbe(page, "light");
-    expect(armed, "position-anchor did not stick, so the anchor-binding probe below asserts nothing").toBe("--probe");
-
     await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
+    // Not nested, so the toward-key must not close it — the one behaviour `isNested` still decides.
     await page.keyboard.press("ArrowLeft");
 
     expect(await isOpen(page)).toBe(true);
     expect(await focusedId(page)).toBe("new");
-    expect(await readAnchorProbe(page, "light")).toBe("--probe");
   });
 
   test("the toward-key never closes an already-open submenu inside a shadow root", async ({ page }) => {

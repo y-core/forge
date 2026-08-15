@@ -52,7 +52,7 @@ comes from. Every import names a subpath; the `ui` namespace publishes no bare b
 | Toggle one mode in a toolbar | `Toggle` | `@y-core/forge/ui/core` |
 | Pick an approximate value on a continuum | `Slider` | `@y-core/forge/ui/core` |
 | Take an exact number with bounds and steps | `NumberField` | `@y-core/forge/ui/core` |
-| Draw a sprite glyph | `Icon` / `createIcon` / `ForgeIcon` | `@y-core/forge/ui/core` |
+| Draw a sprite glyph | `Icon` / `createIcon` / `ForgeIcon<Name>` | `@y-core/forge/ui/core` |
 | Catch a naive bot on a mutation form | `Honeypot` | `@y-core/forge/ui/core` |
 | Challenge a submission that reaches a real cost | `Turnstile` | `@y-core/forge/ui/core` |
 | Give the app its top-level navigation | `Navbar` | `@y-core/forge/ui/chrome` |

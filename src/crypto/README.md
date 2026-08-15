@@ -50,7 +50,7 @@ them through **`@y-core/forge/storage/db`**, the namespace whose primary keys th
 is still no importable `crypto` path.
 
 The design rationale — the frozen Workers clock, the counter, the module-level-state carve-out, and
-the "not a secret" caveat — lives in `.decisions/STORAGE_BINDINGS.md` §1e.
+the "not a secret" caveat — lives in `.decisions/implementation/STORAGE_BINDINGS.md` §1e.
 
 **Anything `@public` added here must be added by hand to a surfacing barrel.** `validate-exports`
 scans only the source files owned by an exported namespace, so its source → barrel pass does not

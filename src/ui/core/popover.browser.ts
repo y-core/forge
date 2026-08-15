@@ -31,9 +31,9 @@ function state(page: Page) {
     const panel = document.querySelector<HTMLElement>("#tips");
     return {
       nativeOpen: panel?.matches(":popover-open"),
-      open: panel?.hasAttribute("data-open"),
-      closed: panel?.hasAttribute("data-closed"),
-      triggerLit: document.querySelector("[data-ref='trigger']")?.hasAttribute("data-popup-open"),
+      // The exact selector `forge-ui.css` §4 lights the trigger with — matching it is the whole
+      // mechanism, so the assertion needs no stylesheet.
+      triggerLit: document.querySelector("[data-slot~='popover']:has(> [data-slot~='popover-content']:popover-open)") !== null,
     };
   });
 }
@@ -43,16 +43,16 @@ test.describe("Popover", () => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
-    expect(await state(page)).toEqual({ nativeOpen: false, open: false, closed: true, triggerLit: false });
+    expect(await state(page)).toEqual({ nativeOpen: false, triggerLit: false });
   });
 
-  test("opening publishes data-open on the panel and data-popup-open on the trigger", async ({ page }) => {
+  test("opening lights the trigger through the sheet's :has() selector", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
 
     await page.click("[data-ref='trigger']");
 
-    await expect.poll(() => state(page)).toEqual({ nativeOpen: true, open: true, closed: false, triggerLit: true });
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: true, triggerLit: true });
   });
 
   test("toggling closed flips both back", async ({ page }) => {
@@ -60,10 +60,10 @@ test.describe("Popover", () => {
     await start(page);
 
     await page.click("[data-ref='trigger']");
-    await expect.poll(async () => (await state(page)).open).toBe(true);
+    await expect.poll(async () => (await state(page)).nativeOpen).toBe(true);
     await page.click("[data-ref='trigger']");
 
-    await expect.poll(() => state(page)).toEqual({ nativeOpen: false, open: false, closed: true, triggerLit: false });
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: false, triggerLit: false });
   });
 
   test("light-dismiss is the platform's, and the attributes follow it", async ({ page }) => {
@@ -71,17 +71,17 @@ test.describe("Popover", () => {
     await start(page);
 
     await page.click("[data-ref='trigger']");
-    await expect.poll(async () => (await state(page)).open).toBe(true);
+    await expect.poll(async () => (await state(page)).nativeOpen).toBe(true);
     await page.keyboard.press("Escape");
 
-    await expect.poll(() => state(page)).toEqual({ nativeOpen: false, open: false, closed: true, triggerLit: false });
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: false, triggerLit: false });
   });
 
   test("placement is the server's and survives every reconciliation", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
     await page.click("[data-ref='trigger']");
-    await expect.poll(async () => (await state(page)).open).toBe(true);
+    await expect.poll(async () => (await state(page)).nativeOpen).toBe(true);
 
     expect(
       await page.evaluate(() => {

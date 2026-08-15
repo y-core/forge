@@ -2,7 +2,8 @@ import { ownerDocument, ownerWindow } from "./dom";
 
 /** Below Tailwind's `md` breakpoint (`48rem`). Stated in `rem` so it meets the `min-width` side
  *  exactly, leaving no width at which neither query matches. */
-const DEFAULT_QUERY = "(max-width: 47.99rem)";
+const DEFAULT_QUERY =
+  "(max-width: 47.99rem)"; /* modern-css-allow: forge-ui-platform-container-query — this toggles a disclosure's `open` state, which is DOM state rather than style, and `@container` can only drive style; the decision is a page-chrome one taken against the viewport by design. */
 
 const mountedCollapses = new WeakMap<Element, () => void>();
 
@@ -26,15 +27,26 @@ export function mountViewportCollapse(options: ViewportCollapseOptions = {}): ()
   const el = found as HTMLDetailsElement | null;
   // Duck-typed rather than `instanceof HTMLDetailsElement`, which is false for an element from
   // another realm, and which would also reject a disclosure a consumer implemented some other way.
-  if (!el || typeof el.open !== "boolean") return noop;
+  // The call named a target and it did not resolve, which is a property of the call site: it throws.
+  if (!el || typeof el.open !== "boolean") {
+    const named = options.element !== undefined ? "the given `element`" : `\`${options.selector ?? "(none)"}\``;
+    throw new Error(`mountViewportCollapse: ${named} did not resolve to a disclosure with an \`open\` property`);
+  }
 
   const existing = mountedCollapses.get(el);
   if (existing) return existing;
 
   const win = ownerWindow(el);
-  if (typeof win.matchMedia !== "function") return noop;
+  // Environmental, so it degrades: the disclosure keeps whatever state the markup gave it.
+  if (typeof win.matchMedia !== "function") {
+    console.warn("[viewport-collapse] matchMedia is unavailable in this realm; the disclosure will not collapse by viewport");
+    return noop;
+  }
   const query = win.matchMedia(options.query ?? DEFAULT_QUERY);
-  if (typeof query.addEventListener !== "function") return noop;
+  if (typeof query.addEventListener !== "function") {
+    console.warn("[viewport-collapse] this realm's MediaQueryList has no addEventListener; the disclosure will not track the viewport");
+    return noop;
+  }
 
   const initialOpen = el.open;
   let userOwned = false;

@@ -2,7 +2,15 @@ import { expect, type Page, test } from "@playwright/test";
 import { render } from "../../testing/render";
 import { DARK_CLASS } from "../chrome/theme";
 import { mount, paintedHex } from "../client/browser-test-helper";
-import { buildTheme, liveRatios, PRESET_FIELD, PRESET_FIELDS, SCHEME_PRESETS } from "../contracts/theme-contract";
+import {
+  buildTheme,
+  COPY_CONFIRM_MS,
+  COPY_STATUS_ATTR,
+  COPY_TARGET_ATTR,
+  liveRatios,
+  PRESET_FIELDS,
+  SCHEME_PRESETS,
+} from "../contracts/theme/theme-contract";
 import { createIcon } from "../core/icon";
 import { CustomiseContent, loadCustomise } from "./customise";
 
@@ -36,12 +44,12 @@ const UTILITY_STYLE = `<style>
   td.pt-2 { padding-top: 0.5rem }
   td.border-t { border-top: 1px solid var(--border) }
   td.border-b { border-bottom: 1px solid var(--border) }
-  td.border-l { border-left: 1px solid var(--border) }
-  td.border-r { border-right: 1px solid var(--border) }
-  td.rounded-tl-md { border-top-left-radius: 0.375rem }
-  td.rounded-tr-md { border-top-right-radius: 0.375rem }
-  td.rounded-bl-md { border-bottom-left-radius: 0.375rem }
-  td.rounded-br-md { border-bottom-right-radius: 0.375rem }
+  td.border-s { border-inline-start: 1px solid var(--border) }
+  td.border-e { border-inline-end: 1px solid var(--border) }
+  td.rounded-ss-md { border-start-start-radius: 0.375rem }
+  td.rounded-se-md { border-start-end-radius: 0.375rem }
+  td.rounded-es-md { border-end-start-radius: 0.375rem }
+  td.rounded-ee-md { border-end-end-radius: 0.375rem }
   .h-10 { height: 2.5rem }
   div.w-full { width: 100% }
 </style>`;
@@ -90,19 +98,18 @@ const DEFAULT_DIALS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma:
 
 /** Pick a scheme the way a reader does — set the value, then fire the delegated `change`. */
 async function choosePreset(page: Page, id: string): Promise<void> {
-  await page.evaluate(
-    ({ field, value }) => {
-      const picker = document.querySelector<HTMLSelectElement>(`select[data-field="${field}"]`);
-      if (picker === null) throw new Error("no preset picker");
-      picker.value = value;
-      picker.dispatchEvent(new Event("change", { bubbles: true }));
-    },
-    { field: PRESET_FIELD, value: id },
-  );
+  await page.evaluate((value) => {
+    const picker = document.querySelector<HTMLSelectElement>("select[data-preset-picker]");
+    if (picker === null) throw new Error("no preset picker");
+    picker.value = value;
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+  }, id);
 }
 
+// Read off the control, never off a signal: which preset the dials name is derived, so the picker's
+// own value is the only place it exists.
 function presetValue(page: Page): Promise<string | undefined> {
-  return page.evaluate((field) => document.querySelector<HTMLSelectElement>(`select[data-field="${field}"]`)?.value, PRESET_FIELD);
+  return page.evaluate(() => document.querySelector<HTMLSelectElement>("select[data-preset-picker]")?.value);
 }
 
 function sliderValues(page: Page): Promise<Record<string, string | undefined>> {
@@ -161,7 +168,7 @@ test.describe("the customiser's levers", () => {
     expect(page.url()).toBe(url);
   });
 
-  test("move the sliders a preset drives, which bindField alone would leave behind", async ({ page }) => {
+  test("move the sliders a preset drives, which a one-way binding would leave behind", async ({ page }) => {
     await mountCustomise(page);
 
     await choosePreset(page, "slate");
@@ -243,7 +250,7 @@ test.describe("the customiser's levers", () => {
     expect(readout).toBe("120°");
   });
 
-  test("paint both scale rows at once, each with its own scale", async ({ page }) => {
+  test("paint every scale row at once, each with its own family and mode", async ({ page }) => {
     await mountCustomise(page);
 
     const step11 = (row: string) =>
@@ -252,8 +259,8 @@ test.describe("the customiser's levers", () => {
         return el === null ? null : getComputedStyle(el).backgroundColor;
       }, row);
 
-    expect(await step11("light")).toBe("rgb(100, 100, 100)");
-    expect(await step11("dark")).toBe("rgb(180, 180, 180)");
+    expect(await step11("gray-light")).toBe("rgb(100, 100, 100)");
+    expect(await step11("gray-dark")).toBe("rgb(180, 180, 180)");
   });
 
   test("align every swatch with the step number heading it", async ({ page }) => {
@@ -261,7 +268,7 @@ test.describe("the customiser's levers", () => {
 
     const drift = await page.evaluate(() => {
       const heads = [...document.querySelectorAll<HTMLElement>("#preview thead tr:last-child th")];
-      const swatches = [...document.querySelectorAll<HTMLElement>('[data-scale-row="light"] [data-swatch]')];
+      const swatches = [...document.querySelectorAll<HTMLElement>('[data-scale-row="gray-light"] [data-swatch]')];
       if (heads.length !== 12 || swatches.length !== 12) return { heads: heads.length, swatches: swatches.length, deltas: null };
       return {
         heads: heads.length,
@@ -297,8 +304,8 @@ test.describe("the customiser's levers", () => {
       }, id);
 
     const frame = { borderTop: "1px", borderLeft: "1px", radius: "6px" };
-    expect(await box("light")).toEqual({ ...frame, background: "rgb(249, 249, 249)", mutedText: "rgb(100, 100, 100)" });
-    expect(await box("dark")).toEqual({ ...frame, background: "rgb(17, 17, 17)", mutedText: "rgb(180, 180, 180)" });
+    expect(await box("gray-light")).toEqual({ ...frame, background: "rgb(249, 249, 249)", mutedText: "rgb(100, 100, 100)" });
+    expect(await box("gray-dark")).toEqual({ ...frame, background: "rgb(17, 17, 17)", mutedText: "rgb(180, 180, 180)" });
   });
 
   test("round the box's four outside corners and no interior one", async ({ page }) => {
@@ -311,7 +318,7 @@ test.describe("the customiser's levers", () => {
         const s = getComputedStyle(el);
         return [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].join(" ");
       };
-      const scope = '[data-scale-row="light"]';
+      const scope = '[data-scale-row="gray-light"]';
       return {
         topLeft: cell(`${scope} tr:first-child td:first-child`),
         topRight: cell(`${scope} tr:first-child td:last-child`),
@@ -333,7 +340,7 @@ test.describe("the customiser's levers", () => {
   test("rewrite the printed hex, not only the swatch it labels", async ({ page }) => {
     await mountCustomise(page);
 
-    const printed = () => page.evaluate(() => document.querySelector('[data-scale-row="light"] [data-hex="10"]')?.textContent);
+    const printed = () => page.evaluate(() => document.querySelector('[data-scale-row="gray-light"] [data-hex="10"]')?.textContent);
     expect(await printed()).toBe("#646464");
 
     await drag(page, [
@@ -346,7 +353,7 @@ test.describe("the customiser's levers", () => {
     expect(await printed()).toBe("#53667e");
 
     const painted = await page.evaluate(() => {
-      const el = document.querySelector<HTMLElement>('[data-scale-row="light"] [data-swatch="10"]');
+      const el = document.querySelector<HTMLElement>('[data-scale-row="gray-light"] [data-swatch="10"]');
       return el === null ? null : getComputedStyle(el).backgroundColor;
     });
     expect(painted).toBe("rgb(83, 102, 126)");
@@ -384,6 +391,133 @@ test.describe("the customiser's levers", () => {
     const output = await page.evaluate(() => document.querySelector("[data-scheme-output] code")?.textContent);
     expect(output).toContain("--gray-11: light-dark(oklch(50.32% 0.0450 256.0), oklch(76.99% 0.0314 256.0));");
     expect(output).not.toContain(".dark {");
+  });
+});
+
+// The whole point of the accent rows: one accent dial has to move an accent swatch, an accent hex
+// and an accent ratio, and leave the gray family alone. A shared painter would fail the last clause.
+test.describe("the customiser's accent family", () => {
+  test("move a swatch, a hex and a ratio together, and no gray hex at all", async ({ page }) => {
+    await mountCustomise(page);
+
+    const read = () =>
+      page.evaluate(() => ({
+        swatch: (() => {
+          const el = document.querySelector<HTMLElement>('[data-scale-row="accent-light"] [data-swatch="8"]');
+          return el === null ? null : getComputedStyle(el).backgroundColor;
+        })(),
+        accentHex: document.querySelector('[data-scale-row="accent-light"] [data-hex="8"]')?.textContent,
+        grayHex: document.querySelector('[data-scale-row="gray-light"] [data-hex="10"]')?.textContent,
+        ratio: document.querySelector('[data-ratio="--primary-foreground|--accent-9:light"]')?.textContent,
+      }));
+
+    const before = await read();
+    expect(before.swatch).not.toBeNull();
+    expect(before.accentHex).toBeTruthy();
+    expect(before.ratio).toBeTruthy();
+
+    await drag(page, [["accentHue", "30"]]);
+
+    const after = await read();
+    const expected = buildTheme({ ...DEFAULT_DIALS, accentHue: 30 });
+    expect(after.accentHex).toBe(expected.accent.light.solid[8]);
+    expect(after.accentHex).not.toBe(before.accentHex);
+    expect(after.swatch).not.toBe(before.swatch);
+    expect(after.ratio).not.toBe(before.ratio);
+    expect(after.ratio).toBe(liveRatios(expected).find((entry) => entry.key === "--primary-foreground|--accent-9:light")?.text);
+    expect(after.grayHex).toBe(before.grayHex);
+  });
+
+  // The default-dials case is covered by SSR; what only the browser proves is that the repaint
+  // recomputes the number rather than reprinting the one the Worker rendered.
+  test("recompute the accent pair live as the dials move, agreeing with SSR at both ends", async ({ page }) => {
+    await mountCustomise(page);
+
+    const cell = (mode: string) =>
+      page.evaluate((m) => document.querySelector(`[data-ratio="--primary-foreground|--accent-9:${m}"]`)?.textContent, mode);
+    const before = await cell("dark");
+    expect(before).toBe(liveRatios(buildTheme(DEFAULT_DIALS)).find((entry) => entry.key === "--primary-foreground|--accent-9:dark")?.text);
+
+    await drag(page, [
+      ["accentHue", "144"],
+      ["accentChroma", "170"],
+    ]);
+
+    const green = { ...DEFAULT_DIALS, accentHue: 144, accentChroma: 170 };
+    const after = await cell("dark");
+    expect(after).not.toBe(before);
+    expect(after).toBe(liveRatios(buildTheme(green)).find((entry) => entry.key === "--primary-foreground|--accent-9:dark")?.text);
+    expect(after).toContain("✓");
+    expect(await cell("light")).toContain("✓");
+  });
+});
+
+// The origin is `http://forge.test`, so `navigator.clipboard` really is undefined here — the
+// unavailable branch needs no simulating, and the success path needs a stub.
+test.describe("the customiser's copy controls", () => {
+  /** Replace the clipboard with a recorder, before any click. */
+  async function stubClipboard(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      const writes: string[] = [];
+      (window as unknown as { forgeClipboardWrites: string[] }).forgeClipboardWrites = writes;
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: (text: string) => {
+            writes.push(text);
+            return Promise.resolve();
+          },
+        },
+      });
+    });
+  }
+
+  const button = (id: string) => `button[${COPY_TARGET_ATTR}="${id}"]`;
+
+  function control(page: Page, id: string): Promise<{ label: string | undefined; status: string | undefined }> {
+    return page.evaluate(
+      ([selector, statusAttr, targetId]) => ({
+        label: document.querySelector(`${selector} [data-copy-label]`)?.textContent ?? undefined,
+        status: document.querySelector(`[${statusAttr}="${targetId}"]`)?.textContent ?? undefined,
+      }),
+      [button(id), COPY_STATUS_ATTR, id] as const,
+    );
+  }
+
+  test("write exactly the CSS on the page, then confirm and restore the label", async ({ page }) => {
+    await mountCustomise(page);
+    await stubClipboard(page);
+
+    const displayed = await page.evaluate(() => document.querySelector("[data-scheme-output] code")?.textContent);
+    await page.click(button("css"));
+
+    expect(await page.evaluate(() => (window as unknown as { forgeClipboardWrites: string[] }).forgeClipboardWrites)).toEqual([displayed ?? ""]);
+    await expect.poll(async () => (await control(page, "css")).label).toBe("Copied");
+    expect((await control(page, "css")).status).toBeTruthy();
+
+    await expect.poll(async () => (await control(page, "css")).label, { timeout: COPY_CONFIRM_MS + 2000 }).toBe("Copy CSS");
+  });
+
+  test("copy the share URL the page is currently showing, not the one it loaded with", async ({ page }) => {
+    await mountCustomise(page);
+    await stubClipboard(page);
+
+    await drag(page, [["grayHue", "120"]]);
+    const displayed = await page.evaluate(() => document.querySelector("[data-share-url]")?.textContent);
+    await page.click(button("url"));
+
+    expect(await page.evaluate(() => (window as unknown as { forgeClipboardWrites: string[] }).forgeClipboardWrites)).toEqual([displayed ?? ""]);
+    expect(displayed).toContain("gh=120");
+  });
+
+  // The branch every plain-HTTP deploy takes. The label must not lie about what happened.
+  test("say so and leave the label alone when the browser offers no clipboard", async ({ page }) => {
+    await mountCustomise(page);
+
+    await page.click(button("css"));
+
+    await expect.poll(async () => (await control(page, "css")).status).toBeTruthy();
+    expect((await control(page, "css")).label).toBe("Copy CSS");
   });
 });
 

@@ -1,3 +1,4 @@
+/* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */
 /* To use a web font, uncomment the Tailwind v4 defaults and prepend your own:
      --font-sans: "Inter", var(--theme-font-sans);
 :root {

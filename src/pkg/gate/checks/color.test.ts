@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { contrastRatio as uiContrastRatio, relativeLuminance as uiRelativeLuminance } from "../../../ui/contracts/color";
+import { contrastRatio as uiContrastRatio, relativeLuminance as uiRelativeLuminance } from "../../../ui/contracts/theme/color";
 import { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./color";
 import { type Mode, parseThemeDeclarations, resolveStep } from "./contrast-parse";
 
@@ -84,7 +84,7 @@ const V0_0_85: Readonly<Record<string, Readonly<Record<Mode, readonly string[]>>
   },
   "theme-neutral.css accent": {
     light: ["#fdfdfe", "#f7f9ff", "#edf2fe", "#e0e9ff", "#d1dfff", "#bed1ff", "#a6bff9", "#88a6ef", "#375bd7", "#2f50cc", "#3a5bc7", "#1d2d5c"],
-    dark: ["#0f141f", "#121826", "#17244a", "#1c2e63", "#243975", "#2d4385", "#365098", "#405db3", "#375bd7", "#476cde", "#96b4ff", "#d5e1ff"],
+    dark: ["#0f141f", "#121826", "#17244a", "#1c2e63", "#243975", "#2d4385", "#365098", "#405db3", "#3457d3", "#476cde", "#96b4ff", "#d5e1ff"],
   },
   "theme-stone.css gray": {
     light: ["#f9f9f8", "#fcfcfb", "#f0f0ef", "#e9e8e6", "#e2dfde", "#dcd8d6", "#d1cdcb", "#bfbab7", "#938c87", "#89827c", "#69635d", "#231f1e"],
