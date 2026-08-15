@@ -6,8 +6,8 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 # UI SSR Components
 
 > Owns the server-rendered UI tier: the `ui/core` component contract, the `ui/controls` bound
-> variants, the server-side half of the signal-binding seam, and the `cn` / `asClass` / `cva`
-> class utilities.
+> variants, the server-side half of the signal-binding seam, the `cn` / `asClass` / `cva`
+> class utilities, and the contract a colour scheme file is declared against.
 >
 > Defers to: [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) for everything that runs in the
 > browser and for the hard SSR/client boundary; `src/ui/README.md` for the component gallery,
@@ -50,6 +50,9 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 - §4a Presence, Not Value: why `data-open` and never `data-open="true"`
 - §4b ARIA States Are Not Styling Hooks: why both are emitted
 - §4c The Caller Is Authoritative: class precedence and state precedence as one rule
+- §5 Colour Scheme Declaration Contract: one declaration site per step, and what selects between the modes
+- §5a OKLCh Solids and Hex Overlays: why the two halves of a scale are written in different spaces
+- §5b The Rejected Wide-Gamut Branch: why a second set of values would outrun the contrast audit
 
 ---
 
@@ -484,3 +487,79 @@ spreads it **before** `{...props}` / `{...rest}`, so the duplicate key resolves 
 Where the two land on different elements nothing collides. The rule is asserted for every
 participating component by the `ui/core` conformance sweep (`src/ui/core/conformance.test.tsx`),
 with a `ui/chrome` case in `toolbar.test.tsx`.
+
+---
+
+## 5. Colour Scheme Declaration Contract
+
+**A scheme file declares each role step exactly once, and no forge stylesheet declares a custom
+property under `.dark`.** A step whose value differs by mode is written with `light-dark()`, and the
+branch is selected by `color-scheme`, which `theme-base.css` sets on the light and dark roots.
+
+The rule is about declaration *sites*, not the selector, which is why it is stated that way and not
+as "no `.dark` block". `theme-base.css` sets `color-scheme: dark` under `.dark` — that is the
+mechanism, and it carries no value a consumer's own scheme could half-supply. The gate enforces the
+rule in exactly this shape: a `.dark` rule declaring no custom property passes.
+
+This replaces a two-block form — the same steps under `:root`, then again under `.dark` — that could
+not be supplied safely. Both selectors weigh 0-1-0 and both match the document element, so source
+order decides between them, and a consumer's scheme is imported after forge's own and therefore
+after both. Supplying only the `:root` half beat forge's dark half and leaked light values into dark
+mode. There was no error and no warning, and light mode looked correct; the defect was visible only
+to a reader already on the dark theme. **A documented requirement that fails silently is a design
+defect rather than a documentation gap**, and it was the second declaration site that made the
+requirement expressible at all. One site removes the hazard by construction instead of by
+instruction.
+
+`color-scheme` is declared in `theme-base.css` rather than in the scheme files, so a scheme carries
+colour and nothing structural: the scheme is the file a consumer replaces, and the mode wiring is the
+file they do not. Declaring it also hands the mode to the user agent, so scrollbars and the
+UA-rendered controls forge cannot paint — the native `<select>` popup among them — follow the theme
+rather than contradicting it.
+
+**A generated scheme is standalone-complete.** The customiser emits every property a scheme owns,
+including the contrast step that pairs with the accent, because a file that is correct only when
+layered over forge's default is the same silent half-supply in a different shape.
+
+**The degradation is accepted rather than mitigated.** A browser without `light-dark()` holds the
+declaration as an uninterpretable token stream, and every `var()` reading it is invalid at
+computed-value time, so the page loses its colours rather than falling back to one mode.
+`light-dark()` is Baseline, and forge owes no compatibility shim before its first stable release.
+
+### 5a. OKLCh Solids and Hex Overlays
+
+**A solid step is written in OKLCh; an alpha step is written as an eight-digit hex.** The mixed
+representation is deliberate — each half is stated in the space its value was produced in.
+
+The ramps in `src/ui/contracts/color.ts` are authored as a per-step lightness with a chroma shape
+over it, so OKLCh is the scheme's own space and hex was a lossy render of it. Writing that space into
+the file makes a scheme legible and hand-editable: shifting the hue of every step becomes a
+substitution rather than a regeneration. It costs the contrast gate nothing, because the resolver
+already reads `oklch()` — the palette values `theme-colors.css` aliases arrive from Tailwind in that
+form.
+
+**The emitted OKLCh is gamut-mapped, never the raw ramp coordinate.** Chroma is reduced at constant
+lightness and hue until the colour is representable in sRGB, and the reduced coordinates are what the
+file carries. A raw coordinate outside sRGB renders wider on a display that can show it, and the
+audited ratio would then describe a colour that reader never sees.
+
+An alpha step is *solved* rather than authored: it is the faintest overlay that composites over the
+scale's own base step to reproduce a solid, and the solver quantises alpha to the byte the hex will
+carry before it fits the channels to it. Restating that result in OKLCh would present a fitted sRGB
+overlay as an authored colour, and would round the very quantity the fit depends on.
+
+### 5b. The Rejected Wide-Gamut Branch
+
+**No scheme ships a `display-p3` branch.** The wide-gamut values a `@supports` and `color-gamut`
+pair would carry are not the values forge audits.
+
+WCAG relative luminance is defined over sRGB, and forge's checks reproduce that procedure rather than
+an equivalent one. A second set of values behind a feature query is a second theme the gate does not
+walk and cannot measure, which would leave every pinned ratio describing the fallback alone. The gain
+is a slightly more saturated accent for a reader on a wide-gamut display; the cost is that forge's
+accessibility claims would hold only for a branch that reader does not receive. The claim is worth
+more than the saturation.
+
+The same test rejects the per-scale surface, indicator, and track properties a wider palette library
+declares: forge resolves those through its semantic layer, and a step nothing reads is surface a
+consumer can come to depend on before any component justifies it.

@@ -17,7 +17,116 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **A colour scheme declares each step once, with `light-dark()`, and no forge stylesheet carries a
+  `.dark` block of values.** The two-block form could not be supplied safely: `:root` and `.dark`
+  both weigh 0-1-0 and both match `<html>`, so source order decided, and a consumer's scheme —
+  imported after forge's — replaced the light half while silently keeping forge's dark one. Light
+  mode looked correct and only a reader already on the dark theme saw the defect. A documented
+  requirement that fails silently is a design defect rather than a documentation gap.
+
+  ```diff
+    :root {
+  -   --gray-11: #646464;
+  +   --gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));
+    }
+  - .dark {
+  -   --gray-11: #b4b4b4;
+  - }
+  ```
+
+  **Every painted colour is byte-identical to 0.0.85** — the emitted coordinates are gamut-mapped, so
+  the mapping converter that writes them and the clipping converter a browser uses land on the same
+  byte, which a new test asserts for all four schemes across both modes and twelve steps.
+
+  - **Update your own scheme file** to one `:root` block, wrapping any step whose value differs by
+    mode in `light-dark(light, dark)`. A step that is the same colour in both modes is written bare.
+    Solid steps are now `oklch()`, the space the ramps are authored in; the `--gray-a*` overlays stay
+    eight-digit hex, because an overlay is fitted to sRGB bytes rather than authored.
+  - **`theme-base.css` now sets `color-scheme`** — `light` on `:root`, `dark` on `.dark` — which is
+    what selects the branch. It stays out of the scheme files deliberately: a scheme is the file a
+    consumer replaces, the mode wiring is the file they do not. The visible bonus is that scrollbars
+    and the UA-rendered controls forge cannot paint — the native `<select>` popup among them — now
+    follow the theme rather than contradicting it.
+  - **`getComputedStyle(...).getPropertyValue("--gray-11")` no longer returns a colour.**
+    `light-dark()` resolves at *used*-value time, and a custom property's computed value is the
+    substituted text, so a token read this way is the same string in both modes. Read the colour off
+    an element that paints it instead — set `style.color = "var(--gray-11)"` on a probe and read back
+    `getComputedStyle(probe).color`.
+  - **A browser without `light-dark()` loses its colours** rather than falling back to one mode. This
+    is accepted: `light-dark()` is Baseline, and forge owes no compatibility shim before 1.0.
+
+- **`schemeCss` emits one `:root` block and adds `--accent-contrast`.** A generated scheme is now
+  standalone-complete — a file that is correct only when layered over forge's default is the same
+  silent half-supply in a different shape.
+
+- **`scaleVars(family, solid, alpha)` is now `scaleVars(family, scales)`**, taking both modes and
+  returning values that already carry their `light-dark()`.
+
+- **`MODE_SELECTOR` is now `MODE_LABEL`** (`@y-core/forge/pkg`), carrying a mode word rather than a
+  selector, there no longer being a per-mode selector to name.
+
+### Added
+
+- `toSrgbGamut` and `oklchCss` (`@y-core/forge/ui/contracts`) — the gamut-mapped coordinate behind
+  `oklchToHex`, and the `oklch()` emission format a scheme file carries. `oklchToHex`'s output is
+  unchanged.
+- `lightDark` (`@y-core/forge/ui/contracts`) — one value covering both modes, collapsed to the bare
+  value where the two agree.
+- `matchPreset`, `customiseState`, `PRESET_CUSTOM`, `PRESET_FIELD` and `PRESET_FIELDS`
+  (`@y-core/forge/ui/contracts`) — the preset picker's shared vocabulary, declared once so the SSR
+  markup and the browser controller cannot drift on it. `customiseState` is the scope state itself:
+  every dial, plus the preset those dials name.
+- `paintedHex` (`ui/client/browser-test-helper`, test-only) — the `#rrggbb` a colour value paints as.
+  A token's computed value is now the `light-dark()` text, and a non-legacy colour serializes in its
+  own space, so neither `getPropertyValue` nor a computed `color` is a colour a spec can compare.
+- `splitLightDark` (`@y-core/forge/pkg`) — the depth-aware value splitter the contrast parser reads
+  a `light-dark()` with.
+- `validate-contrast` fails any `.dark` rule that declares a custom property, in any stylesheet under
+  its `cssDir`. This is the prevention the whole change is for. A `.dark` rule declaring no custom
+  property is untouched, which is what lets `theme-base.css` set `color-scheme` there.
+
+### Changed
+
+- **The theme customiser's preset dropdown applies on change.** Picking a scheme repaints the page
+  immediately through the `customise` scope — no submit, no navigation, and the `Apply` button, the
+  `<form>` around the control and its five hidden dial inputs are all gone. The picker moves its two
+  sliders with it (`bindField` is one-way, DOM to signal), and falls back to `custom` the moment a
+  lever is dragged off a preset. `?p=slate` still resolves server-side, so a preset link is unchanged.
+  **The picker now needs JavaScript**, as the sliders beside it already did.
+
+  It is the bound `ui/controls` `Select` on its default `bindField`, writing a `preset` signal that a
+  domain effect in the page translates into the two gray dials — what a preset *means* is the page's
+  business, not the control's. Every dial's slider is now reconciled from its signal in the same
+  effect that writes the readouts, so a dial moved by anything other than its own thumb no longer
+  leaves the thumb behind.
+- **The theme customiser's painter writes one `light-dark()` per property** and no longer watches
+  `<html>`'s class list — the browser selects the branch, so the `MutationObserver` that existed only
+  to re-paint on a theme toggle is deleted.
+
+### Fixed
+
+- **A signal written from inside an effect left its dependents permanently wrong.** Subscribers were
+  notified inline and gated on an epoch counter that only advanced at the outermost write, so an
+  effect that had already run in that epoch was skipped and never re-ran — the batch coalesced to one
+  downstream run, but that run observed a torn state and was never corrected. Since `computed` is an
+  effect that writes, the defect reached every derived value.
+
+  ```typescript
+  const sum = computed(() => x.value + y.value);
+  effect(() => { x.value = trigger.value; y.value = trigger.value; });
+  trigger.value = 5;
+  // was: sum.value === 5, and stayed 5.  now: 10
+  ```
+
+  A write now enqueues its subscribers and drains them, so **by the time a write returns every
+  dependent has observed the settled value**. Three consequences are worth knowing
+  ([`UI_CLIENT_RUNTIME.md`](.decisions/UI_CLIENT_RUNTIME.md) §3a): a write inside an effect body is
+  not visible to the next line of that body, only after the outermost write returns; a throwing
+  effect drops the effects queued behind it until the next write, as it already did; and a genuinely
+  cyclic graph — `effect(() => { s.value = s.value + 1 })` — now throws past a run cap rather than
+  silently settling on a wrong value.
 
 ---
 

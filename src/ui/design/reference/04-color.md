@@ -4,19 +4,20 @@ Forge's colour system is two layers, and it used to be three.
 
 Underneath is the **scale** in a scheme file — twelve numbered steps, `--gray-1` through `--gray-12`,
 and their twelve translucent siblings `--gray-a1` through `--gray-a12` — alongside the fixed status
-hues in `theme-colors.css`. Each step holds a **literal value**, once per mode, and names a *position
-in the system*: the app background, a subtle border, a low-contrast text colour.
+hues in `theme-colors.css`. Each step holds a **literal value** covering both modes, and names a
+*position in the system*: the app background, a subtle border, a low-contrast text colour.
 
 On top is the semantic layer in `theme-base.css`, which maps a step onto a name describing a
 *use*: `--background`, `--foreground`, `--card`, `--muted`, `--primary`, `--border`, and the rest.
-That file declares the mapping and nothing else — no scale, and no `.dark` block.
+That file declares the mapping, the `color-scheme` that picks each step's mode, and nothing else —
+no scale, and no colour value at all.
 
 There was a third layer beneath both — an eleven-stop neutral ramp each theme file supplied, which
 the steps pointed at. It is gone rather than renamed. It existed only because the semantic layer of
 the time needed something mode-agnostic to point at, and the step layer does that job, so keeping
 both meant two indirections answering one question.
 
-**A theme file re-declares the twelve steps and their alpha siblings, in both blocks, and nothing
+**A theme file re-declares the twelve steps and their alpha siblings, once each, and nothing
 else.** Four schemes ship and none is mandatory: `theme-neutral.css` is the default, which
 `forge.css` imports, so forge renders correctly with no theme file of the application's own, and
 `theme-stone.css` (warm), `theme-gray.css` (cool) and `theme-slate.css` (strongly cool) override the
@@ -115,10 +116,15 @@ carried that error with nothing to notice it by. One token consumes them today �
 A semantic token does not name a colour. It names a **step**, and the step holds the value:
 
 ```css
---muted-foreground: var(--gray-11);  /* declared once, in :root, for both modes */
---gray-11: #646464;                  /* :root */
---gray-11: #b4b4b4;                  /* .dark */
+--muted-foreground: var(--gray-11);                           /* declared once, for both modes */
+--gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));  /* also declared once — the branch is */
+                                                              /* picked by `color-scheme` */
 ```
+
+A step is a single declaration whichever mode is showing. There is no second block: a `.dark` rule
+weighs the same 0-1-0 as `:root` and matches the same element, so a scheme imported after forge's
+would beat one half and silently keep the other. The gate fails any `.dark` rule declaring a custom
+property.
 
 The numbering is Radix's twelve-step scale, and so is the **lightness** of every step in every
 scheme. `theme-neutral.css` is achromatic, so its steps are Radix's `gray` unchanged;
@@ -140,7 +146,7 @@ the borders, for the measured reason the section above gives: reach for `--borde
 `--track` and `--ring` by name, and read the step they resolve through in `theme-base.css` rather
 than inferring it from this table.
 
-**Steps 1 and 2 are swapped in the light block, and only there.** Radix reads step 2 as one shade
+**Steps 1 and 2 are swapped in the light branch, and only there.** Radix reads step 2 as one shade
 *toward* the foreground, so a light-mode panel recedes; forge's cards are raised, and `--card` has
 always been lighter than `--background`. The swap lives in the scale rather than in the semantic
 layer because the scale is where a mode-specific value belongs, and it is what lets
@@ -163,11 +169,11 @@ The scale runs in namespaces, and each is declared in full:
   foreground that sits on step 9. Only the greys moved: these are unchanged, and still Tailwind
   stops, because a status colour is not a thing an application re-themes.
 
-`--red-contrast` and `--green-contrast` are `var(--gray-1)` and carry no `.dark` twin, which is worth
-stating rather than reading as an omission: step 1 is the page, near-white in light and near-black in
+`--red-contrast` and `--green-contrast` are `var(--gray-1)` with no `light-dark()` around it, which is
+worth stating rather than reading as an omission: step 1 is the page, near-white in light and near-black in
 dark, and those are exactly the two answers that token needs. `--yellow-contrast` is the exception —
 near-white on `--yellow-9` measures 1.83, so its foreground stays near-black in *both* modes, making
-it the one place a `.dark` entry carries a different **step** rather than a different value:
+it the one place a `light-dark()` selects between two different **steps** rather than two values:
 `--gray-12` in light, `--gray-1` in dark, which are the same colour seen from either mode.
 
 The three text weights forge's light mode distinguishes now sit on steps that carry a Radix role:
@@ -175,8 +181,8 @@ The three text weights forge's light mode distinguishes now sit on steps that ca
 `--gray-12`. No step is parked.
 
 Default: a per-mode value is overridden on the **step**, never on the semantic token — an app that
-wants a different muted foreground in dark mode re-declares `--gray-11` under `.dark` rather than
-`--muted-foreground` — unless the value is meant to be the same in both modes, which is the
+wants a different muted foreground in dark mode re-declares `--gray-11` with a `light-dark()` rather
+than `--muted-foreground` — unless the value is meant to be the same in both modes, which is the
 semantic token's own job. <!-- rule:forge-ui-color-scale-override-step -->
 
 Overriding the token instead sets it in *both* modes, because the token is declared once and the
@@ -248,11 +254,11 @@ import { Badge } from "@y-core/forge/ui/core";
 
 ## Dark mode is the argument for tokens
 
-`.dark` does not add a second stylesheet, and it does not re-declare a single semantic token. It
-re-points the **steps** those tokens resolve through. The values below are `theme-neutral.css`'s
-scale, which is what an app gets with no theme file of its own:
+`.dark` does not add a second stylesheet, and it does not re-declare a single semantic token. It sets
+`color-scheme: dark`, which picks the dark branch of every **step** those tokens resolve through. The
+values below are `theme-neutral.css`'s scale, which is what an app gets with no theme file of its own:
 
-| Token | Step | Step in `:root` | Step in `.dark` |
+| Token | Step | Light branch | Dark branch |
 |---|---|---|---|
 | `--background` | `--gray-1` | `#f9f9f9` | `#111111` |
 | `--foreground` | `--gray-12` | `#202020` | `#eeeeee` |
@@ -264,16 +270,16 @@ scale, which is what an app gets with no theme file of its own:
 | `--input` | `--gray-10` | `#838383` | `#7b7b7b` |
 | `--ring` | `--gray-11` | `#646464` | `#b4b4b4` |
 
-Read the last two columns as the *step's* value, not the token's. Each token in the first column is
-declared exactly once, in `:root`, and means the same thing in both modes — `--background` is the app
+Read the last two columns as the two branches of the *step's* one declaration, not as the token's
+value. Each token in the first column is declared exactly once and means the same thing in both modes — `--background` is the app
 background whichever mode is on. That is what makes the number of mode-varying decisions at the
 semantic layer zero, and it is why the override point for a per-mode value is the step.
 `--accent-12` is an alias of `--gray-12`, which is why `--primary` and `--foreground` read the same
 value here.
 
 Because `@theme inline` resolves each Tailwind colour utility through `var()`, `bg-card` means
-whatever `--card` currently means. Toggling `.dark` on the document element re-maps every one of
-them at once, with no recompile.
+whatever `--card` currently means. Toggling `.dark` on the document element moves every one of them at
+once, with no recompile — the class changes `color-scheme`, and the browser re-picks each branch.
 
 This is the whole case for `forge-ui-color-token-only`, and it is worth stating plainly: a raw
 utility **survives** the theme switch, and that is the failure. `bg-gray-100` stays light grey
@@ -501,7 +507,7 @@ would strand every citation.
 The `dark:` half is gone with it. A fixed light surface never became theme-independent under `.dark`
 — it became a near-white rectangle on a near-black page — and each variant answered that with a
 hand-written twin. A step answers it structurally instead: `--status-danger-subtle` resolves through
-`--red-2`, which is `red-50` in light and `red-950` in dark, so the panel is a tinted region in
+`--red-2`, which is `light-dark(red-50, red-950)`, so the panel is a tinted region in
 either mode and nothing at the call site says so. Forge's source now contains no `dark:` utility at
 all.
 
@@ -552,7 +558,7 @@ component, roles named before values, and colour as reinforcement of a signal th
 carried in text — draws on *Refactoring UI* by Adam Wathan and Steve Schoger. Every rule was
 rewritten against forge's own system: the twelve-step scale in the scheme files and the semantic
 layer in `theme-base.css`,
-the `.dark` re-mapping of the steps, and the `--status-*` family the `Badge`, `Alert` and `Toast`
+the `color-scheme` that picks each step's mode, and the `--status-*` family the `Badge`, `Alert` and `Toast`
 variants render. The scale-authoring section draws on the same book's account of building a palette
 before building screens, re-derived here against the steps `theme-base.css` consumes.
 

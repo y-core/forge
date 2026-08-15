@@ -23,19 +23,30 @@ const NEUTRAL: Readonly<Record<Mode, Scale<string>>> = {
   dark: ["#111111", "#191919", "#222222", "#2a2a2a", "#313131", "#3a3a3a", "#484848", "#606060", "#6e6e6e", "#7b7b7b", "#b4b4b4", "#eeeeee"],
 };
 
+/** An `oklch(L% C H)` literal back to the hex it names, so a declared step can be compared to a built one. */
+function declaredHex(value: string): string {
+  const parsed = /^oklch\(([0-9.]+)% ([0-9.]+) ([0-9.]+)\)$/.exec(value.trim());
+  if (parsed === null) throw new Error(`not an oklch() literal: ${value}`);
+  return oklchToHex(Number(parsed[1]) / 100, Number(parsed[2]), Number(parsed[3]));
+}
+
+// A scheme declares each step once, so the two modes are read off the argument positions of one
+// `light-dark()` rather than off two blocks; a step equal in both modes is written bare.
 function shippedScale(file: string): Record<Mode, readonly string[]> {
   const text = readFileSync(new URL(`../assets/css/${file}`, import.meta.url).pathname, "utf-8");
-  const block = (selector: string): readonly string[] => {
-    const start = text.indexOf(selector);
-    if (start === -1) throw new Error(`${file}: no ${selector} block`);
-    const chunk = text.slice(start, text.indexOf("}", start));
-    return Array.from({ length: 12 }, (_, i) => {
-      const hex = chunk.match(new RegExp(`--gray-${i + 1}:\\s*(#[0-9a-f]{6})`))?.[1];
-      if (hex === undefined) throw new Error(`${file}: no --gray-${i + 1} in ${selector}`);
-      return hex;
-    });
-  };
-  return { light: block(":root {"), dark: block(".dark {") };
+  const start = text.indexOf(":root {");
+  if (start === -1) throw new Error(`${file}: no :root block`);
+  const chunk = text.slice(start, text.indexOf("}", start));
+
+  const scale: Record<Mode, string[]> = { light: [], dark: [] };
+  for (let i = 0; i < 12; i++) {
+    const declared = chunk.match(new RegExp(`--gray-${i + 1}:\\s*([^;]+);`))?.[1];
+    if (declared === undefined) throw new Error(`${file}: no --gray-${i + 1} in :root`);
+    const branches = /^light-dark\((.+?), (.+)\)$/.exec(declared.trim());
+    scale.light.push(declaredHex(branches?.[1] ?? declared));
+    scale.dark.push(declaredHex(branches?.[2] ?? declared));
+  }
+  return scale;
 }
 
 /** The largest per-channel gap between two `#rrggbb` literals, in bytes out of 255. */

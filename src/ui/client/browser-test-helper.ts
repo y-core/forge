@@ -66,6 +66,32 @@ export function classesOf(html: string, slot: string): string[] {
   return match[1].replaceAll("&amp;", "&").split(" ");
 }
 
+// Two conversions a spec must not do for itself. A token's *computed* value is the substituted text
+// — `light-dark()` resolves at used-value time — so it has to be painted before it is a colour at
+// all; and a non-legacy colour serializes in its own space, so a computed `oklch()` is not
+// comparable to an `rgb()`. The canvas answers with the bytes the browser actually paints, which is
+// the same `#rrggbb` the scheme generator produces.
+/** The `#rrggbb` a CSS colour value paints as — `"var(--gray-11)"`, an `oklch()`, a hex. */
+export function paintedHex(page: Page, value: string): Promise<string> {
+  return page.evaluate((color) => {
+    const probe = document.createElement("div");
+    probe.style.color = color;
+    document.body.append(probe);
+    const computed = getComputedStyle(probe).color;
+    probe.remove();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("no 2d canvas context");
+    context.fillStyle = computed;
+    context.fillRect(0, 0, 1, 1);
+    const [r = 0, g = 0, b = 0] = context.getImageData(0, 0, 1, 1).data;
+    return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+  }, value);
+}
+
 /** `CSS.escape` for a utility class name, which the page has and the test runtime does not. */
 export function escapeClass(cls: string): string {
   return cls.replace(/[[\]:&~=.*>+,()#%'"^$|{}/\\?!@`\s]/g, (ch) => `\\${ch}`);

@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { render } from "../../testing/render";
 import { DARK_CLASS, THEME_STORAGE_KEY } from "../chrome/theme";
-import { mount } from "../client/browser-test-helper";
+import { mount, paintedHex } from "../client/browser-test-helper";
 import { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY } from "../contracts/overlay-contract";
 import { TURNSTILE, TURNSTILE_SCRIPT_SRC } from "../contracts/turnstile-contract";
 import { createIcon } from "../core/icon";
@@ -43,8 +43,16 @@ const icon = createIcon("/sprite.svg", {
   "icon-close": "0 0 24 24",
 });
 
-/** The two tokens the theme cases read back, in both modes, as the shipped token layer declares them. */
+// Read as painted colours, not as declaration text: a scheme declares each step once with
+// `light-dark()`, which resolves at used-value time, so `getPropertyValue` on a token returns the
+// same unresolved function in both modes and would measure nothing.
+/** The two tokens the theme cases read back, as the mode-resolved colour a reader actually sees. */
 const TOKENS = { light: { background: "#f9f9f9", ring: "#646464" }, dark: { background: "#111111", ring: "#b4b4b4" } } as const;
+
+/** A colour token as the `#rrggbb` the browser paints it. */
+function paintedToken(page: Page, property: string): Promise<string> {
+  return paintedHex(page, `var(${property})`);
+}
 
 // The harness runs no Tailwind build, so the utilities the markup names style nothing unless a case
 // supplies them; a measurement without these rules measures the browser's defaults.
@@ -481,13 +489,13 @@ test.describe("the component catalog's table of contents", () => {
       return {
         isTocLink: link.matches(selector),
         focusVisible: link.matches(":focus-visible"),
-        ring: getComputedStyle(link).getPropertyValue("--ring").trim(),
         suppressesOutline: classes.includes("outline-none"),
         drawsRing: classes.includes("focus-visible:ring-2") && classes.includes("focus-visible:ring-ring"),
       };
     }, TOC_LINK);
 
-    expect(focused).toEqual({ isTocLink: true, focusVisible: true, ring: TOKENS.light.ring, suppressesOutline: true, drawsRing: true });
+    expect(focused).toEqual({ isTocLink: true, focusVisible: true, suppressesOutline: true, drawsRing: true });
+    expect(await paintedToken(page, "--ring")).toBe(TOKENS.light.ring);
   });
 
   test("collapses and re-opens the rail from its own toggle", async ({ page }) => {
@@ -601,20 +609,12 @@ test.describe("the table of contents as a column", () => {
 const THEME_TOGGLE = "[data-scope='theme'] button";
 
 /** What the page says its theme is: the class switch, the persisted choice, and the re-mapped tokens. */
-function themeState(page: Page): Promise<{ dark: boolean; stored: string | null; background: string; ring: string }> {
-  return page.evaluate(
-    ({ key, darkClass }) => {
-      const root = document.documentElement;
-      const styles = getComputedStyle(root);
-      return {
-        dark: root.classList.contains(darkClass),
-        stored: localStorage.getItem(key),
-        background: styles.getPropertyValue("--background").trim(),
-        ring: styles.getPropertyValue("--ring").trim(),
-      };
-    },
+async function themeState(page: Page): Promise<{ dark: boolean; stored: string | null; background: string; ring: string }> {
+  const state = await page.evaluate(
+    ({ key, darkClass }) => ({ dark: document.documentElement.classList.contains(darkClass), stored: localStorage.getItem(key) }),
     { key: THEME_STORAGE_KEY, darkClass: DARK_CLASS },
   );
+  return { ...state, background: await paintedToken(page, "--background"), ring: await paintedToken(page, "--ring") };
 }
 
 test.describe("the showcase's theme toggle", () => {

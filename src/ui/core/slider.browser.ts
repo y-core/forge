@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser-test-helper";
+import { mount, paintedHex } from "../client/browser-test-helper";
 import { Slider } from "./slider";
 
 const SLIDER = "[data-slot~='slider']";
@@ -43,15 +43,9 @@ function markup(html: string): string {
 type Thickness = "vertical" | "horizontal";
 
 /** The loaded theme's `--track` colour, as the `r,g,b` triple a screenshot pixel carries. */
-function resolveTrackPixel(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const probe = document.createElement("div");
-    probe.style.color = "var(--track)";
-    document.body.append(probe);
-    const { color } = getComputedStyle(probe);
-    probe.remove();
-    return color.replace(/[^\d,]/g, "");
-  });
+async function resolveTrackPixel(page: Page): Promise<string> {
+  const hex = await paintedHex(page, "var(--track)");
+  return [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).join(",");
 }
 
 async function measureTrack(page: Page, thickness: Thickness): Promise<number> {

@@ -9,10 +9,12 @@ export {
   hexToOklch,
   type Mode,
   type Oklch,
+  oklchCss,
   oklchToHex,
   type Ramp,
   relativeLuminance,
   type Scale,
+  toSrgbGamut,
 } from "./color";
 export { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
 export { ACCEPTED_CONTRAST, type AcceptedContrastRow } from "./contrast-accepted";
@@ -50,6 +52,7 @@ export { TAB_SELECTOR, TABLIST_SELECTOR, TABS_SCOPE } from "./tabs-contract";
 export {
   buildTheme,
   CUSTOMISE_SCOPE,
+  customiseState,
   DIALS,
   type Dial,
   type DialValues,
@@ -58,7 +61,12 @@ export {
   HEX_ATTR,
   type LiveRatio,
   leverRows,
+  lightDark,
   liveRatios,
+  matchPreset,
+  PRESET_CUSTOM,
+  PRESET_FIELD,
+  PRESET_FIELDS,
   PRESET_PARAM,
   RADIUS_PROPERTY,
   ratioKey,

@@ -1,41 +1,44 @@
 /* Colours that are not the scheme — the four status hues, and the two absolute alpha ramps.
+
+   Steps only, exactly as a scheme file is, and each declared once: the mode difference belongs in
+   the scale, never in the semantic token that resolves through it.
    ────────────────────────────────────────────────────────────────────────────── */
 
 :root {
   /* ── danger ─────────────────────────────────────────────────────────────── */
-  --red-2:  var(--color-red-50);
-  --red-3:  var(--color-red-100);
-  --red-6:  var(--color-red-200);
-  --red-9:  var(--color-red-700);
-  --red-11: var(--color-red-800);
-  --red-12: var(--color-red-900);
+  --red-2:        light-dark(var(--color-red-50), var(--color-red-950));
+  --red-3:        light-dark(var(--color-red-100), var(--color-red-900));
+  --red-6:        light-dark(var(--color-red-200), var(--color-red-800));
+  --red-9:        light-dark(var(--color-red-700), var(--color-red-300));
+  --red-11:       light-dark(var(--color-red-800), var(--color-red-200));
+  --red-12:       light-dark(var(--color-red-900), var(--color-red-200));
   --red-contrast: var(--gray-1);
 
   /* ── info ───────────────────────────────────────────────────────────────── */
-  --blue-2:  var(--color-blue-50);
-  --blue-3:  var(--color-blue-100);
-  --blue-6:  var(--color-blue-200);
-  --blue-11: var(--color-blue-800);
-  --blue-12: var(--color-blue-900);
+  --blue-2:  light-dark(var(--color-blue-50), var(--color-blue-950));
+  --blue-3:  light-dark(var(--color-blue-100), var(--color-blue-900));
+  --blue-6:  light-dark(var(--color-blue-200), var(--color-blue-800));
+  --blue-11: light-dark(var(--color-blue-800), var(--color-blue-200));
+  --blue-12: light-dark(var(--color-blue-900), var(--color-blue-200));
 
   /* ── success ────────────────────────────────────────────────────────────── */
-  --emerald-2:  var(--color-emerald-50);
-  --emerald-3:  var(--color-emerald-100);
-  --emerald-6:  var(--color-emerald-200);
-  --emerald-11: var(--color-emerald-800);
-  --emerald-12: var(--color-emerald-900);
+  --emerald-2:  light-dark(var(--color-emerald-50), var(--color-emerald-950));
+  --emerald-3:  light-dark(var(--color-emerald-100), var(--color-emerald-900));
+  --emerald-6:  light-dark(var(--color-emerald-200), var(--color-emerald-800));
+  --emerald-11: light-dark(var(--color-emerald-800), var(--color-emerald-200));
+  --emerald-12: light-dark(var(--color-emerald-900), var(--color-emerald-200));
 
-  --green-9: var(--color-green-700);
+  --green-9:        light-dark(var(--color-green-700), var(--color-green-500));
   --green-contrast: var(--gray-1);
 
   /* ── warning ────────────────────────────────────────────────────────────── */
-  --yellow-2:  var(--color-yellow-50);
-  --yellow-3:  var(--color-yellow-100);
-  --yellow-6:  var(--color-yellow-200);
-  --yellow-9:  var(--color-yellow-500);
-  --yellow-11: var(--color-yellow-800);
-  --yellow-12: var(--color-yellow-900);
-  --yellow-contrast: var(--gray-12);
+  --yellow-2:        light-dark(var(--color-yellow-50), var(--color-yellow-950));
+  --yellow-3:        light-dark(var(--color-yellow-100), var(--color-yellow-900));
+  --yellow-6:        light-dark(var(--color-yellow-200), var(--color-yellow-800));
+  --yellow-9:        light-dark(var(--color-yellow-500), var(--color-yellow-400));
+  --yellow-11:       light-dark(var(--color-yellow-800), var(--color-yellow-200));
+  --yellow-12:       light-dark(var(--color-yellow-900), var(--color-yellow-200));
+  --yellow-contrast: light-dark(var(--gray-12), var(--gray-1));
 
   /* ── absolute alpha ─────────────────────────────────────────────────────── */
   --black-a1:  rgba(0, 0, 0, 0.05);
@@ -63,38 +66,4 @@
   --white-a10: rgba(255, 255, 255, 0.8);
   --white-a11: rgba(255, 255, 255, 0.9);
   --white-a12: rgba(255, 255, 255, 0.95);
-}
-
-/* Steps only, exactly as a scheme file's `.dark` is — and for the same reason: the mode difference
-   belongs in the scale, never in the semantic token that resolves through it. */
-.dark {
-  --red-2:  var(--color-red-950);
-  --red-3:  var(--color-red-900);
-  --red-6:  var(--color-red-800);
-  --red-9:  var(--color-red-300);
-  --red-11: var(--color-red-200);
-  --red-12: var(--color-red-200);
-
-  --blue-2:  var(--color-blue-950);
-  --blue-3:  var(--color-blue-900);
-  --blue-6:  var(--color-blue-800);
-  --blue-11: var(--color-blue-200);
-  --blue-12: var(--color-blue-200);
-
-  --emerald-2:  var(--color-emerald-950);
-  --emerald-3:  var(--color-emerald-900);
-  --emerald-6:  var(--color-emerald-800);
-  --emerald-11: var(--color-emerald-200);
-  --emerald-12: var(--color-emerald-200);
-
-  --green-9: var(--color-green-500);
-
-  --yellow-2:  var(--color-yellow-950);
-  --yellow-3:  var(--color-yellow-900);
-  --yellow-6:  var(--color-yellow-800);
-  --yellow-9:  var(--color-yellow-400);
-  --yellow-11: var(--color-yellow-200);
-  --yellow-12: var(--color-yellow-200);
-  /* Near-black in dark too — see the note in `:root`. The step differs, the colour does not. */
-  --yellow-contrast: var(--gray-1);
 }

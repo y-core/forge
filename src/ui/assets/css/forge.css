@@ -7,15 +7,16 @@
    That is the whole setup. There is nothing else to supply — no ramp, no custom variant, no theme
    file. Everything below is imported for you, and each file has exactly one job:
 
-     theme-neutral.css     the default colour scheme — `--gray-1` … `--gray-12`, per mode
+     theme-neutral.css     the default colour scheme — `--gray-1` … `--gray-12`, each declared once
      theme-colors.css      the four status hues and the absolute alpha ramps — fixed, not themeable
-     theme-base.css        the mapping — `--background: var(--gray-1)`, and the `@theme inline` bridge
+     theme-base.css        the mapping — `--background: var(--gray-1)`, the `color-scheme` that picks
+                           each step's mode, and the `@theme inline` bridge
      forge-ui.css          seperate layers for component defaults a caller's utility should be able to override
                            and state rules that must survive a caller's utility
 
    ── Changing the colour scheme ───────────────────────────────────────────────
 
-   Import one of the alternatives *after* this file. Both re-declare the twelve gray steps and
+   Import one of the alternatives *after* this file. Each re-declares the twelve gray steps and
    nothing else, so they replace `theme-neutral.css`'s values by ordinary cascade:
 
      @import "@y-core/forge/ui/assets/css/theme-stone.css";   warm
@@ -27,14 +28,16 @@
    slate 42. Tailwind's `gray` is blue-tinted despite the name — `theme-neutral.css` is the grey one.
 
    An application's own scheme is structurally identical: re-declare `--gray-1` … `--gray-12` and
-   `--gray-a1` … `--gray-a12` in **both** a `:root` and a `.dark` block, and nothing else.
+   `--gray-a1` … `--gray-a12` in **one** `:root` block, and nothing else. A step whose value differs
+   by mode is written `light-dark(light, dark)`; `theme-base.css` sets the `color-scheme` that picks
+   the branch, so supplying the light half alone is not something the syntax lets you do.
 
    A brand colour goes on `--accent-12`, which forge aliases to `--gray-12` precisely because it
    ships no brand hue of its own.
 
    Note the override point for a *per-mode* value is the **scale**, never the semantic token. Each
-   semantic token is declared once and means the same thing in both modes; only the scale is
-   re-declared under `.dark`. An app that sets `:root { --primary: … }` gets that value in both modes.
+   semantic token is declared once and means the same thing in both modes; only a scale step carries
+   a `light-dark()`. An app that sets `:root { --primary: … }` gets that value in both modes.
 
    ── Rendering forge's own showcase ───────────────────────────────────────────
 
@@ -52,7 +55,7 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    Tailwind v4 defaults `dark:` to `prefers-color-scheme`, so without this line a `dark:` utility
    follows the *operating system* while every forge token follows the *user's choice*, and the two
-   disagree the moment someone picks a theme that is not `system`. Forge's own `.dark` scale blocks
+   disagree the moment someone picks a theme that is not `system`. Forge's own `color-scheme` rules
    and its theme toggle are both class-driven, so this is the definition that matches the system
    forge actually ships.
 
@@ -68,8 +71,8 @@
        @custom-variant dark (@media (prefers-color-scheme: dark));
 
    Written in the **statement** form rather than the block form deliberately: `validate-contrast`
-   parses the scale files by brace-counting `.dark { … }`, and the block spelling would put a second
-   thing that looks exactly like a mode block into a file the gate walks.
+   fails any `.dark { … }` rule declaring a custom property, and the block spelling would put a
+   second thing that looks exactly like a mode block into a file the gate walks.
   ────────────────────────────────────────────────────────────────────────────── */
 @custom-variant dark (&:where(.dark, .dark *));
 

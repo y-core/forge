@@ -1,58 +1,34 @@
 /* Slate — the cool scheme.
 
-   @import theme-base.css before this file. */
+   Only the twelve gray steps, each declared once. A step that differs by mode carries a
+   `light-dark()`, and `theme-base.css` sets the `color-scheme` that picks the branch.
+
+   @import forge.css before this file. */
+
 :root {
-  --gray-1:  #f7f9fb;
-  --gray-2:  #fbfcfe;
-  --gray-3:  #ecf1f6;
-  --gray-4:  #e3e9f1;
-  --gray-5:  #d9e1eb;
-  --gray-6:  #d1dae6;
-  --gray-7:  #c4d0de;
-  --gray-8:  #aebdcf;
-  --gray-9:  #7d8fa7;
-  --gray-10: #73859e;
-  --gray-11: #54657e;
-  --gray-12: #152034;
+  --gray-1:  light-dark(oklch(98.12% 0.0034 247.9), oklch(17.71% 0.0413 265.0));
+  --gray-2:  light-dark(oklch(99.09% 0.0029 264.5), oklch(21.27% 0.0415 266.4));
+  --gray-3:  light-dark(oklch(95.58% 0.0086 247.9), oklch(25.22% 0.0413 261.8));
+  --gray-4:  light-dark(oklch(93.18% 0.0126 255.5), oklch(28.45% 0.0423 261.2));
+  --gray-5:  light-dark(oklch(90.66% 0.0162 253.9), oklch(31.46% 0.0424 258.3));
+  --gray-6:  light-dark(oklch(88.51% 0.0192 255.5), oklch(34.92% 0.0435 257.8));
+  --gray-7:  light-dark(oklch(85.27% 0.0235 252.2), oklch(40.16% 0.0441 257.4));
+  --gray-8:  light-dark(oklch(79.25% 0.0305 253.0), oklch(48.80% 0.0440 257.0));
+  --gray-9:  light-dark(oklch(64.42% 0.0416 255.7), oklch(53.77% 0.0458 258.8));
+  --gray-10: light-dark(oklch(61.13% 0.0435 256.6), oklch(58.21% 0.0449 258.8));
+  --gray-11: light-dark(oklch(50.25% 0.0451 257.9), oklch(77.08% 0.0319 254.4));
+  --gray-12: light-dark(oklch(24.40% 0.0416 261.8), oklch(94.93% 0.0103 247.9));
 
-  --gray-a1:  #00005503;
-  --gray-a2:  #00005506;
-  --gray-a3:  #0000330f;
-  --gray-a4:  #00002d17;
-  --gray-a5:  #0009321f;
-  --gray-a6:  #00002f26;
-  --gray-a7:  #00062e32;
-  --gray-a8:  #00083046;
-  --gray-a9:  #00051d74;
-  --gray-a10: #00071b7f;
-  --gray-a11: #0007149f;
-  --gray-a12: #000509e3;
-}
-
-.dark {
-  --gray-1:  #081023;
-  --gray-2:  #10182c;
-  --gray-3:  #172236;
-  --gray-4:  #1e2a3f;
-  --gray-5:  #243247;
-  --gray-6:  #2c3b51;
-  --gray-7:  #394960;
-  --gray-8:  #506179;
-  --gray-9:  #5e6f89;
-  --gray-10: #6b7c96;
-  --gray-11: #a7b6c9;
-  --gray-12: #e9eff5;
-
-  --gray-a1:  #00000000;
-  --gray-a2:  #d8f4f609;
-  --gray-a3:  #ddeaf814;
-  --gray-a4:  #d3edf81d;
-  --gray-a5:  #d9edfe25;
-  --gray-a6:  #d6ebfd30;
-  --gray-a7:  #d9edff40;
-  --gray-a8:  #d9edff5d;
-  --gray-a9:  #dfebfd6d;
-  --gray-a10: #e5edfd7b;
-  --gray-a11: #f1f7feb5;
-  --gray-a12: #fcfdffef;
+  --gray-a1:  light-dark(#00005503, #00000000);
+  --gray-a2:  light-dark(#00005506, #d8f4f609);
+  --gray-a3:  light-dark(#0000330f, #ddeaf814);
+  --gray-a4:  light-dark(#00002d17, #d3edf81d);
+  --gray-a5:  light-dark(#0009321f, #d9edfe25);
+  --gray-a6:  light-dark(#00002f26, #d6ebfd30);
+  --gray-a7:  light-dark(#00062e32, #d9edff40);
+  --gray-a8:  light-dark(#00083046, #d9edff5d);
+  --gray-a9:  light-dark(#00051d74, #dfebfd6d);
+  --gray-a10: light-dark(#00071b7f, #e5edfd7b);
+  --gray-a11: light-dark(#0007149f, #f1f7feb5);
+  --gray-a12: light-dark(#000509e3, #fcfdffef);
 }

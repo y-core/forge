@@ -31,10 +31,11 @@ export {
   checkAccepted,
   checkDarkHoldsOnlySteps,
   isRoleStep,
-  MODE_SELECTOR,
+  MODE_LABEL,
   mergeThemes,
   parseThemeDeclarations,
   resolveStep,
+  splitLightDark,
 } from "./gate/checks/contrast-parse";
 export type { ClassDeclaration } from "./gate/checks/css-parse";
 export { findClassDeclarations, findSourceDirectives, isClassAnchor, stripComments } from "./gate/checks/css-parse";

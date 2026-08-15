@@ -21,8 +21,8 @@ Non-negotiable. Twenty-one items, no overrides, and a failure here outranks ever
    failure looks like. Expect three answers, written before the markup. `forge-ui-design-read`
 2. **Count** blocks of body copy with no `max-w-prose` or explicit `max-w-*` ancestor. Expect 0.
    `forge-ui-measure-cap`
-3. **Name** every foreground/background token pair on the surface and its measured ratio in `:root`
-   and in `.dark`. Expect ≥ 4.5:1 for body text and ≥ 3:1 for large text and UI boundaries, in both.
+3. **Name** every foreground/background token pair on the surface and its measured ratio in each
+   mode. Expect ≥ 4.5:1 for body text and ≥ 3:1 for large text and UI boundaries, in both.
    `forge-ui-contrast-floor`
 4. **Count** status indications carried by colour with no icon and no word beside them. Expect 0.
    `forge-ui-not-color-alone`

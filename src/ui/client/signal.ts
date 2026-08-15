@@ -1,7 +1,7 @@
 interface EffectNode {
   run: () => void;
   deps: Set<Set<EffectNode>>;
-  lastEpoch: number;
+  disposed: boolean;
 }
 
 /** A readable and writable reactive value; reading `.value` inside an effect subscribes to it. @public */
@@ -15,13 +15,42 @@ export interface ReadonlySignal<T> {
   get value(): T;
 }
 
+const RUN_CAP = 10_000;
+
 let activeEffect: EffectNode | null = null;
-let epoch = 0;
-let depth = 0;
+let flushing = false;
+const pending = new Set<EffectNode>();
 
 function cleanup(node: EffectNode): void {
   for (const dep of node.deps) dep.delete(node);
   node.deps.clear();
+}
+
+function flush(): void {
+  if (flushing) return;
+  flushing = true;
+  let runs = 0;
+  // One node at a time, re-reading `pending` after each run rather than draining a snapshot: a
+  // node enqueued mid-run must be able to run before the nodes queued behind it are re-checked,
+  // which is what collapses a chain to one run of its shared reader.
+  try {
+    while (pending.size > 0) {
+      const node = pending.values().next().value as EffectNode;
+      pending.delete(node);
+      if (node.disposed) {
+        cleanup(node);
+        continue;
+      }
+      if (runs >= RUN_CAP) throw new Error(`signal: effect run cap of ${RUN_CAP} exceeded in one flush — the graph is cyclic`);
+      runs++;
+      node.run();
+    }
+  } finally {
+    // A throw abandons the rest of the queue rather than carrying it into the next write, which
+    // would run those effects against an unrelated caller's stack.
+    flushing = false;
+    pending.clear();
+  }
 }
 
 /** Creates a reactive signal; reading inside an `effect` or `computed` automatically subscribes. @public */
@@ -31,7 +60,7 @@ export function createSignal<T>(initial: T): Signal<T> {
 
   return {
     get value() {
-      if (activeEffect) {
+      if (activeEffect !== null && !activeEffect.disposed) {
         subs.add(activeEffect);
         activeEffect.deps.add(subs);
       }
@@ -40,20 +69,9 @@ export function createSignal<T>(initial: T): Signal<T> {
     set value(v: T) {
       if (Object.is(_value, v)) return;
       _value = v;
-      if (depth === 0) epoch++;
-      depth++;
-      // A throwing subscriber must not strand `depth` above zero — that would freeze `epoch` and
-      // silently stop every later write from notifying.
-      try {
-        for (const sub of [...subs]) {
-          if (sub.lastEpoch < epoch) {
-            sub.lastEpoch = epoch;
-            sub.run();
-          }
-        }
-      } finally {
-        depth--;
-      }
+      for (const sub of subs) pending.add(sub);
+      if (flushing) return;
+      flush();
     },
   };
 }
@@ -61,7 +79,7 @@ export function createSignal<T>(initial: T): Signal<T> {
 /** Runs `fn` immediately, re-runs it whenever any signal read inside it changes, and returns a dispose function. @public */
 export function effect(fn: () => void): () => void {
   const node: EffectNode = {
-    lastEpoch: -1,
+    disposed: false,
     deps: new Set(),
     run() {
       cleanup(node);
@@ -81,10 +99,14 @@ export function effect(fn: () => void): () => void {
   try {
     node.run();
   } catch (err) {
+    node.disposed = true;
     cleanup(node);
     throw err;
   }
-  return () => cleanup(node);
+  return () => {
+    node.disposed = true;
+    cleanup(node);
+  };
 }
 
 /** Derives a read-only signal whose value is recomputed whenever its dependencies change. @public */

@@ -168,16 +168,16 @@ describe("batching", () => {
       b.value = n;
       c.value = n;
     });
+    let observed = 0;
     effect(() => {
-      a.value;
-      b.value;
-      c.value;
+      observed = a.value + b.value + c.value;
       downstreamRuns++;
     });
 
     expect(downstreamRuns).toBe(1);
     trigger.value = 1;
     expect(downstreamRuns).toBe(2);
+    expect(observed).toBe(3);
   });
 
   it("flushes a shared downstream effect once across nested batches", () => {
@@ -185,6 +185,7 @@ describe("batching", () => {
     const mid = createSignal(0);
     const leaf = createSignal(0);
     let downstreamRuns = 0;
+    let observed = "";
 
     effect(() => {
       mid.value = trigger.value;
@@ -193,14 +194,119 @@ describe("batching", () => {
       leaf.value = mid.value;
     });
     effect(() => {
-      mid.value;
-      leaf.value;
+      observed = `${mid.value}/${leaf.value}`;
       downstreamRuns++;
     });
 
     expect(downstreamRuns).toBe(1);
     trigger.value = 1;
     expect(downstreamRuns).toBe(2);
+    expect(observed).toBe("1/1");
+  });
+
+  it("settles a reader registered before the intermediate writer it depends on", () => {
+    const trigger = createSignal(0);
+    const mid = createSignal(0);
+    const leaf = createSignal(0);
+    let observed = "";
+
+    effect(() => {
+      mid.value = trigger.value;
+    });
+    effect(() => {
+      observed = `${mid.value}/${leaf.value}`;
+    });
+    effect(() => {
+      leaf.value = mid.value;
+    });
+
+    trigger.value = 1;
+    expect(observed).toBe("1/1");
+  });
+
+  it("settles a computed of two signals written by one in-effect fan-out", () => {
+    const trigger = createSignal(0);
+    const x = createSignal(0);
+    const y = createSignal(0);
+    const sum = computed(() => x.value + y.value);
+
+    effect(() => {
+      x.value = trigger.value;
+      y.value = trigger.value;
+    });
+
+    trigger.value = 5;
+    expect(sum.value).toBe(10);
+  });
+});
+
+describe("flush queue", () => {
+  it("skips an effect disposed while it sits in the queue", () => {
+    const s = createSignal(0);
+    let laterRuns = 0;
+    let disposeLater: (() => void) | null = null;
+
+    effect(() => {
+      s.value;
+      disposeLater?.();
+    });
+    disposeLater = effect(() => {
+      s.value;
+      laterRuns++;
+    });
+
+    expect(laterRuns).toBe(1);
+    s.value = 1;
+    expect(laterRuns).toBe(1);
+    s.value = 2;
+    expect(laterRuns).toBe(1);
+  });
+
+  it("drops the effects queued behind a thrower rather than running them on the next write", () => {
+    const trigger = createSignal(0);
+    const other = createSignal(0);
+    let behindRuns = 0;
+    let otherRuns = 0;
+
+    effect(() => {
+      if (trigger.value > 0) throw new Error("boom");
+    });
+    effect(() => {
+      trigger.value;
+      behindRuns++;
+    });
+    effect(() => {
+      other.value;
+      otherRuns++;
+    });
+    expect(behindRuns).toBe(1);
+
+    expect(() => {
+      trigger.value = 1;
+    }).toThrow("boom");
+    expect(behindRuns).toBe(1);
+
+    other.value = 1;
+    expect(otherRuns).toBe(2);
+    expect(behindRuns).toBe(1);
+  });
+
+  it("throws on a cyclic graph and still flushes the next write", () => {
+    const s = createSignal(0);
+    expect(() =>
+      effect(() => {
+        s.value = s.value + 1;
+      }),
+    ).toThrow("the graph is cyclic");
+
+    const other = createSignal(0);
+    let runs = 0;
+    effect(() => {
+      other.value;
+      runs++;
+    });
+    other.value = 1;
+    expect(runs).toBe(2);
   });
 });
 
@@ -277,6 +383,7 @@ describe("diamond dependency", () => {
     const b = createSignal(0);
     const c = createSignal(0);
     let dRuns = 0;
+    let observed = 0;
 
     effect(() => {
       b.value = a.value;
@@ -285,13 +392,13 @@ describe("diamond dependency", () => {
       c.value = a.value;
     });
     effect(() => {
-      b.value;
-      c.value;
+      observed = b.value + c.value;
       dRuns++;
     });
 
     expect(dRuns).toBe(1);
     a.value = 1; // triggers both branches, D should fire exactly once
     expect(dRuns).toBe(2);
+    expect(observed).toBe(2);
   });
 });

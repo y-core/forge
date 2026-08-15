@@ -8,6 +8,8 @@
 */
 
 :root {
+  color-scheme: light;
+
   --radius: 0.625rem;
 
   /* ── Semantic tokens — declared once, for both modes ───────────────────── */
@@ -71,6 +73,19 @@
   --status-info-strong:               var(--blue-3);
   --status-info-strong-foreground:    var(--blue-11);
   --status-info-border:               var(--blue-6);
+}
+
+/* `color-scheme` is what selects a scheme's `light-dark()` branch, and it lives here rather than in a
+   scheme file: a scheme is the file a consumer replaces, and this is the file they do not. Without it
+   the branch would follow the operating system, which forge refuses to do — see the
+   `@custom-variant` note in `forge.css`. It also hands the mode to the user agent, so scrollbars and
+   the controls forge cannot paint follow the theme rather than contradicting it.
+
+   It must stay *after* `:root`, which weighs the same 0-1-0 and would otherwise win. That this rule
+   carries no custom property is what keeps it clear of the one-declaration-site contract: there is
+   no value here a consumer's own scheme could half-supply. */
+.dark {
+  color-scheme: dark;
 }
 
 @theme inline {

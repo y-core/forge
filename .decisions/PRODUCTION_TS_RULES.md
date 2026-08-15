@@ -109,7 +109,7 @@ discarded on navigation.
 This is the standing arrangement for `src/ui/client/` and the other browser-only entry points
 ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §1, §5 own the hard SSR boundary that makes the
 exemption safe). Module-level mutable state is the house style there — the reactive graph's
-`activeEffect` / `epoch` / `depth` in `signal.ts`, the id counter in `active-descendant.ts`, the
+`activeEffect` / `flushing` / `pending` in `signal.ts`, the id counter in `active-descendant.ts`, the
 delegation registries in `resume.ts`, and the one-shot latches in `nav.ts` and `turnstile.ts`.
 Rewriting any of them as factories would buy nothing: there is one document, and these are
 page-scoped singletons by nature.
@@ -120,7 +120,8 @@ review finding against seven files that carry no exemption marker and need none.
 **§4a still applies in full.** Page-scoped state that outlives a test is state a test has to be
 able to reset. Where module state is observable, export a reset — `active-descendant.ts` ships
 `resetActiveDescendant` for exactly this. Where it is not exported, tests must not depend on the
-order they run in.
+order they run in. `signal.ts` needs no reset: its queue is empty and its flush flag is down
+whenever no write is in progress, including after one throws, which its own tests assert.
 
 ---
 

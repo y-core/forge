@@ -1,116 +1,63 @@
 /* Neutral — the default colour scheme, and the only one `forge.css` imports.
 
+   Every step is declared once. A step that differs by mode carries a `light-dark()`, and
+   `theme-base.css` sets the `color-scheme` that picks the branch. Solids are gamut-mapped `oklch()`,
+   the space the ramps are authored in; alpha overlays are fitted to sRGB bytes and stay hex.
+
 @import forge.css before this file. */
 
 :root {
-  --gray-1:  #f9f9f9;
-  --gray-2:  #fcfcfc;
-  --gray-3:  #f0f0f0;
-  --gray-4:  #e8e8e8;
-  --gray-5:  #e0e0e0;
-  --gray-6:  #d9d9d9;
-  --gray-7:  #cecece;
-  --gray-8:  #bbbbbb;
-  --gray-9:  #8d8d8d;
-  --gray-10: #838383;
-  --gray-11: #646464;
-  --gray-12: #202020;
-
-  --gray-a1:  #00000003;
-  --gray-a2:  #00000006;
-  --gray-a3:  #0000000f;
-  --gray-a4:  #00000017;
-  --gray-a5:  #0000001f;
-  --gray-a6:  #00000026;
-  --gray-a7:  #00000031;
-  --gray-a8:  #00000044;
-  --gray-a9:  #00000072;
-  --gray-a10: #0000007c;
-  --gray-a11: #0000009b;
-  --gray-a12: #000000df;
-
-  --accent-1:  #fdfdfe;
-  --accent-2:  #f7f9ff;
-  --accent-3:  #edf2fe;
-  --accent-4:  #e0e9ff;
-  --accent-5:  #d1dfff;
-  --accent-6:  #bed1ff;
-  --accent-7:  #a6bff9;
-  --accent-8:  #88a6ef;
-  --accent-9:  #375bd7;
-  --accent-10: #2f50cc;
-  --accent-11: #3a5bc7;
-  --accent-12: #1d2d5c;
-
-  --accent-a1:  #00000000;
-  --accent-a2:  #0053ff06;
-  --accent-a3:  #004efe10;
-  --accent-a4:  #004dff1d;
-  --accent-a5:  #004fff2c;
-  --accent-a6:  #004bff3f;
-  --accent-a7:  #0149f058;
-  --accent-a8:  #0041de76;
-  --accent-a9:  #012eccc8;
-  --accent-a10: #0029c1d0;
-  --accent-a11: #012bb7c5;
-  --accent-a12: #001247e2;
-
-  --accent-contrast: var(--gray-1);
-}
-
-.dark {
-  --gray-1:  #111111;
-  --gray-2:  #191919;
-  --gray-3:  #222222;
-  --gray-4:  #2a2a2a;
-  --gray-5:  #313131;
-  --gray-6:  #3a3a3a;
-  --gray-7:  #484848;
-  --gray-8:  #606060;
-  --gray-9:  #6e6e6e;
-  --gray-10: #7b7b7b;
-  --gray-11: #b4b4b4;
-  --gray-12: #eeeeee;
+  --gray-1:  light-dark(oklch(98.21% 0 0), oklch(17.76% 0 0));
+  --gray-2:  light-dark(oklch(99.11% 0 0), oklch(21.34% 0 0));
+  --gray-3:  light-dark(oklch(95.51% 0 0), oklch(25.20% 0 0));
+  --gray-4:  light-dark(oklch(93.10% 0 0), oklch(28.50% 0 0));
+  --gray-5:  light-dark(oklch(90.67% 0 0), oklch(31.32% 0 0));
+  --gray-6:  light-dark(oklch(88.53% 0 0), oklch(34.85% 0 0));
+  --gray-7:  light-dark(oklch(85.14% 0 0), oklch(40.17% 0 0));
+  --gray-8:  light-dark(oklch(79.21% 0 0), oklch(48.91% 0 0));
+  --gray-9:  light-dark(oklch(64.34% 0 0), oklch(53.82% 0 0));
+  --gray-10: light-dark(oklch(61.00% 0 0), oklch(58.29% 0 0));
+  --gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));
+  --gray-12: light-dark(oklch(24.35% 0 0), oklch(94.91% 0 0));
 
   --gray-a1:  #00000000;
-  --gray-a2:  #ffffff09;
-  --gray-a3:  #ffffff12;
-  --gray-a4:  #ffffff1b;
-  --gray-a5:  #ffffff22;
-  --gray-a6:  #ffffff2c;
-  --gray-a7:  #ffffff3b;
-  --gray-a8:  #ffffff55;
-  --gray-a9:  #ffffff64;
-  --gray-a10: #ffffff72;
-  --gray-a11: #ffffffaf;
-  --gray-a12: #ffffffed;
+  --gray-a2:  light-dark(#00000006, #ffffff09);
+  --gray-a3:  light-dark(#0000000f, #ffffff12);
+  --gray-a4:  light-dark(#00000017, #ffffff1b);
+  --gray-a5:  light-dark(#0000001f, #ffffff22);
+  --gray-a6:  light-dark(#00000026, #ffffff2c);
+  --gray-a7:  light-dark(#00000031, #ffffff3b);
+  --gray-a8:  light-dark(#00000044, #ffffff55);
+  --gray-a9:  light-dark(#00000072, #ffffff64);
+  --gray-a10: light-dark(#0000007c, #ffffff72);
+  --gray-a11: light-dark(#0000009b, #ffffffaf);
+  --gray-a12: light-dark(#000000df, #ffffffed);
 
-  /* The accent, dark. Step 9 is identical to `:root`'s — see the note above. */
-  --accent-1:  #0f141f;
-  --accent-2:  #121826;
-  --accent-3:  #17244a;
-  --accent-4:  #1c2e63;
-  --accent-5:  #243975;
-  --accent-6:  #2d4385;
-  --accent-7:  #365098;
-  --accent-8:  #405db3;
-  --accent-9:  #375bd7;
-  --accent-10: #476cde;
-  --accent-11: #96b4ff;
-  --accent-12: #d5e1ff;
+  --accent-1:  light-dark(oklch(99.43% 0.0014 267.0), oklch(19.09% 0.0252 267.0));
+  --accent-2:  light-dark(oklch(98.23% 0.0082 267.0), oklch(20.94% 0.0308 267.0));
+  --accent-3:  light-dark(oklch(96.09% 0.0170 267.0), oklch(27.16% 0.0720 267.0));
+  --accent-4:  light-dark(oklch(93.46% 0.0310 267.0), oklch(31.85% 0.0965 267.0));
+  --accent-5:  light-dark(oklch(90.19% 0.0470 267.0), oklch(36.25% 0.1065 267.0));
+  --accent-6:  light-dark(oklch(86.20% 0.0674 267.0), oklch(40.33% 0.1135 267.0));
+  --accent-7:  light-dark(oklch(80.62% 0.0874 267.0), oklch(44.91% 0.1227 267.0));
+  --accent-8:  light-dark(oklch(73.09% 0.1121 267.0), oklch(50.21% 0.1394 267.0));
+  --accent-9:  oklch(52.00% 0.1950 267.0);
+  --accent-10: light-dark(oklch(48.68% 0.1950 267.0), oklch(56.53% 0.1794 267.0));
+  --accent-11: light-dark(oklch(50.92% 0.1722 267.0), oklch(77.59% 0.1132 267.0));
+  --accent-12: light-dark(oklch(31.26% 0.0856 267.0), oklch(91.08% 0.0427 267.0));
 
   --accent-a1:  #00000000;
-  --accent-a2:  #6f93fe08;
-  --accent-a3:  #3967ff31;
-  --accent-a4:  #3a6aff4d;
-  --accent-a5:  #4674ff62;
-  --accent-a6:  #517bff74;
-  --accent-a7:  #5783ff8a;
-  --accent-a8:  #5983ffa8;
-  --accent-a9:  #406bffd1;
-  --accent-a10: #517bffd9;
-  --accent-a11: #96b4ffff;
-  --accent-a12: #d5e1ffff;
+  --accent-a2:  light-dark(#0053ff06, #6f93fe08);
+  --accent-a3:  light-dark(#004efe10, #3967ff31);
+  --accent-a4:  light-dark(#004dff1d, #3a6aff4d);
+  --accent-a5:  light-dark(#004fff2c, #4674ff62);
+  --accent-a6:  light-dark(#004bff3f, #517bff74);
+  --accent-a7:  light-dark(#0149f058, #5783ff8a);
+  --accent-a8:  light-dark(#0041de76, #5983ffa8);
+  --accent-a9:  light-dark(#012eccc8, #406bffd1);
+  --accent-a10: light-dark(#0029c1d0, #517bffd9);
+  --accent-a11: light-dark(#012bb7c5, #96b4ffff);
+  --accent-a12: light-dark(#001247e2, #d5e1ffff);
 
-  --accent-contrast: var(--gray-12);
+  --accent-contrast: light-dark(var(--gray-1), var(--gray-12));
 }

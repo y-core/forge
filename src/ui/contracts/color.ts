@@ -91,16 +91,15 @@ function byte(c: number): string {
 
 // Out-of-gamut colours are brought in by reducing chroma at constant lightness and hue, as CSS
 // Color 4 specifies; clipping channels instead would shift the hue.
-/** OKLCh → `#rrggbb`. @public */
-export function oklchToHex(l: number, c: number, h: number): string {
+/** The nearest OKLCh coordinate sRGB can represent, reached by reducing chroma alone. @public */
+export function toSrgbGamut(l: number, c: number, h: number): Oklch {
   const hRad = (h * Math.PI) / 180;
   const cos = Math.cos(hRad);
   const sin = Math.sin(hRad);
 
-  const direct = oklabToLinearSrgb(l, c * cos, c * sin);
-  if (inGamut(direct)) return `#${byte(srgbGamma(direct[0]))}${byte(srgbGamma(direct[1]))}${byte(srgbGamma(direct[2]))}`;
-  if (l >= 1) return "#ffffff";
-  if (l <= 0) return "#000000";
+  if (inGamut(oklabToLinearSrgb(l, c * cos, c * sin))) return { l, c, h };
+  if (l >= 1) return { l: 1, c: 0, h };
+  if (l <= 0) return { l: 0, c: 0, h };
 
   let lo = 0;
   let hi = c;
@@ -109,8 +108,24 @@ export function oklchToHex(l: number, c: number, h: number): string {
     if (inGamut(oklabToLinearSrgb(l, mid * cos, mid * sin))) lo = mid;
     else hi = mid;
   }
-  const mapped = oklabToLinearSrgb(l, lo * cos, lo * sin);
-  return `#${byte(srgbGamma(mapped[0]))}${byte(srgbGamma(mapped[1]))}${byte(srgbGamma(mapped[2]))}`;
+  return { l, c: lo, h };
+}
+
+// Hue is dropped at zero chroma rather than printed: it is noise there, and a varying number would
+// make two identical greys read as two colours.
+/** An OKLCh coordinate as the `oklch()` a scheme file carries. @public */
+export function oklchCss(color: Oklch): string {
+  const lightness = `${(color.l * 100).toFixed(2)}%`;
+  const chroma = color.c.toFixed(4);
+  return Number(chroma) === 0 ? `oklch(${lightness} 0 0)` : `oklch(${lightness} ${chroma} ${color.h.toFixed(1)})`;
+}
+
+/** OKLCh → `#rrggbb`. @public */
+export function oklchToHex(l: number, c: number, h: number): string {
+  const mapped = toSrgbGamut(l, c, h);
+  const hRad = (mapped.h * Math.PI) / 180;
+  const [r, g, b] = oklabToLinearSrgb(mapped.l, mapped.c * Math.cos(hRad), mapped.c * Math.sin(hRad));
+  return `#${byte(srgbGamma(r))}${byte(srgbGamma(g))}${byte(srgbGamma(b))}`;
 }
 
 /** The three sRGB channels of a `#rrggbb` literal, as 0–1. Throws on any other shape. */

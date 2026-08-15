@@ -1,4 +1,15 @@
-import { ACCENT_RAMP, buildAlphaScale, buildScale, contrastRatio, GRAY_RAMP, type Mode, type Ramp, type Scale } from "./color";
+import {
+  ACCENT_RAMP,
+  buildAlphaScale,
+  buildScale,
+  contrastRatio,
+  GRAY_RAMP,
+  type Mode,
+  oklchCss,
+  type Ramp,
+  type Scale,
+  toSrgbGamut,
+} from "./color";
 import { CONTRAST_PAIRS, CRITERION } from "./contrast-pairs";
 
 /** Resumable-scope name the customiser's lever panel stamps. @public */
@@ -70,6 +81,12 @@ export function dialQuery(dials: DialValues): string {
 /** The input-only query parameter a preset travels under; an explicit `gh`/`gc` beside it wins. @public */
 export const PRESET_PARAM = "p";
 
+/** The `data-field` the preset picker stamps, where {@link PRESET_PARAM} is its URL spelling. @public */
+export const PRESET_FIELD = "preset";
+
+/** The option value standing for "no shipped scheme reproduces these dials". @public */
+export const PRESET_CUSTOM = "";
+
 /** A shipped scheme, and the gray dials that reproduce it. @public */
 export interface SchemePreset {
   /** Matches the scheme file's name without its prefix — `stone` for `theme-stone.css`. */
@@ -91,6 +108,19 @@ export const SCHEME_PRESETS: readonly SchemePreset[] = [
   { id: "slate", file: "theme-slate.css", character: "strongly cool", grayHue: 258, grayChroma: 42 },
 ];
 
+/** The shipped scheme a set of dials reproduces, or `undefined` when they sit between presets. @public */
+export function matchPreset(dials: DialValues): SchemePreset | undefined {
+  return SCHEME_PRESETS.find((preset) => dials.grayHue === preset.grayHue && dials.grayChroma === preset.grayChroma);
+}
+
+/** The gray dials a preset sets, and the only fields the picker drives. @public */
+export const PRESET_FIELDS = ["grayHue", "grayChroma"] as const;
+
+/** The customiser's scope state: every dial, plus the preset the dials currently name. @public */
+export function customiseState(dials: DialValues): Record<string, number | string> {
+  return { ...dials, [PRESET_FIELD]: matchPreset(dials)?.id ?? PRESET_CUSTOM };
+}
+
 /** The `--radius` token, which the customiser drives directly rather than through a scale. @public */
 export const RADIUS_PROPERTY = "--radius";
 
@@ -99,24 +129,38 @@ export function stepProperty(family: ScaleFamily, step: number, kind: "solid" | 
   return `--${family}-${kind === "alpha" ? "a" : ""}${step + 1}`;
 }
 
-/** One family's twenty-four declarations as `[property, value]` pairs. @public */
-export function scaleVars(family: ScaleFamily, solid: Scale<string>, alpha: Scale<string>): readonly (readonly [string, string])[] {
+/** One value covering both modes, collapsed to a bare value where the two modes agree. @public */
+export function lightDark(light: string, dark: string): string {
+  return light === dark ? light : `light-dark(${light}, ${dark})`;
+}
+
+/** One family's twenty-four declarations as `[property, value]` pairs, each already mode-complete. @public */
+export function scaleVars(family: ScaleFamily, scales: GeneratedTheme["gray"]): readonly (readonly [string, string])[] {
   const pairs: (readonly [string, string])[] = [];
-  for (let step = 0; step < 12; step++) pairs.push([stepProperty(family, step), solid[step] ?? ""]);
-  for (let step = 0; step < 12; step++) pairs.push([stepProperty(family, step, "alpha"), alpha[step] ?? ""]);
+  for (let step = 0; step < 12; step++) {
+    pairs.push([stepProperty(family, step), lightDark(scales.light.oklch[step] ?? "", scales.dark.oklch[step] ?? "")]);
+  }
+  for (let step = 0; step < 12; step++) {
+    pairs.push([stepProperty(family, step, "alpha"), lightDark(scales.light.alpha[step] ?? "", scales.dark.alpha[step] ?? "")]);
+  }
   return pairs;
 }
 
+// `solid` is kept beside `oklch` rather than derived from it: the overlay solver, the ratios, and
+// the preview all work in the byte-quantised sRGB the hex names.
 /** Both families, both modes — everything a scheme declares, from five numbers. @public */
 export interface GeneratedTheme {
-  readonly gray: Readonly<Record<Mode, { solid: Scale<string>; alpha: Scale<string> }>>;
-  readonly accent: Readonly<Record<Mode, { solid: Scale<string>; alpha: Scale<string> }>>;
+  readonly gray: Readonly<Record<Mode, { solid: Scale<string>; alpha: Scale<string>; oklch: Scale<string> }>>;
+  readonly accent: Readonly<Record<Mode, { solid: Scale<string>; alpha: Scale<string>; oklch: Scale<string> }>>;
 }
 
 function buildFamily(ramp: Readonly<Record<Mode, Ramp>>, hue: number, chroma: number): GeneratedTheme["gray"] {
   const build = (mode: Mode) => {
     const solid = buildScale(ramp[mode], { hue, chroma });
-    return { solid, alpha: buildAlphaScale(solid, mode) };
+    const oklch = solid.map((_, step) =>
+      oklchCss(toSrgbGamut(ramp[mode].lightness[step] ?? 0, (ramp[mode].chroma[step] ?? 0) * chroma, hue)),
+    ) as unknown as Scale<string>;
+    return { solid, alpha: buildAlphaScale(solid, mode), oklch };
   };
   return { light: build("light"), dark: build("dark") };
 }
@@ -131,27 +175,25 @@ export function buildTheme(dials: DialValues): GeneratedTheme {
 
 /** The scheme as a `theme-*.css` file, ready to paste. @public */
 export function schemeCss(theme: GeneratedTheme, dials: DialValues): string {
-  const block = (mode: Mode, selector: string) =>
-    [
-      `${selector} {`,
-      ...scaleVars("gray", theme.gray[mode].solid, theme.gray[mode].alpha).map(([name, value]) => `  ${name}: ${value};`),
-      "",
-      ...scaleVars("accent", theme.accent[mode].solid, theme.accent[mode].alpha).map(([name, value]) => `  ${name}: ${value};`),
-      "}",
-    ].join("\n");
+  const declare = ([name, value]: readonly [string, string]) => `  ${name}: ${value};`;
 
   return [
     "/* Generated by the forge theme customiser.",
     `   Gray   hue ${dials.grayHue ?? 0}deg, chroma ${(dials.grayChroma ?? 0) / 1000}`,
     `   Accent hue ${dials.accentHue ?? 0}deg, chroma ${(dials.accentChroma ?? 0) / 1000}`,
     "",
-    "   A scheme file is exactly this: twelve steps and twelve alpha steps, per mode. Every semantic",
-    "   token in theme-base.css resolves through them, so this is the whole of re-theming. Import it",
-    "   after theme-neutral.css - both selectors weigh 0-1-0, so source order decides. */",
+    "   A scheme file is exactly this: twelve steps and twelve alpha steps per family, each declared",
+    "   once. Every semantic token in theme-base.css resolves through them, so this is the whole of",
+    "   re-theming. A step that differs by mode is written with light-dark(); theme-base.css sets the",
+    "   color-scheme that picks the branch, so import that file and this one is complete. */",
     "",
-    block("light", ":root"),
+    ":root {",
+    ...scaleVars("gray", theme.gray).map(declare),
     "",
-    block("dark", ".dark"),
+    ...scaleVars("accent", theme.accent).map(declare),
+    "",
+    `  --accent-contrast: ${lightDark("var(--gray-1)", "var(--gray-12)")};`,
+    "}",
     "",
   ].join("\n");
 }

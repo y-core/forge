@@ -6,7 +6,7 @@ import {
   type AcceptedRow,
   checkAccepted,
   checkDarkHoldsOnlySteps,
-  MODE_SELECTOR,
+  MODE_LABEL,
   type Mode,
   mergeThemes,
   type ParsedTheme,
@@ -140,6 +140,45 @@ export function measurePairs(
   return out;
 }
 
+// The prevention the one-declaration-site contract exists for: a `.dark` block and a `:root` block
+// both weigh 0-1-0 and both match the document element, so a consumer sheet imported after forge's
+// beats only one of the two halves and leaks the other mode's values in silently. The rule is about
+// declaration sites, not the selector — `theme-base.css` sets `color-scheme` under `.dark`, and a
+// property that is not a custom property is not something a scheme could half-supply.
+/** Fails any `.dark { … }` rule that declares a custom property, in any stylesheet under `cssDir`. */
+function checkNoDarkBlock(root: string, cssDir: string): Finding[] {
+  const findings: Finding[] = [];
+  const files = readdirSync(resolve(root, cssDir))
+    .filter((entry) => entry.endsWith(".css"))
+    .sort();
+
+  for (const name of files) {
+    const source = stripComments(readFileSync(resolve(root, cssDir, name), "utf-8"));
+    for (const match of source.matchAll(/\.dark\b[^;{}()]*\{/g)) {
+      const block = blockAt(source, match.index + match[0].length);
+      const declared = [...block.matchAll(/(--[a-z0-9]+(?:-[a-z0-9]+)*)\s*:/g)].map((property) => property[1]);
+      if (declared.length === 0) continue;
+      findings.push(
+        fail(
+          `declares ${declared.join(", ")} under \`.dark\` — every step is declared once, in \`:root\`, and one that differs by mode is written with \`light-dark()\`. A second block cannot be supplied safely: it weighs the same 0-1-0 as \`:root\`, so a consumer's scheme replaces one half and silently keeps forge's other one`,
+          { file: `${cssDir}/${name}`, line: source.slice(0, match.index).split("\n").length },
+        ),
+      );
+    }
+  }
+  return findings;
+}
+
+/** The body of the rule whose `{` has just been consumed at `start`. */
+function blockAt(css: string, start: number): string {
+  let depth = 1;
+  for (let i = start; i < css.length; i++) {
+    if (css[i] === "{") depth++;
+    else if (css[i] === "}" && --depth === 0) return css.slice(start, i);
+  }
+  return css.slice(start);
+}
+
 /** Measures the audit, then applies the structural rules measurement does not subsume. @public */
 export function checkContrast(config: ContrastCheckConfig): CheckResult {
   const { root, cssDir, pairs, criteria } = config;
@@ -161,8 +200,15 @@ export function checkContrast(config: ContrastCheckConfig): CheckResult {
   const palette = config.palettePath === undefined ? new Map<string, string>() : parsePalette(readFileSync(config.palettePath, "utf-8"));
 
   for (const mode of ["light", "dark"] as const) {
-    if (theme[mode].size === 0) findings.push(fail(`no custom properties parsed from any \`${MODE_SELECTOR[mode]}\` block`, { file: cssDir }));
+    if (theme[mode].size === 0) {
+      findings.push(
+        fail(`no ${MODE_LABEL[mode]} values parsed from any \`:root\` block — a scheme declares its per-mode steps with \`light-dark()\``, {
+          file: cssDir,
+        }),
+      );
+    }
   }
+  findings.push(...checkNoDarkBlock(root, cssDir));
   if (findings.length > 0) return checkResult(findings, "");
 
   const measurements = measurePairs(pairs, criteria, theme, palette);

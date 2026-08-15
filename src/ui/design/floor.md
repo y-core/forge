@@ -103,10 +103,11 @@ roles (`-subtle`, `-subtle-foreground`, `-strong`, `-strong-foreground`, `-borde
 status surface gets a fixed hue without a fixed value.
 
 Each of them resolves through a numbered step of the scale — `--gray-1` … `--gray-12`, their alpha
-siblings, and the fixed status hues — and each step holds a literal value per mode, declared by
-`theme-neutral.css` (or whichever scheme file is imported after it) and, for the hues,
-`theme-colors.css`. `theme-base.css` holds the mapping and no values at all. That is what makes a theme swap a one-file
-change, and what makes a *per-mode* change an edit to the step rather than to the token.
+siblings, and the fixed status hues — and each step holds one literal value covering both modes,
+declared by `theme-neutral.css` (or whichever scheme file is imported after it) and, for the hues,
+`theme-colors.css`. `theme-base.css` holds the mapping, the `color-scheme` that picks each step's
+mode, and no colour values at all. That is what makes a theme swap a one-file change, and what makes
+a *per-mode* change an edit to the step rather than to the token.
 
 A Tailwind palette utility is permitted **only paired with its own `dark:` counterpart**, and only
 for a hue no forge token covers. A bare `bg-red-50` is not a literal, but it fails for the same

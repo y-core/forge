@@ -362,6 +362,33 @@ signal; `effect` subscribes to every signal read during its execution and re-run
 **Use signals for lightweight client state that does not justify an HTMX round trip.** State
 that must survive navigation or be authoritative belongs on the server.
 
+**By the time a write returns, every dependent has observed the settled value.** A write enqueues
+its subscribers; the queue drains synchronously, one node at a time, re-read after each run rather
+than snapshotted, which is what collapses a chain to a single run of its shared reader. Synchronous
+rather than deferred to a microtask, because a scope action writes a signal and the painted DOM has
+to be there before the event handler returns.
+
+**Settled, not glitch-free.** The queue is insertion-ordered, not topological: a reader that
+subscribed to a shared source *before* the effect that feeds it can run once against an intermediate
+value, then again against the settled one, inside the same flush. Ordering topologically needs a
+depth per node recomputed on every run, since effects re-track dynamically — real complexity in the
+core primitive for a glitch no graph here exhibits. A `computed` is ordering-safe by construction:
+a consumer has to reference it, so its own effect subscribed to the shared source first.
+
+**A write inside an effect body only enqueues.** The next line of that body still reads the
+pre-flush value of anything derived from it; the settled value is there once the outermost write
+returns.
+
+**A throwing effect clears the queue.** The throw reaches whoever performed the write, and the
+effects queued behind the thrower are skipped until the next write — carrying them forward would run
+them on an unrelated caller's stack.
+
+**A cycle throws past a run cap.** The cap counts node runs within one flush, so a legitimately deep
+chain of *N* distinct nodes costs *N*. `effect(() => { s.value = s.value + 1 })` throws rather than
+spinning. A cycle that settles is a legitimate shape — the customiser's `preset → dials → preset`
+loop terminates on `Object.is` at the dial signals, whose second pass writes the values already
+there and notifies nobody.
+
 ### 3b. Lazy Loading Utilities
 
 All three take an **options object**, not positional arguments, and each accepts `within` so a

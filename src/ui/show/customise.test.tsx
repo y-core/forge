@@ -4,7 +4,18 @@
 import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { scalePairs } from "../contracts/contrast-pairs";
-import { buildTheme, DIALS, leverRows, SCALE_ROWS, SCHEME_PRESETS, STEP_SEGMENTS, schemeCss } from "../contracts/theme-contract";
+import {
+  buildTheme,
+  CUSTOMISE_SCOPE,
+  DIALS,
+  leverRows,
+  PRESET_FIELD,
+  PRESET_PARAM,
+  SCALE_ROWS,
+  SCHEME_PRESETS,
+  STEP_SEGMENTS,
+  schemeCss,
+} from "../contracts/theme-contract";
 import { fieldId } from "../core/field";
 import { CustomiseContent, loadCustomise } from "./customise";
 
@@ -100,12 +111,27 @@ describe("CustomiseContent", () => {
       expect(out).toContain(`<option data-slot="select-option" value="${preset.id}"`);
       expect(out).toContain(`${preset.id} (${preset.character})`);
     }
-    expect(out).toContain('<form method="get" action="/showcase/ui/theme"');
-    expect(out).toContain('<input type="hidden" name="ah" value="200">');
-    expect(out).toContain('<input type="hidden" name="r" value="4">');
-    expect(out).not.toContain('type="hidden" name="gh"');
-    expect(out).not.toContain('type="hidden" name="gc"');
-    expect(out).not.toContain("data-on-change");
+  });
+
+  it("applies a preset on change rather than on a submit, so it carries no form and no button", async () => {
+    const out = await page("?ah=200&ac=120&r=4");
+    const levers = out.slice(out.indexOf('id="levers"'), out.indexOf('id="preview"'));
+    expect(levers).toContain(`data-on-change="bindField" data-field="${PRESET_FIELD}"`);
+    expect(levers).not.toContain("<form");
+    expect(levers).not.toContain(">Apply<");
+    expect(levers).not.toContain('type="hidden"');
+  });
+
+  it("puts the picker inside the scope, which is what lets its change reach the painter", async () => {
+    const out = await page();
+    const scope = out.indexOf(`data-scope="${CUSTOMISE_SCOPE}"`);
+    expect(scope).toBeGreaterThan(-1);
+    expect(out.indexOf(`data-field="${PRESET_FIELD}"`)).toBeGreaterThan(scope);
+  });
+
+  it("always renders the custom option, since the client selects it the moment a lever moves off a preset", async () => {
+    const out = await page();
+    expect(out).toContain('<option data-slot="select-option" value="" disabled>custom</option>');
   });
 
   it("selects the preset the current dials are actually on", async () => {
@@ -224,7 +250,7 @@ describe("CustomiseContent", () => {
     const out = await page("?gh=256&gc=45");
     expect(out).toContain("data-scheme-output");
     expect(out).toContain(":root {");
-    expect(out).toContain(".dark {");
+    expect(out).not.toContain(".dark {");
   });
 
   it("shows a share URL carrying every dial", async () => {
@@ -242,7 +268,7 @@ describe("CustomiseContent", () => {
 });
 
 describe("schemeCss", () => {
-  it("declares twelve solid and twelve alpha steps per family per mode", () => {
+  it("declares twelve solid and twelve alpha steps per family, once each", () => {
     const css = schemeCss(buildTheme({ grayHue: 256, grayChroma: 45, accentHue: 267, accentChroma: 195, radius: 10 }), {
       grayHue: 256,
       grayChroma: 45,
@@ -252,22 +278,26 @@ describe("schemeCss", () => {
     });
     for (const family of ["gray", "accent"]) {
       for (let step = 1; step <= 12; step++) {
-        expect(css).toContain(`--${family}-${step}:`);
-        expect(css).toContain(`--${family}-a${step}:`);
+        expect(css.split(`--${family}-${step}:`).length - 1).toBe(1);
+        expect(css.split(`--${family}-a${step}:`).length - 1).toBe(1);
       }
     }
     expect(css.split(":root {").length - 1).toBe(1);
-    expect(css.split(".dark {").length - 1).toBe(1);
+    expect(css).not.toContain(".dark {");
+  });
+
+  it("is standalone-complete, carrying the contrast step that pairs with its own accent", () => {
+    const dials = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10 };
+    expect(schemeCss(buildTheme(dials), dials)).toContain("--accent-contrast: light-dark(var(--gray-1), var(--gray-12));");
   });
 
   it("reproduces theme-neutral.css at the default dials", () => {
     const dials = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10 };
     const css = schemeCss(buildTheme(dials), dials);
-    expect(css).toContain("--gray-1: #f9f9f9;");
-    expect(css).toContain("--gray-11: #646464;");
-    expect(css).toContain("--gray-12: #202020;");
-    expect(css).toContain("--gray-1: #111111;");
-    expect(css).toContain("--gray-11: #b4b4b4;");
+    expect(css).toContain("--gray-1: light-dark(oklch(98.21% 0 0), oklch(17.76% 0 0));");
+    expect(css).toContain("--gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));");
+    expect(css).toContain("--gray-12: light-dark(oklch(24.35% 0 0), oklch(94.91% 0 0));");
+    expect(css).toContain("--accent-9: oklch(52.00% 0.1950 267.0);");
   });
 
   it("records the dials it was generated from, so a pasted file can be traced back", () => {

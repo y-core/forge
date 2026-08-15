@@ -1,7 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser-test-helper";
-import { buildTheme, liveRatios } from "../contracts/theme-contract";
+import { DARK_CLASS } from "../chrome/theme";
+import { mount, paintedHex } from "../client/browser-test-helper";
+import { buildTheme, liveRatios, PRESET_FIELD, PRESET_FIELDS, SCHEME_PRESETS } from "../contracts/theme-contract";
 import { createIcon } from "../core/icon";
 import { CustomiseContent, loadCustomise } from "./customise";
 
@@ -76,19 +77,54 @@ function rootProperty(page: Page, property: string): Promise<string> {
   return page.evaluate((name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim(), property);
 }
 
+// A custom property's computed value is the `light-dark()` text itself — the function resolves at
+// used-value time, and only for a property that takes a `<color>`. Painting it is the only way to
+// read the colour the mode actually selects.
+/** A colour token as the `#rrggbb` the browser paints it. */
+function paintedToken(page: Page, property: string): Promise<string> {
+  return paintedHex(page, `var(${property})`);
+}
+
+/** The dials the customiser loads with, so a case can name only the ones it moves. */
+const DEFAULT_DIALS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10 };
+
+/** Pick a scheme the way a reader does — set the value, then fire the delegated `change`. */
+async function choosePreset(page: Page, id: string): Promise<void> {
+  await page.evaluate(
+    ({ field, value }) => {
+      const picker = document.querySelector<HTMLSelectElement>(`select[data-field="${field}"]`);
+      if (picker === null) throw new Error("no preset picker");
+      picker.value = value;
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    { field: PRESET_FIELD, value: id },
+  );
+}
+
+function presetValue(page: Page): Promise<string | undefined> {
+  return page.evaluate((field) => document.querySelector<HTMLSelectElement>(`select[data-field="${field}"]`)?.value, PRESET_FIELD);
+}
+
+function sliderValues(page: Page): Promise<Record<string, string | undefined>> {
+  return page.evaluate(
+    (fields) => Object.fromEntries(fields.map((field) => [field, document.querySelector<HTMLInputElement>(`input[data-field="${field}"]`)?.value])),
+    [...PRESET_FIELDS],
+  );
+}
+
 test.describe("the customiser's levers", () => {
   test("paint the URL's scheme onto the document before anything is touched", async ({ page }) => {
     await mountCustomise(page, "?gh=256&gc=45");
 
     const expected = buildTheme({ grayHue: 256, grayChroma: 45, accentHue: 267, accentChroma: 195, radius: 10 });
-    expect(await rootProperty(page, "--gray-11")).toBe(expected.gray.light.solid[10]);
-    expect(await rootProperty(page, "--gray-1")).toBe(expected.gray.light.solid[0]);
+    expect(await paintedToken(page, "--gray-11")).toBe(expected.gray.light.solid[10]);
+    expect(await paintedToken(page, "--gray-1")).toBe(expected.gray.light.solid[0]);
   });
 
   test("rewrite --gray-11 on the document when a lever moves", async ({ page }) => {
     await mountCustomise(page);
 
-    expect(await rootProperty(page, "--gray-11")).toBe("#646464");
+    expect(await paintedToken(page, "--gray-11")).toBe("#646464");
 
     await drag(page, [
       ["grayChroma", "45"],
@@ -96,18 +132,85 @@ test.describe("the customiser's levers", () => {
     ]);
 
     const expected = buildTheme({ grayHue: 256, grayChroma: 45, accentHue: 267, accentChroma: 195, radius: 10 });
-    expect(await rootProperty(page, "--gray-11")).toBe(expected.gray.light.solid[10]);
+    expect(await paintedToken(page, "--gray-11")).toBe(expected.gray.light.solid[10]);
     expect(expected.gray.light.solid[10]).toBe("#53667e");
+  });
+
+  // The painter writes one `light-dark()` per property and no longer watches `<html>`'s class list,
+  // so this is what proves the browser selects the branch — and that `light-dark()` accepts the
+  // nested `var()` an `--accent-contrast` carries.
+  test("follow the dark class without the painter noticing it changed", async ({ page }) => {
+    await mountCustomise(page);
+    expect(await paintedToken(page, "--gray-11")).toBe("#646464");
+
+    await page.evaluate((cls) => document.documentElement.classList.add(cls), DARK_CLASS);
+
+    expect(await paintedToken(page, "--gray-11")).toBe("#b4b4b4");
+    expect(await paintedToken(page, "--accent-contrast")).toBe("#eeeeee");
+  });
+
+  test("apply a preset the moment it is chosen, with no submit and no navigation", async ({ page }) => {
+    await mountCustomise(page);
+    const url = page.url();
+
+    await choosePreset(page, "slate");
+
+    const slate = SCHEME_PRESETS.find((preset) => preset.id === "slate");
+    const expected = buildTheme({ ...DEFAULT_DIALS, grayHue: slate?.grayHue ?? 0, grayChroma: slate?.grayChroma ?? 0 });
+    expect(await paintedToken(page, "--gray-11")).toBe(expected.gray.light.solid[10]);
+    expect(page.url()).toBe(url);
+  });
+
+  test("move the sliders a preset drives, which bindField alone would leave behind", async ({ page }) => {
+    await mountCustomise(page);
+
+    await choosePreset(page, "slate");
+
+    const slate = SCHEME_PRESETS.find((preset) => preset.id === "slate");
+    expect(await sliderValues(page)).toEqual({ grayHue: String(slate?.grayHue), grayChroma: String(slate?.grayChroma) });
+    expect(await page.evaluate(() => document.querySelector('[data-readout="grayHue"]')?.textContent)).toBe(`${slate?.grayHue}°`);
+  });
+
+  test("fall back to custom once a lever leaves the preset it was on", async ({ page }) => {
+    await mountCustomise(page);
+    expect(await presetValue(page)).toBe("neutral");
+
+    await choosePreset(page, "stone");
+    expect(await presetValue(page)).toBe("stone");
+
+    await drag(page, [["grayHue", "120"]]);
+
+    expect(await presetValue(page)).toBe("");
+  });
+
+  // The painter writing `custom` back to the signal is what makes this work: one still reading
+  // `stone` would make the second pick an `Object.is` no-op, and nothing would move.
+  test("re-apply the preset a lever just left", async ({ page }) => {
+    await mountCustomise(page);
+    const stone = SCHEME_PRESETS.find((preset) => preset.id === "stone");
+
+    await choosePreset(page, "stone");
+    await drag(page, [["grayHue", "120"]]);
+    expect(await presetValue(page)).toBe("");
+
+    await choosePreset(page, "stone");
+
+    expect(await presetValue(page)).toBe("stone");
+    expect(await sliderValues(page)).toEqual({ grayHue: String(stone?.grayHue), grayChroma: String(stone?.grayChroma) });
+    const expected = buildTheme({ ...DEFAULT_DIALS, grayHue: stone?.grayHue ?? 0, grayChroma: stone?.grayChroma ?? 0 });
+    expect(await paintedToken(page, "--gray-11")).toBe(expected.gray.light.solid[10]);
   });
 
   test("repaint a real composed surface, not only the swatches", async ({ page }) => {
     await mountCustomise(page);
 
-    const descriptionColour = () =>
-      page.evaluate(() => {
+    const descriptionColour = async () => {
+      const declared = await page.evaluate(() => {
         const el = document.querySelector("#compositions [data-slot~='card-description']");
         return el === null ? null : getComputedStyle(el).color;
       });
+      return declared === null ? null : await paintedHex(page, declared);
+    };
 
     const before = await descriptionColour();
     expect(before).not.toBeNull();
@@ -119,7 +222,7 @@ test.describe("the customiser's levers", () => {
 
     const after = await descriptionColour();
     expect(after).not.toBe(before);
-    expect(after).toBe("rgb(83, 102, 126)");
+    expect(after).toBe("#53667e");
   });
 
   test("drive --radius directly, since it is a token rather than a scale step", async ({ page }) => {
@@ -269,7 +372,9 @@ test.describe("the customiser's levers", () => {
 
   test("update the copyable scheme block as the dials move", async ({ page }) => {
     await mountCustomise(page);
-    expect(await page.evaluate(() => document.querySelector("[data-scheme-output] code")?.textContent)).toContain("--gray-11: #646464;");
+    expect(await page.evaluate(() => document.querySelector("[data-scheme-output] code")?.textContent)).toContain(
+      "--gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));",
+    );
 
     await drag(page, [
       ["grayChroma", "45"],
@@ -277,8 +382,8 @@ test.describe("the customiser's levers", () => {
     ]);
 
     const output = await page.evaluate(() => document.querySelector("[data-scheme-output] code")?.textContent);
-    expect(output).toContain("--gray-11: #53667e;");
-    expect(output).toContain(".dark {");
+    expect(output).toContain("--gray-11: light-dark(oklch(50.32% 0.0450 256.0), oklch(76.99% 0.0314 256.0));");
+    expect(output).not.toContain(".dark {");
   });
 });
 

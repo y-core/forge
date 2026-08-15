@@ -19,7 +19,7 @@ export const ACCEPTED_CONTRAST: readonly AcceptedContrastRow[] = [
   {
     token: "--border",
     step: "--gray-6",
-    value: { light: "#d9d9d9", dark: "#3a3a3a" },
+    value: { light: "oklch(88.53% 0 0)", dark: "oklch(34.85% 0 0)" },
     measured: "1.24 against --background / --card / --muted in light; 1.40 in dark",
     reason:
       "decorative separation only — a hairline, a divider, a surface edge. It identifies no control and reports no state, so WCAG 1.4.11 does not bind. It is faint by design and measured so rather than assumed: a hairline that reads as a hairline is what a surface edge should be, and recording the number is what keeps that a choice someone made rather than one nobody checked.",

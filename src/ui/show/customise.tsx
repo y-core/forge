@@ -12,6 +12,7 @@ import { CRITERION, scalePairs } from "../contracts/contrast-pairs";
 import {
   buildTheme,
   CUSTOMISE_SCOPE,
+  customiseState,
   DIALS,
   type Dial,
   type DialValues,
@@ -21,6 +22,9 @@ import {
   type LiveRatio,
   leverRows,
   liveRatios,
+  matchPreset,
+  PRESET_CUSTOM,
+  PRESET_FIELD,
   PRESET_PARAM,
   ratioKey,
   SCALE_ROW_ATTR,
@@ -29,12 +33,11 @@ import {
   STEP_SEGMENTS,
   schemeCss,
 } from "../contracts/theme-contract";
+import { Select } from "../controls/select";
 import { Slider } from "../controls/slider";
-import { Button } from "../core/button";
 import { fieldId } from "../core/field";
 import type { ForgeIcon } from "../core/icon";
 import { Label } from "../core/label";
-import { Select } from "../core/select";
 import { Resumable } from "../server/resumable";
 import { CompositionsSection } from "./compositions";
 
@@ -119,50 +122,45 @@ const LeverRow: FC<{ dials: readonly Dial[]; values: DialValues }> = ({ dials, v
   );
 };
 
-/** The four shipped schemes, as a starting point to pick from. */
-const PresetPicker: FC<{ dials: DialValues; path: string; icon: CustomiseIcon }> = ({ dials, path, icon }) => {
-  const current = SCHEME_PRESETS.find((preset) => dials.grayHue === preset.grayHue && dials.grayChroma === preset.grayChroma);
+// The `custom` option is always rendered rather than only when the dials sit between presets: it is
+// what the client selects the moment a slider moves off one, and an option that is not there cannot
+// be selected. `disabled` keeps it out of the reader's own choices — it names a state, not a destination.
+/** The four shipped schemes, as a starting point to pick from — applied the moment one is chosen. */
+const PresetPicker: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, icon }) => {
+  const current = matchPreset(dials);
   return (
-    <form method='get' action={path} class='flex flex-wrap items-end gap-3'>
-      {DIALS.filter((dial) => dial.field !== "grayHue" && dial.field !== "grayChroma").map((dial) => (
-        /* design-allow: forge-ui-catalog-wrong-raw-input — a hidden field is form payload, not a control */
-        <input type='hidden' name={dial.param} value={String(dials[dial.field] ?? dial.fallback)} />
-      ))}
-      <div class='w-64 space-y-1.5'>
-        <Label for={fieldId(PRESET_PARAM)}>Theme preset</Label>
-        <Select field={{ name: PRESET_PARAM }} icon={icon}>
-          {current === undefined ? (
-            <Select.Option value='' disabled selected>
-              custom
-            </Select.Option>
-          ) : null}
-          {SCHEME_PRESETS.map((preset) => (
-            <Select.Option value={preset.id} {...(preset === current ? { selected: true } : {})}>
-              {`${preset.id} (${preset.character})`}
-            </Select.Option>
-          ))}
-        </Select>
-      </div>
-      <Button type='submit' variant='secondary'>
-        Apply
-      </Button>
-    </form>
+    <div class='w-64 space-y-1.5'>
+      <Label for={fieldId(PRESET_PARAM)}>Theme preset</Label>
+      <Select bind={PRESET_FIELD} field={{ name: PRESET_PARAM }} icon={icon}>
+        <Select.Option value={PRESET_CUSTOM} disabled {...(current === undefined ? { selected: true } : {})}>
+          custom
+        </Select.Option>
+        {SCHEME_PRESETS.map((preset) => (
+          <Select.Option value={preset.id} {...(preset === current ? { selected: true } : {})}>
+            {`${preset.id} (${preset.character})`}
+          </Select.Option>
+        ))}
+      </Select>
+    </div>
   );
 };
 
-const LeversSection: FC<{ dials: DialValues; path: string; icon: CustomiseIcon }> = ({ dials, path, icon }) => (
+const LeversSection: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, icon }) => (
   <section id='levers' class='scroll-mt-24 space-y-4'>
     <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>Levers</h2>
     <p class='text-sm text-muted-foreground'>Hue and chroma over a fixed lightness ramp ensuring contrast ratios remain WCAG compliant.</p>
-    <PresetPicker dials={dials} path={path} icon={icon} />
-    <p class='text-sm text-muted-foreground'>
-      Each preset sets the gray dials to the values that reproduce a scheme forge ships. <code class='font-mono'>neutral</code> is exact; the other
-      three land within 1% per channel, because their hue drifts slightly from step to step and the dials apply one hue to all twelve.
-    </p>
-    <Resumable name={CUSTOMISE_SCOPE} state={dials} class='space-y-3'>
-      {leverRows().map((row) => (
-        <LeverRow dials={row} values={dials} />
-      ))}
+    <Resumable name={CUSTOMISE_SCOPE} state={customiseState(dials)} class='space-y-4'>
+      <PresetPicker dials={dials} icon={icon} />
+      <p class='text-sm text-muted-foreground'>
+        Each preset sets the gray dials to the values that reproduce a scheme forge ships, and the page repaints as you pick one.{" "}
+        <code class='font-mono'>neutral</code> is exact; the other three land within 1% per channel, because their hue drifts slightly from step to
+        step and the dials apply one hue to all twelve.
+      </p>
+      <div class='space-y-3'>
+        {leverRows().map((row) => (
+          <LeverRow dials={row} values={dials} />
+        ))}
+      </div>
     </Resumable>
   </section>
 );
@@ -332,7 +330,7 @@ export const CustomiseContent: FC<{ data: CustomiseData; icon: CustomiseIcon }> 
         <h1 class='text-3xl font-bold text-foreground'>Theme customiser</h1>
       </div>
 
-      <LeversSection dials={data.dials} path={data.path} icon={icon} />
+      <LeversSection dials={data.dials} icon={icon} />
       <PreviewSection theme={theme} />
       <WcagSection theme={theme} />
 

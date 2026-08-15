@@ -1,4 +1,3 @@
-import { DARK_CLASS } from "../chrome/theme";
 import { bindField } from "../client/bind";
 import { elementById, ownerDocument } from "../client/dom";
 import { openPopoverAt } from "../client/popover-anchor";
@@ -6,7 +5,6 @@ import { registerScope } from "../client/resume";
 import { mountScrollSpy } from "../client/scroll-spy";
 import { computed, effect } from "../client/signal";
 import { mountTurnstile } from "../client/turnstile";
-import type { Mode } from "../contracts/color";
 import {
   buildTheme,
   CUSTOMISE_SCOPE,
@@ -15,9 +13,14 @@ import {
   dialQuery,
   HEX_ATTR,
   liveRatios,
+  matchPreset,
+  PRESET_CUSTOM,
+  PRESET_FIELD,
+  PRESET_FIELDS,
   RADIUS_PROPERTY,
   SCALE_ROW_ATTR,
   SCALE_ROWS,
+  SCHEME_PRESETS,
   scaleVars,
   schemeCss,
 } from "../contracts/theme-contract";
@@ -68,6 +71,8 @@ registerScope(CUSTOMISE_SCOPE, {
     });
     const ratioCells = new Map([...doc.querySelectorAll<HTMLElement>("[data-ratio]")].map((el) => [el.dataset.ratio ?? "", el]));
     const readouts = new Map(DIALS.map((dial) => [dial.field, root.querySelector(`[data-readout="${dial.field}"]`)]));
+    const sliders = new Map(DIALS.map((dial) => [dial.field, root.querySelector<HTMLInputElement>(`input[data-field="${dial.field}"]`)]));
+    const picker = root.querySelector<HTMLSelectElement>(`select[data-field="${PRESET_FIELD}"]`);
 
     /** Write and remember, so the disposer can name exactly what it added. */
     const set = (el: HTMLElement, property: string, value: string) => {
@@ -84,9 +89,10 @@ registerScope(CUSTOMISE_SCOPE, {
     const stop = effect(() => {
       const { dials, generated } = theme.value;
 
-      const mode: Mode = html.classList.contains(DARK_CLASS) ? "dark" : "light";
-      for (const [name, value] of scaleVars("gray", generated.gray[mode].solid, generated.gray[mode].alpha)) set(html, name, value);
-      for (const [name, value] of scaleVars("accent", generated.accent[mode].solid, generated.accent[mode].alpha)) set(html, name, value);
+      // One value per property, both modes inside it: the browser picks the branch, so nothing here
+      // has to notice the theme toggle rewriting `<html>`'s class list.
+      for (const [name, value] of scaleVars("gray", generated.gray)) set(html, name, value);
+      for (const [name, value] of scaleVars("accent", generated.accent)) set(html, name, value);
       set(html, RADIUS_PROPERTY, `${dials.radius ?? 10}px`);
 
       // Each row is painted on its own element: the semantic tokens compute on `:root` and inherit
@@ -117,9 +123,25 @@ registerScope(CUSTOMISE_SCOPE, {
       }
 
       for (const dial of DIALS) {
+        const value = dials[dial.field] ?? dial.fallback;
         const readout = readouts.get(dial.field);
-        if (readout != null) readout.textContent = `${dials[dial.field] ?? dial.fallback}${dial.unit}`;
+        if (readout != null) readout.textContent = `${value}${dial.unit}`;
+        // `bindField` is one-way, DOM to signal, so a dial moved by anything but its own slider — the
+        // preset effect above — leaves the thumb behind unless the app puts it back. Writing the value
+        // the slider already holds is a no-op, so this does not fight a drag in progress.
+        const slider = sliders.get(dial.field);
+        if (slider != null && slider.value !== String(value)) slider.value = String(value);
       }
+
+      // The picker names the scheme on the page, so a lever dragged off a preset has to move it to
+      // `custom` — a control still reading `slate` beside a scheme that is no longer slate is the
+      // same silent disagreement the readouts exist to prevent. The signal is written back beside the
+      // control: one still reading `slate` would swallow the next pick of the scheme just left,
+      // `createSignal` notifying only on a real change.
+      const picked = matchPreset(dials)?.id ?? PRESET_CUSTOM;
+      if (picker !== null && picker.value !== picked) picker.value = picked;
+      const chosen = state[PRESET_FIELD];
+      if (chosen !== undefined) chosen.value = picked;
 
       const output = doc.querySelector("[data-scheme-output] code");
       if (output !== null) output.textContent = schemeCss(generated, dials);
@@ -128,20 +150,22 @@ registerScope(CUSTOMISE_SCOPE, {
       if (share !== null) share.textContent = `${doc.location.pathname}?${dialQuery(dials)}`;
     });
 
-    // The theme toggle rewrites `<html>`'s class list without touching a signal, so the effect above
-    // would keep painting the mode the page loaded in.
-    const observer = new MutationObserver(() => {
-      const { dials, generated } = theme.value;
-      const mode: Mode = html.classList.contains(DARK_CLASS) ? "dark" : "light";
-      for (const [name, value] of scaleVars("gray", generated.gray[mode].solid, generated.gray[mode].alpha)) set(html, name, value);
-      for (const [name, value] of scaleVars("accent", generated.accent[mode].solid, generated.accent[mode].alpha)) set(html, name, value);
-      set(html, RADIUS_PROPERTY, `${dials.radius ?? 10}px`);
+    // What a preset *means* is two gray dials, and that translation is this page's business and not
+    // the control's (`UI_SSR_COMPONENTS.md` §2a). It writes the signals and stops there — the effect
+    // above moves the sliders and repaints, exactly as it does for a drag.
+    const stopPreset = effect(() => {
+      const picked = String(state[PRESET_FIELD]?.value ?? PRESET_CUSTOM);
+      const preset = SCHEME_PRESETS.find((candidate) => candidate.id === picked);
+      if (preset === undefined) return;
+      for (const field of PRESET_FIELDS) {
+        const dial = state[field];
+        if (dial !== undefined) dial.value = preset[field];
+      }
     });
-    observer.observe(html, { attributeFilter: ["class"] });
 
     return () => {
-      observer.disconnect();
       stop();
+      stopPreset();
       for (const property of written) html.style.removeProperty(property);
     };
   },

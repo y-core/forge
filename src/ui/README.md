@@ -119,7 +119,7 @@ correctly with no theme file of your own. Three alternatives ship beside it — 
 `theme-neutral.css` is the achromatic one.** The names invite the opposite reading.
 
 A theme file re-declares `--gray-1` … `--gray-12` and their translucent siblings `--gray-a1` …
-`--gray-a12`, in both `:root` and `.dark`, and **nothing else**. Every semantic token —
+`--gray-a12`, in one `:root` block, and **nothing else**. Every semantic token —
 `--background`, `--primary`, `--border` and the rest — resolves through those steps, so there is
 nothing else for a scheme to override, and an app's own scheme is structurally identical to
 `theme-slate.css`.
@@ -128,10 +128,15 @@ The mapping is two hops, and knowing which hop you are looking at is what makes 
 section make sense:
 
 ```css
---muted-foreground: var(--gray-11);  /* semantic token — declared once, for both modes */
---gray-11: #646464;                  /* scale step, :root */
---gray-11: #b4b4b4;                  /* scale step, .dark */
+--muted-foreground: var(--gray-11);                        /* semantic token — one value, both modes */
+--gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));  /* scale step — one declaration, both modes */
 ```
+
+**A step is declared once, and the mode is selected by `color-scheme`, which `theme-base.css` sets on
+the light and dark roots.** A second `.dark` block would weigh the same 0-1-0 as `:root` and match the
+same element, so a scheme of your own — imported after forge's — would replace one half and silently
+keep forge's other one. One declaration site removes that by construction; the gate fails any `.dark`
+rule that declares a custom property.
 
 The step numbering is a twelve-step scale, and so is the lightness of every step forge ships: 1
 app background, 2 subtle background, 3 UI element background, 4 hovered UI element background, 5
@@ -158,22 +163,21 @@ attribution and the reasoning are in
 [`ui/design/reference/04-color.md`](./design/reference/04-color.md); the values are in the theme
 files.
 
-**Author your own scheme** by declaring the same twelve steps in both blocks, after the forge
-imports. Write them in a space that carries lightness as its own coordinate, so a step can be moved
-lighter or darker without dragging its hue and chroma with it:
+**Author your own scheme** by declaring the same twelve steps once each, after the forge imports.
+Write them in a space that carries lightness as its own coordinate, so a step can be moved lighter or
+darker without dragging its hue and chroma with it — which is why forge's own schemes ship in OKLCh:
 
 ```css
 :root {
-  --gray-1:  oklch(0.99 0.003 250);
+  --gray-1:  light-dark(oklch(99.00% 0.003 250), oklch(17.00% 0.008 250));
   /* … through … */
-  --gray-12: oklch(0.18 0.010 250);
-}
-.dark {
-  --gray-1:  oklch(0.17 0.008 250);
-  /* … through … */
-  --gray-12: oklch(0.95 0.004 250);
+  --gray-12: light-dark(oklch(18.00% 0.010 250), oklch(95.00% 0.004 250));
 }
 ```
+
+A step that is the same colour in both modes is written bare, with no `light-dark()` around it. The
+translucent `--gray-a*` siblings stay eight-digit hex: an overlay is fitted to sRGB bytes rather than
+authored, so OKLCh would restate a solved result as an authored colour.
 
 **Override an individual token on top of the scheme** for the cases a scale cannot express — a brand
 hue is one, and in forge's vocabulary a brand hue is `--primary`, not `--accent`:
@@ -183,14 +187,12 @@ hue is one, and in forge's vocabulary a brand hue is `--primary`, not `--accent`
 ```
 
 **Override a *step* for anything that must differ between the two modes.** Every semantic token is
-declared exactly once, in `:root`, and `.dark` carries scale steps and nothing else — so a
-`:root { --primary: … }` of your own applies in **both** modes, where a `.dark` twin of forge's would
-once have overridden it back. Re-point the step instead:
+declared exactly once and means the same thing in both modes, so a `:root { --primary: … }` of your
+own applies in **both**. Only a scale step carries a mode difference — re-point the step instead:
 
 ```css
 /* after the forge imports */
-:root { --gray-6: #cccccc; }   /* a stronger hairline in light mode… */
-.dark { --gray-6: #454545; }   /* …and in dark */
+:root { --gray-6: light-dark(#cccccc, #454545); }   /* a stronger hairline, both modes */
 ```
 
 Steps that carry text or a control boundary — 6 is neither — have measured contrast ratios behind
@@ -237,8 +239,9 @@ specificity. Declare a layer of your own *after* `utilities` and put them there:
 
 #### Dark mode with Tailwind v4
 
-Forge's colours are CSS custom properties that `.dark` on `<html>` re-maps — the role steps, and
-through them every semantic token — resolved at runtime through `@theme inline`. **So every forge
+Forge's colours are CSS custom properties whose mode `.dark` on `<html>` selects: the class sets
+`color-scheme`, `color-scheme` picks each role step's `light-dark()` branch, and every semantic token
+resolves through those steps at runtime via `@theme inline`. **So every forge
 component works in dark mode with no extra setup**: `bg-popover`, `text-muted-foreground`,
 `bg-status-danger-subtle` and the rest all follow the class the theme scope toggles, and forge's own
 source contains no `dark:` utility at all.
@@ -934,6 +937,9 @@ count.value = 5;                                       // logs "doubled: 10"
 | `signalRecord(initial)` | `SignalRecord<T>` | One independent signal per key of `initial`. |
 | `writeSignal(rec, key, value)` | `void` | Typed per-key writer for a `SignalRecord`. |
 
+A write flushes the graph before it returns, so every dependent — including one fed by another
+effect's write — has already observed the settled value on the next line.
+
 #### Resumable islands
 
 The island pattern: the server marks an interactive region with a `data-scope` name and serialized
@@ -1572,7 +1578,8 @@ it, and never import htmx from a CDN — this entry pins the version through for
   theme toggle, and a resumability island.
 - A **theme customiser** at the `theme` route: generates a complete forge colour scheme from hue and
   chroma over the fixed lightness ramp, previews it on four scale/surface pairs and on a real composed
-  UI, reports live WCAG ratios for every audited pair, and emits a paste-ready scheme file.
+  UI, reports live WCAG ratios for every audited pair, and emits a paste-ready scheme file that is
+  standalone-complete — every property a scheme owns, including the contrast step its accent pairs with.
 - Route helpers (`load*` / `render*`) and a single path table (`showcasePaths`) so the page and its API
   endpoints never drift.
 
@@ -1590,7 +1597,9 @@ it, and never import htmx from a CDN — this entry pins the version through for
 The customiser paints through CSSOM rather than server-rendering colour, because forge ships
 `style-src 'self'` with no style nonce and the JSX renderer drops `style` attributes accordingly. Every
 hex is server-rendered **as text**, so the page reads correctly with no JavaScript; only the paint waits
-for the eager `customise` scope.
+for the eager `customise` scope. It writes one `light-dark()` per property and never reads the theme
+class, so the browser follows the mode toggle on its own; the preview swatches are painted as literals
+from each row's own mode, which is why a light row and a dark row sit on one page at all.
 
 ### Usage
 

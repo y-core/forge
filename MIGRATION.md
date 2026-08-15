@@ -59,8 +59,9 @@ not a diagnostic.
 
 The line was previously conditional — you needed it only if *your* app wrote `dark:` utilities. It
 still is, in the sense that **forge writes none**. Every colour forge renders resolves through a
-custom property, and the `.dark` block re-declares the role steps those properties point at, so a
-forge component's dark mode arrives through the cascade rather than through a variant. The status
+custom property, and each role step carries both modes in one `light-dark()` that the `.dark` class
+selects between via `color-scheme`, so a forge component's dark mode arrives through the cascade
+rather than through a variant. The status
 variants on `Alert`, `Toast` and `Badge`, and the `renderSuccess` / `renderError` /
 `renderValidationErrors` banners in `@y-core/forge/http`, are the ones that used to be the exception;
 they resolve through the `--status-*` family now, so the exception is gone.
@@ -139,9 +140,9 @@ override point. The mapping used to be one hop, written twice:
 It is now two hops, and only the lower one is per-mode:
 
 ```css
-:root  { --muted-foreground: var(--gray-11); }   /* declared once, for both modes */
-:root  { --gray-11: #646464; }
-.dark  { --gray-11: #b4b4b4; }
+:root { --muted-foreground: var(--gray-11); }                          /* declared once, both modes */
+:root { --gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0)); } /* also once — the branch is */
+                                                                       /* picked by `color-scheme` */
 ```
 
 **`--palette-50` … `--palette-950` no longer exist.** They are deleted, not renamed — earlier
@@ -164,8 +165,7 @@ The fix is to re-point the step instead, which is the layer that is still mode-a
 :root { --primary: var(--brand-600); }
 
 /* after — say it per mode, at the step `--primary` resolves through */
-:root { --accent-12: var(--brand-600); }
-.dark { --accent-12: var(--brand-300); }
+:root { --accent-12: light-dark(var(--brand-600), var(--brand-300)); }
 ```
 
 | If you overrode | Re-point |
@@ -193,7 +193,7 @@ Two of those rows are shared steps, and sharing is the mechanism rather than an 
 accent of its own, so re-declaring it per mode is the supported way to give forge a brand colour —
 that is why the alias exists rather than `--primary` naming a gray step directly.
 
-**`--<hue>-contrast` needs no `.dark` half.** All three resolve to `var(--gray-1)`, and step 1 is
+**`--<hue>-contrast` needs no `light-dark()`.** All three resolve to `var(--gray-1)`, and step 1 is
 the page: near-white in light, near-black in dark, which are exactly the two answers a foreground
 on a saturated fill needs. `--yellow-contrast` is the exception and stays near-black in both modes,
 because near-white on `yellow-500` measures 1.83.
@@ -213,7 +213,7 @@ rg -n '^\s*--(background|foreground|card|popover|primary|secondary|muted|accent|
 
 **Downstream symptom:** a brand colour that was correct in both modes is now the light value on a
 dark page — legible or not depending on the hue, and with no build error, no unset variable and no
-unmatched class anywhere. `validate-contrast` refuses an audited token declared in `.dark` at all,
+unmatched class anywhere. `validate-contrast` refuses any `.dark` rule declaring a custom property,
 so forge's own theme files cannot drift back to the old shape; your stylesheet is outside that gate.
 
 Forge also gained a `--status-*` family in this release — twenty fixed status-hue tokens forge owns,
@@ -268,7 +268,7 @@ likeliest way to pick the wrong file here.
 
 If you were on `theme-zinc.css`, one thing it was doing for you is worth knowing about: it re-pointed
 `--warning` to `orange-700`. If you want that back, re-declare `--yellow-9` (and `--yellow-contrast`,
-per mode, checking the contrast yourself) — but read the changelog entry on that file first. Its dark
+with a `light-dark()` if the two modes differ, checking the contrast yourself) — but read the changelog entry on that file first. Its dark
 warning foreground rendered near-white on orange at **2.77:1**, in every release that shipped the
 file, because its `:root` override won in both modes.
 
@@ -347,7 +347,7 @@ high-contrast text — so your override still parses, still applies, and no long
 |---|---|
 | Never touched `--accent-12` | Nothing, but look at your primary buttons — they went from near-black to indigo. |
 | Overrode `--accent-12` for a brand colour | Re-declare `--accent-9` (the solid) and `--accent-contrast` (its foreground). Two properties instead of one. |
-| Want a complete brand scale | Declare all twelve `--accent-*` steps plus the twelve `--accent-a*` alpha steps in a scheme file, the same shape `theme-neutral.css` uses. The customiser at `/showcase/ui/theme` generates one and emits it ready to paste. |
+| Want a complete brand scale | Declare all twelve `--accent-*` steps plus the twelve `--accent-a*` alpha steps once each in a scheme file, the same shape `theme-neutral.css` uses — a step differing by mode written `light-dark(light, dark)`. The customiser at `/showcase/ui/theme` generates one and emits it ready to paste. |
 
 **Check the contrast if you supply your own step 9.** `--primary-foreground` is an audited pair now
 — WCAG 1.4.3 binds it, because a primary button is text on a filled surface — and forge's own values
@@ -383,8 +383,8 @@ half is the one that generates the utilities:
 
 **The 0.0.82 declarations cannot be pasted back verbatim**, because every one of them named a
 `--palette-*` stop and that ramp is deleted (see [the second break](#the-second-break--a-per-mode-root-override-no-longer-flips-under-dark)).
-Re-pointed onto the role scale, the same eight tokens are one block rather than two — a step is
-mode-aware, so there is no `.dark` twin to write and the dark `--sidebar-primary` literal
+Re-pointed onto the role scale, the same eight tokens are one block rather than two — the step below
+each one carries both modes, so there is no `.dark` twin to write and the dark `--sidebar-primary` literal
 `oklch(0.488 0.243 264.376)` has nowhere to go:
 
 ```css
