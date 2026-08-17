@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.0.87] — 2026-08-17
+
 ### Fixed
 
 - **The browser modules typecheck again inside a Worker app.** Since 0.0.86, any app whose
@@ -3018,6 +3024,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.0.87]: https://github.com/y-core/forge/compare/v0.0.86...v0.0.87
 [0.0.86]: https://github.com/y-core/forge/compare/v0.0.85...v0.0.86
 [0.0.85]: https://github.com/y-core/forge/compare/v0.0.84...v0.0.85
 [0.0.84]: https://github.com/y-core/forge/compare/v0.0.83...v0.0.84
