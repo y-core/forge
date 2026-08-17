@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "types": [],
+    "jsx": "react-jsx",
+    "jsxImportSource": "@y-core/forge/jsx",
+    "paths": {
+      "@y-core/forge/*": [
+        "../../../src/*"
+      ]
+    }
+  },
+  "include": [
+    "main.ts",
+    "workerd-globals.d.ts"
+  ]
+}

@@ -89,7 +89,7 @@
     "ledger"
   ],
   "enabledPlugins": {
-    "typescript-lsp@claude-plugins-official": true
+    "typescript-lsp@devbox-ts": true
   },
   "extraKnownMarketplaces": {},
   "sandbox": {

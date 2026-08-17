@@ -3,7 +3,7 @@ import { activeElement, asElement, closestAcross, contains, elementById, eventTa
 import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./test-dom";
 
 const asNode = (el: FakeElement) => el as unknown as Node;
-const asParent = (el: FakeElement) => el as unknown as ParentNode;
+const asRoot = (el: FakeElement) => el as unknown as Element;
 
 describe("ownerDocument", () => {
   it("reports a document as its own, rather than delegating to the ambient one", () => {
@@ -176,7 +176,7 @@ function shadowTree() {
 }
 
 /** `queryAcross` constrains its type parameter to `Element`, which the fake cannot satisfy. */
-const across = (root: FakeElement, selector: string) => queryAcross(asParent(root), selector) as unknown as FakeElement[];
+const across = (root: FakeElement, selector: string) => queryAcross(asRoot(root), selector) as unknown as FakeElement[];
 
 const ids = (found: FakeElement[]) => found.map((el) => el.id);
 

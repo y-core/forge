@@ -318,7 +318,9 @@ test.describe("Navbar — the drawer at phone width", () => {
     await page.keyboard.press("Escape");
 
     await expect.poll(() => isDrawerOpen(page)).toBe(false);
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? [])).toContain("navbar-toggle");
+    // Polled, not read once: `open` flips synchronously under Escape but `toggle` — and so the
+    // focus restore listening on it — is dispatched a task later.
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? [])).toContain("navbar-toggle");
   });
 
   // A wheel, not `scrollTo`: `overflow: hidden` stops the reader's scroll and permits a scripted

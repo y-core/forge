@@ -69,11 +69,11 @@ export function contains(parent?: Node | null, child?: Node | null): boolean {
 }
 
 /** Every element matching `selector` at or below `root`, descending into open shadow roots. @public */
-export function queryAcross<E extends Element>(root: ParentNode, selector: string): E[] {
+export function queryAcross<E extends Element>(root: Element | Document | DocumentFragment, selector: string): E[] {
   const found: E[] = [];
   // Breadth-first over a growing list rather than recursion — a shadow root nested inside a shadow
   // root is just another tree to visit, at any depth.
-  const trees: ParentNode[] = [root];
+  const trees: Array<Element | Document | DocumentFragment> = [root];
   for (let i = 0; i < trees.length; i += 1) {
     const tree = trees[i];
     if (!tree) continue;

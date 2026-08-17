@@ -58,7 +58,7 @@ const ToastContainer: FC<ToastContainerProps> = ({
     aria-label={label}
     aria-live='polite'
     aria-atomic='false'
-    class={cn("fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4", positionClasses[position], cls)}
+    class={cn("fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4", positionClasses[position], cls)}
     {...rest}>
     {children}
   </section>
@@ -96,7 +96,7 @@ const ToastRoot: FC<ToastProps> = ({
           data-slot='toast-close'
           aria-label={dismissLabel}
           {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-          class='absolute end-2 top-2 rounded p-1 opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
+          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
           <span aria-hidden='true' class='text-sm leading-none'>
             ×
           </span>

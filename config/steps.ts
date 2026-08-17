@@ -43,6 +43,7 @@ const EXPORTS = pkg.exports as ExportsMap;
 /** The gate's steps, in execution order. */
 export const STEPS: readonly Step[] = [
   typecheckStep(),
+  { label: "typecheck:workers-consumer", tail: 20, cmd: ["tsgo", "--noEmit", "-p", "tests/fixtures/workers-consumer/tsconfig.json"] },
   lintStep({ sources: ["src/", "config/"] }),
   testStep(),
   exportsStep({

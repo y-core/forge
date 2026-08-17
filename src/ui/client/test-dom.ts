@@ -64,6 +64,13 @@ export class FakeElement {
     return this;
   }
 
+  // Modelled because `show/lazy-panel.ts` calls it rather than `append`, which a Worker type program
+  // resolves to HTMLRewriter's string-only signature.
+  appendChild(kid: FakeElement): FakeElement {
+    this.append(kid);
+    return kid;
+  }
+
   remove(): void {
     if (!this.parent) return;
     const at = this.parent.children.indexOf(this);

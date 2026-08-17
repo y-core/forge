@@ -6,7 +6,7 @@ const DEFAULT_TOAST =
   '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div></div>';
 
 const DISMISSIBLE_TOAST =
-  '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{}" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 py-4 shadow-lg border-border bg-background text-foreground pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 rounded p-1 opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>';
+  '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{}" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 py-4 shadow-lg border-border bg-background text-foreground pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>';
 
 describe("Toast", () => {
   it("renders with role=status and data-slot=toast", async () => {
@@ -89,7 +89,7 @@ describe("Toast", () => {
         </Toast>,
       ),
     ).toBe(
-      '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{&quot;duration&quot;:0}" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 py-4 shadow-lg border-border bg-background text-foreground pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 rounded p-1 opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>',
+      '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{&quot;duration&quot;:0}" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 py-4 shadow-lg border-border bg-background text-foreground pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>',
     );
   });
 
@@ -115,37 +115,37 @@ describe("Toast", () => {
 describe("Toast.Container", () => {
   it("renders as <section> with aria-live=polite", async () => {
     expect(await render(<Toast.Container />)).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"></section>',
+      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"></section>',
     );
   });
 
   it("defaults to bottom-right position", async () => {
     expect(await render(<Toast.Container />)).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"></section>',
+      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"></section>',
     );
   });
 
   it("renders top-left position classes", async () => {
     expect(await render(<Toast.Container position='top-left' />)).toBe(
-      '<section data-slot="toast-container" data-position="top-left" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4 top-4 left-4 items-start"></section>',
+      '<section data-slot="toast-container" data-position="top-left" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 top-4 left-4 items-start"></section>',
     );
   });
 
   it("renders top-center position with translate", async () => {
     expect(await render(<Toast.Container position='top-center' />)).toBe(
-      '<section data-slot="toast-container" data-position="top-center" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4 top-4 left-1/2 -translate-x-1/2 items-center"></section>',
+      '<section data-slot="toast-container" data-position="top-center" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 top-4 left-1/2 -translate-x-1/2 items-center"></section>',
     );
   });
 
   it("renders top-right position classes", async () => {
     expect(await render(<Toast.Container position='top-right' />)).toBe(
-      '<section data-slot="toast-container" data-position="top-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4 top-4 right-4 items-end"></section>',
+      '<section data-slot="toast-container" data-position="top-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 top-4 right-4 items-end"></section>',
     );
   });
 
   it("renders fixed positioning and z-index", async () => {
     expect(await render(<Toast.Container />)).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"></section>',
+      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"></section>',
     );
   });
 
@@ -157,13 +157,13 @@ describe("Toast.Container", () => {
         </Toast.Container>,
       ),
     ).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"><div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div></section>',
+      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"><div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div></section>',
     );
   });
 
   it("forwards a custom id and data-* attributes via spread", async () => {
     expect(await render(<Toast.Container id='toasts' data-testid='container' />)).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-screen w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="toasts" data-testid="container"></section>',
+      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="toasts" data-testid="container"></section>',
     );
   });
 });

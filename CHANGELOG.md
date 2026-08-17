@@ -17,7 +17,24 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **The browser modules typecheck again inside a Worker app.** Since 0.0.86, any app whose
+  `src/client/main.ts` imports `ui/show/client`, `ui/chrome/client`, `ui/client` or
+  `ui/client/htmx` reported **15 errors from inside `node_modules/@y-core/forge`** — nothing the app
+  could fix on its own. Wrangler's generated `.types/cloudflare.d.ts` declares HTMLRewriter's
+  `interface Element` in global scope, where TypeScript **merges** it with lib.dom's; `Element` then
+  carries `append(content: string | ReadableStream | Response)` and `remove(): Element`, which breaks
+  the structural `ParentNode` contract, the `E extends Element` constraint and every
+  `HTMLSelectElement` cast. Three internal changes, no exported signature narrowed:
+  `queryAcross(root)` and `turnstile.ts`'s `ref(scope)` take `Element | Document | DocumentFragment`
+  instead of `ParentNode`; `show/client.ts` no longer names `HTMLSelectElement`; `show/lazy-panel.ts`
+  calls `appendChild` instead of `append`.
+- **The gate can now see that failure mode.** forge's own type program has no `wrangler types` output
+  in it, so `bun run verify` was green throughout — which is how 0.0.86 shipped. A new
+  `typecheck:workers-consumer` step typechecks `tests/fixtures/workers-consumer/`: a Worker app's
+  `tsconfig.json` (`types: []`), a stub declaring the merging `interface Element`, and an entry
+  importing the four browser subpaths exactly as an app does.
 
 ---
 

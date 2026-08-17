@@ -18,7 +18,7 @@ function buildPayload(el: Element): Element {
   const title = doc.createElement("p");
   title.setAttribute("class", "text-sm font-medium text-foreground");
   title.textContent = LAZY_PANEL_TITLE;
-  panel.append(title);
+  panel.appendChild(title);
 
   const list = doc.createElement("ul");
   list.setAttribute("class", "divide-y divide-border rounded-lg border border-border");
@@ -30,10 +30,11 @@ function buildPayload(el: Element): Element {
     const cost = doc.createElement("span");
     cost.setAttribute("class", "tabular-nums");
     cost.textContent = row.cost;
-    item.append(name, cost);
-    list.append(item);
+    item.appendChild(name);
+    item.appendChild(cost);
+    list.appendChild(item);
   }
-  panel.append(list);
+  panel.appendChild(list);
   return panel;
 }
 
@@ -42,7 +43,7 @@ function mount(el: Element, statusRef: string, loaded: string): void {
   const status = el.querySelector(`[data-ref='${statusRef}']`);
   if (status) status.textContent = loaded;
   // Idempotent: `lazy()` calls `init` once per element, but a re-resumed scope would call it again.
-  if (el.querySelector("ul") === null) el.append(buildPayload(el));
+  if (el.querySelector("ul") === null) el.appendChild(buildPayload(el));
 }
 
 /** Marks the lazy demo panel as loaded and renders the module's payload into it. @internal */

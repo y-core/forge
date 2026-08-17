@@ -15,7 +15,8 @@ declare global {
 
 const mounted = new WeakMap<HTMLElement, () => void>();
 
-const ref = (name: string, scope: ParentNode) => scope.querySelector<HTMLElement>(`[data-ref='${name}']`);
+// Not `ParentNode`, for the reason `dom.ts`'s `queryAcross` is not either.
+const ref = (name: string, scope: Element | Document | DocumentFragment) => scope.querySelector<HTMLElement>(`[data-ref='${name}']`);
 
 /** The widget at or below `root`. The scope root *is* the widget, and `querySelector` reports
  * descendants only, so the root has to be tested separately — as `resume.ts` does for `data-scope`. @internal */

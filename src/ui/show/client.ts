@@ -43,6 +43,9 @@ import {
 } from "../contracts/theme/theme-contract";
 import { LAZY_DEMO_REF, LAZY_DEMO_SCOPE, LAZY_RETRY_FAILURES, LAZY_RETRY_REF, LAZY_RETRY_STATUS_REF, lazyRetryAttempt } from "./lazy-contract";
 
+/** A `<select>` reduced to the one member this page reads and writes. */
+type ValueControl = Element & { value?: string };
+
 // Eager: `contextmenu` is not a delegated `SCOPE_EVENT`, so there is no `data-on-*` in the markup
 // for a lazy scope to resume on.
 registerScope("show-context-menu", {
@@ -87,7 +90,7 @@ registerScope(CUSTOMISE_SCOPE, {
     });
     const ratioCells = new Map([...doc.querySelectorAll<HTMLElement>("[data-ratio]")].map((el) => [el.dataset.ratio ?? "", el]));
     const readouts = new Map(DIALS.map((dial) => [dial.field, root.querySelector(`[data-readout="${dial.field}"]`)]));
-    const picker = root.querySelector<HTMLSelectElement>("select[data-preset-picker]");
+    const picker = root.querySelector("select[data-preset-picker]") as ValueControl | null;
 
     // Both directions, for every dial at once. The thumb now follows a signal moved by anything —
     // a preset pick, a shared link — with no per-control write-back on this page at all.
@@ -170,7 +173,7 @@ registerScope(CUSTOMISE_SCOPE, {
     // the control's (`UI_SSR_COMPONENTS.md` §2a). It is a command, so it lives in the handler that
     // the pick fires: the painter above then moves the sliders and repaints, exactly as for a drag.
     [PRESET_ACTION]: ({ el, state }) => {
-      const preset = SCHEME_PRESETS.find((candidate) => candidate.id === (el as HTMLSelectElement).value);
+      const preset = SCHEME_PRESETS.find((candidate) => candidate.id === (el as ValueControl).value);
       if (preset === undefined) return;
       for (const field of PRESET_FIELDS) {
         const dial = state[field];

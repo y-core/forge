@@ -724,12 +724,12 @@ const PopoverSection: FC = () => (
 
 const SelectSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
   <CatalogSection id='select' title='Select'>
-    <Select name='show-select' class='max-w-xs' icon={icon}>
+    <Select name='show-select' class='max-w-xs' icon={icon} aria-label='Units'>
       <Select.Option value=''>Choose…</Select.Option>
       <Select.Option value='mm'>Millimetres</Select.Option>
       <Select.Option value='in'>Inches</Select.Option>
     </Select>
-    <Select name='show-select-disabled' class='max-w-xs' icon={icon} disabled>
+    <Select name='show-select-disabled' class='max-w-xs' icon={icon} aria-label='Units (disabled)' disabled>
       <Select.Option value='mm'>Disabled</Select.Option>
     </Select>
     <Select name='show-select-groups' class='max-w-xs' icon={icon} aria-label='Units'>
