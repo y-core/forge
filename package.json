@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.85",
+  "version": "0.0.86",
   "bin": {
     "forge-assets": "./src/assets/cli/bin.ts",
     "forge-cfgen": "./src/validation/cli/bin.ts",
