@@ -107,6 +107,11 @@ export const STEPS: readonly Step[] = [
     // The registration entry points, and nothing else: each exists to pull the client runtime in.
     entryPoints: ["client.ts"],
   }),
+  // `.decisions/governance/` is overwrite-on-sync, so an edit made in place is reverted by the next
+  // sync and the reversion looks like nobody's change. Nothing detected that until this step: it
+  // compares the tree against the pinned corpus in `node_modules` and reconciles the Guide Index
+  // with the directory in both directions. Its fixer is the sync itself.
+  { label: "governance", tail: 20, cmd: ["governance-sync", "--check"], fix: ["governance-sync"] },
   docsStep({
     root: ROOT,
     packageName: pkg.name,

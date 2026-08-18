@@ -23,6 +23,8 @@ export interface CloudflareWorkerStepOptions {
   wranglerTypes?: boolean;
   /** `--config` for the bindings invocation; the runtime invocation takes none. */
   workerConfig?: string;
+  /** Whether to check `.decisions/governance/` against the pinned corpus. Defaults to `false`. */
+  governance?: boolean;
 }
 
 /** The step table every Cloudflare Worker app in this fleet shares, in execution order. @public */
@@ -51,7 +53,16 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     steps.push({ label: "types:assets", tail: 20, cmd: ["forge-assets", "types", "--config", options.assetConfig, "--out", assetOut] });
   }
 
-  steps.push(typecheckStep(), lintStep({ sources }), testStep({ sources: tests }));
+  steps.push(typecheckStep(), lintStep({ sources }));
+
+  // Opt-in rather than on by default: the step runs `governance-sync`, a binary from
+  // `@y-core/governance`, and a preset that assumed it would fail with "command not found" in every
+  // app that does not clone the corpus. Its fixer is the sync itself.
+  if (options.governance) {
+    steps.push({ label: "governance", tail: 20, cmd: ["governance-sync", "--check"], fix: ["governance-sync"] });
+  }
+
+  steps.push(testStep({ sources: tests }));
 
   return steps;
 }

@@ -17,7 +17,17 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`cloudflareWorkerSteps` can now gate `.decisions/governance/` against the pinned corpus.** Pass
+  `governance: true` and the preset inserts a `governance` step between `lint` and `test`, running
+  `governance-sync --check`; its fixer is the sync itself, so `bun run fix` reconciles the tree. The
+  step is **opt-in rather than on by default**: it invokes a binary from `@y-core/governance`, which
+  an app that does not clone the corpus has never installed, and an always-on step would fail there
+  with `command not found`. The check is what catches the failure mode the directory's
+  overwrite-on-sync rule creates — an edit made in place is reverted by the next sync, and the
+  reversion looks like nobody's change — and it reconciles the Guide Index with the directory in
+  both directions.
 
 ---
 

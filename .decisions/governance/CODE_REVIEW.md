@@ -163,6 +163,10 @@ prevents.
 **Test sufficiency.** For each new test, apply the deletion check: *if the mechanism this test
 names were deleted, would it still pass?* ([`TESTING.md`](./TESTING.md) §3d.)
 
+**Name reachability.** Read each new export. *Could a reader who knows the domain but not this
+codebase name this symbol from the question it answers — and conversely, does the name carry a
+word that earns nothing?* ([`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §7.)
+
 ---
 
 ## 4. Severity Calibration

@@ -106,8 +106,8 @@ suites concurrently and collecting their verdicts. Three standing conditions:
 
 ## Navigation
 
-Plain tools: `Read`, `Grep`, `Glob`, and `Bash` for the gate itself. If the TypeScript LSP plugin
-is enabled, use it to resolve a symbol named in an error; otherwise `Grep`.
+Plain tools: `Read`, `Grep`, `Glob`, and `Bash` for the gate itself. The TypeScript LSP plugin is
+available; use it to resolve a symbol named in an error.
 
 You rarely need to navigate at all — read the failing file only when the excerpt would otherwise
 be meaningless to the caller.

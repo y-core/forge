@@ -14,6 +14,9 @@
     "url": "git+https://github.com/y-core/forge.git"
   },
   "license": "MIT",
+  "governance": {
+    "kind": "libs"
+  },
   "scripts": {
     "fix": "bun run src/pkg/gate/bin.ts --fix",
     "lint": "bun run src/pkg/gate/bin.ts --only lint",
@@ -46,6 +49,7 @@
     "@biomejs/biome": "^2.5.4",
     "@playwright/test": "^1.62.0",
     "@typescript/native-preview": "^7.0.0-dev.20260707.2",
+    "@y-core/governance": "https://codeload.github.com/y-core/governance/tar.gz/refs/tags/v0.1.1",
     "esbuild": "^0.28.1",
     "tailwindcss": "^4.3.3"
   },

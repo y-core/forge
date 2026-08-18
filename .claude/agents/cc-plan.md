@@ -103,9 +103,10 @@ Gate runs go to `cc-tester` regardless of depth.
 
 ## Navigation
 
-Plain `Read`, `Grep`, and `Glob`. If the TypeScript LSP plugin is enabled, prefer it for symbol
-navigation — locating definitions and finding every caller of a signature you propose to change,
-which `Grep` under-reports on re-exported or aliased symbols.
+`Read`, `Grep`, and `Glob` for discovery — finding files, searching patterns, reaching a symbol
+you can only name. **The TypeScript LSP plugin is available; symbol navigation goes through it**
+— locating definitions and finding every caller of a signature you propose to change, which
+`Grep` under-reports on re-exported or aliased symbols.
 
 ---
 

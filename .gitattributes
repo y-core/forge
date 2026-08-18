@@ -1,0 +1,7 @@
+# Synced wholesale from @y-core/governance and never edited here (AGENT_GUIDE.md §6d), so a
+# version bump would otherwise flood review with a diff nobody reads. They stay committed rather
+# than gitignored: `.decisions/` is hidden to ripgrep already, and gitignoring it as well makes
+# even an explicit `rg 'pattern' .decisions/` return nothing.
+.decisions/governance/** linguist-generated=true -diff
+.claude/agents/**        linguist-generated=true -diff
+.claude/commands/**      linguist-generated=true -diff

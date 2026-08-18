@@ -160,6 +160,6 @@ Gate runs go to `cc-tester` regardless of depth.
 
 ## Navigation
 
-Plain `Read`, `Grep`, and `Glob`. If the TypeScript LSP plugin is enabled, prefer it for locating
-a symbol's definition, finding every caller of a function you are testing, and inventorying a
-file's exports before writing against it.
+`Read`, `Grep`, and `Glob` for discovery. **The TypeScript LSP plugin is available; symbol
+navigation goes through it** — locating a symbol's definition, finding every caller of a function
+you are testing, and inventorying a file's exports before writing against it.

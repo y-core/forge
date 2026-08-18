@@ -19,16 +19,19 @@
         "@biomejs/biome": "^2.5.4",
         "@playwright/test": "^1.62.0",
         "@typescript/native-preview": "^7.0.0-dev.20260707.2",
+        "@y-core/governance": "https://codeload.github.com/y-core/governance/tar.gz/refs/tags/v0.1.1",
         "esbuild": "^0.28.1",
         "tailwindcss": "^4.3.3",
       },
       "peerDependencies": {
         "esbuild": ">=0.20.0",
         "sharp": "latest",
+        "tailwindcss": ">=4.0.0",
       },
       "optionalPeers": [
         "esbuild",
         "sharp",
+        "tailwindcss",
       ],
     },
   },
@@ -136,6 +139,8 @@
     "@typescript/native-preview-win32-arm64": ["@typescript/native-preview-win32-arm64@7.0.0-dev.20260707.2", "", { "os": "win32", "cpu": "arm64" }, "sha512-SsAwfhyHJ1akgBc+99z4+hwdbHsdWaKB8EwCNIMA6JfSLMeUjffrYvxu+vfMyxVtOVOz7RrRXRoiDiu4a2sCtg=="],
 
     "@typescript/native-preview-win32-x64": ["@typescript/native-preview-win32-x64@7.0.0-dev.20260707.2", "", { "os": "win32", "cpu": "x64" }, "sha512-DL4u27stv0fo71sVhOzHSwE+YMZsbBijVI+kg5dLDLilSH79WFTJ8RSQ46vJrCMt+Gjlv/JOZP1PuLJDfioYeQ=="],
+
+    "@y-core/governance": ["@y-core/governance@https://codeload.github.com/y-core/governance/tar.gz/refs/tags/v0.1.1", { "bin": { "governance-sync": "./bin/sync.ts" } }, "sha512-d8Go371N+F7ByDDKyr4Su0WgzBGvgZzl6vNGGLhlj+lslldZTa9KbGeDqk2UJZG6kJlE0xX55N06yGiFwYv6iQ=="],
 
     "esbuild": ["esbuild@0.28.1", "", { "optionalDependencies": { "@esbuild/aix-ppc64": "0.28.1", "@esbuild/android-arm": "0.28.1", "@esbuild/android-arm64": "0.28.1", "@esbuild/android-x64": "0.28.1", "@esbuild/darwin-arm64": "0.28.1", "@esbuild/darwin-x64": "0.28.1", "@esbuild/freebsd-arm64": "0.28.1", "@esbuild/freebsd-x64": "0.28.1", "@esbuild/linux-arm": "0.28.1", "@esbuild/linux-arm64": "0.28.1", "@esbuild/linux-ia32": "0.28.1", "@esbuild/linux-loong64": "0.28.1", "@esbuild/linux-mips64el": "0.28.1", "@esbuild/linux-ppc64": "0.28.1", "@esbuild/linux-riscv64": "0.28.1", "@esbuild/linux-s390x": "0.28.1", "@esbuild/linux-x64": "0.28.1", "@esbuild/netbsd-arm64": "0.28.1", "@esbuild/netbsd-x64": "0.28.1", "@esbuild/openbsd-arm64": "0.28.1", "@esbuild/openbsd-x64": "0.28.1", "@esbuild/openharmony-arm64": "0.28.1", "@esbuild/sunos-x64": "0.28.1", "@esbuild/win32-arm64": "0.28.1", "@esbuild/win32-ia32": "0.28.1", "@esbuild/win32-x64": "0.28.1" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-HrJrvZv5ayxBzPfwphOoNzkzOIIlifzk0KJrGK2c8R4+LKpMtpYLQeUdjnwjWv/LZlkH2laZk+4w78pi99D4Vw=="],
 

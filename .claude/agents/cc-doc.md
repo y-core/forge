@@ -166,5 +166,5 @@ Plain `Read`, `Grep`, and `Glob`. Governing docs are read via the **`CLAUDE.md` 
 the doc's `## 0. Quick Reference` → the target section; read a doc in full when the whole doc is
 the subject, as it is during a rewrite.
 
-If the TypeScript LSP plugin is enabled, prefer it for confirming a symbol's real name and
-signature before documenting it.
+The TypeScript LSP plugin is available; use it to confirm a symbol's real name and signature
+before documenting it.
