@@ -114,7 +114,7 @@ owns is a rule rather than data — and a source file must not restate it:
 
 | Owns | File |
 |---|---|
-| What a source comment may contain, and where displaced rationale goes | [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5 |
+| What a source comment may contain, and where displaced rationale goes | [`CODE_RULES.md`](../governance/CODE_RULES.md) §5 |
 
 ---
 

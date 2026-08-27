@@ -205,7 +205,7 @@ pass the same `name` to each member.
 
 **`scope` separates two fields that share a `name` on one page**, and is caller-opt-in because deriving one
 automatically would need module-level mutable state
-([`PRODUCTION_TS_RULES.md`](../../.decisions/governance/PRODUCTION_TS_RULES.md) §1). **`description` declares that a
+([`CODE_RULES.md`](../../.decisions/governance/CODE_RULES.md) §1). **`description` declares that a
 description element actually renders** and defaults to `false`, so `aria-describedby` is emitted only when something
 really describes the field. A blank or whitespace-bearing `name` or `scope` derives no wiring at all, while the `name`
 **attribute** still renders exactly as given

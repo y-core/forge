@@ -10,7 +10,7 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 >
 > Defers to: the gate's step-list config for which steps exist;
 > [`BOUNDARIES.md`](./BOUNDARIES.md) for the boundaries a security test must exercise;
-> [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5d for the comment budget inside tests.
+> [`CODE_RULES.md`](./CODE_RULES.md) §5d for the comment budget inside tests.
 
 ---
 

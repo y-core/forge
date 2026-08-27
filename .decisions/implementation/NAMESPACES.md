@@ -10,7 +10,7 @@ description: "Barrel export rules, the authoritative subpath catalog, leaf-versu
 > classification.
 >
 > Defers to: [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) for the facade and
-> runtime-only principles these rules serve; [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md)
+> runtime-only principles these rules serve; [`CODE_RULES.md`](../governance/CODE_RULES.md)
 > for the coding rules inside a namespace; `package.json` `exports` for the subpath names
 > themselves, and `src/{ns}/mod.ts` for each namespace's export list.
 

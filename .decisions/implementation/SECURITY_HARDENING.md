@@ -32,6 +32,7 @@ description: "The security namespace: CSP nonce headers, CORS, origin-guard tier
 - §3c verifyOrigin — Inline Origin Check: the in-handler form
 - §3d crossOriginProtection — Fetch Metadata: the `Sec-Fetch-Site` tier
 - §3e Origin-Guard Tiering — Which Guard When: pick one, never stack
+- §3f Dev Posture: https at Every Hop: the canonical dev origin, and `extraOrigins` as the sole escape hatch
 - §4 Rate Limiting with Workers Binding: the limiter middleware
 - §4a rateLimit Middleware Factory: per-route application
 - §4b required false for Dev Graceful Degradation: the availability trade
@@ -151,6 +152,14 @@ the set and why:
 - **`Cross-Origin-Embedder-Policy` is not emitted, and opting in is the caller's decision**
   (`crossOriginEmbedderPolicy`): `require-corp` breaks every subresource lacking a CORP or CORS
   opt-in, which is a site-wide behavioural change rather than a header default.
+- **`style-src` and `font-src` default to `'self'` and are configurable** (`styleSrc`, `fontSrc`),
+  so a route that loads a web font from a CDN can name that origin without any directive becoming a
+  string literal in the app. Widening them never introduces `'unsafe-inline'` — the JSX renderer
+  still drops inline `style` props. **Forge ships no named third-party origins for either.**
+  A CDN font in particular is the wrong default — cache partitioning means it is never a shared
+  cache hit, so it costs two connection setups and a visitor-IP disclosure and buys nothing back.
+  Self-hosting through the asset pipeline's `fonts.downloads` needs no widening at all, which is why
+  the directives are a plain escape hatch rather than a convenience API.
 - **`Cache-Control` is deliberately not a blanket default.** Caching is a per-route decision
   (`definePage({ cache })`), and a namespace-wide value would either over-cache a private page or
   defeat caching everywhere.
@@ -228,6 +237,45 @@ the allowlist unconditionally.
 
 `applyMiddlewareChain` wires `originProtection` for each guard group's `origin` option, so apps
 using the canonical chain get the recommended tier by default.
+
+### 3f. Dev Posture: https at Every Hop
+
+**This section rules on the deployment posture of the app consuming forge, not on forge's own
+repository.** Forge ships no worker and no wrangler configuration; what it ships is a set of guards
+whose correctness depends on the scheme surviving the round trip, so the posture is stated here and
+the consuming app implements it.
+
+**Development is https at every hop.** The origin guards of §3b–§3e compare origins by exact string,
+so any scheme mismatch between what the browser sends and what the app believes its origin to be
+rejects every write. Wrangler stamps `dev.local_protocol` onto the request URL and onto every
+origin-bearing header, so an app running `local_protocol: "http"` behind a TLS-terminating proxy
+sees the browser's `https://` origin arrive as `http://` and 403s its own forms.
+
+The ruling:
+
+- **`BASE_URL` in dev is the canonical proxy origin** — the same URL the browser is pointed at, https
+  and all. It is the single source of truth `allowedOrigins` is derived from (§3e, `BaseUrlConfigSchema`).
+- **The consuming app's wrangler config sets `dev.local_protocol: "https"`.** This is what makes the
+  scheme survive the round trip; it is not optional tuning.
+- **Never a scheme-rewriting middleware.** The rejected alternative is a middleware that reconstructs
+  the request URL or the `Origin` header with the scheme corrected before the guard runs. It is
+  rejected because a guard whose input is rewritten by the app verifies nothing — it
+  launders an attacker-supplied origin into a trusted one, and it is a dev-only code path sitting in
+  the production request chain. Fix the transport, not the evidence.
+- **A consuming app's browser suite targets loopback https**, rather than dropping to http and
+  diverging from the posture under test. Forge's own browser set serves no origin at all, so the
+  rule does not reach it (`playwright.config.ts` owns why).
+- **`extraOrigins` is the only escape hatch** (`deriveAllowedOrigins`, `src/security/url.ts`). It
+  exists for the proxy-less fallback — `wrangler dev` on a bare machine with the browser at
+  `https://localhost:8787`. Entries must be normalized origins and https-or-loopback, and throw at
+  boot otherwise. It is **dev-entrypoint-only and carries no env var**: extras arrive as a parameter
+  from a dev worker entry production never imports, so the production bundle structurally contains no
+  extra origin — the same containment guarantee as the live-reload CSP hash (§2c).
+- **`upgrade-insecure-requests`, HSTS, and `Secure` cookies stay hardcoded.** They are not made
+  conditional on the environment, because under this posture they are correct in dev by construction.
+
+Deprecating `createAnonymousSession`'s `secure?: false` escape hatch is a separate, later question and
+is deliberately not ruled on here.
 
 ---
 

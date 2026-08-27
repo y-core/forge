@@ -13,6 +13,11 @@ description: "How .decisions/ documents are structured, numbered, sized, cross-r
 > All new and updated documents in `governance/` and `implementation/` must follow these rules.
 > Where a repository ships a documentation check, mechanically checkable subsets of §2, §4, §5,
 > §6a, and §9 are enforced by it; where it does not, they are enforced by review.
+>
+> Defers to: [`PLAIN_LANGUAGE.md`](./PLAIN_LANGUAGE.md) for the quality of the prose inside that
+> form — whether a heading says what is beneath it, and whether the reader can act on what they
+> find. This guide decides that a `## 0. Quick Reference` exists; that one decides that it
+> orients.
 
 ---
 

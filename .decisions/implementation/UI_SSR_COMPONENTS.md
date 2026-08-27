@@ -246,7 +246,7 @@ Deriving the same unusable string on both halves does not redeem it — the harm
 tokenization, not a disagreement between forge's code paths. The field still renders and its `name`
 is still passed through; only the wiring is withheld. `src/ui/core/field.tsx` owns the predicates
 and the character set, and is authoritative over any prose restating it
-([`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5a).
+([`CODE_RULES.md`](../governance/CODE_RULES.md) §5a).
 
 **The hostile set is exactly HTML's ASCII whitespace, and JS `\s` is the wrong class for it.** `\s`
 also matches U+00A0 and the Unicode spaces, which are legal id characters no parser treats as a
@@ -287,7 +287,7 @@ hand-maintain `setFormValue` and `setValidity` to reach less, and lose it entire
 **Rejected — Custom Elements as a second path.** Three costs, each sufficient: the spec's mandated
 hyphenated name moves the namespace out of the import and into every consumer's markup as a vendor
 prefix; the registry is process-global and early-binding, reintroducing global mutable state
-([`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §1) plus collision and FOUC
+([`CODE_RULES.md`](../governance/CODE_RULES.md) §1) plus collision and FOUC
 failure modes late-binding delegation does not have; and the audience does not exist under the
 no-build-step constraint ([`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §2), since a
 consumer able to load the registering module already runs the bundler that compiles the JSX.
@@ -422,7 +422,7 @@ in-house table is tractable precisely because forge is a fixed set of primitives
 general Tailwind consumer.
 
 **No cache, also deliberately.** A memo keyed on the argument list is unbounded mutable module
-state needing its own eviction policy ([`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md)
+state needing its own eviction policy ([`CODE_RULES.md`](../governance/CODE_RULES.md)
 §1), and Cloudflare evicts isolates aggressively enough that a cold refill is paid often rather than
 amortised. It stays retrofittable behind the unchanged signature.
 

@@ -68,7 +68,7 @@ that only cites a rule number gives the author nothing to weigh.
 | Untrusted input is validated at the boundary | [`BOUNDARIES.md`](./BOUNDARIES.md) §3 |
 | No PII reaches a log record | [`BOUNDARIES.md`](./BOUNDARIES.md) §4 |
 | A security guard has both a pass and a fail test | [`TESTING.md`](./TESTING.md) §5a |
-| No comment outside the permitted budget | [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a |
+| No comment outside the permitted budget | [`CODE_RULES.md`](./CODE_RULES.md) §5a |
 
 **The pre-1.0 shim ban is the one most often argued away.** A published shim is unrecoverable:
 once a consumer depends on it, removing it is a breaking change — which is precisely what a
@@ -165,7 +165,7 @@ names were deleted, would it still pass?* ([`TESTING.md`](./TESTING.md) §3d.)
 
 **Name reachability.** Read each new export. *Could a reader who knows the domain but not this
 codebase name this symbol from the question it answers — and conversely, does the name carry a
-word that earns nothing?* ([`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §7.)
+word that earns nothing?* ([`CODE_RULES.md`](./CODE_RULES.md) §7.)
 
 ---
 
@@ -176,7 +176,7 @@ word that earns nothing?* ([`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) 
 - **Major — fix before merge.** A new export missing from its barrel; a security test missing
   its fail case; an undeclared cross-namespace edge; wrong entity encoding in an assertion; a
   route registered outside the declarative pattern; any gate step failing; a comment outside the
-  [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a budget.
+  [`CODE_RULES.md`](./CODE_RULES.md) §5a budget.
 - **Minor — consider fixing.** An export with no TSDoc line at all; an imperative loop where an
   array method reads better; a name breaking the
   [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §4b suffix convention.
@@ -215,17 +215,17 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | Pattern | Why it is correct |
 |---|---|
 | A test file beside its source rather than in `tests/` | Co-location is the rule — [`TESTING.md`](./TESTING.md) §2a |
-| `export const X = "…"` at module scope | A constant is not mutable state — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1c |
-| A mutable module-scope cache in a browser-only module | Browser-only modules are exempt from zero-global-state — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1e |
+| `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`](./CODE_RULES.md) §1c |
+| A mutable module-scope cache in a browser-only module | Browser-only modules are exempt from zero-global-state — [`CODE_RULES.md`](./CODE_RULES.md) §1e |
 | Node built-ins in build-time tooling | Exempt by reachability — [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §1e |
 | A value constructor not following `create*` | The documented naming exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1a |
 | An HTTP-boundary method returning a `Response`, not a `Result` | A ratified boundary exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5e |
 | A barrel import of a facade or sealed-internal module | A sanctioned exemption — [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §2c |
 | Duplicated markup or constants across a leaf boundary | An accepted cost — [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §3e |
 | The same symbol name exported from two barrels | Deliberate shadowing where a bound and unbound variant coexist |
-| `@public` / `@internal` on a TSDoc line | Machine-readable markers, explicitly budgeted — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a |
-| A one-line inline comment carrying an external *why* | The third budgeted form, under its four conditions — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5a |
-| A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §5d |
+| `@public` / `@internal` on a TSDoc line | Machine-readable markers, explicitly budgeted — [`CODE_RULES.md`](./CODE_RULES.md) §5a |
+| A one-line inline comment carrying an external *why* | The third budgeted form, under its four conditions — [`CODE_RULES.md`](./CODE_RULES.md) §5a |
+| A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`CODE_RULES.md`](./CODE_RULES.md) §5d |
 | A non-null assertion in a test file | Permitted where the lint config relaxes it for tests; it stays an error in production source |
 
 **This table is extended, never replaced, by the repository's own `implementation/` review

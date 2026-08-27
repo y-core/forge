@@ -57,7 +57,7 @@ You author tests. You do not run the gate — see _Running Tests_.
 
 ## The Comment Budget — Binding
 
-**`governance/PRODUCTION_TS_RULES.md` §5 is binding, and §5d says tests are not exempt.** It is a
+**`governance/CODE_RULES.md` §5 is binding, and §5d says tests are not exempt.** It is a
 ceiling, not a floor.
 
 **The test name is the documentation, and it is the one description that runs.** A test whose
@@ -101,9 +101,11 @@ genuinely runtime-dependent values such as signed tokens and generated ids.
 
 ## Running Tests
 
-**Smoke-run only the single test file you just wrote.** That confirms your new cases pass and
-your fakes typecheck. **Then delegate the full gate to `cc-tester`** and act on its verdict —
-never run `bun run verify` yourself, and never stream gate output through this context.
+**Smoke-run the test file you just wrote.** That confirms your new cases pass and your fakes
+typecheck, it is a handful of lines, and you own the fix either way. **Then hand the full gate to
+`cc-tester`** and act on its verdict — never stream a full gate through this context
+(`governance/PLAIN_LANGUAGE.md` §12). A file-scoped green is not a green gate; report which you
+have.
 
 **You never edit a test to make a failing gate go green.** If a test you wrote fails, decide
 which is wrong — the test or the implementation — and say so. If the implementation is wrong,
@@ -121,9 +123,16 @@ assertion.
 - Every failure branch is asserted for shape
 - Every security guard has both a pass and a fail case (`governance/TESTING.md` §5a)
 - No skipped test without a ledger task recording when the skip is removed — in the ledger, not
-  in a comment (`governance/PRODUCTION_TS_RULES.md` §5c)
+  in a comment (`governance/CODE_RULES.md` §5c)
 
 ## Return Format
+
+> **This section governs the agent-to-agent report** — the structured handoff the calling agent
+> reads. It is a data shape, and it stays rigid.
+>
+> **Prose addressed to a human being is governed by `governance/PLAIN_LANGUAGE.md` instead**: lead
+> with the outcome, match length to substance, say plainly what did not get done, and do not
+> narrate the steps a reader already watched happen (§3d, §8, §9).
 
 Report back:
 
@@ -146,6 +155,11 @@ task's own `Done when:`.
 
 ## Delegation
 
+**Delegate a track that is genuinely independent and sizeable. Do not delegate what you could
+finish in a handful of tool calls, and never delegate in order to double-check your own work** —
+a second agent re-reading your change is the same reasoning at one remove, at the cost of a whole
+context (`governance/PLAIN_LANGUAGE.md` §12). One agent where one suffices.
+
 You may spawn sub-agents to parallelise segmentable work — for example, authoring tests for
 several independent files at once. Three standing conditions:
 
@@ -156,7 +170,7 @@ several independent files at once. Three standing conditions:
 3. **You never delegate the decision of what constitutes adequate coverage** — that judgement is
    this agent's reason for existing.
 
-Gate runs go to `cc-tester` regardless of depth.
+Full-gate runs go to `cc-tester` regardless of depth.
 
 ## Navigation
 

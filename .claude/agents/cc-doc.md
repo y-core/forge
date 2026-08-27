@@ -66,7 +66,7 @@ Three corollaries you will need constantly:
 
 ## The Comment Budget — Binding
 
-**`governance/PRODUCTION_TS_RULES.md` §5 is binding on every source comment you write or leave
+**`governance/CODE_RULES.md` §5 is binding on every source comment you write or leave
 standing.** It is a ceiling, not a floor; §5a is the entire permitted budget.
 
 **Rationale you write goes to a `.decisions/` doc or a namespace `README.md` — never into a
@@ -103,7 +103,9 @@ done.
 2. Decide the directory first — portable rule or local fact (§6d). Getting this wrong is the one
    mistake a later sync makes expensive.
 3. Read the source the doc covers — verify every claim.
-4. Skim a neighbouring doc's `## 0.` block for tone and grain.
+4. Read `governance/PLAIN_LANGUAGE.md` §4 and §5 — headings that say what is beneath them,
+   sentences that expose the actor and the condition, and a section a reader can land on cold.
+   That document owns the prose; a neighbouring doc shows the house grain but settles nothing.
 5. Draft: frontmatter, the opening blockquote with its **Defers to** list, `## 0. Quick
    Reference` with one line per `##` and `###`, then the body.
 6. Run the docs gate step — or delegate the gate to `cc-tester`.
@@ -113,21 +115,28 @@ done.
 existing READMEs, and verify every example against real exports — exact names, signatures, and
 import paths.
 
-## Self-Verification Checklist
+## Before You Return
 
-- [ ] The doc is in the right directory — `governance/` portable, `implementation/` local
-- [ ] Every heading is `## N.` or `### Na.` — no unnumbered, no dot-notation
-- [ ] `## 0. Quick Reference` lists **every** `##` and `###`, and restates none of them
-- [ ] Frontmatter has exactly `title` (2–5 words) and `description` (one sentence, ≤200 chars)
-- [ ] Cross-links are relative paths, and every cited `§N` resolves
-- [ ] No link runs from `governance/` into `implementation/`
-- [ ] Nothing restated that another file owns — every duplicate is a link
-- [ ] No dates, no ticket IDs, no changelog notes
-- [ ] Every documented import subpath exists in the export map
-- [ ] New doc registered in the correct Guide Index table
-- [ ] The docs gate step passes
+The docs gate already checks the mechanical rules — numbering, frontmatter, resolvable
+references, Quick Reference completeness, dated content, boundary-crossing links. **Run the step;
+do not re-inspect by hand what it proves.**
+
+Three things no check measures, and they are why this agent exists:
+
+- **Directory.** `governance/` for a portable rule, `implementation/` for a local fact. This is
+  the one mistake a later sync makes expensive.
+- **Single home.** Nothing restated that another file owns — every duplicate is a link.
+- **Plainness.** Every heading says what is beneath it, and a reader landing on one section from
+  `rg` can act without opening another (`governance/PLAIN_LANGUAGE.md` §4c, §6).
 
 ## Return Format
+
+> **This section governs the agent-to-agent report** — the structured handoff the calling agent
+> reads. It is a data shape, and it stays rigid.
+>
+> **Prose addressed to a human being is governed by `governance/PLAIN_LANGUAGE.md` instead**: lead
+> with the outcome, match length to substance, say plainly what did not get done, and do not
+> narrate the steps a reader already watched happen (§3d, §8, §9).
 
 Report back:
 
@@ -148,6 +157,11 @@ the source claims verified, are themselves the evidence the close rests on.
 
 ## Delegation
 
+**Delegate a track that is genuinely independent and sizeable. Do not delegate what you could
+finish in a handful of tool calls, and never delegate in order to double-check your own work** —
+a second agent re-reading your change is the same reasoning at one remove, at the cost of a whole
+context (`governance/PLAIN_LANGUAGE.md` §12). One agent where one suffices.
+
 You may spawn sub-agents to parallelise segmentable work — for example, verifying claims across
 several namespaces at once. Three standing conditions:
 
@@ -158,7 +172,7 @@ several namespaces at once. Three standing conditions:
    reason for existing. When two files could own it, decide yourself or escalate; never let two
    sub-agents each keep a copy.
 
-Gate runs go to `cc-tester` regardless of depth.
+Full-gate runs go to `cc-tester` regardless of depth.
 
 ## Navigation
 

@@ -14,13 +14,18 @@
 - NEVER provide deprecation shims or backward-compatible paths before v1.0.0
 - NEVER exceed the comment budget — one line of TSDoc per export, the `@public`/`@internal` tags,
   and the rare inline *why*, nothing else
-  ([`PRODUCTION_TS_RULES.md`](.decisions/governance/PRODUCTION_TS_RULES.md) §5)
+  ([`CODE_RULES.md`](.decisions/governance/CODE_RULES.md) §5)
 - ALWAYS delete unbudgeted comments from any file you touch, routing rationale worth keeping to its
-  single home ([`PRODUCTION_TS_RULES.md`](.decisions/governance/PRODUCTION_TS_RULES.md) §5c)
+  single home ([`CODE_RULES.md`](.decisions/governance/CODE_RULES.md) §5c)
 - ALWAYS add new public symbols to the namespace's `mod.ts` as a named export
 - ALWAYS co-locate tests (`*.test.ts` / `*.test.tsx`) with the source they test
 - ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
-- ALWAYS run local verification after changes — **delegate every gate run to `cc-tester`** (see _Verification Delegation_)
+- ALWAYS run local verification after changes — **the full gate goes to `cc-tester`**; a single scoped step is yours to run (see _Verification Delegation_)
+- ALWAYS write for the reader, not the record — a governing document and a message to a person are
+  both judged on whether their reader gets what they need, can find it, can understand it, and can
+  act on it (`governance/PLAIN_LANGUAGE.md` §2). Lead with the outcome, match length to substance,
+  and never compress away a caveat that would change what the reader does next
+  (`governance/PLAIN_LANGUAGE.md` §3d, §8)
 - ALWAYS report a command's exit status with the one canonical suffix — never a variant (see _Shell Exit Checks_)
 - ALWAYS reach the ledger over MCP, and never work from a remembered copy of its rules — the tool descriptions and the refusals carry them, and a refusal is acted on rather than guessed past (see _Ledger Maintenance_)
 - Use `rg` for content search and `find` for file search
@@ -101,13 +106,21 @@ The matching allow rule is an **exact-string** entry (no `:*` prefix wildcard) i
 
 ### Verification Delegation
 
-**`cc-tester` is the sole runner** of `bun run verify` and any cross-cutting suite. It returns a
+**The full gate goes to `cc-tester`** — `bun run verify` and any cross-cutting suite. It returns a
 terse verdict — `✓ green`, or `✗` with the failing step and a minimal excerpt — **never the full
-stream**. `cc-plan`, `cc-dev`, and `cc-doc` delegate every gate run to it; `cc-test` may smoke-run
-only the single test file it just wrote.
+stream**.
+
+**The reason is context isolation, not distrust.** A gate stream is thousands of lines the owning
+agent would otherwise carry for the rest of its turn, so the rule follows the size of the output
+rather than the question of who may be trusted to read a result: cross-cutting or voluminous goes
+to `cc-tester`; a single scoped step — `bun run verify --only lint`, or the one test file you just
+wrote — is yours to run, because routing a handful of lines through a second agent buys nothing
+([`PLAIN_LANGUAGE.md`](.decisions/governance/PLAIN_LANGUAGE.md) §12). **A scoped green is never
+reported as a green gate**, whoever ran it.
 
 On failure the **owning** agent fixes and re-delegates — the gate never re-runs inside the agent
-that owns the fix, and `cc-tester` never edits the code it judges.
+that owns the fix, and `cc-tester` never edits the code it judges. The baseline it established
+is part of its verdict.
 
 `cc-tester` declares a `tools:` allowlist without `Write`/`Edit`, but **enforcement is not
 guaranteed**. Treat the whole split as convention: every agent obeys its stated boundaries because
@@ -147,9 +160,10 @@ doc via the **Guide Index** — never duplicate that detail here.
 ### Governance — portable, overwrite-on-sync
 
 - [`AGENT_GUIDE.md`](.decisions/governance/AGENT_GUIDE.md): how `.decisions/` docs are structured, numbered, sized, and cross-referenced; the governance/implementation boundary; the single-home rule
+- [`PLAIN_LANGUAGE.md`](.decisions/governance/PLAIN_LANGUAGE.md): reader-centred prose for governing documents and for what an agent says to a person — relevant, findable, understandable, usable; response length, narration, corrections, scope, delegation
 - [`LIBRARY_ARCHITECTURE.md`](.decisions/governance/LIBRARY_ARCHITECTURE.md): the dependency facade, the runtime-only no-build-step constraint, demand composition, Web-APIs-only, the Workers isolate model
 - [`NAMESPACE_DESIGN.md`](.decisions/governance/NAMESPACE_DESIGN.md): barrel discipline and the `export *` ban, the no-sibling-barrel rule, leaf/integration classification, naming conventions, when to add a namespace
-- [`PRODUCTION_TS_RULES.md`](.decisions/governance/PRODUCTION_TS_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, **the comment budget (§5 — the ceiling on prose)**, declarative style
+- [`CODE_RULES.md`](.decisions/governance/CODE_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, **the comment budget (§5 — the ceiling on prose)**, declarative style
 - [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md): SSR versus browser, transport versus application security, validate-at-boundary, no-PII logging, fail-closed
 - [`ERROR_HANDLING.md`](.decisions/governance/ERROR_HANDLING.md): the one `Result` primitive, failures crossing a boundary, rendering a failure, the error taxonomy
 - [`TESTING.md`](.decisions/governance/TESTING.md): co-location, exact-match assertions, fakes over mocks, security-test requirements, the one-command-two-modes gate

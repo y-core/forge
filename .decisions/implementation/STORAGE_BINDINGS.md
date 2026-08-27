@@ -102,7 +102,7 @@ it was chosen for. The counter reseeds to a random 10-bit value on each clock ad
 when the wall clock catches up. A backwards clock step is absorbed the same way.
 
 **The module-level default generator is a deliberate exception to
-[`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §1a.** That rule prohibits *request-scoped*
+[`CODE_RULES.md`](../governance/CODE_RULES.md) §1a.** That rule prohibits *request-scoped*
 data in module scope, and its rationale is bleed between recycled isolates. The retained state is
 a timestamp and a counter — nothing request-derived — and the cross-request bleed is exactly what
 stops two requests sharing an isolate from colliding inside one frozen millisecond. Code needing

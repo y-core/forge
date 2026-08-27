@@ -1,9 +1,9 @@
 ---
-title: Production TypeScript Rules
+title: Code Rules
 description: "Seven non-negotiable coding rules: zero global state, explicit errors, validation first, testability, the comment budget, declarative style, and name distinctiveness."
 ---
 
-# Production TypeScript Rules
+# Code Rules
 
 > Seven non-negotiable rules for every TypeScript file in the repository, keeping it testable,
 > predictable, and safe in the Cloudflare Workers runtime.

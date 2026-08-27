@@ -11,7 +11,7 @@ description: "Barrel discipline and the export-star ban, the no-sibling-barrel r
 >
 > Defers to: [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) for the facade and
 > runtime-only principles these rules serve;
-> [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) for the coding rules inside a namespace;
+> [`CODE_RULES.md`](./CODE_RULES.md) for the coding rules inside a namespace;
 > `package.json` `exports` for the subpath names themselves.
 
 ---

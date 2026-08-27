@@ -52,7 +52,7 @@ argument.**
 | A state-changing route carries a CSRF guard | [`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §3a |
 | A security guard has both a pass and a fail test | [`TESTING.md`](./TESTING.md) §5a |
 | No props interface types an icon as bare `ForgeIcon` or `ForgeIcon<string>` | §3b |
-| No comment outside the permitted budget | [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5a |
+| No comment outside the permitted budget | [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a |
 
 **The pre-1.0 shim ban is the one most often argued away.** A published shim is unrecoverable:
 once a consumer depends on it, removing it is a breaking change, which is precisely what a
@@ -161,8 +161,8 @@ step fails before this command runs. The command stays because `ForgeIcon<string
 spellable, still compiles, and is still always wrong in a prop position — catching that explicit
 spelling is its remaining job.
 
-**Unbudgeted comment** ([`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5a is the whole
-budget; [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5b is what is deleted on sight)
+**Unbudgeted comment** ([`CODE_RULES.md`](../governance/CODE_RULES.md) §5a is the whole
+budget; [`CODE_RULES.md`](../governance/CODE_RULES.md) §5b is what is deleted on sight)
 
 ```bash
 rg -n '^\s*\*\s*@example' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
@@ -182,7 +182,7 @@ sweep:
   Deleting that string would delete the test. Never grep for the bare tag.
 - The second needs `-P`: its lookahead is unsupported by the default engine, which errors rather
   than under-matching. Its 400-character threshold is a heuristic floor, not the rule — read each
-  hit and keep the one sentence [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5a permits.
+  hit and keep the one sentence [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a permits.
   It also matches **template-literal contents** that use
   comment syntax as their payload: `cf-env-registry.ts`'s `HEADER` is the banner the `gen:env`
   command emits into generated files, so shortening it would change generator output. A hit inside
@@ -242,21 +242,21 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 
 | Pattern | Why it is correct |
 |---|---|
-| `new Forge<Env>()` in a test | `Forge` is exported from `src/app/mod.ts` with a public constructor. The no-bare-constructor rule targets *config holders* — [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §1d |
+| `new Forge<Env>()` in a test | `Forge` is exported from `src/app/mod.ts` with a public constructor. The no-bare-constructor rule targets *config holders* — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1d |
 | `@y-core/forge/context` imported by a consumer | `context` **is** a public subpath. Any claim that it is internal is stale |
 | A reference to `@y-core/forge/crypto` being absent | That subpath **never existed**. `crypto` is sealed-internal — [`NAMESPACES.md`](./NAMESPACES.md) §3b |
 | `import { v } from "../validation/mod"` in forge source | One of the two sanctioned barrel exemptions — [`NAMESPACE_DESIGN.md`](../governance/NAMESPACE_DESIGN.md) §2c |
 | `import … from "../crypto/mod"` in forge source | The other sanctioned exemption |
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`](../governance/TESTING.md) §2a |
 | `node:fs` / `node:path` in `pkg`, `cli`, `assets`, `ui/assets` | Build-time tooling, exempt from Web-APIs-only — §3b |
-| `export const X = "…"` at module scope | A constant is not mutable state — [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §1c |
-| A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
+| `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1c |
+| A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §4a |
 | `sideEffects` entries in `package.json` | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §4 |
 | A non-null assertion in a test file | Permitted by the `**/*.test.ts` biome override, which sets `noNonNullAssertion: off`; the rule is `error` in production source |
 | `ok` / `err` not following `create*` | The one documented naming exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1a |
 | `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5e |
 | `Input` exported from both `ui/core` and `ui/controls` | Deliberate shadowing — [`NAMESPACES.md`](./NAMESPACES.md) §5b |
-| `@public` / `@internal` on a TSDoc line | Machine-readable visibility markers, explicitly budgeted — [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5a |
-| A one-line inline comment carrying an external *why* | The third budgeted form, subject to the four conditions in [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5a |
-| A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md) §5d |
+| `@public` / `@internal` on a TSDoc line | Machine-readable visibility markers, explicitly budgeted — [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a |
+| A one-line inline comment carrying an external *why* | The third budgeted form, subject to the four conditions in [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a |
+| A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`CODE_RULES.md`](../governance/CODE_RULES.md) §5d |

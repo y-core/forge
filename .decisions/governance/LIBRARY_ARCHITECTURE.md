@@ -9,7 +9,7 @@ description: "Structural principles: the dependency facade, the runtime-only no-
 > the constraints that keep it portable across Workers runtimes.
 >
 > Defers to: [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §3 for the leaf/integration
-> classification; [`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) for the coding rules;
+> classification; [`CODE_RULES.md`](./CODE_RULES.md) for the coding rules;
 > [`BOUNDARIES.md`](./BOUNDARIES.md) for the runtime and layering boundaries; `tsconfig.json`
 > for the compiler configuration.
 
@@ -17,12 +17,13 @@ description: "Structural principles: the dependency facade, the runtime-only no-
 
 ## 0. Quick Reference
 
-- §1 Core Architectural Principles: the five structural commitments
+- §1 Core Architectural Principles: the six structural commitments
 - §1a Facade Over Dependencies: what the library wraps, and why
 - §1b Runtime-Only Library Constraint: raw TypeScript, no build step
 - §1c Demand Composition Principle: single-purpose namespaces
 - §1d Web-APIs-Only Constraint: the permitted runtime surface
 - §1e The Build-Time Exemption Is Reachability: why a path glob is evidence, not the rule
+- §1f Semantic Tokens Are a Facade Over the Scale: what a published component may resolve
 - §2 Namespace Dependency Tiers: pointer to the owning classification
 - §3 Consequences of Shipping Source: what raw TypeScript requires
 - §3a No Build Step in the Gate: the library is always consumed as source
@@ -100,6 +101,27 @@ tooling-shaped it looks.
 Stating the exemption as reachability rather than as a directory list is what keeps it from
 growing: a new glob is cheap to add and impossible to audit, whereas "does a Worker reach this"
 has one answer per module.
+
+### 1f. Semantic Tokens Are a Facade Over the Scale
+
+**A published component resolves a semantic token and never a numbered scale step.** The
+semantic layer is a facade in the sense §1a means it: the scale is the dependency, the semantic
+name is the library's own surface over it, and a component that reaches past the name has taken
+on a coupling the library exists to hold.
+
+The containment is what a retheme is. A consumer swaps the scheme that declares the steps and
+every component follows, because each one asked for a *role* — the surface it sits on, the text
+that must contrast with it — and never for a colour. One component reaching for a step is enough
+to make a retheme a component-by-component audit again.
+
+**This constrains the library, not the consumer.** The scale is a published surface, and an
+application composing its own markup may use it directly — that half of the boundary belongs to
+the application governance corpus, and the two halves are what let the same scheme drive a
+prescriptive component set and an expressive page.
+
+**Which families exist, how many steps each carries, and which step each semantic name resolves
+to are implementation** — they are the values a scheme tunes, and prose that restates them is a
+second copy of the scheme file.
 
 ---
 
@@ -218,7 +240,7 @@ in-process cache across isolate lifetimes.
 - open network connections,
 - read environment variables — bindings arrive on the request context in handlers,
 - store request-scoped mutable state
-  ([`PRODUCTION_TS_RULES.md`](./PRODUCTION_TS_RULES.md) §1a).
+  ([`CODE_RULES.md`](./CODE_RULES.md) §1a).
 
 **Use the execution context's `waitUntil(p)` for work that must outlive the response** —
 logging, analytics, cache warming. An unguarded async side effect can be killed mid-flight when

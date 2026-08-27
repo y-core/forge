@@ -8,7 +8,7 @@
     "forge-verify": "./src/pkg/gate/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities for Cloudflare Workers — HTMX + Tailwind",
+  "description": "Server-rendered web utilities for Cloudflare Workers \u2014 HTMX + Tailwind",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/y-core/forge.git"
@@ -25,7 +25,8 @@
     "test:browser": "playwright test",
     "verify": "bun run src/pkg/gate/bin.ts",
     "verify:full": "bun run src/pkg/gate/bin.ts --full",
-    "prepublishOnly": "bun run verify:full"
+    "prepublishOnly": "bun run verify:full",
+    "postinstall": "governance-sync"
   },
   "sideEffects": [
     "./src/jsx/register.ts",
@@ -49,7 +50,7 @@
     "@biomejs/biome": "^2.5.4",
     "@playwright/test": "^1.62.0",
     "@typescript/native-preview": "^7.0.0-dev.20260707.2",
-    "@y-core/governance": "https://codeload.github.com/y-core/governance/tar.gz/refs/tags/v0.1.1",
+    "@y-core/governance": "https://codeload.github.com/y-core/governance/tar.gz/refs/tags/v0.2.0",
     "esbuild": "^0.28.1",
     "tailwindcss": "^4.3.3"
   },

@@ -9,7 +9,7 @@ description: "Structural principles: the dependency facade, the runtime-only no-
 > constraints that keep it portable across Workers runtimes.
 >
 > Defers to: [`NAMESPACES.md`](./NAMESPACES.md) §4 for the leaf/integration
-> classification and the namespace catalog; [`PRODUCTION_TS_RULES.md`](../governance/PRODUCTION_TS_RULES.md)
+> classification and the namespace catalog; [`CODE_RULES.md`](../governance/CODE_RULES.md)
 > for the coding rules; `tsconfig.json` for the compiler configuration.
 
 ---
