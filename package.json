@@ -1,11 +1,11 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.88",
+  "version": "0.0.89",
   "bin": {
     "forge": "./src/cli/root/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities and an integrated command layer for Cloudflare Workers \u2014 HTMX + Tailwind",
+  "description": "Server-rendered web utilities and an integrated command layer for Cloudflare Workers — HTMX + Tailwind",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/y-core/forge.git"
