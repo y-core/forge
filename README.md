@@ -37,7 +37,12 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/assets` | Asset config & metadata | [src/assets/README.md](src/assets/README.md) |
 | `@y-core/forge/assets/build` | Asset build pipeline | [src/assets/README.md](src/assets/README.md) |
 | `@y-core/forge/assets/manifest` | Manifest & sprite registry | [src/assets/README.md](src/assets/README.md) |
-| `@y-core/forge/cli` | CLI command framework | [src/cli/README.md](src/cli/README.md) |
+| `@y-core/forge/cli` | CLI command framework | [src/cli/core/README.md](src/cli/core/README.md) |
+| `@y-core/forge/cli/assets` | Asset pipeline command tree (`forge assets`) | [src/assets/README.md](src/assets/README.md) |
+| `@y-core/forge/cli/cfgen` | `forge gen-env` env-schema generator | [src/validation/README.md](src/validation/README.md) |
+| `@y-core/forge/cli/pkg` | Project tooling — verification gate & release (Node/Bun only) | [src/cli/pkg/README.md](src/cli/pkg/README.md) |
+| `@y-core/forge/cli/sync` | Cloudflare binding reconciliation (`forge sync`) | [src/cli/sync/README.md](src/cli/sync/README.md) |
+| `@y-core/forge/cli/term` | Terminal rendering — width, wrapping, grids & colour | [src/cli/term/README.md](src/cli/term/README.md) |
 | `@y-core/forge/config` | Environment config | [src/config/README.md](src/config/README.md) |
 | `@y-core/forge/context` | `RequestContext`, `AppContext` | [src/context/README.md](src/context/README.md) |
 | `@y-core/forge/form` | Form parsing, CSRF & bot detection | [src/form/README.md](src/form/README.md) |
@@ -48,7 +53,6 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/jsx/register` | Classic-mode JSX runtime registration | [src/jsx/README.md](src/jsx/README.md) |
 | `@y-core/forge/logging` | Structured logging | [src/logging/README.md](src/logging/README.md) |
 | `@y-core/forge/logging/show` | Log viewer UI & reader | [src/logging/README.md](src/logging/README.md) |
-| `@y-core/forge/pkg` | Project tooling — verification gate & release (Node/Bun only) | [src/pkg/README.md](src/pkg/README.md) |
 | `@y-core/forge/result` | Result monad | [src/result/README.md](src/result/README.md) |
 | `@y-core/forge/router` | Declarative route config | [src/router/README.md](src/router/README.md) |
 | `@y-core/forge/security` | Transport-layer hardening | [src/security/README.md](src/security/README.md) |
@@ -74,7 +78,6 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/ui/show` | Component showcase route helpers | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/show/client` | Showcase filter island (side-effect) | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/validation` | Schema validation (valibot) | [src/validation/README.md](src/validation/README.md) |
-| `@y-core/forge/validation/cli` | `forge-cfgen` env-schema generator | [src/validation/README.md](src/validation/README.md) |
 
 > **There is no aggregate `storage` or `ui` barrel** — each client and each UI surface is imported from its own subpath above.
 >

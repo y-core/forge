@@ -184,7 +184,7 @@ registerScope(CUSTOMISE_SCOPE, {
 });
 
 // Keyed by the button it belongs to, the way `resume.ts` keys its own live-scope map. This module is
-// browser-only, which `PRODUCTION_TS_RULES.md` §1e exempts from the module-state prohibition.
+// browser-only, which `CODE_RULES.md` §1e exempts from the module-state prohibition.
 const copyTimers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
 
 // Lazy: the button stamps `data-on-click`, which is exactly what a lazy scope resumes on.

@@ -1,5 +1,5 @@
 import { TURNSTILE, TURNSTILE_SCRIPT_SRC, TURNSTILE_SCRIPT_TIMEOUT_MS } from "../contracts/turnstile-contract";
-import { ownerDocument, ownerWindow } from "./dom";
+import { activeElement, asElement, contains, eventTarget, ownerDocument, ownerWindow } from "./dom";
 
 interface TurnstileAPI {
   render(el: HTMLElement, params: Record<string, unknown>): string;
@@ -29,6 +29,24 @@ export function findWidget(root: HTMLElement): HTMLElement | null {
  * exposes any element with `id="turnstile"` as `window.turnstile`, which would answer truthy. @internal */
 export const hasApi = (win: Window): win is Window & { turnstile: TurnstileAPI } => typeof win.turnstile?.render === "function";
 
+/** How long after the render a stolen focus is still put back. @internal */
+export const TURNSTILE_FOCUS_GUARD_MS = 5_000;
+
+/** Puts focus back on `previous` when the widget took or dropped it, reporting whether it acted. @internal */
+export function restoreFocus(container: HTMLElement, previous: Element | null): boolean {
+  const current = activeElement(container);
+  if (current === previous) return false;
+  // The widget dropping focus lands on `body` or on nothing; focus the user moved to a real element
+  // elsewhere is theirs, and is left alone.
+  const widgetHasFocus = contains(container, current) || current === null || current === ownerDocument(container).body;
+  if (!widgetHasFocus) return false;
+  const target = previous as HTMLElement | null;
+  if (!target?.isConnected || typeof target.focus !== "function") return false;
+  // Mounting the widget has already shifted the layout, and scrolling the field back into view would compound it.
+  target.focus({ preventScroll: true });
+  return true;
+}
+
 /** Mounts a resilient Cloudflare Turnstile controller for a `<Turnstile>` widget and returns a cleanup function. */
 export function mountTurnstile(root: HTMLElement): () => void {
   const doc = ownerDocument(root);
@@ -57,6 +75,8 @@ export function mountTurnstile(root: HTMLElement): () => void {
   let pollId = 0;
   let pollTimeoutId = 0;
   let scriptTimeoutId = 0;
+  let guardWindowId = 0;
+  let guardSettleId = 0;
 
   const clearTimers = () => {
     win.clearInterval(pollId);
@@ -75,6 +95,30 @@ export function mountTurnstile(root: HTMLElement): () => void {
     if (widgetId !== undefined) win.turnstile?.reset(widgetId);
   };
 
+  const onGuardFocusout = (event: Event) => {
+    const from = asElement(eventTarget(event));
+    if (!from || contains(container, from)) return;
+    // One settle tick, because the element focus actually moved to is only readable after the event.
+    guardSettleId = win.setTimeout(() => {
+      guardSettleId = 0;
+      if (disposed || guardWindowId === 0) return;
+      if (restoreFocus(container, from)) disarmGuard();
+    }, 0);
+  };
+
+  // Not part of `clearTimers`: the poll-success path clears the timers immediately before rendering.
+  const armGuard = () => {
+    guardWindowId = win.setTimeout(disarmGuard, TURNSTILE_FOCUS_GUARD_MS);
+    form.addEventListener("focusout", onGuardFocusout);
+  };
+
+  const disarmGuard = () => {
+    win.clearTimeout(guardWindowId);
+    win.clearTimeout(guardSettleId);
+    guardWindowId = guardSettleId = 0;
+    form.removeEventListener("focusout", onGuardFocusout);
+  };
+
   const renderWidget = () => {
     // A late script `load` or poll hit must not render into a container the app has already swapped
     // out; the widget would mount on a detached node nothing can reach to remove it again.
@@ -84,6 +128,9 @@ export function mountTurnstile(root: HTMLElement): () => void {
       return;
     }
     const theme = doc.documentElement.classList.contains("dark") ? "dark" : "light";
+    // The render is triggered by the user's own first focus, so the widget's grab lands on the field
+    // they just clicked into — captured here because `render` takes focus before it returns.
+    const previous = activeElement(container);
     try {
       widgetId = win.turnstile.render(container, {
         sitekey,
@@ -96,7 +143,10 @@ export function mountTurnstile(root: HTMLElement): () => void {
       });
     } catch {
       showFallback();
+      return;
     }
+    restoreFocus(container, previous);
+    armGuard();
   };
 
   const loadScript = () => {
@@ -154,6 +204,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
   const cleanup = () => {
     disposed = true;
     clearTimers();
+    disarmGuard();
     form.removeEventListener("focusin", loadScript);
     form.removeEventListener("htmx:afterRequest", onAfterRequest);
     if (widgetId !== undefined) win.turnstile?.remove(widgetId);

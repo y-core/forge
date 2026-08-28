@@ -33,6 +33,8 @@ export interface SecurityHeadersOptions {
   connectSrc?: CspValue;
   frameSrc?: CspValue;
   imgSrc?: CspValue;
+  styleSrc?: CspValue;
+  fontSrc?: CspValue;
   workerSrc?: CspValue;
   childSrc?: CspValue;
   hstsMaxAge?: number;
@@ -53,6 +55,7 @@ export type OriginResult = GuardResult<"missing" | "disallowed">;
 /** Options controlling how allowed origins are derived from a base URL. @public */
 export interface DeriveAllowedOriginsOptions {
   includeWww?: boolean;
+  extraOrigins?: string[];
 }
 
 /** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`). @public */

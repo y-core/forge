@@ -109,7 +109,7 @@ rg -nP 'from "\.\./(?!validation/mod|crypto/mod)[a-z-]+/mod"' src/
 
 ```bash
 rg -n '\bBun\.|from "node:' src/ \
-  --glob '!src/pkg/**' --glob '!src/cli/**' --glob '!src/assets/**' \
+  --glob '!src/cli/pkg/**' --glob '!src/cli/**' --glob '!src/assets/**' \
   --glob '!src/ui/assets/**' --glob '!src/**/cli/**'
 ```
 

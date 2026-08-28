@@ -95,8 +95,8 @@ or `ui/chrome` compound destructures an inherited `"data-slot"` out of its props
 compound's own token to any caller that passes `data-slot`, because the rest-props spread that
 follows it wins. `slotToken` is owned by `src/ui/core/utils/as-child.ts`.
 
-**The attribute order is gate-enforced, not conventional.** `src/pkg/gate/checks/jsx.ts` — matchers
-in `src/pkg/gate/checks/jsx-parse.ts` — fails on any JSX element carrying a literal `data-slot` before a spread of
+**The attribute order is gate-enforced, not conventional.** `src/cli/pkg/gate/checks/jsx.ts` — matchers
+in `src/cli/pkg/gate/checks/jsx-parse.ts` — fails on any JSX element carrying a literal `data-slot` before a spread of
 a **bare identifier** (`{...rest}`, `{...props}`, `{...attrs}`). A computed spread such as
 `{...stateAttrs({ selected })}` is deliberately outside the rule: it is built at the call site out of
 values the component itself controls, so no caller token can hide inside it. There is no per-site

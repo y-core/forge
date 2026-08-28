@@ -25,8 +25,9 @@ description: "Which file owns each fact in forge, so every other document cites 
 - §2 The Register: every owned fact and its file
 - §2a Package and Configuration Facts: the export map, the gate, the type system
 - §2b Enforced Rules: the checks that own their own rule sets
-- §2c UI Contracts and Data Tables: the files prose may not re-enumerate
-- §2d The One Prose Row: what a source comment may contain
+- §2c Cloudflare Reconciliation: the files that decide what `forge sync` creates and writes
+- §2d UI Contracts and Data Tables: the files prose may not re-enumerate
+- §2e The One Prose Row: what a source comment may contain
 - §3 Rows That Name More Than One File: policy split from matchers
 - §3a The Barrel Row: exports and barrel-parse
 - §3b The Namespace-Graph Rows: data, policy, and parser
@@ -83,20 +84,37 @@ Each of these checks **owns the rule set it enforces**. Read the check, not a pr
 
 | Owns | File |
 |---|---|
-| Barrel rules as *enforced* | `src/pkg/gate/checks/exports.ts` + `src/pkg/gate/checks/barrel-parse.ts` |
-| The namespace graph as *enforced* | `src/pkg/gate/checks/namespace-graph.ts` + `src/pkg/gate/checks/namespace-graph-parse.ts` |
-| Governing-doc format as *enforced* | `src/pkg/gate/checks/docs.ts` |
-| `@source` coverage as *enforced* | `src/pkg/gate/checks/css-sources.ts` |
-| The modern-CSS rule catalog as *enforced* — every id, tier, severity and replacement | `src/pkg/gate/checks/modern-css-rules.ts` |
-| Token contrast mappings and their measured ratios, as *enforced* | `src/pkg/gate/checks/contrast.ts` + `src/pkg/gate/checks/contrast-parse.ts` |
-| The design corpus's rule ids, citations and source rules as *enforced* | `src/pkg/gate/checks/design.ts` + `src/pkg/gate/checks/design-parse.ts` |
-| JSX pragma lines and the slot-clobber rule as *enforced* | `src/pkg/gate/checks/jsx.ts` + `src/pkg/gate/checks/jsx-parse.ts` |
-| Test co-location, and the modules exempt from it, as *enforced* | `src/pkg/gate/checks/co-location.ts` |
-| The SSR/browser import boundary as *enforced* | `src/pkg/gate/checks/ssr-boundary.ts` |
-| Changelog and package-version agreement as *enforced* | `src/pkg/gate/checks/changelog.ts` |
-| Which modern-CSS findings fail, warn, or are deferred, as *enforced* | `src/pkg/gate/checks/modern-css.ts` + `src/pkg/gate/checks/modern-css-deferred.ts` |
+| Barrel rules as *enforced* | `src/cli/pkg/gate/checks/exports.ts` + `src/cli/pkg/gate/checks/barrel-parse.ts` |
+| The namespace graph as *enforced* | `src/cli/pkg/gate/checks/namespace-graph.ts` + `src/cli/pkg/gate/checks/namespace-graph-parse.ts` |
+| Governing-doc format as *enforced* | `src/cli/pkg/gate/checks/docs.ts` |
+| `@source` coverage as *enforced* | `src/cli/pkg/gate/checks/css-sources.ts` |
+| The modern-CSS rule catalog as *enforced* — every id, tier, severity and replacement | `src/cli/pkg/gate/checks/modern-css-rules.ts` |
+| Token contrast mappings and their measured ratios, as *enforced* | `src/cli/pkg/gate/checks/contrast.ts` + `src/cli/pkg/gate/checks/contrast-parse.ts` |
+| The design corpus's rule ids, citations and source rules as *enforced* | `src/cli/pkg/gate/checks/design.ts` + `src/cli/pkg/gate/checks/design-parse.ts` |
+| JSX pragma lines and the slot-clobber rule as *enforced* | `src/cli/pkg/gate/checks/jsx.ts` + `src/cli/pkg/gate/checks/jsx-parse.ts` |
+| Test co-location, and the modules exempt from it, as *enforced* | `src/cli/pkg/gate/checks/co-location.ts` |
+| The SSR/browser import boundary as *enforced* | `src/cli/pkg/gate/checks/ssr-boundary.ts` |
+| Changelog and package-version agreement as *enforced* | `src/cli/pkg/gate/checks/changelog.ts` |
+| Which modern-CSS findings fail, warn, or are deferred, as *enforced* | `src/cli/pkg/gate/checks/modern-css.ts` + `src/cli/pkg/gate/checks/modern-css-deferred.ts` |
 
-### 2c. UI Contracts and Data Tables
+### 2c. Cloudflare Reconciliation
+
+The `sync` half of the CLI decides what exists, what is created, and what is written back. Each
+row names the file that decides it; no prose here restates a naming rule or a handler's plan.
+
+| Owns | File |
+|---|---|
+| The Cloudflare resource types `forge sync` reconciles | `RESOURCE_TYPES` in `src/cli/sync/types.ts` |
+| Which handler serves a given resource type | `buildHandlers` and `defaultHandlers` in `src/cli/sync/handlers/registry.ts` |
+| Whether a config is a Pages project or a Worker script | `detectTarget` in `src/cli/sync/target.ts` |
+| The naming strategy for a created remote resource | the per-type handler in `src/cli/sync/handlers/` |
+| What a reconciliation run decides to create, write, or leave | `syncBindings` in `src/cli/sync/engine.ts` |
+| The JSONC round-trip contract — what survives a write | `src/cli/sync/config/parse.ts` + `src/cli/sync/config/edit.ts` |
+| The `.dev.vars` marker comments and what each licenses | `GENERATE_MARKER` and `PUSH_MARKER` in `src/cli/sync/handlers/devvars.ts` |
+| The `forge sync` command surface and its flags | `createSyncCommand` in `src/cli/sync/commands.ts` |
+| The `forge` command tree — which first-party commands attach, and where an app's own are loaded from | `src/cli/root/root.ts` |
+
+### 2d. UI Contracts and Data Tables
 
 | Owns | File |
 |---|---|
@@ -107,7 +125,7 @@ Each of these checks **owns the rule set it enforces**. Read the check, not a pr
 | Theme dial fields, parameters, ranges, units and fallbacks | `src/ui/contracts/theme/theme-contract.ts` |
 | The showcase's demo coverage manifest, and the gaps it excuses | `src/ui/show/coverage.ts` + `src/ui/show/coverage-missing.ts` |
 
-### 2d. The One Prose Row
+### 2e. The One Prose Row
 
 Every row above names a *source* file. This one names a governing document, because the fact it
 owns is a rule rather than data — and a source file must not restate it:

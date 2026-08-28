@@ -17,7 +17,174 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`@y-core/forge/cli/term` — one terminal-rendering namespace.** Width measurement
+  (`stringWidth`, `truncate`) that skips ANSI escapes and counts wide characters, combining marks
+  and emoji sequences correctly; wrapping and alignment (`wrapLines`, `padAlign`, `terminalWidth`);
+  one column engine (`renderGrid`, `definitionList`, `BORDERS`) now behind the `forge sync` tables,
+  the `--help` command and flag lists, and the release summary, which were four separate padding
+  expressions; and a threaded chainable styler (`resolveColorLevel`, `createColorize`, `PLAIN`)
+  with 16/256/truecolor degradation. `cli/term` is a sink: it imports `node:process` and nothing
+  else in the package.
+- **`CliContext` — an additive third parameter on a command's `run`.** `(args, flags, ctx)`, where
+  `ctx` carries `io`, a styler for stdout, a separate styler for stderr, and the terminal width.
+  Optional, so a two-parameter handler stays assignable and a two-argument call still typechecks;
+  `execute()` always supplies it. Two levels rather than one, because `forge verify > log.txt` must
+  still colour progress on the attached stderr while the redirected stdout stays clean.
+- **Repeatable flags.** A `StringFlagDef` may declare `multiple: true as const`, and
+  `ResolvedFlags` then types it `string[]`. `--only`, `--resources` and `--rotate` are repeatable,
+  and comma-separated lists still work: `--only a,b --only c` names three.
+- **`--help` shows inherited persistent flags.** `formatHelp` reads `collectFlags(command)` rather
+  than `command.flags`, so a `persistent` flag declared on an ancestor — accepted by the parser all
+  along — is now documented. Descriptions wrap to the terminal width, and `default` values and type
+  placeholders have a column.
+- **A near miss is named.** A mistyped subcommand or long flag gets a `Did you mean …?`, where a
+  mistyped subcommand previously surfaced as `Command "forge" takes no arguments, got 1`.
+- **Negative numbers are values.** `--limit -5` and `--limit -1.5` now parse. A `-`-leading element
+  that looks like a flag is still refused rather than swallowed, so `forge sync --config --commit`
+  still says `Flag --config requires a value`.
+- **Short clusters.** `-abc` expands to `-a -b -c`, and `-ab=cd` to `-a -b=cd`.
+- **`forge sync` reports secrets separately from provisioned bindings.** `Synced by --commit` has
+  become `Created by --commit` (secrets from `.dev.vars`) and `Provisioned by --commit` (KV, D1, R2
+  and queues). The old section's note claimed that everything in it was "created as
+  `PREFIX_<BINDING>` with the id written back", which was never true of a secret: a secret is not a
+  binding, takes no prefix, and has no id — `engine.ts` has always excluded it from the config
+  write-back, and the section note was the one place saying otherwise. `--resources` gains
+  `secrets` and `provision`; `commit` still names every type it named before.
+- **`forge sync` draws its tables in box-drawing characters** rather than pipes and hyphens, so a
+  section is a closed shape whose start and end are visible without counting rules. Each section's
+  title now stands on its own line with its rule grey beneath it, rather than the two running
+  together as one sentence that regularly ran past the window.
+- **`forge sync` renders to the terminal it is writing to.** The `Action` column is coloured by
+  outcome — green settled, cyan waiting on `--commit`, yellow wants a look, red failed, dim nothing
+  to decide — so a forty-row report is scannable. Section notes and the `Action` and `Detail`
+  columns wrap to the window instead of running off it; identifier columns truncate instead, since
+  a binding name broken across two lines is no longer one you can search the config for. The
+  `--force` rewrite warning is yellow and the `Updated <path>` confirmation green. `--json` is
+  unaffected — it selects `PLAIN` and its payload is data no styler touches.
+
+### Breaking Changes
+
+- **A flag repeated without `multiple` now throws, where it used to keep the last occurrence
+  silently.** This is the point of the change: `forge verify --only typecheck --only
+  validate-exports --only validate-docs` used to run one check and report `1 of 1 steps run`,
+  saying nothing about the two it dropped. A repeatable flag collects every occurrence; a
+  single-valued one refuses the repeat and names what would have been lost. `selectSteps`,
+  `parseResources` and `resolveRotation` are **widened** to `string | readonly string[]`, never
+  narrowed, so a caller passing the comma-joined string is unaffected.
+- **One `forge` binary replaces the four `forge-*` ones, and the CLI namespaces moved beneath
+  `src/cli/`.** `forge-verify`, `forge-release`, `forge-assets` and `forge-cfgen` are gone; the
+  package now declares a single `bin`, `forge`, whose subcommands are `verify`, `release`, `sync`,
+  `assets` and `gen-env`. Rewrite every script accordingly — `forge-verify --only lint` becomes
+  `forge verify --only lint`, `forge-assets build css` becomes `forge assets build css`, and
+  `forge-cfgen` becomes `forge gen-env`. `createGateBinCommand()` and `createReleaseBinCommand()`
+  are unchanged apart from the command `name` they carry (`"verify"` and `"release"`), so a
+  repository assembling its own tree keeps working. Pre-1.0, so no shim.
+- **`@y-core/forge/pkg` is now `@y-core/forge/cli/pkg`, and `@y-core/forge/validation/cli` is now
+  `@y-core/forge/cli/cfgen`.** The export surface of each is byte-identical; only the subpath
+  changed. `@y-core/forge/cli` still resolves, now to `src/cli/core/mod.ts`. A consuming
+  `config/steps.ts` needs its one import path updated and nothing else.
+- **`cloudflareWorkerSteps` emits `["forge", "assets", "types", …]` instead of `["forge-assets",
+  "types", …]`.** A repository on the preset picks this up by upgrading; one that pinned the old
+  `cmd` array in its own step table must edit it.
+
+- **CSP directive sources are validated, and a malformed one now throws.** Every string source in
+  every directive (`scriptSrc`, `connectSrc`, `frameSrc`, `imgSrc`, `styleSrc`, `fontSrc`,
+  `workerSrc`, `childSrc`) must be a single CSP source token: non-empty, and free of whitespace,
+  `;`, `,` and control characters. `'unsafe-inline'` is rejected case-insensitively wherever it
+  appears. The `NONCE` symbol is exempt. The rule is enforced at both factory time
+  (`createSecurityHeaders`) and call time (`applySecurityHeaders`) — so a value that previously
+  passed construction, or that `applySecurityHeaders` previously emitted into a live policy or
+  turned into a 500, now fails loudly at the point it is supplied. A source carrying a `;` or a
+  space does not widen a directive, it terminates or splits it, silently rewriting the rest of the
+  policy; there is no case where accepting one was correct. Pre-1.0, so no shim.
+- **`mergeSecurityHeaders` now falls back to a directive's default when the base omits it.**
+  Previously each directive was concatenated from the two inputs alone, so merging onto a base that
+  did not name a directive produced that directive from the override only — `mergeSecurityHeaders({},
+  { styleSrc: ["https://cdn.example.com"] })` emitted `style-src https://cdn.example.com`, dropping
+  `'self'`, and the same shape merging `scriptSrc` dropped both `'self'` and the nonce placeholder,
+  disabling every nonced inline script. The defaults now live in one `CSP_DEFAULTS` constant and
+  seed the merge, so the example above emits `style-src 'self' https://cdn.example.com`.
+  `workerSrc` and `childSrc` have no default and stay absent unless provided. A base that already
+  named the directive is unaffected — the emitted policy is byte-identical.
+- **`isHttpsOrLoopback` now requires the scheme it claims to check.** The predicate matched on the
+  host, so any scheme reached the loopback allowance: `ws://localhost:8787` and `ftp://localhost`
+  were accepted as origins. It now admits `https:` on any host, and `http:` only on `localhost` or
+  `127.0.0.1`. Both callers tighten with it — `deriveAllowedOrigins`' `extraOrigins` and
+  `BaseUrlConfigSchema` — so a non-http(s) `BASE_URL` or extra origin that used to be accepted now
+  throws at boot. Values matching the documented rule are unaffected.
+
+### Added
+
+- **`forge sync` — Cloudflare binding reconciliation, folded in from `@y-core/foundry`.** Compares
+  the bindings a `wrangler.jsonc` declares against what exists on the account, reports the plan,
+  and provisions and writes back resolved ids under `--commit`. The engine, handler registry, API
+  client and JSONC round-trip writer are published at `@y-core/forge/cli/sync`; the surface, its
+  flags, the `.dev.vars` marker comments and the credential requirements are documented in
+  `src/cli/sync/README.md`. `@y-core/foundry` is archived — depend on forge alone.
+- **App-defined commands.** `forge` loads `config/commands.ts` from the working directory after
+  attaching its own, so an application's commands appear in `forge --help` and run as
+  `forge <name>`. The module default-exports an array of `CommandBase`. Absent, nothing changes; a
+  name colliding with a first-party command fails loudly rather than shadowing it.
+- **`@y-core/forge/cli/assets`** publishes `createAssetsCommands()`, the subtree `forge assets`
+  attaches, so an application can mount the asset pipeline under a command tree of its own.
+
+- **`style-src` and `font-src` are now configurable.** Both were string literals inside `buildCsp`
+  and unreachable from `SecurityHeadersOptions`, so a third-party stylesheet or font host could not
+  be allowed without bypassing the facade. They are now the `styleSrc` and `fontSrc` options,
+  default to `'self'` exactly as before, and are listed in `CSP_DIRECTIVES` so `mergeSecurityHeaders`
+  concatenates them. **The emitted directive order and every default are byte-identical** — the
+  change is purely additive, and widening them still never introduces `'unsafe-inline'`: it is now
+  rejected as a directive source outright. Forge ships no named third-party origins for either; for
+  fonts specifically, self-hosting via the asset pipeline's `fonts.downloads` needs no widening at
+  all and is the better default for the reasons `SECURITY_HARDENING.md` §2e gives.
+- **`extraOrigins` on `deriveAllowedOrigins`.** `DeriveAllowedOriginsOptions` gains
+  `extraOrigins?: string[]`, appended after the base origin and the optional `www` variant and
+  de-duplicated against them. Each entry must be a normalized origin (`entry === new URL(entry).origin`,
+  so no path, trailing slash, credentials or redundant default port — any of which would silently never
+  match `verifyOrigin`'s exact-string comparison) and must satisfy the same https-or-loopback rule
+  `BaseUrlConfigSchema` applies, now shared rather than duplicated; anything else throws, which for a
+  dev entrypoint is boot time. **There is deliberately no env var** — extras arrive as a parameter from
+  a dev worker entry production never imports, so the production bundle structurally contains no extra
+  origin. It exists for the proxy-less `wrangler dev` fallback only; the standard posture is https at
+  every hop, ruled in `SECURITY_HARDENING.md` §3f. Omitting the option leaves behaviour byte-identical.
+
+### Fixed
+
+- **`deriveAllowedOrigins` dropped the port from the `www` variant, granting an origin the caller
+  never asked to trust.** The variant was built from the protocol and hostname alone, so a
+  `BASE_URL` of `https://example.com:8443` produced `https://www.example.com` — port 443 implied.
+  Because `cors`/`originGuard` compare by exact string, that entry handed cross-origin write access
+  to whatever real service answers on the `www` host's default port (a marketing site, a CDN host,
+  an XSS-able sibling) while *failing* to grant `https://www.example.com:8443`, the origin
+  `includeWww: true` was asked for. The variant is now derived from the already-normalized
+  `parsed.origin`, so the port travels with it and a redundant default port stays collapsed. Bases
+  on a default port are unaffected — the emitted strings are byte-identical. Under the https-at-every-hop
+  dev posture non-default ports in `BASE_URL` are routine, so this was on its way from obscure to common.
+- **`BaseUrlConfigSchema` rejected `BASE_URL` with a message naming one loopback host when the rule
+  accepts two.** The predicate has always allowed `http://127.0.0.1` alongside `http://localhost`,
+  but the valibot issue message and the schema's TSDoc named only `localhost` — so an operator who
+  set `BASE_URL=http://127.0.0.1:8787` (a value that is in fact accepted) was told it must be
+  `localhost`. Both messages explaining the predicate now interpolate one shared constant and cannot
+  drift again. `parseExtraOrigin`'s message is unchanged in rendered value; **the schema's message
+  text has changed**, which is visible to anyone matching on the issue string — pre-1.0, so no shim.
+
+- **The Turnstile widget stole focus from the field the user had just clicked into.** `mountTurnstile`
+  arms the lazy script load on the form's first `focusin`, so the trigger *is* that first click — and
+  when Cloudflare's `render()` grabs focus into its own frame, the grab landed on the field the user
+  was about to type in, every session. Nothing forge passes causes it and Turnstile exposes no render
+  parameter that suppresses it. `renderWidget` now captures the active element immediately before
+  `render()` and puts focus back with `preventScroll`, but only when focus actually ended up inside
+  the widget and the original element is still connected — focus the user moved elsewhere in the
+  meantime is left where they put it.
+- **Turnstile also stole focus *after* `render()` returned.** The synchronous restore above cannot
+  see a grab the widget's iframe makes once it has finished loading, nor a blur that lands on
+  `document.body`, so the field the user was typing in still lost focus a beat later. A delegated
+  `focusout` listener on the form is now armed for `TURNSTILE_FOCUS_GUARD_MS` (5000 ms) after
+  `render()`: it tracks the last legitimately focused field and restores focus to it when the widget
+  takes it or it is dropped to the body. A deliberate move to another control is honoured, and the
+  restore is one-shot.
 
 ---
 

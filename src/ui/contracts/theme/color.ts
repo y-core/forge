@@ -1,4 +1,4 @@
-/** The two blocks a scheme file declares. Matches `Mode` in `src/pkg/gate/checks/contrast-parse.ts`. @public */
+/** The two blocks a scheme file declares. Matches `Mode` in `src/cli/pkg/gate/checks/contrast-parse.ts`. @public */
 export type Mode = "light" | "dark";
 
 /** A twelve-position scale, as a tuple rather than an array. @public */

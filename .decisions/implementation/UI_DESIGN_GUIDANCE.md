@@ -188,8 +188,8 @@ because it is followed.
 
 The contract is one sentence: **the corpus may not describe an API forge does not have.**
 
-Enforcement is a gate step. `src/pkg/gate/checks/design.ts` owns the policy — what is asserted, what
-fails, in what order, with what message — and `src/pkg/gate/checks/design-parse.ts` owns the matchers it
+Enforcement is a gate step. `src/cli/pkg/gate/checks/design.ts` owns the policy — what is asserted, what
+fails, in what order, with what message — and `src/cli/pkg/gate/checks/design-parse.ts` owns the matchers it
 decides on: how a claim is extracted from prose, and how it is resolved against forge's real
 exports. The split is the one described for the barrel and namespace-graph checks in
 [`AGENT_GUIDE.md`](../governance/AGENT_GUIDE.md) §8.
@@ -222,7 +222,7 @@ rule means rather than a property of where the walk happens to start.
 **A gated rule is not thereby a Floor rule.** Which rules are checked statically is decided by
 mechanical checkability (§1a) alone, so the enforced set spans both tiers, and a Tier-2 Default that
 happens to be greppable is checked exactly as a Floor rule is. That does not promote it. A gated
-Default remains rebuttable in the sense §2b defines: `src/pkg/gate/checks/design-parse.ts` gives every rule a
+Default remains rebuttable in the sense §2b defines: `src/cli/pkg/gate/checks/design-parse.ts` gives every rule a
 per-site suppression carrying a **mandatory written reason**, which is the form §2c's written brief
 takes inside forge's own source — stated, attached to the line it excuses, and reviewable, rather
 than inferred or silent.
@@ -272,7 +272,7 @@ consumer-facing corpus, however design-shaped it sounds.
 
 ## 6. Format Exemption and This Document's Scope
 
-`src/pkg/gate/checks/docs.ts`, configured by `config/steps.ts`, scopes to `.decisions/`, `CLAUDE.md`, the root `README.md`, every
+`src/cli/pkg/gate/checks/docs.ts`, configured by `config/steps.ts`, scopes to `.decisions/`, `CLAUDE.md`, the root `README.md`, every
 `src/**/README.md`, and `.claude/agents/`. The corpus at `src/ui/design/` matches none of those.
 
 Therefore:

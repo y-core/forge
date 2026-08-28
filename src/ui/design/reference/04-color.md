@@ -328,13 +328,13 @@ There is no longer a worst case to take across five ramps, and the reason is str
 changing. **All four shipped schemes are built on one lightness ramp and differ only in hue**, so
 every audited ratio is the same across them to within **0.05** — the widest gap at any audited step
 is `--muted-foreground` in light, 5.17 through 5.22 — by construction rather than by coincidence,
-which is why the contract in `src/pkg/gate/checks/contrast-parse.ts` can pin one set of numbers and have them
+which is why the contract in `src/cli/pkg/gate/checks/contrast-parse.ts` can pin one set of numbers and have them
 describe every scheme alike. A scheme swap cannot move a pair across its floor.
 
 That the property is construction rather than measurement is what adding a scheme demonstrated:
 `theme-gray.css` shipped without a single contract row being re-pinned. One measurement describes
 any scheme built this way, not merely the ones that have been measured. The ratios themselves are
-`src/pkg/gate/checks/contrast-parse.ts`'s to own.
+`src/cli/pkg/gate/checks/contrast-parse.ts`'s to own.
 
 That guarantee is a property of the construction, not of theming in general. A scheme an application
 authors itself is on its own ramp and is bound by no such distance, which is what the rules below are
@@ -509,7 +509,7 @@ either mode and nothing at the call site says so. Forge's source now contains no
 all.
 
 The measured ratios are not written here, and are not written in the components either. They are
-contract rows in `src/pkg/gate/checks/contrast-parse.ts`, beside the values they describe and re-checked on
+contract rows in `src/cli/pkg/gate/checks/contrast-parse.ts`, beside the values they describe and re-checked on
 every gate run. `alert.tsx` carried them in a comment until the family landed, and carrying them
 there is what let four of them be wrong for as long as they were.
 

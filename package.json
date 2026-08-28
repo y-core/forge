@@ -2,13 +2,10 @@
   "name": "@y-core/forge",
   "version": "0.0.88",
   "bin": {
-    "forge-assets": "./src/assets/cli/bin.ts",
-    "forge-cfgen": "./src/validation/cli/bin.ts",
-    "forge-release": "./src/pkg/release/bin.ts",
-    "forge-verify": "./src/pkg/gate/bin.ts"
+    "forge": "./src/cli/root/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities for Cloudflare Workers \u2014 HTMX + Tailwind",
+  "description": "Server-rendered web utilities and an integrated command layer for Cloudflare Workers \u2014 HTMX + Tailwind",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/y-core/forge.git"
@@ -18,13 +15,13 @@
     "kind": "libs"
   },
   "scripts": {
-    "fix": "bun run src/pkg/gate/bin.ts --fix",
-    "lint": "bun run src/pkg/gate/bin.ts --only lint",
-    "release": "bun run src/pkg/release/bin.ts",
+    "fix": "bun run src/cli/root/bin.ts verify --fix",
+    "lint": "bun run src/cli/root/bin.ts verify --only lint",
+    "release": "bun run src/cli/root/bin.ts release",
     "test": "bun test",
     "test:browser": "playwright test",
-    "verify": "bun run src/pkg/gate/bin.ts",
-    "verify:full": "bun run src/pkg/gate/bin.ts --full",
+    "verify": "bun run src/cli/root/bin.ts verify",
+    "verify:full": "bun run src/cli/root/bin.ts verify --full",
     "prepublishOnly": "bun run verify:full",
     "postinstall": "governance-sync"
   },
@@ -88,8 +85,28 @@
       "import": "./src/assets/manifest/mod.ts"
     },
     "./cli": {
-      "types": "./src/cli/mod.ts",
-      "import": "./src/cli/mod.ts"
+      "types": "./src/cli/core/mod.ts",
+      "import": "./src/cli/core/mod.ts"
+    },
+    "./cli/assets": {
+      "types": "./src/cli/assets/mod.ts",
+      "import": "./src/cli/assets/mod.ts"
+    },
+    "./cli/cfgen": {
+      "types": "./src/cli/cfgen/mod.ts",
+      "import": "./src/cli/cfgen/mod.ts"
+    },
+    "./cli/pkg": {
+      "types": "./src/cli/pkg/mod.ts",
+      "import": "./src/cli/pkg/mod.ts"
+    },
+    "./cli/sync": {
+      "types": "./src/cli/sync/mod.ts",
+      "import": "./src/cli/sync/mod.ts"
+    },
+    "./cli/term": {
+      "types": "./src/cli/term/mod.ts",
+      "import": "./src/cli/term/mod.ts"
     },
     "./config": {
       "types": "./src/config/mod.ts",
@@ -102,6 +119,14 @@
     "./form": {
       "types": "./src/form/mod.ts",
       "import": "./src/form/mod.ts"
+    },
+    "./html/htmx": {
+      "types": "./src/html/htmx/mod.ts",
+      "import": "./src/html/htmx/mod.ts"
+    },
+    "./http": {
+      "types": "./src/http/mod.ts",
+      "import": "./src/http/mod.ts"
     },
     "./jsx": {
       "types": "./src/jsx/mod.ts",
@@ -119,14 +144,6 @@
       "types": "./src/jsx/register.ts",
       "import": "./src/jsx/register.ts"
     },
-    "./html/htmx": {
-      "types": "./src/html/htmx/mod.ts",
-      "import": "./src/html/htmx/mod.ts"
-    },
-    "./http": {
-      "types": "./src/http/mod.ts",
-      "import": "./src/http/mod.ts"
-    },
     "./logging": {
       "types": "./src/logging/mod.ts",
       "import": "./src/logging/mod.ts"
@@ -134,10 +151,6 @@
     "./logging/show": {
       "types": "./src/logging/show/mod.ts",
       "import": "./src/logging/show/mod.ts"
-    },
-    "./pkg": {
-      "types": "./src/pkg/mod.ts",
-      "import": "./src/pkg/mod.ts"
     },
     "./result": {
       "types": "./src/result/mod.ts",
@@ -175,11 +188,27 @@
       "types": "./src/ui/assets/mod.ts",
       "import": "./src/ui/assets/mod.ts"
     },
+    "./ui/assets/css/*.css": "./src/ui/assets/css/*.css",
     "./ui/assets/glyphs": {
       "types": "./src/ui/assets/glyphs.ts",
       "import": "./src/ui/assets/glyphs.ts"
     },
-    "./ui/assets/css/*.css": "./src/ui/assets/css/*.css",
+    "./ui/chrome": {
+      "types": "./src/ui/chrome/mod.ts",
+      "import": "./src/ui/chrome/mod.ts"
+    },
+    "./ui/chrome/client": {
+      "types": "./src/ui/chrome/client.ts",
+      "import": "./src/ui/chrome/client.ts"
+    },
+    "./ui/client": {
+      "types": "./src/ui/client/mod.ts",
+      "import": "./src/ui/client/mod.ts"
+    },
+    "./ui/client/htmx": {
+      "types": "./src/ui/client/htmx.ts",
+      "import": "./src/ui/client/htmx.ts"
+    },
     "./ui/contracts": {
       "types": "./src/ui/contracts/mod.ts",
       "import": "./src/ui/contracts/mod.ts"
@@ -200,22 +229,6 @@
       "types": "./src/ui/core/client.ts",
       "import": "./src/ui/core/client.ts"
     },
-    "./ui/chrome": {
-      "types": "./src/ui/chrome/mod.ts",
-      "import": "./src/ui/chrome/mod.ts"
-    },
-    "./ui/chrome/client": {
-      "types": "./src/ui/chrome/client.ts",
-      "import": "./src/ui/chrome/client.ts"
-    },
-    "./ui/client": {
-      "types": "./src/ui/client/mod.ts",
-      "import": "./src/ui/client/mod.ts"
-    },
-    "./ui/client/htmx": {
-      "types": "./src/ui/client/htmx.ts",
-      "import": "./src/ui/client/htmx.ts"
-    },
     "./ui/design/*.md": "./src/ui/design/*.md",
     "./ui/server": {
       "types": "./src/ui/server/mod.ts",
@@ -232,10 +245,6 @@
     "./validation": {
       "types": "./src/validation/mod.ts",
       "import": "./src/validation/mod.ts"
-    },
-    "./validation/cli": {
-      "types": "./src/validation/cli/mod.ts",
-      "import": "./src/validation/cli/mod.ts"
     }
   },
   "files": [
@@ -251,7 +260,6 @@
     "src/http/",
     "src/jsx/",
     "src/logging/",
-    "src/pkg/",
     "src/result/",
     "src/router/",
     "src/security/",

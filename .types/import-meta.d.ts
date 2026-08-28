@@ -6,4 +6,7 @@ interface ImportMeta {
   /** True only in the module the process was launched with. False in every module reached by an
    *  `import`, which is what lets a test import a validator without running it. */
   readonly main: boolean;
+  /** The directory holding this module, already a filesystem path — what `fileURLToPath(dirname(url))`
+   *  would produce, without the two conversions. */
+  readonly dir: string;
 }

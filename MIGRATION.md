@@ -277,7 +277,7 @@ in.
 - **Three generator signatures moved with it** (`@y-core/forge/ui/contracts/theme`): `scaleVars(family,
   solid, alpha)` is now `scaleVars(family, scales)` and returns twelve pairs rather than twenty-four;
   `stepProperty(family, step)` drops its `kind` parameter; and `schemeCss` emits one `:root` block and
-  adds `--accent-contrast`. `MODE_SELECTOR` (`@y-core/forge/pkg`) is now `MODE_LABEL`, carrying a mode
+  adds `--accent-contrast`. `MODE_SELECTOR` (`@y-core/forge/cli/pkg`) is now `MODE_LABEL`, carrying a mode
   word rather than a selector.
 
 ```bash

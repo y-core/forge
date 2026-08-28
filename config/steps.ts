@@ -1,13 +1,13 @@
 /** The single source of truth for what forge's verification gate runs, and each check's config.
  *
- *  Loaded by `forge-verify` through its default export. Every step is a pre-built builder from the
+ *  Loaded by `forge verify` through its default export. Every step is a pre-built builder from the
  *  `pkg` namespace; a step with no `fullOnly` runs in every mode.
  */
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
-import { resolveAppRoot } from "../src/cli/mod";
+import { resolveAppRoot } from "../src/cli/core/mod";
 import {
   browserStep,
   changelogStep,
@@ -26,13 +26,13 @@ import {
   ssrBoundaryStep,
   testStep,
   typecheckStep,
-} from "../src/pkg/mod";
+} from "../src/cli/pkg/mod";
 import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
 import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 
 // Derived from this file's location, never `process.cwd()`, so the table resolves the same paths
-// whichever directory `forge-verify` was invoked from. forge cannot use `resolveAppRoot`'s derived
+// whichever directory `forge verify` was invoked from. forge cannot use `resolveAppRoot`'s derived
 // branch: it has no `node_modules/@y-core/forge` above its own source.
 /** Repository root. */
 export const ROOT = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url)), ".."));

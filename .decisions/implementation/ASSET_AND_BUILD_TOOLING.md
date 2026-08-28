@@ -158,7 +158,7 @@ const at build time (§6), and a glyph's inner markup at runtime is
 
 ## 4. cli Namespace
 
-Signatures, worked examples, and the full flag-parsing table live in `src/cli/README.md`. This
+Signatures, worked examples, and the full flag-parsing table live in `src/cli/core/README.md`. This
 section carries only the decisions behind them.
 
 ### 4a. Commands Are Values
@@ -175,7 +175,7 @@ spawning themselves.
 **A gate or build verb is therefore a factory, not a script.** `createReleaseCommand` (§5a) and
 `createGateCommand` (§5f) both return a command from a config whose first field is `cwd`; the
 `bin.ts` a package script points at resolves `cwd` and calls `execute`. Both ship from
-`@y-core/forge/pkg` — a factory reachable only from a repository's own binding is a script
+`@y-core/forge/cli/pkg` — a factory reachable only from a repository's own binding is a script
 wearing a factory's clothes.
 
 ### 4b. Flags Are a Typed Record
@@ -285,7 +285,7 @@ argument overrides the scan, and is rejected unless it is greater than the curre
 
 ### 5c. Git and Manifest Internals
 
-**The git and `package.json` helpers in `src/pkg/internal/` are unpublished.** They exist to
+**The git and `package.json` helpers in `src/cli/pkg/internal/` are unpublished.** They exist to
 serve the two command factories and nothing else. A consumer that needs `git tag` has `git`; what
 forge publishes is the *policy* over it — the ordered, refusing release command — not a thin
 `execFileSync` wrapper it would have to reimplement the policy around. `checkExports` enforces
@@ -337,12 +337,12 @@ remote must still be able to release. A first release omits it too: a compare li
 worse than none. Reading the URL from `git remote get-url` was rejected — it breaks in a clone
 with a renamed remote, and it puts a subprocess on a path that is otherwise pure metadata.
 
-**`src/pkg/release/changelog.ts` returns its failures instead of throwing, diverging from the
+**`src/cli/pkg/release/changelog.ts` returns its failures instead of throwing, diverging from the
 `ReleaseError` style of the rest of the namespace.** The divergence is the gate's doing: §5e must
 report every malformed heading in one run, and an exception stops at the first. The module is
 also import-free — no clock, no filesystem, no git — so `release.ts` converts a returned failure
 into a `ReleaseError` at its own boundary and the file I/O lives with the other readers in
-`src/pkg/internal/pkg-json.ts`.
+`src/cli/pkg/internal/pkg-json.ts`.
 
 ### 5e. Changelog Gate Invariants
 
@@ -351,7 +351,7 @@ into a `ReleaseError` at its own boundary and the file I/O lives with the other 
 would fail every work-in-progress commit; `verify --full` runs exactly where the invariant bites,
 before `prepublishOnly` and before a tag exists.
 
-**It imports the parser from `src/pkg/mod.ts` rather than adding a second changelog parser.**
+**It imports the parser from `src/cli/pkg/mod.ts` rather than adding a second changelog parser.**
 Release needs the same grammar to promote with, and two parsers for one document is precisely
 the drift the gate exists to catch. One parser, two callers.
 
@@ -381,7 +381,7 @@ whole design: five repositories share the selection logic, the fail-fast orderin
 probe and the full-log file, while each keeps its own steps as its own source of truth — forge's in
 `config/steps.ts` (see [`TESTING.md`](../governance/TESTING.md) §6a).
 
-**The bin is the entry point; the factory is the escape hatch.** `forge-verify` resolves
+**The bin is the entry point; the factory is the escape hatch.** `forge verify` resolves
 `config/steps.ts` (or `--config`) and delegates to `createGateCommand`, so a project needs no
 binding file of its own. The factory stays published for the case the bin cannot serve — a table
 assembled at run time, or a gate embedded in a larger CLI.
@@ -409,7 +409,7 @@ that invoke tools as `bun x biome` need a different prefix, and one config field
 five forks of the runner. The temp-directory prefix behind the full-log file stays hardcoded —
 configuring it would be surface for nothing.
 
-**The formatters in `src/pkg/gate/report.ts` stay unpublished.** Publishing them would freeze the
+**The formatters in `src/cli/pkg/gate/report.ts` stay unpublished.** Publishing them would freeze the
 exact glyphs and wording of every gate line across five repositories, and would hand the next
 repository the parts to build an alternate runner from — the fork this consolidation removed.
 
@@ -488,7 +488,7 @@ varied from a test — folded into `installedAppRoot` it would be unassertable.
 states it.** A `file:` dependency installs as symlinks into the forge checkout and every runtime
 resolves `import.meta.url` to the realpath, so this module reports itself under `src/cli/` with no
 `node_modules` segment left to split on. The derivation returns `undefined`, correctly: the path
-has stopped naming the consumer. Every `forge-assets` command therefore carries `--root`, falling
+has stopped naming the consumer. Every `forge assets` command therefore carries `--root`, falling
 back to `FORGE_APP_ROOT`, with an empty value treated as absent so an exported-but-unset variable
 cannot resolve every path against `/`. This is the *stated* branch, not a third one — reading
 through the symlink is the walk this section rules out, and it would answer for a `file:`
@@ -512,7 +512,7 @@ A check is built in layers, and the **prefix states which one a function is**:
 | `format*` | pure | findings → strings. |
 
 `check*` is the only entry point a consumer needs; the rest are the seams that make one assertable
-without a filesystem or a subprocess. `src/pkg/mod.ts` is authoritative over which checks are
+without a filesystem or a subprocess. `src/cli/pkg/mod.ts` is authoritative over which checks are
 published, and this document enumerates none of them.
 
 **`ok` is derived from the findings, never passed.** `checkResult(findings, summary)` computes it,
@@ -533,7 +533,7 @@ and the config it runs with.
 
 ## 6. Generated Assets Module
 
-**The build's real product is a TypeScript file.** `buildAll` and `forge-assets types` both end by
+**The build's real product is a TypeScript file.** `buildAll` and `forge assets types` both end by
 writing one module — carrying the manifest mapping, one `viewBox` const per sprite group, one
 bound icon component per group, and the glyph-name union those components are typed on.
 Everything the runtime knows about the build, it knows by importing that module; nothing reads the
@@ -543,7 +543,7 @@ output directory. `src/assets/README.md` owns how to author against it.
 Every content hash in it churns on each production build, so committing it would put a file no
 human edits into every diff and would let a stale copy typecheck green against assets absent from
 the current build. A consuming app aliases it as `@assets` and regenerates it with
-`forge-assets types`.
+`forge assets types`.
 
 ### 6a. The Ordered Stages and the Two Codegen Passes
 
@@ -557,7 +557,7 @@ properties of the order are decisions rather than incidents:
 - **Cursors run after CSS.** Baking a cursor value means reading the emitted stylesheet for the
   custom properties it resolved, so the CSS stage must have produced a file the manifest can name.
 
-The first pass is why a *clean* checkout still typechecks: `forge-assets types` (§6b) writes the
+The first pass is why a *clean* checkout still typechecks: `forge assets types` (§6b) writes the
 same module from the config alone, so `tsc`/`tsgo` never depends on a toolchain having run.
 
 ### 6b. Build and Types Artifacts Are Shape-Identical

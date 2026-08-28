@@ -5,17 +5,54 @@
 // Node's Buffer extends Uint8Array; declare minimally so execSync return type resolves.
 declare type Buffer = Uint8Array;
 
+// A stdin/stdout stream, declared only as far as the prompt in `cli/sync` needs it: whether a
+// terminal is attached, and something readline can be handed.
+interface NodeStdioStream {
+  readonly isTTY?: boolean;
+  readonly columns?: number;
+}
+
 declare module "node:process" {
   export const argv: string[];
   export const env: Record<string, string | undefined>;
   export function exit(code?: number): never;
+
+  // The object form, needed for `process.exitCode = n` — a settable property a named import
+  // cannot express, since imported bindings are read-only.
+  interface Process {
+    argv: string[];
+    env: Record<string, string | undefined>;
+    exitCode?: number;
+    readonly pid: number;
+    readonly stdin: NodeStdioStream;
+    readonly stdout: NodeStdioStream;
+    readonly stderr: NodeStdioStream;
+    cwd(): string;
+    exit(code?: number): never;
+  }
+  const process: Process;
+  export default process;
 }
 
 declare const process: {
   exit(code?: number): never;
   cwd(): string;
   env: Record<string, string | undefined>;
+  exitCode?: number;
+  readonly pid: number;
+  readonly stdin: NodeStdioStream;
+  readonly stdout: NodeStdioStream;
+  readonly stderr: NodeStdioStream;
 };
+
+// The promise-returning readline, used for the one confirmation `forge sync --rotate` asks.
+declare module "node:readline/promises" {
+  interface Interface {
+    question(query: string): Promise<string>;
+    close(): void;
+  }
+  export function createInterface(options: { input: NodeStdioStream; output: NodeStdioStream }): Interface;
+}
 
 interface PathApi {
   readonly sep: string;
@@ -53,8 +90,13 @@ declare module "node:fs" {
   export function readFileSync(path: string, encoding: "utf-8"): string;
   export function writeFileSync(path: string, data: string | Uint8Array): void;
   export function writeFileSync(path: string, data: string, encoding: "utf-8"): void;
+  // The options form, for a file that must be created with a restrictive mode.
+  export function writeFileSync(path: string, data: string, options: { encoding: "utf-8"; mode: number }): void;
   export function existsSync(path: string | URL): boolean;
+  export function chmodSync(path: string, mode: number): void;
   export interface Stats {
+    mode: number;
+    size: number;
     isDirectory(): boolean;
     isFile(): boolean;
   }

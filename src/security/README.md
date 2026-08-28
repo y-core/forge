@@ -73,7 +73,7 @@ Headers set on every response:
 
 | Header | Value |
 |---|---|
-| `Content-Security-Policy` | Strict policy — `default-src 'self'`, `style-src 'self'` (no `'unsafe-inline'`), `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `upgrade-insecure-requests`, plus your directives |
+| `Content-Security-Policy` | Strict policy — `default-src 'self'`, `style-src`/`font-src` defaulting to `'self'` and extensible via `styleSrc`/`fontSrc` (never `'unsafe-inline'`), `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `upgrade-insecure-requests`, plus your directives |
 | `Strict-Transport-Security` | `max-age=<hstsMaxAge>; includeSubDomains; preload` (default `hstsMaxAge` = `63072000`) |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `X-Content-Type-Options` | `nosniff` |
@@ -91,6 +91,8 @@ Headers set on every response:
 | `connectSrc` | `CspSourceValue[]` | `["'self'"]` | CSP `connect-src` |
 | `frameSrc` | `CspSourceValue[]` | `["'self'"]` | CSP `frame-src` |
 | `imgSrc` | `CspSourceValue[]` | `["'self'", "data:"]` | CSP `img-src` |
+| `styleSrc` | `CspSourceValue[]` | `["'self'"]` | CSP `style-src` — widen for a web-font CDN stylesheet |
+| `fontSrc` | `CspSourceValue[]` | `["'self'"]` | CSP `font-src` — widen for a web-font CDN's font files |
 | `workerSrc` | `CspSourceValue[]` | — | Emitted only when provided |
 | `childSrc` | `CspSourceValue[]` | — | Emitted only when provided |
 | `hstsMaxAge` | `number` | `63072000` | HSTS `max-age` in seconds |
@@ -99,7 +101,7 @@ Headers set on every response:
 | `crossOriginResourcePolicy` | `"same-origin" \| "same-site" \| "cross-origin"` | `"same-origin"` | CORP; loosen for embeddable assets/APIs |
 | `crossOriginEmbedderPolicy` | `"require-corp" \| "credentialless"` | — (not emitted) | COEP; opt-in only |
 
-The factory rejects empty or whitespace-only directive source entries (which would silently break the policy) by throwing at construction time.
+Every string source in every directive must be a single CSP source token: non-empty, and free of whitespace, `;`, `,` and control characters — a malformed entry silently breaks the whole policy, so it throws instead. `'unsafe-inline'` is rejected outright, case-insensitively, in every directive. The `NONCE` symbol is exempt (it is not a string). Both `createSecurityHeaders` (at construction) and `applySecurityHeaders` (per call) apply the rule.
 
 ```typescript
 import { createSecurityHeaders, NONCE, TURNSTILE_CSP, type SecurityHeadersOptions } from "@y-core/forge/security";
@@ -122,6 +124,16 @@ A `unique symbol` placeholder. Place it in a CSP directive's source array (`scri
 ### `TURNSTILE_CSP`
 
 The Cloudflare Turnstile CDN origin (`"https://challenges.cloudflare.com"`) as a typed constant. Add it to `scriptSrc`, `connectSrc`, and `frameSrc` when Turnstile is active, rather than hardcoding the string.
+
+### Widening `style-src` / `font-src`
+
+Both default to `["'self'"]` and take a source list like any other directive, for a third-party stylesheet or font host. `mergeSecurityHeaders` concatenates them, and a directive the base omits falls back to its default before the concatenation — so merging `{ styleSrc: ["https://cdn.example.com"] }` onto a base that never mentioned `styleSrc` yields `style-src 'self' https://cdn.example.com`, keeping the app's own stylesheet.
+
+```typescript
+const withCdnSheet = mergeSecurityHeaders(headers, { styleSrc: ["https://cdn.example.com"] });
+```
+
+> **For web fonts, prefer self-hosting over widening** — the asset pipeline's `fonts.downloads` fetches at build time and serves same-origin, needing no CSP change at all ([`../assets/README.md`](../assets/README.md)); why a font CDN is the wrong default is [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §2e's.
 
 ### `getNonce(context)`
 
@@ -163,7 +175,7 @@ const withNonce = applySecurityHeaders(page, { scriptSrc: ["'self'", NONCE], non
 
 ### `mergeSecurityHeaders(base, extra)`
 
-Layers extra CSP sources onto a base `SecurityHeadersOptions`, concatenating each directive's source list (and shallow-merging `permissionsPolicy`, overriding `hstsMaxAge`). The canonical use is adding dev-only sources — such as the Wrangler live-reload inline-script hash — in the dev worker entry only, so they cannot leak into production by construction.
+Layers extra CSP sources onto a base `SecurityHeadersOptions`, concatenating each directive's source list (and shallow-merging `permissionsPolicy`, overriding `hstsMaxAge`). A directive the base omits falls back to its default before the concatenation, so merging onto a partial base never drops `'self'` or the nonce placeholder; `workerSrc` and `childSrc` have no default and stay absent unless one side provides them. The canonical use is adding dev-only sources — such as the Wrangler live-reload inline-script hash — in the dev worker entry only, so they cannot leak into production by construction.
 
 ```typescript
 import { mergeSecurityHeaders } from "@y-core/forge/security";
@@ -323,7 +335,9 @@ Pure function. Parses a URL string into `ParsedUrl` (`{ origin, hostname, protoc
 
 ### `deriveAllowedOrigins(parsed, options?)`
 
-Computes the allowed-origin list for a `ParsedUrl`. Always includes the base origin; pass `{ includeWww: true }` to also add the `www.`-prefixed variant for non-`www` hostnames.
+Computes the allowed-origin list for a `ParsedUrl`. Always includes the base origin; pass `{ includeWww: true }` to also add the `www.`-prefixed variant for non-`www` hostnames. The variant carries the base origin's port, so a `BASE_URL` on a non-default port grants the `www` host on that same port and nothing else.
+
+`{ extraOrigins: [...] }` appends further origins after those. Each entry must be a **normalized origin** — exactly what a browser puts in an `Origin` header, so no path, no trailing slash, no credentials, no redundant default port — and must be `https:` or an `http://localhost` / `http://127.0.0.1` loopback, the same rule `BaseUrlConfigSchema` applies. Anything else throws, which for a dev entrypoint is boot time. An entry already in the list is dropped, so passing the base origin back in is harmless.
 
 ```typescript
 import { parseUrl, deriveAllowedOrigins } from "@y-core/forge/security";
@@ -331,7 +345,15 @@ import { parseUrl, deriveAllowedOrigins } from "@y-core/forge/security";
 const parsed = parseUrl("https://example.com");
 const origins = deriveAllowedOrigins(parsed, { includeWww: true });
 // ["https://example.com", "https://www.example.com"]
+
+deriveAllowedOrigins(parseUrl("https://example.com:8443"), { includeWww: true });
+// ["https://example.com:8443", "https://www.example.com:8443"]
+
+// dev worker entry only — browser at https://localhost:8787, no proxy in front
+deriveAllowedOrigins(parseUrl(env.BASE_URL), { extraOrigins: ["https://localhost:8787"] });
 ```
+
+> **Dev entrypoints only.** There is no env var for `extraOrigins` — extras arrive as a parameter from a dev worker entry that production never imports, so the production bundle structurally contains no extra origin, exactly as with the live-reload CSP hash above. Under the standard posture dev is https at every hop and no extra origin is needed at all; see [Dev is https at every hop](#dev-is-https-at-every-hop).
 
 ### `BaseUrlConfigSchema`
 
@@ -353,7 +375,7 @@ This namespace is **transport-layer only**. The guards below are the building bl
 
 ### CSP nonces vs. inline scripts
 
-`createSecurityHeaders` emits a strict CSP with **no `'unsafe-inline'`** for either `script-src` or `style-src`. Every inline `<script>` must carry the per-request nonce from `getNonce(c)`; inline `style=` attributes are dropped by the JSX renderer because the policy forbids them. A static nonce defeats the mechanism — the factory always mints a fresh one per request.
+`createSecurityHeaders` emits a strict CSP with **no `'unsafe-inline'`** for either `script-src` or `style-src`. Both `style-src` and `font-src` default to `'self'` and are extensible via the `styleSrc`/`fontSrc` options — widening them to a CDN origin never introduces `'unsafe-inline'`. Every inline `<script>` must carry the per-request nonce from `getNonce(c)`; inline `style=` attributes are dropped by the JSX renderer because the policy forbids them. A static nonce defeats the mechanism — the factory always mints a fresh one per request.
 
 ### CSRF defense lives in two places
 
@@ -443,6 +465,12 @@ The hash cannot reach production because production never imports the dev entry.
 
 `BaseUrlConfigSchema` collapses environment configuration into one source of truth: validate `BASE_URL` once at boot, then feed `allowedOrigins` into every origin-aware guard (`cors`, `originGuard`, `originProtection`). Because `originProtection.allowedOrigins` accepts a resolver, you can keep the parsed config on the context and resolve per request, so a single env change updates CORS, origin guards, and cross-origin protection together.
 
+### Dev is https at every hop
+
+**Symptom:** every write in local development 403s, while the same code is fine in production. The origin guards compare origins by exact string, so a dev server speaking `http` behind a TLS-terminating proxy rejects the browser's `https` origin — its own forms included.
+
+**What to do:** serve https at every hop in dev — the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `extraOrigins` only in the proxy-less case. The ruling, including why the scheme is never patched up in middleware and why HSTS and `Secure` cookies stay hardcoded, is [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §3f's.
+
 ---
 
 ## See also
@@ -451,5 +479,5 @@ The hash cannot reach production because production never imports the dev entry.
 - [`@y-core/forge/session`](../session/) — session cookies and middleware
 - [`@y-core/forge/http`](../http/) — `safeUrl` URL sanitization, response fragments
 - [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) — the header
-  factory and its nonce contract (§2), origin-guard tiering (§3e), rate-limit key selection (§4d),
-  and the Cloudflare header trust boundary (§5c)
+  factory and its nonce contract (§2), origin-guard tiering (§3e), the https-everywhere dev posture
+  (§3f), rate-limit key selection (§4d), and the Cloudflare header trust boundary (§5c)

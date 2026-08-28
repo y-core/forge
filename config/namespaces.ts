@@ -1,12 +1,13 @@
-import type { EdgeKind } from "../src/pkg/mod";
+import type { EdgeKind } from "../src/cli/pkg/mod";
 
 /** Namespaces any other namespace may import without that import counting as an edge. */
 export const PRIMITIVES: readonly string[] = ["context", "crypto", "result", "validation"];
 
 /** Namespaces declared to have zero cross-namespace edges beyond the primitives above. */
 export const LEAF: readonly string[] = [
+  "assets",
   "assets/manifest",
-  "cli",
+  "cli/term",
   "config",
   "context",
   "form",
@@ -24,14 +25,17 @@ export const LEAF: readonly string[] = [
 /** Every declared cross-namespace edge: source → target → whether it survives type erasure. */
 export const EDGES: Record<string, Record<string, EdgeKind>> = {
   app: { config: "value", form: "value", http: "value", logging: "value", security: "value" },
-  assets: { "assets/build": "value", cli: "value" },
   "assets/build": { assets: "type" },
+  "cli/assets": { assets: "value", "assets/build": "value", "cli/core": "value" },
+  "cli/cfgen": { "cli/core": "value" },
+  "cli/core": { "cli/term": "value" },
+  "cli/pkg": { "cli/core": "value", "cli/term": "value" },
+  "cli/sync": { "cli/core": "value", "cli/term": "value" },
   jsx: { http: "value" },
   // Type-only on purpose: `storage/kv → logging` is the runtime edge, so a value import here would
   // close a real cycle.
   logging: { "storage/kv": "type" },
   "logging/show": { "html/htmx": "value", http: "value", jsx: "value", logging: "value", "ui/core": "value" },
-  pkg: { cli: "value" },
   security: { logging: "value" },
   "storage/db": { logging: "value" },
   "storage/kv": { logging: "value" },
@@ -55,5 +59,4 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "ui/core": "value",
     "ui/server": "value",
   },
-  "validation/cli": { cli: "value" },
 };

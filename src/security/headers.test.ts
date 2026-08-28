@@ -6,6 +6,9 @@ import { applySecurityHeaders, createSecurityHeaders, getNonce, mergeSecurityHea
 import { NONCE } from "./nonce";
 import type { SecurityHeadersOptions } from "./types";
 
+const tokenMessage = (name: string) =>
+  `Invalid CSP directive "${name}": source entries must be single CSP source tokens (no whitespace, ';', ',' or control characters)`;
+
 async function headersFor(middleware: ReturnType<typeof createSecurityHeaders>) {
   const app = new Forge();
   app.use("*", middleware);
@@ -90,6 +93,18 @@ describe("createSecurityHeaders — custom options", () => {
     expect(csp).toContain("embed.example.com");
   });
 
+  it("overrides styleSrc", async () => {
+    const headers = await headersFor(createSecurityHeaders({ styleSrc: ["'self'", "https://fonts.googleapis.com"] }));
+    const csp = headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("style-src 'self' https://fonts.googleapis.com;");
+  });
+
+  it("overrides fontSrc", async () => {
+    const headers = await headersFor(createSecurityHeaders({ fontSrc: ["'self'", "https://fonts.gstatic.com"] }));
+    const csp = headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("font-src 'self' https://fonts.gstatic.com;");
+  });
+
   it("overrides cross-origin-opener-policy for popup flows", async () => {
     const headers = await headersFor(createSecurityHeaders({ crossOriginOpenerPolicy: "same-origin-allow-popups" }));
     expect(headers.get("cross-origin-opener-policy")).toBe("same-origin-allow-popups");
@@ -113,6 +128,62 @@ describe("createSecurityHeaders — directive validation", () => {
 
   it("throws on a whitespace-only connect-src entry", () => {
     expect(() => createSecurityHeaders({ connectSrc: ["   "] })).toThrow();
+  });
+
+  it("throws on an empty style-src entry", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["'self'", ""] })).toThrow();
+  });
+
+  it("throws on an empty font-src entry", () => {
+    expect(() => createSecurityHeaders({ fontSrc: ["'self'", ""] })).toThrow();
+  });
+
+  it("names the directive and the non-empty rule for a whitespace-only entry", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["   "] })).toThrow(
+      'Invalid CSP directive "styleSrc": source entries must be non-empty strings',
+    );
+  });
+
+  it("rejects a source smuggling a second directive after a semicolon", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["'self'; script-src-elem 'unsafe-inline'"] })).toThrow(tokenMessage("styleSrc"));
+  });
+
+  it("rejects a scriptSrc source smuggling a second directive after a semicolon", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'self'; script-src-elem 'unsafe-inline'"] })).toThrow(tokenMessage("scriptSrc"));
+  });
+
+  it("rejects a source carrying an internal space", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["'self' 'unsafe-inline'"] })).toThrow(tokenMessage("styleSrc"));
+  });
+
+  it("rejects a source carrying a CRLF header break", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["'self'\r\nx-injected: 1"] })).toThrow(tokenMessage("styleSrc"));
+  });
+
+  it("rejects a source carrying a comma", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["https://a.example,https://b.example"] })).toThrow(tokenMessage("styleSrc"));
+  });
+
+  it("rejects 'unsafe-inline' outright", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["'unsafe-inline'"] })).toThrow(
+      `Invalid CSP directive "styleSrc": 'unsafe-inline' is never permitted`,
+    );
+  });
+
+  it("rejects 'unsafe-inline' spelled in upper case", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["'UNSAFE-INLINE'"] })).toThrow(
+      `Invalid CSP directive "styleSrc": 'unsafe-inline' is never permitted`,
+    );
+  });
+
+  it("rejects 'unsafe-inline' on scriptSrc", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'self'", "'unsafe-inline'"] })).toThrow(
+      `Invalid CSP directive "scriptSrc": 'unsafe-inline' is never permitted`,
+    );
+  });
+
+  it("accepts the NONCE placeholder, which is not a string source", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'self'", NONCE] })).not.toThrow();
   });
 });
 
@@ -191,6 +262,18 @@ describe("applySecurityHeaders", () => {
     expect(hardened.headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains; preload");
   });
 
+  it("validates its directives at call time, not only at factory time", () => {
+    expect(() => applySecurityHeaders(new Response("ok"), { styleSrc: ["'self'; script-src-elem 'unsafe-inline'"], nonce: "n" })).toThrow(
+      tokenMessage("styleSrc"),
+    );
+  });
+
+  it("rejects 'unsafe-inline' passed straight to the response hardener", () => {
+    expect(() => applySecurityHeaders(new Response("ok"), { scriptSrc: ["'unsafe-inline'"], nonce: "n" })).toThrow(
+      `Invalid CSP directive "scriptSrc": 'unsafe-inline' is never permitted`,
+    );
+  });
+
   it("preserves status, statusText, body, and pre-existing headers", async () => {
     const original = new Response("teapot body", { status: 418, statusText: "I'm a teapot", headers: { "x-custom": "kept" } });
     const hardened = applySecurityHeaders(original, { nonce: "n" });
@@ -260,6 +343,33 @@ describe("mergeSecurityHeaders", () => {
     const base = { scriptSrc: ["'self'"] };
     mergeSecurityHeaders(base, { scriptSrc: ["'sha256-abc='"] });
     expect(base.scriptSrc).toEqual(["'self'"]);
+  });
+
+  it("concatenates styleSrc and fontSrc onto a base list", () => {
+    const base: SecurityHeadersOptions = { styleSrc: ["'self'"], fontSrc: ["'self'"] };
+    const merged = mergeSecurityHeaders(base, { styleSrc: ["https://fonts.googleapis.com"], fontSrc: ["https://fonts.gstatic.com"] });
+    expect(merged.styleSrc).toEqual(["'self'", "https://fonts.googleapis.com"]);
+    expect(merged.fontSrc).toEqual(["'self'", "https://fonts.gstatic.com"]);
+  });
+
+  it("falls back to the styleSrc default when the base omits the directive", () => {
+    expect(mergeSecurityHeaders({}, { styleSrc: ["https://cdn.example.com"] }).styleSrc).toEqual(["'self'", "https://cdn.example.com"]);
+  });
+
+  it("retains 'self' and the nonce placeholder when the base omits scriptSrc", () => {
+    expect(mergeSecurityHeaders({}, { scriptSrc: ["https://cdn.example.com"] }).scriptSrc).toEqual(["'self'", NONCE, "https://cdn.example.com"]);
+  });
+
+  it("keeps workerSrc default-free, emitting exactly the extra sources", () => {
+    expect(mergeSecurityHeaders({}, { workerSrc: ["blob:"] }).workerSrc).toEqual(["blob:"]);
+  });
+
+  it("keeps childSrc default-free, emitting exactly the extra sources", () => {
+    expect(mergeSecurityHeaders({}, { childSrc: ["https://embed.example.com"] }).childSrc).toEqual(["https://embed.example.com"]);
+  });
+
+  it("falls back to the imgSrc default, which carries two sources", () => {
+    expect(mergeSecurityHeaders({}, { imgSrc: ["https://images.example.com"] }).imgSrc).toEqual(["'self'", "data:", "https://images.example.com"]);
   });
 
   it("overrides hstsMaxAge when provided", () => {

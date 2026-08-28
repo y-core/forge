@@ -4,6 +4,7 @@ import { render } from "../../testing/render";
 import { TURNSTILE_SCRIPT_SRC, TURNSTILE_SCRIPT_TIMEOUT_MS } from "../contracts/turnstile-contract";
 import { Turnstile } from "../core/turnstile";
 import { mount } from "./browser-test-helper";
+import { TURNSTILE_FOCUS_GUARD_MS } from "./turnstile";
 
 declare global {
   interface Window {
@@ -22,6 +23,8 @@ declare global {
     forgeTimers: { scheduled: number[]; fired: number[] };
     /** Reads of `window.turnstile` since the counter was last zeroed. */
     forgeTurnstileReads: { count: number };
+    /** What each focus-meddling fake did when its moment came, in the order it happened. */
+    turnstileFocusActs: string[];
   }
 }
 
@@ -46,6 +49,20 @@ function formMarkup(): Promise<string> {
   );
 }
 
+/** The same form with a second field, so a deliberate move has somewhere legitimate to land. */
+function twoFieldFormMarkup(): Promise<string> {
+  return render(
+    jsx("form", {
+      id: "form",
+      children: [
+        jsx("input", { id: "field", name: "email" }),
+        jsx("input", { id: "field-b", name: "name" }),
+        Turnstile({ siteKey: "site-key", size: "normal" }),
+      ],
+    }),
+  );
+}
+
 /** Two independent forms, each with its own `<Turnstile>` — what a page with two widgets renders. */
 function twoFormsMarkup(): Promise<string> {
   const form = (id: string, field: string, siteKey: string, size: "compact" | "normal") =>
@@ -53,13 +70,74 @@ function twoFormsMarkup(): Promise<string> {
   return render(jsx("div", { children: [form("form", "field", "key-a", "normal"), form("form-b", "field-b", "key-b", "compact")] }));
 }
 
+/** The same, with the focus grab Cloudflare's widget performs as it mounts. */
+const FAKE_SCRIPT_STEALING_FOCUS = `${FAKE_SCRIPT}
+  var render = window.turnstile.render;
+  window.turnstile.render = function (el, params) {
+    var id = render(el, params);
+    var inner = document.createElement('input');
+    inner.id = 'widget-inner';
+    el.appendChild(inner);
+    inner.focus();
+    return id;
+  };
+`;
+
+/** Grabs focus into the widget `delay` ms after `render` returned, recording whether the grab landed. */
+const stealsFocusAfter = (delay: number) => `${FAKE_SCRIPT}
+  window.turnstileFocusActs = [];
+  var renderThenSteal = window.turnstile.render;
+  window.turnstile.render = function (el, params) {
+    var id = renderThenSteal(el, params);
+    var inner = document.createElement('input');
+    inner.id = 'widget-inner';
+    el.appendChild(inner);
+    setTimeout(function () {
+      inner.focus();
+      window.turnstileFocusActs.push(document.activeElement === inner ? 'stole' : 'missed');
+    }, ${delay});
+    return id;
+  };
+`;
+
+/** The grab Cloudflare's widget performs a tick after `render` has already returned. */
+const FAKE_SCRIPT_STEALING_FOCUS_ASYNC = stealsFocusAfter(50);
+
+/** The same grab, arriving long after the guard window has closed. */
+const FAKE_SCRIPT_STEALING_FOCUS_LATE = stealsFocusAfter(TURNSTILE_FOCUS_GUARD_MS + 1000);
+
+/** Drops focus asynchronously instead of taking it, which lands the document on `body`. */
+const FAKE_SCRIPT_BLURRING_FOCUS_ASYNC = `${FAKE_SCRIPT}
+  window.turnstileFocusActs = [];
+  var renderThenBlur = window.turnstile.render;
+  window.turnstile.render = function (el, params) {
+    var id = renderThenBlur(el, params);
+    setTimeout(function () {
+      var held = document.activeElement;
+      if (held && held.blur) held.blur();
+      window.turnstileFocusActs.push(document.activeElement === document.body ? 'blurred' : 'missed');
+    }, 50);
+    return id;
+  };
+`;
+
+type ScriptOutcome = "ok" | "abort" | "hang" | "steals-focus" | "steals-focus-async" | "steals-focus-late" | "blurs-focus-async";
+
+const FAKE_SCRIPT_BODIES: Record<Exclude<ScriptOutcome, "abort" | "hang">, string> = {
+  ok: FAKE_SCRIPT,
+  "steals-focus": FAKE_SCRIPT_STEALING_FOCUS,
+  "steals-focus-async": FAKE_SCRIPT_STEALING_FOCUS_ASYNC,
+  "steals-focus-late": FAKE_SCRIPT_STEALING_FOCUS_LATE,
+  "blurs-focus-async": FAKE_SCRIPT_BLURRING_FOCUS_ASYNC,
+};
+
 /** Serve the fake Cloudflare script, and seed the recorder so assertions never read `undefined`. */
-async function serveScript(page: Page, outcome: "ok" | "abort" | "hang" = "ok"): Promise<void> {
+async function serveScript(page: Page, outcome: ScriptOutcome = "ok"): Promise<void> {
   await page.route(TURNSTILE_SCRIPT_SRC, async (route) => {
     if (outcome === "abort") return route.abort();
     // "hang": never answer, so neither `load` nor `error` fires and only the timeout can resolve it.
     if (outcome === "hang") return;
-    return route.fulfill({ contentType: "application/javascript", body: FAKE_SCRIPT });
+    return route.fulfill({ contentType: "application/javascript", body: FAKE_SCRIPT_BODIES[outcome] });
   });
 }
 
@@ -208,6 +286,145 @@ test.describe("mountTurnstile — rendering", () => {
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
     expect(await page.evaluate(() => window.turnstileCalls.renders[0]?.theme)).toBe("dark");
+  });
+});
+
+test.describe("mountTurnstile — the engaged field keeps focus", () => {
+  test("restores focus to the field whose own focus triggered the load", async ({ page }) => {
+    await serveScript(page, "steals-focus");
+    await mount(page, await formMarkup(), EXPOSE);
+    await mountController(page);
+
+    // A real focus, not a synthetic `focusin`: the steal only reproduces when the browser is
+    // actually holding focus on the field the user clicked into.
+    await page.locator("#field").focus();
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("field");
+    await page.locator("#field").pressSequentially("typed@example.com");
+    expect(await page.locator("#field").inputValue()).toBe("typed@example.com");
+  });
+});
+
+test.describe("mountTurnstile — the post-render focus guard", () => {
+  const focusState = (page: Page) => page.evaluate(() => ({ acts: window.turnstileFocusActs ?? [], focused: document.activeElement?.id ?? null }));
+
+  const renderCount = (page: Page) => page.evaluate(() => window.turnstileCalls?.renders.length ?? 0);
+
+  test("restores focus when the widget grabs it a tick after render returned", async ({ page }) => {
+    await serveScript(page, "steals-focus-async");
+    await mount(page, await formMarkup(), EXPOSE);
+    await mountController(page);
+
+    await page.locator("#field").focus();
+
+    await expect.poll(() => focusState(page)).toEqual({ acts: ["stole"], focused: "field" });
+  });
+
+  test("restores focus when the widget asynchronously drops it onto the body", async ({ page }) => {
+    await serveScript(page, "blurs-focus-async");
+    await mount(page, await formMarkup(), EXPOSE);
+    await mountController(page);
+
+    await page.locator("#field").focus();
+
+    await expect.poll(() => focusState(page)).toEqual({ acts: ["blurred"], focused: "field" });
+  });
+
+  test("honours a deliberate move to another field and stays armed", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page);
+    await mount(page, await twoFieldFormMarkup(), EXPOSE);
+    await countTimerFirings(page);
+    await mountController(page);
+    await page.locator("#field").focus();
+    await expect.poll(() => renderCount(page)).toBe(1);
+
+    await page.locator("#field-b").focus();
+    await page.clock.fastForward(10);
+
+    expect(await timersAt(page, 0)).toEqual({ scheduled: 1, fired: 1 });
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("field-b");
+    expect(await timersAt(page, TURNSTILE_FOCUS_GUARD_MS)).toEqual({ scheduled: 1, fired: 0 });
+  });
+
+  test("honours a deliberate move made after the guard window has closed", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page);
+    await mount(page, await twoFieldFormMarkup(), EXPOSE);
+    await countTimerFirings(page);
+    await mountController(page);
+    await page.locator("#field").focus();
+    await expect.poll(() => renderCount(page)).toBe(1);
+
+    await page.clock.fastForward(TURNSTILE_FOCUS_GUARD_MS + 1000);
+    expect(await timersAt(page, TURNSTILE_FOCUS_GUARD_MS)).toEqual({ scheduled: 1, fired: 1 });
+
+    await page.locator("#field-b").focus();
+    await page.clock.fastForward(10);
+
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("field-b");
+  });
+
+  test("restores to the field the user moved to, not the one that triggered the load", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page, "steals-focus-async");
+    await mount(page, await twoFieldFormMarkup(), EXPOSE);
+    await mountController(page);
+    await page.locator("#field").focus();
+    await expect.poll(() => renderCount(page)).toBe(1);
+
+    await page.locator("#field-b").focus();
+    await page.clock.fastForward(10);
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("field-b");
+
+    await page.clock.fastForward(100);
+    await page.clock.fastForward(10);
+
+    await expect.poll(() => focusState(page)).toEqual({ acts: ["stole"], focused: "field-b" });
+  });
+
+  test("leaves a grab arriving after the guard window with the widget", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page, "steals-focus-late");
+    await mount(page, await formMarkup(), EXPOSE);
+    await mountController(page);
+    await page.locator("#field").focus();
+    await expect.poll(() => renderCount(page)).toBe(1);
+
+    await page.clock.fastForward(TURNSTILE_FOCUS_GUARD_MS + 1100);
+    await page.clock.fastForward(10);
+
+    await expect.poll(() => focusState(page)).toEqual({ acts: ["stole"], focused: "widget-inner" });
+  });
+
+  test("cleanup disarms the guard before its window elapses", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page);
+    await mount(page, await formMarkup(), EXPOSE);
+    // Instrumented here and not a line earlier: see `countTimerFirings`.
+    await countTimerFirings(page);
+    await mountController(page);
+    await page.locator("#field").focus();
+    await expect.poll(() => renderCount(page)).toBe(1);
+    expect(await timersAt(page, TURNSTILE_FOCUS_GUARD_MS)).toEqual({ scheduled: 1, fired: 0 });
+
+    await page.evaluate(() => window.turnstileCleanup?.());
+    await page.clock.fastForward(TURNSTILE_FOCUS_GUARD_MS + 1000);
+
+    expect(await timersAt(page, TURNSTILE_FOCUS_GUARD_MS)).toEqual({ scheduled: 1, fired: 0 });
+  });
+
+  test("honours a click into the widget once the guard has spent its one restore", async ({ page }) => {
+    await serveScript(page, "steals-focus-async");
+    await mount(page, await formMarkup(), EXPOSE);
+    await mountController(page);
+    await page.locator("#field").focus();
+    await expect.poll(() => focusState(page)).toEqual({ acts: ["stole"], focused: "field" });
+
+    await page.locator("#widget-inner").focus();
+
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("widget-inner");
   });
 });
 

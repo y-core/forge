@@ -92,7 +92,12 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/assets` | `src/assets/mod.ts` | `defineAssetsConfig`, `loadConfig`, `AssetsConfig` |
 | `@y-core/forge/assets/build` | `src/assets/build/mod.ts` | `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets` |
 | `@y-core/forge/assets/manifest` | `src/assets/manifest/mod.ts` | `createManifest`, `createSpriteRegistry` |
-| `@y-core/forge/cli` | `src/cli/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError` |
+| `@y-core/forge/cli` | `src/cli/core/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError` |
+| `@y-core/forge/cli/assets` | `src/cli/assets/mod.ts` | `createAssetsCommands` — the `forge assets` subtree; imports `cli/core`, `assets`, `assets/build` |
+| `@y-core/forge/cli/cfgen` | `src/cli/cfgen/mod.ts` | `createGenEnv`, `readWranglerConfig`, `emit` — imports `cli` |
+| `@y-core/forge/cli/pkg` | `src/cli/pkg/mod.ts` | project tooling, both verbs — the release command factory and the gate command factory, with their step presets and transforms. The git/manifest helpers and the gate's formatters are `@internal` ([`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) §5c, §5f) |
+| `@y-core/forge/cli/sync` | `src/cli/sync/mod.ts` | `createSyncCommand`, `syncBindings`, `loadWranglerConfig`, `createCfClient`, the resource handlers — the `forge sync` subtree; imports `cli/core` |
+| `@y-core/forge/cli/term` | `src/cli/term/mod.ts` | `stringWidth`, `truncate`, `wrapLines`, `padAlign`, `terminalWidth`, `renderGrid`, `definitionList`, `BORDERS`, `resolveColorLevel`, `createColorize`, `PLAIN` — terminal rendering, and a sink: it imports `node:process` and nothing else in this repository, so `cli/{core,pkg,sync}` may import it and it may import none of them |
 | `@y-core/forge/config` | `src/config/mod.ts` | `Config`, `createConfig`, `env`, `resolveConfig` |
 | `@y-core/forge/context` | `src/context/mod.ts` | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
 | `@y-core/forge/form` | `src/form/mod.ts` | `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `isHoneypotFilled`, `verifyTurnstile`, `formToObject` — `formToObject` reads a body into a plain object; applying a schema to it is `defineAction`'s |
@@ -104,7 +109,6 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/http` | `src/http/mod.ts` | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `htmlResponse`, `fragmentResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
 | `@y-core/forge/logging` | `src/logging/mod.ts` | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withRedaction`, `requestLogger`, `requestLog` |
 | `@y-core/forge/logging/show` | `src/logging/show/mod.ts` | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
-| `@y-core/forge/pkg` | `src/pkg/mod.ts` | project tooling, both verbs — the release command factory and the gate command factory, with their step presets and transforms. The git/manifest helpers and the gate's formatters are `@internal` ([`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) §5c, §5f) |
 | `@y-core/forge/result` | `src/result/mod.ts` | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
 | `@y-core/forge/router` | `src/router/mod.ts` | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
 | `@y-core/forge/security` | `src/security/mod.ts` | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
@@ -129,7 +133,6 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/ui/show` | `src/ui/show/mod.ts` | `ShowcaseContent`, `registerShowcase`, `showcaseRoutes` |
 | `@y-core/forge/ui/show/client` | `src/ui/show/client.ts` | showcase browser controller registration |
 | `@y-core/forge/validation` | `src/validation/mod.ts` | `v` (valibot facade), `ValidationResult` |
-| `@y-core/forge/validation/cli` | `src/validation/cli/mod.ts` | `createGenEnv`, `readWranglerConfig`, `emit` — imports `cli` |
 
 ### 3b. Internal Namespaces
 
@@ -178,9 +181,16 @@ That file is authoritative for the graph, and this document enumerates none of i
 for that inversion is stated at the head of the file. What stays here is why a classification
 holds, which is the part prose is better at.
 
-**A directory is a namespace only when it owns an export subpath.** `src/assets/cli/` has none,
-so it is part of `assets` and its `cli` import is `assets`' edge. Classifying by directory instead
-of by subpath reports namespaces the package does not have, and edges nobody can import.
+**A directory is a namespace only when it owns an export subpath.** `src/cli/root/` has none — it
+is the `forge` binary's assembly and nothing imports it — so it belongs to no namespace and
+contributes no edges. Classifying by directory instead of by subpath reports namespaces the package
+does not have, and edges nobody can import.
+
+**`cli` is a container, not a namespace.** `./cli` resolves to `src/cli/core/mod.ts`, so the
+kernel's namespace is `cli/core` and each command layer beside it — `cli/pkg`, `cli/sync`,
+`cli/assets`, `cli/cfgen` — is its own. Keeping the kernel in `core/` rather than at `src/cli/` is
+what makes that work: `resolveNamespaces` matches by longest directory prefix, so a `cli` namespace
+rooted at `src/cli/` would swallow every one of them.
 
 **A type-only import still counts as an edge.** It is erased at emit and so cannot create a
 runtime cycle (§2), but it is a coupling that a rename breaks, so it is declared with its kind
@@ -200,7 +210,7 @@ in `config/namespaces.ts` (`EDGES`) as source, target and kind**; an undeclared
 cross-namespace import is a defect, and so is a declared edge no source file makes. Imports of §4c
 primitives are not edges and are not declared.
 
-`src/pkg/gate/checks/namespace-graph.ts` walks `src/**`, builds the observed graph and diffs it
+`src/cli/pkg/gate/checks/namespace-graph.ts` walks `src/**`, builds the observed graph and diffs it
 against that declaration, so an undeclared import, a stale declaration, and a leaf that quietly
 gained an edge each fail the gate rather than passing unnoticed. Three properties of the walk are
 load-bearing and not self-evident:

@@ -35,8 +35,15 @@ declare module "bun:test" {
   export function expect(value?: any): any;
 
   type TestFn = () => void | Promise<void>;
+  interface TestCase {
+    (name: string, fn: TestFn, timeout?: number): void;
+    /** Skips the case when the condition holds — how a test that needs a file outside the
+     *  repository declines to run rather than failing on a clean checkout. */
+    skipIf(condition: boolean): (name: string, fn: TestFn, timeout?: number) => void;
+    todo(name: string, fn?: TestFn, timeout?: number): void;
+  }
   export function describe(name: string, fn: () => void): void;
-  export const it: (name: string, fn: TestFn, timeout?: number) => void;
+  export const it: TestCase;
   export const test: typeof it;
   export function beforeAll(fn: TestFn, timeout?: number): void;
   export function afterAll(fn: TestFn, timeout?: number): void;

@@ -77,16 +77,15 @@ test.describe("the four components that used to be inert without script", () => 
   });
 
   test("ToggleGroup: single selection is exclusive and submits the chosen value", async ({ page }) => {
-    const html =
-      (await render(
-        ToggleGroup({
-          "aria-label": "Align",
-          children: [
-            ToggleGroup.Item({ name: "align", value: "left", pressed: true, children: "L" }),
-            ToggleGroup.Item({ name: "align", value: "right", children: "R" }),
-          ],
-        }),
-      )) + '<button id="go" type="submit">Go</button>';
+    const html = `${await render(
+      ToggleGroup({
+        "aria-label": "Align",
+        children: [
+          ToggleGroup.Item({ name: "align", value: "left", pressed: true, children: "L" }),
+          ToggleGroup.Item({ name: "align", value: "right", children: "R" }),
+        ],
+      }),
+    )}<button id="go" type="submit">Go</button>`;
     await mountWithoutScript(page, html);
 
     await page.locator('[data-slot~="toggle-group-item"]', { hasText: "R" }).click();
@@ -115,17 +114,16 @@ test.describe("the four components that used to be inert without script", () => 
   });
 
   test("ToggleGroup: type=multiple submits every chosen value", async ({ page }) => {
-    const html =
-      (await render(
-        ToggleGroup({
-          type: "multiple",
-          "aria-label": "Overlays",
-          children: [
-            ToggleGroup.Item({ type: "multiple", name: "overlay", value: "grid", pressed: true, children: "Grid" }),
-            ToggleGroup.Item({ type: "multiple", name: "overlay", value: "rulers", children: "Rulers" }),
-          ],
-        }),
-      )) + '<button id="go" type="submit">Go</button>';
+    const html = `${await render(
+      ToggleGroup({
+        type: "multiple",
+        "aria-label": "Overlays",
+        children: [
+          ToggleGroup.Item({ type: "multiple", name: "overlay", value: "grid", pressed: true, children: "Grid" }),
+          ToggleGroup.Item({ type: "multiple", name: "overlay", value: "rulers", children: "Rulers" }),
+        ],
+      }),
+    )}<button id="go" type="submit">Go</button>`;
     await mountWithoutScript(page, html);
 
     await page.locator('[data-slot~="toggle-group-item"]', { hasText: "Rulers" }).click();

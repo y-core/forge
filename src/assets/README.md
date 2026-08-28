@@ -2,7 +2,7 @@
 
 Asset pipeline for `@y-core/forge` consumer projects — the namespace family that turns a typed `assets.config.ts` into hashed, cache-busted, production-ready static output plus a generated, fully-typed asset module.
 
-The pipeline bundles JavaScript with esbuild, compiles Tailwind CSS, assembles SVG sprite sheets, downloads fonts, rasterises favicons/PWA icons, and copies static files — then emits a `.forge/assets.ts` module that maps every logical asset name to its content-hashed path. Consumer apps drive it through the `forge-assets` CLI binary; library code consumes the runtime helpers (`createManifest`, `createSpriteRegistry`) at request time.
+The pipeline bundles JavaScript with esbuild, compiles Tailwind CSS, assembles SVG sprite sheets, downloads fonts, rasterises favicons/PWA icons, and copies static files — then emits a `.forge/assets.ts` module that maps every logical asset name to its content-hashed path. Consumer apps drive it through the `forge assets` CLI binary; library code consumes the runtime helpers (`createManifest`, `createSpriteRegistry`) at request time.
 
 The namespace splits into three import paths plus one CLI binary:
 
@@ -11,7 +11,7 @@ The namespace splits into three import paths plus one CLI binary:
 | `@y-core/forge/assets` | `src/assets/mod.ts` | Config authoring + types for consumer apps (`defineAssetsConfig`, `env`, `flag`, `loadConfig`) |
 | `@y-core/forge/assets/build` | `src/assets/build/mod.ts` | Build pipeline functions (`buildAll`, `buildJS`, `buildCSS`, `buildSprites`, …) |
 | `@y-core/forge/assets/manifest` | `src/assets/manifest/mod.ts` | Runtime manifest + sprite lookups (`createManifest`, `createSpriteRegistry`) |
-| `forge-assets` (bin) | `src/assets/cli/bin.ts` | CLI wrapper around the build pipeline |
+| `forge assets` (bin) | `src/cli/assets/bin.ts` | CLI wrapper around the build pipeline |
 
 See [`.decisions/implementation/ASSET_AND_BUILD_TOOLING.md`](../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) for the authoritative architecture.
 
@@ -26,7 +26,7 @@ See [`.decisions/implementation/ASSET_AND_BUILD_TOOLING.md`](../../.decisions/im
 - **Favicon / PWA icons** — `buildIcons` rasterises a master SVG (via `sharp`) into SVG, PNG, ICO, and a web-app `manifest.json`.
 - **Font downloads** — `buildFonts` fetches remote fonts into the public directory with on-disk caching.
 - **Content hashing** — with `minify: true`, every emitted file gets an 8-char SHA-256 stem (`styles.abc12345.css`) and an immutable `_headers` cache rule is written.
-- **Generated typed module** — `buildAll` writes `.forge/assets.ts` exporting an `assets` manifest plus per-sprite-group typed `*Icon` components. `forge-assets types` emits the same module from config alone, so a clean checkout can typecheck and test without running a build.
+- **Generated typed module** — `buildAll` writes `.forge/assets.ts` exporting an `assets` manifest plus per-sprite-group typed `*Icon` components. `forge assets types` emits the same module from config alone, so a clean checkout can typecheck and test without running a build.
 - **Path-containment safety** — `safeJoin` guards every config-supplied output path against escaping the asset root.
 - **Incremental state** — `loadState`/`hasChanged`/`markBuilt`/`saveState` track per-file hashes for watch-mode skip logic.
 
@@ -99,10 +99,10 @@ export default defineAssetsConfig({
 
 ```bash
 # Build everything and write .forge/assets.ts
-forge-assets build all
+forge assets build all
 
 # Production build: minified + content-hashed filenames + _headers
-forge-assets build all --minify
+forge assets build all --minify
 ```
 
 ### 3. Consume the generated module at runtime
@@ -259,17 +259,17 @@ assets.path("unknown.png"); // "/assets/unknown.png" (pass-through fallback)
 
 ### CLI commands
 
-The `forge-assets` binary (`src/assets/cli/bin.ts`) exposes a nested command tree built on `@y-core/forge/cli`. Every command calls `loadConfig(flags.config, process.env)` first.
+The `forge assets` binary (`src/cli/assets/bin.ts`) exposes a nested command tree built on `@y-core/forge/cli`. Every command calls `loadConfig(flags.config, process.env)` first.
 
 | Command | Builds | Flags |
 |---|---|---|
-| `forge-assets build all` | Full pipeline + generated module | `--minify`, `--config <path>`, `--out <path>` |
-| `forge-assets build css` | Tailwind CSS only | `--minify`, `--config <path>` |
-| `forge-assets build js` | esbuild bundles only | `--minify`, `--config <path>` |
-| `forge-assets build fonts` | Font downloads only | `--config <path>` |
-| `forge-assets build icons` | Favicon/PWA icons only | `--config <path>` |
-| `forge-assets sprites` | SVG sprite sheets only | `--minify`, `--config <path>` |
-| `forge-assets types` | Nothing — derives the generated module from config | `--config <path>`, `--out <path>` |
+| `forge assets build all` | Full pipeline + generated module | `--minify`, `--config <path>`, `--out <path>` |
+| `forge assets build css` | Tailwind CSS only | `--minify`, `--config <path>` |
+| `forge assets build js` | esbuild bundles only | `--minify`, `--config <path>` |
+| `forge assets build fonts` | Font downloads only | `--config <path>` |
+| `forge assets build icons` | Favicon/PWA icons only | `--config <path>` |
+| `forge assets sprites` | SVG sprite sheets only | `--minify`, `--config <path>` |
+| `forge assets types` | Nothing — derives the generated module from config | `--config <path>`, `--out <path>` |
 
 Flag notes:
 
@@ -279,7 +279,7 @@ Flag notes:
 | `--config` | string | Path to `assets.config.ts` (default: resolved from cwd) |
 | `--out` | string | Output path for the generated assets module (`build all` and `types`; default `.forge/assets.ts`) |
 
-Pass `--help` (or `-h`) at any level for generated help, e.g. `forge-assets build --help`.
+Pass `--help` (or `-h`) at any level for generated help, e.g. `forge assets build --help`.
 
 ### The generated module in typecheck and tests
 
@@ -293,10 +293,10 @@ build first closes the hole, but pays for it with the entire toolchain — `tail
 optionally `sharp`, and the network for font and remote-sprite fetches — none of which affects
 whether TypeScript compiles.
 
-`forge-assets types` is the cheap half. It derives the module from `assets.config.ts` alone:
+`forge assets types` is the cheap half. It derives the module from `assets.config.ts` alone:
 
 ```bash
-forge-assets types    # milliseconds; no tailwind, no esbuild, no sharp, no network
+forge assets types    # milliseconds; no tailwind, no esbuild, no sharp, no network
 ```
 
 Everything that carries **type** information is config-derived and reproduced exactly:
@@ -320,10 +320,10 @@ dev and deploy:
 ```json
 {
   "scripts": {
-    "build:assets": "forge-assets build all --minify",
-    "dev:assets": "forge-assets build all",
-    "typecheck": "forge-assets types && tsgo --noEmit",
-    "test": "forge-assets types && bun test"
+    "build:assets": "forge assets build all --minify",
+    "dev:assets": "forge assets build all",
+    "typecheck": "forge assets types && tsgo --noEmit",
+    "test": "forge assets types && bun test"
   }
 }
 ```
