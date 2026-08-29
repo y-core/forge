@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.0.90] — 2026-08-29
+
 ### Added
 
 - **`@y-core/forge/site` — the crawler and edge surface, derived from the route table.** A leaf
@@ -3261,6 +3267,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.0.90]: https://github.com/y-core/forge/compare/v0.0.89...v0.0.90
 [0.0.89]: https://github.com/y-core/forge/compare/v0.0.88...v0.0.89
 [0.0.88]: https://github.com/y-core/forge/compare/v0.0.87...v0.0.88
 [0.0.87]: https://github.com/y-core/forge/compare/v0.0.86...v0.0.87
