@@ -1,3 +1,4 @@
+import { SiteConfigSchema } from "../site/types";
 import { v } from "../validation/mod";
 
 /** A deferred read of a build-environment variable, resolved when a bundle's defines are resolved. @internal */
@@ -67,6 +68,13 @@ const FontDownloadSchema = v.object({ url: v.string(), to: v.string() });
 
 const PathsConfigSchema = v.object({ sourceDir: v.optional(v.string()), publicDir: v.optional(v.string()), publicPrefix: v.optional(v.string()) });
 
+// `outDir` is the asset-tree root, not `paths.publicDir` — `robots.txt` and `sitemap.xml` are only
+// meaningful at the root of the origin. This mirrors `icons`, the one other block allowed there.
+const SiteBuildConfigSchema = v.object({ outDir: v.string(), config: SiteConfigSchema });
+
+/** The files a configured `site` block writes into its `outDir`. @public */
+export const SITE_OUTPUTS: readonly string[] = ["robots.txt", "sitemap.xml"];
+
 export const AssetsConfigSchema = v.object({
   paths: v.optional(PathsConfigSchema),
   js: v.optional(v.object({ bundles: v.optional(v.array(JsBundleSchema)) })),
@@ -76,6 +84,7 @@ export const AssetsConfigSchema = v.object({
   fonts: v.optional(v.object({ downloads: v.optional(v.array(FontDownloadSchema)) })),
   icons: v.optional(IconsConfigSchema),
   cursors: v.optional(CursorsConfigSchema),
+  site: v.optional(SiteBuildConfigSchema),
 });
 
 export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
@@ -94,6 +103,8 @@ export type IconOutput = v.InferOutput<typeof IconOutputSchema>;
 export type IconsConfig = v.InferOutput<typeof IconsConfigSchema>;
 export type CursorSource = v.InferOutput<typeof CursorSourceSchema>;
 export type CursorsConfig = v.InferOutput<typeof CursorsConfigSchema>;
+/** Where the generated `robots.txt` and `sitemap.xml` are written, and the site config they render from. @public */
+export type SiteBuildConfig = v.InferOutput<typeof SiteBuildConfigSchema>;
 export type AssetsConfig = v.InferInput<typeof AssetsConfigSchema>;
 
 export interface ResolvedPaths {
@@ -111,4 +122,5 @@ export interface ResolvedConfig {
   fonts: { downloads: FontDownload[] };
   icons: IconsConfig | null;
   cursors: CursorsConfig | null;
+  site: SiteBuildConfig | null;
 }

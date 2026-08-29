@@ -2,6 +2,7 @@
  *  writing a spawnable file per check. Labels are fixed: they are the `--only` tokens.
  */
 
+import { type AssetRootCheckConfig, checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
 import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
 import { type CoLocationCheckConfig, checkCoLocation } from "./checks/co-location";
@@ -83,6 +84,11 @@ export function exportsStep(config: ExportsCheckConfig, options: StepOptions = {
 /** Diffs the observed cross-namespace imports against the declared graph. @public */
 export function namespaceGraphStep(config: NamespaceGraphCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-namespace-graph", () => checkNamespaceGraph(config), options);
+}
+
+/** Diffs the files the assets pipeline writes to the asset root against the `run_worker_first` exclusions. @public */
+export function assetRootStep(config: AssetRootCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-asset-root", () => checkAssetRoot(config), options);
 }
 
 /** Checks every source module has a test beside it, so deleting one is loud rather than silent. @public */

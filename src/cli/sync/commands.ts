@@ -313,8 +313,7 @@ const SECTIONS: SectionSpec[] = [
   {
     title: "Provisioned by --commit",
     alias: "provision",
-    note: (prefix) =>
-      `Bindings created as ${prefix ? `${prefix}_<BINDING>` : "<BINDING>"} with the id written back into wrangler.jsonc`,
+    note: (prefix) => `Bindings created as ${prefix ? `${prefix}_<BINDING>` : "<BINDING>"} with the id written back into wrangler.jsonc`,
     types: ["kv_namespaces", "d1_databases", "r2_buckets", "queues"],
     withType: true,
   },

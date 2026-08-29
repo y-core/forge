@@ -35,3 +35,4 @@ export type { DeploymentTarget } from "./target";
 export { describeTarget, detectTarget } from "./target";
 export type { CfAuth, PrefixStrategy, ResourceType, SyncAction, SyncConfig, SyncNote, SyncOutput, SyncResult, WranglerConfig } from "./types";
 export { ACTION_LABELS, RESOURCE_TYPES } from "./types";
+export { createSyncZoneCommand, planZoneRules, rulesInSync } from "./zone";

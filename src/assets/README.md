@@ -25,7 +25,8 @@ See [`.decisions/implementation/ASSET_AND_BUILD_TOOLING.md`](../../.decisions/im
 - **SVG sprite sheets** — `buildSprites` normalises and sanitises source SVGs into `<symbol>` entries inside a single hidden `<svg>`, propagating root presentation attributes and emitting per-symbol `viewBox` metadata.
 - **Favicon / PWA icons** — `buildIcons` rasterises a master SVG (via `sharp`) into SVG, PNG, ICO, and a web-app `manifest.json`.
 - **Font downloads** — `buildFonts` fetches remote fonts into the public directory with on-disk caching.
-- **Content hashing** — with `minify: true`, every emitted file gets an 8-char SHA-256 stem (`styles.abc12345.css`) and an immutable `_headers` cache rule is written.
+- **Content hashing** — with `minify: true`, every emitted file gets an 8-char SHA-256 stem (`styles.abc12345.css`), and the `_headers` cache rule switches from `no-cache` to immutable.
+- **Robots and sitemap** — `buildSite` renders `robots.txt` and `sitemap.xml` into the asset-tree root from a [`@y-core/forge/site`](../site/README.md) config, so a crawler costs the Worker no invocation.
 - **Generated typed module** — `buildAll` writes `.forge/assets.ts` exporting an `assets` manifest plus per-sprite-group typed `*Icon` components. `forge assets types` emits the same module from config alone, so a clean checkout can typecheck and test without running a build.
 - **Path-containment safety** — `safeJoin` guards every config-supplied output path against escaping the asset root.
 - **Incremental state** — `loadState`/`hasChanged`/`markBuilt`/`saveState` track per-file hashes for watch-mode skip logic.
@@ -214,7 +215,9 @@ Pass the union wherever a component is generic over its glyph names — `Toolbar
 
 `BuildOptions`: `{ minify?: boolean; assetsPath?: string }`. `assetsPath` defaults to `.forge/assets.ts`. `minify` toggles both esbuild/Tailwind minification **and** content hashing across the pipeline.
 
-`buildAll` runs in dependency order: CSS → JS → copy → sprites → fonts → icons → generate `.forge/assets.ts`. When `minify` is set it additionally writes a `_headers` file (sibling of `publicDir`) with an immutable `Cache-Control` rule for `/assets/*`.
+`buildAll` runs in dependency order: CSS → JS → copy → sprites → fonts → icons → site → generate `.forge/assets.ts`. It always writes a `_headers` file (sibling of `publicDir`) carrying a `Cache-Control` rule for `/assets/*`; `minify` only decides whether that value is `no-cache` or immutable.
+
+> **`_headers` is written wholesale.** `emitHeaders` truncates the file on every build, so a header rule for any other path — including the generated `robots.txt` and `sitemap.xml` — has to go through `emitHeaders` rather than a second writer.
 
 > **Output-directory ownership.** `buildJS`, `buildCSS`, and `buildSprites` clean their target directory on every run — `buildJS` removes all non-hidden files plus `chunks/` in each `outdir`, `buildCSS` removes all `.css` files in the output directory, and sprite builds remove all non-hidden `.svg` files. Never place hand-authored files alongside generated output; they will be deleted.
 

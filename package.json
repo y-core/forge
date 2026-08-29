@@ -168,6 +168,10 @@
       "types": "./src/session/mod.ts",
       "import": "./src/session/mod.ts"
     },
+    "./site": {
+      "types": "./src/site/mod.ts",
+      "import": "./src/site/mod.ts"
+    },
     "./storage/db": {
       "types": "./src/storage/db/mod.ts",
       "import": "./src/storage/db/mod.ts"
@@ -264,6 +268,7 @@
     "src/router/",
     "src/security/",
     "src/session/",
+    "src/site/",
     "src/storage/",
     "src/testing/",
     "src/ui/",

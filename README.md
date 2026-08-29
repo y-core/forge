@@ -57,6 +57,7 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/router` | Declarative route config | [src/router/README.md](src/router/README.md) |
 | `@y-core/forge/security` | Transport-layer hardening | [src/security/README.md](src/security/README.md) |
 | `@y-core/forge/session` | Session + cookie management | [src/session/README.md](src/session/README.md) |
+| `@y-core/forge/site` | Robots, sitemap & zone rules | [src/site/README.md](src/site/README.md) |
 | `@y-core/forge/storage/db` | D1 database client | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/storage/kv` | Workers KV typed store | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/storage/r2` | R2 object storage | [src/storage/README.md](src/storage/README.md) |

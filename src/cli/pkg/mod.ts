@@ -1,5 +1,6 @@
 export type { SourceStepOptions, StepOptions } from "./gate/builders";
 export {
+  assetRootStep,
   browserStep,
   changelogStep,
   coLocationStep,
@@ -16,6 +17,8 @@ export {
   testStep,
   typecheckStep,
 } from "./gate/builders";
+export type { AssetRootCheckConfig } from "./gate/checks/asset-root";
+export { checkAssetRoot } from "./gate/checks/asset-root";
 export {
   exportNamesFromLine,
   findPublicSymbols,

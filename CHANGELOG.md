@@ -17,7 +17,55 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`@y-core/forge/site` — the crawler and edge surface, derived from the route table.** A leaf
+  namespace of pure string and data transforms: `defineSiteConfig` / `SiteConfigSchema` /
+  `resolveSiteConfig` for the config, `renderRobotsTxt` and `renderSitemapXml` for the two
+  generated files, and `resolveSitemapEntries` for the filter-and-decorate step between them.
+  Parameterised and wildcard route patterns are dropped from a sitemap — there is no single URL
+  they stand for.
+
+  It takes a plain `string[]` of paths rather than a `RouteMap`, so the caller passes
+  `routePaths(routes, { method: "GET" })` and the namespace stays free of a `router` dependency.
+
+- **Zone expression builders in the same namespace.** `buildAllowRule` turns a served surface into
+  the Cloudflare custom rule that actions everything the surface does not account for, replacing a
+  hand-extended deny-list; `buildRedirectRule` emits a host-to-apex single redirect.
+  `RESERVED_PREFIXES` — `/cdn-cgi/` and `/.well-known/` — is unioned into every allow-list whether
+  the caller asks for it or not, because `/cdn-cgi/` serves Turnstile and filtering it takes down
+  every form on the site. Expressions are checked against Cloudflare's 4096-character per-rule
+  limit before the write rather than at the API.
+
+- **A `site` block in the assets config**, mirroring `icons` with its own root-legal `outDir`.
+  `buildAll` gains a `buildSite` step after `buildIcons`, emitting `robots.txt` and `sitemap.xml`
+  into the asset-tree root — so a crawler is served static bytes and costs the Worker no
+  invocation.
+
+- **`validate-asset-root`, a new gate step in `cloudflareWorkerSteps()`.** It compares the files
+  the assets pipeline writes into the asset-tree root (`icons.outputs`, plus the `site` block)
+  against the `!`-prefixed entries of `assets.run_worker_first`, which were previously kept in step
+  by hand. A missing exclusion fails — that is a Worker invocation bought for nothing, and a 404
+  for a generated file; a `!` entry naming nothing the pipeline emits only warns, since an app may
+  legitimately exclude a hand-authored file. The step runs only when both config paths are
+  supplied, and reuses the existing JSONC parser rather than adding a second one.
+
+- **`forge sync zone`** — a sibling subcommand reconciling a zone's `http_request_firewall_custom`
+  and `http_request_dynamic_redirect` entry point rulesets against the `zone` block of a
+  `config/site.ts`. Read-only by default, `--commit` writes, `--check` exits non-zero on drift for
+  the gate, `--json` for machine output. It reuses `createCfClient`, the `Result`-returning error
+  classification and the table renderer rather than adding a second stack. Credentials are
+  `CLOUDFLARE_ZONE_ID` + `CLOUDFLARE_API_TOKEN`, and the token needs both Zone WAF:Edit and
+  Dynamic Redirect:Edit — no single permission covers both phases.
+
+  `createCfClient` now takes `Pick<CfAuth, "apiToken">`: it authenticates and nothing more, so a
+  zone-scoped caller no longer has to invent an account id.
+
+- **Verified Cloudflare zone-ruleset surface**, recorded in `src/cli/sync/api/endpoints.ts`:
+  the phase-addressed entrypoint paths, the fact that `PUT` replaces the whole `rules` array, the
+  per-phase token permissions, and the phase ordering — `http_request_dynamic_redirect` runs
+  *before* `http_request_firewall_custom`, so a host redirect terminates before the WAF sees the
+  request.
 
 ---
 

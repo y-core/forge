@@ -54,6 +54,7 @@ describe("buildAll() — emitHeaders", () => {
           fonts: { downloads: [] },
           icons: null,
           cursors: null,
+          site: null,
         },
         { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
@@ -84,6 +85,7 @@ describe("buildAll() — emitHeaders", () => {
           fonts: { downloads: [] },
           icons: null,
           cursors: null,
+          site: null,
         },
         { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
@@ -128,6 +130,7 @@ describe("buildAll() — generated module available to the JS bundle", () => {
           fonts: { downloads: [] },
           icons: null,
           cursors: null,
+          site: null,
         },
         { minify: false, assetsPath: assetsModule },
       );
@@ -170,6 +173,7 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
         fonts: { downloads: [] },
         icons: null,
         cursors: null,
+        site: null,
       } satisfies ResolvedConfig;
 
       await buildAll(config, { minify: true, assetsPath: builtModule });
@@ -228,6 +232,7 @@ describe("generateAssetsTypes() — glyph-name union", () => {
       fonts: { downloads: [] },
       icons: null,
       cursors: null,
+      site: null,
     };
   }
 
@@ -302,6 +307,7 @@ describe("generateAssetsTypes() — derives from config alone", () => {
         },
         fonts: { downloads: [{ url: "https://example.invalid/inter.woff2", to: "fonts/inter.woff2" }] },
         icons: null,
+        site: null,
         cursors: {
           target: "cursors.css",
           themes: { light: ":root", dark: ".dark" },

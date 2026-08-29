@@ -7,6 +7,7 @@ import { buildCursors } from "./cursors";
 import { buildFonts } from "./fonts";
 import { buildIcons } from "./icons";
 import { buildJS } from "./js";
+import { buildSite } from "./site";
 import type { SpriteGroupResult } from "./sprites";
 import { buildSprites } from "./sprites";
 
@@ -46,6 +47,10 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
 
   if (config.icons) {
     await buildIcons(config.icons);
+  }
+
+  if (config.site) {
+    buildSite(config.site);
   }
 
   if (config.cursors) {

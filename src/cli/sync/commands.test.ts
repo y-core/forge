@@ -240,9 +240,7 @@ describe("printResults()", () => {
 
   it("names the convention without a prefix when there is none", () => {
     const lines = capture([PROVISIONED], WORKER, "");
-    expect(noteUnder(lines, "Provisioned by --commit")).toBe(
-      "Bindings created as <BINDING> with the id written back into wrangler.jsonc",
-    );
+    expect(noteUnder(lines, "Provisioned by --commit")).toBe("Bindings created as <BINDING> with the id written back into wrangler.jsonc");
   });
 
   it("spells each action for a reader rather than printing the enum", () => {
@@ -613,7 +611,7 @@ describe("--rotate and --local", () => {
   it("leaves the file untouched when it refuses", async () => {
     const config = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=keep-me\n`);
     const devVars = join(dirname(config), ".dev.vars");
-    await Promise.resolve(run({ local: true, commit: true, config, rotate: "SESSION_SECRET" })).catch(() => { });
+    await Promise.resolve(run({ local: true, commit: true, config, rotate: "SESSION_SECRET" })).catch(() => {});
     expect(readFileSync(devVars, "utf-8")).toContain("SESSION_SECRET=keep-me");
   });
 

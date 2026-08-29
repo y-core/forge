@@ -65,5 +65,6 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
     fonts: { downloads: parsed.fonts?.downloads ?? [] },
     icons: parsed.icons ?? null,
     cursors: parsed.cursors ?? null,
+    site: parsed.site ?? null,
   };
 }

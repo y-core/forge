@@ -113,6 +113,7 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/router` | `src/router/mod.ts` | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
 | `@y-core/forge/security` | `src/security/mod.ts` | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
 | `@y-core/forge/session` | `src/session/mod.ts` | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
+| `@y-core/forge/site` | `src/site/mod.ts` | `defineSiteConfig`, `resolveSiteConfig`, `SiteConfigSchema`, `renderRobotsTxt`, `renderSitemapXml`, `resolveSitemapEntries`, and the zone builders `buildAllowExpression` / `buildAllowRule` / `buildRedirectRule` with `RESERVED_PREFIXES` |
 | `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | the D1 client, its resolver and binding check, the `sql` tag and its guard, and the UUIDv7 set — which is implemented in `crypto` and surfaced here (§3b) |
 | `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
 | `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend` |

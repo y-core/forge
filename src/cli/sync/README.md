@@ -6,6 +6,7 @@ actually exists on the account, and provision what does not.
 ```sh
 forge sync                    # status: what is declared vs what is out there. Writes nothing
 forge sync --commit           # create the missing remotes, write the resolved ids back
+forge sync zone               # the same, for zone rules read from config/site.ts
 ```
 
 There is one command and two modes. `sync` on its own is the status report — it
@@ -162,12 +163,46 @@ The Workers token templates do **not** grant Cloudflare Pages, so a token that r
 a Worker's settings fails on a Pages project. Cloudflare returns one code for a
 rejected token and for a valid token missing a permission, so the row names both.
 
+## `forge sync zone` — zone rules, not account bindings
+
+`forge sync` reconciles **account** resources extracted from `wrangler.jsonc`. Zone rules are
+neither: a different scope, and a different config file. So `zone` is a sibling subcommand that
+reuses the client, the error classification, the table renderer and the read-only-by-default
+posture — not another `ResourceHandler`, whose `extract(config: WranglerConfig)` signature does
+not fit.
+
+```sh
+forge sync zone --config config/site.ts   # read-only report, the default
+forge sync zone --commit                  # writes the entry point rulesets
+forge sync zone --check                   # exit non-zero on drift, for the gate
+```
+
+It reads the `zone` block of a [`@y-core/forge/site`](../../site/README.md) config and reconciles
+two phase entry point rulesets: `http_request_firewall_custom` for the route-derived allow-list,
+and `http_request_dynamic_redirect` for a host-to-apex redirect.
+
+**A `PUT` replaces the phase's whole rule list.** A rule this config does not describe does not
+survive a `--commit` — including one authored by hand in the dashboard. That is the point of one
+source of truth, and it is also the thing to know before the first commit.
+
+**Sync before you push.** Allowing a path that does not exist yet is harmless; deploying a path
+that is not yet allowed is an outage, because the edge answers it before the Worker ever sees it.
+The order is always `forge sync zone --commit` → push → deploy. `--check` in the gate turns "you
+forgot" into a local failure, which is the only place it is cheap to catch.
+
+Credentials are `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN`, or `--zone-id` / `--api-token`.
+**No single permission covers both phases:** the firewall phase needs Zone → *Zone WAF: Edit*, the
+redirect phase Zone → *Dynamic Redirect: Edit*, and both need Zone → *Zone: Read*. This is a CLI
+credential, not a Worker secret — it belongs in `.dev.vars` unmarked, never behind
+`# foundry:push` and never in `vars`.
+
 ## Programmatic use
 
 ```ts
 import { createSyncCommand, syncBindings, loadWranglerConfig } from "@y-core/forge/cli/sync";
 ```
 
-`createSyncCommand()` returns the `Command` the `forge` binary attaches under `sync`; the rest of
+`createSyncCommand()` returns the `Command` the `forge` binary attaches under `sync`, and
+`createSyncZoneCommand()` the one attached beneath it; the rest of
 the barrel is the engine, the handler registry, the Cloudflare API client, and the JSONC
 round-trip writer, so an application can drive reconciliation without the command layer.

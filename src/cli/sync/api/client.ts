@@ -13,7 +13,10 @@ export interface CfClient {
   delete<T>(path: string): Promise<Result<T, CfApiClientError>>;
 }
 
-export function createCfClient(auth: CfAuth, fetchFn: typeof globalThis.fetch = globalThis.fetch): CfClient {
+// `Pick<…, "apiToken">`: the client authenticates and nothing more. Account scope lives in the
+// path a caller builds, so a zone-scoped command has no account id to offer and should not have to
+// invent one.
+export function createCfClient(auth: Pick<CfAuth, "apiToken">, fetchFn: typeof globalThis.fetch = globalThis.fetch): CfClient {
   async function requestEnvelope<T>(method: string, path: string, body?: unknown): Promise<Result<CfApiResponse<T>, CfApiClientError>> {
     let res: Response;
     try {

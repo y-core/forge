@@ -1,4 +1,4 @@
-import { changelogStep, docsStep, exportsStep, jsxStep, lintStep, testStep, typecheckStep } from "./builders";
+import { assetRootStep, changelogStep, docsStep, exportsStep, jsxStep, lintStep, testStep, typecheckStep } from "./builders";
 import type { ChangelogCheckConfig } from "./checks/changelog";
 import type { DocsCheckConfig } from "./checks/docs";
 import type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
@@ -25,6 +25,8 @@ export interface CloudflareWorkerStepOptions {
   workerConfig?: string;
   /** Whether to check `.decisions/governance/` against the pinned corpus. Defaults to `false`. */
   governance?: boolean;
+  /** Application root, needed by the asset-root check. Defaults to `process.cwd()`. */
+  root?: string;
 }
 
 /** The step table every Cloudflare Worker app in this fleet shares, in execution order. @public */
@@ -63,6 +65,12 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   }
 
   steps.push(testStep({ sources: tests }));
+
+  // Both halves of the coupling have to be present to compare them: the assets config names what is
+  // written to the asset root, the wrangler config names what the Worker is kept out of.
+  if (options.assetConfig !== undefined && options.workerConfig !== undefined) {
+    steps.push(assetRootStep({ root: options.root ?? process.cwd(), assetConfig: options.assetConfig, workerConfig: options.workerConfig }));
+  }
 
   return steps;
 }

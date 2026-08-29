@@ -15,8 +15,9 @@ export type {
   ResolvedConfig,
   ResolvedJsBundle,
   ResolvedPaths,
+  SiteBuildConfig,
   SpriteGroup,
   SpriteSource,
   Sprites,
 } from "./types";
-export { AssetsConfigSchema } from "./types";
+export { AssetsConfigSchema, SITE_OUTPUTS } from "./types";

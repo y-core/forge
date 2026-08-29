@@ -144,6 +144,87 @@ export const PAGES_SUPPORTED_CONFIG_FIELDS = [
 export const RATELIMIT_NAMESPACE_API = null;
 
 // ---------------------------------------------------------------------------
+// Zone rulesets (Ruleset Engine)
+// ---------------------------------------------------------------------------
+
+const zone = (zoneId: string) => `/zones/${encodeURIComponent(zoneId)}`;
+
+/**
+ * The **phase entry point ruleset** for a zone. GET reads the latest version;
+ * PUT replaces it.
+ *
+ * These are the only zone paths this tool addresses, and they are phase-addressed
+ * rather than id-addressed — no `GET /rulesets` listing step is needed to resolve
+ * an id, and an entry point ruleset that does not exist yet is created by the
+ * first write.
+ *
+ * **PUT replaces the whole `rules` array.** Any rule omitted from the body is
+ * deleted, which is exactly what makes reconciliation declarative and idempotent —
+ * and exactly why a hand-authored dashboard rule in the same phase does not
+ * survive a `--commit`. The additive `POST .../rulesets/{id}/rules` alternative is
+ * deliberately not used. Send only `description` and `rules`: `name` and `type`
+ * are not updatable and must be omitted.
+ *
+ * [D] developers.cloudflare.com/ruleset-engine/rulesets-api/update/ and
+ *     /ruleset-engine/rulesets-api/endpoints/ (2026-08-29). Sourced from
+ *     documentation, not from wrangler — wrangler does not speak to this API at
+ *     all — so the shapes here carry less weight than the [W]-marked ones above
+ *     and should be re-checked against a live response on first use.
+ */
+export const zoneRulesetEntrypoint = (zoneId: string, phase: string) => `${zone(zoneId)}/rulesets/phases/${encodeURIComponent(phase)}/entrypoint`;
+
+/**
+ * The two phases this tool writes, and the one fact about their order that
+ * changes a design decision.
+ *
+ * **`http_request_dynamic_redirect` runs before `http_request_firewall_custom`** —
+ * it is the *first* application-layer request phase, and custom rules sit nine
+ * phases later, after `ddos_l7`. A redirect is a terminating action, so a `www`
+ * request is answered with its 301 and never reaches the WAF at all.
+ *
+ * The consequence for the allow-list expression: the `http.host eq "<apex>"`
+ * clause is **defence in depth, not load-bearing**. It was specified on the
+ * assumption that the WAF might see `www` traffic first; it does not. Keep the
+ * clause — it scopes the rule to the host whose surface was actually enumerated —
+ * but do not treat its absence as an outage risk for the `www` redirect.
+ *
+ * `http_request_redirect` is a *different* phase (account-level Bulk Redirects)
+ * and is not the one single redirects use.
+ *
+ * [D] developers.cloudflare.com/ruleset-engine/reference/phases-list/ and
+ *     /waf/feature-interoperability/ (2026-08-29).
+ */
+export const ZONE_PHASES = {
+  /** Single Redirects. First application-layer request phase. */
+  redirect: "http_request_dynamic_redirect",
+  /** WAF custom rules. Runs after `ddos_l7`, before `http_ratelimit`. */
+  firewall: "http_request_firewall_custom",
+} as const;
+
+/**
+ * Plan limits a route-derived expression can actually reach, and the token
+ * permissions each phase needs.
+ *
+ * **Expression length is capped at 4096 characters per rule**, on every plan;
+ * exceeding it fails the write with code 20127 rather than truncating. This is
+ * the limit a generated allow-list grows into, so builders must check it before
+ * the request rather than letting the API reject the deploy.
+ *
+ * **Rule count per phase** is plan-scoped: 5 on Free, 20 on Pro, 100 on Business.
+ * A generated allow-list is one rule, so the ceiling that binds first is the
+ * expression length, not the count.
+ *
+ * **Token permissions** are per-phase and no single one covers both: the firewall
+ * phase needs Zone → *Zone WAF: Edit*, the redirect phase needs Zone →
+ * *Dynamic Redirect: Edit*. Both also need Zone → *Zone: Read*. One token may of
+ * course carry all three.
+ *
+ * [D] developers.cloudflare.com/waf/custom-rules/ and
+ *     /rules/url-forwarding/single-redirects/create-api/ (2026-08-29).
+ */
+export const ZONE_EXPRESSION_MAX_CHARS = 4096;
+
+// ---------------------------------------------------------------------------
 // Error envelopes
 // ---------------------------------------------------------------------------
 
