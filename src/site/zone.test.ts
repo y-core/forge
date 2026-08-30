@@ -88,4 +88,20 @@ describe("buildRedirectRule", () => {
   it("refuses a spec with no source host", () => {
     expect(() => buildRedirectRule({ from: [], apex: "example.com" })).toThrow(/no source host/);
   });
+
+  it("refuses a source outside the apex — this consolidates a zone, it is not a URL forwarder", () => {
+    expect(() => buildRedirectRule({ from: ["www.elsewhere.net"], apex: "example.com" })).toThrow(/not within "example.com"/);
+  });
+
+  it("refuses a source that merely ends in the apex without a label boundary", () => {
+    expect(() => buildRedirectRule({ from: ["notexample.com"], apex: "example.com" })).toThrow(/not within/);
+  });
+
+  it("refuses the apex itself, which would redirect to itself", () => {
+    expect(() => buildRedirectRule({ from: ["example.com"], apex: "example.com" })).toThrow(/apex itself/);
+  });
+
+  it("accepts a deeper subdomain", () => {
+    expect(buildRedirectRule({ from: ["old.www.example.com"], apex: "example.com" }).expression).toContain("old.www.example.com");
+  });
 });

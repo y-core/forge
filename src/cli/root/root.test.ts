@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createRootCommand } from "./root";
 
-const FIRST_PARTY = ["verify", "release", "sync", "assets", "gen-env"];
+// `verify` and `release` are bare verbs whose object is the repository; `cf` and `assets` are
+// domain nouns under which the verb and object are both named. That split is the tree's whole rule.
+const FIRST_PARTY = ["verify", "release", "cf", "assets"];
 const KERNEL = resolve(import.meta.dir, "../core/command.ts");
 
 /** A throwaway project root, optionally carrying a `config/commands.ts` declaring one command. */

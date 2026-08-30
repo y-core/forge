@@ -99,11 +99,25 @@ export function buildAllowRule(surface: ZoneSurface, options: AllowRuleOptions):
  * Builds the single-redirect rule that sends every `from` host to the apex, preserving the path
  * and query string.
  *
+ * **Every source must be a subdomain of the apex.** This rule consolidates a zone onto one
+ * hostname; it is not a general URL forwarder. A source outside the apex could never fire — the
+ * rule is deployed to the apex's own zone — and one *equal* to the apex is a redirect loop. Both
+ * are refused here rather than committed and discovered in production.
+ *
  * @public
  */
 export function buildRedirectRule(spec: RedirectSpec): ZoneRule {
   const hosts = unique(spec.from);
   if (hosts.length === 0) throw new Error("buildRedirectRule: no source host to redirect from.");
+
+  for (const host of hosts) {
+    if (host === spec.apex) throw new Error(`buildRedirectRule: "${host}" is the apex itself — that rule would redirect to itself.`);
+    if (!host.endsWith(`.${spec.apex}`)) {
+      throw new Error(
+        `buildRedirectRule: "${host}" is not within "${spec.apex}". This rule consolidates a zone onto its apex, so every source must be a subdomain of it.`,
+      );
+    }
+  }
 
   const expression = `(http.host in {${hosts.map(quote).join(" ")}})`;
   assertWithinLimit(expression, "buildRedirectRule");

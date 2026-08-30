@@ -5,6 +5,7 @@ export type {
   Changefreq,
   RedirectSpec,
   ResolvedSiteConfig,
+  ResolvedZoneConfig,
   ResolveSitemapOptions,
   RobotsConfig,
   RobotsRule,

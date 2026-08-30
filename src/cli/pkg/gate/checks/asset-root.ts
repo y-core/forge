@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { posix, relative, resolve } from "node:path";
 import { loadConfig } from "../../../../assets/config";
 import { SITE_OUTPUTS } from "../../../../assets/types";
-import { stripJsonc } from "../../../sync/config/jsonc";
+import { stripJsonc } from "../../../cf/config/jsonc";
 import { type CheckResult, checkResult, type Finding, fail, warn } from "../finding";
 
 /** What the asset-root check needs to find both halves of the coupling. @public */

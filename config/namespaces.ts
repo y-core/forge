@@ -30,13 +30,12 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   assets: { site: "value" },
   "assets/build": { assets: "value", site: "value" },
   "cli/assets": { assets: "value", "assets/build": "value", "cli/core": "value" },
-  "cli/cfgen": { "cli/core": "value" },
   "cli/core": { "cli/term": "value" },
-  // `assets` and `cli/sync` are the asset-root check's two halves: it loads the assets config to
-  // learn what is written to the asset tree's root, and reuses `cli/sync`'s JSONC parser to read the
+  // `assets` and `cli/cf` are the asset-root check's two halves: it loads the assets config to learn
+  // what is written to the asset tree's root, and reuses `cli/cf`'s JSONC parser to read the
   // wrangler exclusions it is compared against. Neither target reaches back into `cli/pkg`.
-  "cli/pkg": { assets: "value", "cli/core": "value", "cli/sync": "value", "cli/term": "value" },
-  "cli/sync": { "cli/core": "value", "cli/term": "value", site: "value" },
+  "cli/pkg": { assets: "value", "cli/cf": "value", "cli/core": "value", "cli/term": "value" },
+  "cli/cf": { "cli/core": "value", "cli/term": "value", site: "value" },
   jsx: { http: "value" },
   // Type-only on purpose: `storage/kv → logging` is the runtime edge, so a value import here would
   // close a real cycle.

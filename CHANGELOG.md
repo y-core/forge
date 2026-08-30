@@ -17,7 +17,34 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **`@y-core/forge/site`: `zone.apex` is now optional**, defaulting to the origin's hostname. A
+  consumer states the host once; stating it twice is how the two drift, and there is no case for a
+  zone whose apex is not the host the site declares itself served from. An explicit `apex` still
+  wins. `ResolvedSiteConfig.zone` is a new `ResolvedZoneConfig`, whose `apex` is required.
+
+- **`buildRedirectRule` now refuses a source host outside the apex.** It consolidates a zone onto
+  one hostname and is not a general URL forwarder: a source outside the apex could never fire —
+  the rule is deployed to the apex's own zone — and a source equal to the apex is a redirect loop.
+  Both are refused when the rule is built rather than discovered after a commit.
+
+- **`forge sync zone` no longer reports permanent drift on a rule it just wrote.** Rules were
+  compared with `JSON.stringify`, which is key-order sensitive: Cloudflare returns
+  `action_parameters` alphabetised and the builder composes them in another order, so a redirect
+  rule compared unequal to itself and `--check` failed on every run. Keys are now canonicalised
+  before comparison; array order is preserved, since a ruleset's rule order is meaningful.
+
+- **`forge sync zone` reports an auth failure honestly.** It previously said "token lacks
+  permission", which is a guess presented as a diagnosis: Cloudflare returns one code for a token
+  it rejects and for a valid token missing a permission, as `endpoints.ts` already recorded. The
+  row now names both possibilities and the code, and Cloudflare's own message is printed under the
+  table where it has the width to be read. `--json` carries it as `errorDetail`.
+
+- **`forge sync zone` credentials are environment-first.** `CLOUDFLARE_ZONE_ID` and
+  `CLOUDFLARE_API_TOKEN` are refused up front when unset, with a message that names the variable
+  rather than reporting a downstream auth failure. The flags remain for a one-off, but a value on a
+  command line lands in shell history.
 
 ---
 

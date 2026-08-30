@@ -83,7 +83,7 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
   it("emits the asset step with --out, since the emitter writes nothing useful without one", () => {
     const assets = cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }).find((s) => s.label === "types:assets");
 
-    expect(assets?.cmd).toEqual(["forge", "assets", "types", "--config", "src/assets/config.ts", "--out", ".forge/assets.ts"]);
+    expect(assets?.cmd).toEqual(["forge", "assets", "gen", "types", "--config", "src/assets/config.ts", "--out", ".forge/assets.ts"]);
   });
 
   it("lets an app place the emitted module somewhere other than .forge/assets.ts", () => {
@@ -91,7 +91,7 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
       (s) => s.label === "types:assets",
     );
 
-    expect(assets?.cmd).toEqual(["forge", "assets", "types", "--config", "src/assets/config.ts", "--out", "generated/assets.ts"]);
+    expect(assets?.cmd).toEqual(["forge", "assets", "gen", "types", "--config", "src/assets/config.ts", "--out", "generated/assets.ts"]);
   });
 
   it("omits types:assets entirely when no asset config is given", () => {

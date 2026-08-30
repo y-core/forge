@@ -25,7 +25,7 @@ description: "Which file owns each fact in forge, so every other document cites 
 - §2 The Register: every owned fact and its file
 - §2a Package and Configuration Facts: the export map, the gate, the type system
 - §2b Enforced Rules: the checks that own their own rule sets
-- §2c Cloudflare Reconciliation: the files that decide what `forge sync` creates and writes
+- §2c Cloudflare Reconciliation: the files that decide what `forge cf sync` creates and writes
 - §2d UI Contracts and Data Tables: the files prose may not re-enumerate
 - §2e The One Prose Row: what a source comment may contain
 - §3 Rows That Name More Than One File: policy split from matchers
@@ -104,14 +104,14 @@ row names the file that decides it; no prose here restates a naming rule or a ha
 
 | Owns | File |
 |---|---|
-| The Cloudflare resource types `forge sync` reconciles | `RESOURCE_TYPES` in `src/cli/sync/types.ts` |
-| Which handler serves a given resource type | `buildHandlers` and `defaultHandlers` in `src/cli/sync/handlers/registry.ts` |
-| Whether a config is a Pages project or a Worker script | `detectTarget` in `src/cli/sync/target.ts` |
-| The naming strategy for a created remote resource | the per-type handler in `src/cli/sync/handlers/` |
-| What a reconciliation run decides to create, write, or leave | `syncBindings` in `src/cli/sync/engine.ts` |
-| The JSONC round-trip contract — what survives a write | `src/cli/sync/config/parse.ts` + `src/cli/sync/config/edit.ts` |
-| The `.dev.vars` marker comments and what each licenses | `GENERATE_MARKER` and `PUSH_MARKER` in `src/cli/sync/handlers/devvars.ts` |
-| The `forge sync` command surface and its flags | `createSyncCommand` in `src/cli/sync/commands.ts` |
+| The Cloudflare resource types `forge cf sync` reconciles | `RESOURCE_TYPES` in `src/cli/cf/types.ts` |
+| Which handler serves a given resource type | `buildHandlers` and `defaultHandlers` in `src/cli/cf/account/handlers/registry.ts` |
+| Whether a config is a Pages project or a Worker script | `detectTarget` in `src/cli/cf/target.ts` |
+| The naming strategy for a created remote resource | the per-type handler in `src/cli/cf/account/handlers/` |
+| What a reconciliation run decides to create, write, or leave | `syncBindings` in `src/cli/cf/account/engine.ts` |
+| The JSONC round-trip contract — what survives a write | `src/cli/cf/config/parse.ts` + `src/cli/cf/config/edit.ts` |
+| The `.dev.vars` marker comments and what each licenses | `GENERATE_MARKER` and `PUSH_MARKER` in `src/cli/cf/account/handlers/devvars.ts` |
+| The `forge cf sync` command surface and its flags | `createSyncAccountCommand` in `src/cli/cf/account/commands.ts` |
 | The `forge` command tree — which first-party commands attach, and where an app's own are loaded from | `src/cli/root/root.ts` |
 
 ### 2d. UI Contracts and Data Tables

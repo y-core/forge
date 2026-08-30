@@ -1,12 +1,10 @@
 import { createAssetsCommands } from "../assets/commands";
-import { createGenEnv } from "../cfgen/cf-env-command";
+import { createCfCommands } from "../cf/commands";
 import { addCommand, createCommand } from "../core/command";
 import type { CommandBase } from "../core/types";
 import { createGateBinCommand } from "../pkg/gate/command";
 import { loadConfigModule } from "../pkg/internal/config-module";
 import { createReleaseBinCommand } from "../pkg/release/release";
-import { createSyncCommand } from "../sync/commands";
-import { createSyncZoneCommand } from "../sync/zone";
 
 /** Where `forge` looks for an application's own command table. @public */
 export const DEFAULT_COMMANDS_CONFIG = "config/commands.ts";
@@ -18,11 +16,8 @@ export async function createRootCommand(cwd: string = process.cwd()): Promise<Co
 
   addCommand(root, createGateBinCommand());
   addCommand(root, createReleaseBinCommand());
-  const sync = createSyncCommand();
-  addCommand(sync, createSyncZoneCommand());
-  addCommand(root, sync);
+  addCommand(root, createCfCommands());
   addCommand(root, createAssetsCommands());
-  addCommand(root, createGenEnv());
 
   const commands = await loadConfigModule<readonly CommandBase[]>({
     root: cwd,

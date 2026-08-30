@@ -37,8 +37,16 @@ describe("resolveSiteConfig", () => {
     expect(() => resolveSiteConfig({ ...base, robots: { rules: [{ userAgent: "*", crawlDelay: -1 }] } })).toThrow();
   });
 
-  it("carries a zone block through unchanged", () => {
-    const zone: SiteConfig["zone"] = { apex: "example.com", redirect: { from: ["www.example.com"] }, allow: { action: "block" } };
-    expect(resolveSiteConfig({ ...base, zone }).zone).toEqual(zone);
+  it("carries a zone block through, filling the apex from the origin's hostname", () => {
+    const zone: SiteConfig["zone"] = { redirect: { from: ["www.example.com"] }, allow: { action: "block" } };
+    expect(resolveSiteConfig({ ...base, zone }).zone).toEqual({ ...zone, apex: "example.com" });
+  });
+
+  it("keeps an explicit apex over the derived one", () => {
+    expect(resolveSiteConfig({ ...base, zone: { apex: "other.test" } }).zone?.apex).toBe("other.test");
+  });
+
+  it("derives the apex from the origin's host alone, dropping scheme and port", () => {
+    expect(resolveSiteConfig({ ...base, origin: "https://example.com:8443", zone: {} }).zone?.apex).toBe("example.com");
   });
 });

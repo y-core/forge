@@ -1,11 +1,11 @@
 # `@y-core/forge/validation`
 
-Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge gen-env`) under the `/cli` sub-path.
+Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge cf gen env`) under the `/cli` sub-path.
 
 | Import path | Surface |
 |---|---|
 | `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `describeValidationIssue`, `formatValidationIssues`, `ValidationResult` |
-| `@y-core/forge/cli/cfgen` | `forge gen-env` env-schema generator API (also a `bin`) |
+| `@y-core/forge/cli/cf` | `forge cf gen env` env-schema generator API (also a `bin`) |
 
 **Everything except `v` is a sibling of it, not a member.** `strictObject` and `v.strictObject` are two different functions, and the one without the prefix is the recommendation for untrusted input.
 
@@ -18,7 +18,7 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 - **Form-text primitives** — `formText()` for a single-line control and `formMultilineText()` for a `<textarea>`. A form body reaches a schema exactly as submitted, so trimming and CRLF folding are the schema's job; these are the two shapes worth having.
 - **Bounded issue descriptions** — `describeValidationIssue` names the field one issue is about and nothing else, so a refusal a caller reads cannot carry the submitted value, the schema's own rule, or a length the caller chose. `formatValidationIssues` is the internal diagnostic counterpart.
 - **`ValidationResult<T>`** — a domain alias of forge's one `Result` primitive, `Result<T, readonly string[]>` (`{ ok: true; data: T } | { ok: false; error: readonly string[] }`), the canonical return type for any service that validates its own input.
-- **`forge gen-env` env-schema generator** — reads `wrangler.jsonc` bindings and `.dev.vars` keys and emits a committed, schema-first valibot `EnvSchema` (plus an inferred `type Env`), replacing the env half of `wrangler types`.
+- **`forge cf gen env` env-schema generator** — reads `wrangler.jsonc` bindings and `.dev.vars` keys and emits a committed, schema-first valibot `EnvSchema` (plus an inferred `type Env`), replacing the env half of `wrangler types`.
 
 ---
 
@@ -172,9 +172,9 @@ This type is defined in and re-exported from `@y-core/forge/result` (the single 
 
 ---
 
-## `@y-core/forge/cli/cfgen`
+## `@y-core/forge/cli/cf`
 
-The `forge gen-env` env-schema generator. It reads a Cloudflare `wrangler.jsonc` config plus a `.dev.vars` secrets file and emits a single committed module containing a runtime valibot `EnvSchema` and a compile-time `type Env = v.InferOutput<typeof EnvSchema>` — a schema-first replacement for the env half of `wrangler types`. The package exposes both the `forge gen-env` binary and the underlying functions.
+The `forge cf gen env` env-schema generator. It reads a Cloudflare `wrangler.jsonc` config plus a `.dev.vars` secrets file and emits a single committed module containing a runtime valibot `EnvSchema` and a compile-time `type Env = v.InferOutput<typeof EnvSchema>` — a schema-first replacement for the env half of `wrangler types`. The package exposes both the `forge cf gen env` binary and the underlying functions.
 
 ### Usage
 
@@ -189,7 +189,7 @@ Run the generator as a `package.json` script:
 ```json
 {
   "scripts": {
-    "gen:env": "forge gen-env"
+    "gen:env": "forge cf gen env"
   }
 }
 ```
@@ -224,7 +224,7 @@ Override generation policy with a `--config` module that exports a `Partial<GenO
 
 ```typescript
 // src/app/env.config.ts
-import type { GenOptions } from "@y-core/forge/cli/cfgen";
+import type { GenOptions } from "@y-core/forge/cli/cf";
 
 export const options: Partial<GenOptions> = {
   optional: new Set(["ANALYTICS"]),
@@ -236,9 +236,9 @@ To call the generator programmatically (e.g. wiring it into a custom CLI via `ex
 
 ```typescript
 import { execute } from "@y-core/forge/cli";
-import { createGenEnv } from "@y-core/forge/cli/cfgen";
+import { createGenEnvCommand } from "@y-core/forge/cli/cf";
 
-await execute(createGenEnv());
+await execute(createGenEnvCommand());
 ```
 
 ### Core Components & APIs
@@ -247,14 +247,14 @@ await execute(createGenEnv());
 
 | Export | Signature | Description |
 |---|---|---|
-| `createGenEnv` | `() => CommandBase` | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge gen-env` bin entry. |
+| `createGenEnvCommand` | `() => CommandBase` | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge cf gen env` bin entry. |
 | `readWranglerConfig` | `(path: string) => Record<string, unknown>` | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped). |
 | `loadOptions` | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given. |
 
 #### Generator internals (`cf-env-registry` + `cf-env-gen`)
 
 The generator core is split across two files, and **all of it is `@internal`** — none of these
-symbols are barrel-exported. Drive generation through the command API above (`createGenEnv`); there is
+symbols are barrel-exported. Drive generation through the command API above (`createGenEnvCommand`); there is
 no supported way to assemble a schema from the internal pieces.
 
 - **`cf-env-registry.ts`** holds the **data**: the `REGISTRY` binding-kind table (`configKey → nameField

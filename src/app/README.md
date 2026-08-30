@@ -323,7 +323,7 @@ Two forms of binding validation against a valibot schema.
 - `validateEnv(env, schema)` — one-shot. Returns the typed, validated env, or **throws** `Error("Invalid environment: …")` with the offending paths. Call it at startup when you have the raw env in hand.
 - `validateBindings(schema)` — middleware form. Validates `c.env` on the first request, and again whenever the env reference changes (so a swapped binding set is re-checked). Throws on failure; it does not store or mutate the env — read bindings via `c.env` directly.
 
-In production apps the schema is **typically generated**, not hand-written: `forge gen-env` (`bun run gen:env`, from `@y-core/forge/cli/cfgen`) emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, so the schema can never drift from the actual binding surface. Hand-written schemas remain fine for small surfaces. See the standard setup guide in [src/config/README.md](../config/README.md).
+In production apps the schema is **typically generated**, not hand-written: `forge cf gen env` (`bun run gen:env`, from `@y-core/forge/cli/cf`) emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, so the schema can never drift from the actual binding surface. Hand-written schemas remain fine for small surfaces. See the standard setup guide in [src/config/README.md](../config/README.md).
 
 ```ts
 import { validateEnv, validateBindings } from "@y-core/forge/app";

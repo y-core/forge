@@ -52,7 +52,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   }
 
   if (options.assetConfig !== undefined) {
-    steps.push({ label: "types:assets", tail: 20, cmd: ["forge", "assets", "types", "--config", options.assetConfig, "--out", assetOut] });
+    steps.push({ label: "types:assets", tail: 20, cmd: ["forge", "assets", "gen", "types", "--config", options.assetConfig, "--out", assetOut] });
   }
 
   steps.push(typecheckStep(), lintStep({ sources }));

@@ -74,7 +74,7 @@ import { buildAllowRule, buildRedirectRule } from "@y-core/forge/site";
 
 const rule = buildAllowRule(
   {
-    apex: "example.com",
+    apex: "example.com", // in a config, omit `zone.apex` — it defaults to the origin's hostname
     paths: routePaths(routes), // every method — a POST endpoint must not be filtered by a GET-only view
     prefixes: ["/assets/"],
     files: ["/favicon.ico", "/robots.txt", "/sitemap.xml"],
@@ -113,6 +113,17 @@ Start the rollout on `managed_challenge` rather than `block`: a legitimate path 
 gets a challenge a human can pass. Cloudflare's `log` action is Enterprise-only, so this is the
 available shakedown. Either action ends the request at the edge, so the saved Worker invocation is
 identical from day one.
+
+### The apex is stated once
+
+`zone.apex` is optional and defaults to the origin's hostname. Stating the host twice is how the two
+drift, and there is no case for a zone whose apex is not the host the site declares itself served
+from.
+
+The redirect follows from the same idea: **every `from` host must be a subdomain of the apex.**
+`buildRedirectRule` consolidates a zone onto one hostname — it is not a general URL forwarder. A
+source outside the apex could never fire, since the rule is deployed to the apex's own zone, and a
+source equal to the apex is a loop. Both are refused when the rule is built.
 
 ### The apex host clause is defence in depth
 

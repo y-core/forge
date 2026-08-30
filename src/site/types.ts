@@ -36,7 +36,9 @@ const ZoneAllowSchema = v.object({
 
 const ZoneConfigSchema = v.object({
   zoneId: v.optional(v.string()),
-  apex: v.string(),
+  // Omitted, it is the origin's hostname. Stating it twice is how the two drift, and there is no
+  // case for a zone whose apex is not the host the site declares itself served from.
+  apex: v.optional(v.string()),
   redirect: v.optional(ZoneRedirectSchema),
   allow: v.optional(ZoneAllowSchema),
 });
@@ -68,6 +70,8 @@ export type SitemapConfig = v.InferOutput<typeof SitemapConfigSchema>;
 export type ZoneAction = v.InferOutput<typeof ZoneActionSchema>;
 /** The zone block of a site config — edge rules derived from the same route table. @public */
 export type ZoneConfig = v.InferOutput<typeof ZoneConfigSchema>;
+/** A {@link ZoneConfig} whose `apex` has been filled in from the origin. @public */
+export type ResolvedZoneConfig = Omit<ZoneConfig, "apex"> & { apex: string };
 /** What a consumer writes in `site.config.ts`. @public */
 export type SiteConfig = v.InferInput<typeof SiteConfigSchema>;
 
@@ -77,7 +81,7 @@ export interface ResolvedSiteConfig {
   pages: readonly string[];
   robots: { rules: readonly RobotsRule[]; sitemap: boolean };
   sitemap: { exclude: readonly string[]; entries: Readonly<Record<string, SitemapOverride>> };
-  zone: ZoneConfig | null;
+  zone: ResolvedZoneConfig | null;
 }
 
 /** One resolved `<url>` of a sitemap: an absolute location plus whatever metadata the config supplied. @public */

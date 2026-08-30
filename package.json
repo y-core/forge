@@ -92,17 +92,13 @@
       "types": "./src/cli/assets/mod.ts",
       "import": "./src/cli/assets/mod.ts"
     },
-    "./cli/cfgen": {
-      "types": "./src/cli/cfgen/mod.ts",
-      "import": "./src/cli/cfgen/mod.ts"
+    "./cli/cf": {
+      "types": "./src/cli/cf/mod.ts",
+      "import": "./src/cli/cf/mod.ts"
     },
     "./cli/pkg": {
       "types": "./src/cli/pkg/mod.ts",
       "import": "./src/cli/pkg/mod.ts"
-    },
-    "./cli/sync": {
-      "types": "./src/cli/sync/mod.ts",
-      "import": "./src/cli/sync/mod.ts"
     },
     "./cli/term": {
       "types": "./src/cli/term/mod.ts",

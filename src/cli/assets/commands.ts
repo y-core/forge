@@ -28,24 +28,36 @@ async function loadAssetsConfig(flags: { config: string | undefined; root: strin
 export function createAssetsCommands(): CommandBase {
   const root = createCommand({ name: "assets", description: "Asset pipeline for @y-core/forge consumer projects" });
 
-  const buildCmd = createCommand({ name: "build", description: "Build asset types" });
+  const buildAllFlags = {
+    minify: { type: "boolean", description: "Minify CSS and JS output; also enables content-hashed filenames" },
+    config: CONFIG_FLAG,
+    root: ROOT_FLAG,
+    out: { type: "string", description: "Output path for the generated assets module (default: .forge/assets.ts)" },
+  } as const;
+
+  const runBuildAll = async (
+    _args: string[],
+    flags: { minify: boolean | undefined; config: string | undefined; root: string | undefined; out: string | undefined },
+  ) => {
+    const config = await loadAssetsConfig(flags);
+    await buildAll(config, {
+      ...(flags.minify !== undefined ? { minify: flags.minify } : {}),
+      ...(flags.out !== undefined ? { assetsPath: flags.out } : {}),
+    });
+  };
+
+  // The bare `assets build` is `assets build all`, from the same flags and the same runner. Unlike
+  // a scope default, this one defaults to the *union*, so it cannot silently do less than asked.
+  const buildCmd = createCommand({
+    name: "build",
+    description: "Build assets. Defaults to every step; name one to build it alone",
+    flags: buildAllFlags,
+    run: runBuildAll,
+  });
 
   addCommand(
     buildCmd,
-    createCommand({
-      name: "all",
-      description: "Build all assets and generate the typed assets module",
-      flags: {
-        minify: { type: "boolean", description: "Minify CSS and JS output; also enables content-hashed filenames" },
-        config: CONFIG_FLAG,
-        root: ROOT_FLAG,
-        out: { type: "string", description: "Output path for the generated assets module (default: .forge/assets.ts)" },
-      },
-      run: async (_args, flags) => {
-        const config = await loadAssetsConfig(flags);
-        await buildAll(config, { minify: flags.minify, ...(flags.out !== undefined ? { assetsPath: flags.out } : {}) });
-      },
-    }),
+    createCommand({ name: "all", description: "Build all assets and generate the typed assets module", flags: buildAllFlags, run: runBuildAll }),
   );
 
   addCommand(
@@ -117,8 +129,10 @@ export function createAssetsCommands(): CommandBase {
     }),
   );
 
+  const genCmd = createCommand({ name: "gen", description: "Generate a typed module from the assets config" });
+
   addCommand(
-    root,
+    genCmd,
     createCommand({
       name: "types",
       description: "Generate the typed assets module from config alone — no CSS, JS, sprite or icon build",
@@ -133,6 +147,8 @@ export function createAssetsCommands(): CommandBase {
       },
     }),
   );
+
+  addCommand(root, genCmd);
 
   return root;
 }

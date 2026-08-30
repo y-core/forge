@@ -15,6 +15,8 @@ export function resolveSiteConfig(config: SiteConfig): ResolvedSiteConfig {
     pages: parsed.pages,
     robots: { rules: parsed.robots.rules, sitemap: parsed.robots.sitemap ?? false },
     sitemap: { exclude: parsed.sitemap?.exclude ?? [], entries: parsed.sitemap?.entries ?? {} },
-    zone: parsed.zone ?? null,
+    // The apex defaults to the origin's hostname, so a consumer states the host once. `new URL` is
+    // safe here: the schema has already refused an origin that is not an absolute URL.
+    zone: parsed.zone ? { ...parsed.zone, apex: parsed.zone.apex ?? new URL(parsed.origin).hostname } : null,
   };
 }
