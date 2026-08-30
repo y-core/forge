@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.0.91] — 2026-08-30
+
 ### Changed
 
 - **`@y-core/forge/site`: `zone.apex` is now optional**, defaulting to the origin's hostname. A
@@ -3294,6 +3300,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.0.91]: https://github.com/y-core/forge/compare/v0.0.90...v0.0.91
 [0.0.90]: https://github.com/y-core/forge/compare/v0.0.89...v0.0.90
 [0.0.89]: https://github.com/y-core/forge/compare/v0.0.88...v0.0.89
 [0.0.88]: https://github.com/y-core/forge/compare/v0.0.87...v0.0.88
