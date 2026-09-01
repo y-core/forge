@@ -29,28 +29,28 @@ Identical to the routing table in [`index.md`](./index.md), deliberately — thi
 wrapper, and two routing tables that had drifted apart would be worse than one. **Change both or
 neither.**
 
-| The question in front of you | Read |
-|---|---|
-| What may I never do, whatever I was asked for? | [`floor.md`](./floor.md) |
-| Which component do I reach for? | [`catalog.md`](./catalog.md) |
-| Does this look like it was generated rather than designed? | [`tells.md`](./tells.md) |
-| Am I done? | [`preflight.md`](./preflight.md) |
-| Two things look equally important. | [`reference/01-hierarchy.md`](./reference/01-hierarchy.md) |
-| How much space goes between these, and why that much? | [`reference/02-layout.md`](./reference/02-layout.md) |
-| How many text sizes and weights, and how wide does the copy run? | [`reference/03-typography.md`](./reference/03-typography.md) |
-| Which token is this shade, and does it hold in dark mode? | [`reference/04-color.md`](./reference/04-color.md) |
-| Should this sit on a raised surface, or is a border enough? | [`reference/05-depth.md`](./reference/05-depth.md) |
-| How do I lay out a field, and where does its error go? | [`reference/06-forms.md`](./reference/06-forms.md) |
-| The list is empty, or loading, or it failed. | [`reference/07-states.md`](./reference/07-states.md) |
-| Where does this control live — the shell, a rail, or the page? | [`reference/08-navigation.md`](./reference/08-navigation.md) |
-| What happens on focus, on keyboard, while it is in flight? | [`reference/09-interaction.md`](./reference/09-interaction.md) |
+| The question in front of you                                           | Read                                                               |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| What may I never do, whatever I was asked for?                         | [`floor.md`](./floor.md)                                           |
+| Which component do I reach for?                                        | [`catalog.md`](./catalog.md)                                       |
+| Does this look like it was generated rather than designed?             | [`tells.md`](./tells.md)                                           |
+| Am I done?                                                             | [`preflight.md`](./preflight.md)                                   |
+| Two things look equally important.                                     | [`reference/01-hierarchy.md`](./reference/01-hierarchy.md)         |
+| How much space goes between these, and why that much?                  | [`reference/02-layout.md`](./reference/02-layout.md)               |
+| How many text sizes and weights, and how wide does the copy run?       | [`reference/03-typography.md`](./reference/03-typography.md)       |
+| Which token is this shade, and does it hold in dark mode?              | [`reference/04-color.md`](./reference/04-color.md)                 |
+| Should this sit on a raised surface, or is a border enough?            | [`reference/05-depth.md`](./reference/05-depth.md)                 |
+| How do I lay out a field, and where does its error go?                 | [`reference/06-forms.md`](./reference/06-forms.md)                 |
+| The list is empty, or loading, or it failed.                           | [`reference/07-states.md`](./reference/07-states.md)               |
+| Where does this control live — the shell, a rail, or the page?         | [`reference/08-navigation.md`](./reference/08-navigation.md)       |
+| What happens on focus, on keyboard, while it is in flight?             | [`reference/09-interaction.md`](./reference/09-interaction.md)     |
 | Can someone reach and read this without a mouse or full colour vision? | [`reference/10-accessibility.md`](./reference/10-accessibility.md) |
-| This region gets swapped in over the wire. | [`reference/11-htmx.md`](./reference/11-htmx.md) |
-| How tight, how plain, how much movement? | [`reference/12-density.md`](./reference/12-density.md) |
-| It is a landing page, not an app screen. | [`reference/13-marketing.md`](./reference/13-marketing.md) |
-| I am auditing someone else's surface. | [`reference/14-review.md`](./reference/14-review.md) |
-| There is a photograph or a glyph on this surface. | [`reference/15-media.md`](./reference/15-media.md) |
-| I am about to write this behaviour in script or in an older CSS idiom. | [`reference/16-platform.md`](./reference/16-platform.md) |
+| This region gets swapped in over the wire.                             | [`reference/11-htmx.md`](./reference/11-htmx.md)                   |
+| How tight, how plain, how much movement?                               | [`reference/12-density.md`](./reference/12-density.md)             |
+| It is a landing page, not an app screen.                               | [`reference/13-marketing.md`](./reference/13-marketing.md)         |
+| I am auditing someone else's surface.                                  | [`reference/14-review.md`](./reference/14-review.md)               |
+| There is a photograph or a glyph on this surface.                      | [`reference/15-media.md`](./reference/15-media.md)                 |
+| I am about to write this behaviour in script or in an older CSS idiom. | [`reference/16-platform.md`](./reference/16-platform.md)           |
 
 ## Two tiers
 

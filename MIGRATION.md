@@ -1,14 +1,14 @@
 # Migration Guide
 
-What a consuming app has to *do* for the releases that need more than a version bump.
+What a consuming app has to _do_ for the releases that need more than a version bump.
 `CHANGELOG.md` is the record of **what** changed; this file is **what to do about it**, and it only
 carries the releases where that is not obvious from a compile error.
 
-| Upgrade | What it needs | Size |
-|---|---|---|
-| **0.0.85 → 0.0.86** | Your `ui/client` import list — twenty-four names are gone or moved — plus your overlay transition classes, your two-way control bindings, your colour-scheme file's `.dark` block, and a grep for `--gray-a` | An afternoon |
+| Upgrade             | What it needs                                                                                                                                                                                                                                                                  | Size                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| **0.0.85 → 0.0.86** | Your `ui/client` import list — twenty-four names are gone or moved — plus your overlay transition classes, your two-way control bindings, your colour-scheme file's `.dark` block, and a grep for `--gray-a`                                                                   | An afternoon                     |
 | **0.0.82 → 0.0.83** | Your theme import, if you have one — then a look at every screen, because every colour changes and `--primary` becomes a brand colour — plus your `--accent-12` override if you had one, two token checks, six silent hazards, and your page shell if you mount the log viewer | One import, then a design review |
-| **0.0.80 → 0.0.81** | The `defineAction` schema pipeline — four silent hazards | An afternoon |
+| **0.0.80 → 0.0.81** | The `defineAction` schema pipeline — four silent hazards                                                                                                                                                                                                                       | An afternoon                     |
 
 **Retention.** Entries for the last two minor bands stay inline here; older bands are dropped at
 0.1.0, after which `CHANGELOG.md` alone carries them.
@@ -34,20 +34,20 @@ rg -n "MODE_SELECTOR|buildAlphaScale|scaleVars|stepProperty|TransitionState|COLL
 
 ## Every name deleted from a barrel, and what replaces it
 
-| Gone from | Name | Replacement |
-|---|---|---|
-| `ui/client` | `bindField`, `bindGroup`, `parseControlValue`, `applyControlValue` | `bindControls(root, signals)` |
-| `ui/client` | `mountTransitionState`, `mountPopupTriggerState`, `TransitionStateOptions` | CSS — `@starting-style`, `transition-behavior: allow-discrete`, `overlay`, `:has()` |
-| `ui/client` | `mountAnchorBinding` | The implicit anchor a `command` / `commandfor` invoker gives its popup, plus CSS anchor positioning |
-| `ui/client` | `repeat`, `RepeatOptions` | None — render the list on the server and swap it with htmx |
-| `ui/client` | `mountActiveDescendant`, `resetActiveDescendant`, `ActiveDescendantOptions` | None — no forge component uses the active-descendant pattern; manage `aria-activedescendant` yourself if yours does |
-| `ui/client` | `loadScriptOnEvent`, `loadStylesheet`, `LazyLoadOptions` | `<script async>` / `<link rel="stylesheet">` in the markup, or `lazy({ ref, load, init })` for a dynamic `import()` |
-| `ui/client` | `mountMenu`, `mountTabs`, `mountTooltip`, `mountNumberField`, and their `MenuOptions` / `TabsOptions` / `TooltipOptions` | The registered scopes forge's own client entries install — import `@y-core/forge/ui/core/client` and call `resume()` |
-| `ui/client` | `ACTIVE_COMPOSITE_ITEM` | Same constant, one subpath over: `@y-core/forge/ui/contracts` |
-| `ui/contracts` | `COLLAPSIBLE_SCOPE`, `ACCORDION_SCOPE` | None — those scopes registered nothing but the two deleted transition controllers |
-| `ui/contracts` | `TransitionState`, and the `open` / `popupOpen` / `transition` keys of `stateAttrs` | The CSS above; there is no state attribute to type |
-| `ui/contracts` | `buildAlphaScale` | None — see the alpha-scale section below |
-| `pkg` | `MODE_SELECTOR` | `MODE_LABEL`, which carries the mode word rather than a selector |
+| Gone from      | Name                                                                                                                     | Replacement                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `ui/client`    | `bindField`, `bindGroup`, `parseControlValue`, `applyControlValue`                                                       | `bindControls(root, signals)`                                                                                        |
+| `ui/client`    | `mountTransitionState`, `mountPopupTriggerState`, `TransitionStateOptions`                                               | CSS — `@starting-style`, `transition-behavior: allow-discrete`, `overlay`, `:has()`                                  |
+| `ui/client`    | `mountAnchorBinding`                                                                                                     | The implicit anchor a `command` / `commandfor` invoker gives its popup, plus CSS anchor positioning                  |
+| `ui/client`    | `repeat`, `RepeatOptions`                                                                                                | None — render the list on the server and swap it with htmx                                                           |
+| `ui/client`    | `mountActiveDescendant`, `resetActiveDescendant`, `ActiveDescendantOptions`                                              | None — no forge component uses the active-descendant pattern; manage `aria-activedescendant` yourself if yours does  |
+| `ui/client`    | `loadScriptOnEvent`, `loadStylesheet`, `LazyLoadOptions`                                                                 | `<script async>` / `<link rel="stylesheet">` in the markup, or `lazy({ ref, load, init })` for a dynamic `import()`  |
+| `ui/client`    | `mountMenu`, `mountTabs`, `mountTooltip`, `mountNumberField`, and their `MenuOptions` / `TabsOptions` / `TooltipOptions` | The registered scopes forge's own client entries install — import `@y-core/forge/ui/core/client` and call `resume()` |
+| `ui/client`    | `ACTIVE_COMPOSITE_ITEM`                                                                                                  | Same constant, one subpath over: `@y-core/forge/ui/contracts`                                                        |
+| `ui/contracts` | `COLLAPSIBLE_SCOPE`, `ACCORDION_SCOPE`                                                                                   | None — those scopes registered nothing but the two deleted transition controllers                                    |
+| `ui/contracts` | `TransitionState`, and the `open` / `popupOpen` / `transition` keys of `stateAttrs`                                      | The CSS above; there is no state attribute to type                                                                   |
+| `ui/contracts` | `buildAlphaScale`                                                                                                        | None — see the alpha-scale section below                                                                             |
+| `pkg`          | `MODE_SELECTOR`                                                                                                          | `MODE_LABEL`, which carries the mode word rather than a selector                                                     |
 
 Everything below is one of these rows, in the order the greps above will hit them.
 
@@ -82,14 +82,14 @@ class keyed on one never applies.
 
 **The replacement is CSS**, and the mapping is mechanical:
 
-| Was | Now |
-|---|---|
-| `data-[starting-style]:` | `starting:` |
-| `data-[open]:` | `open:` |
-| `data-[closed]:` | `not-open:` |
-| — | add `transition-discrete` to the class string |
-| — | add `overlay` to the transition list of any popover that animates out |
-| `data-[popup-open]:` on a trigger | a `:has()` rule in your own stylesheet |
+| Was                               | Now                                                                   |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `data-[starting-style]:`          | `starting:`                                                           |
+| `data-[open]:`                    | `open:`                                                               |
+| `data-[closed]:`                  | `not-open:`                                                           |
+| —                                 | add `transition-discrete` to the class string                         |
+| —                                 | add `overlay` to the transition list of any popover that animates out |
+| `data-[popup-open]:` on a trigger | a `:has()` rule in your own stylesheet                                |
 
 ```diff
 - <Dialog class="transition-all data-[starting-style]:opacity-0 data-[closed]:scale-95">
@@ -133,7 +133,7 @@ forge replacement; each has a platform one.
   tabindex.
 - **`loadScriptOnEvent`** could never return an honest disposer, since an injected script cannot be
   un-run. Put the `<script async>` in the markup. **`loadStylesheet`** becomes a `<link
-  rel="stylesheet">`, or `media="print" onload="this.media='all'"` if you were deferring it.
+rel="stylesheet">`, or `media="print" onload="this.media='all'"` if you were deferring it.
 - **`lazy({ ref, load, init, onError? })` stays** and is the supported way to defer a dynamic
   `import()` until an element scrolls into view.
 
@@ -175,7 +175,7 @@ rg -n "mountMenu|mountTabs|mountTooltip|mountNumberField|withOwner|OwnedRun" src
 
 **What broke.** `resume()` used to return the same disposer to every caller after the first, and a
 second call did nothing. It is now two jobs: the delegated listeners are per-document and
-**refcounted**, while the eager pass runs on *every* call over the root it was handed. Three
+**refcounted**, while the eager pass runs on _every_ call over the root it was handed. Three
 consequences:
 
 - **`resume(shadowRoot)` after `resume()` now works** — it visits the shadow subtree instead of
@@ -214,7 +214,7 @@ rg -n "openPopoverAt" src/
 from inside a `computed` was not even warned about. It now throws:
 `signal: a signal was written while an effect or computed was running`.
 
-**A write that happens to match the current value throws too.** The refusal runs *before* the
+**A write that happens to match the current value throws too.** The refusal runs _before_ the
 `Object.is` equality check, deliberately: the rule is about where the write was made, not what it
 carried, so a no-op write that was silently benign before is now a hard failure. This is the one to
 grep for, because it is the case a test suite will not have covered.
@@ -265,7 +265,7 @@ in.
   wiring is the file you do not. The bonus is that scrollbars and the UA-rendered controls forge
   cannot paint, the native `<select>` popup among them, now follow the theme.
 - **`getComputedStyle(el).getPropertyValue("--gray-11")` no longer returns a colour.** `light-dark()`
-  resolves at *used*-value time and a custom property's computed value is the substituted text, so a
+  resolves at _used_-value time and a custom property's computed value is the substituted text, so a
   token read this way is the same string in both modes. Read the colour off an element that paints
   it: set `style.color = "var(--gray-11)"` on a probe and read back `getComputedStyle(probe).color`.
 - **A browser without `light-dark()` loses its colours** rather than falling back to one mode.
@@ -275,7 +275,7 @@ in.
   will find the scheme files you have not converted. A `.dark` rule declaring no custom property is
   untouched.
 - **Three generator signatures moved with it** (`@y-core/forge/ui/contracts/theme`): `scaleVars(family,
-  solid, alpha)` is now `scaleVars(family, scales)` and returns twelve pairs rather than twenty-four;
+solid, alpha)` is now `scaleVars(family, scales)` and returns twelve pairs rather than twenty-four;
   `stepProperty(family, step)` drops its `kind` parameter; and `schemeCss` emits one `:root` block and
   adds `--accent-contrast`. `MODE_SELECTOR` (`@y-core/forge/cli/pkg`) is now `MODE_LABEL`, carrying a mode
   word rather than a selector.
@@ -293,13 +293,13 @@ from all four scheme files, and `buildAlphaScale` is gone from `@y-core/forge/ui
 
 **A scheme file of your own that still declares them keeps compiling and keeps rendering correctly.**
 Nothing in forge read the alpha steps, so the declarations are inert rather than wrong — delete them
-when convenient. The one break that shows on screen is an app that *reads* one, and only reads have
+when convenient. The one break that shows on screen is an app that _reads_ one, and only reads have
 to be re-pointed:
 
-| If you read | Re-point to |
-|---|---|
+| If you read                                                                               | Re-point to                                                                                                                      |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `--gray-a*` as a scrim or a backdrop — anything translucent over content it must not hide | `--overlay`, or the absolute `--black-a1` … `--black-a12` / `--white-a1` … `--white-a12` ramps, which stay in `theme-colors.css` |
-| `--gray-a*` as a surface tint — "slightly lighter", "slightly darker" | One step along the solid scale, per `forge-ui-color-scale-no-adhoc-tint` |
+| `--gray-a*` as a surface tint — "slightly lighter", "slightly darker"                     | One step along the solid scale, per `forge-ui-color-scale-no-adhoc-tint`                                                         |
 
 **A `var(--gray-a6)` left in place paints nothing** — the property is undeclared, so the whole
 declaration is invalid at computed-value time. That is loud on a background and easy to miss on a
@@ -351,7 +351,7 @@ and a missing required prop are compile errors, and this file covers only what a
 tell you. The rest of 0.0.83 is tokens, and the rendering changes are described in the changelog.
 
 **The one exception to that rule is [the log viewer](#if-you-mount-the-log-viewer), at the end.** It
-*is* a compile error, and it would normally be left to the compiler — but the error tells you a prop
+_is_ a compile error, and it would normally be left to the compiler — but the error tells you a prop
 is missing, not what to put in it, and what to put in it is a page shell. That is a worked example,
 not a diagnostic.
 
@@ -402,7 +402,7 @@ direction. Why:
 
 Set your OS to dark mode, set your app's theme toggle to light, and look at **one of your own
 `dark:` utilities** — a `dark:bg-slate-900` panel in your own markup will do. It should render its
-*light* half, because `.dark` is not on the document. If it renders dark, something has re-declared
+_light_ half, because `.dark` is not on the document. If it renders dark, something has re-declared
 the variant back to the media query; look at the **tail** of your stylesheet rather than its head,
 because the last declaration is the one that counts. Forge's own components are no help here — they
 carry no `dark:` utility and follow the class either way.
@@ -416,16 +416,24 @@ A 12-step role scale has replaced the `--palette-*` ramp under the semantic toke
 override point. The mapping used to be one hop, written twice:
 
 ```css
-:root  { --muted-foreground: var(--palette-600); }
-.dark  { --muted-foreground: var(--palette-300); }
+:root {
+  --muted-foreground: var(--palette-600);
+}
+.dark {
+  --muted-foreground: var(--palette-300);
+}
 ```
 
 It is now two hops, and only the lower one is per-mode:
 
 ```css
-:root { --muted-foreground: var(--gray-11); }                          /* declared once, both modes */
-:root { --gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0)); } /* also once — the branch is */
-                                                                       /* picked by `color-scheme` */
+:root {
+  --muted-foreground: var(--gray-11);
+} /* declared once, both modes */
+:root {
+  --gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));
+} /* also once — the branch is */
+/* picked by `color-scheme` */
 ```
 
 **`--palette-50` … `--palette-950` no longer exist.** They are deleted, not renamed — earlier
@@ -435,7 +443,7 @@ gives you no sign that your ramp is inert. Delete it, or keep it for your own ut
 forge ignores it.
 
 The values changed too, and comprehensively — see
-[the third break](#the-third-break--every-colour-changes). What changed *here* is where a
+[the third break](#the-third-break--every-colour-changes). What changed _here_ is where a
 per-mode decision can be expressed, and that is a separate hazard: an app that wrote
 `:root { --primary: … }` was overriding a light-mode declaration that forge's `.dark` block then
 overrode back. That block no longer declares `--primary`, so your value is now the value in **both**
@@ -445,27 +453,31 @@ The fix is to re-point the step instead, which is the layer that is still mode-a
 
 ```css
 /* before — forge's `.dark` twin flipped this back */
-:root { --primary: var(--brand-600); }
+:root {
+  --primary: var(--brand-600);
+}
 
 /* after — say it per mode, at the step `--primary` resolves through */
-:root { --accent-12: light-dark(var(--brand-600), var(--brand-300)); }
+:root {
+  --accent-12: light-dark(var(--brand-600), var(--brand-300));
+}
 ```
 
-| If you overrode | Re-point |
-|---|---|
-| `--primary` | `--accent-12` |
-| `--background`, `--foreground` | `--gray-1`, `--gray-12` |
-| `--card`, `--popover` | `--gray-2` |
-| `--secondary`, `--muted`, `--accent` | `--gray-3` |
-| `--muted-foreground` | `--gray-11` |
-| `--primary-foreground` | `--gray-1` |
-| `--secondary-foreground`, `--accent-foreground`, `--card-foreground`, `--popover-foreground` | `--gray-12` |
-| `--border` | `--gray-6` |
-| `--input`, `--track` | `--gray-10` |
-| `--ring` | `--gray-11` |
-| `--overlay` | `--black-a6` |
-| `--destructive`, `--success`, `--warning` | `--red-9`, `--green-9`, `--yellow-9` |
-| `--destructive-foreground`, `--success-foreground`, `--warning-foreground` | `--red-contrast`, `--green-contrast`, `--yellow-contrast` |
+| If you overrode                                                                              | Re-point                                                  |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `--primary`                                                                                  | `--accent-12`                                             |
+| `--background`, `--foreground`                                                               | `--gray-1`, `--gray-12`                                   |
+| `--card`, `--popover`                                                                        | `--gray-2`                                                |
+| `--secondary`, `--muted`, `--accent`                                                         | `--gray-3`                                                |
+| `--muted-foreground`                                                                         | `--gray-11`                                               |
+| `--primary-foreground`                                                                       | `--gray-1`                                                |
+| `--secondary-foreground`, `--accent-foreground`, `--card-foreground`, `--popover-foreground` | `--gray-12`                                               |
+| `--border`                                                                                   | `--gray-6`                                                |
+| `--input`, `--track`                                                                         | `--gray-10`                                               |
+| `--ring`                                                                                     | `--gray-11`                                               |
+| `--overlay`                                                                                  | `--black-a6`                                              |
+| `--destructive`, `--success`, `--warning`                                                    | `--red-9`, `--green-9`, `--yellow-9`                      |
+| `--destructive-foreground`, `--success-foreground`, `--warning-foreground`                   | `--red-contrast`, `--green-contrast`, `--yellow-contrast` |
 
 Two of those rows are shared steps, and sharing is the mechanism rather than an accident.
 `--input` and `--track` both name step 10, and each names it independently — so overriding
@@ -504,7 +516,7 @@ distinct from `--destructive` / `--success` / `--warning`, which stay yours to r
 `Toast`, `Badge` and the `@y-core/forge/http` banners resolve through it. **Nothing you do changes
 because of that** — those four already used fixed hues rather than `--destructive`, so re-pointing
 `--destructive` never re-tinted a status panel and still does not. What is new is that the fixed
-hues are now tokens you can reach: if you *want* to re-tint an error panel, `--status-danger-*` is
+hues are now tokens you can reach: if you _want_ to re-tint an error panel, `--status-danger-*` is
 where to do it, and `--status-danger-strong` is the chip tier a `Badge` reads.
 
 ## The loud break — one theme file is deleted, and two filenames now mean something else
@@ -522,13 +534,13 @@ is the row of this table to read twice.
 rg -n 'theme-(gray|zinc|neutral|slate|stone|mist|olive)\.css'
 ```
 
-| You imported | Do |
-|---|---|
-| `theme-neutral.css` | **Delete the import.** `forge.css` imports it for you now — it is the default scheme. Keeping it restates the default and changes nothing |
-| `theme-gray.css` | **Decide.** Same filename, new file: it is now the **cool** scheme, Tailwind's `gray` hue. Keep it if you want cool; delete it for the achromatic default |
-| `theme-zinc.css` | Switch to `theme-stone.css`, or delete the import. Zinc has no successor |
-| `theme-slate.css` | Keep it. The values change, and it is visibly cooler than it was |
-| `theme-stone.css` | Keep it. The values change, and it is visibly warmer than it was |
+| You imported        | Do                                                                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `theme-neutral.css` | **Delete the import.** `forge.css` imports it for you now — it is the default scheme. Keeping it restates the default and changes nothing                 |
+| `theme-gray.css`    | **Decide.** Same filename, new file: it is now the **cool** scheme, Tailwind's `gray` hue. Keep it if you want cool; delete it for the achromatic default |
+| `theme-zinc.css`    | Switch to `theme-stone.css`, or delete the import. Zinc has no successor                                                                                  |
+| `theme-slate.css`   | Keep it. The values change, and it is visibly cooler than it was                                                                                          |
+| `theme-stone.css`   | Keep it. The values change, and it is visibly warmer than it was                                                                                          |
 
 **A theme file is no longer required at all.** `forge.css` imports `theme-neutral.css` — the default,
 achromatic scheme — for you, so forge renders correctly with nothing else imported. That is a setup
@@ -538,12 +550,12 @@ replace.
 **If you are choosing rather than migrating**, four schemes ship and they differ only in how far they
 lean. Measured as max−min across R/G/B at step 11, the muted-text step:
 
-| Import | Tint at step 11 | Character |
-|---|---|---|
-| *(none — the default)* | 0 | Achromatic |
-| `theme-stone.css` | 12 | Warm |
-| `theme-gray.css` | 20 | Cool |
-| `theme-slate.css` | 42 | Strongly cool |
+| Import                 | Tint at step 11 | Character     |
+| ---------------------- | --------------- | ------------- |
+| _(none — the default)_ | 0               | Achromatic    |
+| `theme-stone.css`      | 12              | Warm          |
+| `theme-gray.css`       | 20              | Cool          |
+| `theme-slate.css`      | 42              | Strongly cool |
 
 **Tailwind's ramp named `gray` is blue-tinted**, so `theme-gray.css` is the cool scheme and the
 achromatic one is `theme-neutral.css`. The names invite the opposite reading, and that is the single
@@ -570,25 +582,25 @@ compile error, no unset variable and no unmatched class — the page simply rend
 
 What to look at, in rough order of how noticeable it is:
 
-| What | What happens |
-|---|---|
-| Everything neutral | New scale end to end. The default scheme is achromatic; `theme-stone.css` is warm, `theme-gray.css` cool and `theme-slate.css` strongly cool, and all three carry a **visible** tint rather than the near-neutral they used to |
-| `--input`, `--ring` | **Lighter** than they were mid-audit — 4.34 → 3.33 and 6.87 → 5.19 in light — and still clear of the 3:1 floor 1.4.11 binds them by. Against 0.0.82 they are still far stronger; the shipped dark `--input` measured 1.70:1 |
-| `--foreground` | Slightly stronger: 14.30 against `--muted` |
-| `--border` | Quieter. It keeps the decorative step, which on the new scale is a fainter hairline than the old ramp drew |
-| Light-mode cards | **Still raised.** `--card` stays lighter than `--background`, which took a deliberate swap of steps 1 and 2 in the light block — Radix reads step 2 as one shade toward the foreground, which would have made a panel recede |
-| The dialog scrim | `rgb(0 0 0 / 0.5)` becomes `var(--overlay)`, which is `--black-a6` at 0.4 — marginally lighter, and now overridable without touching a component rule |
-| Status panels and chips | Unchanged. `--status-*` is still on Tailwind stops; only the greys moved |
+| What                    | What happens                                                                                                                                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Everything neutral      | New scale end to end. The default scheme is achromatic; `theme-stone.css` is warm, `theme-gray.css` cool and `theme-slate.css` strongly cool, and all three carry a **visible** tint rather than the near-neutral they used to |
+| `--input`, `--ring`     | **Lighter** than they were mid-audit — 4.34 → 3.33 and 6.87 → 5.19 in light — and still clear of the 3:1 floor 1.4.11 binds them by. Against 0.0.82 they are still far stronger; the shipped dark `--input` measured 1.70:1    |
+| `--foreground`          | Slightly stronger: 14.30 against `--muted`                                                                                                                                                                                     |
+| `--border`              | Quieter. It keeps the decorative step, which on the new scale is a fainter hairline than the old ramp drew                                                                                                                     |
+| Light-mode cards        | **Still raised.** `--card` stays lighter than `--background`, which took a deliberate swap of steps 1 and 2 in the light block — Radix reads step 2 as one shade toward the foreground, which would have made a panel recede   |
+| The dialog scrim        | `rgb(0 0 0 / 0.5)` becomes `var(--overlay)`, which is `--black-a6` at 0.4 — marginally lighter, and now overridable without touching a component rule                                                                          |
+| Status panels and chips | Unchanged. `--status-*` is still on Tailwind stops; only the greys moved                                                                                                                                                       |
 
 **If you ship more than one scheme, the difference between them is now legible.** Three tokens, as
 they resolve in a Tailwind 4.3.3 build of each scheme (light / dark):
 
-| | `--background` | `--muted-foreground` | `--border` |
-|---|---|---|---|
+|                               | `--background`        | `--muted-foreground`  | `--border`            |
+| ----------------------------- | --------------------- | --------------------- | --------------------- |
 | `theme-neutral.css` (default) | `#f9f9f9` / `#111111` | `#646464` / `#b4b4b4` | `#d9d9d9` / `#3a3a3a` |
-| `theme-stone.css` | `#f9f9f8` / `#13100f` | `#69635d` / `#b8b3af` | `#dcd8d6` / `#3e3935` |
-| `theme-gray.css` | `#f8f9fa` / `#0b111c` | `#5d6571` / `#afb5bd` | `#d6d9de` / `#323b48` |
-| `theme-slate.css` | `#f7f9fb` / `#081023` | `#54657e` / `#a7b6c9` | `#d1dae6` / `#2c3b51` |
+| `theme-stone.css`             | `#f9f9f8` / `#13100f` | `#69635d` / `#b8b3af` | `#dcd8d6` / `#3e3935` |
+| `theme-gray.css`              | `#f8f9fa` / `#0b111c` | `#5d6571` / `#afb5bd` | `#d6d9de` / `#323b48` |
+| `theme-slate.css`             | `#f7f9fb` / `#081023` | `#54657e` / `#a7b6c9` | `#d1dae6` / `#2c3b51` |
 
 **What that does not cost you is contrast.** All four schemes sit on one lightness ramp and differ
 only in hue, so every ratio forge audits is the same across them to within 0.05 — the widest gap at
@@ -604,7 +616,7 @@ that contains a forge component will need regenerating, and the diff is real rat
 ## The fourth break — `--primary` is a brand colour, and your `--accent-12` override is inert
 
 **`Button variant='primary'` was near-black. It is indigo now.** This is a second visual change on
-top of the one above, and unlike that one it has a thing to *do* if you had supplied your own brand
+top of the one above, and unlike that one it has a thing to _do_ if you had supplied your own brand
 colour.
 
 Forge shipped no accent, so `--accent-12` was aliased to `--gray-12` and `--primary` resolved
@@ -626,11 +638,11 @@ high-contrast text — so your override still parses, still applies, and no long
 
 ### What to do
 
-| If you… | Do this |
-|---|---|
-| Never touched `--accent-12` | Nothing, but look at your primary buttons — they went from near-black to indigo. |
-| Overrode `--accent-12` for a brand colour | Re-declare `--accent-9` (the solid) and `--accent-contrast` (its foreground). Two properties instead of one. |
-| Want a complete brand scale | Declare all twelve `--accent-*` steps plus the twelve `--accent-a*` alpha steps once each in a scheme file, the same shape `theme-neutral.css` uses — a step differing by mode written `light-dark(light, dark)`. The customiser at `/showcase/ui/theme` generates one and emits it ready to paste. |
+| If you…                                   | Do this                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Never touched `--accent-12`               | Nothing, but look at your primary buttons — they went from near-black to indigo.                                                                                                                                                                                                                    |
+| Overrode `--accent-12` for a brand colour | Re-declare `--accent-9` (the solid) and `--accent-contrast` (its foreground). Two properties instead of one.                                                                                                                                                                                        |
+| Want a complete brand scale               | Declare all twelve `--accent-*` steps plus the twelve `--accent-a*` alpha steps once each in a scheme file, the same shape `theme-neutral.css` uses — a step differing by mode written `light-dark(light, dark)`. The customiser at `/showcase/ui/theme` generates one and emits it ready to paste. |
 
 **Check the contrast if you supply your own step 9.** `--primary-foreground` is an audited pair now
 — WCAG 1.4.3 binds it, because a primary button is text on a filled surface — and forge's own values
@@ -672,29 +684,29 @@ each one carries both modes, so there is no `.dark` twin to write and the dark `
 
 ```css
 :root {
-  --sidebar:                       var(--gray-2);
-  --sidebar-foreground:            var(--gray-12);
-  --sidebar-primary:               var(--accent-12);
-  --sidebar-primary-foreground:    var(--gray-1);
-  --sidebar-accent:                var(--gray-4);
-  --sidebar-accent-foreground:     var(--gray-12);
-  --sidebar-border:                var(--gray-6);
-  --sidebar-ring:                  var(--ring);
+  --sidebar: var(--gray-2);
+  --sidebar-foreground: var(--gray-12);
+  --sidebar-primary: var(--accent-12);
+  --sidebar-primary-foreground: var(--gray-1);
+  --sidebar-accent: var(--gray-4);
+  --sidebar-accent-foreground: var(--gray-12);
+  --sidebar-border: var(--gray-6);
+  --sidebar-ring: var(--ring);
 }
 
 @theme inline {
-  --color-sidebar:                     var(--sidebar);
-  --color-sidebar-foreground:          var(--sidebar-foreground);
-  --color-sidebar-primary:             var(--sidebar-primary);
-  --color-sidebar-primary-foreground:  var(--sidebar-primary-foreground);
-  --color-sidebar-accent:              var(--sidebar-accent);
-  --color-sidebar-accent-foreground:   var(--sidebar-accent-foreground);
-  --color-sidebar-border:              var(--sidebar-border);
-  --color-sidebar-ring:                var(--sidebar-ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 }
 ```
 
-These are the 0.0.82 *roles* rather than the 0.0.82 pixels — the shades move with the new scale, as
+These are the 0.0.82 _roles_ rather than the 0.0.82 pixels — the shades move with the new scale, as
 everything else does. They depend on `--gray-*`, `--accent-12` and `--ring`, so keep the block after
 the forge theme import. Re-declaring is the compatibility path, not the recommended one: nothing in
 forge maintains these any more, and a panel is usually better expressed with `--card` or `--muted`,
@@ -710,12 +722,12 @@ still defaults to `"top"`, and `Toolbar` is not affected: its own `placement` de
 
 Two things move, and neither is a type error:
 
-| What moves | Fix |
-|---|---|
-| The class string — a top strip becomes a left rail | Pass `placement="top"` |
-| Generated ids — `navbar-menu-top-*` → `navbar-menu-left-*`, `navbar-group-top-*` → `navbar-group-left-*` | Pass an explicit `id` |
+| What moves                                                                                               | Fix                    |
+| -------------------------------------------------------------------------------------------------------- | ---------------------- |
+| The class string — a top strip becomes a left rail                                                       | Pass `placement="top"` |
+| Generated ids — `navbar-menu-top-*` → `navbar-menu-left-*`, `navbar-group-top-*` → `navbar-group-left-*` | Pass an explicit `id`  |
 
-The ids move because `idBase` falls back to the *resolved* placement when no `id` is given. An
+The ids move because `idBase` falls back to the _resolved_ placement when no `id` is given. An
 explicit `id` takes precedence over the placement in the same expression, so setting one pins the
 prefix against this and any future default change — which is the better fix if anything outside the
 component names those ids.
@@ -742,12 +754,12 @@ Every other forwarded prop is unaffected: native attributes, `data-*` hooks and 
 reach the `<select>`, because those are about the control rather than the box around it. `class` is
 the single split, recorded as a `classSlot` in `conformance.test.tsx`.
 
-| What you passed | Where it lands now | What to do |
-|---|---|---|
-| A geometry utility — `w-*`, `max-w-*`, `col-span-*`, a margin | The wrapper | Nothing; this is the fix |
-| An inherited text utility — `text-sm`, `font-*` | The wrapper, then inherits into the control | Usually nothing |
-| A utility that paints a box — `border-*`, `bg-*`, `rounded-*`, `ring-*` | The wrapper, *behind* the control's own border and background | Move it into your own stylesheet keyed on `[data-slot~='select']`, or drop it |
-| A padding utility — `px-*`, `py-*` | The wrapper, insetting the control rather than its text | Drop it; the control carries `px-3 py-2` |
+| What you passed                                                         | Where it lands now                                            | What to do                                                                    |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| A geometry utility — `w-*`, `max-w-*`, `col-span-*`, a margin           | The wrapper                                                   | Nothing; this is the fix                                                      |
+| An inherited text utility — `text-sm`, `font-*`                         | The wrapper, then inherits into the control                   | Usually nothing                                                               |
+| A utility that paints a box — `border-*`, `bg-*`, `rounded-*`, `ring-*` | The wrapper, _behind_ the control's own border and background | Move it into your own stylesheet keyed on `[data-slot~='select']`, or drop it |
+| A padding utility — `px-*`, `py-*`                                      | The wrapper, insetting the control rather than its text       | Drop it; the control carries `px-3 py-2`                                      |
 
 **Downstream symptom:** a `Select` you had given a custom border or background renders with the
 default control outline drawn on top of it, and the custom paint visible only as a ring of wrapper
@@ -764,12 +776,12 @@ rg -n '<Select[^>]*class=' --glob '*.tsx'
 `buttonVariants({ variant: 'ghost', size })`, which means its `size` prop is now `ButtonSize` — the
 full `sm` / `md` / `lg` / `icon` / `icon-sm` / `square` scale — and `sm` changes meaning.
 
-| `size` | Was | Is now |
-|---|---|---|
-| `sm` (the default) | `size-[34px]`, a square | `h-8 px-3 text-sm`, the `Button` `sm` pill |
-| `md` | `size-10`, a square | `h-10 px-4 text-sm`, the `Button` `md` pill |
-| `lg` | `size-11`, a square | `h-12 px-6 text-base`, the `Button` `lg` pill |
-| *(square boxes)* | — | `size='icon-sm'` is `size-8`; `icon` is `size-9` |
+| `size`             | Was                     | Is now                                           |
+| ------------------ | ----------------------- | ------------------------------------------------ |
+| `sm` (the default) | `size-[34px]`, a square | `h-8 px-3 text-sm`, the `Button` `sm` pill       |
+| `md`               | `size-10`, a square     | `h-10 px-4 text-sm`, the `Button` `md` pill      |
+| `lg`               | `size-11`, a square     | `h-12 px-6 text-base`, the `Button` `lg` pill    |
+| _(square boxes)_   | —                       | `size='icon-sm'` is `size-8`; `icon` is `size-9` |
 
 **An icon-only item must now pass `size='icon-sm'`.** Left at the default it becomes a wide pill with
 a centred glyph and horizontal padding it did not have.
@@ -782,7 +794,7 @@ only when you pass them, and an `<svg>` with neither falls back to the replaced-
 takes over the row. Pass a size on the icon (`class='size-4'`, or `width` / `height`) at every
 `ToggleGroup.Item` call site that renders one.
 
-`ToggleGroupItemSize` is removed, so a module that *named* the type gets a compile error and is not
+`ToggleGroupItemSize` is removed, so a module that _named_ the type gets a compile error and is not
 at risk here. A module that only passed a string literal compiles unchanged and re-renders at a new
 size, which is the whole hazard.
 
@@ -807,9 +819,9 @@ target — at least 32px across in both orientations, which is what makes it cle
 
 Two things follow, and neither is a type change:
 
-| What moves | Consequence |
-|---|---|
-| The fill is gone | Value is legible from thumb position only, as on an unstyled range input |
+| What moves                                                                              | Consequence                                                                |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| The fill is gone                                                                        | Value is legible from thumb position only, as on an unstyled range input   |
 | The input's box is 32px in the cross axis, up from 8px horizontally and 20px vertically | A slider in a tight row is taller than it was, and a vertical one is wider |
 
 **You must be importing `theme-base.css`.** The track and thumb are the only part of a forge
@@ -831,7 +843,7 @@ tracks, and the row they sit in grows by up to 24px each.
 If you render `<Navbar collapsible="always">` as a rail, its layout classes move off the component
 and onto the `Resumable` scope root — which takes a `class` as of this release for exactly that
 purpose. `Navbar`'s own `class` lands on the `<details>`, two boxes inside the element your flex row
-actually lays out. A width set there only ever *looked* right, because every box between happened to
+actually lays out. A width set there only ever _looked_ right, because every box between happened to
 size to its content, and a `shrink-0` set there guarded an element the flex algorithm was never going
 to shrink.
 
@@ -937,7 +949,7 @@ come from `@y-core/forge/ui/chrome`.
 Nothing here needs action; it is listed so the change is not a surprise on first render. The viewer
 is rebuilt on `ui/core` primitives and semantic tokens, replacing a hand-rolled `brand-*` palette
 that forge never shipped and no consumer declared — so those utilities did not compile at all, and
-the viewer had invisible borders and unreadable text in *light* mode too. Level chips are now `Badge`
+the viewer had invisible borders and unreadable text in _light_ mode too. Level chips are now `Badge`
 variants, the table sits in a `Card` bounded by a `ScrollArea`, the empty state says which of its two
 causes it is, a failed read renders a retry instead of blanking the table, and neither HTMX swap
 drops keyboard focus.
@@ -954,7 +966,7 @@ rewrite.
 
 `CHANGELOG.md`'s `[0.0.81]` section is the record of **what** changed and is not repeated here.
 This file covers **what to do**, and it is weighted deliberately: most of it is about the changes a
-consuming app will *not* notice. The type errors announce themselves and a compiler will walk you
+consuming app will _not_ notice. The type errors announce themselves and a compiler will walk you
 through them. The rest of this list keeps compiling, keeps returning `200`, keeps passing the test
 suite — and behaves differently in production.
 
@@ -971,20 +983,20 @@ Read this alongside the rules it applies:
 
 ## Which breaks announce themselves
 
-| Break | How you find out |
-|---|---|
-| `parse` / `validate` replaced by `schema` | Compile error |
-| `injectedFields` removed | Compile error |
-| `readFields`, `readTextField`, `FormFieldReader` removed | Compile error |
-| `onValidationError` receives issues, not strings | Compile error |
-| `scopeAttrs` / `ScopeAttrsProps` moved to `ui/contracts` | Compile error — unresolved import |
-| A `_csrf` submitted to a route with no `csrfProtection` | Every submission refused, at runtime |
-| A missing `honeypot:` / `turnstile:` **on a strict schema** | Every submission refused, at runtime |
-| A missing `honeypot:` / `turnstile:` on a **non-strict** schema | **Nothing.** Bot detection is gone |
-| An implicitly-optional schema field | Nothing, until a user omits the field |
-| A dropped `v.safeParse` config | Nothing |
-| A hand-rolled `Object.fromEntries` body read | Nothing |
-| A refusal body a client parses | Nothing — the *status* is unchanged |
+| Break                                                           | How you find out                      |
+| --------------------------------------------------------------- | ------------------------------------- |
+| `parse` / `validate` replaced by `schema`                       | Compile error                         |
+| `injectedFields` removed                                        | Compile error                         |
+| `readFields`, `readTextField`, `FormFieldReader` removed        | Compile error                         |
+| `onValidationError` receives issues, not strings                | Compile error                         |
+| `scopeAttrs` / `ScopeAttrsProps` moved to `ui/contracts`        | Compile error — unresolved import     |
+| A `_csrf` submitted to a route with no `csrfProtection`         | Every submission refused, at runtime  |
+| A missing `honeypot:` / `turnstile:` **on a strict schema**     | Every submission refused, at runtime  |
+| A missing `honeypot:` / `turnstile:` on a **non-strict** schema | **Nothing.** Bot detection is gone    |
+| An implicitly-optional schema field                             | Nothing, until a user omits the field |
+| A dropped `v.safeParse` config                                  | Nothing                               |
+| A hand-rolled `Object.fromEntries` body read                    | Nothing                               |
+| A refusal body a client parses                                  | Nothing — the _status_ is unchanged   |
 
 The runtime refusals are loud by design: a submission that is refused every time is found on the
 first manual test of the form. The bottom five rows are the substance of this guide.
@@ -994,7 +1006,7 @@ first manual test of the form. The bottom five rows are the substance of this gu
 ## Silent hazard 1 — a field that was optional by accident now hard-fails
 
 The removed `readFields` wrote `""` for a field the caller never sent. A schema field that was
-*labelled* optional in the UI but declared as a plain string therefore validated fine: `""` passes
+_labelled_ optional in the UI but declared as a plain string therefore validated fine: `""` passes
 `v.maxLength`, and it passes any `*`-quantified `v.regex`. The absence was collapsed before the
 schema could observe it.
 
@@ -1019,14 +1031,14 @@ submissions that omit the field, so a filled-in smoke test passes.
 
 Every field the markup does **not** mark `required` needs `v.optional` in the schema. Note also that
 `v.optional(v.string())` accepts `""` as well as absence, which is what a browser sends for an empty
-optional text input that *is* present — so `v.optional` is the right shape for both.
+optional text input that _is_ present — so `v.optional` is the right shape for both.
 
 ---
 
 ## Silent hazard 2 — the refusal status, and the workaround that must not survive
 
 A consuming app that returned its own status for a refusal is the case to read carefully, because
-the *before* and *after* are the same number and the conclusion "nothing to do" is wrong.
+the _before_ and _after_ are the same number and the conclusion "nothing to do" is wrong.
 
 ```ts
 import { defineAction } from "@y-core/forge/app";
@@ -1039,7 +1051,9 @@ if (!result.ok) return fragmentResponse(renderValidationErrors(result.error), 42
 // after — the pipeline answers 422 itself; the route never sees the failure
 export const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
   schema: ContactSchema,
-  handle: async (data) => { /* reached only through a passing safeParse */ },
+  handle: async (data) => {
+    /* reached only through a passing safeParse */
+  },
 });
 ```
 
@@ -1085,7 +1099,7 @@ const result = v.safeParse(ContactSchema, raw, { abortPipeEarly: true });
 `Config`, and they are one letter apart in effect as well as in spelling:
 
 - `abortEarly` — stop the whole validation at the first issue. **One** issue, total.
-- `abortPipeEarly` — stop each *pipeline* at its first issue, and carry on to the next entry. One
+- `abortPipeEarly` — stop each _pipeline_ at its first issue, and carry on to the next entry. One
   issue **per failing field**.
 
 An app that wants a different shape passes `onValidationError` and runs its own `v.safeParse`.
@@ -1103,11 +1117,11 @@ response is just steerable by the submission.
 `Object.fromEntries(formData)` is the obvious hand-rolled replacement for the removed reader. It is
 wrong in a way no test written against a well-formed body can see.
 
-| Reader | `email=victim@x&email=attacker@y` yields |
-|---|---|
-| `readFields` (removed) — `formData.get` | `"victim@x"` — **first**-wins |
-| `Object.fromEntries(formData)` | `"attacker@y"` — **last**-wins |
-| `formToObject(formData)` | `["victim@x", "attacker@y"]` — an array |
+| Reader                                  | `email=victim@x&email=attacker@y` yields |
+| --------------------------------------- | ---------------------------------------- |
+| `readFields` (removed) — `formData.get` | `"victim@x"` — **first**-wins            |
+| `Object.fromEntries(formData)`          | `"attacker@y"` — **last**-wins           |
+| `formToObject(formData)`                | `["victim@x", "attacker@y"]` — an array  |
 
 ```ts
 import { formToObject } from "@y-core/forge/form";
@@ -1124,7 +1138,7 @@ const body = formToObject(formData, { drop });
 
 **Why this is a vulnerability and not a nit.** A scalar schema field fed an array refuses in its own
 words, so `formToObject` turns a duplicated key into a visible `422`. Last-wins turns it into a
-*successful* request carrying the attacker's value. Where the submitted value is echoed into an
+_successful_ request carrying the attacker's value. Where the submitted value is echoed into an
 outbound message — a `reply_to` on a contact email is the canonical case — an attacker appends a
 second `email` field and redirects the reply, and the form reports success to the victim who filled
 it in. First-wins is not safe either; it merely fails in the victim's favour by luck.
@@ -1152,14 +1166,16 @@ import { Honeypot } from "@y-core/forge/ui/core";
 export const CONTACT_DECOY = "company"; // one app-owned constant, referenced twice
 
 // view
-<Honeypot field={CONTACT_DECOY} />
+<Honeypot field={CONTACT_DECOY} />;
 
 // action
 defineAction<typeof ContactSchema, Bindings, AppConfig>({
   schema: ContactSchema,
   honeypot: CONTACT_DECOY,
   turnstile: { secretKey: (_c, config) => config.services.turnstile.secretKey, verify: (c) => ({ expectedHostname: c.url.hostname }) },
-  handle: async (data) => { /* … */ },
+  handle: async (data) => {
+    /* … */
+  },
 });
 ```
 
@@ -1168,7 +1184,7 @@ that does not name them gets neither the check nor the strip — so on a `strict
 decoy arrives as an undeclared key and every submission is refused. That is the intended direction
 to fail in, and it is the reason this break is listed apart from the four above.
 
-**It is loud only on a strict schema.** Both options are optional in the *type* — there is no
+**It is loud only on a strict schema.** Both options are optional in the _type_ — there is no
 compile error, by necessity, since a form with no decoy must stay valid. On a plain `v.object` an
 undeclared field is silently dropped, so an app that has not adopted `strictObject` gets no refusal,
 no compile error, and **no bot detection**: the pipeline previously stripped the honeypot field
@@ -1238,11 +1254,15 @@ the decoy field filled and assert the refusal.
 
 ```ts
 it("refuses a submission with the decoy field filled", async () => {
-  const res = await app.request("/api/contact", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ _csrf: token, [CONTACT_DECOY]: "bot", name: "Jane", email: "j@x.test", message: "…" }),
-  }, MINIMUM_ENV);
+  const res = await app.request(
+    "/api/contact",
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ _csrf: token, [CONTACT_DECOY]: "bot", name: "Jane", email: "j@x.test", message: "…" }),
+    },
+    MINIMUM_ENV,
+  );
 
   expect(res.status).toBe(422);
 });

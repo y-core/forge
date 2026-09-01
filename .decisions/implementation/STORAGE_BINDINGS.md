@@ -61,7 +61,7 @@ The `sql` tag produces a `SqlFragment` — the parameterized query string plus i
 `D1Client.query` / `queryOne` / `execute` / `batch` accept a `SqlFragment` only.
 
 ```typescript
-const rows = await db.query(sql`SELECT * FROM users WHERE id = ${userId}`)
+const rows = await db.query(sql`SELECT * FROM users WHERE id = ${userId}`);
 ```
 
 `isSqlFragment(value)` is the type guard for generic helpers that must reject raw strings. It is a
@@ -95,14 +95,14 @@ injected clock.
 **The 12-bit `rand_a` field carries a monotonic counter, not randomness** (RFC 9562 Method 1,
 Section 6.2), and on Workers that is load-bearing rather than an optimisation. `Date.now()` does not
 advance during synchronous execution — it is frozen at the time of the last I/O as a timing-attack
-mitigation — so *every* ID minted between two awaits reads the same millisecond. A textbook
+mitigation — so _every_ ID minted between two awaits reads the same millisecond. A textbook
 UUIDv7 with a random `rand_a` therefore emits a batch in random order, losing the single property
 it was chosen for. The counter reseeds to a random 10-bit value on each clock advance, leaving
 ≥3072 increments of headroom; on overflow the generator borrows the next millisecond and repays it
 when the wall clock catches up. A backwards clock step is absorbed the same way.
 
 **The module-level default generator is a deliberate exception to
-[`CODE_RULES.md`](../governance/CODE_RULES.md) §1a.** That rule prohibits *request-scoped*
+[`CODE_RULES.md`](../governance/CODE_RULES.md) §1a.** That rule prohibits _request-scoped_
 data in module scope, and its rationale is bleed between recycled isolates. The retained state is
 a timestamp and a counter — nothing request-derived — and the cross-request bleed is exactly what
 stops two requests sharing an isolate from colliding inside one frozen millisecond. Code needing
@@ -124,7 +124,7 @@ generator**, so an application mixing them still gets a single global ordering.
 **Do not reach for `WITHOUT ROWID` to shrink a UUID key.** In an ordinary rowid table every
 secondary index entry carries the implicit integer rowid, not the primary key, so a 36-character
 id costs two fixed copies per row regardless of how many indexes the table has. `WITHOUT ROWID`
-makes the id the table key, which appends it to *every* secondary index entry — past one index it
+makes the id the table key, which appends it to _every_ secondary index entry — past one index it
 is a net loss.
 
 **It is implemented in the sealed-internal `crypto` module and surfaced here** — see
@@ -234,10 +234,10 @@ bucket, which is what keeps the storage layer testable against an in-memory back
 
 Every storage namespace provides two functions with distinct lifecycle roles:
 
-| Function | Role |
-|---|---|
+| Function                 | Role                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------ |
 | `validateXBinding(name)` | Returns a `Middleware`; register via `app.use` to shape-check the binding on first request |
-| `resolveX(c, opts)` | Request time: read the binding off `c` via a `binding` selector and build the typed client |
+| `resolveX(c, opts)`      | Request time: read the binding off `c` via a `binding` selector and build the typed client |
 
 **The validation is a functional-shape check, not a presence check.** KV and R2 require
 `typeof binding.get` and `typeof binding.put` to be `"function"`; D1 requires `typeof
@@ -246,7 +246,7 @@ rather than failing deep inside a handler. Every `validate*` and `resolve*` in �
 one rule.
 
 **Resolver error policy — throw, never `Result`.** A missing binding is a deployment defect, so
-`resolve*` **throws**. Once resolved, store and client *operations* return `Result<T, E>`,
+`resolve*` **throws**. Once resolved, store and client _operations_ return `Result<T, E>`,
 because runtime storage failures are expected errors.
 
 **The boundary is: resolution throws (fail closed); operations return `Result`.** The
@@ -270,7 +270,7 @@ valibot schema — the storage helpers are thin wrappers over it. Its canonical 
 
 ### 4c. Structural Contracts — Cast-Free Platform Bindings
 
-Each storage namespace publishes *neutral* interfaces (`R2Bucket`, `KVNamespace`, `D1Database`)
+Each storage namespace publishes _neutral_ interfaces (`R2Bucket`, `KVNamespace`, `D1Database`)
 so consumers do not couple to `@cloudflare/workers-types`. But pinning a binding selector to the
 exact neutral type conflates what the resolver **accepts** (the platform binding off `c.env.X`)
 with what the adapter **exposes**, which forced an `as unknown as R2Bucket` cast at every R2 call
@@ -282,14 +282,14 @@ resolver constrained to it.** Each namespace publishes one — `D1DatabaseLike`,
 type and constrained to the matching contract.
 
 The `*Like` interfaces are a structural **supertype** of both forge's neutral type and the
-platform's runtime type. Because the binding return is *constrained to* the contract rather than
-*pinned to* the neutral type, the compiler infers the concrete type and proves it satisfies the
+platform's runtime type. Because the binding return is _constrained to_ the contract rather than
+_pinned to_ the neutral type, the compiler infers the concrete type and proves it satisfies the
 contract — **no cast at any call site.**
 
 **A pass-through option bag is typed `unknown` on the contract.** `R2BucketLike`'s `get` and `list`
 options go straight to the binding and forge never reads a field of them, so naming a shape would
 pin the supertype to one platform's spelling and stop a real `R2Bucket` from satisfying it.
-`put` is typed (`R2PutLike`) precisely because the adapter *constructs* that object.
+`put` is typed (`R2PutLike`) precisely because the adapter _constructs_ that object.
 
 **Testing without a real platform binding is the second thing the supertype buys, and it is why
 the contract is written to the consumed surface rather than mirroring the platform's.** An

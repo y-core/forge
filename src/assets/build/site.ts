@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
 import { resolveSiteConfig } from "../../site/config";
 import { renderRobotsTxt } from "../../site/robots";
 import { renderSitemapXml } from "../../site/sitemap";

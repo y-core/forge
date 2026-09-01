@@ -103,7 +103,7 @@ values the component itself controls, so no caller token can hide inside it. The
 suppression, matching `exports.ts` and `docs.ts`.
 
 **The destructure preserves attribute position, which is why it is the recipe.** The JSX transform
-merges duplicate keys in source order — a later spread overwrites the *value* but keeps the *first*
+merges duplicate keys in source order — a later spread overwrites the _value_ but keeps the _first_
 insertion position — so a literal rewritten in place serializes byte-identically. A spread-last
 props helper would achieve the same merge while moving `data-slot` after `class` in every rendered
 string, for no behavioural gain.
@@ -118,21 +118,21 @@ silently, with no build error and no visual hint beyond the state never moving. 
 keys off a `data-slot`-anchored descendant selector instead. **A decorative element nested inside
 another cannot use `peer-*`.**
 
-**`Slider`'s `output` prop carries the *sanitized* value rather than the raw `value` prop** — the
+**`Slider`'s `output` prop carries the _sanitized_ value rather than the raw `value` prop** — the
 string HTML's value-sanitization algorithm for `input[type=range]` settles on, which is what
 positions the thumb; a readout taken from the prop can disagree with the thumb permanently, and
 `Slider` ships no client controller to reconcile them. The algorithm is module-local to
 `slider.tsx` and takes the serialized attribute string rather than the prop, so it parses
 byte-for-byte what the browser parses. **Mirroring that readout on input is a consumer concern** —
 forge stays markup-only (§1a). This is §1h's "a server may only stamp what it can keep true"
-resolving *toward* stamping: the sanitized value is a total function of attributes forge emits in
+resolving _toward_ stamping: the sanitized value is a total function of attributes forge emits in
 the same breath.
 
 **`output` stays a boolean, and the unformatted readout is a decision rather than a gap** — no
 formatting hook, no locale, no unit; a consumer wanting `"50%"` composes their own `<output>`.
 **`Meter` is the precedent and the argument**: `Meter.Value`'s text is caller-supplied children, so
 presenting a number is already composition rather than configuration, and a formatter prop here
-would make the two disagree about who owns it. **Any future formatter seam receives the *sanitized*
+would make the two disagree about who owns it. **Any future formatter seam receives the _sanitized_
 string, never the raw prop.**
 
 ### 1f. Turnstile — Server-Rendered Mount Point
@@ -150,7 +150,7 @@ A **composite** is a widget made of many focusable items that behaves as **one t
 items; the controller never guesses.** How it declares them differs by widget, deliberately.
 
 **`Toolbar` uses an explicit `data-toolbar-item` marker rather than a `data-slot` prefix**, because
-`Toolbar.Group` and `Toolbar.Separator` are slots that must *not* be focus stops and a prefix
+`Toolbar.Group` and `Toolbar.Separator` are slots that must _not_ be focus stops and a prefix
 selector cannot express the exception. The marker is public, so any foreign element inside a toolbar
 opts in by carrying it.
 
@@ -203,7 +203,7 @@ platform maintains from there.
 
 **A side is stamped at SSR, where the Worker cannot know the reader's direction, so `Side` carries
 physical and logical spellings in one value space** (`src/ui/contracts/state-attrs.ts`). The
-physical members stay, because a popup that must *not* mirror needs them, and there is deliberately
+physical members stay, because a popup that must _not_ mirror needs them, and there is deliberately
 no separate logical type: `data-side` is one attribute with one value space, and splitting the type
 would let a caller hold a value the attribute cannot express.
 
@@ -213,17 +213,17 @@ would let a caller hold a value the attribute cannot express.
 `inset-inline-start: anchor(start)` parses but resolves against the **containing block's** writing
 mode; a top-layer `position: fixed` popup's containing block is the viewport, whose direction is the
 root element's, so a `dir="rtl"` subtree inside an LTR document resolves to the LTR answer — the
-original bug reintroduced through its own fix. `:dir()` asks the *tree*, which is the only thing
-that knows. `position-try-fallbacks` needs nothing added: `flip-inline` transforms *used*
+original bug reintroduced through its own fix. `:dir()` asks the _tree_, which is the only thing
+that knows. `position-try-fallbacks` needs nothing added: `flip-inline` transforms _used_
 declarations after the cascade settles, so `:dir()` selection happens first.
 
 **Align runs on the axis perpendicular to the side, in whichever vocabulary the side used.**
 `inline-*` sides align on the block axis, which does not mirror, so they join the physical rows
 verbatim; `block-*` sides align on the inline axis, which does, so those rows are `:dir()`-keyed.
-`block-*` *placement* rows carry no `:dir()` at all, direction mirroring the inline axis only.
+`block-*` _placement_ rows carry no `:dir()` at all, direction mirroring the inline axis only.
 
 **A component projects the subset its stylesheet can render**, so an unrenderable value is
-unrepresentable rather than silently unstyled: `Tooltip`'s block is a complete *physical* matrix, so
+unrepresentable rather than silently unstyled: `Tooltip`'s block is a complete _physical_ matrix, so
 `tooltip.tsx` narrows its prop with `Exclude<Side, …>`. Prefer that projection form — `popover.tsx`
 narrows with an independent literal union instead, which does not track future growth of `Side`.
 
@@ -241,7 +241,7 @@ no wheel listener.
 **Every id forge derives for a form field must be a single id token, and a field whose `name` — or
 whose non-blank `scope` — is not one derives no `id`, no `for` and no `aria-describedby` at all.**
 HTML forbids ASCII whitespace inside an id and splits every IDREF list on it, so such an id can be
-*declared* but never *named*: the browser tokenizes the reference into fragments matching nothing.
+_declared_ but never _named_: the browser tokenizes the reference into fragments matching nothing.
 Deriving the same unusable string on both halves does not redeem it — the harm is the platform's
 tokenization, not a disagreement between forge's code paths. The field still renders and its `name`
 is still passed through; only the wiring is withheld. `src/ui/core/field.tsx` owns the predicates
@@ -250,7 +250,7 @@ and the character set, and is authoritative over any prose restating it
 
 **The hostile set is exactly HTML's ASCII whitespace, and JS `\s` is the wrong class for it.** `\s`
 also matches U+00A0 and the Unicode spaces, which are legal id characters no parser treats as a
-separator — so splitting an IDREF on one breaks a *resolvable* id into pieces, manufacturing the
+separator — so splitting an IDREF on one breaks a _resolvable_ id into pieces, manufacturing the
 dangling reference this rule exists to prevent.
 
 **Suppressing beats sanitizing**, because collapsing whitespace would have forge rewrite caller
@@ -383,7 +383,7 @@ Two things scope a conflict beyond the concern itself: a utility's **modifier pr
 **The coverage boundary.** The table covers the families forge's own primitives emit plus those a
 consumer override plausibly targets. **It is not a complete map of Tailwind and will never be.** A
 utility outside it passes through untouched — so two conflicting utilities from an uncovered family
-are *both* emitted and stylesheet order decides between them. That is the behaviour every consumer
+are _both_ emitted and stylesheet order decides between them. That is the behaviour every consumer
 already had before conflict resolution existed; an uncovered family is a gap, not a regression.
 
 **Fail-open, and the inversion is deliberate.** An unrecognised utility is always kept, inverting
@@ -396,7 +396,7 @@ a newer Tailwind, with no error and no fix available from outside forge; and fai
 case is the status quo ante every consumer already lives with.
 
 **Importance is kept, diverging from the stated design reference.** forge keeps `!important` in the
-conflict key, so a later *normal* utility cannot displace an earlier *important* one and
+conflict key, so a later _normal_ utility cannot displace an earlier _important_ one and
 `cn("h-full!", "h-5")` keeps both. tailwind-merge strips importance and would drop the first. That
 behaviour is wrong at the cascade — `!important` wins regardless of source order — so deleting the
 important utility changes what renders. Where the reference is wrong about CSS, forge does not
@@ -433,7 +433,7 @@ amortised. It stays retrofittable behind the unchanged signature.
 **State attributes are the styling hooks CSS matches on to react to a component's state, and they
 are declared once, in a module both tiers import.** This is not an SSR concern but the one contract
 the server-rendered component and the browser controller must agree on, and neither owns it: a state
-attribute is written in **two places that cannot see each other**, and drift is *silent* — the
+attribute is written in **two places that cannot see each other**, and drift is _silent_ — the
 selector stops matching, so the component looks unstyled rather than broken. The same argument
 produced the delegated-event vocabulary ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §3c).
 
@@ -445,7 +445,7 @@ naming forge's state attributes.** Nothing here enumerates it, for the reason §
 attribute outside the table fails a conformance test — smuggling a hook past it is the exact failure
 the single declaration exists to prevent.
 
-**And a declared name with no producer is removed.** A hook that is never emitted is the *inverse*
+**And a declared name with no producer is removed.** A hook that is never emitted is the _inverse_
 of the drift above and just as misleading: a consumer styles against it and gets a rule that can
 never match. Removal is also cheapest before publication, since afterwards it is a breaking change —
 so a hook is added with its producer, never ahead of it.
@@ -506,7 +506,7 @@ it for every participating component.
 property under `.dark`.** A step whose value differs by mode is written with `light-dark()`, and the
 branch is selected by `color-scheme`, which `theme-base.css` sets on the light and dark roots.
 
-The rule is about declaration *sites*, not the selector, which is why it is stated that way and not
+The rule is about declaration _sites_, not the selector, which is why it is stated that way and not
 as "no `.dark` block". `theme-base.css` sets `color-scheme: dark` under `.dark` — that is the
 mechanism, and it carries no value a consumer's own scheme could half-supply. The gate enforces the
 rule in exactly this shape: a `.dark` rule declaring no custom property passes.
@@ -575,14 +575,14 @@ consumer can come to depend on before any component justifies it.
 **`--status-*` is deliberately separate from `--destructive` / `--success` / `--warning`, and the
 split is an ownership one.** The latter are fills an app owns and may re-point at its brand; the
 status hues are forge's, so a failure panel keeps meaning "failed" whatever `--destructive` has been
-pointed at. An app that means to change what "failed" *looks like* re-points the underlying step,
+pointed at. An app that means to change what "failed" _looks like_ re-points the underlying step,
 not the semantic alias.
 
 ### 5d. The dark: Variant Is Class-Driven, and That Is a Takeover
 
 **`forge.css` redefines Tailwind's `dark:` variant to follow the theme class rather than
-`prefers-color-scheme`,** because otherwise a `dark:` utility follows the *operating system* while
-every forge token follows the *user's choice* — and the two disagree the moment someone picks a
+`prefers-color-scheme`,** because otherwise a `dark:` utility follows the _operating system_ while
+every forge token follows the _user's choice_ — and the two disagree the moment someone picks a
 theme that is not `system`.
 
 **It reconfigures a consumer's own `dark:` utilities too, and nothing catches that**: forge has no

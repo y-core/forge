@@ -1,4 +1,5 @@
 import type { RequestContext } from "@remix-run/fetch-router";
+
 import type { GuardResult } from "../result/result";
 
 /** Options for `createCsrfToken`. @public */
@@ -71,16 +72,16 @@ export interface CsrfKeyRing {
 }
 
 /** A function that resolves a CSRF secret key (or key ring) from the request context. @public */
-// biome-ignore lint/suspicious/noExplicitAny: context shape varies per consumer
+// oxlint-disable-next-line typescript/no-explicit-any -- context shape varies per consumer
 export type CsrfSecretResolver = (c: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
 
 /** Options for the `csrfProtection` middleware. @public */
 export interface CsrfProtectionOptions {
-  // biome-ignore lint/suspicious/noExplicitAny: context shape varies
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
   secret: (context: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
   tokenField?: string;
   headerName?: string;
-  // biome-ignore lint/suspicious/noExplicitAny: context shape varies
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
   subject: ((context: RequestContext<any, any>) => string | undefined) | false;
   maxBytes?: number;
 }

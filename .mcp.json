@@ -1,8 +1,1 @@
-{
-  "mcpServers": {
-    "ledger": {
-      "type": "http",
-      "url": "https://task-forge.devbox.test:8443/mcp/forge"
-    }
-  }
-}
+{ "mcpServers": { "ledger": { "type": "http", "url": "https://task-forge.devbox.test:8443/mcp/forge" } } }

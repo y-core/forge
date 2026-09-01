@@ -5,11 +5,11 @@ description: "The dial model a generated colour scheme is produced from, the emi
 
 # Theme Generation Contracts
 
-> Owns the shared data a colour scheme is *generated* and *audited* against: the dials a scheme
+> Owns the shared data a colour scheme is _generated_ and _audited_ against: the dials a scheme
 > is produced from, the pipeline that turns them into a scheme file, and the audited pair list
 > the verification gate and the browser customiser read from one declaration.
 >
-> It does not own how a scheme file is *declared* — that is
+> It does not own how a scheme file is _declared_ — that is
 > [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §5 — nor how the customiser page is reached,
 > which is [`UI_SHOWCASE.md`](./UI_SHOWCASE.md) §1b.
 >
@@ -76,7 +76,7 @@ the URL, and reloading is reproducing it exactly.
 server cannot know; every dial arrives in the request, so the server can render the correct scheme
 and there is no intermediate state to correct.
 
-**The browser half never navigates.** It repaints in place and *publishes* the equivalent link
+**The browser half never navigates.** It repaints in place and _publishes_ the equivalent link
 rather than writing one into the address bar, so a drag costs no history entry and no request.
 
 ### 1c. Presets Are Fitted Aliases, Not a Second Source
@@ -136,7 +136,7 @@ pair `openPopoverAt` runs into ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md)
 [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §1a.
 
 **The consequence is a real constraint on the page, not an implementation detail.** Server-rendered
-markup carries the *structure* of the preview and the *keys* the painter writes into; the colour
+markup carries the _structure_ of the preview and the _keys_ the painter writes into; the colour
 arrives only once the scope resumes.
 
 ---

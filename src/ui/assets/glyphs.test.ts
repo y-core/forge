@@ -1,4 +1,5 @@
 import { describe, expect, it, spyOn } from "bun:test";
+
 import { loadSpriteGlyphs, parseSpriteGlyphs } from "./glyphs";
 
 describe("parseSpriteGlyphs()", () => {

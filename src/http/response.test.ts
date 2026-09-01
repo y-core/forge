@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createRedirectResponse, fragmentResponse, htmlResponse, redirect } from "./response";
 
 describe("htmlResponse", () => {

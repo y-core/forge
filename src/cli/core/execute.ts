@@ -1,4 +1,5 @@
 import process, { argv as processArgv, exit as processExit } from "node:process";
+
 import { resolveColorLevel } from "../term/capability";
 import { createColorize } from "../term/color";
 import { terminalWidth } from "../term/terminal";

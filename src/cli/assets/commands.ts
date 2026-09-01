@@ -3,6 +3,7 @@ import { buildFonts } from "../../assets/build/fonts";
 import { buildIcons } from "../../assets/build/icons";
 import { buildJS } from "../../assets/build/js";
 import { buildAll, generateAssetsTypes } from "../../assets/build/pipeline";
+import { buildRasters } from "../../assets/build/rasters";
 import { buildSprites } from "../../assets/build/sprites";
 import { loadConfig } from "../../assets/config";
 import { resolveAppRoot } from "../core/app-root";
@@ -110,6 +111,19 @@ export function createAssetsCommands(): CommandBase {
       run: async (_args, flags) => {
         const config = await loadAssetsConfig(flags);
         if (config.icons) await buildIcons(config.icons);
+      },
+    }),
+  );
+
+  addCommand(
+    buildCmd,
+    createCommand({
+      name: "rasters",
+      description: "Rasterize configured SVGs to PNG",
+      flags: { config: CONFIG_FLAG, root: ROOT_FLAG },
+      run: async (_args, flags) => {
+        const config = await loadAssetsConfig(flags);
+        await buildRasters(config.rasters, config.paths.publicDir);
       },
     }),
   );

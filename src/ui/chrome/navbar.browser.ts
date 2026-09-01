@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { createIcon } from "../core/icon";
@@ -85,11 +86,11 @@ test.describe("Navbar — anatomy the bar actually claims", () => {
   test("a bar menu's popup reports its open state to the platform's own selector", async ({ page }) => {
     await mountNavbar(page);
 
-    const isOpen = () => page.evaluate(() => document.querySelector("#navbar-menu-top-0")?.matches(":popover-open"));
+    const reportsOpen = () => page.evaluate(() => document.querySelector("#navbar-menu-top-0")?.matches(":popover-open"));
 
-    expect(await isOpen()).toBe(false);
+    expect(await reportsOpen()).toBe(false);
     await page.click("[data-slot~='menu-trigger']");
-    expect(await isOpen()).toBe(true);
+    expect(await reportsOpen()).toBe(true);
   });
 
   test("a nested leaf is a menu item and still a real link", async ({ page }) => {

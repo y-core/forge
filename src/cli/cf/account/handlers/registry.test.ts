@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import type { ResourceType, WranglerConfig } from "../../types";
 import { buildHandlers, defaultHandlers, findHandler } from "./registry";
 import type { ResourceHandler } from "./types";

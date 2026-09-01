@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { mountNavDrawer } from "./drawer";
 
 /** The fake fires `toggle` synchronously on every write to `open`, and routes focus through the

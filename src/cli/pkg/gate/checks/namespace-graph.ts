@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+
 import { type CheckResult, checkResult, type Finding, fail } from "../finding";
 import type { ExportsMap } from "./exports";
 import { buildGraph, type DeclaredGraph, diffGraph, findEnumerations, type SourceFile } from "./namespace-graph-parse";

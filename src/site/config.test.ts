@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { defineSiteConfig, resolveSiteConfig } from "./config";
 import type { SiteConfig } from "./types";
 

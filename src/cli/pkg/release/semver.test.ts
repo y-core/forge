@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { bumpSemVer, compareSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
 
 describe("parseSemVer()", () => {

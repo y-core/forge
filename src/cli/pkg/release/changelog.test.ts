@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
 
 /** The em dash the grammar requires, escaped so an en dash cannot pass unnoticed in a diff. */

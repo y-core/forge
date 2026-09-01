@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import type { Command, CommandBase } from "../core/types";
 import { createAssetsCommands } from "./commands";
 
@@ -13,12 +14,12 @@ function runnableCommands(root: CommandBase): CommandBase[] {
 }
 
 describe("createAssetsCommands", () => {
-  it("registers the seven asset subcommands", () => {
+  it("registers the eight asset subcommands", () => {
     const root = createAssetsCommands();
     const names = runnableCommands(root)
       .map((c) => c.name)
       .sort();
-    expect(names).toEqual(["all", "css", "fonts", "icons", "js", "sprites", "types"]);
+    expect(names).toEqual(["all", "css", "fonts", "icons", "js", "rasters", "sprites", "types"]);
   });
 
   it("groups by verb — `build` produces assets, `gen` produces a module describing them", () => {

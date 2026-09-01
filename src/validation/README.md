@@ -2,10 +2,10 @@
 
 Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge cf gen env`) under the `/cli` sub-path.
 
-| Import path | Surface |
-|---|---|
+| Import path                | Surface                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `describeValidationIssue`, `formatValidationIssues`, `ValidationResult` |
-| `@y-core/forge/cli/cf` | `forge cf gen env` env-schema generator API (also a `bin`) |
+| `@y-core/forge/cli/cf`     | `forge cf gen env` env-schema generator API (also a `bin`)                                                                                        |
 
 **Everything except `v` is a sibling of it, not a member.** `strictObject` and `v.strictObject` are two different functions, and the one without the prefix is the recommendation for untrusted input.
 
@@ -29,14 +29,7 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 Declare the schema with `strictObject` and the form-text primitives, parse untrusted input with `v.safeParse`, and convert the result into a `ValidationResult` at the system boundary.
 
 ```typescript
-import {
-  describeValidationIssue,
-  formMultilineText,
-  formText,
-  strictObject,
-  v,
-  type ValidationResult,
-} from "@y-core/forge/validation";
+import { describeValidationIssue, formMultilineText, formText, strictObject, v, type ValidationResult } from "@y-core/forge/validation";
 
 const ContactSchema = strictObject({
   name: v.pipe(formText(), v.minLength(2)),
@@ -94,7 +87,7 @@ function strictObject<TEntries extends v.ObjectEntries>(
 ): v.StrictObjectSchema<TEntries, …>;
 ```
 
-A strict object schema in which only a field the schema *actually declares* counts as declared. Use it in place of `v.strictObject` for anything parsing untrusted input — a request body above all.
+A strict object schema in which only a field the schema _actually declares_ counts as declared. Use it in place of `v.strictObject` for anything parsing untrusted input — a request body above all.
 
 ```typescript
 import { strictObject, v } from "@y-core/forge/validation";
@@ -102,7 +95,7 @@ import { strictObject, v } from "@y-core/forge/validation";
 const ContactSchema = strictObject({ name: v.string(), email: v.pipe(v.string(), v.email()) });
 ```
 
-The difference is the declared-key test. Valibot answers "is this key declared?" by looking the name up on the schema's entries object, and on an ordinary object literal that lookup reaches inherited members — so a caller sending `__proto__`, `constructor`, `toString`, `valueOf` or any other inherited name reads as declared for *any* schema and is dropped from the parsed output instead of being refused. That is the one case where the unknown-key guarantee would not hold, and `strictObject` closes it for the whole class of names at once, with no branch naming any of them.
+The difference is the declared-key test. Valibot answers "is this key declared?" by looking the name up on the schema's entries object, and on an ordinary object literal that lookup reaches inherited members — so a caller sending `__proto__`, `constructor`, `toString`, `valueOf` or any other inherited name reads as declared for _any_ schema and is dropped from the parsed output instead of being refused. That is the one case where the unknown-key guarantee would not hold, and `strictObject` closes it for the whole class of names at once, with no branch naming any of them.
 
 The correction is applied **at construction**, so it survives composition: the property holds when the schema is nested in another object, wrapped in `v.pipe`, or used as a `v.union` / `v.variant` option. A patch applied to a finished schema would not.
 
@@ -111,7 +104,7 @@ The correction is applied **at construction**, so it survives composition: the p
 #### `formText()` / `formMultilineText()`
 
 ```typescript
-function formText(): v.GenericSchema<string, string>;          // trim
+function formText(): v.GenericSchema<string, string>; // trim
 function formMultilineText(): v.GenericSchema<string, string>; // CRLF → LF, then trim
 ```
 
@@ -121,7 +114,7 @@ The default shapes for form text. `formText()` is the single-line variant and **
 import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation";
 
 const MessageSchema = strictObject({
-  subject: v.pipe(formText(), v.minLength(1)),                        // refuses "   "
+  subject: v.pipe(formText(), v.minLength(1)), // refuses "   "
   body: v.pipe(formMultilineText(), v.minLength(1), v.maxLength(2000)),
 });
 ```
@@ -139,13 +132,13 @@ function formatValidationIssues(issues: readonly v.BaseIssue<unknown>[]): string
 
 Two formatters with different audiences, and they are **not** interchangeable.
 
-| | `describeValidationIssue` | `formatValidationIssues` |
-|---|---|---|
-| Audience | the caller — a response body | the operator — a log line or a thrown message |
-| Output | the failing field's name, bounded in depth and per-segment length | `path: message` per issue, joined by `; ` |
-| Reproduces the submission | no | **yes**, via `issue.message` |
+|                           | `describeValidationIssue`                                         | `formatValidationIssues`                      |
+| ------------------------- | ----------------------------------------------------------------- | --------------------------------------------- |
+| Audience                  | the caller — a response body                                      | the operator — a log line or a thrown message |
+| Output                    | the failing field's name, bounded in depth and per-segment length | `path: message` per issue, joined by `; `     |
+| Reproduces the submission | no                                                                | **yes**, via `issue.message`                  |
 
-Use `describeValidationIssue` for anything a caller reads. It names the field and nothing else, because each of the alternatives is a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and `issue.input` is the submission itself. Only the path survives, bounded, because a `v.record` key or a refused undeclared key is caller-chosen text of caller-chosen length. The result therefore varies only with *which* field failed — a 50,000-character value and a 5-character one produce the same string, and extra fields cannot multiply the response.
+Use `describeValidationIssue` for anything a caller reads. It names the field and nothing else, because each of the alternatives is a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and `issue.input` is the submission itself. Only the path survives, bounded, because a `v.record` key or a refused undeclared key is caller-chosen text of caller-chosen length. The result therefore varies only with _which_ field failed — a 50,000-character value and a 5-character one produce the same string, and extra fields cannot multiply the response.
 
 ```typescript
 const messages = result.issues.map(describeValidationIssue); // ["email"]
@@ -163,9 +156,9 @@ type ValidationResult<T> = Result<T, readonly string[]>;
 //  ≡ { ok: true; data: T } | { ok: false; error: readonly string[] };
 ```
 
-| Variant | Fields | Meaning |
-|---|---|---|
-| Success | `ok: true`, `data: T` | Input parsed; `data` is the typed value. |
+| Variant | Fields                                  | Meaning                                                       |
+| ------- | --------------------------------------- | ------------------------------------------------------------- |
+| Success | `ok: true`, `data: T`                   | Input parsed; `data` is the typed value.                      |
 | Failure | `ok: false`, `error: readonly string[]` | Validation failed; `error` holds the human-readable messages. |
 
 This type is defined in and re-exported from `@y-core/forge/result` (the single result primitive). Convert a valibot result into it by mapping `result.issues` through `describeValidationIssue` on failure (see the usage example above) — not through `issue.message`, which reproduces the submitted value.
@@ -187,25 +180,21 @@ The generator is one third of the **standard three-part env setup** (see the ful
 Run the generator as a `package.json` script:
 
 ```json
-{
-  "scripts": {
-    "gen:env": "forge cf gen env"
-  }
-}
+{ "scripts": { "gen:env": "forge cf gen env" } }
 ```
 
 ```bash
 bun run gen:env
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--wrangler` | `wrangler.jsonc` | Path to the wrangler config. |
-| `--dev-vars` | `.dev.vars` | Path to the `.dev.vars` secrets file. |
-| `--out` | `src/app/env.schema.ts` | Output module path. |
-| `--config` | `src/app/env.config.ts` | Host-policy module exporting a `Partial<GenOptions>`; built-in `DEFAULT_OPTIONS` are used when this file is absent. |
+| Flag         | Default                 | Description                                                                                                         |
+| ------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `--wrangler` | `wrangler.jsonc`        | Path to the wrangler config.                                                                                        |
+| `--dev-vars` | `.dev.vars`             | Path to the `.dev.vars` secrets file.                                                                               |
+| `--out`      | `src/app/env.schema.ts` | Output module path.                                                                                                 |
+| `--config`   | `src/app/env.config.ts` | Host-policy module exporting a `Partial<GenOptions>`; built-in `DEFAULT_OPTIONS` are used when this file is absent. |
 
-The command reads the wrangler bindings and dev-vars keys, collects entries, emits the module, and runs a biome format pass so the generated file passes the lint gate. A typical generated module:
+The command reads the wrangler bindings and dev-vars keys, collects entries, emits the module, and runs an oxfmt format pass so the generated file passes the lint gate. A typical generated module:
 
 ```typescript
 /** env.schema.ts — GENERATED — do not edit; run `bun run gen:env`. */
@@ -226,10 +215,7 @@ Override generation policy with a `--config` module that exports a `Partial<GenO
 // src/app/env.config.ts
 import type { GenOptions } from "@y-core/forge/cli/cf";
 
-export const options: Partial<GenOptions> = {
-  optional: new Set(["ANALYTICS"]),
-  refinements: { API_BASE_URL: { minLength: 8 } },
-};
+export const options: Partial<GenOptions> = { optional: new Set(["ANALYTICS"]), refinements: { API_BASE_URL: { minLength: 8 } } };
 ```
 
 To call the generator programmatically (e.g. wiring it into a custom CLI via `execute`):
@@ -245,11 +231,11 @@ await execute(createGenEnvCommand());
 
 #### Command API (`cf-env-command`)
 
-| Export | Signature | Description |
-|---|---|---|
-| `createGenEnvCommand` | `() => CommandBase` | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge cf gen env` bin entry. |
-| `readWranglerConfig` | `(path: string) => Record<string, unknown>` | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped). |
-| `loadOptions` | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given. |
+| Export                | Signature                                      | Description                                                                                                                                        |
+| --------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createGenEnvCommand` | `() => CommandBase`                            | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge cf gen env` bin entry. |
+| `readWranglerConfig`  | `(path: string) => Record<string, unknown>`    | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped).                                                            |
+| `loadOptions`         | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given.                                 |
 
 #### Generator internals (`cf-env-registry` + `cf-env-gen`)
 
@@ -258,7 +244,7 @@ symbols are barrel-exported. Drive generation through the command API above (`cr
 no supported way to assemble a schema from the internal pieces.
 
 - **`cf-env-registry.ts`** holds the **data**: the `REGISTRY` binding-kind table (`configKey → nameField
-  → TS type` rows in wrangler's collection order), the `DEFAULT_OPTIONS` policy default, the baked
+→ TS type` rows in wrangler's collection order), the `DEFAULT_OPTIONS` policy default, the baked
   `HEADER` comment, and the `BindingDef` / `Entry` shapes. All `@internal`.
 - **`cf-env-gen.ts`** holds the **codegen**: the pure `collectBindings`, `collectVars`, `emit`, and
   `stripJsonc` functions that walk the registry and render the module text. All `@internal`.
@@ -267,6 +253,6 @@ no supported way to assemble a schema from the internal pieces.
 
 Only `GenOptions` is public — the host-policy shape you pass via a `--config` module.
 
-| Type | Shape | Description |
-|---|---|---|
+| Type         | Shape                                                                                                  | Description                                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GenOptions` | `{ optional: Set<string>; refinements: Record<string, { minLength?: number }>; bindingCheck: string }` | Host policy layered over the generated schema: optional bindings, per-var refinements, and the shared `v.custom` presence check. Merged over the internal `DEFAULT_OPTIONS`. |

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { classesOf, escapeClass, mount } from "../client/browser-test-helper";
 import { Button } from "./button";
@@ -64,7 +65,7 @@ for (const control of CONTROLS) {
       const classes = classesOf(await control.html(), control.slot);
 
       expect(classes).toContain("focus-visible:ring-2");
-      expect(classes.filter((cls) => /^focus:/.test(cls))).toEqual([]);
+      expect(classes.filter((cls) => cls.startsWith("focus:"))).toEqual([]);
     });
 
     test("matches :focus-visible when reached by keyboard, so the ring is really delivered", async ({ page }) => {

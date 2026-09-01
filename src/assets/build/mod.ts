@@ -11,6 +11,7 @@ export { buildJS } from "./js";
 export { safeJoin } from "./paths";
 export type { BuildOptions } from "./pipeline";
 export { buildAll, generateAssetsTypes } from "./pipeline";
+export { buildRasters } from "./rasters";
 export { buildSite } from "./site";
 export type { SpriteBuildResult, SpriteGroupResult } from "./sprites";
 export { buildSprites, extractViewBoxes, sanitizeSVG, svgToSymbol } from "./sprites";

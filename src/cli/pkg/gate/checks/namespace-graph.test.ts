@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { resolveNamespaces, validateNoEnumeration, validateNoMutualValuePairs } from "./namespace-graph";
 import type { EdgeKind } from "./namespace-graph-parse";
 

@@ -1,4 +1,5 @@
 import type { RequestContext } from "@remix-run/fetch-router";
+
 import { setPendingHeader } from "../../context/pending-headers";
 import { createSignedCookie } from "../../session/signed";
 import type { FlashMessage, FlashType } from "./flash";
@@ -14,17 +15,17 @@ export interface FlashCookieOptions {
 
 /** Reads and writes flash messages on a signed, single-read cookie. @public */
 export interface Flasher {
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant for cookie operations
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant for cookie operations
   set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void>;
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   get(c: RequestContext<any, any>): Promise<FlashMessage[]>;
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   success(c: RequestContext<any, any>, text: string): Promise<void>;
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   info(c: RequestContext<any, any>, text: string): Promise<void>;
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   warning(c: RequestContext<any, any>, text: string): Promise<void>;
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   error(c: RequestContext<any, any>, text: string): Promise<void>;
 }
 
@@ -37,13 +38,13 @@ export function createFlash(options: FlashCookieOptions): Flasher {
 
   const cookie = createSignedCookie(name, { secrets: options.secrets, path, maxAge, sameSite });
 
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   async function set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void> {
     const serialized = await cookie.serialize(JSON.stringify(messages));
     setPendingHeader(c, "set-cookie", serialized, { append: true });
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   async function get(c: RequestContext<any, any>): Promise<FlashMessage[]> {
     const raw = await cookie.parse(c.request.headers.get("cookie") ?? null);
     if (raw == null) return [];
@@ -58,7 +59,7 @@ export function createFlash(options: FlashCookieOptions): Flasher {
   }
 
   function convenience(type: FlashType) {
-    // biome-ignore lint/suspicious/noExplicitAny: bindings irrelevant
+    // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
     return (c: RequestContext<any, any>, text: string) => set(c, [{ type, text }]);
   }
 

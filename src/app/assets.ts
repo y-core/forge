@@ -1,6 +1,7 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
 import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
+
 import { resolveConfig } from "../config/config";
 import { retrieveConfig } from "../config/registry";
 import { getAppContext } from "../context/types";

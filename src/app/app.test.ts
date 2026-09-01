@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
+
 import { createConfig } from "../config/config";
 import { csrfProtection, importCsrfKey } from "../form/csrf";
 import type { SerializedError } from "../logging/serialize-error";
@@ -155,7 +157,7 @@ describe("createApp", () => {
     const app = createApp<AppBindings>({ config: createConfig({ dbUrl: { __env: "DB_URL" } }, v.object({ dbUrl: v.string() })) });
 
     mapHandler(app, "GET", "/config-test", (context) => {
-      // biome-ignore lint/suspicious/noExplicitAny: config accessed via context property
+      // oxlint-disable-next-line typescript/no-explicit-any -- config accessed via context property
       const config = (context as any).config as { dbUrl: string };
       return new Response(config.dbUrl);
     });

@@ -8,21 +8,21 @@ This is an **integration namespace** (composes `context`, `app`, `jsx`, `logging
 
 ## Exports
 
-| Symbol | Kind | Summary |
-|---|---|---|
-| `createTestContext` | function | `RequestContext` pre-loaded with `env`/`executionCtx`/`config`/request logger — exactly as the Forge router injects them. Satisfies `getAppContext`. |
-| `TestContextOptions` | type | Options for `createTestContext` (`env`, `config`, `executionCtx`, `logger`). |
-| `mockExecutionContext` | function | `ExecutionContext` whose `waitUntil`/`passThroughOnException` are no-ops. |
-| `nullLogger` | const | `Logger` that drops everything; `child()` returns itself. |
-| `mintTestCsrfToken` | function | Imports a hex secret and mints a real path-bound CSRF token in one call (production primitives — no mocking). |
-| `fakeKV` | function | In-memory `KVNamespace` fake (text + arrayBuffer modes, metadata, prefix `list`, offset-cursor pagination, `expiration`). |
-| `fakeD1` | function | Programmable `D1DatabaseLike` stub; a `query` responder controls results and every bound statement records into `calls`. |
-| `fakeR2` | function | Functional in-memory `R2BucketLike` fake — `put`/`get`/`head`/`delete`/`list` with working `arrayBuffer()`/`text()`/`blob()` and cursor `list`. |
-| `fakeAssetsFetcher` | function | `AssetsFetcher` fake serving from a path→body map (`200`/`404`). |
-| `render` | function | Renders a JSX element to its exact HTML string for `toBe` assertions (wraps the `jsx` render runtime). |
-| `buildRequest` | function | Builds a `Request` from a path plus optional `method`/`headers`/`formData`/`json`/`body`/`baseUrl` — kills `new Request(...)` boilerplate. |
-| `mapHandler` | function | Registers a single route on a `Forge` app in tests, mirroring `app.map(routes, controller)`. |
-| `TestAction` | type | Route action for `mapHandler`: a bare `RequestHandler` or a `{ middleware, handler }` object. |
+| Symbol                 | Kind     | Summary                                                                                                                                              |
+| ---------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createTestContext`    | function | `RequestContext` pre-loaded with `env`/`executionCtx`/`config`/request logger — exactly as the Forge router injects them. Satisfies `getAppContext`. |
+| `TestContextOptions`   | type     | Options for `createTestContext` (`env`, `config`, `executionCtx`, `logger`).                                                                         |
+| `mockExecutionContext` | function | `ExecutionContext` whose `waitUntil`/`passThroughOnException` are no-ops.                                                                            |
+| `nullLogger`           | const    | `Logger` that drops everything; `child()` returns itself.                                                                                            |
+| `mintTestCsrfToken`    | function | Imports a hex secret and mints a real path-bound CSRF token in one call (production primitives — no mocking).                                        |
+| `fakeKV`               | function | In-memory `KVNamespace` fake (text + arrayBuffer modes, metadata, prefix `list`, offset-cursor pagination, `expiration`).                            |
+| `fakeD1`               | function | Programmable `D1DatabaseLike` stub; a `query` responder controls results and every bound statement records into `calls`.                             |
+| `fakeR2`               | function | Functional in-memory `R2BucketLike` fake — `put`/`get`/`head`/`delete`/`list` with working `arrayBuffer()`/`text()`/`blob()` and cursor `list`.      |
+| `fakeAssetsFetcher`    | function | `AssetsFetcher` fake serving from a path→body map (`200`/`404`).                                                                                     |
+| `render`               | function | Renders a JSX element to its exact HTML string for `toBe` assertions (wraps the `jsx` render runtime).                                               |
+| `buildRequest`         | function | Builds a `Request` from a path plus optional `method`/`headers`/`formData`/`json`/`body`/`baseUrl` — kills `new Request(...)` boilerplate.           |
+| `mapHandler`           | function | Registers a single route on a `Forge` app in tests, mirroring `app.map(routes, controller)`.                                                         |
+| `TestAction`           | type     | Route action for `mapHandler`: a bare `RequestHandler` or a `{ middleware, handler }` object.                                                        |
 
 ## Usage
 
@@ -30,19 +30,16 @@ This is an **integration namespace** (composes `context`, `app`, `jsx`, `logging
 import { createTestContext, fakeKV, mintTestCsrfToken } from "@y-core/forge/testing";
 
 // Direct handler test — no app dispatch needed:
-const c = createTestContext<AppEnv, AppConfig>(new Request("http://test/settings"), {
-  env: { SETTINGS_KV: fakeKV() },
-  config: testConfig,
-});
+const c = createTestContext<AppEnv, AppConfig>(new Request("http://test/settings"), { env: { SETTINGS_KV: fakeKV() }, config: testConfig });
 const res = await settingsHandler(c);
 
 // POST through csrfProtection without a prior GET:
 const token = await mintTestCsrfToken(TEST_CSRF_SECRET, "/api/contact");
-const posted = await app.request("/api/contact", {
-  method: "POST",
-  headers: { "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ _csrf: token, name: "Jane" }),
-}, TEST_ENV);
+const posted = await app.request(
+  "/api/contact",
+  { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ _csrf: token, name: "Jane" }) },
+  TEST_ENV,
+);
 ```
 
 Prefer `app.request(...)` (the `Forge` test helper) for full-chain integration tests; reach for `createTestContext` when exercising a single handler or middleware in isolation.

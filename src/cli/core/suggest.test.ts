@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { suggest } from "./suggest";
 
 const COMMANDS = ["verify", "release", "sync", "assets", "gen-env"];

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { ESC } from "./ansi";
 import { padAlign, wrapLines } from "./wrap";
 

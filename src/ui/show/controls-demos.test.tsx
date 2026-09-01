@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import { describe, expect, it } from "bun:test";
+
 import { render } from "../../testing/render";
 import { CONTROLS_DEMO_SCOPE, CONTROLS_DEMO_STATE, type ControlsDemoState, controlsReadout } from "../contracts/controls-demo-contract";
 import { fieldId } from "../core/field";
@@ -9,10 +10,10 @@ import { SECTIONS } from "./components";
 import { ControlsDemos } from "./controls-demos";
 import { DEMO_COVERAGE, sectionBodies } from "./coverage";
 
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;
 StubIcon.sprite = "/icons.svg";
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
 const html = await render(<ControlsDemos icon={icon} />);

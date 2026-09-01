@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
 import { type ChangelogParse, parseChangelog } from "../../release/changelog";
 import { compareSemVer, parseSemVer } from "../../release/semver";
 import { type CheckResult, checkResult, type Finding, fail, warn } from "../finding";

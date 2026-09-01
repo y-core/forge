@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createManifest } from "./manifest";
 import { createSpriteRegistry } from "./registry";
 

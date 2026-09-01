@@ -33,10 +33,10 @@ interface Bindings {
 function handler(context) {
   const c = getAppContext<Bindings>(context);
 
-  c.env.CSRF_SECRET;            // typed Workers binding
-  c.executionCtx.waitUntil(p);  // defer async work past the response
-  c.request;                    // the standard Request
-  c.url.pathname;               // parsed URL
+  c.env.CSRF_SECRET; // typed Workers binding
+  c.executionCtx.waitUntil(p); // defer async work past the response
+  c.request; // the standard Request
+  c.url.pathname; // parsed URL
 }
 ```
 
@@ -67,7 +67,7 @@ const userCtx = contextVar<User>("user");
 userCtx.set(context, { id: "u_123" });
 
 // In a downstream handler:
-const user = userCtx.get(context);          // throws if unset
+const user = userCtx.get(context); // throws if unset
 const maybe = userCtx.getOptional(context); // undefined if unset
 ```
 
@@ -98,15 +98,15 @@ const traceId = context.get(TraceKey);
 
 Narrows a `RequestContext` to an `AppContext`, asserting that the Forge router injected per-request state (`env`, `executionCtx`, `config`) via `provideRequestState`. Reads `EnvKey` so it fails loudly with a clear message if state is absent.
 
-| Parameter | Type | Description |
-|---|---|---|
+| Parameter | Type             | Description                                          |
+| --------- | ---------------- | ---------------------------------------------------- |
 | `context` | `RequestContext` | The raw context received by a handler or middleware. |
 
-| Type parameter | Default | Description |
-|---|---|---|
-| `Bindings` | `Record<string, unknown>` | Shape of the Workers `env` bindings. |
-| `Params` | `Record<string, string>` | Route parameter shape. |
-| `Config` | `unknown` | App config shape carried on the context. |
+| Type parameter | Default                   | Description                              |
+| -------------- | ------------------------- | ---------------------------------------- |
+| `Bindings`     | `Record<string, unknown>` | Shape of the Workers `env` bindings.     |
+| `Params`       | `Record<string, string>`  | Route parameter shape.                   |
+| `Config`       | `unknown`                 | App config shape carried on the context. |
 
 **Returns** `AppContext<Bindings, Params, Config>`. **Throws** if per-request state was never injected.
 
@@ -114,30 +114,30 @@ Narrows a `RequestContext` to an `AppContext`, asserting that the Forge router i
 
 Extends `RequestContext<Params>` with Workers-specific, read-only properties. Available on any context once the app router has injected per-request state.
 
-| Property | Type | Description |
-|---|---|---|
-| `env` | `Bindings` | The Workers `env` bindings. |
+| Property       | Type               | Description                                                             |
+| -------------- | ------------------ | ----------------------------------------------------------------------- |
+| `env`          | `Bindings`         | The Workers `env` bindings.                                             |
 | `executionCtx` | `ExecutionContext` | The Workers execution context (`waitUntil` / `passThroughOnException`). |
-| `config` | `Config` | App-level config carried on the context. |
-| `request` | `Request` | Inherited from `RequestContext` — the standard `Request`. |
-| `url` | `URL` | Inherited from `RequestContext` — the parsed request URL. |
+| `config`       | `Config`           | App-level config carried on the context.                                |
+| `request`      | `Request`          | Inherited from `RequestContext` — the standard `Request`.               |
+| `url`          | `URL`              | Inherited from `RequestContext` — the parsed request URL.               |
 
 ### `contextVar<T>(name)`
 
 Creates a typed accessor for a per-request variable, binding the key and value type into one source of truth.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `name` | `string` | Label used in the default "not set" error message. |
+| Parameter | Type     | Description                                        |
+| --------- | -------- | -------------------------------------------------- |
+| `name`    | `string` | Label used in the default "not set" error message. |
 
 **Returns** a `ContextVar<T>`:
 
-| Member | Signature | Description |
-|---|---|---|
-| `set` | `(context, value: T) => void` | Sets the value on the context for this request. |
-| `get` | `(context, message?: string) => T` | Reads the value; throws if unset. `message` overrides the default error. |
-| `getOptional` | `(context) => T \| undefined` | Reads the value; returns `undefined` if unset. |
-| `key` | `ContextKey<T>` | The underlying typed key. |
+| Member        | Signature                          | Description                                                              |
+| ------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `set`         | `(context, value: T) => void`      | Sets the value on the context for this request.                          |
+| `get`         | `(context, message?: string) => T` | Reads the value; throws if unset. `message` overrides the default error. |
+| `getOptional` | `(context) => T \| undefined`      | Reads the value; returns `undefined` if unset.                           |
+| `key`         | `ContextKey<T>`                    | The underlying typed key.                                                |
 
 ### `createContextKey<T>(name?)`
 
@@ -157,9 +157,9 @@ Re-exported from `@remix-run/fetch-router` — the base context type every handl
 
 ### Types
 
-| Type | Description |
-|---|---|
-| `ContextVar<T>` | The accessor pair returned by `contextVar` (`get` / `set` / `getOptional` / `key`). |
-| `ContextKey<T>` | Opaque key type for context-variable storage. |
-| `Middleware` | Standard middleware type (re-exported from `@remix-run/fetch-router`). |
-| `RequestHandler` | Standard route handler type (re-exported from `@remix-run/fetch-router`). |
+| Type             | Description                                                                         |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| `ContextVar<T>`  | The accessor pair returned by `contextVar` (`get` / `set` / `getOptional` / `key`). |
+| `ContextKey<T>`  | Opaque key type for context-variable storage.                                       |
+| `Middleware`     | Standard middleware type (re-exported from `@remix-run/fetch-router`).              |
+| `RequestHandler` | Standard route handler type (re-exported from `@remix-run/fetch-router`).           |

@@ -21,16 +21,9 @@ declare module "bun:test" {
     mockRestore(): this;
   }
 
-  export const mock: {
-    <T extends AnyFn>(fn?: T): Mock<T>;
-    module(id: string, factory: () => any): void | Promise<void>;
-    restore(): void;
-  };
+  export const mock: { <T extends AnyFn>(fn?: T): Mock<T>; module(id: string, factory: () => any): void | Promise<void>; restore(): void };
 
-  export function spyOn<T extends object, K extends keyof T>(
-    object: T,
-    method: K,
-  ): Mock<T[K] extends AnyFn ? T[K] : AnyFn>;
+  export function spyOn<T extends object, K extends keyof T>(object: T, method: K): Mock<T[K] extends AnyFn ? T[K] : AnyFn>;
 
   export function expect(value?: any): any;
 

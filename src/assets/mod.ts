@@ -12,6 +12,7 @@ export type {
   IconsConfig,
   JsBundle,
   PathsConfig,
+  RasterEntry,
   ResolvedConfig,
   ResolvedJsBundle,
   ResolvedPaths,

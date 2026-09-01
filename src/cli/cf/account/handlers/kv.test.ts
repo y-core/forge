@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import type { WranglerConfig } from "../../types";
 import { kvHandler } from "./kv";
 import type { HandlerContext } from "./types";
@@ -94,7 +95,6 @@ describe("kvHandler.reconcile()", () => {
   });
 
   it("reports error when list API fails", async () => {
-    const _fetchFn = makeFetch([]);
     const errFetch: typeof globalThis.fetch = async () => {
       return new Response(JSON.stringify({ success: false, errors: [{ code: 1, message: "auth failed" }], messages: [], result: null }), {
         status: 403,

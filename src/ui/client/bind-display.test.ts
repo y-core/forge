@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { bindAttr, bindText } from "./bind-display";
 import { createSignal } from "./signal";
 import type { SignalRecord } from "./signal-record";

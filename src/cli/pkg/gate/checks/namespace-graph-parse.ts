@@ -450,7 +450,7 @@ export function sectionWindow(lines: readonly string[], start: RegExp): { from: 
 
   for (let i = from + 1; i < lines.length; i++) {
     const line = lines[i];
-    if (line !== undefined && /^## /.test(line)) return { from, to: i };
+    if (line !== undefined && line.startsWith("## ")) return { from, to: i };
   }
   return { from, to: lines.length };
 }

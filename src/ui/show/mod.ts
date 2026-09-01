@@ -3,16 +3,7 @@ export { CollectionSurface, CompositionsSection, FeedbackSurface, SettingsSurfac
 export { CustomiseContent, type CustomiseData, type CustomiseIcon, loadCustomise } from "./customise";
 export type { ShowcaseIcon, ShowcaseOptions, ShowcaseUiRoutes } from "./register";
 export { registerShowcase, showcaseRoutes } from "./register";
-export type {
-  DependentData,
-  PaginateData,
-  PreviewData,
-  SearchData,
-  ShowcaseData,
-  ShowcasePaths,
-  ToastData,
-  ValidateData,
-} from "./route";
+export type { DependentData, PaginateData, PreviewData, SearchData, ShowcaseData, ShowcasePaths, ToastData, ValidateData } from "./route";
 export {
   loadDependent,
   loadPaginate,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { fakeTree } from "./test-dom";
 import { dismissToast } from "./toast";
 

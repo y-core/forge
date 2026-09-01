@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+
 import { lazy } from "./lazy";
 
 // Polyfill the browser-only `CSS.escape` for the Bun test runtime (per the CSSOM spec algorithm).
@@ -102,7 +103,6 @@ describe("lazy", () => {
       return 1;
     };
 
-    // biome-ignore lint/complexity/useArrowFunction: arrow functions cannot be constructed with `new`
     lg.IntersectionObserver = function (callback: IntersectionObserverCallback, options?: IntersectionObserverInit): MockObserver {
       capturedCallback = callback;
       capturedOptions = options;

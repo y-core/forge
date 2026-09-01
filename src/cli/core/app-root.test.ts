@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { findAppRoot, installedAppRoot, resolveAppRoot } from "./app-root";
 
 describe("findAppRoot() — deriving the app root from an install path", () => {

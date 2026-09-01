@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { buildTheme, lightDark, liveRatios, matchPreset, PRESET_CUSTOM, SCHEME_PRESETS, scaleVars, stepProperty } from "./theme-contract";
 
 const DEFAULTS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10 };

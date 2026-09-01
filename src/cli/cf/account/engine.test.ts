@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import type { DeploymentTarget } from "../target";
 import type { SyncConfig, WranglerConfig } from "../types";
 import { syncBindings } from "./engine";

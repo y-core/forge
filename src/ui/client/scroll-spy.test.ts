@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { mountScrollSpy } from "./scroll-spy";
 
 interface Records {

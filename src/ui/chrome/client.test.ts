@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { resume, resumeScope } from "../client/resume";
 import { isDark } from "./client";
 import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";

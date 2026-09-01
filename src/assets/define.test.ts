@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { env, flag, resolveDefine } from "./config";
 
 describe("resolveDefine()", () => {

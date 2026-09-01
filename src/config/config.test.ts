@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { v } from "../validation/mod";
 import { applyMapping, createConfig, env, optionalGroup, resolveConfig } from "./config";
 
@@ -293,7 +294,7 @@ describe("Config", () => {
 
   it("applies overrides patch when detect returns true", () => {
     const cfg = createConfig(testDescriptor.map, testDescriptor.schema, {
-      detect: (env) => env.MODE === "dev",
+      detect: (vars) => vars.MODE === "dev",
       patch: (config) => ({ ...config, dbUrl: "dev://override" }),
     });
 

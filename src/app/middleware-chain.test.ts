@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
+
 import type { Middleware } from "@remix-run/fetch-router";
+
 import { getNonce } from "../security/headers";
 import { requestIdCtx } from "../security/request-id";
 import { mapHandler } from "../testing/route";

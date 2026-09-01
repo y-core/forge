@@ -53,7 +53,7 @@ description: "The valibot facade, form parsing and its byte cap, CSRF protection
 facade is what keeps the valibot version single-sourced and lets forge bound its surface.
 
 **`v` is complete, but it is not alone.** The namespace also ships forge's own schema and issue
-helpers, and they are named exports sitting *beside* `v`, never members of it: `strictObject`
+helpers, and they are named exports sitting _beside_ `v`, never members of it: `strictObject`
 (§1d), `formText` and `formMultilineText` (§1d), and `describeValidationIssue` (§1b).
 `src/validation/mod.ts` is authoritative for the list. The import shape is what matters here,
 because `strictObject` and `v.strictObject` are two different functions and only one of them is
@@ -71,7 +71,7 @@ refusal it receives.
 
 **Render issues through `describeValidationIssue` — never `issue.message`.** It names the failing
 field and nothing else, bounded in depth and in per-segment length, so the refusal varies only
-with *which* field failed and not with what was sent. The three parts it refuses to reproduce are
+with _which_ field failed and not with what was sent. The three parts it refuses to reproduce are
 each a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source
 text of the schema's own `v.regex`, and `issue.input` is the submission itself.
 
@@ -97,7 +97,7 @@ returning a structured fragment for each failure mode. `ActionDefinition` (`src/
 authoritative for the option list, and `src/app/README.md` documents each option with its type.
 
 **The schema is the only way in.** `handle` is unreachable except through a passing `v.safeParse`
-of `schema`, and it receives the schema's *output*, so a transform arrives as the type it actually
+of `schema`, and it receives the schema's _output_, so a transform arrives as the type it actually
 is. A `parse`/`validate` pair of arbitrary callbacks is the shape this refuses: such a pair fixes
 the order the two run in and nothing more — neither has to involve a schema, so a `validate` that
 returns its own argument compiles and is accepted. **Order is a weaker guarantee than validation,
@@ -120,7 +120,7 @@ guard ran is the derive-only rule, owned by
 [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §2b.
 
 **Prefer `strictObject` from `validation` over `v.strictObject`** (§1a). The unknown-key
-guarantee — an undeclared field is *refused*, not silently stripped — is stated against the
+guarantee — an undeclared field is _refused_, not silently stripped — is stated against the
 former, and a schema written with the raw valibot form does not carry the correction that makes
 that guarantee hold for every key a caller can send. That is an opt-in property rather than a
 hidden one: the choice is visible at the call site, and `src/validation/strict-object.ts` states
@@ -141,14 +141,14 @@ and never the control that produced them.
 **`formMultilineText()` folds CRLF, and that is what makes a length check mean one thing:** under
 `v.pipe(formMultilineText(), v.maxLength(500))` each line break counts once, so the limit means the
 same whether the newline arrived as LF or CRLF rather than silently halving the budget. The benefit
-belongs to the fold's *presence*, not to where it sits relative to the trim — that position is not
+belongs to the fold's _presence_, not to where it sits relative to the trim — that position is not
 observable from anywhere, including from a check the caller appends, and `src/validation/form-text.ts`
 records why so the justification is not invented a third time.
 
 **`defineAction` calls `parseFormData(c)` internally**, so it enforces the body cap and surfaces
 `413` on oversized bodies (§2c). A refused body answers **`422`** — a well-formed request the
 server understood and declined — carrying one `<li>` that names the failing field and nothing
-else (§1b). A schema, an `onValidationError` or a `handle` that *throws* is a route defect rather
+else (§1b). A schema, an `onValidationError` or a `handle` that _throws_ is a route defect rather
 than a bad request: it is logged and answered `500` unless `onError` is supplied. Valibot does not
 catch what a pipe action throws, so a `v.transform` or `v.check` that throws on malformed input
 reaches that same path instead of escaping the handler.
@@ -346,7 +346,7 @@ client-side half.
 declares and never the decoy, so a bot reading only the response cannot tell a honeypot or
 Turnstile rejection from a failed field (§1b bounds the same response to one issue).
 
-**The named field is the schema's *first declared* field, and that is an accepted residual, not a
+**The named field is the schema's _first declared_ field, and that is an accepted residual, not a
 bug.** A caller who knows its own body would have validated can still infer that the refusal came
 from a guard. Closing it means synthesising a plausible per-submission field, which manufactures a
 second, richer signal; forge takes the narrower residual. An app that needs the distinction hidden

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { bytesCodec, jsonCodec, textCodec } from "./codec";
 
 describe("jsonCodec", () => {

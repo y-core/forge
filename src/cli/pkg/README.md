@@ -93,14 +93,7 @@ A pre-built step is a value, so the table stays the one place to read. Anything 
 ship a step for is still an ordinary `cmd` entry, as `check:bindings` is above.
 
 ```json
-{
-  "scripts": {
-    "verify": "forge verify",
-    "verify:full": "forge verify --full",
-    "lint": "forge verify --only lint",
-    "fix": "forge verify --fix"
-  }
-}
+{ "scripts": { "verify": "forge verify", "verify:full": "forge verify --full", "lint": "forge verify --only lint", "fix": "forge verify --fix" } }
 ```
 
 `config/steps.ts` is the default; `--config` names another path, and `--root` names the directory
@@ -148,17 +141,17 @@ Output is one line per step, then one verdict line:
 Every validator forge runs on itself is a published function taking a config, so an app can run the
 same rules on its own tree. Each is also a pre-built step, whose label is its `--only` token:
 
-| Step | Check | Asserts |
-|---|---|---|
-| `exportsStep` | `checkExports` | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable |
-| `namespaceGraphStep` | `checkNamespaceGraph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair |
-| `docsStep` | `checkDocs` | Documented subpaths resolve; section numbering, cross-references, frontmatter, size, freshness |
-| `designStep` | `checkDesign` | The design corpus teaches only what ships, and the source obeys the rules it states |
-| `modernCssStep` | `checkModernCss` | Stylesheets and class literals use the platform feature that replaced each hand-written pattern |
-| `cssSourcesStep` | `checkCssSources` | Every utility class the library emits is visible to a consumer's Tailwind scan |
-| `changelogStep` | `checkChangelog` | Keep a Changelog grammar, ordering, and the topmost heading equalling `package.json` |
-| `jsxStep` | `checkJsx` | Every shipped `.tsx` carries its pragmas and writes no clobberable `data-slot` |
-| `browserStep` | `hasChromium` | A launchable browser exists — declared as the step's `requires.probe` |
+| Step                 | Check                 | Asserts                                                                                                                        |
+| -------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `exportsStep`        | `checkExports`        | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable |
+| `namespaceGraphStep` | `checkNamespaceGraph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair                                        |
+| `docsStep`           | `checkDocs`           | Documented subpaths resolve; section numbering, cross-references, frontmatter, size, freshness                                 |
+| `designStep`         | `checkDesign`         | The design corpus teaches only what ships, and the source obeys the rules it states                                            |
+| `modernCssStep`      | `checkModernCss`      | Stylesheets and class literals use the platform feature that replaced each hand-written pattern                                |
+| `cssSourcesStep`     | `checkCssSources`     | Every utility class the library emits is visible to a consumer's Tailwind scan                                                 |
+| `changelogStep`      | `checkChangelog`      | Keep a Changelog grammar, ordering, and the topmost heading equalling `package.json`                                           |
+| `jsxStep`            | `checkJsx`            | Every shipped `.tsx` carries its pragmas and writes no clobberable `data-slot`                                                 |
+| `browserStep`        | `hasChromium`         | A launchable browser exists — declared as the step's `requires.probe`                                                          |
 
 Configuration goes to the builder, in the step table itself — that file already answers "what does
 this repository's gate do?", so a check's allowlists belong with it:
@@ -221,9 +214,9 @@ if (!result.ok) {
 }
 ```
 
-| Type | Shape |
-|---|---|
-| `Finding` | `{ level: "fail" \| "warn"; message; file?; line?; detail? }` |
+| Type          | Shape                                                                             |
+| ------------- | --------------------------------------------------------------------------------- |
+| `Finding`     | `{ level: "fail" \| "warn"; message; file?; line?; detail? }`                     |
 | `CheckResult` | `{ ok; findings; summary }` — `ok` is **derived** from the findings, never passed |
 
 The `parse*` / `validate*` / `resolve*` / `check*` / `format*` prefixes name the layer a function
@@ -238,15 +231,15 @@ A root is **stated** by the caller or **derived** from forge's own install path 
 
 ```ts
 // from @y-core/forge/cli
-resolveAppRoot()          // <app>, derived from <app>/node_modules/@y-core/forge/…
-resolveAppRoot(myRoot)    // stated; always wins
+resolveAppRoot(); // <app>, derived from <app>/node_modules/@y-core/forge/…
+resolveAppRoot(myRoot); // stated; always wins
 ```
 
-| Function | Returns |
-|---|---|
-| `resolveAppRoot(explicit?)` | The stated root, else the derived one, else throws. |
-| `installedAppRoot()` | The app root, or `undefined` when forge is not installed under a `node_modules`. |
-| `findAppRoot(modulePath)` | Pure: everything before the **first** `node_modules` segment of a path. |
+| Function                    | Returns                                                                          |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| `resolveAppRoot(explicit?)` | The stated root, else the derived one, else throws.                              |
+| `installedAppRoot()`        | The app root, or `undefined` when forge is not installed under a `node_modules`. |
+| `findAppRoot(modulePath)`   | Pure: everything before the **first** `node_modules` segment of a path.          |
 
 ### Test your own step table
 
@@ -350,8 +343,8 @@ import { formatReleaseDate, parseChangelog, promoteUnreleased } from "@y-core/fo
 
 const parsed = parseChangelog(source);
 if (parsed.ok) {
-  console.log(parsed.unreleased.empty);        // false
-  console.log(parsed.versions[0]?.version);    // "0.0.83"
+  console.log(parsed.unreleased.empty); // false
+  console.log(parsed.versions[0]?.version); // "0.0.83"
 }
 
 const result = promoteUnreleased(source, {
@@ -369,8 +362,8 @@ if (result.ok) console.log(result.source);
 import { resolveVersion } from "@y-core/forge/cli/pkg";
 
 const result = resolveVersion({ cwd: process.cwd(), tagPrefix: "v" });
-console.log(result.version);  // e.g. "1.3.0"
-console.log(result.reason);   // "auto-minor"
+console.log(result.version); // e.g. "1.3.0"
+console.log(result.reason); // "auto-minor"
 console.log(result.previous); // "v1.2.4" | null
 ```
 
@@ -379,9 +372,9 @@ console.log(result.previous); // "v1.2.4" | null
 ```ts
 import { bumpSemVer, formatSemVer, parseSemVer } from "@y-core/forge/cli/pkg";
 
-const v = parseSemVer("v1.2.3");      // { major: 1, minor: 2, patch: 3 }
+const v = parseSemVer("v1.2.3"); // { major: 1, minor: 2, patch: 3 }
 const next = bumpSemVer(v!, "minor"); // { major: 1, minor: 3, patch: 0 }
-formatSemVer(next);                   // "1.3.0"
+formatSemVer(next); // "1.3.0"
 ```
 
 ### Handle failures by `kind`
@@ -411,10 +404,10 @@ try {
 Resolves a step table and runs the gate over it. `createGateBinCommand()` builds it; `bin.ts` is the
 four-line entry point `package.json` points at.
 
-| Flag | Default | Effect |
-|---|---|---|
-| `--config <path>` | `config/steps.ts` | Module default-exporting `readonly Step[]`, relative to `--root` or absolute. |
-| `--root <path>` | the working directory | Directory every step runs in, and the base a relative `--config` resolves against. |
+| Flag              | Default               | Effect                                                                             |
+| ----------------- | --------------------- | ---------------------------------------------------------------------------------- |
+| `--config <path>` | `config/steps.ts`     | Module default-exporting `readonly Step[]`, relative to `--root` or absolute.      |
+| `--root <path>`   | the working directory | Directory every step runs in, and the base a relative `--config` resolves against. |
 
 Plus every flag `createGateCommand` takes — `--full`, `--only`, `--list`, `--fix` — because the bin
 delegates to it once the table is loaded rather than reimplementing the run.
@@ -431,20 +424,20 @@ Builds the `verify` CLI `Command`. The returned command takes no positional argu
 
 `GateCommandConfig`:
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `cwd` | `string` | — | Repository root. Every step is spawned here, so a step's relative paths resolve. Required. |
-| `steps` | `readonly Step[]` | — | The table to resolve against — the project's own steps. Required. |
-| `binDir` | `string` | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve. |
+| Field    | Type              | Default                    | Description                                                                                |
+| -------- | ----------------- | -------------------------- | ------------------------------------------------------------------------------------------ |
+| `cwd`    | `string`          | —                          | Repository root. Every step is spawned here, so a step's relative paths resolve. Required. |
+| `steps`  | `readonly Step[]` | —                          | The table to resolve against — the project's own steps. Required.                          |
+| `binDir` | `string`          | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve.                                            |
 
 Flags:
 
-| Flag | Effect |
-|---|---|
-| `--full` | Also run the `fullOnly` steps — the ones that may require a machine prerequisite. |
+| Flag           | Effect                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `--full`       | Also run the `fullOnly` steps — the ones that may require a machine prerequisite.             |
 | `--only <a,b>` | Run only those steps, in table order. An unknown label is refused with the known ones listed. |
-| `--list` | Print the resolved selection and exit, running nothing. |
-| `--fix` | Run each selected step's fixer instead of the step. Steps without one are counted as skipped. |
+| `--list`       | Print the resolved selection and exit, running nothing.                                       |
+| `--fix`        | Run each selected step's fixer instead of the step. Steps without one are counted as skipped. |
 
 Behaviour worth relying on:
 
@@ -462,25 +455,25 @@ Behaviour worth relying on:
 
 ### Step table
 
-| Type | Shape |
-|---|---|
-| `GateMode` | `"fast" \| "full"` — closed. A fast run carries no machine prerequisite; `--full` may. |
-| `Step` | `CommandStep \| CheckStep` — a step is spawned, or called; never both |
-| `StepBase` | `{ label; fullOnly?; requires? }` — what both variants carry |
-| `CommandStep` | `StepBase & { cmd; tail; fix? }` |
-| `CheckStep` | `StepBase & { run }` |
-| `StepRequirement` | `{ tool; probe?; hint }` — `probe` defaults to whether `<tool> --version` exits 0 |
-| `Selection` | `{ ok: true; steps; total; scoped } \| { ok: false; error }` |
+| Type              | Shape                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| `GateMode`        | `"fast" \| "full"` — closed. A fast run carries no machine prerequisite; `--full` may. |
+| `Step`            | `CommandStep \| CheckStep` — a step is spawned, or called; never both                  |
+| `StepBase`        | `{ label; fullOnly?; requires? }` — what both variants carry                           |
+| `CommandStep`     | `StepBase & { cmd; tail; fix? }`                                                       |
+| `CheckStep`       | `StepBase & { run }`                                                                   |
+| `StepRequirement` | `{ tool; probe?; hint }` — `probe` defaults to whether `<tool> --version` exits 0      |
+| `Selection`       | `{ ok: true; steps; total; scoped } \| { ok: false; error }`                           |
 
-| Field | Type | Description |
-|---|---|---|
-| `label` | `string` | Stable identifier — the `--only` token, and the name reported on failure. |
-| `fullOnly` | `boolean?` | Restrict to `--full` runs. A boolean rather than a mode list, so a full run is a superset of a fast one by construction. |
-| `requires` | `StepRequirement?` | Machine prerequisite checked before the step runs. Legal only on a `fullOnly` step. |
-| `cmd` | `readonly [string, ...string[]]` | Executable followed by its arguments. |
-| `tail` | `number` | Lines of captured output shown when the step fails. |
-| `fix` | `readonly [string, ...string[]]?` | Auto-fixing counterpart invoked by `--fix`. |
-| `run` | `() => CheckResult \| Promise<CheckResult>` | Called in-process. Its findings are printed whole, so there is no `tail` and no fixer. |
+| Field      | Type                                        | Description                                                                                                              |
+| ---------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `label`    | `string`                                    | Stable identifier — the `--only` token, and the name reported on failure.                                                |
+| `fullOnly` | `boolean?`                                  | Restrict to `--full` runs. A boolean rather than a mode list, so a full run is a superset of a fast one by construction. |
+| `requires` | `StepRequirement?`                          | Machine prerequisite checked before the step runs. Legal only on a `fullOnly` step.                                      |
+| `cmd`      | `readonly [string, ...string[]]`            | Executable followed by its arguments.                                                                                    |
+| `tail`     | `number`                                    | Lines of captured output shown when the step fails.                                                                      |
+| `fix`      | `readonly [string, ...string[]]?`           | Auto-fixing counterpart invoked by `--fix`.                                                                              |
+| `run`      | `() => CheckResult \| Promise<CheckResult>` | Called in-process. Its findings are printed whole, so there is no `tail` and no fixer.                                   |
 
 The two variants are exclusive by construction — `cmd?: never` on one and `run?: never` on the
 other — so a step declaring both is a type error rather than a runtime precedence rule. Narrow with
@@ -496,13 +489,13 @@ project needs a spawnable file per check.
 Resolves which steps to run. **Pure** — no disk, no spawning, no clock. Five refusals, all returned
 rather than thrown:
 
-| Refusal | Why |
-|---|---|
-| duplicate step label | A label is the `--only` token and the name on a failure line; it must name exactly one step. |
-| `requires` on a step that is not `fullOnly` | A fast run must work on any machine with the repo's dependencies installed. |
-| unknown `--only` label | |
-| a label outside the requested mode | |
-| a selection of zero steps | Checked on the *outcome*, so it still holds when the selection logic itself is wrong. |
+| Refusal                                     | Why                                                                                          |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| duplicate step label                        | A label is the `--only` token and the name on a failure line; it must name exactly one step. |
+| `requires` on a step that is not `fullOnly` | A fast run must work on any machine with the repo's dependencies installed.                  |
+| unknown `--only` label                      |                                                                                              |
+| a label outside the requested mode          |                                                                                              |
+| a selection of zero steps                   | Checked on the _outcome_, so it still holds when the selection logic itself is wrong.        |
 
 The first two are properties of the **table**, so they are checked before the mode is applied and
 before `--only` narrows: a malformed table is refused whichever run was asked for, and `--only`
@@ -522,14 +515,14 @@ the wrangler config.
 
 `CloudflareWorkerStepOptions`:
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `sources` | `readonly string[]` | `["src/", "tests/"]` | Directories linted and type-checked. |
-| `tests` | `readonly string[]` | `["tests/"]` | Test paths passed to `bun test`. |
-| `assetConfig` | `string?` | — | Asset config path. Omit to skip the `types:assets` step entirely. |
-| `assetOut` | `string` | `.forge/assets.ts` | Where the asset-types emitter writes. |
-| `wranglerTypes` | `boolean` | `true` | Emit the two `wrangler types` steps. `false` for an app that declares its binding types by hand. |
-| `workerConfig` | `string?` | — | `--config` for the bindings invocation. |
+| Field           | Type                | Default              | Description                                                                                      |
+| --------------- | ------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| `sources`       | `readonly string[]` | `["src/", "tests/"]` | Directories linted and type-checked.                                                             |
+| `tests`         | `readonly string[]` | `["tests/"]`         | Test paths passed to `bun test`.                                                                 |
+| `assetConfig`   | `string?`           | —                    | Asset config path. Omit to skip the `types:assets` step entirely.                                |
+| `assetOut`      | `string`            | `.forge/assets.ts`   | Where the asset-types emitter writes.                                                            |
+| `wranglerTypes` | `boolean`           | `true`               | Emit the two `wrangler types` steps. `false` for an app that declares its binding types by hand. |
+| `workerConfig`  | `string?`           | —                    | `--config` for the bindings invocation.                                                          |
 
 The two generated-type paths (`./.types/cloudflare.d.ts` and `./.types/worker-configuration.d.ts`)
 are baked in rather than exposed — every app in the fleet uses them, and an option nobody varies is
@@ -545,13 +538,13 @@ explicitly alongside.
 
 `LibraryStepOptions`:
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `root` | `string` | — | Repository root. Every check resolves and reports its paths against it. Required. |
-| `pkg` | `GatePackage` | — | `{ name; version; exports; files }`, verbatim from `package.json`. Required. |
-| `sources` | `readonly string[]` | `["src/"]` | Directories linted. |
-| `tests` | `readonly string[]` | whole project | Test paths passed to `bun test`. |
-| `exports` / `docs` / `jsx` / `changelog` | `Partial<…CheckConfig>?` | — | Merged over the config derived from `pkg`, for that check's allowlists. |
+| Field                                    | Type                     | Default       | Description                                                                       |
+| ---------------------------------------- | ------------------------ | ------------- | --------------------------------------------------------------------------------- |
+| `root`                                   | `string`                 | —             | Repository root. Every check resolves and reports its paths against it. Required. |
+| `pkg`                                    | `GatePackage`            | —             | `{ name; version; exports; files }`, verbatim from `package.json`. Required.      |
+| `sources`                                | `readonly string[]`      | `["src/"]`    | Directories linted.                                                               |
+| `tests`                                  | `readonly string[]`      | whole project | Test paths passed to `bun test`.                                                  |
+| `exports` / `docs` / `jsx` / `changelog` | `Partial<…CheckConfig>?` | —             | Merged over the config derived from `pkg`, for that check's allowlists.           |
 
 ### Release command
 
@@ -559,16 +552,16 @@ explicitly alongside.
 
 Resolves an optional config module and runs the release. `createReleaseBinCommand()` builds it.
 
-| Flag | Default | Effect |
-|---|---|---|
-| `--config <path>` | `config/release.ts` | Module default-exporting `Omit<ReleaseCommandConfig, "cwd">`. **Optional** — an absent default path releases with the built-in defaults. |
-| `--root <path>` | the working directory | The repository the release happens in, supplied as `cwd`. |
+| Flag              | Default               | Effect                                                                                                                                   |
+| ----------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `--config <path>` | `config/release.ts`   | Module default-exporting `Omit<ReleaseCommandConfig, "cwd">`. **Optional** — an absent default path releases with the built-in defaults. |
+| `--root <path>`   | the working directory | The repository the release happens in, supplied as `cwd`.                                                                                |
 
 Plus `--dry`/`-n`, `--allow-dirty` and `--allow-empty-changelog`, and the optional positional
 version, all delegated to `createReleaseCommand`.
 
 **The config module may not set `cwd`.** It comes from `--root` or the working directory, so the
-module describes *the release* and stays portable across checkouts. A `--config` naming a missing
+module describes _the release_ and stays portable across checkouts. A `--config` naming a missing
 file is still an error — only the unnamed default is allowed to be absent, because that absence is
 the zero-config case rather than a mistake.
 
@@ -578,27 +571,27 @@ Builds the `release` CLI `Command`. The returned command supports a single optio
 argument (an explicit version) plus the `--dry`/`-n`, `--allow-dirty` and
 `--allow-empty-changelog` flags.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `config` | `ReleaseCommandConfig` | Project configuration (see below). |
-| `deps` | `ReleaseDeps` | Optional dependency overrides for testing; defaults to the real git/pkg/version functions. |
+| Parameter | Type                   | Description                                                                                |
+| --------- | ---------------------- | ------------------------------------------------------------------------------------------ |
+| `config`  | `ReleaseCommandConfig` | Project configuration (see below).                                                         |
+| `deps`    | `ReleaseDeps`          | Optional dependency overrides for testing; defaults to the real git/pkg/version functions. |
 
 `ReleaseCommandConfig`:
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `cwd` | `string` | — | Repository working directory. Required. |
-| `tagPrefix` | `string` | `"v"` | Prefix for git tags (e.g. `v1.2.3`). |
-| `stageFiles` | `string[]` | what the release wrote | `["package.json"]`, plus `changelogFile` when a changelog was promoted. Naming it **replaces** the derived list rather than adding to it. |
-| `changelogFile` | `string` | `"CHANGELOG.md"` | Changelog to promote, relative to `cwd`. A missing file skips promotion. |
+| Field           | Type       | Default                | Description                                                                                                                               |
+| --------------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `cwd`           | `string`   | —                      | Repository working directory. Required.                                                                                                   |
+| `tagPrefix`     | `string`   | `"v"`                  | Prefix for git tags (e.g. `v1.2.3`).                                                                                                      |
+| `stageFiles`    | `string[]` | what the release wrote | `["package.json"]`, plus `changelogFile` when a changelog was promoted. Naming it **replaces** the derived list rather than adding to it. |
+| `changelogFile` | `string`   | `"CHANGELOG.md"`       | Changelog to promote, relative to `cwd`. A missing file skips promotion.                                                                  |
 
 Flags:
 
-| Flag | Short | Effect |
-|---|---|---|
-| `--dry` | `-n` | Report the resolved version and the promotion that would happen; write nothing, and skip the clean-tree check. |
-| `--allow-dirty` | — | Skip the clean-working-tree refusal. |
-| `--allow-empty-changelog` | — | Release despite an empty `[Unreleased]`. Promotion still runs; a malformed changelog is still refused. |
+| Flag                      | Short | Effect                                                                                                         |
+| ------------------------- | ----- | -------------------------------------------------------------------------------------------------------------- |
+| `--dry`                   | `-n`  | Report the resolved version and the promotion that would happen; write nothing, and skip the clean-tree check. |
+| `--allow-dirty`           | —     | Skip the clean-working-tree refusal.                                                                           |
+| `--allow-empty-changelog` | —     | Release despite an empty `[Unreleased]`. Promotion still runs; a malformed changelog is still refused.         |
 
 ### Version resolution
 
@@ -607,20 +600,20 @@ Flags:
 Computes the next version from git state and returns a `VersionResult`. Throws `ReleaseError` on
 invalid or non-monotonic versions.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `options.explicit` | `string?` | Forces a specific version; must be greater than the latest tag. |
-| `options.cwd` | `string` | Repository working directory. |
-| `options.tagPrefix` | `string` | Tag prefix used to strip/match tags. |
-| `deps` | `VersionDeps?` | Optional git/pkg overrides for testing. |
+| Parameter           | Type           | Description                                                     |
+| ------------------- | -------------- | --------------------------------------------------------------- |
+| `options.explicit`  | `string?`      | Forces a specific version; must be greater than the latest tag. |
+| `options.cwd`       | `string`       | Repository working directory.                                   |
+| `options.tagPrefix` | `string`       | Tag prefix used to strip/match tags.                            |
+| `deps`              | `VersionDeps?` | Optional git/pkg overrides for testing.                         |
 
 `VersionResult`:
 
-| Field | Type | Description |
-|---|---|---|
-| `version` | `string` | Resolved version string (no prefix), e.g. `"1.3.0"`. |
-| `reason` | `"explicit" \| "auto-patch" \| "auto-minor" \| "auto-major" \| "first-release" \| "in-sync"` | How the version was derived. |
-| `previous` | `string \| null` | The latest tag, or `null` for a first release. |
+| Field      | Type                                                                                         | Description                                          |
+| ---------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `version`  | `string`                                                                                     | Resolved version string (no prefix), e.g. `"1.3.0"`. |
+| `reason`   | `"explicit" \| "auto-patch" \| "auto-minor" \| "auto-major" \| "first-release" \| "in-sync"` | How the version was derived.                         |
+| `previous` | `string \| null`                                                                             | The latest tag, or `null` for a first release.       |
 
 Resolution rules:
 
@@ -633,13 +626,13 @@ Resolution rules:
 
 ### SemVer
 
-| Function | Signature | Description |
-|---|---|---|
-| `parseSemVer` | `(str: string) => SemVer \| null` | Parses `major.minor.patch` (optional `v` prefix). Rejects leading zeros, negatives, and malformed input by returning `null`. |
-| `formatSemVer` | `(v: SemVer) => string` | Formats a `SemVer` back to `"major.minor.patch"`. |
-| `compareSemVer` | `(a: SemVer, b: SemVer) => -1 \| 0 \| 1` | Orders two versions. |
-| `isGreaterThan` | `(next: SemVer, prev: SemVer) => boolean` | `true` when `next` is strictly greater than `prev`. |
-| `bumpSemVer` | `(v: SemVer, kind: BumpKind) => SemVer` | Returns a new version bumped by `kind`, zeroing lower components. |
+| Function        | Signature                                 | Description                                                                                                                  |
+| --------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `parseSemVer`   | `(str: string) => SemVer \| null`         | Parses `major.minor.patch` (optional `v` prefix). Rejects leading zeros, negatives, and malformed input by returning `null`. |
+| `formatSemVer`  | `(v: SemVer) => string`                   | Formats a `SemVer` back to `"major.minor.patch"`.                                                                            |
+| `compareSemVer` | `(a: SemVer, b: SemVer) => -1 \| 0 \| 1`  | Orders two versions.                                                                                                         |
+| `isGreaterThan` | `(next: SemVer, prev: SemVer) => boolean` | `true` when `next` is strictly greater than `prev`.                                                                          |
+| `bumpSemVer`    | `(v: SemVer, kind: BumpKind) => SemVer`   | Returns a new version bumped by `kind`, zeroing lower components.                                                            |
 
 `SemVer` is `{ major: number; minor: number; patch: number }`.
 `BumpKind` is `"major" | "minor" | "patch"`.
@@ -649,27 +642,27 @@ Resolution rules:
 Pure string transforms — no filesystem, no clock, no git. Failures are **returned, not thrown**, so
 a caller can report every malformed heading in one pass.
 
-| Function | Signature | Description |
-|---|---|---|
-| `parseChangelog` | `(source: string) => ChangelogParse` | Reads the structure without changing it. |
+| Function            | Signature                                                                                                    | Description                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `parseChangelog`    | `(source: string) => ChangelogParse`                                                                         | Reads the structure without changing it.                                                              |
 | `promoteUnreleased` | `(source, opts: PromoteOptions) => { ok: true; source: string } \| { ok: false; errors: readonly string[] }` | Retitles `[Unreleased]`, inserts a fresh empty one above it, and appends the compare-link definition. |
-| `formatReleaseDate` | `(date: Date) => string` | `YYYY-MM-DD` in the **local** calendar — not UTC. |
+| `formatReleaseDate` | `(date: Date) => string`                                                                                     | `YYYY-MM-DD` in the **local** calendar — not UTC.                                                     |
 
 `PromoteOptions`:
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `version` | `string` | — | Version being promoted to — bare semver, no leading `v`. |
-| `date` | `string` | — | Already-formatted release date. |
-| `tagPrefix` | `string` | `"v"` | Prefix used in the compare URL's tag names. |
-| `compareUrlBase` | `string?` | — | Repository base URL. Omit to skip the link definition entirely. |
+| Field            | Type      | Default | Description                                                     |
+| ---------------- | --------- | ------- | --------------------------------------------------------------- |
+| `version`        | `string`  | —       | Version being promoted to — bare semver, no leading `v`.        |
+| `date`           | `string`  | —       | Already-formatted release date.                                 |
+| `tagPrefix`      | `string`  | `"v"`   | Prefix used in the compare URL's tag names.                     |
+| `compareUrlBase` | `string?` | —       | Repository base URL. Omit to skip the link definition entirely. |
 
 `ChangelogParse` is `{ ok: true; unreleased: UnreleasedSection; versions: readonly VersionHeading[]; linkRefs: readonly string[] }`
 or `{ ok: false; errors: readonly string[] }`.
 
-| Type | Shape |
-|---|---|
-| `VersionHeading` | `{ version: string; date: string; line: number }` — bare semver, ISO date, zero-indexed line. |
+| Type                | Shape                                                                                                     |
+| ------------------- | --------------------------------------------------------------------------------------------------------- |
+| `VersionHeading`    | `{ version: string; date: string; line: number }` — bare semver, ISO date, zero-indexed line.             |
 | `UnreleasedSection` | `{ line: number; body: readonly string[]; empty: boolean }` — verbatim body up to the next `## ` heading. |
 
 A parse fails on: no `[Unreleased]` section, more than one, an entry heading above it, an entry
@@ -687,16 +680,16 @@ or there is no earlier released version.
 
 Extends `Error` with a discriminated `kind` field for programmatic handling.
 
-| `kind` | Raised when |
-|---|---|
-| `invalid-version` | A version string cannot be parsed, or `package.json` has no `version`. |
-| `version-not-greater` | An explicit version is not greater than the latest tag. |
-| `version-mismatch` | `package.json` and the latest tag disagree with no new commits. |
-| `git-error` | A `git` command exits non-zero. |
-| `pkg-update` | Reading or writing `package.json` or the changelog fails. |
-| `working-tree-dirty` | The working tree has uncommitted changes and `--allow-dirty` was not passed. |
-| `changelog-empty` | `[Unreleased]` carries no entry while commits exist since the tag, and `--allow-empty-changelog` was not passed. |
-| `changelog-malformed` | The changelog does not parse. No flag overrides this. |
+| `kind`                | Raised when                                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `invalid-version`     | A version string cannot be parsed, or `package.json` has no `version`.                                           |
+| `version-not-greater` | An explicit version is not greater than the latest tag.                                                          |
+| `version-mismatch`    | `package.json` and the latest tag disagree with no new commits.                                                  |
+| `git-error`           | A `git` command exits non-zero.                                                                                  |
+| `pkg-update`          | Reading or writing `package.json` or the changelog fails.                                                        |
+| `working-tree-dirty`  | The working tree has uncommitted changes and `--allow-dirty` was not passed.                                     |
+| `changelog-empty`     | `[Unreleased]` carries no entry while commits exist since the tag, and `--allow-empty-changelog` was not passed. |
+| `changelog-malformed` | The changelog does not parse. No flag overrides this.                                                            |
 
 ---
 

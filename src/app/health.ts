@@ -1,4 +1,5 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
+
 import { getAppContext } from "../context/types";
 import type { CheckFn, HealthCheckResult } from "./types";
 

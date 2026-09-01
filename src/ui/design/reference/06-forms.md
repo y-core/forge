@@ -10,20 +10,22 @@ input still submits. The rules below are about the parts that do not announce th
 
 Three primitives look interchangeable and are not.
 
-| Given | Choose | Why |
-|---|---|---|
-| A control that is validated, can be wrong, and has a server-side `name` | `FormField` | A `<fieldset>` that wires `id` / `for` / `aria-describedby` / `aria-invalid` from one `name` |
-| A settings row — a labelled control with no validation and no error | `Field` | A layout row with a decorative `<span>` label; no form semantics at all |
-| Several checkboxes or radios answering one question | `CheckboxGroup` / `RadioGroup` | Real `<input type="checkbox">` / `<input type="radio">`; radio grouping and roving focus are the platform's |
+| Given                                                                   | Choose                         | Why                                                                                                         |
+| ----------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| A control that is validated, can be wrong, and has a server-side `name` | `FormField`                    | A `<fieldset>` that wires `id` / `for` / `aria-describedby` / `aria-invalid` from one `name`                |
+| A settings row — a labelled control with no validation and no error     | `Field`                        | A layout row with a decorative `<span>` label; no form semantics at all                                     |
+| Several checkboxes or radios answering one question                     | `CheckboxGroup` / `RadioGroup` | Real `<input type="checkbox">` / `<input type="radio">`; radio grouping and roving focus are the platform's |
 
 **Default: reach for `FormField` whenever the value is submitted and can be rejected.**
 <!-- rule:forge-ui-form-formfield-default -->
+
 `Field` is not a lighter `FormField`; it has no error slot, so choosing it for a validated control
 means the error has nowhere to render. Override for a control whose value is applied immediately and
 cannot fail — a theme preference, a viewport slider.
 
 **Default: use `CheckboxGroup` / `RadioGroup` rather than a `FormField` wrapping loose inputs.**
 <!-- rule:forge-ui-form-group-primitive -->
+
 Both accept `name`, `scope`, `description`, `invalid`, `disabled` and `orientation`, and expose
 `.Label`, `.Item`, `.Description` and `.Error`. Override only for a group whose items are not a
 single question — a matrix of independent toggles, which is a stack of `Field` rows.
@@ -38,14 +40,15 @@ Override only under a brief that restates the form's type scale.
 
 Three two-state controls, and only one of them submits.
 
-| Given | Choose | What it renders |
-|---|---|---|
-| A setting whose value is submitted with the form | `Switch` | `<input type="checkbox" role="switch">` — it has a `name` and a value |
-| An in-page mode that no server ever reads | `Toggle` | `<button type="button" aria-pressed>` — submits nothing |
-| One choice out of a small visible set | `ToggleGroup` | A `<fieldset>` of pressed buttons; `type` picks single or multiple |
+| Given                                            | Choose        | What it renders                                                       |
+| ------------------------------------------------ | ------------- | --------------------------------------------------------------------- |
+| A setting whose value is submitted with the form | `Switch`      | `<input type="checkbox" role="switch">` — it has a `name` and a value |
+| An in-page mode that no server ever reads        | `Toggle`      | `<button type="button" aria-pressed>` — submits nothing               |
+| One choice out of a small visible set            | `ToggleGroup` | A `<fieldset>` of pressed buttons; `type` picks single or multiple    |
 
 **Default: pick by whether the value is submitted, not by which one looks right.**
 <!-- rule:forge-ui-form-toggle-by-submission -->
+
 Reaching for `Switch` when a `Toggle` was meant puts a checkbox into the submitted body under a name
 the action never declared. Reaching for `Toggle` when a `Switch` was meant loses the value silently
 at submit. Override never — the distinction is what the elements are.
@@ -58,22 +61,24 @@ Forge exports the id derivation as functions precisely so two places cannot disa
 hand-written `for="email"` beside an `id="field-email"` is silent: nothing errors, nothing warns, and
 clicking the label stops focusing the control.
 
-| Helper | Gives you |
-|---|---|
-| `fieldId(name, scope?)` | the control's id |
-| `fieldDescriptionId(name, scope?)` | the description element's id |
-| `fieldErrorId(name, scope?)` | the error element's id |
-| `fieldControlProps(props, field)` | id, name, disabled, `aria-describedby`, `aria-invalid` merged onto a control |
-| `fieldDescribedBy(name, options)` | just the `aria-describedby`, for a `<fieldset>`-shaped group |
-| `FIELD_LABEL_CLASSES` | the shared label class string |
+| Helper                             | Gives you                                                                    |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| `fieldId(name, scope?)`            | the control's id                                                             |
+| `fieldDescriptionId(name, scope?)` | the description element's id                                                 |
+| `fieldErrorId(name, scope?)`       | the error element's id                                                       |
+| `fieldControlProps(props, field)`  | id, name, disabled, `aria-describedby`, `aria-invalid` merged onto a control |
+| `fieldDescribedBy(name, options)`  | just the `aria-describedby`, for a `<fieldset>`-shaped group                 |
+| `FIELD_LABEL_CLASSES`              | the shared label class string                                                |
 
 **Default: derive every field id through the helpers, never as a string literal.**
 <!-- rule:forge-ui-form-id-helpers -->
+
 Override only for an id that forge does not own — a `Dialog`'s `id`, a `Tabs.Panel`'s `id` — where
 there is no helper to disagree with.
 
 **Default: wire a control by passing it a `field` descriptor rather than by spreading attributes.**
 <!-- rule:forge-ui-form-control-props -->
+
 `Input`, `Select` and `Textarea` call `fieldControlProps` internally when given `field`. Override
 when composing a control forge does not ship, in which case call `fieldControlProps` yourself.
 
@@ -83,6 +88,7 @@ Override never — a second label class string is how "field label" comes to mea
 
 **Default: pass a `scope` whenever two fields on one page share a `name`.**
 <!-- rule:forge-ui-form-scope-collision -->
+
 A sign-in and a sign-up form both holding `email` otherwise emit one id twice, and the second label
 points at the first control. Pass the same `scope` to the control and to every compound member.
 Override when the page provably renders one such field, which is the common case and why `scope` is
@@ -95,9 +101,9 @@ opt-in.
 import { Input } from "@y-core/forge/ui/core";
 
 <div>
-  <label for="email">Email</label>
-  <Input id="email" name="email" type="email" aria-describedby="email-err" />
-  <p id="email-error">Enter a valid address.</p>
+  <label for='email'>Email</label>
+  <Input id='email' name='email' type='email' aria-describedby='email-err' />
+  <p id='email-error'>Enter a valid address.</p>
 </div>;
 ```
 
@@ -108,10 +114,10 @@ reported as an error by assistive technology rather than ignored, and the messag
 // Right — one `name`, every id derived.
 import { FormField, Input } from "@y-core/forge/ui/core";
 
-<FormField name="email" invalid={Boolean(error)}>
-  <FormField.Label name="email">Email</FormField.Label>
-  <Input name="email" type="email" field={{ name: "email", invalid: Boolean(error) }} />
-  <FormField.Error name="email">{error}</FormField.Error>
+<FormField name='email' invalid={Boolean(error)}>
+  <FormField.Label name='email'>Email</FormField.Label>
+  <Input name='email' type='email' field={{ name: "email", invalid: Boolean(error) }} />
+  <FormField.Error name='email'>{error}</FormField.Error>
 </FormField>;
 ```
 
@@ -123,22 +129,24 @@ unconditionally — no `{error && …}` guard, and therefore no branch that can 
 ## `ui/core` bases versus `ui/controls` bound variants
 
 `@y-core/forge/ui/controls` exports `Input`, `Select`, `Slider`, `Switch`, `Textarea` and
-`ToggleGroup` under the *same names* as `@y-core/forge/ui/core`, adding a required `bind` prop that
+`ToggleGroup` under the _same names_ as `@y-core/forge/ui/core`, adding a required `bind` prop that
 stamps `data-field` for the client signal runtime.
 
-| Given | Import from |
-|---|---|
-| The value is read by the server on submit | `@y-core/forge/ui/core` |
-| A browser signal must see the value as it changes | `@y-core/forge/ui/controls` |
-| Both — a bound control inside a submitted form | `@y-core/forge/ui/controls`, plus a `field` descriptor |
+| Given                                             | Import from                                            |
+| ------------------------------------------------- | ------------------------------------------------------ |
+| The value is read by the server on submit         | `@y-core/forge/ui/core`                                |
+| A browser signal must see the value as it changes | `@y-core/forge/ui/controls`                            |
+| Both — a bound control inside a submitted form    | `@y-core/forge/ui/controls`, plus a `field` descriptor |
 
 **Default: reach for the `ui/core` base until a client signal actually reads the value.**
 <!-- rule:forge-ui-form-bind-when-client -->
+
 `bind` without a registered scope is an inert `data-field` attribute. Override when the surface is a
 `Resumable` island whose state drives other rendering.
 
 **Default: one module imports a given control name from exactly one of the two barrels.**
 <!-- rule:forge-ui-form-one-barrel -->
+
 Two `Input`s in one file resolve by whichever import came last, and the loser is invisible. Override
 only by aliasing explicitly at the import, which makes the pair readable:
 
@@ -157,6 +165,7 @@ control is bound is how a bound control loses its label.
 
 **Default: the message renders inside the field's own `FormField`, adjacent to the control.**
 <!-- rule:forge-ui-form-error-inline -->
+
 `FormField.Error` renders a `role="alert"` paragraph with the derived error id. Override never for
 placement; a summary may be added, not substituted.
 
@@ -168,12 +177,14 @@ where the `Alert` is the only correct home.
 
 **Default: validate on submit first, then on change for the fields that failed.**
 <!-- rule:forge-ui-form-validate-timing -->
+
 Never on first blur of a field the user has not filled: tabbing through a form should not paint it
 red. Override for a field whose validity is expensive to discover late — a username uniqueness check
-— which may validate on blur *after* a value exists.
+— which may validate on blur _after_ a value exists.
 
 **Default: an invalid field carries `data-invalid`, `aria-invalid` and an `Icon` together.**
 <!-- rule:forge-ui-form-invalid-triple -->
+
 The first two come from **two different places**, and conflating them is the common bug: `FormField`'s
 `invalid` prop puts `data-invalid` on the `<fieldset>` via `stateAttrs`, while `aria-invalid` reaches
 the control only via `fieldControlProps`. A field marked `invalid` with a control that never went
@@ -182,9 +193,9 @@ it is what satisfies `forge-ui-not-color-alone`. Override never.
 
 ```tsx
 // Wrong — invalid signalled by a class alone.
-<FormField name="card" class="border-destructive">
-  <FormField.Label name="card">Card number</FormField.Label>
-  <Input name="card" />
+<FormField name='card' class='border-destructive'>
+  <FormField.Label name='card'>Card number</FormField.Label>
+  <Input name='card' />
 </FormField>
 ```
 
@@ -197,11 +208,11 @@ import { createIcon, FormField, Input } from "@y-core/forge/ui/core";
 
 const AppIcon = createIcon("/assets/icons.svg");
 
-<FormField name="card" invalid>
-  <FormField.Label name="card">Card number</FormField.Label>
-  <Input name="card" field={{ name: "card", invalid: true }} />
-  <FormField.Error name="card">
-    <AppIcon name="close" aria-hidden="true" />
+<FormField name='card' invalid>
+  <FormField.Label name='card'>Card number</FormField.Label>
+  <Input name='card' field={{ name: "card", invalid: true }} />
+  <FormField.Error name='card'>
+    <AppIcon name='close' aria-hidden='true' />
     That card number is not valid.
   </FormField.Error>
 </FormField>;
@@ -221,6 +232,7 @@ and the outbound referrer — and only mutation handlers consult it. Override ne
 
 **Default: `Turnstile` sits inside the `<form>`, immediately above the submit control.**
 <!-- rule:forge-ui-form-turnstile-placement -->
+
 Inside, so the token input Cloudflare injects is submitted with the form; above submit, so a
 challenge appearing does not push the button the user is reaching for. Override when the form is long
 enough that the widget would be off-screen at submit time, in which case place it in view of the
@@ -228,17 +240,20 @@ button.
 
 **Default: one `primary` `Button` per form, and it is the submit.**
 <!-- rule:forge-ui-form-one-primary -->
+
 Cancel and secondary paths take `secondary` or `ghost`. Override under a brief for a split primary
 action, where the two are visually one control.
 
 ```tsx
 import { Button, Form, Honeypot, Turnstile } from "@y-core/forge/ui/core";
 
-<Form method="post" csrfToken={csrfToken} hx-post="/contact" hx-target="#contact-result">
+<Form method='post' csrfToken={csrfToken} hx-post='/contact' hx-target='#contact-result'>
   <Honeypot />
   {/* fields */}
   <Turnstile siteKey={turnstileSiteKey} />
-  <Button type="submit" variant="primary">Send message</Button>
+  <Button type='submit' variant='primary'>
+    Send message
+  </Button>
 </Form>;
 ```
 

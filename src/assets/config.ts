@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+
 import { v } from "../validation/mod";
 import type { AssetsConfig, DefineValue, EnvRef, FlagRef, ResolvedConfig, ResolvedJsBundle } from "./types";
 import { AssetsConfigSchema } from "./types";
@@ -39,9 +40,9 @@ export interface LoadConfigOptions {
 
 /** Imports, validates and normalises the asset config. @public */
 export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedConfig> {
-  const { root, configPath = "assets.config.ts", env = {} } = options;
+  const { root, configPath = "assets.config.ts", env: envVars = {} } = options;
   const resolvedPath = resolve(root, configPath);
-  // biome-ignore lint/suspicious/noExplicitAny: dynamic module has unknown shape
+  // oxlint-disable-next-line typescript/no-explicit-any -- dynamic module has unknown shape
   const mod = (await import(resolvedPath)) as any;
   const raw: unknown = mod.default ?? mod;
   const parsed = v.parse(AssetsConfigSchema, raw);
@@ -49,7 +50,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
   const bundles: ResolvedJsBundle[] = (parsed.js?.bundles ?? []).map((bundle) => {
     const { define: rawDefine, ...rest } = bundle;
     if (!rawDefine) return rest;
-    return { ...rest, define: Object.fromEntries(Object.entries(rawDefine).map(([k, val]) => [k, resolveDefine(val, env)])) };
+    return { ...rest, define: Object.fromEntries(Object.entries(rawDefine).map(([k, val]) => [k, resolveDefine(val, envVars)])) };
   });
 
   return {
@@ -61,6 +62,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
     js: { bundles },
     css: parsed.css ?? [],
     copy: parsed.copy ?? [],
+    rasters: parsed.rasters ?? [],
     sprites: parsed.sprites ?? {},
     fonts: { downloads: parsed.fonts?.downloads ?? [] },
     icons: parsed.icons ?? null,

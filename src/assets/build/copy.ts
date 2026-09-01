@@ -1,5 +1,6 @@
 import { copyFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+
 import type { CopyEntry } from "../types";
 import { safeJoin } from "./paths";
 

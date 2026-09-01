@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
+
 import { contrastRatio as uiContrastRatio, relativeLuminance as uiRelativeLuminance } from "../../../../ui/contracts/theme/color";
 import { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./color";
 import { type Mode, parseThemeDeclarations, resolveStep } from "./contrast-parse";

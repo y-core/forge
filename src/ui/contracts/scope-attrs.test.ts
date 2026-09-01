@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { type ScopeAttrsProps, scopeAttrs } from "./scope-attrs";
 
 describe("scopeAttrs", () => {

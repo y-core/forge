@@ -23,7 +23,7 @@ restated here** — that a pair is verified in both modes for every theme the ap
 least headroom and is audited explicitly (`forge-ui-color-theme-muted-pair`), and that a new theme
 file is audited rather than assumed (`forge-ui-color-theme-per-theme-audit`).
 
-What belongs here is the sequencing: those are decisions taken *while choosing the pair*, and a
+What belongs here is the sequencing: those are decisions taken _while choosing the pair_, and a
 surface composed without them is re-designed rather than repaired. The example below is what the
 failure looks like when contrast and `forge-ui-not-color-alone` are both deferred.
 
@@ -58,14 +58,14 @@ beside them drives **assistive technology**. They are not alternatives, and neit
 **A `data-state` with no ARIA counterpart styles perfectly and announces nothing.** The component
 looks right in every review that is conducted by looking.
 
-| What you are expressing | The styling hook | The ARIA counterpart |
-|---|---|---|
-| A disclosure or popup is open | the native state — `[open]` on `<details>` / `<dialog>`, `:popover-open` on a popover | the platform's own, since `<summary>` and an invoker button both carry it |
-| A toggle is pressed | `data-pressed` | `aria-pressed` |
-| A tab is the current one | `data-selected` | `aria-selected` |
-| A checkable control is checked | `data-checked` | `aria-checked`, or the native `checked` |
-| A field holds an error | `data-invalid` | `aria-invalid` plus `aria-describedby` |
-| A control is inert but discoverable | `data-disabled` | `aria-disabled` |
+| What you are expressing             | The styling hook                                                                      | The ARIA counterpart                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| A disclosure or popup is open       | the native state — `[open]` on `<details>` / `<dialog>`, `:popover-open` on a popover | the platform's own, since `<summary>` and an invoker button both carry it |
+| A toggle is pressed                 | `data-pressed`                                                                        | `aria-pressed`                                                            |
+| A tab is the current one            | `data-selected`                                                                       | `aria-selected`                                                           |
+| A checkable control is checked      | `data-checked`                                                                        | `aria-checked`, or the native `checked`                                   |
+| A field holds an error              | `data-invalid`                                                                        | `aria-invalid` plus `aria-describedby`                                    |
+| A control is inert but discoverable | `data-disabled`                                                                       | `aria-disabled`                                                           |
 
 Default: emit both halves for every state you express, and emit the `data-*` half through
 `stateAttrs` or `applyStateAttrs` rather than by writing the attribute name — unless the element is
@@ -128,6 +128,7 @@ is what is actually announced.
 Default: never put `aria-readonly` on a `<button>` or a `role="button"` element — carry the state on
 the control the button acts on, or use `disabled` — unless the element's role genuinely supports it.
 <!-- rule:forge-ui-a11y-no-aria-readonly-on-button -->
+
 `aria-readonly` is not a supported attribute of `role="button"`, so a validator flags it and no
 assistive technology acts on it. `NumberField`'s steppers are where the mistake looks most
 plausible — a `readonly` input beside two buttons — and forge deliberately leaves them bare, letting

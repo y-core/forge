@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createColorize } from "../../term/color";
 import { checkResult, fail, formatCheckResult, formatFinding, warn } from "./finding";
 

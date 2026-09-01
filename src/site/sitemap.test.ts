@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { resolveSiteConfig } from "./config";
 import { renderSitemapXml, resolveSitemapEntries } from "./sitemap";
 import type { SiteConfig } from "./types";

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
 import { type ScopeAttrsProps, scopeAttrs } from "../contracts/scope-attrs";
@@ -548,6 +549,7 @@ test.describe("resume — shadow-root discovery", () => {
   async function nest(page: Page, html: string, depth: number, mode: ShadowRootMode = "open"): Promise<void> {
     await mount(page, `<div id="host"></div><template id="source">${html}</template>`, EXPOSE);
     await page.evaluate(
+      // oxlint-disable-next-line eslint/no-shadow -- the callback runs in the browser realm and cannot close over the Node-side binding; the matching name is what documents the marshalled argument
       ({ depth, mode }) => {
         const template = document.querySelector<HTMLTemplateElement>("#source");
         let host = document.querySelector<HTMLElement>("#host");

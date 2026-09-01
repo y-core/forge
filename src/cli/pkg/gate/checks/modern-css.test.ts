@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+
 import { checkModernCss, type ModernCssCheckConfig } from "./modern-css";
 import type { DeferredFinding } from "./modern-css-deferred";
 

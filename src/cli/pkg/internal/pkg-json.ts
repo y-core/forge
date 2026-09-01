@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import { resolve } from "node:path";
+
 import { ReleaseError } from "../types";
 
 /** Reads the `version` field from `package.json` in `cwd`, throwing a {@link ReleaseError} if it is missing or unreadable. */

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { classGroup, GROUP_OVERRIDES } from "./class-groups";
 
 describe("classGroup exact families", () => {

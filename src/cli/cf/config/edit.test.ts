@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { applyJsoncEdits } from "./edit";
 
 function apply(src: string, edits: Parameters<typeof applyJsoncEdits>[1]): string {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import "./register";
 import { renderToString } from "./render-to-string";
 

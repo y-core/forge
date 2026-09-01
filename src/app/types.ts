@@ -1,5 +1,6 @@
 import type { Middleware } from "@remix-run/fetch-router";
 import type { Matcher } from "@remix-run/route-pattern/match";
+
 import type { AppContext } from "../context/types";
 import type { TurnstileFailure, TurnstileVerifyOptions } from "../form/types";
 import type { Logger } from "../logging/types";

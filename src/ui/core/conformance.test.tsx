@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
+
 import type { FC } from "../../jsx/types";
 import { render } from "../../testing/render";
 import { STATE_ATTRS } from "../contracts/state-attrs";

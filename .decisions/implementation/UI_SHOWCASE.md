@@ -9,7 +9,7 @@ description: "What the ui/show showcase is for, how an app registers it, and the
 > surface, what an app must supply to mount it, and the coverage contract that fails the build
 > when a published component has no demo.
 >
-> It governs the showcase's *contract*, not its content. No component behaviour is decided here.
+> It governs the showcase's _contract_, not its content. No component behaviour is decided here.
 >
 > Defers to: `src/ui/README.md` for the routes, options, loaders and worked usage;
 > [`THEME_GENERATION.md`](./THEME_GENERATION.md) for the theme page's dial model and audit
@@ -114,7 +114,7 @@ exception is written down with an owner.**
 owes a demo of** — a variant, a size, an orientation, a sub-component, a bound-control shape. Each
 axis carries the marker that proves it was rendered.
 
-An entry also names *where* the demo belongs, so a failure can say what to add rather than only
+An entry also names _where_ the demo belongs, so a failure can say what to add rather than only
 that something is absent. Nothing here enumerates the manifest; it is data, and the module is
 authoritative over any prose describing forge's demonstrated surface.
 
@@ -127,7 +127,7 @@ opening, and the check would then pass on markup outside the section it names.
 
 **The check renders the catalog and reads the HTML.** A source-level check would prove that a
 component was imported, which is the claim that is never in doubt; what drifts is whether the demo
-still *renders* the axis — a variant dropped from a demo compiles, passes every type check, and
+still _renders_ the axis — a variant dropped from a demo compiles, passes every type check, and
 disappears from the page silently.
 
 Reading markup is also what makes the marker vocabulary honest: an axis is proven by the attribute,
@@ -143,7 +143,7 @@ next step.
 The contract is enforced by three assertions, and the directions matter more than the count:
 
 - **Every component export in every published UI barrel is declared in the manifest.** This is the
-  direction that catches a *new* component: adding one to a barrel fails the build until it is
+  direction that catches a _new_ component: adding one to a barrel fails the build until it is
   either demonstrated or written down as owed.
 - **No uncovered key is left unexcused.** A declared demo or axis the rendered catalog does not
   show must appear in the gap list.

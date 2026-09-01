@@ -130,6 +130,7 @@ export class FakeElement {
   }
 
   closest(selector: string): FakeElement | null {
+    // oxlint-disable-next-line typescript/no-this-alias -- the loop variable walks up from this node; it is a cursor, not an alias
     for (let node: FakeElement | null = this; node; node = node.parent) {
       if (node.matches(selector)) return node;
     }
@@ -171,6 +172,7 @@ export class FakeElement {
    * after stepping — whose `target` is a readonly getter, so only a fake one is retargeted. */
   dispatchEvent(event: FakeEvent | Event): void {
     if (event instanceof FakeEvent) event.target ??= this;
+    // oxlint-disable-next-line typescript/no-this-alias -- the loop variable walks up from this node; it is a cursor, not an alias
     for (let node: FakeElement | null = this; node; node = node.parent) {
       for (const listener of [...(node.listeners.get(event.type) ?? [])]) listener(event as FakeEvent);
     }

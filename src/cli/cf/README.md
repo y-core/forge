@@ -154,13 +154,13 @@ Writes are atomic: a temp file beside the config, then a rename.
 
 ## What each action means
 
-| action | meaning |
-|---|---|
-| `exists` | verified present remotely, or a local-only binding with nothing to verify |
-| `created` / `updated` | a write happened |
-| `skipped` | deliberately did nothing; the detail says why |
-| `unavailable` | the remote target or resource does not exist |
-| `error` | the operation failed; the detail carries the cause |
+| action                | meaning                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| `exists`              | verified present remotely, or a local-only binding with nothing to verify |
+| `created` / `updated` | a write happened                                                          |
+| `skipped`             | deliberately did nothing; the detail says why                             |
+| `unavailable`         | the remote target or resource does not exist                              |
+| `error`               | the operation failed; the detail carries the cause                        |
 
 A row saying `exists` has either queried the remote or explains in its detail why
 there is nothing to query. No handler claims a remote resource is present without
@@ -173,14 +173,14 @@ having looked — a registry-wide test enforces this.
 The token needs one account permission per resource type it touches — **Read** for a
 status run, **Edit** for `--commit`:
 
-| touching | permission |
-|---|---|
-| a Pages project's vars and secrets | Cloudflare Pages |
-| a Worker's settings, secrets, rate limits | Workers Scripts |
-| KV namespaces | Workers KV Storage |
-| D1 databases | D1 |
-| R2 buckets | Workers R2 Storage |
-| queues | Queues |
+| touching                                  | permission         |
+| ----------------------------------------- | ------------------ |
+| a Pages project's vars and secrets        | Cloudflare Pages   |
+| a Worker's settings, secrets, rate limits | Workers Scripts    |
+| KV namespaces                             | Workers KV Storage |
+| D1 databases                              | D1                 |
+| R2 buckets                                | Workers R2 Storage |
+| queues                                    | Queues             |
 
 The Workers token templates do **not** grant Cloudflare Pages, so a token that reads
 a Worker's settings fails on a Pages project. Cloudflare returns one code for a
@@ -225,9 +225,9 @@ Credentials are `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN`, read from the e
 missing is refused before any call is made. `--zone-id` / `--api-token` exist for a one-off, but a
 value on a command line lands in shell history, so the environment is the intended route.
 
-**No single permission covers both phases:** the firewall phase needs Zone → *Zone WAF: Edit*, the
-redirect phase Zone → *Dynamic Redirect: Edit*, and both need Zone → *Zone: Read*. Some accounts
-also need Account → *Account Rulesets: Edit*; the symptom is both phases failing identically, which
+**No single permission covers both phases:** the firewall phase needs Zone → _Zone WAF: Edit_, the
+redirect phase Zone → _Dynamic Redirect: Edit_, and both need Zone → _Zone: Read_. Some accounts
+also need Account → _Account Rulesets: Edit_; the symptom is both phases failing identically, which
 a per-phase scope problem cannot produce.
 
 **An auth failure does not tell you which.** Cloudflare returns one code for a token it rejects and

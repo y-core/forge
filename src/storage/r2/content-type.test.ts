@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { CONTENT_TYPE_DEFAULT, inferContentType } from "./content-type";
 
 describe("inferContentType", () => {

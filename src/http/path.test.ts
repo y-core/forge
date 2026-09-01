@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { joinPath } from "./path";
 
 describe("joinPath", () => {

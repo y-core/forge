@@ -1,4 +1,5 @@
 import { describe, expect, it, type Mock, mock } from "bun:test";
+
 import { ReleaseError, type VersionResult } from "../types";
 import { createReleaseCommand } from "./release";
 
@@ -64,21 +65,21 @@ describe("createReleaseCommand()", () => {
   it("respects tagPrefix config", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project", tagPrefix: "pkg-v" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.resolveVersion.mock.calls[0]![0]).toMatchObject({ tagPrefix: "pkg-v" });
   });
 
   it("passes cwd to resolveVersion", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/my/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.resolveVersion.mock.calls[0]![0]).toMatchObject({ cwd: "/my/project" });
   });
 
   it("dry-run mode does not call updatePackageVersion, commit, or createTag", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: true, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: true, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(0);
     expect(deps.commit.mock.calls).toHaveLength(0);
     expect(deps.createTag.mock.calls).toHaveLength(0);
@@ -87,7 +88,7 @@ describe("createReleaseCommand()", () => {
   it("non-dry-run calls updatePackageVersion, commit, and createTag", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(1);
     expect(deps.commit.mock.calls).toHaveLength(1);
     expect(deps.createTag.mock.calls).toHaveLength(1);
@@ -105,7 +106,7 @@ describe("createReleaseCommand()", () => {
       }),
     });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(callOrder).toEqual(["commit", "createTag"]);
   });
 
@@ -127,14 +128,14 @@ describe("createReleaseCommand()", () => {
       }),
     });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(callOrder).toEqual(["updatePackageVersion", "writeChangelog", "commit", "createTag"]);
   });
 
   it("commit receives the correct message and stageFiles", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "bun.lock"] }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     const [cwd, message, files] = deps.commit.mock.calls[0]!;
     expect(cwd).toBe("/project");
     expect(message).toBe("chore: release 1.1.0");
@@ -144,7 +145,7 @@ describe("createReleaseCommand()", () => {
   it("in-sync returns early without tagging", () => {
     const deps = makeDeps({ resolveVersion: mock(() => ({ version: "1.0.0", reason: "in-sync" as const, previous: "v1.0.0" })) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(0);
     expect(deps.createTag.mock.calls).toHaveLength(0);
   });
@@ -156,7 +157,7 @@ describe("createReleaseCommand()", () => {
     console.log = (msg: string) => logs.push(msg);
     try {
       const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-      cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+      void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     } finally {
       console.log = origLog;
     }
@@ -167,21 +168,21 @@ describe("createReleaseCommand()", () => {
   it("checks dirty tree when allow-dirty is false", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": false, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": false, "allow-empty-changelog": false });
     expect(deps.isWorkingTreeClean.mock.calls).toHaveLength(1);
   });
 
   it("skips dirty tree check when allow-dirty is true", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.isWorkingTreeClean.mock.calls).toHaveLength(0);
   });
 
   it("skips dirty tree check in dry-run mode", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: true, "allow-dirty": false, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: true, "allow-dirty": false, "allow-empty-changelog": false });
     expect(deps.isWorkingTreeClean.mock.calls).toHaveLength(0);
   });
 
@@ -192,7 +193,7 @@ describe("createReleaseCommand()", () => {
     const deps = makeDeps({ tagExists: mock((_cwd: string, _tag: string): boolean => true) });
     try {
       const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-      cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+      void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     } finally {
       console.log = origLog;
     }
@@ -209,7 +210,7 @@ describe("createReleaseCommand()", () => {
     const deps = makeDeps({ commit: mock((_cwd: string, _message: string, _files: string[]): boolean => false) });
     try {
       const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-      cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+      void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     } finally {
       console.log = origLog;
     }
@@ -226,7 +227,7 @@ describe("createReleaseCommand()", () => {
     const deps = makeDeps({ commit: mock((_cwd: string, _message: string, _files: string[]): boolean => true) });
     try {
       const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-      cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+      void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     } finally {
       console.log = origLog;
     }
@@ -244,7 +245,7 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("promotes [Unreleased] into a dated section using the injected clock", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     const [cwd, file, source] = deps.writeChangelog.mock.calls[0] as [string, string, string];
     expect(cwd).toBe("/project");
     expect(file).toBe("CHANGELOG.md");
@@ -276,14 +277,14 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("reads the clock exactly once", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.now.mock.calls).toHaveLength(1);
   });
 
   it("omits the link definition when the repository URL is unknown", () => {
     const deps = makeDeps({ readRepositoryUrl: mock((_cwd: string): string | null => null) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     const [, , source] = deps.writeChangelog.mock.calls[0] as [string, string, string];
     expect(source.includes("[1.1.0]: ")).toBe(false);
   });
@@ -291,7 +292,7 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("honours a configured changelogFile", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project", changelogFile: "docs/CHANGES.md" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.readChangelog.mock.calls[0]?.[1]).toBe("docs/CHANGES.md");
     expect(deps.writeChangelog.mock.calls[0]?.[1]).toBe("docs/CHANGES.md");
   });
@@ -324,7 +325,7 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("--allow-empty-changelog proceeds and still promotes, carrying the placeholder through", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => EMPTY) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": true });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": true });
     expect(deps.writeChangelog.mock.calls).toHaveLength(1);
     const [, , source] = deps.writeChangelog.mock.calls[0] as [string, string, string];
     expect(source.split("\n")[8]).toBe("## [1.1.0] — 2026-02-03");
@@ -347,7 +348,7 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("a repository with no changelog releases unchanged", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => null) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    const logs = runCapturingLogs(() => cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false }));
+    const logs = runCapturingLogs(() => void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false }));
     expect(deps.writeChangelog.mock.calls).toHaveLength(0);
     expect(deps.createTag.mock.calls).toHaveLength(1);
     expect(logs.some((l) => l === "  changelog: (no CHANGELOG.md — skipped)")).toBe(true);
@@ -356,7 +357,7 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("--dry reports the promotion and writes nothing", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    const logs = runCapturingLogs(() => cmd.run?.([], { dry: true, "allow-dirty": true, "allow-empty-changelog": false }));
+    const logs = runCapturingLogs(() => void cmd.run?.([], { dry: true, "allow-dirty": true, "allow-empty-changelog": false }));
     expect(deps.readChangelog.mock.calls).toHaveLength(1);
     expect(deps.writeChangelog.mock.calls).toHaveLength(0);
     expect(logs.some((l) => l === "  changelog: [Unreleased] → [1.1.0] — 2026-02-03")).toBe(true);
@@ -365,7 +366,7 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("in-sync returns before the changelog is read", () => {
     const deps = makeDeps({ resolveVersion: mock(() => ({ version: "1.0.0", reason: "in-sync" as const, previous: "v1.0.0" })) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
+    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false });
     expect(deps.readChangelog.mock.calls).toHaveLength(0);
   });
 
@@ -385,7 +386,7 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
   it("stages the changelog it promoted, so the bump and the promotion land in one commit", () => {
     const deps = makeDeps();
 
-    createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS);
+    void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS);
 
     expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "CHANGELOG.md"]);
   });
@@ -393,7 +394,7 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
   it("follows a renamed changelog rather than staging a `CHANGELOG.md` that was never written", () => {
     const deps = makeDeps();
 
-    createReleaseCommand({ cwd: "/project", changelogFile: "docs/CHANGES.md" }, deps).run?.([], FLAGS);
+    void createReleaseCommand({ cwd: "/project", changelogFile: "docs/CHANGES.md" }, deps).run?.([], FLAGS);
 
     expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "docs/CHANGES.md"]);
   });
@@ -401,7 +402,7 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
   it("stages package.json alone when there is no changelog, since `git add` fails on a missing path", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => null) });
 
-    createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS);
+    void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS);
 
     expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json"]);
   });
@@ -409,7 +410,7 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
   it("takes an explicit list verbatim, for a lockfile or a monorepo's sibling manifests", () => {
     const deps = makeDeps();
 
-    createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "bun.lock"] }, deps).run?.([], FLAGS);
+    void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "bun.lock"] }, deps).run?.([], FLAGS);
 
     expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "bun.lock"]);
   });
@@ -417,7 +418,7 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
   it("lets an explicit list drop the changelog, since the field is an override and not an addition", () => {
     const deps = makeDeps();
 
-    createReleaseCommand({ cwd: "/project", stageFiles: ["package.json"] }, deps).run?.([], FLAGS);
+    void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json"] }, deps).run?.([], FLAGS);
 
     expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json"]);
   });

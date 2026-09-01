@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { mountNumberField } from "./number-field";
 import { type FakeElement, FakeEvent, fakeTree } from "./test-dom";
 

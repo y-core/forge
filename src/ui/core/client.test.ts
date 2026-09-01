@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import { resume, resumeScope } from "../client/resume";
 import { FakeEvent, fakeTree } from "../client/test-dom";
-
 // Import client.ts to register the toast and alert scopes as a side effect.
 import "./client";
 

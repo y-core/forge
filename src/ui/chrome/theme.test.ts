@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { DARK_CLASS, DEFAULT_PREF, FOUC_SCRIPT, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 describe("theme constants", () => {

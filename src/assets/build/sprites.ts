@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+
 import type { SpriteGroup, Sprites } from "../types";
 import { fetchURL } from "./download";
 import { hashFile } from "./hash";

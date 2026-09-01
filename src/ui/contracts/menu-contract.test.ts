@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { menuItemAttrs } from "./menu-contract";
 
 describe("menuItemAttrs", () => {

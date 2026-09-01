@@ -1,0 +1,20 @@
+{
+  "printWidth": 148,
+  "tabWidth": 2,
+  "useTabs": false,
+  "objectWrap": "collapse",
+  "semi": true,
+  "trailingComma": "all",
+  "arrowParens": "always",
+  "bracketSpacing": true,
+  "bracketSameLine": true,
+  "quoteProps": "as-needed",
+  "singleQuote": false,
+  "jsxSingleQuote": true,
+  "experimentalOperatorPosition": "end",
+  "proseWrap": "preserve",
+  "endOfLine": "lf",
+  "sortPackageJson": false,
+  "sortImports": true,
+  "ignorePatterns": [".decisions/governance/**", ".claude"]
+}

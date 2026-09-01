@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { findPublicSymbols, parseBarrelExportNames, parseBarrelExports, parseConsumerExportNames } from "./barrel-parse";
 
 function fixture(source: string): string {
@@ -116,11 +117,11 @@ describe("findPublicSymbols() — TSDoc block extent", () => {
     expect(findPublicSymbols(path)).toEqual(["readField"]);
   });
 
-  it("skips an intervening biome-ignore comment line", () => {
+  it("skips an intervening lint-suppression comment line", () => {
     const path = fixture(
       [
         "/** Reads a field. @public */",
-        "// biome-ignore lint/suspicious/noExplicitAny: fixture",
+        "// oxlint-disable-next-line typescript/no-explicit-any -- fixture",
         "export const readField = (value: any): string => value;",
         "",
       ].join("\n"),

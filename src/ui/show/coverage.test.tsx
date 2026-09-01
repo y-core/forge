@@ -2,15 +2,16 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import { beforeAll, describe, expect, it } from "bun:test";
+
 import { render } from "../../testing/render";
-// biome-ignore lint/style/noRestrictedImports: the published surface is what is being asserted
+// oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as chrome from "../chrome/mod";
-// biome-ignore lint/style/noRestrictedImports: the published surface is what is being asserted
+// oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as controls from "../controls/mod";
 import { createIcon } from "../core/icon";
-// biome-ignore lint/style/noRestrictedImports: the published surface is what is being asserted
+// oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as core from "../core/mod";
-// biome-ignore lint/style/noRestrictedImports: the published surface is what is being asserted
+// oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as server from "../server/mod";
 import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent } from "./components";
 import { type CoverageReport, coverageKeys, coverageReport, DEMO_COVERAGE, explainGap, explainStale } from "./coverage";
@@ -28,7 +29,7 @@ const icon = createIcon("/sprite.svg", {
   "icon-monitor": "0 0 24 24",
   "icon-hamburger": "0 0 24 24",
   "icon-close": "0 0 24 24",
-  // biome-ignore lint/suspicious/noExplicitAny: the catalog's own icon union is wider than this fixture
+  // oxlint-disable-next-line typescript/no-explicit-any -- the catalog's own icon union is wider than this fixture
 }) as any;
 
 function componentExports(barrel: Record<string, unknown>): string[] {

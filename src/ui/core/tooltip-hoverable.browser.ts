@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { Tooltip } from "./tooltip";

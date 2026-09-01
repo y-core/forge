@@ -11,15 +11,7 @@ export { syncBindings } from "./account/engine";
 export type { Verification } from "./account/handlers/declarative";
 export { createDeclarativeHandler, UNVERIFIED_DETAIL } from "./account/handlers/declarative";
 export type { DevVar, DevVarKind } from "./account/handlers/devvars";
-export {
-  devVarsPath,
-  editDevVars,
-  GENERATE_MARKER,
-  PUSH_MARKER,
-  parseDevVars,
-  readDevVars,
-  writeDevVars,
-} from "./account/handlers/devvars";
+export { devVarsPath, editDevVars, GENERATE_MARKER, PUSH_MARKER, parseDevVars, readDevVars, writeDevVars } from "./account/handlers/devvars";
 export { createLocalVarsHandler } from "./account/handlers/localvars";
 export { dnsName, prefixedName, sanitizeName } from "./account/handlers/naming";
 export { rateLimitsHandler } from "./account/handlers/ratelimits";

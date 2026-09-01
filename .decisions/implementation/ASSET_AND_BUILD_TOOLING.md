@@ -57,7 +57,7 @@ project root and export the result as default. `src/assets/README.md` carries th
 
 **It types, it does not validate.** It is the identity function over `AssetsConfig`; the schema
 runs in `loadConfig`, which `v.parse`s the imported module into a `ResolvedConfig` with every
-optional field defaulted. A mistyped config therefore fails at *load* time, in the CLI — the
+optional field defaulted. A mistyped config therefore fails at _load_ time, in the CLI — the
 only point at which a config file can be checked at all, since nothing imports it before then.
 
 `paths.publicDir` is the single output root; every artifact lands under it, including JS
@@ -66,7 +66,7 @@ bundles, whose subdirectory is per-bundle (`js.bundles[].outdir`) rather than gl
 
 ### 1b. AssetsConfig Type Shape
 
-**The config shape is owned by `src/assets/types.ts`** — the valibot schemas there *are* the
+**The config shape is owned by `src/assets/types.ts`** — the valibot schemas there _are_ the
 type, via `InferInput`, and `src/assets/README.md` carries the field-by-field reference. This
 document enumerates none of it: a second copy of a field list is indistinguishable from an
 amendment the moment the two disagree.
@@ -90,14 +90,14 @@ command was typed. §5h states the rule this is an instance of.
 
 ### 2a. Build Functions — Orchestration
 
-| Function | Runs |
-|---|---|
-| `buildAll` | Every configured stage, in the order §6 fixes, then the generated module and `_headers` |
-| `buildCSS` | One Tailwind CLI build per `css[]` entry |
-| `buildJS` | One esbuild bundle per `js.bundles[]` entry, into that bundle's own `outdir` |
-| `buildSprites` | One sheet per named sprite group, from its explicit `sources[].files` list |
-| `copyAssets` | Each `copy[]` rule, `from` → `to` |
-| `buildFonts`, `buildIcons`, `buildCursors` | The font downloads, the rasterised icon outputs, the baked cursor values |
+| Function                                   | Runs                                                                                    |
+| ------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `buildAll`                                 | Every configured stage, in the order §6 fixes, then the generated module and `_headers` |
+| `buildCSS`                                 | One Tailwind CLI build per `css[]` entry                                                |
+| `buildJS`                                  | One esbuild bundle per `js.bundles[]` entry, into that bundle's own `outdir`            |
+| `buildSprites`                             | One sheet per named sprite group, from its explicit `sources[].files` list              |
+| `copyAssets`                               | Each `copy[]` rule, `from` → `to`                                                       |
+| `buildFonts`, `buildIcons`, `buildCursors` | The font downloads, the rasterised icon outputs, the baked cursor values                |
 
 Signatures live in `src/assets/README.md`; none of these takes the whole config — each takes its
 own slice plus an output directory.
@@ -116,13 +116,13 @@ because the CLI exposes each as its own subcommand, so a developer can rerun one
 
 Content hashing is one SHA-256 digest truncated to its first 8 hex characters, and it is
 **opt-in with `--minify`**: an unhashed build emits logical filenames and the manifest maps each
-key to itself. Hashes are taken from the *emitted* file, not its sources, so an output that
+key to itself. Hashes are taken from the _emitted_ file, not its sources, so an output that
 compiles to identical bytes keeps its URL — and the `_headers` file `buildAll` writes claims
 `immutable` only when hashing was on.
 
 **The incremental-state helpers in `src/assets/build/state.ts` are published but unused by the
 pipeline.** No forge build path calls them, and `buildAll` re-runs every configured stage
-unconditionally. Their contract is a state file the *consumer* names — forge bakes in no path
+unconditionally. Their contract is a state file the _consumer_ names — forge bakes in no path
 and writes no build state of its own. What makes a repeat build cheap for the one artifact that
 matters is the skip-if-identical write in §6, not stored hashes.
 
@@ -145,7 +145,7 @@ developer can read — rather than a 500 on a page that merely referenced a new 
 
 ### 3b. createSpriteRegistry — Sprite Sheet URL Lookup
 
-**`createSpriteRegistry(sprites, manifest)` resolves a sprite *group name* to that sheet's
+**`createSpriteRegistry(sprites, manifest)` resolves a sprite _group name_ to that sheet's
 public URL** — `get(name) => string`, delegating to `manifest.path`. It parses no SVG and knows
 nothing about symbols; an unknown group name **throws**, because a sprite URL that silently
 resolves to nothing renders every glyph on the page as an empty `<use>`.
@@ -180,7 +180,7 @@ wearing a factory's clothes.
 
 ### 4b. Flags Are a Typed Record
 
-**Flags are a record keyed by long name, not an array of definitions.** The key *is* the `--long`
+**Flags are a record keyed by long name, not an array of definitions.** The key _is_ the `--long`
 form and `short` is a field on the definition, so a flag cannot be declared with a name that
 disagrees with the one that reads it.
 
@@ -201,7 +201,7 @@ exit code. `execute` catches every error, prints it to stderr via `formatError`,
 
 **Exit status is a two-valued contract: 0 is success, 1 is failure.** Anything a numeric code might
 have encoded belongs in the `kind` or the message, where a reader and a test can both see it. A
-command needing a different code — or needing to exit *without* the `Error:` prefix — calls
+command needing a different code — or needing to exit _without_ the `Error:` prefix — calls
 `process.exit` itself; the gate does that so its summary line is the last thing printed.
 
 ### 4d. CommandBase and Command Are Not Mergeable
@@ -216,7 +216,7 @@ differently-flagged commands has no common `Command<…>` to be typed as. Tree l
 
 ## 5. pkg Namespace — Project Tooling
 
-**`pkg` owns both project verbs — release *and* verification.** The namespace is what a project's
+**`pkg` owns both project verbs — release _and_ verification.** The namespace is what a project's
 tooling commands are built from, not release automation alone. Its layout follows the split:
 `release/` and `gate/` hold the two factories, `internal/` holds what only serves them, and
 `mod.ts` is the one barrel over all three — the subdirectories are plain directories of concrete
@@ -226,7 +226,7 @@ importing a barrel.
 **What the barrel publishes is decided by one question: would a consuming app plausibly call this
 itself?** A symbol that exists only to serve the two command factories stays out of `mod.ts` —
 the git and `package.json` helpers in `internal/` (§5c), the gate's formatters (§5f). The test is
-the *caller*, not difficulty or stability: a helper is unpublished because nobody outside would
+the _caller_, not difficulty or stability: a helper is unpublished because nobody outside would
 reach for it.
 
 ### 5a. createReleaseCommand — Automated Release Workflow
@@ -254,17 +254,17 @@ prose commit. A project with no changelog stages `package.json` alone, because `
 `git add` and naming a path that does not exist would fail the release outright.
 
 **`stageFiles` is an override, not an addition.** Naming it replaces the derived list. It exists
-for what a release touches *beyond* its own writes — a lockfile, a monorepo's sibling manifests,
+for what a release touches _beyond_ its own writes — a lockfile, a monorepo's sibling manifests,
 a version constant in source — and those callers state the full list deliberately.
 
 Four refusals are guards, not conveniences:
 
-| Refusal | Why, and when it is reached | Override |
-|---|---|---|
-| Dirty working tree | Checked before anything is resolved, so a half-finished change cannot ship | `--allow-dirty`, which defeats the guard's only purpose |
-| Tag already exists | Checked after the version is resolved, so a botched release cannot be re-cut over its own tag | none |
-| Nothing to release | No commits since the latest tag; reports "already at" and stops. `package.json` disagreeing with the tag there is an error, not a bump | none |
-| Empty `[Unreleased]`, with commits since the tag | Shipping a release nobody wrote a line for is the drift the changelog prevents | `--allow-empty-changelog` (§5d); a *malformed* changelog is a separate refusal no flag reaches |
+| Refusal                                          | Why, and when it is reached                                                                                                            | Override                                                                                       |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Dirty working tree                               | Checked before anything is resolved, so a half-finished change cannot ship                                                             | `--allow-dirty`, which defeats the guard's only purpose                                        |
+| Tag already exists                               | Checked after the version is resolved, so a botched release cannot be re-cut over its own tag                                          | none                                                                                           |
+| Nothing to release                               | No commits since the latest tag; reports "already at" and stops. `package.json` disagreeing with the tag there is an error, not a bump | none                                                                                           |
+| Empty `[Unreleased]`, with commits since the tag | Shipping a release nobody wrote a line for is the drift the changelog prevents                                                         | `--allow-empty-changelog` (§5d); a _malformed_ changelog is a separate refusal no flag reaches |
 
 **A refusal `throw`s a `ReleaseError`; it does not call `exit`.** `execute` renders any `Error`
 as `Error: <message>` and exits 1 (§4c), so the operator sees the same output while the guard
@@ -274,7 +274,7 @@ written**, so no mutation can precede a refusal.
 
 **`--dry` prints the resolved version and what would be promoted, then stops before any write.**
 It skips the clean-tree check too, so it is safe to run at any time — but it resolves from
-`<latest-tag>..HEAD`, so running it *before* committing reports "nothing to release" rather than
+`<latest-tag>..HEAD`, so running it _before_ committing reports "nothing to release" rather than
 the version a release would produce. Commit first, then dry-run.
 
 **The bump is the highest one any commit in `<latest-tag>..HEAD` asks for**: a `major:` subject
@@ -287,7 +287,7 @@ argument overrides the scan, and is rejected unless it is greater than the curre
 
 **The git and `package.json` helpers in `src/cli/pkg/internal/` are unpublished.** They exist to
 serve the two command factories and nothing else. A consumer that needs `git tag` has `git`; what
-forge publishes is the *policy* over it — the ordered, refusing release command — not a thin
+forge publishes is the _policy_ over it — the ordered, refusing release command — not a thin
 `execFileSync` wrapper it would have to reimplement the policy around. `checkExports` enforces
 the line: an `@public` tag on any of them fails the gate until it is either exported or retagged.
 
@@ -365,7 +365,7 @@ Failing invariants:
   cut for.
 - Every link reference definition names a heading that exists.
 
-A heading with *no* link definition is a warning only — promotion writes the definition, and some
+A heading with _no_ link definition is a warning only — promotion writes the definition, and some
 entries legitimately lack one.
 
 Three things are deliberately not checked, each because the file disproves them: **`---`
@@ -386,26 +386,26 @@ probe and the full-log file, while each keeps its own steps as its own source of
 binding file of its own. The factory stays published for the case the bin cannot serve — a table
 assembled at run time, or a gate embedded in a larger CLI.
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `cwd` | `string` | — | Repository root. Every step is spawned here, so a step's relative paths resolve. |
-| `steps` | `readonly Step[]` | — | The table to resolve against. |
-| `binDir` | `string` | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve. |
+| Field    | Type              | Default                    | Description                                                                      |
+| -------- | ----------------- | -------------------------- | -------------------------------------------------------------------------------- |
+| `cwd`    | `string`          | —                          | Repository root. Every step is spawned here, so a step's relative paths resolve. |
+| `steps`  | `readonly Step[]` | —                          | The table to resolve against.                                                    |
+| `binDir` | `string`          | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve.                                  |
 
 **One command, two modes — not two commands.** `verify` runs the fast set; `verify --full` adds
 the `fullOnly` steps. Two verbs sharing every flag and differing only in a membership filter is a
 mode by definition, and modelling it as two verbs costs a duplicated binding file per repo, a
-`gate` config field, and a superset invariant that must be *tested* rather than being true by
+`gate` config field, and a superset invariant that must be _tested_ rather than being true by
 construction.
 
 **`GateMode` is a closed `"fast" | "full"` union, and `Step.fullOnly` is a boolean.** Together they
 carry the prerequisite invariant [`TESTING.md`](../governance/TESTING.md) §6c exists to settle: a third mode
-would have no defined answer to "may this step require a browser?", and a *list* of modes would let
+would have no defined answer to "may this step require a browser?", and a _list_ of modes would let
 a table express a step that a fast run has and a full run does not. Neither is a restriction the
 runner enforces at runtime — both are shapes that make the wrong thing unsayable.
 
 **`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps
-that invoke tools as `bun x biome` need a different prefix, and one config field is cheaper than
+that invoke tools as `bun x oxlint` need a different prefix, and one config field is cheaper than
 five forks of the runner. The temp-directory prefix behind the full-log file stays hardcoded —
 configuring it would be surface for nothing.
 
@@ -413,7 +413,7 @@ configuring it would be surface for nothing.
 exact glyphs and wording of every gate line across five repositories, and would hand the next
 repository the parts to build an alternate runner from — the fork this consolidation removed.
 
-**`selectSteps` *is* published**, because it is pure — an app unit-tests its own table against it
+**`selectSteps` _is_ published**, because it is pure — an app unit-tests its own table against it
 at zero step cost, the same argument that makes forge's `steps.test.ts` worth having.
 
 **Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent.**
@@ -462,7 +462,7 @@ probing for a marker file, not at all. A root arrives one of exactly two ways:
   `config/steps.ts`).
 - **Derived.** `installedAppRoot()` takes this module's own path and returns everything before its
   first `node_modules` segment — pure string arithmetic, reading no directory. When forge is
-  installed under `<app>/node_modules/…`, that text *is* `<app>`.
+  installed under `<app>/node_modules/…`, that text _is_ `<app>`.
 
 `resolveAppRoot(explicit?)` is the one entry point: stated wins, derived is the fallback, and when
 neither is available **it throws**.
@@ -473,8 +473,8 @@ check that walks a tree containing nothing it recognises and reports the same gr
 that walked the right tree and found no problems. Every guard in this gate exists to separate
 those two outcomes; a discovered root quietly re-merges them.
 
-**Why not a walk-up.** An upward search for `package.json` finds *a* project, not necessarily
-*this* one — a monorepo package, a `node_modules` entry, or a parent checkout all answer, and it
+**Why not a walk-up.** An upward search for `package.json` finds _a_ project, not necessarily
+_this_ one — a monorepo package, a `node_modules` entry, or a parent checkout all answer, and it
 succeeds, so nothing signals that the wrong tree was chosen. Deriving from the install path cannot
 pick a different project, because the path is the install.
 
@@ -490,7 +490,7 @@ resolves `import.meta.url` to the realpath, so this module reports itself under 
 `node_modules` segment left to split on. The derivation returns `undefined`, correctly: the path
 has stopped naming the consumer. Every `forge assets` command therefore carries `--root`, falling
 back to `FORGE_APP_ROOT`, with an empty value treated as absent so an exported-but-unset variable
-cannot resolve every path against `/`. This is the *stated* branch, not a third one — reading
+cannot resolve every path against `/`. This is the _stated_ branch, not a third one — reading
 through the symlink is the walk this section rules out, and it would answer for a `file:`
 dependency of a dependency exactly as confidently as for the app.
 
@@ -503,13 +503,13 @@ steps is a half-measure this namespace refuses.
 
 A check is built in layers, and the **prefix states which one a function is**:
 
-| Prefix | Purity | Shape |
-|---|---|---|
-| `parse*` / `find*` | pure | text → data. No disk, no root, no path. |
-| `validate*` | pure | data → `Finding[]`. Every policy decision lives here. |
-| `resolve*` | impure | config → files or contents. Walks disk, judges nothing. |
-| `check*` | impure | config → `CheckResult`. Orchestrates the three above. |
-| `format*` | pure | findings → strings. |
+| Prefix             | Purity | Shape                                                   |
+| ------------------ | ------ | ------------------------------------------------------- |
+| `parse*` / `find*` | pure   | text → data. No disk, no root, no path.                 |
+| `validate*`        | pure   | data → `Finding[]`. Every policy decision lives here.   |
+| `resolve*`         | impure | config → files or contents. Walks disk, judges nothing. |
+| `check*`           | impure | config → `CheckResult`. Orchestrates the three above.   |
+| `format*`          | pure   | findings → strings.                                     |
 
 `check*` is the only entry point a consumer needs; the rest are the seams that make one assertable
 without a filesystem or a subprocess. `src/cli/pkg/mod.ts` is authoritative over which checks are
@@ -517,7 +517,7 @@ published, and this document enumerates none of them.
 
 **`ok` is derived from the findings, never passed.** `checkResult(findings, summary)` computes it,
 so "a check that reports a failure and forgets to flip a flag" is not expressible. **`summary`
-always carries a count** — `0 .tsx files carry every pragma` is a *visible* nothing-happened, and a
+always carries a count** — `0 .tsx files carry every pragma` is a _visible_ nothing-happened, and a
 silent green is indistinguishable from a check that walked nothing.
 
 **Two levels, not a scale.** `fail` fails the check; `warn` is reported and does not. A third level
@@ -551,14 +551,14 @@ the current build. A consuming app aliases it as `@assets` and regenerates it wi
 properties of the order are decisions rather than incidents:
 
 - **Codegen runs twice, before and after `buildJS`.** esbuild resolves the `@assets` alias while
-  bundling, so a bundle importing the manifest needs the module to *already exist* — the first
+  bundling, so a bundle importing the manifest needs the module to _already exist_ — the first
   pass exists solely to make the second pass's inputs bundleable. The second pass then rewrites it
   with the JS bundle keys the first pass could not know.
 - **Cursors run after CSS.** Baking a cursor value means reading the emitted stylesheet for the
   custom properties it resolved, so the CSS stage must have produced a file the manifest can name.
 
-The first pass is why a *clean* checkout still typechecks: `forge assets types` (§6b) writes the
-same module from the config alone, so `tsc`/`tsgo` never depends on a toolchain having run.
+The first pass is why a _clean_ checkout still typechecks: `forge assets types` (§6b) writes the
+same module from the config alone, so `tsc` never depends on a toolchain having run.
 
 ### 6b. Build and Types Artifacts Are Shape-Identical
 
@@ -587,7 +587,7 @@ the group's symbol keys with the group's prefix stripped — alongside the `*_ME
 `createIcon` narrows its `name` prop against, so the two cannot disagree.
 
 **It exists to be usable in type position.** `createIcon` already infers the narrow component
-type at the *value* site, but a consumer writing a props interface — `icon: ForgeIcon<G>` — needs
+type at the _value_ site, but a consumer writing a props interface — `icon: ForgeIcon<G>` — needs
 the union as a name it can spell. Without one it hand-maintains a literal union beside the sprite
 config, a second copy of the glyph list that drifts the first time a glyph is added. `ForgeIcon`
 declares no default for its parameter, so the widening a missing union invites does not compile

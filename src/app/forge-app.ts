@@ -2,6 +2,7 @@ import type { MatchData, Middleware } from "@remix-run/fetch-router";
 import { createRouter, RequestContext } from "@remix-run/fetch-router";
 import type { Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
 import { createMatcher, createMultiMatcher } from "@remix-run/route-pattern/match";
+
 import type { Config } from "../config/config";
 import { resolveConfig } from "../config/config";
 import { applyPendingHeaders } from "../context/pending-headers";
@@ -15,7 +16,7 @@ import type { Logger } from "../logging/types";
 import { toError } from "../result/result";
 import type { GlobalMiddlewareEntry, RequestState } from "./types";
 
-// biome-ignore lint/suspicious/noExplicitAny: mock context for testing only
+// oxlint-disable-next-line typescript/no-explicit-any -- mock context for testing only
 const MOCK_CTX: ExecutionContext = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
 
 /** Compiles a `use()` path convention into a route-pattern matcher, or `null` for the catch-all. */

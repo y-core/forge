@@ -118,6 +118,7 @@ function renderNodeSync(node: unknown): string | Promise<string> {
     if (parts.every((p): p is string => typeof p === "string")) {
       return parts.join("");
     }
+    // oxlint-disable-next-line typescript/await-thenable -- parts is a mixed string/Promise array by design; Promise.all resolves plain values through unchanged
     return Promise.all(parts).then((ps) => ps.join(""));
   }
 

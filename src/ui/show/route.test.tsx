@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
 import { mapHandler } from "../../testing/route";
@@ -20,10 +21,10 @@ import {
   showcasePaths,
 } from "./route";
 
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = (_props: any) => null as any;
 StubIcon.sprite = "/icons.svg";
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
 function makeApp() {

@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
+
 import { createElement } from "../../../jsx/element";
 import { render } from "../../../testing/render";
 import { Button } from "../button";
@@ -43,7 +44,6 @@ describe("cloneAsChild — button options the compound never set", () => {
   });
 
   it("leaves a child button's own disabled alone when no disabled option is given", async () => {
-    // biome-ignore lint/a11y/useButtonType: a child that declares no type is the case under test
     const child = <button disabled>Go</button>;
 
     expect(await render(cloneAsChild(child, base))).toBe('<button disabled class="probe-class" data-slot="probe">Go</button>');
@@ -71,7 +71,6 @@ describe("cloneAsChild — button options the compound did set", () => {
   });
 
   it("an explicit disabled option overrides the child's own", async () => {
-    // biome-ignore lint/a11y/useButtonType: a child that declares no type is the case under test
     const child = <button>Go</button>;
 
     expect(await render(cloneAsChild(child, { ...base, disabled: true }))).toBe(
@@ -80,7 +79,6 @@ describe("cloneAsChild — button options the compound did set", () => {
   });
 
   it("disabled=false is a decision, not an omission, and clears the child's own", async () => {
-    // biome-ignore lint/a11y/useButtonType: a child that declares no type is the case under test
     const child = <button disabled>Go</button>;
 
     expect(await render(cloneAsChild(child, { ...base, disabled: false }))).toBe('<button class="probe-class" data-slot="probe">Go</button>');

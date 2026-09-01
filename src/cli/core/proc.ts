@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+
 import type { CaptureResult, ToolHints } from "./types";
 
 /** Idempotently inserts `dir` at the front of `process.env.PATH`. */

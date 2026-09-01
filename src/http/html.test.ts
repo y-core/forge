@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { html, isSafeHtml, rawHtml } from "./html";
 
 describe("rawHtml", () => {

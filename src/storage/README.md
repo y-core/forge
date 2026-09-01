@@ -9,10 +9,10 @@ binding-resolution and validation pattern.
 > instead. Each is a self-contained namespace with its own factory, codecs/helpers, binding
 > resolvers, and types.
 
-| Sub-path | Service | Entry factory |
-|---|---|---|
-| `@y-core/forge/storage/db` | Cloudflare **D1** SQL database | `createD1Client` |
-| `@y-core/forge/storage/kv` | Cloudflare **Workers KV** | `createKVStore` |
+| Sub-path                   | Service                          | Entry factory       |
+| -------------------------- | -------------------------------- | ------------------- |
+| `@y-core/forge/storage/db` | Cloudflare **D1** SQL database   | `createD1Client`    |
+| `@y-core/forge/storage/kv` | Cloudflare **Workers KV**        | `createKVStore`     |
 | `@y-core/forge/storage/r2` | Cloudflare **R2** object storage | `createObjectStore` |
 
 All three share two cross-cutting conventions:
@@ -68,25 +68,23 @@ return Response.json(found.data);
 
 Wraps a raw `D1Database` binding with a typed `D1Client`.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `db` | `D1Database` | The D1 binding, typically `c.env.DB` |
+| Parameter | Type                           | Description                                                       |
+| --------- | ------------------------------ | ----------------------------------------------------------------- |
+| `db`      | `D1Database`                   | The D1 binding, typically `c.env.DB`                              |
 | `options` | `D1ClientOptions` _(optional)_ | `{ logger?: Logger }` — logs each prepared query at `debug` level |
 
 The returned `D1Client` has four methods. Each accepts a `SqlFragment` (or array of fragments for
 `batch`) and resolves to a `Result`:
 
-| Method | Signature | Returns (on `ok`) |
-|---|---|---|
-| `query` | `query<T>(fragment)` | `T[]` — all matching rows |
-| `queryOne` | `queryOne<T>(fragment)` | `T \| null` — first row or `null` |
-| `execute` | `execute(fragment)` | `{ rowsWritten: number; lastRowId?: number \| null }` |
-| `batch` | `batch<T>(fragments)` | `D1Result<T>[]` — one result per statement |
+| Method     | Signature               | Returns (on `ok`)                                     |
+| ---------- | ----------------------- | ----------------------------------------------------- |
+| `query`    | `query<T>(fragment)`    | `T[]` — all matching rows                             |
+| `queryOne` | `queryOne<T>(fragment)` | `T \| null` — first row or `null`                     |
+| `execute`  | `execute(fragment)`     | `{ rowsWritten: number; lastRowId?: number \| null }` |
+| `batch`    | `batch<T>(fragments)`   | `D1Result<T>[]` — one result per statement            |
 
 ```ts
-const created = await db.execute(
-  sql`INSERT INTO users (email) VALUES (${email})`,
-);
+const created = await db.execute(sql`INSERT INTO users (email) VALUES (${email})`);
 if (created.ok) {
   console.log("new row id", created.data.lastRowId);
 }
@@ -116,11 +114,11 @@ const whereActive = sql`status = ${"active"}`;
 const query = sql`SELECT * FROM users WHERE ${whereActive} ORDER BY created_at DESC`;
 ```
 
-| Export | Description |
-|---|---|
-| `sql` | Tagged template that produces a `SqlFragment` |
+| Export                 | Description                                                                                                                                                                |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`                  | Tagged template that produces a `SqlFragment`                                                                                                                              |
 | `isSqlFragment(value)` | Type guard — a **provenance** check, not a shape check. Only a fragment `sql` minted passes; use it in generic helpers that must reject raw strings and look-alike objects |
-| `SQL_PLACEHOLDER` | The placeholder string (`"?"`) emitted for each bind param |
+| `SQL_PLACEHOLDER`      | The placeholder string (`"?"`) emitted for each bind param                                                                                                                 |
 
 #### `uuidv7()` — time-ordered record identifiers
 
@@ -173,15 +171,15 @@ dashboard query, log line and error message; `x'0192…'` literals in hand-writt
 prefix matching on the id; and a `json_object('id', id)` that no longer produces anything sendable
 to a client.
 
-| Export | Description |
-|---|---|
-| `uuidv7()` | Generates a canonical lowercase UUIDv7 from a shared monotonic generator |
-| `uuidv7Bytes()` | The same value as its raw 16 octets, for a `BLOB` column — shares the generator with `uuidv7()`, so both forms stay ordered against each other |
-| `uuidFromBytes(value)` | Renders 16 octets as the canonical string; accepts the `number[]` D1 returns for a `BLOB`, plus `Uint8Array` and `ArrayBuffer`. Throws unless the value is exactly 16 bytes |
-| `uuidToBytes(id)` | Parses a canonical 36-character UUID (either case) to its 16 octets, for binding against a `BLOB` column. An **encoder, not a validator** — validate a request-supplied ID at the boundary with `v.pipe(v.string(), v.uuid())` first |
-| `createUuidv7(options?)` | Factory returning an independent string generator; pass `options.now` to inject a clock in tests |
-| `createUuidv7Bytes(options?)` | The byte-emitting factory — the core generator the other three build on |
-| `Uuidv7Options`, `UuidByteInput` | The options and accepted-byte-encoding types |
+| Export                           | Description                                                                                                                                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `uuidv7()`                       | Generates a canonical lowercase UUIDv7 from a shared monotonic generator                                                                                                                                                             |
+| `uuidv7Bytes()`                  | The same value as its raw 16 octets, for a `BLOB` column — shares the generator with `uuidv7()`, so both forms stay ordered against each other                                                                                       |
+| `uuidFromBytes(value)`           | Renders 16 octets as the canonical string; accepts the `number[]` D1 returns for a `BLOB`, plus `Uint8Array` and `ArrayBuffer`. Throws unless the value is exactly 16 bytes                                                          |
+| `uuidToBytes(id)`                | Parses a canonical 36-character UUID (either case) to its 16 octets, for binding against a `BLOB` column. An **encoder, not a validator** — validate a request-supplied ID at the boundary with `v.pipe(v.string(), v.uuid())` first |
+| `createUuidv7(options?)`         | Factory returning an independent string generator; pass `options.now` to inject a clock in tests                                                                                                                                     |
+| `createUuidv7Bytes(options?)`    | The byte-emitting factory — the core generator the other three build on                                                                                                                                                              |
+| `Uuidv7Options`, `UuidByteInput` | The options and accepted-byte-encoding types                                                                                                                                                                                         |
 
 ### Integration guide
 
@@ -197,14 +195,14 @@ app.use("*", validateD1Binding("DB"));
 const db = resolveD1Client(c, { binding: (c) => c.env.DB });
 ```
 
-| Function | Purpose |
-|---|---|
+| Function                   | Purpose                                                                                                                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `resolveD1Client(c, opts)` | Reads the binding via `opts.binding(c)` and builds a `D1Client`. Throws when absent unless `opts.required === false` (then returns `null`). Accepts an optional `opts.client: D1ClientOptions`. |
-| `validateD1Binding(name)` | Returns a `Middleware`; on first request asserts `c.env[name]` is an object whose `prepare` is a function, rejecting a stray string/number bound to the name. |
+| `validateD1Binding(name)`  | Returns a `Middleware`; on first request asserts `c.env[name]` is an object whose `prepare` is a function, rejecting a stray string/number bound to the name.                                   |
 
 ### Security
 
-- **Never build SQL by string concatenation.** Always use `sql\`…\``. The `D1Client` surface only
+- **Never build SQL by string concatenation.** Always use ``sql`…` ``. The `D1Client` surface only
   accepts `SqlFragment`, so any attempt to pass a raw string is a type error — keep it that way and
   do not coerce around the type with `as`.
 - `isSqlFragment` is the runtime guard for code paths that receive `unknown` and must reject
@@ -213,7 +211,7 @@ const db = resolveD1Client(c, { binding: (c) => c.env.DB });
   so a hand-built `{text, params}` literal no longer satisfies it. This is what closes the
   injection path — `JSON.parse` output can never carry a symbol key, so attacker-controlled JSON
   shaped like a fragment is bound as a **parameter** instead of being concatenated into the
-  statement text. The brand is non-enumerable in practice: `JSON.stringify(sql\`…\`)` round-trips
+  statement text. The brand is non-enumerable in practice: ``JSON.stringify(sql`…`)`` round-trips
   to a value `isSqlFragment` rejects.
 
 ---
@@ -261,26 +259,26 @@ if (got.ok && got.data) {
 
 Wraps a raw `KVNamespace` with a typed `KVStore<T>`.
 
-| Option | Type | Default | Purpose |
-|---|---|---|---|
-| `codec` | `KvCodec<T>` | `jsonCodec()` | Encode/decode pair for stored values |
-| `prefix` | `string` | _(none)_ | Key namespace applied on write, stripped on read |
-| `defaultTtl` | `number` | _(none)_ | Fallback `expirationTtl` (seconds) when a write omits one |
-| `logger` | `Logger` | scoped default | Logs decode errors and cache misses |
+| Option       | Type         | Default        | Purpose                                                   |
+| ------------ | ------------ | -------------- | --------------------------------------------------------- |
+| `codec`      | `KvCodec<T>` | `jsonCodec()`  | Encode/decode pair for stored values                      |
+| `prefix`     | `string`     | _(none)_       | Key namespace applied on write, stripped on read          |
+| `defaultTtl` | `number`     | _(none)_       | Fallback `expirationTtl` (seconds) when a write omits one |
+| `logger`     | `Logger`     | scoped default | Logs decode errors and cache misses                       |
 
 > Keys must not contain the reserved separator `||`; the store throws on such keys (it uses `||` to
 > join the prefix).
 
 The returned `KVStore<T>` exposes:
 
-| Method | Signature | Returns (on `ok`) |
-|---|---|---|
-| `get` | `get(key)` | `T \| null` |
-| `getWithMeta` | `getWithMeta<M>(key)` | `KVEntry<T, M>` — `{ value: T \| null; metadata: M \| null }` |
-| `set` | `set(key, value, options?)` | `void` |
-| `getOrSet` | `getOrSet(key, factory, options?)` | `T` — returns the cached value, or computes via `factory`, writes it, and returns it |
-| `delete` | `delete(key)` | `void` |
-| `list` | `list<M>(options?)` | `{ keys: KVListEntry<M>[]; cursor?: string; complete: boolean }` |
+| Method        | Signature                          | Returns (on `ok`)                                                                    |
+| ------------- | ---------------------------------- | ------------------------------------------------------------------------------------ |
+| `get`         | `get(key)`                         | `T \| null`                                                                          |
+| `getWithMeta` | `getWithMeta<M>(key)`              | `KVEntry<T, M>` — `{ value: T \| null; metadata: M \| null }`                        |
+| `set`         | `set(key, value, options?)`        | `void`                                                                               |
+| `getOrSet`    | `getOrSet(key, factory, options?)` | `T` — returns the cached value, or computes via `factory`, writes it, and returns it |
+| `delete`      | `delete(key)`                      | `void`                                                                               |
+| `list`        | `list<M>(options?)`                | `{ keys: KVListEntry<M>[]; cursor?: string; complete: boolean }`                     |
 
 `KVSetOptions` controls writes: `{ ttl?: number; expiration?: number; metadata?: unknown }`.
 `ttl` is in seconds (KV enforces a 60-second platform minimum). `KVListOptions` is
@@ -288,11 +286,7 @@ The returned `KVStore<T>` exposes:
 
 ```ts
 // Read-through cache: compute on miss, cache for 5 minutes.
-const config = await sessions.getOrSet(
-  "feature-flags",
-  async () => fetchFlagsFromOrigin(),
-  { ttl: 300 },
-);
+const config = await sessions.getOrSet("feature-flags", async () => fetchFlagsFromOrigin(), { ttl: 300 });
 ```
 
 #### Codecs
@@ -300,16 +294,16 @@ const config = await sessions.getOrSet(
 ```ts
 import { jsonCodec, textCodec, bytesCodec } from "@y-core/forge/storage/kv";
 
-jsonCodec<T>();  // JSON.stringify / JSON.parse — structured records, the default
-textCodec();     // identity — plain string values (tokens, slugs, flags)
-bytesCodec();    // Uint8Array <-> ArrayBuffer — binary blobs
+jsonCodec<T>(); // JSON.stringify / JSON.parse — structured records, the default
+textCodec(); // identity — plain string values (tokens, slugs, flags)
+bytesCodec(); // Uint8Array <-> ArrayBuffer — binary blobs
 ```
 
-| Codec | `KvValueType` | Application type | Use for |
-|---|---|---|---|
-| `jsonCodec<T>()` | `"text"` | `T` | Records, arrays, any typed data |
-| `textCodec()` | `"text"` | `string` | Raw strings |
-| `bytesCodec()` | `"arrayBuffer"` | `Uint8Array` | Binary data |
+| Codec            | `KvValueType`   | Application type | Use for                         |
+| ---------------- | --------------- | ---------------- | ------------------------------- |
+| `jsonCodec<T>()` | `"text"`        | `T`              | Records, arrays, any typed data |
+| `textCodec()`    | `"text"`        | `string`         | Raw strings                     |
+| `bytesCodec()`   | `"arrayBuffer"` | `Uint8Array`     | Binary data                     |
 
 A codec is `{ readonly type: KvValueType; encode(value): string | ArrayBuffer; decode(raw): T }`. The
 `type` selects which KV `get` overload the store calls, so a custom codec must declare it correctly.
@@ -322,16 +316,13 @@ import { resolveKVStore, validateKVBinding, jsonCodec } from "@y-core/forge/stor
 app.use("*", validateKVBinding("SESSIONS_KV"));
 
 // Inside a handler — pass `store` codec options so the result is typed immediately:
-const sessions = resolveKVStore<typeof c.env, Session>(c, {
-  binding: (c) => c.env.SESSIONS_KV,
-  store: { codec: jsonCodec<Session>() },
-});
+const sessions = resolveKVStore<typeof c.env, Session>(c, { binding: (c) => c.env.SESSIONS_KV, store: { codec: jsonCodec<Session>() } });
 ```
 
-| Function | Purpose |
-|---|---|
+| Function                  | Purpose                                                                                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `resolveKVStore(c, opts)` | Reads the binding via `opts.binding(c)` and builds a `KVStore<T>` from `opts.store`. Throws when absent unless `opts.required === false`. |
-| `validateKVBinding(name)` | Returns a `Middleware`; asserts `c.env[name]` is an object whose `get` and `put` are functions. |
+| `validateKVBinding(name)` | Returns a `Middleware`; asserts `c.env[name]` is an object whose `get` and `put` are functions.                                           |
 
 ### Security
 
@@ -365,21 +356,15 @@ const sessions = resolveKVStore<typeof c.env, Session>(c, {
 ```ts
 import { createObjectStore, r2Backend } from "@y-core/forge/storage/r2";
 
-const assets = createObjectStore(r2Backend(c.env.ASSETS_BUCKET), {
-  prefix: "uploads",
-});
+const assets = createObjectStore(r2Backend(c.env.ASSETS_BUCKET), { prefix: "uploads" });
 
-const put = await assets.put("avatars/42.png", imageBytes, {
-  contentType: "image/png",
-});
+const put = await assets.put("avatars/42.png", imageBytes, { contentType: "image/png" });
 if (!put.ok) {
   return new Response(put.error.message, { status: 500 });
 }
 
 // Stream it straight back to the client with range + ETag support:
-return assets.serveObject(c.request, "avatars/42.png", {
-  cacheControl: "public, max-age=3600",
-});
+return assets.serveObject(c.request, "avatars/42.png", { cacheControl: "public, max-age=3600" });
 ```
 
 ### Core components and APIs
@@ -388,20 +373,20 @@ return assets.serveObject(c.request, "avatars/42.png", {
 
 Wraps an `ObjectStorageBackend` with a typed `ObjectStore`.
 
-| Option | Type | Purpose |
-|---|---|---|
+| Option   | Type     | Purpose                                          |
+| -------- | -------- | ------------------------------------------------ |
 | `prefix` | `string` | Key namespace applied on write, stripped on read |
-| `logger` | `Logger` | Scoped logger |
+| `logger` | `Logger` | Scoped logger                                    |
 
 The returned `ObjectStore`:
 
-| Method | Signature | Returns (on `ok`) |
-|---|---|---|
-| `get` | `get(key, options?)` | `ObjectBody \| null` — metadata plus a streamable body |
-| `head` | `head(key)` | `StoredObject \| null` — metadata only |
-| `put` | `put(key, value, options?)` | `StoredObject` — content type inferred from the key when omitted |
-| `delete` | `delete(key)` | `void` — `key` may be a single string or an array |
-| `list` | `list(options?)` | `ListObjectsResult` |
+| Method        | Signature                             | Returns (on `ok`)                                                |
+| ------------- | ------------------------------------- | ---------------------------------------------------------------- |
+| `get`         | `get(key, options?)`                  | `ObjectBody \| null` — metadata plus a streamable body           |
+| `head`        | `head(key)`                           | `StoredObject \| null` — metadata only                           |
+| `put`         | `put(key, value, options?)`           | `StoredObject` — content type inferred from the key when omitted |
+| `delete`      | `delete(key)`                         | `void` — `key` may be a single string or an array                |
+| `list`        | `list(options?)`                      | `ListObjectsResult`                                              |
 | `serveObject` | `serveObject(request, key, options?)` | `Promise<Response>` (not `Result`-wrapped — always a `Response`) |
 
 `StorePutOptions` carries `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`,
@@ -412,13 +397,13 @@ accepts `prefix`, `limit`, `cursor`, and `delimiter`.
 
 Retrieves an object and returns a ready-to-return `Response`. It always resolves to a `Response`:
 
-| Status | Condition |
-|---|---|
-| `200` | Full object body |
-| `206` | Satisfied `Range` request (sets `Content-Range`) |
-| `304` | `If-None-Match` matches the object's `ETag` |
-| `404` | Object absent |
-| `416` | Unsatisfiable / malformed `Range` |
+| Status | Condition                                        |
+| ------ | ------------------------------------------------ |
+| `200`  | Full object body                                 |
+| `206`  | Satisfied `Range` request (sets `Content-Range`) |
+| `304`  | `If-None-Match` matches the object's `ETag`      |
+| `404`  | Object absent                                    |
+| `416`  | Unsatisfiable / malformed `Range`                |
 
 It sets `Content-Type`, `ETag`, `Accept-Ranges`, `Content-Length`, and `Cache-Control`.
 
@@ -426,17 +411,14 @@ It sets `Content-Type`, `ETag`, `Accept-Ranges`, `Content-Length`, and `Cache-Co
 import { serveObject, r2Backend } from "@y-core/forge/storage/r2";
 
 const backend = r2Backend(c.env.ASSETS_BUCKET);
-return serveObject(backend, c.request, key, {
-  cacheControl: "public, max-age=3600",
-  contentDisposition: "attachment",
-});
+return serveObject(backend, c.request, key, { cacheControl: "public, max-age=3600", contentDisposition: "attachment" });
 ```
 
 `ServeOptions`:
 
-| Option | Type | Purpose |
-|---|---|---|
-| `cacheControl` | `string` | Overrides the object's stored `Cache-Control` |
+| Option               | Type                       | Purpose                                             |
+| -------------------- | -------------------------- | --------------------------------------------------- |
+| `cacheControl`       | `string`                   | Overrides the object's stored `Cache-Control`       |
 | `contentDisposition` | `"inline" \| "attachment"` | Emits a `Content-Disposition` header (see Security) |
 
 #### `r2Backend(bucket)` and the backend interface
@@ -457,8 +439,8 @@ const store = createObjectStore(r2Backend(c.env.ASSETS_BUCKET), { prefix: "uploa
 ```ts
 import { inferContentType, CONTENT_TYPE_DEFAULT } from "@y-core/forge/storage/r2";
 
-inferContentType("photo.png");  // "image/png"
-inferContentType("file.bin");   // CONTENT_TYPE_DEFAULT === "application/octet-stream"
+inferContentType("photo.png"); // "image/png"
+inferContentType("file.bin"); // CONTENT_TYPE_DEFAULT === "application/octet-stream"
 ```
 
 ### Integration guide
@@ -472,10 +454,10 @@ app.use("*", validateR2Binding("ASSETS_BUCKET"));
 const store = resolveObjectStore(c, { binding: (c) => c.env.ASSETS_BUCKET });
 ```
 
-| Function | Purpose |
-|---|---|
+| Function                      | Purpose                                                                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `resolveObjectStore(c, opts)` | Reads the bucket via `opts.binding(c)`, wraps it with `r2Backend`, and builds an `ObjectStore`. Throws when absent unless `opts.required === false`. |
-| `validateR2Binding(name)` | Returns a `Middleware`; asserts `c.env[name]` is an object whose `get` and `put` are functions. |
+| `validateR2Binding(name)`     | Returns a `Middleware`; asserts `c.env[name]` is an object whose `get` and `put` are functions.                                                      |
 
 ### Advanced — signed URLs
 
@@ -484,21 +466,13 @@ without exposing the bucket. The receiving route verifies it with `verifySignedO
 serving.
 
 ```ts
-import {
-  importSigningKey,
-  createSignedObjectUrl,
-  verifySignedObjectUrl,
-  serveObject,
-  r2Backend,
-} from "@y-core/forge/storage/r2";
+import { importSigningKey, createSignedObjectUrl, verifySignedObjectUrl, serveObject, r2Backend } from "@y-core/forge/storage/r2";
 
 // Import the secret once (hex-encoded, from a secret binding).
 const signingKey = await importSigningKey(c.env.SIGNING_SECRET);
 
 // Issue a URL that expires in 10 minutes:
-const url = await createSignedObjectUrl(signingKey, c.request.url, "avatars/42.png", {
-  expiresInSeconds: 600,
-});
+const url = await createSignedObjectUrl(signingKey, c.request.url, "avatars/42.png", { expiresInSeconds: 600 });
 
 // On the receiving route:
 const verdict = await verifySignedObjectUrl(signingKey, c.request.url);
@@ -509,11 +483,11 @@ if (!verdict.ok) {
 return serveObject(r2Backend(c.env.ASSETS_BUCKET), c.request, verdict.key);
 ```
 
-| Function | Signature | Notes |
-|---|---|---|
-| `importSigningKey(hexSecret)` | `Promise<CryptoKey>` | Imports a hex secret as a Web Crypto HMAC-SHA256 key |
-| `createSignedObjectUrl(key, baseUrl, objectKey, options?)` | `Promise<string>` | Appends `?key=`, `?exp=`, `?sig=`; `expiresInSeconds` defaults to `3600` |
-| `verifySignedObjectUrl(key, url)` | `Promise<{ ok: true; key } \| { ok: false; reason }>` | Checks expiry first, then constant-time HMAC compare |
+| Function                                                   | Signature                                             | Notes                                                                    |
+| ---------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| `importSigningKey(hexSecret)`                              | `Promise<CryptoKey>`                                  | Imports a hex secret as a Web Crypto HMAC-SHA256 key                     |
+| `createSignedObjectUrl(key, baseUrl, objectKey, options?)` | `Promise<string>`                                     | Appends `?key=`, `?exp=`, `?sig=`; `expiresInSeconds` defaults to `3600` |
+| `verifySignedObjectUrl(key, url)`                          | `Promise<{ ok: true; key } \| { ok: false; reason }>` | Checks expiry first, then constant-time HMAC compare                     |
 
 The HMAC is computed over a length-prefixed payload (`${key.length}:${key}|${exp}`) so the `key`/`exp`
 boundary stays unambiguous even when the object key contains the `|` delimiter.
@@ -537,10 +511,10 @@ boundary stays unambiguous even when the object key contains the `|` delimiter.
 
 All three namespaces follow the same two-function lifecycle pattern.
 
-| Phase | Function | Role |
-|---|---|---|
+| Phase                   | Function                 | Role                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Startup / first request | `validateXBinding(name)` | A `Middleware` (register via `app.use("*", …)`) that runs a **functional shape check** on first request — D1 requires `prepare` to be a function; KV and R2 require `get` and `put`. A string or number bound to the name is rejected, not just an absent binding. The validated env reference is cached, so the check runs once per env. |
-| Request time | `resolveX(c, opts)` | Reads the binding off the context via `opts.binding: (c) => …` and builds the typed client/store. Throws a descriptive `Error` when the binding is absent; pass `opts.required === false` to receive `null` instead (for optional features in local dev). |
+| Request time            | `resolveX(c, opts)`      | Reads the binding off the context via `opts.binding: (c) => …` and builds the typed client/store. Throws a descriptive `Error` when the binding is absent; pass `opts.required === false` to receive `null` instead (for optional features in local dev).                                                                                 |
 
 ```ts
 import { validateD1Binding } from "@y-core/forge/storage/db";
@@ -593,51 +567,51 @@ Every type each sub-path's barrel exports, and what it is for.
 
 ### `storage/db`
 
-| Type | Shape / purpose |
-|---|---|
-| `D1Client` | The four-method client `createD1Client` returns. |
-| `D1ClientOptions` | `{ logger? }` for `createD1Client`. |
-| `D1Database`, `D1DatabaseLike` | Forge's neutral D1 binding, and the structural supertype resolvers constrain to. |
-| `D1PreparedStatement` | The prepared-statement surface `D1Database.prepare` returns. |
-| `D1Result` | One statement's result — what `batch` resolves to, one entry per statement. |
-| `SqlFragment` | Branded `{ text, params }` — the only value `D1Client` accepts. |
-| `D1BindingOptions` | `{ binding, required?, client? }` for `resolveD1Client`. |
-| `Uuidv7Options`, `UuidByteInput` | The generator options, and the accepted byte encodings for `uuidFromBytes`. |
+| Type                             | Shape / purpose                                                                  |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| `D1Client`                       | The four-method client `createD1Client` returns.                                 |
+| `D1ClientOptions`                | `{ logger? }` for `createD1Client`.                                              |
+| `D1Database`, `D1DatabaseLike`   | Forge's neutral D1 binding, and the structural supertype resolvers constrain to. |
+| `D1PreparedStatement`            | The prepared-statement surface `D1Database.prepare` returns.                     |
+| `D1Result`                       | One statement's result — what `batch` resolves to, one entry per statement.      |
+| `SqlFragment`                    | Branded `{ text, params }` — the only value `D1Client` accepts.                  |
+| `D1BindingOptions`               | `{ binding, required?, client? }` for `resolveD1Client`.                         |
+| `Uuidv7Options`, `UuidByteInput` | The generator options, and the accepted byte encodings for `uuidFromBytes`.      |
 
 ### `storage/kv`
 
-| Type | Shape / purpose |
-|---|---|
-| `KVStore` | The typed store `createKVStore` returns. |
-| `KVStoreOptions` | `{ codec?, prefix?, defaultTtl?, logger? }` for `createKVStore`. |
-| `KVSetOptions` | `{ ttl?, expiration?, metadata? }` for `set` / `getOrSet`. |
-| `KVPutOptions` | The raw put options passed through to the binding. |
-| `KVEntry` | `{ value, metadata }` — what `getWithMeta` resolves to. |
+| Type                                           | Shape / purpose                                                                |
+| ---------------------------------------------- | ------------------------------------------------------------------------------ |
+| `KVStore`                                      | The typed store `createKVStore` returns.                                       |
+| `KVStoreOptions`                               | `{ codec?, prefix?, defaultTtl?, logger? }` for `createKVStore`.               |
+| `KVSetOptions`                                 | `{ ttl?, expiration?, metadata? }` for `set` / `getOrSet`.                     |
+| `KVPutOptions`                                 | The raw put options passed through to the binding.                             |
+| `KVEntry`                                      | `{ value, metadata }` — what `getWithMeta` resolves to.                        |
 | `KVListOptions`, `KVListResult`, `KVListEntry` | `{ prefix?, limit?, cursor? }`, the page it returns, and one key in that page. |
-| `KvCodec`, `KvValueType` | `{ type, encode, decode }`, and the `"text" \| "arrayBuffer"` wire selector. |
-| `KVNamespace`, `KVNamespaceLike` | Forge's neutral KV binding, and the structural supertype. |
-| `KVBindingOptions` | `{ binding, required?, store? }` for `resolveKVStore`. |
+| `KvCodec`, `KvValueType`                       | `{ type, encode, decode }`, and the `"text" \| "arrayBuffer"` wire selector.   |
+| `KVNamespace`, `KVNamespaceLike`               | Forge's neutral KV binding, and the structural supertype.                      |
+| `KVBindingOptions`                             | `{ binding, required?, store? }` for `resolveKVStore`.                         |
 
 ### `storage/r2`
 
-| Type | Shape / purpose |
-|---|---|
-| `ObjectStore` | The typed store `createObjectStore` returns. |
-| `ObjectStoreOptions` | `{ prefix?, logger? }` for `createObjectStore`. |
-| `ObjectStorageBackend` | The adapter surface every R2 helper consumes; `r2Backend` produces one. |
-| `StoredObject`, `ObjectBody` | Metadata only, and metadata plus a streamable body. |
-| `StorePutOptions` | `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`, `cacheControl`, `metadata`. |
-| `StoreGetOptions` | `{ range? }`. |
-| `StoreListOptions`, `ListObjectsResult` | `{ prefix?, limit?, cursor?, delimiter? }`, and the page it returns. |
-| `ServeOptions` | `{ cacheControl?, contentDisposition? }` for `serveObject`. |
-| `SignedUrlOptions` | `{ expiresInSeconds? }` for `createSignedObjectUrl`. |
-| `SignedUrlOk`, `SignedUrlError` | The two arms of `verifySignedObjectUrl`'s verdict. |
-| `R2Bucket`, `R2BucketLike` | Forge's neutral bucket, and the structural supertype. |
-| `R2Object`, `R2ObjectBody`, `R2ObjectLike`, `R2ObjectBodyLike` | Object metadata and body, neutral and structural forms. |
-| `R2GetOptions`, `R2PutOptions`, `R2PutLike` | Pass-through get and put options, and the put shape the adapter constructs. |
-| `R2ListOptions`, `R2ListResult`, `R2ListLike` | List options, its result, and the structural list surface. |
-| `R2HttpMetadata` | The HTTP header fields stored alongside an object. |
-| `R2BindingOptions` | `{ binding, required?, store? }` for `resolveObjectStore`. |
+| Type                                                           | Shape / purpose                                                                                        |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `ObjectStore`                                                  | The typed store `createObjectStore` returns.                                                           |
+| `ObjectStoreOptions`                                           | `{ prefix?, logger? }` for `createObjectStore`.                                                        |
+| `ObjectStorageBackend`                                         | The adapter surface every R2 helper consumes; `r2Backend` produces one.                                |
+| `StoredObject`, `ObjectBody`                                   | Metadata only, and metadata plus a streamable body.                                                    |
+| `StorePutOptions`                                              | `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`, `cacheControl`, `metadata`. |
+| `StoreGetOptions`                                              | `{ range? }`.                                                                                          |
+| `StoreListOptions`, `ListObjectsResult`                        | `{ prefix?, limit?, cursor?, delimiter? }`, and the page it returns.                                   |
+| `ServeOptions`                                                 | `{ cacheControl?, contentDisposition? }` for `serveObject`.                                            |
+| `SignedUrlOptions`                                             | `{ expiresInSeconds? }` for `createSignedObjectUrl`.                                                   |
+| `SignedUrlOk`, `SignedUrlError`                                | The two arms of `verifySignedObjectUrl`'s verdict.                                                     |
+| `R2Bucket`, `R2BucketLike`                                     | Forge's neutral bucket, and the structural supertype.                                                  |
+| `R2Object`, `R2ObjectBody`, `R2ObjectLike`, `R2ObjectBodyLike` | Object metadata and body, neutral and structural forms.                                                |
+| `R2GetOptions`, `R2PutOptions`, `R2PutLike`                    | Pass-through get and put options, and the put shape the adapter constructs.                            |
+| `R2ListOptions`, `R2ListResult`, `R2ListLike`                  | List options, its result, and the structural list surface.                                             |
+| `R2HttpMetadata`                                               | The HTTP header fields stored alongside an object.                                                     |
+| `R2BindingOptions`                                             | `{ binding, required?, store? }` for `resolveObjectStore`.                                             |
 
 ---
 

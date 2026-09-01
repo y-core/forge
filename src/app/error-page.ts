@@ -47,8 +47,7 @@ export function createErrorPage<Bindings = Record<string, unknown>>(
       <body>
         <main class="error-page mx-auto max-w-xl p-8">
           <h1 class="mb-4 text-xl font-semibold">${title}</h1>
-          ${renderError(message)}
-          ${options.homeHref ? html`<p class="mt-4"><a href="${options.homeHref}">Back to safety</a></p>` : ""}
+          ${renderError(message)} ${options.homeHref ? html`<p class="mt-4"><a href="${options.homeHref}">Back to safety</a></p>` : ""}
         </main>
       </body>
     </html>`;

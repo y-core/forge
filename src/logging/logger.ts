@@ -47,7 +47,7 @@ function makeLogger(prefix: string, bindings: Record<string, unknown>, core: Log
   function dispatch(level: LogLevel, message: string, data?: Record<string, unknown>): void {
     if (minLevel !== undefined && !levelAtLeast(level, minLevel)) return;
     const hasBindings = Object.keys(bindings).length > 0;
-    const merged = hasBindings || data ? { ...bindings, ...(data ?? {}) } : undefined;
+    const merged = hasBindings || data ? { ...bindings, ...data } : undefined;
     const record: LogRecord = { level, prefix, message, timestamp: new Date().toISOString(), ...(merged !== undefined ? { data: merged } : {}) };
     for (const channel of channels) {
       try {
@@ -55,6 +55,7 @@ function makeLogger(prefix: string, bindings: Record<string, unknown>, core: Log
         if (result instanceof Promise) {
           result.catch(notifyChannelError);
           if (pending.length >= PENDING_CAP) {
+            // oxlint-disable-next-line typescript/no-floating-promises -- splice returns the evicted promise, which already carries the .catch attached above
             pending.splice(0, 1);
           }
           pending.push(result);

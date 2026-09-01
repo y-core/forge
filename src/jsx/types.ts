@@ -4,7 +4,7 @@ import type { SafeHtml } from "../http/html";
 export type JSXNode = JSXElement | SafeHtml | string | number | boolean | null | undefined | JSXNode[];
 
 /** Component function — accepts any props object, returns a (possibly async) node. @internal */
-// biome-ignore lint/suspicious/noExplicitAny: JSX runtime must accept any component signature at the type-erasure level
+// oxlint-disable-next-line typescript/no-explicit-any -- JSX runtime must accept any component signature at the type-erasure level
 export type ComponentFn = (...args: any[]) => unknown | Promise<unknown>;
 
 /** An element produced by the forge JSX runtime. Discriminated by `$jsx: true`. @public */
@@ -555,12 +555,12 @@ export declare namespace JSX {
   type Element = JSXElement;
 
   interface ElementChildrenAttribute {
-    // biome-ignore lint/complexity/noBannedTypes: TypeScript JSX convention — {} is required by the spec to declare the children slot
+    // oxlint-disable-next-line typescript/no-empty-object-type -- TypeScript JSX convention — {} is required by the spec to declare the children slot
     children: {};
   }
 
   interface ElementAttributesProperty {
-    // biome-ignore lint/complexity/noBannedTypes: TypeScript JSX convention — {} is required by the spec to declare the props slot
+    // oxlint-disable-next-line typescript/no-empty-object-type -- TypeScript JSX convention — {} is required by the spec to declare the props slot
     props: {};
   }
 

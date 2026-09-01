@@ -2,15 +2,16 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import { describe, expect, it } from "bun:test";
+
 import { Forge } from "../../app/forge-app";
 import type { FC } from "../../jsx/types";
 import { PAGE_ORDER, SHOWCASE_PAGES } from "./components";
 import { registerShowcase, showcaseRoutes } from "./register";
 
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;
 StubIcon.sprite = "/icons.svg";
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
 const Layout: FC<{ ctx: { title: string } }> = ({ ctx, children }) => (

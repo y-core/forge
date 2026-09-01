@@ -1,4 +1,5 @@
 import type { Middleware, RequestContext } from "@remix-run/fetch-router";
+
 import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
 import { base64urlEncode, randomBytes } from "../crypto/mod";
@@ -35,7 +36,7 @@ function buildPermissionsPolicy(o?: PermissionsPolicyOptions): string {
 const secureHeadersNonce = contextVar<string>("secureHeadersNonce");
 
 /** Returns the CSP nonce `createSecurityHeaders` set for the current request, or `""` when it has not run. @public */
-// biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for nonce access
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for nonce access
 export function getNonce(c: RequestContext<any, any>): string {
   return secureHeadersNonce.getOptional(c) ?? "";
 }

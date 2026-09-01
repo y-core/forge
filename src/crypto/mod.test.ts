@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+
 import {
   base64urlDecode,
   base64urlEncode,
@@ -125,7 +126,7 @@ describe("timingSafeEqualBytes", () => {
 });
 
 describe("timingSafeEqualBytes — JS fallback (no native crypto.subtle.timingSafeEqual)", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: swap the native method out to exercise the fallback path
+  // oxlint-disable-next-line typescript/no-explicit-any -- swap the native method out to exercise the fallback path
   const subtleAny = crypto.subtle as any;
   let saved: unknown;
 

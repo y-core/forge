@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { v } from "../validation/mod";
 import { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";
 

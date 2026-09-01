@@ -7,16 +7,16 @@
    @import forge.css before this file. */
 
 :root {
-  --gray-1:  light-dark(oklch(98.12% 0.0034 247.9), oklch(17.71% 0.0413 265.0));
-  --gray-2:  light-dark(oklch(99.09% 0.0029 264.5), oklch(21.27% 0.0415 266.4));
-  --gray-3:  light-dark(oklch(95.58% 0.0086 247.9), oklch(25.22% 0.0413 261.8));
-  --gray-4:  light-dark(oklch(93.18% 0.0126 255.5), oklch(28.45% 0.0423 261.2));
-  --gray-5:  light-dark(oklch(90.66% 0.0162 253.9), oklch(31.46% 0.0424 258.3));
-  --gray-6:  light-dark(oklch(88.51% 0.0192 255.5), oklch(34.92% 0.0435 257.8));
-  --gray-7:  light-dark(oklch(85.27% 0.0235 252.2), oklch(40.16% 0.0441 257.4));
-  --gray-8:  light-dark(oklch(79.25% 0.0305 253.0), oklch(48.80% 0.0440 257.0));
-  --gray-9:  light-dark(oklch(64.42% 0.0416 255.7), oklch(53.77% 0.0458 258.8));
+  --gray-1: light-dark(oklch(98.12% 0.0034 247.9), oklch(17.71% 0.0413 265));
+  --gray-2: light-dark(oklch(99.09% 0.0029 264.5), oklch(21.27% 0.0415 266.4));
+  --gray-3: light-dark(oklch(95.58% 0.0086 247.9), oklch(25.22% 0.0413 261.8));
+  --gray-4: light-dark(oklch(93.18% 0.0126 255.5), oklch(28.45% 0.0423 261.2));
+  --gray-5: light-dark(oklch(90.66% 0.0162 253.9), oklch(31.46% 0.0424 258.3));
+  --gray-6: light-dark(oklch(88.51% 0.0192 255.5), oklch(34.92% 0.0435 257.8));
+  --gray-7: light-dark(oklch(85.27% 0.0235 252.2), oklch(40.16% 0.0441 257.4));
+  --gray-8: light-dark(oklch(79.25% 0.0305 253), oklch(48.8% 0.044 257));
+  --gray-9: light-dark(oklch(64.42% 0.0416 255.7), oklch(53.77% 0.0458 258.8));
   --gray-10: light-dark(oklch(61.13% 0.0435 256.6), oklch(58.21% 0.0449 258.8));
   --gray-11: light-dark(oklch(50.25% 0.0451 257.9), oklch(77.08% 0.0319 254.4));
-  --gray-12: light-dark(oklch(24.40% 0.0416 261.8), oklch(94.93% 0.0103 247.9));
+  --gray-12: light-dark(oklch(24.4% 0.0416 261.8), oklch(94.93% 0.0103 247.9));
 }

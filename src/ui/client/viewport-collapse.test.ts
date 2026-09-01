@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { mountViewportCollapse } from "./viewport-collapse";
 
 /** The fake fires `toggle` synchronously on every write to `open` — one event per change, in order

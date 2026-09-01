@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
+
 import type { ResolvedJsBundle } from "../types";
 import { safeJoin } from "./paths";
 

@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import { posix, relative, resolve, sep } from "node:path";
+
 import { type CheckResult, checkResult, type Finding, fail } from "../finding";
 
 /** What the co-location check needs to know about the project. @public */

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { activeElement, asElement, closestAcross, contains, elementById, eventTarget, isRtl, ownerDocument, queryAcross, safeStorage } from "./dom";
 import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./test-dom";
 

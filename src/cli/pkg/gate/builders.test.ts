@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import {
   browserStep,
   changelogStep,
@@ -7,10 +8,12 @@ import {
   designStep,
   docsStep,
   exportsStep,
+  formatStep,
   jsxStep,
   lintStep,
   namespaceGraphStep,
   testStep,
+  typeAwareLintStep,
   typecheckStep,
 } from "./builders";
 import { hasChromium } from "./checks/browser";
@@ -37,7 +40,7 @@ const CHECK_STEPS: readonly Step[] = [
   cssSourcesStep({ root: "/nowhere", uiDir: "ui", cssDir: "css", sourceDir: "src", readme: "README.md" }),
 ];
 
-const COMMAND_STEPS: readonly Step[] = [typecheckStep(), lintStep(), testStep(), browserStep()];
+const COMMAND_STEPS: readonly Step[] = [typecheckStep(), lintStep(), formatStep(), testStep(), browserStep()];
 
 describe("builders — the two step kinds", () => {
   it("makes every check an in-process step, so none needs a spawnable file of its own", () => {
@@ -70,31 +73,51 @@ describe("builders — the two step kinds", () => {
 
 describe("builders — the tool steps", () => {
   it("points the type checker at the whole project, with no source list to drift from lint's", () => {
-    expect(typecheckStep().cmd).toEqual(["tsgo", "--noEmit"]);
+    expect(typecheckStep().cmd).toEqual(["tsc", "--noEmit"]);
   });
 
   it("defaults lint to src/ alone", () => {
-    expect(lintStep().cmd).toEqual(["biome", "check", "--error-on-warnings", "src/"]);
+    expect(lintStep().cmd).toEqual(["oxlint", "--deny-warnings", "src/"]);
   });
 
-  // Biome exits 0 on a `warn` diagnostic, so the flag is what makes a green gate mean a clean tree.
-  // The fixer must not carry it: a warning it has no safe fix for would make `--fix` exit non-zero.
+  it("defaults format to src/ alone", () => {
+    expect(formatStep().cmd).toEqual(["oxfmt", "--check", "src/"]);
+  });
+
+  // Both tools exit 0 on a `warn` diagnostic, so the flag is what makes a green gate mean a clean
+  // tree. The fixer must not carry it: a warning it has no safe fix for would make `--fix` exit
+  // non-zero.
   it("fails lint on a warning, without letting the fixer inherit the flag", () => {
     const lint = lintStep();
 
-    expect(lint.cmd).toContain("--error-on-warnings");
-    expect(lint.fix).not.toContain("--error-on-warnings");
+    expect(lint.cmd).toContain("--deny-warnings");
+    expect(lint.fix).not.toContain("--deny-warnings");
+  });
+
+  it("checks formatting without writing, and lets only the fixer write", () => {
+    const format = formatStep();
+
+    expect(format.cmd).toContain("--check");
+    expect(format.fix).not.toContain("--check");
   });
 
   it("threads sources through both the lint command and its fixer, so the two cannot diverge", () => {
     const lint = lintStep({ sources: ["src/", "scripts/"] });
 
-    expect(lint.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/", "scripts/"]);
-    expect(lint.fix).toEqual(["biome", "check", "--write", "src/", "scripts/"]);
+    expect(lint.cmd).toEqual(["oxlint", "--deny-warnings", "src/", "scripts/"]);
+    expect(lint.fix).toEqual(["oxlint", "--fix", "src/", "scripts/"]);
   });
 
-  it("gives lint the only fixer, so --fix never rewrites what another step generated", () => {
-    expect(COMMAND_STEPS.filter((step) => !isCheckStep(step) && step.fix !== undefined).map((step) => step.label)).toEqual(["lint"]);
+  it("threads sources through both the format command and its fixer, so the two cannot diverge", () => {
+    const format = formatStep({ sources: ["src/", "scripts/"] });
+
+    expect(format.cmd).toEqual(["oxfmt", "--check", "src/", "scripts/"]);
+    expect(format.fix).toEqual(["oxfmt", "src/", "scripts/"]);
+  });
+
+  // `lint` before `format`: under `--fix` the formatter must write last and own the final layout.
+  it("gives lint and format the only fixers, so --fix never rewrites what another step generated", () => {
+    expect(COMMAND_STEPS.filter((step) => !isCheckStep(step) && step.fix !== undefined).map((step) => step.label)).toEqual(["lint", "format"]);
   });
 
   it("tests the whole project when no paths are named", () => {
@@ -110,6 +133,30 @@ describe("builders — the tool steps", () => {
     expect(browserStep().tail).toBe(120);
     expect(typecheckStep().tail).toBe(20);
     expect(lintStep().tail).toBe(20);
+    expect(formatStep().tail).toBe(20);
+  });
+});
+
+describe("typeAwareLintStep()", () => {
+  it("is full-only: it builds its own TypeScript program, so it stays off the fast loop", () => {
+    expect(typeAwareLintStep().fullOnly).toBe(true);
+  });
+
+  // The type-aware run is a superset of the syntax run, so it is the only one that can tell a stale
+  // directive from one only a type-aware rule redeems. The check rides here for that reason.
+  it("reports unused suppression directives as errors", () => {
+    expect(typeAwareLintStep().cmd).toEqual([
+      "oxlint",
+      "--type-aware",
+      "--deny-warnings",
+      "--report-unused-disable-directives-severity",
+      "error",
+      "src/",
+    ]);
+  });
+
+  it("has no fixer: a type-aware finding is never safe to rewrite unattended", () => {
+    expect(typeAwareLintStep().fix).toBeUndefined();
   });
 });
 

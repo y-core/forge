@@ -7,7 +7,7 @@ export function consoleChannel(): LogChannel {
     write(record: LogRecord): void {
       const { data, ...rest } = record;
       // reserved fields win — caller data cannot forge level/message/timestamp
-      console.log(JSON.stringify({ ...(data ?? {}), ...rest }));
+      console.log(JSON.stringify({ ...data, ...rest }));
     },
   };
 }

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { Tooltip } from "./tooltip";
@@ -181,7 +182,7 @@ test.describe("Tooltip — anchored placement", () => {
       Tooltip({
         children: [
           Tooltip.Trigger({ id: "save", for: "save-tip", children: "Save" }),
-          // biome-ignore lint/suspicious/noExplicitAny: the matrix is driven by data, not by literals
+          // oxlint-disable-next-line typescript/no-explicit-any -- the matrix is driven by data, not by literals
           Tooltip.Content({ id: "save-tip", side: side as any, align: align as any, children: "Writes the file" }),
         ],
       }),

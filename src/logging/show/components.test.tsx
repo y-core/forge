@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
+
 import { render } from "../../testing/render";
 import { createIcon } from "../../ui/core/icon";
 import type { LogRecord, LogRow } from "../types";

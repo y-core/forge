@@ -37,21 +37,40 @@ function checkStep(label: string, run: CheckStep["run"], options: StepOptions, f
   return { label, run, ...mode(options.fullOnly, fullByDefault) };
 }
 
-/** `tsgo --noEmit`. Belongs first in a table: a type failure cascades into misleading lint and test failures. @public */
+/** `tsc --noEmit`. Belongs first in a table: a type failure cascades into misleading lint and test failures. @public */
 export function typecheckStep(options: StepOptions = {}): CommandStep {
-  return { label: "typecheck", tail: 20, cmd: ["tsgo", "--noEmit"], ...mode(options.fullOnly) };
+  return { label: "typecheck", tail: 20, cmd: ["tsc", "--noEmit"], ...mode(options.fullOnly) };
 }
 
-/** `biome check` over `sources` (default `src/`), with `--write` as its fixer. @public */
+/** `oxlint` over `sources` (default `src/`), with `--fix` as its fixer. @public */
 export function lintStep(options: SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["src/"];
   return {
     label: "lint",
     tail: 20,
-    // Biome exits 0 on `warn`, so without this a green gate would not mean a clean tree.
-    cmd: ["biome", "check", "--error-on-warnings", ...sources],
-    fix: ["biome", "check", "--write", ...sources],
+    // oxlint exits 0 on `warn`, so without this a green gate would not mean a clean tree.
+    cmd: ["oxlint", "--deny-warnings", ...sources],
+    fix: ["oxlint", "--fix", ...sources],
     ...mode(options.fullOnly),
+  };
+}
+
+/** `oxfmt --check` over `sources` (default `src/`), with a bare `oxfmt` run as its fixer. Ordered after `lintStep` so the formatter owns the final byte layout. @public */
+export function formatStep(options: SourceStepOptions = {}): CommandStep {
+  const sources = options.sources ?? ["src/"];
+  return { label: "format", tail: 20, cmd: ["oxfmt", "--check", ...sources], fix: ["oxfmt", ...sources], ...mode(options.fullOnly) };
+}
+
+/** `oxlint --type-aware` over `sources` (default `src/`); always `--full`: it builds its own TypeScript program. @public */
+export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep {
+  const sources = options.sources ?? ["src/"];
+  return {
+    label: "lint:types",
+    tail: 40,
+    // The unused-directive check rides here, not on `lint`: this run is a superset, so it is the only
+    // one that can tell a stale directive from one that only a type-aware rule redeems.
+    cmd: ["oxlint", "--type-aware", "--deny-warnings", "--report-unused-disable-directives-severity", "error", ...sources],
+    ...mode(options.fullOnly, true),
   };
 }
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
+
 import { createContextKey, RequestContext } from "@remix-run/fetch-router";
+
 import { contextVar } from "./accessor";
 
 function makeCtx() {

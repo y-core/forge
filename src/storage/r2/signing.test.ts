@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createSignedObjectUrl, importSigningKey, verifySignedObjectUrl } from "./signing";
 
 async function makeKey(): Promise<CryptoKey> {

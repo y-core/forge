@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
+
 import { chromium } from "@playwright/test";
+
 import { hasChromium, resolveChromiumPath } from "./browser";
 
 const ORIGINAL = process.env.CHROME_PATH;

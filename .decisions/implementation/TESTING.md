@@ -20,6 +20,7 @@ description: "forge's two test runners and its browser set, the entity encoding 
 - §1a bun:test Primitives: import source and nesting limit
 - §1b Custom bun:test Stub — No bun-types: the hard package ban
 - §1c The Browser Set: real Chromium behind its own verb
+- §1d Waiting on an htmx Swap: settled, not merely swapped
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
@@ -54,7 +55,7 @@ and both are kept.
 **Import all test utilities from `bun:test`** — never from a third-party test library. The one
 exception is the browser set, which imports `@playwright/test` (§1c): driving a real browser needs a
 browser driver, and there is no forge-owned equivalent to reach for instead. The ban is on
-*assertion and mocking* libraries layered over a runner that already has both, and that ban is
+_assertion and mocking_ libraries layered over a runner that already has both, and that ban is
 unchanged.
 
 **Keep `describe` nesting to at most two levels.** Deeper nesting costs more readability than
@@ -89,13 +90,13 @@ the release gate, which is permitted to carry a prerequisite
 
 **`bun test` is untouched by it.** The two never share a process, so no global is ever redefined and
 forge's Cloudflare `Request` / `Response` / `fetch` semantics stay exactly as the runtime ships them
-— which matters, because forge is a Workers framework and those semantics *are* the product. File
+— which matters, because forge is a Workers framework and those semantics _are_ the product. File
 discovery cannot collide either: `bun test` matches `*.test.*` / `*.spec.*`, and `*.browser.ts` is
 neither.
 
 **This is why a DOM shim was rejected.** Registering one defines hundreds of globals and shadows Bun
 natives the rest of the suite exercises, and the shim available did not implement the Popover API at
-all — so the platform features these components are *built on* would have been certified against a
+all — so the platform features these components are _built on_ would have been certified against a
 model of the platform that did not have them. Worse, its shadow-root retargeting was backwards,
 which would have made the central assertion about `event.target` pass for the wrong reason. The
 browser set guarantees isolation **by construction**: a separate process, and no global ever
@@ -103,15 +104,15 @@ redefined.
 
 **What each runner is sufficient evidence for:**
 
-| Claim | Proven by |
-|---|---|
-| the server emitted this exact markup | `bun test`, exact-HTML assertion (§3) |
-| a pure function returns this value | `bun test` |
-| a controller moves focus / writes an attribute / consumes a key | **the browser set only** |
+| Claim                                                           | Proven by                             |
+| --------------------------------------------------------------- | ------------------------------------- |
+| the server emitted this exact markup                            | `bun test`, exact-HTML assertion (§3) |
+| a pure function returns this value                              | `bun test`                            |
+| a controller moves focus / writes an attribute / consumes a key | **the browser set only**              |
 
 **An SSR string is not sufficient evidence for a controller**, and a behaviour test does not subsume
 an exact-HTML test — a component can behave correctly while emitting markup no stylesheet matches.
-Where a rebuild changes markup, the exact-HTML test is *updated*, never replaced by a behaviour
+Where a rebuild changes markup, the exact-HTML test is _updated_, never replaced by a behaviour
 test.
 
 **A case in the browser set asserts a DOM or focus state, never a call count.** It builds real
@@ -120,9 +121,24 @@ browser's own input path, and reads what resulted. A test that counts calls is t
 own fixture.
 
 **A UA pseudo-element is asserted from rendered pixels, never from `getComputedStyle`.** Chromium
-answers `getComputedStyle(el, "::-webkit-slider-runnable-track")` with the *host* element's style
+answers `getComputedStyle(el, "::-webkit-slider-runnable-track")` with the _host_ element's style
 rather than the pseudo-element's, so a computed-style spec for the slider track would pass whatever
 the track actually did. `slider.browser.ts` samples a screenshot instead.
+
+### 1d. Waiting on an htmx Swap
+
+**A case that interacts with the page after an htmx swap waits on `htmx:afterSettle`, never on the
+state the swap wrote.** htmx inserts the fragment into the DOM immediately, then binds its `hx-*`
+trigger listeners in a settle task deferred by `htmx.config.defaultSettleDelay` — so every swap
+leaves a window in which the new markup is fully readable and completely inert. A poll on the
+swapped-in attributes therefore returns _inside_ that window, and the next interaction fires no
+request at all.
+
+Whether the poll's tick lands before or after the settle is a coin flip that CPU contention biases,
+which is what makes the resulting failure load-dependent rather than reproducible. `showcase.browser.ts`
+counts `htmx:afterSettle` on `document.body` and gates on the count. Raising `defaultSettleDelay`
+is how such a race is made deterministic while it is being diagnosed; production settle timing is
+never changed to suit a spec.
 
 ---
 
@@ -141,13 +157,13 @@ follows the same rule under its own suffix (§1c).
 The JSX renderer escapes **every** string child, static and interpolated alike. Assert the
 escaped forms:
 
-| Character | Escaped form |
-|---|---|
-| `'` (apostrophe) | `&#39;` |
-| `&` (ampersand) | `&amp;` |
-| `<` (less-than) | `&lt;` |
-| `>` (greater-than) | `&gt;` |
-| `"` in attributes | `&#34;` or `&quot;` |
+| Character          | Escaped form        |
+| ------------------ | ------------------- |
+| `'` (apostrophe)   | `&#39;`             |
+| `&` (ampersand)    | `&amp;`             |
+| `<` (less-than)    | `&lt;`              |
+| `>` (greater-than) | `&gt;`              |
+| `"` in attributes  | `&#34;` or `&quot;` |
 
 **Static text in the JSX source is escaped exactly as an interpolated value is** — `<p>Tom &
 Co</p>` and `<p>{name}</p>` produce the same entities. Never assert raw `&`, `<`, `>`, `'` or
@@ -187,8 +203,8 @@ is the only accepted shape.
 **The operational check, applied before a test is counted as written: delete the mechanism the test
 names; a test that still passes was never testing it.**
 
-The failure shape is always the same. The subject is a *mechanism* — a timer cleared, a list that
-does not grow, an observer disconnected — and the assertion reads an *outcome* that a second,
+The failure shape is always the same. The subject is a _mechanism_ — a timer cleared, a list that
+does not grow, an observer disconnected — and the assertion reads an _outcome_ that a second,
 independent mechanism also produces. A guard clause is the usual second mechanism: `if (disposed)
 return;` at the top of a callback makes "nothing visibly happened" true whether or not the timer
 that calls it was ever cancelled.
@@ -209,7 +225,7 @@ the cheapest form: `expect(timers).toEqual({ scheduled: 1, fired: 0 })`.
 
 This does not weaken §1c's rule that a browser case asserts a DOM state rather than a call count.
 What is counted here is the **platform's** own invocation — a timer callback firing, a property being
-read — which *is* the mechanism. §1c bans substituting a count of calls into the test's own fixture
+read — which _is_ the mechanism. §1c bans substituting a count of calls into the test's own fixture
 for the DOM state a controller was supposed to produce; where the subject is a DOM state, assert the
 DOM state.
 
@@ -251,17 +267,17 @@ design signal rather than a licence to mock.
 Where each §5a row is covered at integration level, through `app.request()` with real
 primitives:
 
-| Matrix row | Covering tests |
-|---|---|
-| CSRF valid → 200 / invalid → 403 | `src/form/csrf.test.ts` (mint-then-verify, invalid header, missing token, path and subject mismatch) |
-| CSRF 403 carries security headers | `src/app/app.test.ts` |
-| Origin same → 200 / cross or missing → 403 | `src/security/origin.test.ts`, `src/security/cop.test.ts` |
-| Rate limit under / over / binding absent / key unresolvable | `src/security/rate-limit.test.ts`; header carriage in `src/app/app.test.ts` |
-| Input validation ok / issues | `src/app/action.test.ts`, `src/validation/format-issues.test.ts` |
-| Body size under / over, both `Content-Length` and streaming | `src/form/parse-form-data.test.ts`, `src/app/action.test.ts` |
-| Content-Type valid / invalid → 415 | `src/security/content-type.test.ts` |
-| Log-viewer access allow / deny → 403 | `src/logging/show/route.test.tsx` |
-| Auth middleware valid / expired session | **N/A** — no `auth` namespace exists yet ([`NAMESPACES.md`](./NAMESPACES.md) §5a); add with that namespace |
+| Matrix row                                                  | Covering tests                                                                                             |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| CSRF valid → 200 / invalid → 403                            | `src/form/csrf.test.ts` (mint-then-verify, invalid header, missing token, path and subject mismatch)       |
+| CSRF 403 carries security headers                           | `src/app/app.test.ts`                                                                                      |
+| Origin same → 200 / cross or missing → 403                  | `src/security/origin.test.ts`, `src/security/cop.test.ts`                                                  |
+| Rate limit under / over / binding absent / key unresolvable | `src/security/rate-limit.test.ts`; header carriage in `src/app/app.test.ts`                                |
+| Input validation ok / issues                                | `src/app/action.test.ts`, `src/validation/format-issues.test.ts`                                           |
+| Body size under / over, both `Content-Length` and streaming | `src/form/parse-form-data.test.ts`, `src/app/action.test.ts`                                               |
+| Content-Type valid / invalid → 415                          | `src/security/content-type.test.ts`                                                                        |
+| Log-viewer access allow / deny → 403                        | `src/logging/show/route.test.tsx`                                                                          |
+| Auth middleware valid / expired session                     | **N/A** — no `auth` namespace exists yet ([`NAMESPACES.md`](./NAMESPACES.md) §5a); add with that namespace |
 
 **`isHxRequest` has no row.** It is a routing hint, not a security boundary, so there is no
 guard middleware to test — see [`HTMX.md`](./HTMX.md) §7.

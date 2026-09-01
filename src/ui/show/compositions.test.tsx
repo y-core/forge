@@ -2,13 +2,14 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import { describe, expect, it } from "bun:test";
+
 import { render } from "../../testing/render";
 import { CollectionSurface, CompositionsSection, FeedbackSurface, SettingsSurface } from "./compositions";
 
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;
 StubIcon.sprite = "/icons.svg";
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
 function occurrences(haystack: string, needle: string): number {

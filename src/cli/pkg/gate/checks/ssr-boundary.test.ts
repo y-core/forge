@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { boundaryViolation, validateSsrBoundary } from "./ssr-boundary";
 
 const CONFIG = { clientDir: "src/ui/client", entryPoints: ["client.ts"] } as const;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createD1Client } from "../storage/db/client";
 import { sql } from "../storage/db/sql";
 import { createKVStore } from "../storage/kv/store";
@@ -220,7 +221,7 @@ describe("fakeR2", () => {
 
 describe("fakeD1", () => {
   it("returns configured rows for all()", async () => {
-    const db = fakeD1((sql) => (sql.includes("users") ? [{ id: 1 }, { id: 2 }] : []));
+    const db = fakeD1((query) => (query.includes("users") ? [{ id: 1 }, { id: 2 }] : []));
     const res = await db.prepare("SELECT * FROM users").bind().all<{ id: number }>();
     expect(res.success).toBe(true);
     expect(res.results).toEqual([{ id: 1 }, { id: 2 }]);

@@ -7,15 +7,7 @@ captures any throw as data, a `toError()` helper for coercing unknown thrown val
 and two domain aliases (`GuardResult`, `ValidationResult`).
 
 ```ts
-import {
-  ok,
-  err,
-  result,
-  toError,
-  type Result,
-  type GuardResult,
-  type ValidationResult,
-} from "@y-core/forge/result";
+import { ok, err, result, toError, type Result, type GuardResult, type ValidationResult } from "@y-core/forge/result";
 ```
 
 ## Features
@@ -103,14 +95,14 @@ try {
 `toError()` leaves existing `Error` instances untouched and wraps everything else
 with `new Error(String(thrown))`:
 
-| Thrown value | `toError(...).message` |
-|---|---|
+| Thrown value        | `toError(...).message`            |
+| ------------------- | --------------------------------- |
 | `new Error("boom")` | `"boom"` (same instance returned) |
-| `"oops"` | `"oops"` |
-| `404` | `"404"` |
-| `{ code: 1 }` | `"[object Object]"` |
-| `undefined` | `"undefined"` |
-| `null` | `"null"` |
+| `"oops"`            | `"oops"`                          |
+| `404`               | `"404"`                           |
+| `{ code: 1 }`       | `"[object Object]"`               |
+| `undefined`         | `"undefined"`                     |
+| `null`              | `"null"`                          |
 
 ### Building results with `ok()` and `err()`
 
@@ -184,19 +176,17 @@ const contact = r.data;
 ### `Result<T, E>`
 
 ```ts
-type Result<T, E = Error> =
-  | { ok: true; data: T }
-  | { ok: false; error: E };
+type Result<T, E = Error> = { ok: true; data: T } | { ok: false; error: E };
 ```
 
 A discriminated union representing the outcome of a fallible operation. Use it as
 the return type for any function that can fail in a predictable way — never return
 `null | T` or throw for expected failures.
 
-| Type parameter | Default | Description |
-|---|---|---|
-| `T` | — | Type of the success payload, available as `data` when `ok` is `true`. |
-| `E` | `Error` | Type of the failure payload, available as `error` when `ok` is `false`. |
+| Type parameter | Default | Description                                                             |
+| -------------- | ------- | ----------------------------------------------------------------------- |
+| `T`            | —       | Type of the success payload, available as `data` when `ok` is `true`.   |
+| `E`            | `Error` | Type of the failure payload, available as `error` when `ok` is `false`. |
 
 Always check `r.ok` before accessing `r.data` or `r.error`; the union narrows
 automatically inside the guard. There is exactly **one** failure field — `error`;
@@ -216,11 +206,11 @@ The sanctioned value-constructors. `ok()` with no argument builds a passing
 `{ ok: true, data }` / `{ ok: false, error }` object literals so the discriminant and
 field names stay uniform across the codebase.
 
-| Function | Parameter | Returns |
-|---|---|---|
-| `ok` | — | `{ ok: true, data: undefined }` typed `Result<void, never>`. |
-| `ok` | `data: T` | `{ ok: true, data }` typed `Result<T, never>`. |
-| `err` | `error: E` | `{ ok: false, error }` typed `Result<never, E>`. |
+| Function | Parameter  | Returns                                                      |
+| -------- | ---------- | ------------------------------------------------------------ |
+| `ok`     | —          | `{ ok: true, data: undefined }` typed `Result<void, never>`. |
+| `ok`     | `data: T`  | `{ ok: true, data }` typed `Result<T, never>`.               |
+| `err`    | `error: E` | `{ ok: false, error }` typed `Result<never, E>`.             |
 
 ### `GuardResult<R>`
 
@@ -235,9 +225,9 @@ channel carries a machine-readable reason code in `.error` — typically a
 string-literal union (e.g. `"missing" | "disallowed"`). The reason is for server
 diagnostics only; never surface it to clients.
 
-| Type parameter | Default | Description |
-|---|---|---|
-| `R` | `string` | The reason-code type carried in `error` on failure. |
+| Type parameter | Default  | Description                                         |
+| -------------- | -------- | --------------------------------------------------- |
+| `R`            | `string` | The reason-code type carried in `error` on failure. |
 
 ### `ValidationResult<T>`
 
@@ -251,9 +241,9 @@ message list as `error: readonly string[]` — a list of already-formatted,
 human-readable field messages, so a UI can surface every failing field at once.
 Produced by `@y-core/forge/validation` functions and `defineAction`'s `validate` hook.
 
-| Type parameter | Description |
-|---|---|
-| `T` | Type of the parsed, validated value on success. |
+| Type parameter | Description                                     |
+| -------------- | ----------------------------------------------- |
+| `T`            | Type of the parsed, validated value on success. |
 
 ### `result(arg)`
 
@@ -266,11 +256,11 @@ function result<T, E = Error>(fn: () => Promise<T>): Promise<Result<T, E>>;
 function result<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
 ```
 
-| Parameter | Type | Description |
-|---|---|---|
-| `arg` | `() => T` | Sync function — returns `Result<T, E>` synchronously. |
-| `arg` | `() => Promise<T>` | Async/promise-returning function — returns `Promise<Result<T, E>>`. |
-| `arg` | `Promise<T>` | A bare promise — returns `Promise<Result<T, E>>`. |
+| Parameter | Type               | Description                                                         |
+| --------- | ------------------ | ------------------------------------------------------------------- |
+| `arg`     | `() => T`          | Sync function — returns `Result<T, E>` synchronously.               |
+| `arg`     | `() => Promise<T>` | Async/promise-returning function — returns `Promise<Result<T, E>>`. |
+| `arg`     | `Promise<T>`       | A bare promise — returns `Promise<Result<T, E>>`.                   |
 
 Behavior:
 
@@ -291,9 +281,9 @@ Coerces any thrown value into an `Error` instance. Returns `thrown` unchanged if
 is already an `Error`; otherwise returns `new Error(String(thrown))`. Safe to use
 in `catch (err)` blocks where `err` is `unknown`.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `thrown` | `unknown` | The caught value to normalize into an `Error`. |
+| Parameter | Type      | Description                                    |
+| --------- | --------- | ---------------------------------------------- |
+| `thrown`  | `unknown` | The caught value to normalize into an `Error`. |
 
 ## See also
 

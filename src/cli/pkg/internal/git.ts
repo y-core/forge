@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+
 import { ReleaseError } from "../types";
 
 // `execFileSync` surfaces the actual git output on stderr/stdout; `message` is only the generic "Command failed: <cmd>" summary.

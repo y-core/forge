@@ -13,7 +13,7 @@
 - NEVER hardcode API keys, secrets, or credentials in source files
 - NEVER provide deprecation shims or backward-compatible paths before v1.0.0
 - NEVER exceed the comment budget — one line of TSDoc per export, the `@public`/`@internal` tags,
-  and the rare inline *why*, nothing else
+  and the rare inline _why_, nothing else
   ([`CODE_RULES.md`](.decisions/governance/CODE_RULES.md) §5)
 - ALWAYS delete unbudgeted comments from any file you touch, routing rationale worth keeping to its
   single home ([`CODE_RULES.md`](.decisions/governance/CODE_RULES.md) §5c)
@@ -62,11 +62,12 @@ Scope is a property of the URL, so no tool takes a `project` argument.
 
 ## Toolchain
 
-| Tool | Role |
-|---|---|
-| `bun` | Package manager and test runner |
-| `tsgo` (`@typescript/native-preview`) | Type checker (use instead of `tsc`) |
-| `biome` | Linter and formatter (use instead of `eslint`/`prettier`) |
+| Tool                   | Role                                                     |
+| ---------------------- | -------------------------------------------------------- |
+| `bun`                  | Package manager and test runner                          |
+| `tsc` (`typescript` 7) | Type checker — the native compiler                       |
+| `oxlint`               | Linter, incl. type-aware rules (use instead of `eslint`) |
+| `oxfmt`                | Formatter and import sorter (use instead of `prettier`)  |
 
 ```bash
 bun run verify                 # the gate — every step must pass
@@ -74,13 +75,13 @@ bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps, run none
 bun run verify:full            # the release gate — adds the steps needing a machine prerequisite
 bun run lint                   # check only, never write (`verify --only lint`)
-bun run fix                    # every step's fixer (`verify --fix`) — lint is the only one today
+bun run fix                    # every step's fixer (`verify --fix`) — lint and format today
 ```
 
 Gate philosophy, the modes, and the flags: [`TESTING.md`](.decisions/implementation/TESTING.md) §6.
 The step list itself is `config/steps.ts`.
 
-**Avoid:** `tsc` (use `tsgo`), `bun-types` (use the custom stub), `eslint`/`prettier` (use `biome`).
+**Avoid:** `bun-types` (use the custom stub), `eslint` (use `oxlint`), `prettier` (use `oxfmt`), `biome` (retired — use `oxfmt`).
 
 ### Shell Exit Checks
 
@@ -115,8 +116,9 @@ agent would otherwise carry for the rest of its turn, so the rule follows the si
 rather than the question of who may be trusted to read a result: cross-cutting or voluminous goes
 to `cc-tester`; a single scoped step — `bun run verify --only lint`, or the one test file you just
 wrote — is yours to run, because routing a handful of lines through a second agent buys nothing
-([`PLAIN_LANGUAGE.md`](.decisions/governance/PLAIN_LANGUAGE.md) §12). **A scoped green is never
-reported as a green gate**, whoever ran it.
+([`PLAIN_LANGUAGE.md`](.decisions/governance/PLAIN_LANGUAGE.md) §12). `cc-plan`, `cc-dev` and
+`cc-doc` each run scoped steps on that basis, and `cc-test` smoke-runs the single test file it
+just wrote. **A scoped green is never reported as a green gate**, whoever ran it.
 
 On failure the **owning** agent fixes and re-delegates — the gate never re-runs inside the agent
 that owns the fix, and `cc-tester` never edits the code it judges. The baseline it established
@@ -197,12 +199,12 @@ doc via the **Guide Index** — never duplicate that detail here.
 Add new code in the namespace its concern belongs to; follow the recipe in the governing doc —
 never duplicate a capability that already exists.
 
-| Adding… | Goes to | Recipe |
-|---|---|---|
-| Authentication (JWT, OAuth, session login), permissions/RBAC, API-key lifecycle | NEW `auth` namespace — identity is application-layer, never `security` | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5a |
-| CORS middleware, webhook signature verification | `security` — transport-layer request/response hardening only | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5a, [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md) §2 |
-| SSR component | `ui/core` (markup only); client behaviour goes in `ui/client` | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5b, [`UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md) |
-| Browser controller, signal, or lazy-loaded resource | `ui/client` — never imported from a Worker-executed file | [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md) §1, [`UI_CLIENT_RUNTIME.md`](.decisions/implementation/UI_CLIENT_RUNTIME.md) §2 |
-| Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5c |
-| HTTP output concern (response builders, header classes, HTML escaping, streaming) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5d |
-| Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `.decisions/` | [`UI_DESIGN_GUIDANCE.md`](.decisions/implementation/UI_DESIGN_GUIDANCE.md) §5a |
+| Adding…                                                                             | Goes to                                                                 | Recipe                                                                                                                                   |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication (JWT, OAuth, session login), permissions/RBAC, API-key lifecycle     | NEW `auth` namespace — identity is application-layer, never `security`  | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5a                                                                           |
+| CORS middleware, webhook signature verification                                     | `security` — transport-layer request/response hardening only            | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5a, [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md) §2                |
+| SSR component                                                                       | `ui/core` (markup only); client behaviour goes in `ui/client`           | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5b, [`UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md) |
+| Browser controller, signal, or lazy-loaded resource                                 | `ui/client` — never imported from a Worker-executed file                | [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md) §1, [`UI_CLIENT_RUNTIME.md`](.decisions/implementation/UI_CLIENT_RUNTIME.md) §2   |
+| Third pipeline-builder variant (beyond `definePage`/`defineAction`)                 | extract ALL pipeline builders into a NEW `handler` namespace            | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5c                                                                           |
+| HTTP output concern (response builders, header classes, HTML escaping, streaming)   | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5d                                                                           |
+| Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `.decisions/`                                  | [`UI_DESIGN_GUIDANCE.md`](.decisions/implementation/UI_DESIGN_GUIDANCE.md) §5a                                                           |

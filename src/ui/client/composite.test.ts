@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { isDisabled, isNativeInput } from "./composite";
 import { fakeTree } from "./test-dom";
 

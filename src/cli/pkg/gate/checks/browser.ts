@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+
 import { chromium } from "@playwright/test";
 
 /** The system Chromium path, if `CHROME_PATH` names one that exists on disk. */

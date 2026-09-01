@@ -1,4 +1,5 @@
 import type { RequestContext } from "@remix-run/fetch-router";
+
 import { FORM_MAX_BYTES_DEFAULT } from "./config";
 import type { ParseFormDataOptions, ReadonlyFormData } from "./types";
 
@@ -44,7 +45,7 @@ async function parseWithByteLimit(req: Request, maxBytes: number): Promise<Parse
 
 /** Reads the request body as form data once per request, capped at `maxBytes` and memoized so later callers share the parse. @public */
 export function parseFormData(
-  // biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for form-data parsing
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for form-data parsing
   context: RequestContext<any, any>,
   options: ParseFormDataOptions = {},
 ): Promise<ReadonlyFormData> {

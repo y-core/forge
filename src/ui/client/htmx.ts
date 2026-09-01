@@ -1,4 +1,5 @@
 import htmx from "htmx.org";
+
 import { asElement, eventTarget } from "./dom";
 import { resumeScope } from "./resume";
 

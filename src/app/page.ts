@@ -1,4 +1,5 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
+
 import { ConfigKey, getAppContext } from "../context/types";
 import { CacheControl } from "../http/headers";
 import { createLogger } from "../logging/logger";

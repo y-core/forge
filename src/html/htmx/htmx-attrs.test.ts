@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { type HxAttrsProps, hxAttrs } from "./htmx-attrs";
 
 describe("hxAttrs", () => {

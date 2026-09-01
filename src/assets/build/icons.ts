@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+
 import type { IconOutput, IconsConfig } from "../types";
 
 /** Writes every configured icon output, loading the optional `sharp` dependency on demand. @public */

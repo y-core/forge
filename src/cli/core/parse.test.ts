@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { addCommand, createCommand } from "./command";
 import { CliError } from "./errors";
 import { collectFlags, parseArgs, splitList } from "./parse";

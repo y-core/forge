@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { DARK_CLASS, THEME_STORAGE_KEY } from "../chrome/theme";
 import { mount, paintedHex } from "../client/browser-test-helper";
@@ -28,6 +29,8 @@ declare global {
     forgeHtmx: typeof import("../client/htmx");
     /** Renders recorded by the fake Cloudflare script this spec serves. */
     showcaseTurnstileRenders?: Array<{ sitekey: unknown; size: unknown; theme: unknown }>;
+    /** Swaps this spec has seen settle, counted by `observeHtmxSettles`. */
+    showcaseHtmxSettles?: number;
   }
 }
 
@@ -45,6 +48,18 @@ const EXPOSE = {
 // document has loaded — without this call every `hx-*` attribute on the page is inert.
 async function processHtmx(page: Page): Promise<void> {
   await page.evaluate(() => window.forgeHtmx.htmx.process(document.body));
+}
+
+// htmx inserts a swapped fragment immediately but binds its `hx-*` listeners one settle tick later,
+// so post-swap DOM state is readable while the markup is still inert — a case interacting after a
+// swap waits on this counter, never on the state the swap wrote.
+async function observeHtmxSettles(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.showcaseHtmxSettles = 0;
+    document.body.addEventListener("htmx:afterSettle", () => {
+      window.showcaseHtmxSettles = (window.showcaseHtmxSettles ?? 0) + 1;
+    });
+  });
 }
 
 const icon = createIcon("/sprite.svg", {
@@ -116,6 +131,7 @@ async function mountShowcase(page: Page, which: ShowcasePage, options: MountShow
   await mount(page, prelude + html, css.length === 0 ? EXPOSE : { ...EXPOSE, css });
   await page.evaluate(() => window.forgeResume.resume());
   await processHtmx(page);
+  await observeHtmxSettles(page);
 }
 
 /** `data-slot` is a token list, so focus is asserted on the parsed tokens rather than the raw value. */
@@ -292,6 +308,11 @@ function validateFieldState(page: Page) {
   );
 }
 
+/** How many swaps have settled — the point a swapped-in fragment's own attributes become live. */
+function settledSwaps(page: Page): Promise<number> {
+  return page.evaluate(() => window.showcaseHtmxSettles ?? 0);
+}
+
 /** Types a value into the demo field the way a reader leaves it: filled, then blurred. */
 // Playwright's `fill` emits `input` alone; the browser emits `change` only when the control blurs.
 async function typeEmail(page: Page, value: string): Promise<void> {
@@ -328,8 +349,9 @@ test.describe("the showcase's inline-validation demo", () => {
 
     await typeEmail(page, "not-an-email");
 
-    // Polls the swapped-in state rather than `requested.length`: the counter increments before htmx
-    // has swapped, so the second `fill` would land on an input about to be replaced.
+    // Waits for the settle, not just the swapped-in state: the fragment's `hx-*` attributes are
+    // inert until then, so a second interaction would trigger nothing and no request would follow.
+    await expect.poll(() => settledSwaps(page)).toBe(1);
     await expect
       .poll(() => validateFieldState(page))
       .toEqual({ dataInvalid: true, ariaInvalid: "true", error: "Please enter a valid email address.", errorIcons: 1 });
@@ -338,6 +360,7 @@ test.describe("the showcase's inline-validation demo", () => {
     await typeEmail(page, "user@example.com");
 
     await expect.poll(() => requested.length).toBe(2);
+    await expect.poll(() => settledSwaps(page)).toBe(2);
     await expect.poll(() => validateFieldState(page)).toEqual({ dataInvalid: false, ariaInvalid: null, error: null, errorIcons: 0 });
   });
 });

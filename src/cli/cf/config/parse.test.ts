@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+
 import { parseWranglerConfig, stripJsonc } from "./parse";
 
 describe("stripJsonc()", () => {

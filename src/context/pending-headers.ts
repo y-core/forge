@@ -1,10 +1,11 @@
 import type { RequestContext } from "@remix-run/fetch-router";
+
 import { contextVar } from "./accessor";
 
 const pendingHeadersCtx = contextVar<Headers>("__pendingResponseHeaders");
 
 /** Queues a response header for this request. Use `applyPendingHeaders` to apply them to the Response. @internal */
-// biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for header queuing
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for header queuing
 export function setPendingHeader(context: RequestContext<any, any>, name: string, value: string, options?: { append?: boolean }): void {
   let headers = pendingHeadersCtx.getOptional(context);
   if (!headers) {
@@ -19,7 +20,7 @@ export function setPendingHeader(context: RequestContext<any, any>, name: string
 }
 
 /** Applies any queued response headers from this context to a Response object. @internal */
-// biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant
 export function applyPendingHeaders(context: RequestContext<any, any>, response: Response): Response {
   const pending = pendingHeadersCtx.getOptional(context);
   if (!pending) return response;

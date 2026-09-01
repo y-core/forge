@@ -10,7 +10,7 @@ const SAFE_URL_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
 
 // Browsers ignore C0/C1 controls and spaces when resolving a scheme, so `java\tscript:` executes
 // unless they are stripped before scheme detection.
-// biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching C0/C1 control chars
+// oxlint-disable-next-line eslint/no-control-regex -- deliberately matching C0/C1 control chars
 const URL_NOISE = /[\u0000-\u0020\u007f-\u009f]/g;
 
 /** Sanitizes a URL for `href`/`src` attributes, collapsing anything but http/https/mailto/tel to `"#"`. @public */

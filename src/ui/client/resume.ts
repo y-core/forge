@@ -19,7 +19,7 @@ export interface ScopeDefinition<A extends string = string> {
   /** Resume at `resume()` time instead of waiting for the first interaction. */
   eager?: boolean;
   /** Binds DOM-mutating effects once on first resume, optionally returning a disposer. */
-  // biome-ignore lint/suspicious/noConfusingVoidType: void in union is intentional — allows implicit-return setups
+  // oxlint-disable-next-line typescript/no-invalid-void-type -- void in union is intentional — allows implicit-return setups
   setup?: (ctx: Omit<ResumeContext, "el">) => void | (() => void);
   /** Action handlers keyed by the `data-on-<event>` value. */
   on?: Record<A, (ctx: ResumeContext, event: Event) => void>;

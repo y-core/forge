@@ -7,12 +7,12 @@ import { createContextKey } from "@remix-run/fetch-router";
 /** A type-safe accessor pair bound to one context-variable key. @public */
 export interface ContextVar<T> {
   /** Reads the variable; throws if it is not set on this request. */
-  // biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for context-variable access
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
   get(c: RequestContext<any, any>, message?: string): T;
-  // biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for context-variable access
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
   set(c: RequestContext<any, any>, value: T): void;
   /** Reads the variable; `undefined` if not yet set. */
-  // biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for context-variable access
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for context-variable access
   getOptional(c: RequestContext<any, any>): T | undefined;
   readonly key: ContextKey<T>;
 }
@@ -38,7 +38,7 @@ export type AppContext<
 
 /** Narrows a `RequestContext` to an `AppContext`, throwing if per-request state has not been injected. @public */
 export function getAppContext<Bindings = Record<string, unknown>, Params extends Record<string, string> = Record<string, string>, Config = unknown>(
-  // biome-ignore lint/suspicious/noExplicitAny: bindings/params/config are irrelevant for the state check
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings/params/config are irrelevant for the state check
   context: RequestContext<any, any>,
 ): AppContext<Bindings, Params, Config> {
   if (context.get(EnvKey) === undefined) {

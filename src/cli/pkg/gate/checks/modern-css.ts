@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { relative, resolve } from "node:path";
+
 import { type CheckResult, checkResult, type Finding, fail, warn } from "../finding";
 import { type DeferredFinding, MODERN_CSS_DEFERRED } from "./modern-css-deferred";
 import { findModernCssViolations, type ModernCssFinding } from "./modern-css-parse";

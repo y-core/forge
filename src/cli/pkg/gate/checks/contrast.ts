@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
 import { type CheckResult, checkResult, type Finding, fail } from "../finding";
 import { contrastRatio, oklchToPaintedHex, parseOklch } from "./color";
 import {

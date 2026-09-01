@@ -22,12 +22,12 @@ surface explicitly. <!-- rule:forge-ui-marketing-authenticated-stays-app -->
 Four things, and only four. Everything else on the page is composed exactly as it would be in the
 app.
 
-| Lever | App default | Marketing | Terminates in |
-|---|---|---|---|
-| Type steps | `text-sm` body, `text-base` headings | `text-base` body, `text-4xl`+ for the hero line | Tailwind type scale |
-| Vertical rhythm | `p-6`, `gap-6` between sections | `py-16` or more, `gap-12` between sections | Tailwind spacing scale |
-| The hero | none — a page starts at its content | one, at the top, carrying the single message | `Card`-free plain section |
-| The accent moment | none | exactly one element using `--primary` as a surface | `bg-primary text-primary-foreground` |
+| Lever             | App default                          | Marketing                                          | Terminates in                        |
+| ----------------- | ------------------------------------ | -------------------------------------------------- | ------------------------------------ |
+| Type steps        | `text-sm` body, `text-base` headings | `text-base` body, `text-4xl`+ for the hero line    | Tailwind type scale                  |
+| Vertical rhythm   | `p-6`, `gap-6` between sections      | `py-16` or more, `gap-12` between sections         | Tailwind spacing scale               |
+| The hero          | none — a page starts at its content  | one, at the top, carrying the single message       | `Card`-free plain section            |
+| The accent moment | none                                 | exactly one element using `--primary` as a surface | `bg-primary text-primary-foreground` |
 
 Default: a marketing page opens with exactly one hero region carrying one headline, one supporting
 line, and one `primary` `Button`, unless the brief describes a page with two independent audiences
@@ -50,15 +50,15 @@ Default: exactly one element per page uses `--primary` as a filled surface — t
 Forge ships no marketing-specific components, and none are needed. A landing page is the existing
 primitives at a different rhythm.
 
-| Section | Component | How it is used |
-|---|---|---|
-| Feature group | `Card` | One `Card` per feature, `Card.Title` + `Card.Description`, no footer button per card |
-| Status or category label | `Badge` | `outline` for a category, `default` for the one thing genuinely new |
-| FAQ | `Accordion` | `Accordion.Item` / `.Trigger` / `.Content` — native `<details>`, so it works with no JavaScript |
-| Announcement or notice bar | `Alert` | `default` for news, `info` for a neutral fact; `warning` and `destructive` are not marketing tones |
-| Email or trial capture | `Dialog` | `Dialog.Trigger` opens it; the platform owns backdrop and Escape |
-| A named person | `Avatar` | Only with a real person's real image or initials via `Avatar.Fallback` |
-| Section separation | `Separator` | Between bands, in place of a border on each `Card` |
+| Section                    | Component   | How it is used                                                                                     |
+| -------------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| Feature group              | `Card`      | One `Card` per feature, `Card.Title` + `Card.Description`, no footer button per card               |
+| Status or category label   | `Badge`     | `outline` for a category, `default` for the one thing genuinely new                                |
+| FAQ                        | `Accordion` | `Accordion.Item` / `.Trigger` / `.Content` — native `<details>`, so it works with no JavaScript    |
+| Announcement or notice bar | `Alert`     | `default` for news, `info` for a neutral fact; `warning` and `destructive` are not marketing tones |
+| Email or trial capture     | `Dialog`    | `Dialog.Trigger` opens it; the platform owns backdrop and Escape                                   |
+| A named person             | `Avatar`    | Only with a real person's real image or initials via `Avatar.Fallback`                             |
+| Section separation         | `Separator` | Between bands, in place of a border on each `Card`                                                 |
 
 Default: a marketing feature grid renders one `Card` per feature with `Card.Title` and
 `Card.Description` and no per-card `Button`, unless each feature links to a materially different
@@ -100,12 +100,14 @@ import { Button } from "@y-core/forge/ui/core";
 
 <section class='flex flex-col items-center gap-6 px-6 py-24 text-center'>
   <h1 class='max-w-prose text-3xl font-semibold text-foreground md:text-5xl'>Ship faster</h1>
-  <p class='max-w-prose text-lg text-muted-foreground'>
-    Deploy on every merge, with a rollback that takes one click.
-  </p>
+  <p class='max-w-prose text-lg text-muted-foreground'>Deploy on every merge, with a rollback that takes one click.</p>
   <div class='flex gap-3'>
-    <Button variant='primary' size='lg'>Start free trial</Button>
-    <Button variant='ghost' size='lg'>Read the docs</Button>
+    <Button variant='primary' size='lg'>
+      Start free trial
+    </Button>
+    <Button variant='ghost' size='lg'>
+      Read the docs
+    </Button>
   </div>
 </section>;
 ```

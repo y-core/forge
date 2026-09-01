@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import { describe, expect, it } from "bun:test";
+
 import { render } from "../../testing/render";
 import { scalePairs } from "../contracts/theme/contrast-pairs";
 import {
@@ -24,13 +25,13 @@ import { buttonVariants } from "../core/button";
 import { fieldId } from "../core/field";
 import { CustomiseContent, loadCustomise } from "./customise";
 
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;
 StubIcon.sprite = "/icons.svg";
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
-// biome-ignore lint/suspicious/noExplicitAny: only `url` is read
+// oxlint-disable-next-line typescript/no-explicit-any -- only `url` is read
 const ctx = (search = "") => ({ url: new URL(`https://example.test/showcase/ui/theme${search}`) }) as any;
 
 const page = (search = "") => render(<CustomiseContent data={loadCustomise(ctx(search))} icon={icon} />);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import type { WranglerConfig } from "../../types";
 import { syncBindings } from "../engine";
 import { GENERATE_MARKER, PUSH_MARKER } from "./devvars";

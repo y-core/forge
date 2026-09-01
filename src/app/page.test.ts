@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { CSRF_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
 import { escapeHtml } from "../http/escape";

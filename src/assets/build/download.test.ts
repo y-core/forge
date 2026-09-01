@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { fetchURL } from "./download";
 
 describe("fetchURL()", () => {

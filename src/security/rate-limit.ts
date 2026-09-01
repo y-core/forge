@@ -1,4 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
+
 import type { AppContext } from "../context/types";
 import { getAppContext } from "../context/types";
 import { createLogger } from "../logging/logger";

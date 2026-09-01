@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { checkMenuItem } from "./menu";
 import { type FakeElement, fakeTree } from "./test-dom";
 

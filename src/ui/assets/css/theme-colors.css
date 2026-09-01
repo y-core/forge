@@ -7,63 +7,63 @@
 
 :root {
   /* ── danger ─────────────────────────────────────────────────────────────── */
-  --red-2:        light-dark(var(--color-red-50), var(--color-red-950));
-  --red-3:        light-dark(var(--color-red-100), var(--color-red-900));
-  --red-6:        light-dark(var(--color-red-200), var(--color-red-800));
-  --red-9:        light-dark(var(--color-red-700), var(--color-red-300));
-  --red-11:       light-dark(var(--color-red-800), var(--color-red-200));
-  --red-12:       light-dark(var(--color-red-900), var(--color-red-200));
+  --red-2: light-dark(var(--color-red-50), var(--color-red-950));
+  --red-3: light-dark(var(--color-red-100), var(--color-red-900));
+  --red-6: light-dark(var(--color-red-200), var(--color-red-800));
+  --red-9: light-dark(var(--color-red-700), var(--color-red-300));
+  --red-11: light-dark(var(--color-red-800), var(--color-red-200));
+  --red-12: light-dark(var(--color-red-900), var(--color-red-200));
   --red-contrast: var(--gray-1);
 
   /* ── info ───────────────────────────────────────────────────────────────── */
-  --blue-2:  light-dark(var(--color-blue-50), var(--color-blue-950));
-  --blue-3:  light-dark(var(--color-blue-100), var(--color-blue-900));
-  --blue-6:  light-dark(var(--color-blue-200), var(--color-blue-800));
+  --blue-2: light-dark(var(--color-blue-50), var(--color-blue-950));
+  --blue-3: light-dark(var(--color-blue-100), var(--color-blue-900));
+  --blue-6: light-dark(var(--color-blue-200), var(--color-blue-800));
   --blue-11: light-dark(var(--color-blue-800), var(--color-blue-200));
   --blue-12: light-dark(var(--color-blue-900), var(--color-blue-200));
 
   /* ── success ────────────────────────────────────────────────────────────── */
-  --emerald-2:  light-dark(var(--color-emerald-50), var(--color-emerald-950));
-  --emerald-3:  light-dark(var(--color-emerald-100), var(--color-emerald-900));
-  --emerald-6:  light-dark(var(--color-emerald-200), var(--color-emerald-800));
+  --emerald-2: light-dark(var(--color-emerald-50), var(--color-emerald-950));
+  --emerald-3: light-dark(var(--color-emerald-100), var(--color-emerald-900));
+  --emerald-6: light-dark(var(--color-emerald-200), var(--color-emerald-800));
   --emerald-11: light-dark(var(--color-emerald-800), var(--color-emerald-200));
   --emerald-12: light-dark(var(--color-emerald-900), var(--color-emerald-200));
 
-  --green-9:        light-dark(var(--color-green-700), var(--color-green-500));
+  --green-9: light-dark(var(--color-green-700), var(--color-green-500));
   --green-contrast: var(--gray-1);
 
   /* ── warning ────────────────────────────────────────────────────────────── */
-  --yellow-2:        light-dark(var(--color-yellow-50), var(--color-yellow-950));
-  --yellow-3:        light-dark(var(--color-yellow-100), var(--color-yellow-900));
-  --yellow-6:        light-dark(var(--color-yellow-200), var(--color-yellow-800));
-  --yellow-9:        light-dark(var(--color-yellow-500), var(--color-yellow-400));
-  --yellow-11:       light-dark(var(--color-yellow-800), var(--color-yellow-200));
-  --yellow-12:       light-dark(var(--color-yellow-900), var(--color-yellow-200));
+  --yellow-2: light-dark(var(--color-yellow-50), var(--color-yellow-950));
+  --yellow-3: light-dark(var(--color-yellow-100), var(--color-yellow-900));
+  --yellow-6: light-dark(var(--color-yellow-200), var(--color-yellow-800));
+  --yellow-9: light-dark(var(--color-yellow-500), var(--color-yellow-400));
+  --yellow-11: light-dark(var(--color-yellow-800), var(--color-yellow-200));
+  --yellow-12: light-dark(var(--color-yellow-900), var(--color-yellow-200));
   --yellow-contrast: light-dark(var(--gray-12), var(--gray-1));
 
   /* ── absolute alpha ─────────────────────────────────────────────────────── */
-  --black-a1:  rgba(0, 0, 0, 0.05);
-  --black-a2:  rgba(0, 0, 0, 0.1);
-  --black-a3:  rgba(0, 0, 0, 0.15);
-  --black-a4:  rgba(0, 0, 0, 0.2);
-  --black-a5:  rgba(0, 0, 0, 0.3);
-  --black-a6:  rgba(0, 0, 0, 0.4);
-  --black-a7:  rgba(0, 0, 0, 0.5);
-  --black-a8:  rgba(0, 0, 0, 0.6);
-  --black-a9:  rgba(0, 0, 0, 0.7);
+  --black-a1: rgba(0, 0, 0, 0.05);
+  --black-a2: rgba(0, 0, 0, 0.1);
+  --black-a3: rgba(0, 0, 0, 0.15);
+  --black-a4: rgba(0, 0, 0, 0.2);
+  --black-a5: rgba(0, 0, 0, 0.3);
+  --black-a6: rgba(0, 0, 0, 0.4);
+  --black-a7: rgba(0, 0, 0, 0.5);
+  --black-a8: rgba(0, 0, 0, 0.6);
+  --black-a9: rgba(0, 0, 0, 0.7);
   --black-a10: rgba(0, 0, 0, 0.8);
   --black-a11: rgba(0, 0, 0, 0.9);
   --black-a12: rgba(0, 0, 0, 0.95);
 
-  --white-a1:  rgba(255, 255, 255, 0.05);
-  --white-a2:  rgba(255, 255, 255, 0.1);
-  --white-a3:  rgba(255, 255, 255, 0.15);
-  --white-a4:  rgba(255, 255, 255, 0.2);
-  --white-a5:  rgba(255, 255, 255, 0.3);
-  --white-a6:  rgba(255, 255, 255, 0.4);
-  --white-a7:  rgba(255, 255, 255, 0.5);
-  --white-a8:  rgba(255, 255, 255, 0.6);
-  --white-a9:  rgba(255, 255, 255, 0.7);
+  --white-a1: rgba(255, 255, 255, 0.05);
+  --white-a2: rgba(255, 255, 255, 0.1);
+  --white-a3: rgba(255, 255, 255, 0.15);
+  --white-a4: rgba(255, 255, 255, 0.2);
+  --white-a5: rgba(255, 255, 255, 0.3);
+  --white-a6: rgba(255, 255, 255, 0.4);
+  --white-a7: rgba(255, 255, 255, 0.5);
+  --white-a8: rgba(255, 255, 255, 0.6);
+  --white-a9: rgba(255, 255, 255, 0.7);
   --white-a10: rgba(255, 255, 255, 0.8);
   --white-a11: rgba(255, 255, 255, 0.9);
   --white-a12: rgba(255, 255, 255, 0.95);

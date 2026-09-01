@@ -3,13 +3,7 @@
 Session management and cookie primitives for Cloudflare Workers. This namespace combines a curated re-export of the `@remix-run/cookie` and `@remix-run/session` surface with two forge-specific additions: `sessionMiddleware` (a request/response session lifecycle middleware that avoids cache-defeating cookie writes) and `createSignedCookie` (a hardened cookie constructor that enforces `httpOnly`, `secure`, and HMAC signing).
 
 ```typescript
-import {
-  sessionMiddleware,
-  sessionCtx,
-  createSignedCookie,
-  createCookieSessionStorage,
-  createCookie,
-} from "@y-core/forge/session";
+import { sessionMiddleware, sessionCtx, createSignedCookie, createCookieSessionStorage, createCookie } from "@y-core/forge/session";
 ```
 
 ---
@@ -33,17 +27,12 @@ import {
 A production session setup uses a signed cookie plus cookie-backed storage, registered once as app-level middleware.
 
 ```typescript
-import {
-  sessionMiddleware,
-  sessionCtx,
-  createSignedCookie,
-  createCookieSessionStorage,
-} from "@y-core/forge/session";
+import { sessionMiddleware, sessionCtx, createSignedCookie, createCookieSessionStorage } from "@y-core/forge/session";
 
 // 1. Define a hardened, HMAC-signed session cookie.
 const sessionCookie = createSignedCookie("__session", {
-  secrets: [env.SESSION_SECRET],     // at least 32 characters
-  maxAge: 60 * 60 * 24 * 7,          // 7 days
+  secrets: [env.SESSION_SECRET], // at least 32 characters
+  maxAge: 60 * 60 * 24 * 7, // 7 days
   sameSite: "Lax",
 });
 
@@ -62,15 +51,15 @@ import { sessionCtx } from "@y-core/forge/session";
 function loginHandler(context) {
   const session = sessionCtx.get(context);
 
-  session.set("userId", user.id);    // marks the session dirty → Set-Cookie written after the handler
+  session.set("userId", user.id); // marks the session dirty → Set-Cookie written after the handler
   const userId = session.get("userId");
 
   if (!session.has("userId")) {
     // not logged in
   }
 
-  session.unset("cart");             // remove a value
-  session.destroy();                 // clears the session and queues cookie removal
+  session.unset("cart"); // remove a value
+  session.destroy(); // clears the session and queues cookie removal
 }
 ```
 
@@ -80,7 +69,7 @@ A plain, unsigned cookie for a non-sensitive value:
 import { createCookie } from "@y-core/forge/session";
 
 const themeCookie = createCookie("theme", {
-  maxAge: 60 * 60 * 24 * 365,        // 1 year
+  maxAge: 60 * 60 * 24 * 365, // 1 year
   sameSite: "Lax",
 });
 
@@ -100,27 +89,30 @@ For per-visitor persistence without accounts (settings, drafts, preferences), us
 import { createAnonymousSession, sessionCtx } from "@y-core/forge/session";
 
 // One registration — secrets and bindings resolve from the request env:
-app.use("*", createAnonymousSession<AppEnv>({
-  cookieName: "app_session",
-  secret: (c) => c.env.SESSION_SECRET,   // ≥ 32 chars, enforced
-  kv: (c) => c.env.SESSIONS_KV,          // server-side session store
-}));
+app.use(
+  "*",
+  createAnonymousSession<AppEnv>({
+    cookieName: "app_session",
+    secret: (c) => c.env.SESSION_SECRET, // ≥ 32 chars, enforced
+    kv: (c) => c.env.SESSIONS_KV, // server-side session store
+  }),
+);
 
 // In a handler — this is the entire persistence story:
 const session = sessionCtx.get(c);
-session.set("settings", validated.settings);  // dirty → saved to KV, Set-Cookie (id only)
-const settings = session.get("settings");     // read back on any later request
+session.set("settings", validated.settings); // dirty → saved to KV, Set-Cookie (id only)
+const settings = session.get("settings"); // read back on any later request
 ```
 
 ### Choosing the storage backend
 
-| | KV storage (`kv` given) | Cookie storage (`kv` omitted) |
-|---|---|---|
-| Data location | Server-side (Workers KV) | Serialized into the cookie |
-| Size limit | KV value limits (MBs) | ~4 KB total cookie budget |
-| Client data exposure | None — opaque id only | Data rides on every request |
-| Revocation | Delete the KV key | Impossible until cookie expiry |
-| Extra infrastructure | One KV namespace | None |
+|                      | KV storage (`kv` given)  | Cookie storage (`kv` omitted)  |
+| -------------------- | ------------------------ | ------------------------------ |
+| Data location        | Server-side (Workers KV) | Serialized into the cookie     |
+| Size limit           | KV value limits (MBs)    | ~4 KB total cookie budget      |
+| Client data exposure | None — opaque id only    | Data rides on every request    |
+| Revocation           | Delete the KV key        | Impossible until cookie expiry |
+| Extra infrastructure | One KV namespace         | None                           |
 
 Prefer KV storage for anything beyond a couple of tiny values. `createKVSessionStorage(kv, { prefix?, ttlSeconds? })` is also exported standalone for use with `sessionMiddleware` directly — it is the durable sibling of `createMemorySessionStorage` and follows the same storage contract (`read` never throws; `save` returns the id when dirty, `""` when destroyed, `null` when unchanged).
 
@@ -134,10 +126,10 @@ Prefer KV storage for anything beyond a couple of tiny values. `createKVSessionS
 
 Forge-specific. Returns a middleware that reads the session cookie on the way in, exposes the resulting `Session` via `sessionCtx`, and persists it on the way out.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `storage` | `SessionStorage` | The storage backend that reads/saves session data. |
-| `cookie` | `Cookie` | The cookie used to parse the incoming session and serialize the outgoing one. Use `createSignedCookie` in production. |
+| Parameter | Type             | Description                                                                                                           |
+| --------- | ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `storage` | `SessionStorage` | The storage backend that reads/saves session data.                                                                    |
+| `cookie`  | `Cookie`         | The cookie used to parse the incoming session and serialize the outgoing one. Use `createSignedCookie` in production. |
 
 The middleware skips persistence entirely when the session was **neither modified nor destroyed**, so a `Set-Cookie` header is written only when needed. The serialized cookie is queued on the per-request pending-header channel and flushed by the app's single `applyHeaders` pass, not by rebuilding the response in this middleware.
 
@@ -152,8 +144,8 @@ app.use("*", sessionMiddleware(storage, sessionCookie));
 Forge-specific. A typed context accessor (`contextVar<Session>`) for the session set by `sessionMiddleware`.
 
 ```typescript
-const session = sessionCtx.get(context);          // throws if sessionMiddleware did not run
-const maybe = sessionCtx.getOptional(context);    // Session | undefined
+const session = sessionCtx.get(context); // throws if sessionMiddleware did not run
+const maybe = sessionCtx.getOptional(context); // Session | undefined
 ```
 
 Register `sessionMiddleware` before any handler that calls `sessionCtx.get` — the accessor throws if the session was never set.
@@ -162,12 +154,12 @@ Register `sessionMiddleware` before any handler that calls `sessionCtx.get` — 
 
 Forge-specific. Creates a `Cookie` that always enforces `httpOnly: true` and `secure: true`, HMAC-signs the value with the provided secrets, and defaults `sameSite` to `"Lax"`. Use this for any sensitive cookie — sessions, auth tokens.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `name` | `string` | The cookie name (e.g. `"__session"`). |
-| `options.secrets` | `[string, ...string[]]` | One or more signing secrets, **each at least 32 characters**. The first signs new cookies; the rest verify older ones (rotation). |
-| `options.sameSite` | `"Strict" \| "Lax"` | Optional. `SameSite` policy. Defaults to `"Lax"`. `"None"` is not allowed. |
-| `options.maxAge`, `options.path`, `options.domain`, `options.expires`, … | `CookieOptions` | Standard cookie options, except `httpOnly`, `secure`, and `secrets` handling is fixed by this factory. |
+| Parameter                                                                | Type                    | Description                                                                                                                       |
+| ------------------------------------------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                                                   | `string`                | The cookie name (e.g. `"__session"`).                                                                                             |
+| `options.secrets`                                                        | `[string, ...string[]]` | One or more signing secrets, **each at least 32 characters**. The first signs new cookies; the rest verify older ones (rotation). |
+| `options.sameSite`                                                       | `"Strict" \| "Lax"`     | Optional. `SameSite` policy. Defaults to `"Lax"`. `"None"` is not allowed.                                                        |
+| `options.maxAge`, `options.path`, `options.domain`, `options.expires`, … | `CookieOptions`         | Standard cookie options, except `httpOnly`, `secure`, and `secrets` handling is fixed by this factory.                            |
 
 ```typescript
 const sessionCookie = createSignedCookie("__session", {
@@ -199,22 +191,22 @@ Re-export from `@remix-run/session`. Creates a `SessionStorage` that keeps sessi
 
 Re-export from `@remix-run/session`. The per-user data container returned by `sessionCtx.get`.
 
-| Member | Signature | Description |
-|---|---|---|
-| `get` | `get(key): value \| undefined` | Read a value (checks both regular and flash data). |
-| `set` | `set(key, value): void` | Write a value; marks the session dirty. Passing `null`/`undefined` removes the key. |
-| `unset` | `unset(key): void` | Remove a value; marks the session dirty. |
-| `has` | `has(key): boolean` | Whether a value is stored for the key. |
-| `flash` | `flash(key, value): void` | Store a value available only on the **next** request, then cleared. |
-| `destroy` | `destroy(): void` | Mark the session destroyed; blocks further mutation and queues cookie removal. |
-| `data` | `SessionData` | Raw `[values, flash]` tuple for storage. Use `get` for normal reads. |
-| `id` | `string` | The session identifier. |
-| `dirty` | `boolean` | Whether the session was modified. |
-| `destroyed` | `boolean` | Whether the session was destroyed. |
+| Member      | Signature                      | Description                                                                         |
+| ----------- | ------------------------------ | ----------------------------------------------------------------------------------- |
+| `get`       | `get(key): value \| undefined` | Read a value (checks both regular and flash data).                                  |
+| `set`       | `set(key, value): void`        | Write a value; marks the session dirty. Passing `null`/`undefined` removes the key. |
+| `unset`     | `unset(key): void`             | Remove a value; marks the session dirty.                                            |
+| `has`       | `has(key): boolean`            | Whether a value is stored for the key.                                              |
+| `flash`     | `flash(key, value): void`      | Store a value available only on the **next** request, then cleared.                 |
+| `destroy`   | `destroy(): void`              | Mark the session destroyed; blocks further mutation and queues cookie removal.      |
+| `data`      | `SessionData`                  | Raw `[values, flash]` tuple for storage. Use `get` for normal reads.                |
+| `id`        | `string`                       | The session identifier.                                                             |
+| `dirty`     | `boolean`                      | Whether the session was modified.                                                   |
+| `destroyed` | `boolean`                      | Whether the session was destroyed.                                                  |
 
 ```typescript
 const session = sessionCtx.get(context);
-session.flash("notice", "Saved!");   // shown once, on the next request
+session.flash("notice", "Saved!"); // shown once, on the next request
 const notice = session.get("notice");
 ```
 
@@ -225,28 +217,28 @@ Re-exports from `@remix-run/cookie`. The general-purpose cookie type and its fac
 ```typescript
 const cookie = createCookie("locale", { maxAge: 60 * 60 * 24 * 365 });
 const value = await cookie.parse(context.request.headers.get("cookie")); // string | null
-const header = await cookie.serialize("en-GB");                          // Set-Cookie value
+const header = await cookie.serialize("en-GB"); // Set-Cookie value
 ```
 
 Use `createCookie` for non-sensitive values. For sensitive cookies, use `createSignedCookie`, which enforces the secure defaults `createCookie` leaves optional.
 
 ### Additional re-exports
 
-| Export | Source | Purpose |
-|---|---|---|
-| `createSession` | `@remix-run/session` | Construct a `Session` directly (advanced/test use). |
+| Export            | Source               | Purpose                                                               |
+| ----------------- | -------------------- | --------------------------------------------------------------------- |
+| `createSession`   | `@remix-run/session` | Construct a `Session` directly (advanced/test use).                   |
 | `createSessionId` | `@remix-run/session` | Generate a cryptographically secure session ID (`crypto.randomUUID`). |
 
 ### Types
 
-| Type | Shape / purpose |
-|---|---|
-| `SignedCookieOptions` | `CookieOptions` minus `httpOnly` / `secure` / `secrets`, plus a required `secrets: [string, ...string[]]` and a `sameSite?: "Strict" \| "Lax"`. |
+| Type                      | Shape / purpose                                                                                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SignedCookieOptions`     | `CookieOptions` minus `httpOnly` / `secure` / `secrets`, plus a required `secrets: [string, ...string[]]` and a `sameSite?: "Strict" \| "Lax"`.                  |
 | `AnonymousSessionOptions` | `createAnonymousSession`'s options — `secret` (required resolver), `cookieName?`, `kv?`, `secure?`, `maxAge?`, and everything `KVSessionStorageOptions` carries. |
-| `KVSessionStorageOptions` | `{ prefix?, ttlSeconds? }` — the key prefix (`${prefix}:${session.id}`) and the sliding TTL refreshed on every save. |
-| `SessionKVBinding` | The minimal structural KV surface the session store calls (`get` / `put` / `delete`); any Workers `KVNamespace` satisfies it. |
-| `SessionStorage` | The `{ read, save }` storage interface — implement it to back sessions with a custom store. |
-| `CookieOptions` | Options accepted by `createCookie`. |
+| `KVSessionStorageOptions` | `{ prefix?, ttlSeconds? }` — the key prefix (`${prefix}:${session.id}`) and the sliding TTL refreshed on every save.                                             |
+| `SessionKVBinding`        | The minimal structural KV surface the session store calls (`get` / `put` / `delete`); any Workers `KVNamespace` satisfies it.                                    |
+| `SessionStorage`          | The `{ read, save }` storage interface — implement it to back sessions with a custom store.                                                                      |
+| `CookieOptions`           | Options accepted by `createCookie`.                                                                                                                              |
 
 ---
 
@@ -260,20 +252,18 @@ Bind CSRF tokens to the session id so a token minted in one browser cannot be re
 
 Use `createSignedCookie` for the session cookie, never a plain `createCookie`. `createSignedCookie` guarantees three properties that protect the session:
 
-| Property | Effect |
-|---|---|
-| `httpOnly: true` | The cookie is not readable from JavaScript, mitigating session theft via XSS. |
-| `secure: true` | The cookie is only sent over HTTPS, preventing interception in transit. |
-| HMAC signature | The cookie value is signed with the configured secrets, so a tampered value is rejected on parse. |
+| Property         | Effect                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| `httpOnly: true` | The cookie is not readable from JavaScript, mitigating session theft via XSS.                     |
+| `secure: true`   | The cookie is only sent over HTTPS, preventing interception in transit.                           |
+| HMAC signature   | The cookie value is signed with the configured secrets, so a tampered value is rejected on parse. |
 
 ### Strong, rotatable secrets
 
 Each secret passed to `createSignedCookie` must be at least 32 characters — the factory throws otherwise. Source secrets from Worker bindings (`env.SESSION_SECRET`), never hardcode them. To rotate, prepend the new secret; older secrets remain in the array so existing cookies still verify:
 
 ```typescript
-createSignedCookie("__session", {
-  secrets: [env.SESSION_SECRET_NEW, env.SESSION_SECRET_OLD],
-});
+createSignedCookie("__session", { secrets: [env.SESSION_SECRET_NEW, env.SESSION_SECRET_OLD] });
 ```
 
 ### `SameSite` and CSRF

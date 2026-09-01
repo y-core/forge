@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fs from "node:fs";
+
 import { ReleaseError } from "../types";
 import { readPackageVersion, updatePackageVersion } from "./pkg-json";
 

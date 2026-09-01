@@ -1,4 +1,4 @@
-import { assetRootStep, changelogStep, docsStep, exportsStep, jsxStep, lintStep, testStep, typecheckStep } from "./builders";
+import { assetRootStep, changelogStep, docsStep, exportsStep, formatStep, jsxStep, lintStep, testStep, typecheckStep } from "./builders";
 import type { ChangelogCheckConfig } from "./checks/changelog";
 import type { DocsCheckConfig } from "./checks/docs";
 import type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
@@ -55,13 +55,13 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     steps.push({ label: "types:assets", tail: 20, cmd: ["forge", "assets", "gen", "types", "--config", options.assetConfig, "--out", assetOut] });
   }
 
-  steps.push(typecheckStep(), lintStep({ sources }));
+  steps.push(typecheckStep(), lintStep({ sources }), formatStep({ sources }));
 
-  // Opt-in rather than on by default: the step runs `governance-sync`, a binary from
-  // `@y-core/governance`, and a preset that assumed it would fail with "command not found" in every
-  // app that does not clone the corpus. Its fixer is the sync itself.
+  // Opt-in rather than on by default: the step runs `gov`, a binary from `@y-core/governance`, and a
+  // preset that assumed it would fail with "command not found" in every app that does not clone the
+  // corpus. Its fixer is the sync itself.
   if (options.governance) {
-    steps.push({ label: "governance", tail: 20, cmd: ["governance-sync", "--check"], fix: ["governance-sync"] });
+    steps.push({ label: "governance", tail: 20, cmd: ["gov", "sync", "--check"], fix: ["gov", "sync"] });
   }
 
   steps.push(testStep({ sources: tests }));
@@ -111,6 +111,7 @@ export function forgeChecks(options: LibraryStepOptions): readonly Step[] {
   return [
     typecheckStep(),
     lintStep({ sources: options.sources ?? ["src/"] }),
+    formatStep({ sources: options.sources ?? ["src/"] }),
     testStep({ sources: options.tests ?? [] }),
     exportsStep({ ...derived, files: pkg.files, ...options.exports }),
     jsxStep({ root, ...options.jsx }),

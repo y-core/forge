@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
+
 import { type CheckResult, checkResult, type Finding, fail } from "../finding";
 import { parseConsumerExportNames } from "./barrel-parse";
 import {

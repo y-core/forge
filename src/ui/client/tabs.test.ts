@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { mountTabs } from "./tabs";
 import { type FakeElement, FakeEvent, fakeTree } from "./test-dom";
 

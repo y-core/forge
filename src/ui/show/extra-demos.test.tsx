@@ -2,16 +2,17 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import { describe, expect, it } from "bun:test";
+
 import { render } from "../../testing/render";
 import { ShowcaseContent, type ShowcasePage } from "./components";
 import { sectionBodies } from "./coverage";
 import { LAZY_DEMO_LOADED, LAZY_DEMO_PENDING, LAZY_DEMO_REF, LAZY_DEMO_SCOPE } from "./lazy-contract";
 import { showcasePaths } from "./route";
 
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;
 StubIcon.sprite = "/icons.svg";
-// biome-ignore lint/suspicious/noExplicitAny: test-only stub
+// oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
 const page = (which: ShowcasePage) => render(<ShowcaseContent data={{ paths: showcasePaths("/showcase") }} icon={icon} page={which} />);

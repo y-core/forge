@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createColorize } from "../term/color";
 import { addCommand, createCommand } from "./command";
 import { formatHelp, formatUsage } from "./help";

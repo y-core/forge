@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
 import { TURNSTILE_SCRIPT_SRC, TURNSTILE_SCRIPT_TIMEOUT_MS } from "../contracts/turnstile-contract";

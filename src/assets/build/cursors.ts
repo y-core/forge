@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+
 import type { CursorsConfig } from "../types";
 import { parseColor, toHex } from "./color";
 import { readThemeTokens, resolveToken } from "./css-tokens";

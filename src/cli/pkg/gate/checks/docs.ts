@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+
 import { type CheckResult, checkResult, type Finding, fail, warn } from "../finding";
 import { findSubpathCitations, uncitedSubpaths } from "./docs-parse";
 import type { ExportsMap } from "./exports";
@@ -113,7 +114,7 @@ function blockAfter(lines: readonly string[], startPattern: RegExp): { start: nu
   if (start === -1) return null;
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^## /.test(lines[i] ?? "")) {
+    if ((lines[i] ?? "").startsWith("## ")) {
       end = i;
       break;
     }

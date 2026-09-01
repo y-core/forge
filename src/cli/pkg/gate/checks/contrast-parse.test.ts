@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { checkDarkHoldsOnlySteps, parseThemeDeclarations, resolveStep, splitLightDark } from "./contrast-parse";
 
 describe("splitLightDark", () => {

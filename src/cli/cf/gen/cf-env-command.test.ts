@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 // mock.module must be registered before cf-env-command loads, hence the dynamic imports below; it is process-global, so the real module is spread through.
 const mockSpawnSync = mock((_cmd: string, _args?: string[], _opts?: unknown): { status: number | null; error?: Error } => ({ status: 0 }));
-mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
+await mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
 
 const { createGenEnvCommand, loadOptions, readWranglerConfig } = await import("./cf-env-command");
 const { execute } = await import("../../core/execute");
@@ -130,7 +130,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     expect(generated).toContain("CACHE");
   });
 
-  it("invokes biome via the (mocked) spawnSync formatter", async () => {
+  it("invokes oxfmt via the (mocked) spawnSync formatter", async () => {
     const dir = tempDir();
     const wranglerPath = join(dir, "wrangler.jsonc");
     const outPath = join(dir, "env.schema.ts");
@@ -150,7 +150,7 @@ describe("createGenEnv — run handler end-to-end", () => {
 
     expect(mockSpawnSync).toHaveBeenCalled();
     const [cmd, args] = mockSpawnSync.mock.calls[0] as [string, string[]];
-    expect(cmd).toBe("biome");
-    expect(args).toEqual(["check", "--write", outPath]);
+    expect(cmd).toBe("oxfmt");
+    expect(args).toEqual([outPath]);
   });
 });

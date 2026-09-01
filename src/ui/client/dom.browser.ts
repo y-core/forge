@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+
 import { mount } from "./browser-test-helper";
 
 declare global {

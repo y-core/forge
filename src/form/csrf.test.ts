@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "bun:test";
+
 import { Forge } from "../app/forge-app";
 import type { AppContext } from "../context/types";
 import { mapHandler } from "../testing/route";
@@ -382,7 +383,7 @@ describe("csrfProtection middleware with resolver secret", () => {
       csrfProtection({
         secret: async (c) => {
           callCount++;
-          // biome-ignore lint/suspicious/noExplicitAny: test-only cast to read env secret
+          // oxlint-disable-next-line typescript/no-explicit-any -- test-only cast to read env secret
           return ((c as any).env as { CSRF_SECRET: string }).CSRF_SECRET === "a".repeat(64) ? keyA : keyB;
         },
         subject: false,

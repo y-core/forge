@@ -316,7 +316,6 @@ function renderGroup(item: NavGroup, ctx: NavRenderCtx): JSXNode {
   const headingId = `navbar-group-${ctx.idBase}-${ctx.seq.n++}`;
   const fattrs = filterAttrs(item, ctx.activeFilters);
   return (
-    // biome-ignore lint/a11y/useSemanticElements: the semantic element for `role="group"` is `<fieldset>`, which carries form-control grouping and a `<legend>` contract this navigation block has no business claiming
     <div
       data-slot={slotToken("navbar-group", fattrs["data-slot"])}
       role='group'

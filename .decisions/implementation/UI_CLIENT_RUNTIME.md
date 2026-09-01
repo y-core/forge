@@ -65,7 +65,7 @@ scope's `setup` body is not: `mountMenu`, `mountTabs`, `mountTooltip`, `mountNum
 caller and a second call would double-mount. Being internal without being un-`@public` is what
 [`NAMESPACE_DESIGN.md`](../governance/NAMESPACE_DESIGN.md) §1c permits — its gate proves
 `@public → barrel`, not the converse. `mountRovingFocus` is public despite backing four scopes
-because it is a primitive those scopes *call* rather than a scope's `setup`, and an author building
+because it is a primitive those scopes _call_ rather than a scope's `setup`, and an author building
 their own composite is obliged to reach for it.
 
 ### 2b. Theme Controller and FOUC Prevention
@@ -81,7 +81,7 @@ The theme surface is split across two subpaths, and the split matters:
 **`FOUC_SCRIPT` is an inline script for `<head>` that reads storage and sets the dark class
 before first paint**, preventing a flash of unstyled content.
 
-**Its hash must be listed in the CSP `script-src`.** Any *other* server-rendered inline
+**Its hash must be listed in the CSP `script-src`.** Any _other_ server-rendered inline
 `<script>` must instead carry the per-request nonce from `getNonce(c)` — see
 [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §2a.
 
@@ -91,7 +91,7 @@ it on the client is tested against it. The theme passes on every count — its c
 `localStorage`, which no server can read, and the wrong intermediate state is a full-page inversion.
 The viewport-driven disclosure (§2l) passes on none, and gets no equivalent: its input is a
 `matchMedia` read of a width the stylesheet already responds to; every inline script is a CSP hash
-*every* consumer carries, and a disclosure default is opt-in where a theme is universal; and its
+_every_ consumer carries, and a disclosure default is opt-in where a theme is universal; and its
 wrong intermediate state is "navigation visible", which is the accessible no-JS fallback rather than
 a defect. **The residual is stated rather than hidden:** the correction lands when the app's client
 entry runs, so deferring that entry behind a large bundle widens the window in which the disclosure
@@ -134,7 +134,7 @@ from `ui/client`**, like its four siblings: an app side-effect-imports `ui/core/
 capability two of them wanted and logged a miss for it. A page that renders no `<Turnstile>` has no
 scope to resume, so nothing is fetched and nothing is reported.
 
-**Its argument is the tree it searches, and it is required.** Given the scope root — which *is* the
+**Its argument is the tree it searches, and it is required.** Given the scope root — which _is_ the
 widget — it matches that node before descending, as `resume.ts` does for `data-scope`; given an
 enclosing element it searches within it. Either way a page with several `<Turnstile>` widgets mounts
 one controller each. Searching the whole document instead resolved every widget to the first one:
@@ -174,7 +174,7 @@ handling the same keystroke several times.
 **The runtime owns the effects a `setup` creates; the author owns everything else.** Every `effect`
 created while a scope's `setup` runs is collected and disposed with the scope, so a disposer never
 has to be threaded back out for one — `withOwner` is the primitive, and the scope runtime is its only
-caller. What a `setup` *returns* is for what the runtime cannot see: listeners, observers, timers,
+caller. What a `setup` _returns_ is for what the runtime cannot see: listeners, observers, timers,
 controller handles. It runs **after** the scope's effects are disposed, so no reactive computation is
 alive while an author's teardown mutates the DOM those effects write to.
 
@@ -207,9 +207,9 @@ arrows that move between a panel and its submenu.
 **The two horizontal arrows go through the platform rather than around it**, and which arrow means
 which is **resolved from the popup's own writing direction** rather than hardcoded (`isRtl`, `src/ui/README.md`) — so the
 pair mirrors under `dir="rtl"`, including for a single RTL subtree inside an LTR page. The key
-pointing *toward* the submenu calls `.click()` on a `menu-submenu-trigger` — the row's own
+pointing _toward_ the submenu calls `.click()` on a `menu-submenu-trigger` — the row's own
 `command="toggle-popover"` is what opens the panel, and the nested popup's own `mountMenu` is what
-moves focus into it. The key pointing *away* calls `hidePopover()` on a nested popup, the same path
+moves focus into it. The key pointing _away_ calls `hidePopover()` on a nested popup, the same path
 Escape already takes, so focus restoration is the one `toggle` handler rather than a second parallel
 one. Nothing about the state machine is reimplemented.
 
@@ -257,7 +257,7 @@ makes `toolbar`, `menu`, `tabs` and `tooltip` eager — every one is setup-only.
 ### 2i. `openPopoverAt` — Coordinate Placement
 
 **Every other popup in forge is placed by CSS, against its trigger** — through the anchored rules in
-`forge-ui.css`, which name no anchor bar the tooltip's. Every *invoker-opened* popup has an
+`forge-ui.css`, which name no anchor bar the tooltip's. Every _invoker-opened_ popup has an
 **implicit anchor** — its invoker — which `position-anchor`'s initial `auto` resolves to, for
 `command`/`commandfor` exactly as for `popovertarget`; `src/ui/core/menu-anchor.browser.ts` measures
 that and pins the boundary this section depends on: a popup shown by `showPopover()` rather than by
@@ -280,14 +280,14 @@ the whole box stays on screen. Four properties are load-bearing:
   paints the corrected position rather than the provisional one.
 - **A menu opened from `contextmenu` must be held back until the button is released**, or the
   platform light-dismisses it on the very `pointerup` that ended the right-click. `contextmenu` fires
-  *between* `pointerdown` and `pointerup`, and the dismiss pass on that release finds neither target
+  _between_ `pointerdown` and `pointerup`, and the dismiss pass on that release finds neither target
   inside a popup — nothing was open when the button went down — so everything is hidden one event
   after it was shown and the reader sees a menu that flashes and vanishes. `afterPointerUp` defers
   the show to a one-shot **capture-phase** `pointerup` on the owner document: the dismiss pass runs
   ahead of listeners for the same event, so showing there is still within that one event and before
   any paint, and the pass finds nothing to dismiss. Callers pass `event.buttons !== 0`, never a flat
   `true` — a keyboard-raised `contextmenu` (Menu key, `Shift+F10`) reports no buttons and is followed
-  by no release, so an unconditional guard arms a listener the *next* unrelated click fires. `once`,
+  by no release, so an unconditional guard arms a listener the _next_ unrelated click fires. `once`,
   so a later click still light-dismisses normally.
 
 The popup opts in with `Menu.Popup`'s `coords` prop, which stamps `data-coords` and selects the
@@ -309,7 +309,7 @@ docs sidebar does not change the URL as the reader scrolls, so nothing server-si
 entry is current — which is the gap between forge's rule that the current destination is always
 indicated and a page whose destinations are all one document.
 
-**Entries are ordered by the *targets'* document position, never by link order**, computed with
+**Entries are ordered by the _targets'_ document position, never by link order**, computed with
 `compareDocumentPosition` over the resolved sections. "Which section is being read" is a question
 about the page, and a nav may list its links in whatever order reads best — a grouped table of
 contents is often alphabetical within each group, exactly where link order names the wrong section.
@@ -342,7 +342,7 @@ produced it.
 
 **The override is tracked by a counter of the controller's own writes, not by comparing state.**
 Every programmatic write fires exactly one `toggle`, in order, so a counter tells the controller's
-changes from the user's. A state comparison cannot: the user toggling *back* to the value the
+changes from the user's. A state comparison cannot: the user toggling _back_ to the value the
 controller last wrote is still the user deciding, and a comparison reads that as the controller's
 own echo.
 
@@ -376,11 +376,11 @@ event handler returns.
 
 **A `computed` is lazy and pull-based.** Its body never runs at creation, never runs if nothing
 reads it, and re-derives on read only when a source actually moved. A read therefore answers from
-its sources' *current* values, so nothing can observe a derived value assembled before one of its
+its sources' _current_ values, so nothing can observe a derived value assembled before one of its
 sources moved — the torn read an eager, push-based derivation produces.
 
 **Optimistic enqueue, drain-time drop.** A write enqueues the effects behind its subscribers,
-walking *through* derived nodes, which hold no queue slot of their own. Whether a derived value
+walking _through_ derived nodes, which hold no queue slot of their own. Whether a derived value
 really moved is decided at dequeue, against the version each effect recorded per source; a
 computed's version moves only on a real `Object.is` change, so an effect whose sources moved under
 an unchanged value is dropped without running.
@@ -395,15 +395,15 @@ O(deps) per queued node — depth one and single-digit fan-out here — and has 
 **writing a signal during an `effect` or `computed` run throws.** With no writes in effects there is
 no effect-to-effect edge, so a double run cannot be constructed at all. Ordering is not an
 alternative route to the same guarantee: the shape that double-runs — one effect writing a signal a
-second reads while a third writes a leaf — puts all three at depth 1 of the *read* graph, and the
-edge that causes the double run is the *write*, which the read graph cannot see and which is not
+second reads while a third writes a leaf — puts all three at depth 1 of the _read_ graph, and the
+edge that causes the double run is the _write_, which the read graph cannot see and which is not
 knowable until it happens.
 
 **Effects paint; commands belong in the handler that caused them.** The island model already
 separates the roles (§3c): `on` handlers command, `computed` derives, `effect` paints. The throw
 matches the module's posture — `computed` throws on a self-read, and the run cap catches a cycle —
 and it additionally catches a write from inside a `computed`. Shipping the assertion with no build
-step is safe because the rule is a property of the *call site*: an effect either writes or it does
+step is safe because the rule is a property of the _call site_: an effect either writes or it does
 not, deterministically (§2's throw-or-report rule). The sanctioned replacements need no new API —
 `computed` for derivation, an `on` handler for a command, and `queueMicrotask` for a genuinely
 deferred one, which runs with no active node and so writes after the flush has settled.
@@ -412,8 +412,8 @@ deferred one, which runs with no active node and so writes after the flush has s
 effects queued behind the thrower are skipped until the next write — carrying them forward would run
 them on an unrelated caller's stack.
 
-**A cycle throws past a per-node run cap.** The cap counts *one node's* runs within one flush, so a
-deep chain of *N* distinct nodes costs one run each and never approaches it; the budget is
+**A cycle throws past a per-node run cap.** The cap counts _one node's_ runs within one flush, so a
+deep chain of _N_ distinct nodes costs one run each and never approaches it; the budget is
 independent of graph size, which is why it is small. It is a backstop rather than the first line —
 an effect that writes the signal it reads is refused by the write rule before the cap could count.
 
@@ -432,7 +432,7 @@ loaded, which is indistinguishable from never having been scheduled unless it is
 **A failed `lazy` import retries; it does not die silently.** The rejection goes to `onError` — or,
 with no handler, to `console.error`, because an error with nowhere to go is the one outcome this
 module refuses. The element is re-observed after a fixed delay, and both bounds are load-bearing.
-The cap — three `load()` calls — exists because `observe()` invokes its callback *immediately* for
+The cap — three `load()` calls — exists because `observe()` invokes its callback _immediately_ for
 an element already on screen, so an uncapped re-observe on a visible element is a spin loop. The
 delay is what makes the retry a retry: re-observing at once spends the whole budget within a few
 frames of the first failure, recovering only from an outage that is already over. Re-observing
@@ -450,7 +450,7 @@ delegated island listener that drives every registered scope.
 registers forge's own scopes ([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §2d).
 
 **A component whose markup names a scope must guarantee the scope exists.** A side-effect module
-registering scopes for markup a *sibling* renders imports the module those scopes live in, rather
+registering scopes for markup a _sibling_ renders imports the module those scopes live in, rather
 than leaving the app to discover the dependency from a warning. `ui/chrome/client` imports
 `ui/core/client` for exactly this reason: chrome markup names the `menu` and `toolbar` scopes.
 
@@ -462,9 +462,9 @@ preference.
 
 **Scope discovery descends into open shadow roots.** The eager pass walks the tree rather than
 running one flat `querySelectorAll`, because a selector cannot cross a shadow boundary: a scope
-rendered inside a web component would otherwise never be *visited*, so its `setup` would never run
+rendered inside a web component would otherwise never be _visited_, so its `setup` would never run
 and nothing would warn. The delegated half has no such problem — `closestAcross` climbs out through
-`host` — so a *lazy* scope inside a shadow root works either way and only an eager one would fail,
+`host` — so a _lazy_ scope inside a shadow root works either way and only an eager one would fail,
 silently. A
 closed root reports `shadowRoot === null` and is stepped over. `resume(within)` accepts a
 `ShadowRoot` as the walk root, so a web component can resume only its own subtree; the delegated
@@ -481,7 +481,7 @@ call's set and would otherwise outlive the listeners that were its only route to
 
 **One scope's `setup` cannot take the page down.** Each eager `setup` runs inside its own try/catch:
 a throw is reported against the scope's name and the loop continues, so later scopes still resume and
-a subsequent `resume()` re-attempts the one that threw. `hydrateState` therefore *throws* on
+a subsequent `resume()` re-attempts the one that threw. `hydrateState` therefore _throws_ on
 malformed or non-object `data-state` rather than degrading to `{}` — that markup is server-authored
 and deterministic per render, and a silent `{}` produced a scope whose every signal was missing.
 
@@ -512,7 +512,7 @@ and the platform still ignores a command it does not know.
 **Import the htmx bundle for its side effect only, from the client entry:**
 
 ```typescript
-import "@y-core/forge/ui/client/htmx"   // no exports used
+import "@y-core/forge/ui/client/htmx"; // no exports used
 ```
 
 It attaches `htmx` to `window` and registers the built-in extensions.

@@ -1,22 +1,22 @@
 # Hierarchy
 
-Hierarchy is the answer to one question a user asks of every screen: *what am I supposed to do
-here?* Forge's primitives already encode an answer. `buttonVariants` ships three variants and no
+Hierarchy is the answer to one question a user asks of every screen: _what am I supposed to do
+here?_ Forge's primitives already encode an answer. `buttonVariants` ships three variants and no
 more, and that is not a shortage — it is the action pyramid, spelled as an API.
 
 ## The action pyramid is `buttonVariants`
 
-| Tier | Variant | What it is for | How many per surface |
-|---|---|---|---|
-| Primary | `primary` | The one thing the surface exists for | Exactly one |
-| Secondary | `secondary` | The real alternative a user might take instead | Zero or one, usually |
-| Tertiary | `ghost` | Everything else — cancel, dismiss, back, row-level affordances | As many as the surface honestly has |
+| Tier      | Variant     | What it is for                                                 | How many per surface                |
+| --------- | ----------- | -------------------------------------------------------------- | ----------------------------------- |
+| Primary   | `primary`   | The one thing the surface exists for                           | Exactly one                         |
+| Secondary | `secondary` | The real alternative a user might take instead                 | Zero or one, usually                |
+| Tertiary  | `ghost`     | Everything else — cancel, dismiss, back, row-level affordances | As many as the surface honestly has |
 
 Default: exactly one `primary` button renders per surface — a page, a `Dialog`, or a `Card` each
 count as one surface — unless a written brief describes a surface with two genuinely co-equal
 outcomes, such as an accept/decline decision with no default. <!-- rule:forge-ui-hierarchy-one-primary -->
 
-Default: `secondary` is reserved for the action a user would plausibly take *instead* of the
+Default: `secondary` is reserved for the action a user would plausibly take _instead_ of the
 primary one, not for the second-most-visible thing on the surface, unless a brief calls for a
 paired control set where both members carry equal commitment. <!-- rule:forge-ui-hierarchy-secondary-alternative -->
 
@@ -73,13 +73,13 @@ built as that exact pair — copy the relationship rather than inventing a new o
 ## Icon-only actions
 
 `Button` `size` offers `icon` and `icon-sm` as fixed square boxes, and `square` as a
-*relationship* — full width, aspect-ratio 1.
+_relationship_ — full width, aspect-ratio 1.
 
-| You have | Use | Why |
-|---|---|---|
-| A standalone icon action beside `md` controls | `size='icon'` | 36px square — the nearest neighbour to the 40px `md` row |
-| An icon action inside a dense toolbar or beside `sm` controls | `size='icon-sm'` | 32px square — exactly the `sm` row's height, so the two line up |
-| An icon action in a rail whose width the app owns | `size='square'` | Takes the parent's width and stays square, so the rail's token stays the single source |
+| You have                                                      | Use              | Why                                                                                    |
+| ------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------- |
+| A standalone icon action beside `md` controls                 | `size='icon'`    | 36px square — the nearest neighbour to the 40px `md` row                               |
+| An icon action inside a dense toolbar or beside `sm` controls | `size='icon-sm'` | 32px square — exactly the `sm` row's height, so the two line up                        |
+| An icon action in a rail whose width the app owns             | `size='square'`  | Takes the parent's width and stays square, so the rail's token stays the single source |
 
 Default: an icon-only `Button` uses `icon` or `icon-sm` and never a text size with a hand-tuned
 padding override, unless the button sits in a container whose width is set by the app, in which
@@ -97,13 +97,13 @@ rule, and a `Tooltip` is not a substitute for one.
 non-`default` variant is a claim about how much the message matters. Making that claim when the
 message does not carry it is the fastest way to teach a user to ignore the component.
 
-| The message says | Variant | Note |
-|---|---|---|
-| Here is context you may want | `default` | The correct choice far more often than it gets used |
-| This succeeded and the outcome is not visible elsewhere | `success` | If the outcome *is* visible, say nothing |
-| Something needs attention but nothing is broken | `warning` | Not for "are you sure" |
-| An operation failed, or data will be lost | `destructive` | Reserve it; spending it on validation noise devalues it |
-| A neutral fact worth a colour of its own | `info` | Rarely earns its place over `default` |
+| The message says                                        | Variant       | Note                                                    |
+| ------------------------------------------------------- | ------------- | ------------------------------------------------------- |
+| Here is context you may want                            | `default`     | The correct choice far more often than it gets used     |
+| This succeeded and the outcome is not visible elsewhere | `success`     | If the outcome _is_ visible, say nothing                |
+| Something needs attention but nothing is broken         | `warning`     | Not for "are you sure"                                  |
+| An operation failed, or data will be lost               | `destructive` | Reserve it; spending it on validation noise devalues it |
+| A neutral fact worth a colour of its own                | `info`        | Rarely earns its place over `default`                   |
 
 Default: an `Alert` or `Toast` uses `default` unless the message names a specific failure, a
 specific risk, or a completed action whose result the user cannot otherwise see. <!-- rule:forge-ui-hierarchy-severity-default-first -->
@@ -129,12 +129,12 @@ in a form the user will submit, where a `Label` is required by
 
 When a label is genuinely needed, spend as little as possible on it:
 
-| Situation | Reach for |
-|---|---|
-| A read-only detail row | `Field` with `orientation='horizontal'` — label and value on one line, label already at `text-xs` on `--muted-foreground` |
-| A stacked read-only detail | `Field` with the default `orientation='vertical'` |
-| A real form control | `FormField.Label`, or a `Label` carrying `FIELD_LABEL_CLASSES` |
-| A group heading a sighted user reads from layout | a visually hidden heading, so `forge-ui-heading-order` still holds |
+| Situation                                        | Reach for                                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| A read-only detail row                           | `Field` with `orientation='horizontal'` — label and value on one line, label already at `text-xs` on `--muted-foreground` |
+| A stacked read-only detail                       | `Field` with the default `orientation='vertical'`                                                                         |
+| A real form control                              | `FormField.Label`, or a `Label` carrying `FIELD_LABEL_CLASSES`                                                            |
+| A group heading a sighted user reads from layout | a visually hidden heading, so `forge-ui-heading-order` still holds                                                        |
 
 Default: a section whose purpose is obvious from its layout carries a visually hidden heading
 rather than a visible one, unless the section is one of several that a user must choose between

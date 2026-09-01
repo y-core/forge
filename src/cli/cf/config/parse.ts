@@ -1,6 +1,7 @@
 import { chmodSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
+
 import type { Result } from "../../../result/result";
 import { v } from "../../../validation/mod";
 import { CliError } from "../../core/errors";
@@ -52,7 +53,7 @@ export function loadWranglerConfig(configPath: string): LoadedWranglerConfig {
   try {
     parsed = JSON.parse(json);
   } catch (err) {
-    throw new Error(`malformed wrangler config at ${abs}: invalid JSON — ${(err as Error).message}`);
+    throw new Error(`malformed wrangler config at ${abs}: invalid JSON — ${(err as Error).message}`, { cause: err });
   }
 
   const result = v.safeParse(WranglerConfigSchema, parsed);

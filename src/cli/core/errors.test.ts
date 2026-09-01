@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { CliError, formatError } from "./errors";
 import type { CliErrorKind } from "./types";
 

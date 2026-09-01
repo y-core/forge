@@ -10,7 +10,7 @@ description: "Why the src/ui/design corpus exists, its two-tier rule model, the 
 > test a candidate rule must pass, the anti-drift contract with the design gate, and forge's
 > ratified dial defaults.
 >
-> It governs the corpus's *shape*, never its content. No design rule is stated here.
+> It governs the corpus's _shape_, never its content. No design rule is stated here.
 >
 > Defers to: [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) for the `ui/core` component
 > contract and the class utilities; [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) for the
@@ -48,9 +48,9 @@ description: "Why the src/ui/design corpus exists, its two-tier rule model, the 
 Forge's `ui` namespace publishes a large surface — the `@y-core/forge/ui/core` server-rendered
 components, the bound variants in `@y-core/forge/ui/controls`, the application shell in
 `@y-core/forge/ui/chrome`, a semantic token system in `@y-core/forge/ui/assets`, and the mount
-controllers in `@y-core/forge/ui/client`. Every one of them is documented for *calling*.
+controllers in `@y-core/forge/ui/client`. Every one of them is documented for _calling_.
 
-None of it is documented for *composing*. This is the gap the corpus at `src/ui/design/` exists
+None of it is documented for _composing_. This is the gap the corpus at `src/ui/design/` exists
 to close, and it is not a hypothetical one: an agent handed only the API reference can wire every
 component correctly and still ship output that type-checks, passes its tests, and reads as a
 defect. The corpus's job is to name those patterns; `src/ui/design/floor.md` and
@@ -213,7 +213,7 @@ second direction is why a rule the corpus publishes for consumers can fail forge
 is held to the guidance it ships, and its worked examples most tightly of all, because an example
 that contradicts the rule beside it teaches the contradiction rather than the rule.
 
-The scope is the whole source tree because the corpus states rules about *markup*, and forge renders
+The scope is the whole source tree because the corpus states rules about _markup_, and forge renders
 markup outside `ui/` — `logging/show/` is an entire surface. Narrowed to `ui/`, the second direction
 was a claim wider than the check behind it, and the gap was not hypothetical. Where a rule is
 genuinely local to one directory, the finder scopes itself, because that scoping is part of what the
@@ -242,11 +242,11 @@ script's, per §4's non-restatement rule.
 Three homes exist for a statement about forge's UI, and the boundary between them is the section
 other documents will cite most. Each answers a different question:
 
-| Home | Owns | The question it answers |
-|---|---|---|
-| `.decisions/` | forge-**internal** constraints | What must forge's own source do? |
-| `src/ui/README.md` | **API usage** | How do I call this, with what arguments? |
-| `src/ui/design/` | consumer-facing **design judgement** | Which one should I call, and what does good look like? |
+| Home               | Owns                                 | The question it answers                                |
+| ------------------ | ------------------------------------ | ------------------------------------------------------ |
+| `.decisions/`      | forge-**internal** constraints       | What must forge's own source do?                       |
+| `src/ui/README.md` | **API usage**                        | How do I call this, with what arguments?               |
+| `src/ui/design/`   | consumer-facing **design judgement** | Which one should I call, and what does good look like? |
 
 The distinction between the second and third is the one that is actually hard, so state it
 concretely: that a component accepts a given variant is API usage. That one of those variants is
@@ -278,7 +278,7 @@ consumer-facing corpus, however design-shaped it sounds.
 Therefore:
 
 - **The corpus is exempt** from the governing-doc format. No `## N.` numbering, no `## 0. Quick
-  Reference`, no line cap. Its files are organized for a reader learning to compose a UI, in
+Reference`, no line cap. Its files are organized for a reader learning to compose a UI, in
   whatever shape serves that; its citation anchors are the rule ids of §3, not section numbers.
 - **This document is fully subject** to it. Numbered headings, the Quick Reference, the
   frontmatter fields, the size thresholds, the ban on dated and ticketed content — all of it
@@ -339,11 +339,11 @@ by a source, never by symmetry.
 
 Forge ratifies three dials, each on a 1–10 scale, and sets its app-UI defaults:
 
-| Dial | Default | What it sets |
-|---|---|---|
-| Density | 5 | How much information occupies a given area, and how tight the spacing scale runs |
-| Variance | 4 | How much a surface departs from the plainest arrangement that works |
-| Motion | 3 | How much movement the interface carries, via the `@y-core/forge/ui/client` transition states |
+| Dial     | Default | What it sets                                                                                 |
+| -------- | ------- | -------------------------------------------------------------------------------------------- |
+| Density  | 5       | How much information occupies a given area, and how tight the spacing scale runs             |
+| Variance | 4       | How much a surface departs from the plainest arrangement that works                          |
+| Motion   | 3       | How much movement the interface carries, via the `@y-core/forge/ui/client` transition states |
 
 These are deliberately restrained relative to the design sources the corpus credits, and the
 reason is a difference in target rather than a disagreement about taste. Most published design

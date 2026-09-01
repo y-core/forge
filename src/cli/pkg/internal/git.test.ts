@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 
 // Install mock before ./git is loaded so its top-level import gets the stub.
 const mockExecSync = mock((_cmd: string, _args?: string[], _opts?: unknown): string | Buffer => "");
-mock.module("node:child_process", () => ({ execFileSync: mockExecSync }));
+await mock.module("node:child_process", () => ({ execFileSync: mockExecSync }));
 
 const { gitExec, isWorkingTreeClean, getLatestTag, getCommitsSinceTag, getLastCommitMessage, createTag, commit, tagExists } = await import("./git");
 

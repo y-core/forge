@@ -1,4 +1,5 @@
 import type { Middleware, RequestContext } from "@remix-run/fetch-router";
+
 import { contextVar } from "../context/accessor";
 import {
   base64urlDecode,
@@ -149,7 +150,7 @@ export async function verifyCsrfToken(
 }
 
 /** Mints a CSRF token bound to `path` using the minter set by `csrfProtection`. @public */
-// biome-ignore lint/suspicious/noExplicitAny: bindings are irrelevant for csrf minting
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant for csrf minting
 export async function mintCsrf(context: RequestContext<any, any>, path?: string): Promise<string> {
   if (!path) {
     throw new Error("mintCsrf: a non-empty action path is required to mint a CSRF token");
@@ -167,9 +168,9 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
 
   const ringCache = new WeakMap<object, CsrfKeyRing>();
-  // biome-ignore lint/suspicious/noExplicitAny: context shape varies
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
   const resolveRing = async (context: RequestContext<any, any>): Promise<CsrfKeyRing> => {
-    // biome-ignore lint/suspicious/noExplicitAny: env shape varies across apps and tests
+    // oxlint-disable-next-line typescript/no-explicit-any -- env shape varies across apps and tests
     const envObj = (context as any).env;
     const cacheKey = envObj && typeof envObj === "object" ? (envObj as object) : null;
     if (cacheKey) {
@@ -207,9 +208,9 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
       try {
         const formData = await parseFormData(context, parseOptions);
         token = formData.get(tokenField)?.toString() ?? undefined;
-      } catch (err) {
+      } catch (error) {
         // A size failure is not a CSRF failure; reporting 403 would send the client after the wrong problem.
-        if ((err as { status?: number }).status === 413) {
+        if ((error as { status?: number }).status === 413) {
           return new Response("Payload Too Large", { status: 413 });
         }
       }

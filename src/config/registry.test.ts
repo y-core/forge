@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { registerConfig, retrieveConfig } from "./registry";
 
 describe("retrieveConfig", () => {

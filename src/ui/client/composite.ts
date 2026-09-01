@@ -85,8 +85,8 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
 
   /** `-1` when every item in that direction is disabled — the guard that stops an all-disabled
    * group from spinning the wrap-and-skip loop forever. */
-  function nextEnabled(items: HTMLElement[], from: number, step: number): number {
-    for (let i = from; i >= 0 && i < items.length; i += step) {
+  function nextEnabled(items: HTMLElement[], from: number, stride: number): number {
+    for (let i = from; i >= 0 && i < items.length; i += stride) {
       const item = items[i];
       if (item && !isDisabled(item)) return i;
     }

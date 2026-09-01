@@ -72,7 +72,7 @@ ever imported by runtime source, so none reaches a Worker bundle.
 
 **A tool the pipeline shells out to is a peer dependency, declared.** `buildCSS` runs
 `execFileSync("tailwindcss", …)` exactly as `buildJS` runs `esbuild` and the image step runs
-`sharp`; the three are one category. Nothing *imports* `tailwindcss`, which is exactly how such a
+`sharp`; the three are one category. Nothing _imports_ `tailwindcss`, which is exactly how such a
 requirement escapes declaration — but an undeclared requirement does not stop being one, it only
 stops being checked, and it surfaces as a `command not found` mid-build where `bun install` should
 have warned.
@@ -85,7 +85,7 @@ consequence of the declaration, not its justification — the declaration was ow
 
 ### 3d. CSS Source Scanning Stops at `ui/`
 
-**Tailwind never scans `node_modules`.** Shipping raw source therefore does not ship *rules* — a
+**Tailwind never scans `node_modules`.** Shipping raw source therefore does not ship _rules_ — a
 consumer's build sees forge's markup only if something tells its scanner where to look, and a class
 with no rule renders as an attribute that does nothing.
 
@@ -95,7 +95,7 @@ monorepo alike. A consumer-side path would have to hardcode an install layout an
 under most of them.
 
 **The scope stops at `ui/`, and that is the decision rather than the reach of a relative path.** A
-component library owes its consumers the classes its own components emit — importing `ui` *is* the
+component library owes its consumers the classes its own components emit — importing `ui` _is_ the
 statement that they will be rendered. A namespace whose markup is opt-in owes them something
 different: whether an app mounts that surface is the app's call, not forge's, so what it owes is a
 **documented `@source` requirement in that namespace's README**, and the app scans it.

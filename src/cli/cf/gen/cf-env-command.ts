@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+
 import { createCommand } from "../../core/command";
 import { scopeLogger } from "../../core/log";
 import type { CommandBase } from "../../core/types";
@@ -18,13 +19,13 @@ export function readWranglerConfig(path: string): Record<string, unknown> {
 export async function loadOptions(configPath?: string): Promise<GenOptions> {
   if (!configPath) return DEFAULT_OPTIONS;
   const mod = (await import(pathToFileURL(configPath).href)) as { options?: Partial<GenOptions>; default?: Partial<GenOptions> };
-  return { ...DEFAULT_OPTIONS, ...(mod.options ?? mod.default ?? {}) };
+  return { ...DEFAULT_OPTIONS, ...(mod.options ?? mod.default) };
 }
 
-function formatWithBiome(outPath: string, cwd: string): void {
-  const biome = spawnSync("biome", ["check", "--write", outPath], { stdio: "inherit", cwd });
-  if (biome.status !== 0 && biome.error) {
-    spawnSync(resolve(cwd, "node_modules/.bin/biome"), ["check", "--write", outPath], { stdio: "inherit", cwd });
+function formatGenerated(outPath: string, cwd: string): void {
+  const oxfmt = spawnSync("oxfmt", [outPath], { stdio: "inherit", cwd });
+  if (oxfmt.status !== 0 && oxfmt.error) {
+    spawnSync(resolve(cwd, "node_modules/.bin/oxfmt"), [outPath], { stdio: "inherit", cwd });
   }
 }
 
@@ -58,7 +59,7 @@ export function createGenEnvCommand(): CommandBase {
 
       const entries = [...collectBindings(cfg, options), ...collectVars(devVars, wranglerVars, options)];
       writeFileSync(outPath, emit(entries));
-      formatWithBiome(outPath, cwd);
+      formatGenerated(outPath, cwd);
 
       log.info(`wrote ${entries.length} entries to ${outPath}`);
     },

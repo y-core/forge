@@ -26,8 +26,8 @@ export interface ConfigDescriptor<ConfigData, Keys extends string = string> {
   overrides?: ConfigOverrides<ConfigData>;
 }
 
-function resolve<ConfigData>(env: object, descriptor: ConfigDescriptor<ConfigData>): ConfigData {
-  const record = env as Record<string, unknown>;
+function resolve<ConfigData>(bindings: object, descriptor: ConfigDescriptor<ConfigData>): ConfigData {
+  const record = bindings as Record<string, unknown>;
   const mapped = applyMapping(record, descriptor.map);
   let config = parseEnv(descriptor.schema, mapped);
   if (descriptor.overrides?.detect(record)) {
@@ -42,12 +42,12 @@ export function env<K extends string>(name: K): EnvRef<K> {
 }
 
 /** Recursively projects an env record through an {@link EnvMapping}. @internal */
-export function applyMapping(env: Record<string, unknown>, map: EnvMapping): unknown {
+export function applyMapping(source: Record<string, unknown>, map: EnvMapping): unknown {
   if (typeof map === "string") return map;
-  if ("__env" in map) return env[(map as EnvRef).__env];
+  if ("__env" in map) return source[(map as EnvRef).__env];
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(map)) {
-    result[key] = applyMapping(env, value);
+    result[key] = applyMapping(source, value);
   }
   return result;
 }
@@ -77,8 +77,8 @@ export function optionalGroup<T extends Record<string, v.GenericSchema>>(
 }
 
 /** Returns config from store, or an empty object cast to T when no store is registered. @public */
-export function resolveConfig<T>(store: Config<T> | undefined, env: object): T {
-  return (store ? store.get(env) : {}) as T;
+export function resolveConfig<T>(store: Config<T> | undefined, bindings: object): T {
+  return (store ? store.get(bindings) : {}) as T;
 }
 
 /** Lazy config holder that resolves and caches parsed config per distinct `env`. @public */
@@ -86,11 +86,11 @@ export class Config<ConfigData> {
   #cache = new WeakMap<object, ConfigData>();
   #seed: ConfigData | undefined;
   #hasSeed = false;
-  readonly #resolve: (env: object) => ConfigData;
+  readonly #resolve: (bindings: object) => ConfigData;
 
   private constructor(map: EnvMapping, schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>, overrides?: ConfigOverrides<ConfigData>) {
     const descriptor: ConfigDescriptor<ConfigData> = { map, schema, ...(overrides ? { overrides } : {}) };
-    this.#resolve = (env: object) => resolve(env, descriptor);
+    this.#resolve = (bindings: object) => resolve(bindings, descriptor);
   }
 
   /** Instantiates a holder; prefer the {@link createConfig} factory. @internal */
@@ -103,12 +103,12 @@ export class Config<ConfigData> {
   }
 
   /** Resolves config for `env`, caching the parsed result. */
-  get(env: object): ConfigData {
+  get(bindings: object): ConfigData {
     if (this.#hasSeed) return this.#seed as ConfigData;
-    const hit = this.#cache.get(env);
+    const hit = this.#cache.get(bindings);
     if (hit) return hit;
-    const resolved = this.#resolve(env);
-    this.#cache.set(env, resolved);
+    const resolved = this.#resolve(bindings);
+    this.#cache.set(bindings, resolved);
     return resolved;
   }
 

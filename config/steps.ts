@@ -6,6 +6,7 @@
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import pkg from "../package.json" with { type: "json" };
 import { resolveAppRoot } from "../src/cli/core/mod";
 import {
@@ -18,6 +19,7 @@ import {
   docsStep,
   type ExportsMap,
   exportsStep,
+  formatStep,
   jsxStep,
   lintStep,
   modernCssStep,
@@ -25,6 +27,7 @@ import {
   type Step,
   ssrBoundaryStep,
   testStep,
+  typeAwareLintStep,
   typecheckStep,
 } from "../src/cli/pkg/mod";
 import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
@@ -43,8 +46,10 @@ const EXPORTS = pkg.exports as ExportsMap;
 /** The gate's steps, in execution order. */
 export const STEPS: readonly Step[] = [
   typecheckStep(),
-  { label: "typecheck:workers-consumer", tail: 20, cmd: ["tsgo", "--noEmit", "-p", "tests/fixtures/workers-consumer/tsconfig.json"] },
+  { label: "typecheck:workers-consumer", tail: 20, cmd: ["tsc", "--noEmit", "-p", "tests/fixtures/workers-consumer/tsconfig.json"] },
   lintStep({ sources: ["src/", "config/"] }),
+  formatStep({ sources: ["."] }),
+  typeAwareLintStep({ sources: ["src/", "config/"] }),
   testStep(),
   exportsStep({
     root: ROOT,
@@ -111,7 +116,7 @@ export const STEPS: readonly Step[] = [
   // sync and the reversion looks like nobody's change. Nothing detected that until this step: it
   // compares the tree against the pinned corpus in `node_modules` and reconciles the Guide Index
   // with the directory in both directions. Its fixer is the sync itself.
-  { label: "governance", tail: 20, cmd: ["governance-sync", "--check"], fix: ["governance-sync"] },
+  { label: "governance", tail: 20, cmd: ["gov", "sync", "--check"], fix: ["gov", "sync"] },
   docsStep({
     root: ROOT,
     packageName: pkg.name,

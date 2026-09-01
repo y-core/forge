@@ -2,7 +2,7 @@
 
 App bootstrap and request lifecycle for `@y-core/forge` — the namespace that turns a set of routes, middleware, and handlers into a single Cloudflare Workers `fetch` default export.
 
-`createApp` returns a `Forge` instance: a Workers-native request router wrapped in a fail-closed error boundary. Its `fetch(request, env, executionCtx)` method *is* the Workers module handler, so the entire wiring is `export default app`. Around routing it provides path-scoped middleware, per-request config/env injection, two route-handler factories (`definePage`, `defineAction`), a static-asset catch-all (`applyAssets`), startup binding validation (`validateEnv`, `validateBindings`), and a JSON health endpoint (`healthCheck`).
+`createApp` returns a `Forge` instance: a Workers-native request router wrapped in a fail-closed error boundary. Its `fetch(request, env, executionCtx)` method _is_ the Workers module handler, so the entire wiring is `export default app`. Around routing it provides path-scoped middleware, per-request config/env injection, two route-handler factories (`definePage`, `defineAction`), a static-asset catch-all (`applyAssets`), startup binding validation (`validateEnv`, `validateBindings`), and a JSON health endpoint (`healthCheck`).
 
 This namespace is an **integration namespace** — it composes `form`, `http`, `logging`, `result`, `router`, `security`, and `validation` into the app lifecycle. See [`.decisions/implementation/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) and [`.decisions/implementation/LIBRARY_ARCHITECTURE.md`](../../.decisions/implementation/LIBRARY_ARCHITECTURE.md) for the authoritative architecture.
 
@@ -28,14 +28,7 @@ This namespace is an **integration namespace** — it composes `form`, `http`, `
 A complete Workers entry that wires middleware, routes, assets, and a health check:
 
 ```ts
-import {
-  createApp,
-  applyAssets,
-  definePage,
-  defineAction,
-  healthCheck,
-  validateBindings,
-} from "@y-core/forge/app";
+import { createApp, applyAssets, definePage, defineAction, healthCheck, validateBindings } from "@y-core/forge/app";
 import { renderPage } from "@y-core/forge/jsx";
 import { route, createController } from "@y-core/forge/router";
 import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
@@ -49,7 +42,7 @@ interface Bindings {
 }
 
 const app = createApp<Bindings>({
-  config: configStore,                               // resolved once per request → c.config
+  config: configStore, // resolved once per request → c.config
   isDebug: (c) => configStore.get(c.env).site.debug, // show error detail when true
 });
 
@@ -59,21 +52,21 @@ app.use("*", validateBindings(v.object({ CSRF_SECRET: v.string() })));
 
 // Routes as data (single source of truth).
 const routes = route({
-  home:    { method: "GET",  pattern: "/" },
+  home: { method: "GET", pattern: "/" },
   contact: { method: "POST", pattern: "/api/contact" },
-  health:  { method: "GET",  pattern: "/api/health" },
+  health: { method: "GET", pattern: "/api/health" },
 });
 
 const controller = createController(routes, {
   actions: {
-    home:    homePage,
+    home: homePage,
     contact: { middleware: [csrfGuard], handler: contactAction },
-    health:  healthCheck<Bindings>({ kv: (c) => Boolean(c.env.MY_KV) }),
+    health: healthCheck<Bindings>({ kv: (c) => Boolean(c.env.MY_KV) }),
   },
 });
 
 app.map(routes, controller);
-applyAssets(app, { notFoundView });   // static-asset catch-all over the ASSETS binding
+applyAssets(app, { notFoundView }); // static-asset catch-all over the ASSETS binding
 
 export default app;
 ```
@@ -88,16 +81,16 @@ export default app;
 
 Creates a `Forge` instance with a structured error boundary.
 
-| Option | Type | Description |
-|---|---|---|
-| `config` | `Config<T>` (object) | A config store (from `@y-core/forge/config`). Registered against the app and resolved once per request; the result is exposed as `c.config` and to page/action handlers. |
-| `isDebug` | `(c: AppContext<Bindings>) => boolean` | When it returns `true`, the default `500` page includes the error message; otherwise a generic message is shown. Throwing inside `isDebug` is caught and treated as `false`. |
-| `onError` | `(error: Error, c: AppContext<Bindings>) => Response \| Promise<Response>` | Custom app-level error handler. Replaces the default `500` page. If it throws, forge falls back to the default page. |
-| `logger` | `Logger` | Custom logger injected into the error handler. Defaults to `createLogger("app")`. |
-| `middleware` | `(app: Forge<Bindings>) => void` | Wiring step 1 — register global middleware (typically one `applyMiddlewareChain` call). |
-| `routes` | `(app: Forge<Bindings>) => void` | Wiring step 2 — register routes (`app.map` calls). |
-| `finalize` | `(app: Forge<Bindings>) => void` | Wiring step 3 — late registrations (e.g. dev-only routes) that must precede the asset catch-all. |
-| `assets` | `AssetOptions<Bindings>` | Wiring step 4 — registers the static-asset catch-all **last**, so real routes always win. |
+| Option       | Type                                                                       | Description                                                                                                                                                                  |
+| ------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`     | `Config<T>` (object)                                                       | A config store (from `@y-core/forge/config`). Registered against the app and resolved once per request; the result is exposed as `c.config` and to page/action handlers.     |
+| `isDebug`    | `(c: AppContext<Bindings>) => boolean`                                     | When it returns `true`, the default `500` page includes the error message; otherwise a generic message is shown. Throwing inside `isDebug` is caught and treated as `false`. |
+| `onError`    | `(error: Error, c: AppContext<Bindings>) => Response \| Promise<Response>` | Custom app-level error handler. Replaces the default `500` page. If it throws, forge falls back to the default page.                                                         |
+| `logger`     | `Logger`                                                                   | Custom logger injected into the error handler. Defaults to `createLogger("app")`.                                                                                            |
+| `middleware` | `(app: Forge<Bindings>) => void`                                           | Wiring step 1 — register global middleware (typically one `applyMiddlewareChain` call).                                                                                      |
+| `routes`     | `(app: Forge<Bindings>) => void`                                           | Wiring step 2 — register routes (`app.map` calls).                                                                                                                           |
+| `finalize`   | `(app: Forge<Bindings>) => void`                                           | Wiring step 3 — late registrations (e.g. dev-only routes) that must precede the asset catch-all.                                                                             |
+| `assets`     | `AssetOptions<Bindings>`                                                   | Wiring step 4 — registers the static-asset catch-all **last**, so real routes always win.                                                                                    |
 
 All options are optional; `createApp()` with no arguments is valid. The generic `Bindings` parameter types `c.env` throughout the app.
 
@@ -129,12 +122,12 @@ Manual wiring (`createApp()` + `app.use` + `app.map` + `applyAssets`) remains fu
 
 `createApp` returns a `Forge<Bindings>`. The `Forge` class is also exported directly for typing.
 
-| Member | Signature | Description |
-|---|---|---|
-| `fetch` | `(request: Request, env: Bindings, executionCtx?: ExecutionContext) => Promise<Response>` | The Workers module `fetch` handler. `HEAD` requests are served as `GET` with the body stripped. `executionCtx` defaults to a mock context for non-Workers environments. |
-| `use` | `(path: string, ...handlers: Middleware[]) => void` | Registers path-scoped global middleware. `"*"` matches every request; `"/admin/*"` matches `/admin` and anything beneath it. |
-| `map` | `(routes, controller) => void` | Declarative route registration — the canonical way to add routes. |
-| `request` | `(path: string, init?: RequestInit, env?: Bindings) => Promise<Response>` | Test helper: builds a `Request` from `path`, dispatches the full chain, and awaits any `waitUntil` promises before returning. |
+| Member    | Signature                                                                                 | Description                                                                                                                                                             |
+| --------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch`   | `(request: Request, env: Bindings, executionCtx?: ExecutionContext) => Promise<Response>` | The Workers module `fetch` handler. `HEAD` requests are served as `GET` with the body stripped. `executionCtx` defaults to a mock context for non-Workers environments. |
+| `use`     | `(path: string, ...handlers: Middleware[]) => void`                                       | Registers path-scoped global middleware. `"*"` matches every request; `"/admin/*"` matches `/admin` and anything beneath it.                                            |
+| `map`     | `(routes, controller) => void`                                                            | Declarative route registration — the canonical way to add routes.                                                                                                       |
+| `request` | `(path: string, init?: RequestInit, env?: Bindings) => Promise<Response>`                 | Test helper: builds a `Request` from `path`, dispatches the full chain, and awaits any `waitUntil` promises before returning.                                           |
 
 Because `fetch` is the module handler, the whole app ships as:
 
@@ -148,15 +141,15 @@ The router is built lazily on the first request, with a static middleware stack:
 
 Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) into a `RequestHandler`, with optional caching, custom headers, and error recovery.
 
-| Field | Type | Description |
-|---|---|---|
-| `action` | `(c, config, data) => ActionData \| Response \| Promise<...>` | Optional. Runs on every non-`GET` request, before the loader, so the view renders post-mutation state. Its return value reaches the view as `state.actionData`; returning a `Response` short-circuits rendering. Skipped entirely on a `GET`. `data` is the `schema`'s output, and is `undefined` on a page that declares none. |
-| `schema` | `S extends v.GenericSchema` | Optional. Routes every non-`GET` request through the same read → guard → validate sequence `defineAction` runs, so `action` is unreachable without a passing `v.safeParse` and receives the output as its third argument. A refused body becomes a `422` fragment (with the configured `cache`/`headers` applied) and `action`, `loader` and `view` never run. Omitting it leaves the page as it was. |
-| `loader` | `(c, config) => LoaderData \| Response \| Promise<...>` | Optional. Fetches page data. Returning a `Response` (e.g. a redirect) short-circuits rendering — the response still gets the configured headers/cache applied. |
-| `view` | `(c, config, state) => Response \| Promise<Response>` | Required. Builds the page response. `state` is `{ data, actionData, method }`: `state.data` is the loader's return value, `state.actionData` the action's (`undefined` on a `GET`), and `state.method` is `"GET"` or `"POST"`. |
-| `cache` | `"no-store" \| CacheDirective` | Optional. Sets `Cache-Control`. `CacheDirective` is `{ maxAge: number; scope?: "public" \| "private" }` (scope defaults to `"public"`). |
-| `headers` | `Record<string, string>` | Optional. Extra response headers, merged onto whatever the view returned. |
-| `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Called if `action`, `loader`, or `view` throws. If omitted, the error re-throws to the app's error boundary. |
+| Field     | Type                                                          | Description                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`  | `(c, config, data) => ActionData \| Response \| Promise<...>` | Optional. Runs on every non-`GET` request, before the loader, so the view renders post-mutation state. Its return value reaches the view as `state.actionData`; returning a `Response` short-circuits rendering. Skipped entirely on a `GET`. `data` is the `schema`'s output, and is `undefined` on a page that declares none.                                                                       |
+| `schema`  | `S extends v.GenericSchema`                                   | Optional. Routes every non-`GET` request through the same read → guard → validate sequence `defineAction` runs, so `action` is unreachable without a passing `v.safeParse` and receives the output as its third argument. A refused body becomes a `422` fragment (with the configured `cache`/`headers` applied) and `action`, `loader` and `view` never run. Omitting it leaves the page as it was. |
+| `loader`  | `(c, config) => LoaderData \| Response \| Promise<...>`       | Optional. Fetches page data. Returning a `Response` (e.g. a redirect) short-circuits rendering — the response still gets the configured headers/cache applied.                                                                                                                                                                                                                                        |
+| `view`    | `(c, config, state) => Response \| Promise<Response>`         | Required. Builds the page response. `state` is `{ data, actionData, method }`: `state.data` is the loader's return value, `state.actionData` the action's (`undefined` on a `GET`), and `state.method` is `"GET"` or `"POST"`.                                                                                                                                                                        |
+| `cache`   | `"no-store" \| CacheDirective`                                | Optional. Sets `Cache-Control`. `CacheDirective` is `{ maxAge: number; scope?: "public" \| "private" }` (scope defaults to `"public"`).                                                                                                                                                                                                                                                               |
+| `headers` | `Record<string, string>`                                      | Optional. Extra response headers, merged onto whatever the view returned.                                                                                                                                                                                                                                                                                                                             |
+| `onError` | `(error: Error, c) => Response \| Promise<Response>`          | Optional. Called if `action`, `loader`, or `view` throws. If omitted, the error re-throws to the app's error boundary.                                                                                                                                                                                                                                                                                |
 
 **The submission sequence's options are declared here too.** `honeypot`, `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. `onValidationError` is what lets a self-posting page answer a refused body by re-rendering its own view with the field errors in place, instead of the default `422` fragment.
 
@@ -184,16 +177,16 @@ Wires a `read → guard → validate → handle` pipeline into a POST handler th
 
 `defineAction<S, Bindings, ConfigData>` takes three type arguments and infers `S` from `def.schema`. TypeScript has no partial type-argument inference, so a call site naming `Bindings` names the schema too (`defineAction<typeof ContactSchema, Bindings, AppConfig>`); `createHandlerFactory` removes the need for any of them.
 
-| Field | Type | Description |
-|---|---|---|
-| `schema` | `S extends v.GenericSchema` | The body schema. Prefer `strictObject` from `@y-core/forge/validation` — it is what turns a field nobody declared into a refusal rather than a value silently dropped, and it holds for every key a caller can send. |
-| `handle` | `(data: v.InferOutput<S>, c, config) => Response \| Promise<Response>` | Runs after the schema passes. Receives the schema's **output** (so a transform reaches it as the type it actually is), the context, and the resolved `config`. |
-| `onValidationError` | `(issues: readonly v.BaseIssue<unknown>[], c) => Response \| Promise<Response>` | Optional. Replaces the default validation fragment. It receives the **issues**, not formatted strings: an issue embeds the rejected value, and under a strict object the caller's own key, so how much of a caller's text travels back in a refusal is the app's decision. |
-| `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Overrides the default `500` fragment for anything that throws inside the validate-and-handle region — `handle`, the schema, or `onValidationError`. |
-| `honeypot` | `string` | Optional. The field carrying this route's decoy — the same value the view gave `<Honeypot field={…} />`, best held as one app-owned constant referenced by both. Naming it here is what checks the decoy **and** drops it, so the schema never declares a field no human fills. No default and no shorthand: a name forge could supply is a name every bot already knows to skip. |
-| `turnstile` | `ActionTurnstileOptions` | Optional. `{ secretKey, tokenField?, verify }`. The pipeline verifies the token and drops the token field, so the schema is never asked to declare it. `tokenField` is fixed at definition time (the field is dropped whether or not verification reaches the network); `secretKey` and `verify` resolve per request. |
-| `onBotDetected` | `(rejection: BotRejection, c) => Response \| Promise<Response>` | Optional. Replaces the refusal a tripped guard renders. `BotRejection` is `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`, so an app can tell a siteverify outage from an attack. The default says nothing about the guard at all. |
-| `maxBytes` | `number` | Optional. Body-size cap for this route's form parse. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). A `csrfProtection` guard on the same route parses the body first, so raising this also means raising the guard's own `maxBytes`. |
+| Field               | Type                                                                            | Description                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`            | `S extends v.GenericSchema`                                                     | The body schema. Prefer `strictObject` from `@y-core/forge/validation` — it is what turns a field nobody declared into a refusal rather than a value silently dropped, and it holds for every key a caller can send.                                                                                                                                                              |
+| `handle`            | `(data: v.InferOutput<S>, c, config) => Response \| Promise<Response>`          | Runs after the schema passes. Receives the schema's **output** (so a transform reaches it as the type it actually is), the context, and the resolved `config`.                                                                                                                                                                                                                    |
+| `onValidationError` | `(issues: readonly v.BaseIssue<unknown>[], c) => Response \| Promise<Response>` | Optional. Replaces the default validation fragment. It receives the **issues**, not formatted strings: an issue embeds the rejected value, and under a strict object the caller's own key, so how much of a caller's text travels back in a refusal is the app's decision.                                                                                                        |
+| `onError`           | `(error: Error, c) => Response \| Promise<Response>`                            | Optional. Overrides the default `500` fragment for anything that throws inside the validate-and-handle region — `handle`, the schema, or `onValidationError`.                                                                                                                                                                                                                     |
+| `honeypot`          | `string`                                                                        | Optional. The field carrying this route's decoy — the same value the view gave `<Honeypot field={…} />`, best held as one app-owned constant referenced by both. Naming it here is what checks the decoy **and** drops it, so the schema never declares a field no human fills. No default and no shorthand: a name forge could supply is a name every bot already knows to skip. |
+| `turnstile`         | `ActionTurnstileOptions`                                                        | Optional. `{ secretKey, tokenField?, verify }`. The pipeline verifies the token and drops the token field, so the schema is never asked to declare it. `tokenField` is fixed at definition time (the field is dropped whether or not verification reaches the network); `secretKey` and `verify` resolve per request.                                                             |
+| `onBotDetected`     | `(rejection: BotRejection, c) => Response \| Promise<Response>`                 | Optional. Replaces the refusal a tripped guard renders. `BotRejection` is `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`, so an app can tell a siteverify outage from an attack. The default says nothing about the guard at all.                                                                                                                                    |
+| `maxBytes`          | `number`                                                                        | Optional. Body-size cap for this route's form parse. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). A `csrfProtection` guard on the same route parses the body first, so raising this also means raising the guard's own `maxBytes`.                                                                                                                                              |
 
 **What reaches the schema.** Every entry the caller sent, minus the fields a guard on that request consumed. An **absent field is absent** rather than `""`, which is what keeps `v.optional` reachable and required-ness a presence check. A **repeated key arrives as an array**, so a scalar schema refuses it in its own words and a route that genuinely accepts many says so with `v.array`. A **`File` passes through unchanged**, so an upload schema can see one.
 
@@ -226,13 +219,13 @@ export const contactAction = defineAction<typeof ContactSchema, Bindings, AppCon
 
 The automatic error responses (all are HTMX-swappable fragments):
 
-| Status | Cause |
-|---|---|
-| `413` | Form body exceeds the size cap (`parseFormData` throws with `status: 413`). |
-| `400` | Body is unparseable as form data. |
-| `422` | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else ([`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1b). |
-| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above, so a bot cannot tell a guard from a mistyped field by comparing answers ([`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §4c). |
-| `500` | Anything in the validate-and-handle region throws, and no `onError` was supplied; the failure is logged. That covers `handle`, a schema whose `v.transform`/`v.check` throws on malformed input (valibot does not catch those), and a throwing `onValidationError`. A throwing schema is a route defect, not a bad request, which is why it is a `500` and not a `400`. |
+| Status | Cause                                                                                                                                                                                                                                                                                                                                                                   |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `413`  | Form body exceeds the size cap (`parseFormData` throws with `status: 413`).                                                                                                                                                                                                                                                                                             |
+| `400`  | Body is unparseable as form data.                                                                                                                                                                                                                                                                                                                                       |
+| `422`  | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else ([`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1b).                                                                           |
+| `422`  | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above, so a bot cannot tell a guard from a mistyped field by comparing answers ([`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §4c).                                                                                                               |
+| `500`  | Anything in the validate-and-handle region throws, and no `onError` was supplied; the failure is logged. That covers `handle`, a schema whose `v.transform`/`v.check` throws on malformed input (valibot does not catch those), and a throwing `onValidationError`. A throwing schema is a route defect, not a bad request, which is why it is a `500` and not a `400`. |
 
 ### `createHandlerFactory<Bindings, ConfigData>()`
 
@@ -275,11 +268,11 @@ health: healthCheck<Bindings>({
 
 `applyAssets` registers a catch-all route that serves static files from the `ASSETS` binding, falling back to a typed `notFoundView`. The `Bindings` type must include an optional `ASSETS` fetcher (`HasAssets`).
 
-| Parameter | Type | Description |
-|---|---|---|
-| `app` | `Forge<Bindings>` | The app to register the catch-all on. |
+| Parameter              | Type                                           | Description                                                                                                                     |
+| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `app`                  | `Forge<Bindings>`                              | The app to register the catch-all on.                                                                                           |
 | `options.notFoundView` | `(c, config) => Response \| Promise<Response>` | Rendered when the asset is missing, the binding is absent, or the method is not `GET`/`HEAD`. Receives the resolved app config. |
-| `path` | `string` (default `"*"`) | Pattern for the catch-all route. |
+| `path`                 | `string` (default `"*"`)                       | Pattern for the catch-all route.                                                                                                |
 
 ```ts
 import { applyAssets } from "@y-core/forge/app";
@@ -295,12 +288,12 @@ applyAssets(app, {
 
 Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` (and reusable as `definePage`'s `onError`). It preserves the default boundary's guarantees — the real error message appears **only** when `isDebug(c)` returns `true` (a throwing `isDebug` counts as `false`), and all interpolated content is HTML-escaped.
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `isDebug` | `(c) => boolean` | `() => false` | Gate for showing `error.message`. |
-| `title` | `string` | `"Something went wrong"` | Page `<title>` and heading. |
-| `stylesheetHref` | `string \| ((c) => string)` | — | Optional stylesheet link (static or per-request, e.g. hashed asset path). A throwing resolver renders the page without the link. |
-| `homeHref` | `string` | — | Optional "Back to safety" link. |
+| Option           | Type                        | Default                  | Description                                                                                                                      |
+| ---------------- | --------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `isDebug`        | `(c) => boolean`            | `() => false`            | Gate for showing `error.message`.                                                                                                |
+| `title`          | `string`                    | `"Something went wrong"` | Page `<title>` and heading.                                                                                                      |
+| `stylesheetHref` | `string \| ((c) => string)` | —                        | Optional stylesheet link (static or per-request, e.g. hashed asset path). A throwing resolver renders the page without the link. |
+| `homeHref`       | `string`                    | —                        | Optional "Back to safety" link.                                                                                                  |
 
 ```ts
 import { createApp, createErrorPage } from "@y-core/forge/app";
@@ -329,10 +322,7 @@ In production apps the schema is **typically generated**, not hand-written: `for
 import { validateEnv, validateBindings } from "@y-core/forge/app";
 import { v } from "@y-core/forge/validation";
 
-const EnvSchema = v.object({
-  CSRF_SECRET: v.string(),
-  TURNSTILE_SECRET_KEY: v.string(),
-});
+const EnvSchema = v.object({ CSRF_SECRET: v.string(), TURNSTILE_SECRET_KEY: v.string() });
 
 // One-shot:
 const env = validateEnv(rawEnv, EnvSchema);
@@ -367,10 +357,7 @@ Build the route map with `route()` from `@y-core/forge/router` — names mapped 
 ```ts
 import { route } from "@y-core/forge/router";
 
-export const routes = route({
-  home:    { method: "GET",  pattern: "/" },
-  contact: { method: "POST", pattern: "/api/contact" },
-});
+export const routes = route({ home: { method: "GET", pattern: "/" }, contact: { method: "POST", pattern: "/api/contact" } });
 ```
 
 ### 2. Bind handlers in a controller
@@ -382,7 +369,7 @@ import { createController } from "@y-core/forge/router";
 
 export const controller = createController(routes, {
   actions: {
-    home:    homePage,                                            // bare handler
+    home: homePage, // bare handler
     contact: { middleware: [csrfGuard], handler: contactAction }, // per-route middleware
   },
 });
@@ -392,8 +379,8 @@ export const controller = createController(routes, {
 
 ```ts
 app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] })); // globals first
-app.map(routes, controller);                                          // routes
-applyAssets(app, { notFoundView });                                   // catch-all last
+app.map(routes, controller); // routes
+applyAssets(app, { notFoundView }); // catch-all last
 export default app;
 ```
 
@@ -443,11 +430,15 @@ When `createApp({ config })` is given a store, `fetch` calls `resolveConfig(stor
 ```ts
 import { Forge } from "@y-core/forge/app";
 
-const res = await app.request("/api/contact", {
-  method: "POST",
-  headers: { "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ _csrf: token, name: "Jane", email: "j@x.io", message: "Hello there" }),
-}, MINIMUM_ENV);
+const res = await app.request(
+  "/api/contact",
+  {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ _csrf: token, name: "Jane", email: "j@x.io", message: "Hello there" }),
+  },
+  MINIMUM_ENV,
+);
 
 expect(res.status).toBe(200);
 ```
@@ -481,26 +472,26 @@ Related docs:
 
 ## Exports
 
-| Symbol | Kind | Summary |
-|---|---|---|
-| `createApp` | function | Creates a `Forge` app with a structured error boundary. |
-| `Forge` | class | The app object — a Workers-native router with `fetch`/`use`/`map`/`request`. |
-| `definePage` | function | Loader + view → `RequestHandler`, with caching and error recovery. |
-| `defineAction` | function | Schema-validated POST pipeline with auto error fragments. |
-| `createHandlerFactory` | function | Returns `definePage`/`defineAction` with `Bindings`/`ConfigData` pre-bound. |
-| `HandlerFactory` | type | The pre-bound pair returned by `createHandlerFactory`. |
-| `healthCheck` | function | Concurrent named checks → JSON `{ ok, checks }` (`200`/`503`). |
-| `applyAssets` | function | Registers the static-asset catch-all over the `ASSETS` binding. |
-| `serveAssets` | function | The underlying asset-serving `RequestHandler`. |
-| `validateEnv` | function | One-shot env validation against a valibot schema (throws). |
-| `validateBindings` | function | Middleware-form binding validation (first request / on change). |
-| `ConfigKey` | const | Context key holding the resolved per-request app config. |
-| `ActionDefinition` | type | The `defineAction` config shape. |
-| `ActionTurnstileOptions` | type | `{ secretKey, tokenField?, verify }` for `turnstile` on either builder. |
-| `BotRejection` | type | Why a guard refused — `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`. |
-| `AppOptions` | type | The `createApp` options shape. |
-| `AssetOptions` | type | The `applyAssets`/`serveAssets` options (`notFoundView`). |
-| `AssetsFetcher` | type | Shape of the `ASSETS` binding (`fetch(req)`). |
-| `CacheDirective` | type | `{ maxAge; scope? }` for `definePage({ cache })`. |
-| `HealthCheckResult` | type | `{ ok; checks }` health response body. |
-| `PageDefinition` | type | The `definePage` config shape, inheriting the submission sequence's options. |
+| Symbol                   | Kind     | Summary                                                                            |
+| ------------------------ | -------- | ---------------------------------------------------------------------------------- |
+| `createApp`              | function | Creates a `Forge` app with a structured error boundary.                            |
+| `Forge`                  | class    | The app object — a Workers-native router with `fetch`/`use`/`map`/`request`.       |
+| `definePage`             | function | Loader + view → `RequestHandler`, with caching and error recovery.                 |
+| `defineAction`           | function | Schema-validated POST pipeline with auto error fragments.                          |
+| `createHandlerFactory`   | function | Returns `definePage`/`defineAction` with `Bindings`/`ConfigData` pre-bound.        |
+| `HandlerFactory`         | type     | The pre-bound pair returned by `createHandlerFactory`.                             |
+| `healthCheck`            | function | Concurrent named checks → JSON `{ ok, checks }` (`200`/`503`).                     |
+| `applyAssets`            | function | Registers the static-asset catch-all over the `ASSETS` binding.                    |
+| `serveAssets`            | function | The underlying asset-serving `RequestHandler`.                                     |
+| `validateEnv`            | function | One-shot env validation against a valibot schema (throws).                         |
+| `validateBindings`       | function | Middleware-form binding validation (first request / on change).                    |
+| `ConfigKey`              | const    | Context key holding the resolved per-request app config.                           |
+| `ActionDefinition`       | type     | The `defineAction` config shape.                                                   |
+| `ActionTurnstileOptions` | type     | `{ secretKey, tokenField?, verify }` for `turnstile` on either builder.            |
+| `BotRejection`           | type     | Why a guard refused — `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`. |
+| `AppOptions`             | type     | The `createApp` options shape.                                                     |
+| `AssetOptions`           | type     | The `applyAssets`/`serveAssets` options (`notFoundView`).                          |
+| `AssetsFetcher`          | type     | Shape of the `ASSETS` binding (`fetch(req)`).                                      |
+| `CacheDirective`         | type     | `{ maxAge; scope? }` for `definePage({ cache })`.                                  |
+| `HealthCheckResult`      | type     | `{ ok; checks }` health response body.                                             |
+| `PageDefinition`         | type     | The `definePage` config shape, inheriting the submission sequence's options.       |

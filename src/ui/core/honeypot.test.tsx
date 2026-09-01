@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { HONEYPOT_FIELD_DEFAULT } from "../../form/constants";
 import { isHoneypotFilled } from "../../form/honeypot";
 import { render } from "../../testing/render";

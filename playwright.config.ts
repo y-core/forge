@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+
 import { resolveChromiumPath } from "./src/cli/pkg/mod";
 
 /**

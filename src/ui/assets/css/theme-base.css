@@ -14,66 +14,66 @@
   --radius: 0.625rem;
 
   /* ── Semantic tokens — declared once, for both modes ───────────────────── */
-  --background:           var(--gray-1);
-  --foreground:           var(--gray-12);
+  --background: var(--gray-1);
+  --foreground: var(--gray-12);
 
-  --card:                 var(--gray-2);
-  --card-foreground:      var(--gray-12);
+  --card: var(--gray-2);
+  --card-foreground: var(--gray-12);
 
-  --popover:              var(--gray-2);
-  --popover-foreground:   var(--gray-12);
+  --popover: var(--gray-2);
+  --popover-foreground: var(--gray-12);
 
-  --primary:              var(--accent-9);
-  --primary-foreground:   var(--accent-contrast);
+  --primary: var(--accent-9);
+  --primary-foreground: var(--accent-contrast);
 
-  --secondary:            var(--gray-3);
+  --secondary: var(--gray-3);
   --secondary-foreground: var(--gray-12);
 
-  --muted:                var(--gray-3);
-  --muted-foreground:     var(--gray-11);
+  --muted: var(--gray-3);
+  --muted-foreground: var(--gray-11);
 
-  --accent:               var(--gray-3);
-  --accent-foreground:    var(--gray-12);
+  --accent: var(--gray-3);
+  --accent-foreground: var(--gray-12);
 
-  --destructive:            var(--red-9);
+  --destructive: var(--red-9);
   --destructive-foreground: var(--red-contrast);
 
-  --success:              var(--green-9);
-  --success-foreground:   var(--green-contrast);
-  --warning:              var(--yellow-9);
-  --warning-foreground:   var(--yellow-contrast);
+  --success: var(--green-9);
+  --success-foreground: var(--green-contrast);
+  --warning: var(--yellow-9);
+  --warning-foreground: var(--yellow-contrast);
 
-  --border:               var(--gray-6);
-  --input:                var(--gray-10);
+  --border: var(--gray-6);
+  --input: var(--gray-10);
 
-  --track:                var(--gray-10);
-  --ring:                 var(--gray-11);
+  --track: var(--gray-10);
+  --ring: var(--gray-11);
 
-  --overlay:              var(--black-a6);
+  --overlay: var(--black-a6);
 
-  --status-danger-subtle:             var(--red-2);
-  --status-danger-subtle-foreground:  var(--red-12);
-  --status-danger-strong:             var(--red-3);
-  --status-danger-strong-foreground:  var(--red-11);
-  --status-danger-border:             var(--red-6);
+  --status-danger-subtle: var(--red-2);
+  --status-danger-subtle-foreground: var(--red-12);
+  --status-danger-strong: var(--red-3);
+  --status-danger-strong-foreground: var(--red-11);
+  --status-danger-border: var(--red-6);
 
-  --status-warning-subtle:            var(--yellow-2);
+  --status-warning-subtle: var(--yellow-2);
   --status-warning-subtle-foreground: var(--yellow-12);
-  --status-warning-strong:            var(--yellow-3);
+  --status-warning-strong: var(--yellow-3);
   --status-warning-strong-foreground: var(--yellow-11);
-  --status-warning-border:            var(--yellow-6);
+  --status-warning-border: var(--yellow-6);
 
-  --status-success-subtle:            var(--emerald-2);
+  --status-success-subtle: var(--emerald-2);
   --status-success-subtle-foreground: var(--emerald-12);
-  --status-success-strong:            var(--emerald-3);
+  --status-success-strong: var(--emerald-3);
   --status-success-strong-foreground: var(--emerald-11);
-  --status-success-border:            var(--emerald-6);
+  --status-success-border: var(--emerald-6);
 
-  --status-info-subtle:               var(--blue-2);
-  --status-info-subtle-foreground:    var(--blue-12);
-  --status-info-strong:               var(--blue-3);
-  --status-info-strong-foreground:    var(--blue-11);
-  --status-info-border:               var(--blue-6);
+  --status-info-subtle: var(--blue-2);
+  --status-info-subtle-foreground: var(--blue-12);
+  --status-info-strong: var(--blue-3);
+  --status-info-strong-foreground: var(--blue-11);
+  --status-info-border: var(--blue-6);
 }
 
 /* `color-scheme` is what selects a scheme's `light-dark()` branch, and it lives here rather than in a
@@ -90,63 +90,63 @@
 }
 
 @theme inline {
-  --color-background:                  var(--background);
-  --color-foreground:                  var(--foreground);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
 
-  --color-card:                        var(--card);
-  --color-card-foreground:             var(--card-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
 
-  --color-popover:                     var(--popover);
-  --color-popover-foreground:          var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
 
-  --color-primary:                     var(--primary);
-  --color-primary-foreground:          var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
 
-  --color-secondary:                   var(--secondary);
-  --color-secondary-foreground:        var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
 
-  --color-muted:                       var(--muted);
-  --color-muted-foreground:            var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
 
-  --color-accent:                      var(--accent);
-  --color-accent-foreground:           var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
 
-  --color-destructive:                 var(--destructive);
-  --color-destructive-foreground:      var(--destructive-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
-  --color-success:                     var(--success);
-  --color-success-foreground:          var(--success-foreground);
-  --color-warning:                     var(--warning);
-  --color-warning-foreground:          var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
 
-  --color-border:                      var(--border);
-  --color-input:                       var(--input);
-  --color-track:                       var(--track);
-  --color-ring:                        var(--ring);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-track: var(--track);
+  --color-ring: var(--ring);
 
-  --color-status-danger-subtle:             var(--status-danger-subtle);
-  --color-status-danger-subtle-foreground:  var(--status-danger-subtle-foreground);
-  --color-status-danger-strong:             var(--status-danger-strong);
-  --color-status-danger-strong-foreground:  var(--status-danger-strong-foreground);
-  --color-status-danger-border:             var(--status-danger-border);
+  --color-status-danger-subtle: var(--status-danger-subtle);
+  --color-status-danger-subtle-foreground: var(--status-danger-subtle-foreground);
+  --color-status-danger-strong: var(--status-danger-strong);
+  --color-status-danger-strong-foreground: var(--status-danger-strong-foreground);
+  --color-status-danger-border: var(--status-danger-border);
 
-  --color-status-warning-subtle:            var(--status-warning-subtle);
+  --color-status-warning-subtle: var(--status-warning-subtle);
   --color-status-warning-subtle-foreground: var(--status-warning-subtle-foreground);
-  --color-status-warning-strong:            var(--status-warning-strong);
+  --color-status-warning-strong: var(--status-warning-strong);
   --color-status-warning-strong-foreground: var(--status-warning-strong-foreground);
-  --color-status-warning-border:            var(--status-warning-border);
+  --color-status-warning-border: var(--status-warning-border);
 
-  --color-status-success-subtle:            var(--status-success-subtle);
+  --color-status-success-subtle: var(--status-success-subtle);
   --color-status-success-subtle-foreground: var(--status-success-subtle-foreground);
-  --color-status-success-strong:            var(--status-success-strong);
+  --color-status-success-strong: var(--status-success-strong);
   --color-status-success-strong-foreground: var(--status-success-strong-foreground);
-  --color-status-success-border:            var(--status-success-border);
+  --color-status-success-border: var(--status-success-border);
 
-  --color-status-info-subtle:               var(--status-info-subtle);
-  --color-status-info-subtle-foreground:    var(--status-info-subtle-foreground);
-  --color-status-info-strong:               var(--status-info-strong);
-  --color-status-info-strong-foreground:    var(--status-info-strong-foreground);
-  --color-status-info-border:               var(--status-info-border);
+  --color-status-info-subtle: var(--status-info-subtle);
+  --color-status-info-subtle-foreground: var(--status-info-subtle-foreground);
+  --color-status-info-strong: var(--status-info-strong);
+  --color-status-info-strong-foreground: var(--status-info-strong-foreground);
+  --color-status-info-border: var(--status-info-border);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

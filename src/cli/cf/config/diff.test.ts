@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { diffConfig, formatPath } from "./diff";
 
 describe("formatPath()", () => {

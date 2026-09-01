@@ -42,6 +42,11 @@ const IconsConfigSchema = v.object({
   outputs: v.array(IconOutputSchema),
 });
 
+const RasterEntrySchema = v.pipe(
+  v.object({ from: v.string(), to: v.string(), width: v.optional(v.number()), height: v.optional(v.number()) }),
+  v.check((e) => e.width !== undefined || e.height !== undefined, "raster entry needs width or height"),
+);
+
 const CssBuildSchema = v.object({ tool: v.literal("tailwindcss"), input: v.string(), output: v.string() });
 
 const CopyEntrySchema = v.object({ from: v.string(), to: v.string() });
@@ -80,6 +85,7 @@ export const AssetsConfigSchema = v.object({
   js: v.optional(v.object({ bundles: v.optional(v.array(JsBundleSchema)) })),
   css: v.optional(v.array(CssBuildSchema)),
   copy: v.optional(v.array(CopyEntrySchema)),
+  rasters: v.optional(v.array(RasterEntrySchema)),
   sprites: v.optional(v.record(v.string(), SpriteGroupSchema)),
   fonts: v.optional(v.object({ downloads: v.optional(v.array(FontDownloadSchema)) })),
   icons: v.optional(IconsConfigSchema),
@@ -92,6 +98,8 @@ export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
 export type ResolvedJsBundle = Omit<JsBundle, "define"> & { define?: Record<string, string> };
 export type CssBuild = v.InferOutput<typeof CssBuildSchema>;
 export type CopyEntry = v.InferOutput<typeof CopyEntrySchema>;
+/** One SVG-to-PNG rasterization; the unset dimension is derived from the source's intrinsic ratio. @public */
+export type RasterEntry = v.InferOutput<typeof RasterEntrySchema>;
 /** One sprite source file, as a bare filename whose symbol key is its basename or an explicit key/file pair. @internal */
 export type SpriteFileEntry = v.InferOutput<typeof SpriteFileEntrySchema>;
 export type SpriteSource = v.InferOutput<typeof SpriteSourceSchema>;
@@ -118,6 +126,7 @@ export interface ResolvedConfig {
   js: { bundles: ResolvedJsBundle[] };
   css: CssBuild[];
   copy: CopyEntry[];
+  rasters: RasterEntry[];
   sprites: Sprites;
   fonts: { downloads: FontDownload[] };
   icons: IconsConfig | null;

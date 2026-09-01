@@ -55,12 +55,12 @@ description: "The security namespace: CSP nonce headers, CORS, origin-guard tier
 
 **Not in security** — a common mistake:
 
-| Looked for here | Actually in |
-|---|---|
-| `timingSafeEqual` / `timingSafeEqualBytes` | internal `src/crypto/` (`@internal`) |
-| `csrfProtection`, `importCsrfKey`, `mintCsrf` | `@y-core/forge/form` |
-| `sessionMiddleware` | `@y-core/forge/session` |
-| `isHxRequest` | `@y-core/forge/html/htmx` — a UX hint, not a boundary ([`HTMX.md`](./HTMX.md) §7) |
+| Looked for here                               | Actually in                                                                       |
+| --------------------------------------------- | --------------------------------------------------------------------------------- |
+| `timingSafeEqual` / `timingSafeEqualBytes`    | internal `src/crypto/` (`@internal`)                                              |
+| `csrfProtection`, `importCsrfKey`, `mintCsrf` | `@y-core/forge/form`                                                              |
+| `sessionMiddleware`                           | `@y-core/forge/session`                                                           |
+| `isHxRequest`                                 | `@y-core/forge/html/htmx` — a UX hint, not a boundary ([`HTMX.md`](./HTMX.md) §7) |
 
 ---
 
@@ -77,7 +77,7 @@ injects it into the CSP `script-src`, and stores it on the request context for `
 the app's outermost `applyHeaders` pass, rather than each middleware rebuilding its own
 `Response`.
 
-**They are queued *before* `next()`, alongside the nonce.** Two consequences, both intended:
+**They are queued _before_ `next()`, alongside the nonce.** Two consequences, both intended:
 
 - **Error pages always carry them.** The headers are on the channel before anything deeper can
   throw, so they do not depend on the response unwinding back out through this middleware. Queuing
@@ -210,18 +210,18 @@ minting and verification live in `@y-core/forge/form`.
 Three middleware defend against cross-origin mutation. They form a deliberate tiering:
 **pick one per route rather than stacking them.**
 
-| Guard | Signal | When the signal is absent | Use when |
-|---|---|---|---|
-| `originProtection(options)` | `Sec-Fetch-Site` **and** the `Origin`/`Referer` allowlist, both applied | Falls back to Fetch-Metadata vouching; fails closed with no signal at all | **The default.** Broadest coverage — modern browsers plus older UAs |
-| `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless `allowMissingHeader` | Stricter, no allowlist |
-| `originGuard(allowed)` | `Origin`/`Referer` only | Allowed through | Webhook/privileged endpoints keyed purely on an origin allowlist |
+| Guard                            | Signal                                                                  | When the signal is absent                                                 | Use when                                                            |
+| -------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `originProtection(options)`      | `Sec-Fetch-Site` **and** the `Origin`/`Referer` allowlist, both applied | Falls back to Fetch-Metadata vouching; fails closed with no signal at all | **The default.** Broadest coverage — modern browsers plus older UAs |
+| `crossOriginProtection(options)` | `Sec-Fetch-Site` only                                                   | Fails closed (`403`) unless `allowMissingHeader`                          | Stricter, no allowlist                                              |
+| `originGuard(allowed)`           | `Origin`/`Referer` only                                                 | Allowed through                                                           | Webhook/privileged endpoints keyed purely on an origin allowlist    |
 
 **`originProtection` is the authoritative recommended default** — the other two are the
 single-signal tiers it is built from.
 
 All three exempt safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) first, so only state-changing
 requests are gated. `originProtection` treats `Sec-Fetch-Site` as a **veto, not a pass**: any
-value other than `same-origin`/`none` rejects outright, and a good value does *not* short-circuit
+value other than `same-origin`/`none` rejects outright, and a good value does _not_ short-circuit
 the allowlist. `allowedOrigins` — a static `string[]` or a per-request resolver — is consulted on
 every mutating request carrying an `Origin` or `Referer`; only when both are absent does the guard
 fall back to the browser's Fetch-Metadata vouching, and with no signal at all it fails closed.
@@ -349,21 +349,21 @@ with `trustCfHeaders: true`.**
 
 The flag surfaces in three places, all defaulting to `false`:
 
-| Surface | With `trustCfHeaders: true` | Default |
-|---|---|---|
-| `requestId({ trustCfHeaders })` | Adopt `CF-Ray` as the id (UUID fallback) | Always mint a UUID; ignore `CF-Ray` |
-| `RateLimitOptions.trustCfHeaders` (§4d) | Default key reads `CF-Connecting-IP` | Default keying throws → `503` unless a custom `key` is given |
-| `MiddlewareChainOptions.trustCfHeaders` | Threaded to `requestId()` and every guard group's rate-limit guard | Both distrust the CF headers |
+| Surface                                 | With `trustCfHeaders: true`                                        | Default                                                      |
+| --------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `requestId({ trustCfHeaders })`         | Adopt `CF-Ray` as the id (UUID fallback)                           | Always mint a UUID; ignore `CF-Ray`                          |
+| `RateLimitOptions.trustCfHeaders` (§4d) | Default key reads `CF-Connecting-IP`                               | Default keying throws → `503` unless a custom `key` is given |
+| `MiddlewareChainOptions.trustCfHeaders` | Threaded to `requestId()` and every guard group's rate-limit guard | Both distrust the CF headers                                 |
 
 **`applyMiddlewareChain` takes a single `trustCfHeaders` and threads it to both**, so an app
 declares its trust posture once:
 
 ```typescript
 applyMiddlewareChain(app, {
-  trustCfHeaders: true,   // this Worker runs behind Cloudflare
+  trustCfHeaders: true, // this Worker runs behind Cloudflare
   securityHeaders: { scriptSrc: ["'self'", NONCE] },
   guards: [{ paths: ["/api/*"], rateLimit: { limiter: (c) => c.env.RATE_LIMITER } }],
-})
+});
 ```
 
 **A Cloudflare-deployed app must set `trustCfHeaders: true` or pass a custom rate-limit `key`**

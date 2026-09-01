@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { createGenEnvCommand, loadOptions } from "./cf-env-command";
 import { collectBindings, collectVars, emit, stripJsonc } from "./cf-env-gen";
 import { DEFAULT_OPTIONS, type Entry, type GenOptions, HEADER } from "./cf-env-registry";

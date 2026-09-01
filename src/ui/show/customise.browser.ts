@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { DARK_CLASS } from "../chrome/theme";
 import { mount, paintedHex } from "../client/browser-test-helper";
@@ -58,7 +59,7 @@ const icon = createIcon("/sprite.svg", { "icon-spinner": "0 0 24 24", "icon-chev
 
 /** A loader context carrying only the URL, exactly as the route's loader receives it. */
 async function mountCustomise(page: Page, search = ""): Promise<void> {
-  // biome-ignore lint/suspicious/noExplicitAny: only `url` is read by the loader
+  // oxlint-disable-next-line typescript/no-explicit-any -- only `url` is read by the loader
   const ctx = { url: new URL(`http://forge.test/showcase/ui/theme${search}`) } as any;
   const html = await render(CustomiseContent({ data: loadCustomise(ctx), icon }));
   await mount(page, UTILITY_STYLE + html, { ...EXPOSE, css: TOKEN_CSS });

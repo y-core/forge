@@ -6,7 +6,7 @@ import { delimiter } from "node:path";
 
 // `mock.module` is process-global, so the real module is spread to preserve exports a sibling test file mocks (e.g. execFileSync).
 const mockSpawnSync = mock((_cmd: string, _args?: string[], _opts?: unknown): { status: number | null; error?: Error } => ({ status: 0 }));
-mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
+await mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
 
 const { run, capture, hasTool, probeOk, requireTools, insertPath } = await import("./proc");
 
@@ -62,13 +62,13 @@ describe("capture()", () => {
   it("returns the child's combined output interleaved in write order", () => {
     fakeChild(["out-1\n", "err-1\n", "out-2\n"]);
 
-    expect(capture("biome", ["check"]).output).toBe("out-1\nerr-1\nout-2\n");
+    expect(capture("oxfmt", ["--check"]).output).toBe("out-1\nerr-1\nout-2\n");
   });
 
   it("returns a non-zero exit code without throwing", () => {
     fakeChild(["boom\n"], 2);
 
-    const result = capture("biome", ["check"]);
+    const result = capture("oxfmt", ["--check"]);
     expect(result.code).toBe(2);
     expect(result.output).toBe("boom\n");
   });
@@ -76,7 +76,7 @@ describe("capture()", () => {
   it("reports a null status (signal kill) as exit code 1", () => {
     fakeChild([], null);
 
-    expect(capture("tsgo", ["--noEmit"]).code).toBe(1);
+    expect(capture("tsc", ["--noEmit"]).code).toBe(1);
   });
 
   it("appends the spawn error when the process never started", () => {
@@ -192,9 +192,9 @@ describe("hasTool()", () => {
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
 
-    hasTool("tsgo");
+    hasTool("tsc");
 
-    expect(mockSpawnSync.mock.calls[0]![0]).toBe("tsgo");
+    expect(mockSpawnSync.mock.calls[0]![0]).toBe("tsc");
     expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["--version"]);
   });
 });

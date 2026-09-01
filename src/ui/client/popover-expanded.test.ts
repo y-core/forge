@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { mountExpandedState, mountExpandedStates } from "./popover-expanded";
 import { FakeEvent, fakeTree } from "./test-dom";
 

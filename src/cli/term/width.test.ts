@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { ESC, hasAnsi, stripAnsi } from "./ansi";
 import { stringWidth, truncate } from "./width";
 

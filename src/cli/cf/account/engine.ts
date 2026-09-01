@@ -71,7 +71,7 @@ function mergeEntries(config: WranglerConfig, type: ResourceType, entries: unkno
     case "queues": {
       type QueueProducer = NonNullable<NonNullable<WranglerConfig["queues"]>["producers"]>;
       const producers = entries as QueueProducer;
-      return { ...config, queues: { ...(config.queues ?? {}), producers } };
+      return { ...config, queues: { ...config.queues, producers } };
     }
     // These resource types have no server-assigned ID to write back into the config.
     case "local_vars":

@@ -17,5 +17,5 @@ export function fragmentResponse(body: string | SafeHtml, status = 200, headers?
   if (headers && Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
     throw new Error("fragmentResponse: content-type is fixed for HTML responses — remove it from headers");
   }
-  return new Response(String(body), { status, headers: { ...(headers ?? {}), "content-type": "text/html; charset=utf-8" } });
+  return new Response(String(body), { status, headers: { ...headers, "content-type": "text/html; charset=utf-8" } });
 }

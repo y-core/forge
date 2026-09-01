@@ -25,7 +25,7 @@ import { defineSiteConfig, renderRobotsTxt, renderSitemapXml } from "@y-core/for
   `routePaths(routes, { method: "GET" })` from [`@y-core/forge/router`](../router/README.md). That
   keeps this namespace a leaf and keeps its schema validating plain data.
 - **Zone expression builders.** `buildAllowRule` turns a served surface into the Cloudflare custom
-  rule that actions everything the surface does *not* account for; `buildRedirectRule` emits a
+  rule that actions everything the surface does _not_ account for; `buildRedirectRule` emits a
   host-to-apex single redirect.
 - **Reserved paths forge supplies, not the consumer.** `/cdn-cgi/` and `/.well-known/` are unioned
   into every allow-list whether asked for or not (see [Reserved prefixes](#reserved-prefixes)).
@@ -47,10 +47,7 @@ export default defineSiteConfig({
   origin: "https://example.com",
   pages: routePaths(routes, { method: "GET" }),
   robots: { rules: [{ userAgent: "*", allow: ["/"], disallow: ["/api/"] }], sitemap: true },
-  sitemap: {
-    exclude: ["/api/*"],
-    entries: { "/": { changefreq: "monthly", priority: 1.0 } },
-  },
+  sitemap: { exclude: ["/api/*"], entries: { "/": { changefreq: "monthly", priority: 1.0 } } },
 });
 ```
 
@@ -101,7 +98,7 @@ platform is served from it** — a rule that filters it takes down every form on
 ### Why an allow-list, and which direction is safe
 
 A deny-list is a list of substrings a human extends forever. An allow-list is derived from the
-route table and needs no maintenance — but it carries the opposite failure mode: it blocks a *real*
+route table and needs no maintenance — but it carries the opposite failure mode: it blocks a _real_
 route the edge has not been told about, which is a 403 to a genuine user rather than a probe
 getting through.
 
@@ -128,7 +125,7 @@ source equal to the apex is a loop. Both are refused when the rule is built.
 ### The apex host clause is defence in depth
 
 `buildAllowRule` scopes its expression to `surface.apex`, because that is the only host whose
-surface was enumerated. It is *not* load-bearing for the `www` redirect:
+surface was enumerated. It is _not_ load-bearing for the `www` redirect:
 `http_request_dynamic_redirect` is the first application-layer phase and `http_request_firewall_custom`
 runs nine phases later, so a `www` request is answered with its 301 and never reaches the WAF.
 
@@ -137,5 +134,5 @@ runs nine phases later, so a `www` request is answered with its 301 and never re
 Cloudflare caps a rule expression at 4096 characters on every plan, failing the write with error
 20127 rather than truncating. `buildAllowExpression` checks this before the request and names the
 two ways out — collapse exact paths into a prefix, or move the surface into a Cloudflare list. Rule
-*count* (5 on Free, 20 on Pro, 100 on Business) is not the binding limit, since a generated
+_count_ (5 on Free, 20 on Pro, 100 on Business) is not the binding limit, since a generated
 allow-list is a single rule.

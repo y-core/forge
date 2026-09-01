@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { render } from "../../testing/render";
 import { createIcon, type ForgeIcon, Icon } from "./icon";
 

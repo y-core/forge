@@ -18,5 +18,5 @@ export function isValidElement(value: unknown): value is JSXElement {
 
 /** Clones a JSXElement, shallow-merging extra props. @public */
 export function cloneElement(element: JSXElement, props?: Record<string, unknown>): JSXElement {
-  return { ...element, props: { ...element.props, ...(props ?? {}) } };
+  return { ...element, props: { ...element.props, ...props } };
 }

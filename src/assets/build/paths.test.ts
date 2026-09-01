@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { copyAssets } from "./copy";
 import { buildFonts } from "./fonts";
 import { safeJoin } from "./paths";

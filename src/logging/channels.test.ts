@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import { consoleChannel, withLevels, withMinLevel, withRedaction } from "./channels";
 import type { LogChannel, LogRecord } from "./types";
 import { LOG_LEVELS, levelAtLeast, parseLogLevel, parseLogLevels } from "./types";
@@ -23,14 +24,14 @@ function makeRecord(overrides?: Partial<LogRecord>): LogRecord {
 describe("consoleChannel", () => {
   it("emits a single JSON line", () => {
     const ch = consoleChannel();
-    ch.write(makeRecord());
+    void ch.write(makeRecord());
     expect(captured).toHaveLength(1);
     expect(() => JSON.parse(captured[0]!)).not.toThrow();
   });
 
   it("includes level, prefix, message, and timestamp", () => {
     const ch = consoleChannel();
-    ch.write(makeRecord({ level: "warn", prefix: "svc", message: "oops", timestamp: "2026-01-01T00:00:00.000Z" }));
+    void ch.write(makeRecord({ level: "warn", prefix: "svc", message: "oops", timestamp: "2026-01-01T00:00:00.000Z" }));
     const obj = JSON.parse(captured[0]!);
     expect(obj.level).toBe("warn");
     expect(obj.prefix).toBe("svc");
@@ -40,7 +41,7 @@ describe("consoleChannel", () => {
 
   it("spreads data fields at the top level", () => {
     const ch = consoleChannel();
-    ch.write(makeRecord({ data: { userId: "u1", count: 3 } }));
+    void ch.write(makeRecord({ data: { userId: "u1", count: 3 } }));
     const obj = JSON.parse(captured[0]!);
     expect(obj.userId).toBe("u1");
     expect(obj.count).toBe(3);
@@ -49,7 +50,7 @@ describe("consoleChannel", () => {
 
   it("omits data key when no data provided", () => {
     const ch = consoleChannel();
-    ch.write(makeRecord());
+    void ch.write(makeRecord());
     const obj = JSON.parse(captured[0]!);
     expect("data" in obj).toBe(false);
   });
@@ -67,7 +68,7 @@ describe("consoleChannel", () => {
 
   it("reserved fields win — caller-supplied level in data cannot forge the real level", () => {
     const ch = consoleChannel();
-    ch.write(makeRecord({ level: "error", message: "real message", data: { level: "debug", message: "forged" } }));
+    void ch.write(makeRecord({ level: "error", message: "real message", data: { level: "debug", message: "forged" } }));
     const obj = JSON.parse(captured[0]!);
     expect(obj.level).toBe("error");
     expect(obj.message).toBe("real message");
@@ -75,7 +76,7 @@ describe("consoleChannel", () => {
 
   it("reserved fields win — caller-supplied timestamp in data is overridden by the record timestamp", () => {
     const ch = consoleChannel();
-    ch.write(makeRecord({ timestamp: "2026-01-01T00:00:00.000Z", data: { timestamp: "fake" } }));
+    void ch.write(makeRecord({ timestamp: "2026-01-01T00:00:00.000Z", data: { timestamp: "fake" } }));
     const obj = JSON.parse(captured[0]!);
     expect(obj.timestamp).toBe("2026-01-01T00:00:00.000Z");
     expect(obj.timestamp).not.toBe("fake");
@@ -99,8 +100,8 @@ describe("withMinLevel", () => {
     const { records, channel } = makeCapture();
     const filtered = withMinLevel(channel, "warn");
 
-    filtered.write(makeRecord({ level: "debug" }));
-    filtered.write(makeRecord({ level: "info" }));
+    void filtered.write(makeRecord({ level: "debug" }));
+    void filtered.write(makeRecord({ level: "info" }));
 
     expect(records).toHaveLength(0);
   });
@@ -109,8 +110,8 @@ describe("withMinLevel", () => {
     const { records, channel } = makeCapture();
     const filtered = withMinLevel(channel, "warn");
 
-    filtered.write(makeRecord({ level: "warn" }));
-    filtered.write(makeRecord({ level: "error" }));
+    void filtered.write(makeRecord({ level: "warn" }));
+    void filtered.write(makeRecord({ level: "error" }));
 
     expect(records.map((r) => r.level)).toStrictEqual(["warn", "error"]);
   });
@@ -172,8 +173,8 @@ describe("withLevels", () => {
     const { records, channel } = makeCapture();
     const filtered = withLevels(channel, ["warn", "error"]);
 
-    filtered.write(makeRecord({ level: "info" }));
-    filtered.write(makeRecord({ level: "warn" }));
+    void filtered.write(makeRecord({ level: "info" }));
+    void filtered.write(makeRecord({ level: "warn" }));
 
     expect(records.map((r) => r.level)).toStrictEqual(["warn"]);
   });
@@ -182,7 +183,7 @@ describe("withLevels", () => {
     const { records, channel } = makeCapture();
     const filtered = withLevels(channel, []);
 
-    for (const level of LOG_LEVELS) filtered.write(makeRecord({ level }));
+    for (const level of LOG_LEVELS) void filtered.write(makeRecord({ level }));
 
     expect(records).toHaveLength(0);
   });
@@ -191,7 +192,7 @@ describe("withLevels", () => {
     const { records, channel } = makeCapture();
     const filtered = withLevels(channel, ["debug", "error"]);
 
-    for (const level of LOG_LEVELS) filtered.write(makeRecord({ level }));
+    for (const level of LOG_LEVELS) void filtered.write(makeRecord({ level }));
 
     expect(records.map((r) => r.level)).toStrictEqual(["debug", "error"]);
   });
@@ -253,7 +254,7 @@ describe("withRedaction", () => {
     const { records, channel } = makeCapture();
     const redacted = withRedaction(channel, (r) => ({ ...r, message: "[redacted]" }));
 
-    redacted.write(makeRecord({ message: "secret payload" }));
+    void redacted.write(makeRecord({ message: "secret payload" }));
 
     expect(records).toHaveLength(1);
     expect(records[0]!.message).toBe("[redacted]");
@@ -263,7 +264,7 @@ describe("withRedaction", () => {
     const { records, channel } = makeCapture();
     const redacted = withRedaction(channel, (r) => ({ ...r, data: { safe: true } }));
 
-    redacted.write(makeRecord({ data: { token: "abc" } }));
+    void redacted.write(makeRecord({ data: { token: "abc" } }));
 
     expect(records[0]!.data).toStrictEqual({ safe: true });
   });

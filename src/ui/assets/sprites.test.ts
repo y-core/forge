@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+
 import { FORGE_UI_ICON_NAMES, forgeUiSpriteSources } from "./sprites";
 
 describe("forgeUiSpriteSources", () => {

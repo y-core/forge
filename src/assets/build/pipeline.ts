@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
+
 import type { ResolvedConfig } from "../types";
 import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
@@ -7,6 +8,7 @@ import { buildCursors } from "./cursors";
 import { buildFonts } from "./fonts";
 import { buildIcons } from "./icons";
 import { buildJS } from "./js";
+import { buildRasters } from "./rasters";
 import { buildSite } from "./site";
 import type { SpriteGroupResult } from "./sprites";
 import { buildSprites } from "./sprites";
@@ -34,6 +36,8 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   }
 
   copyAssets(config.copy, publicDir);
+
+  await buildRasters(config.rasters, publicDir);
 
   if (Object.keys(config.sprites).length > 0) {
     const result = await buildSprites(config.sprites, publicDir, { hash: shouldHash });

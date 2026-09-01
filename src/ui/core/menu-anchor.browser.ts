@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { Navbar, type NavDefinition } from "../chrome/navbar";
 import { mount } from "../client/browser-test-helper";

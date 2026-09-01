@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { findSlotClobbers } from "./jsx-parse";
 
 function clobbers(source: string): string[] {

@@ -82,10 +82,10 @@ A bare string or `RoutePattern` is also accepted and defaults to method `ANY`.
 import { route, get, post, Route } from "@y-core/forge/router";
 
 const routes = route({
-  home: get("/"),                                   // verb helper
-  save: { method: "POST", pattern: "/api/save" },   // object literal
-  any: new Route("ANY", "/health"),                 // explicit Route
-  catchAll: "/legacy/*path",                         // bare string → method ANY
+  home: get("/"), // verb helper
+  save: { method: "POST", pattern: "/api/save" }, // object literal
+  any: new Route("ANY", "/health"), // explicit Route
+  catchAll: "/legacy/*path", // bare string → method ANY
 });
 ```
 
@@ -95,18 +95,12 @@ const routes = route({
 onto every contained pattern.
 
 ```typescript
-const routes = route({
-  home: get("/"),
-  api: route({
-    save: post("/api/save"),
-    load: get("/api/load"),
-  }),
-});
+const routes = route({ home: get("/"), api: route({ save: post("/api/save"), load: get("/api/load") }) });
 
 // Base pattern joined onto each child:
 const admin = route("/admin", {
-  logs: get("/logs"),     // → "/admin/logs"
-  users: get("/users"),   // → "/admin/users"
+  logs: get("/logs"), // → "/admin/logs"
+  users: get("/users"), // → "/admin/users"
 });
 ```
 
@@ -118,13 +112,10 @@ Build URLs from the route, never by string concatenation. The pattern's params a
 so the call is checked.
 
 ```typescript
-const routes = route({
-  user: get("/users/:id"),
-  save: post("/api/save"),
-});
+const routes = route({ user: get("/users/:id"), save: post("/api/save") });
 
-routes.save.href();                          // "/api/save"
-routes.user.href({ id: "42" });              // "/users/42"
+routes.save.href(); // "/api/save"
+routes.user.href({ id: "42" }); // "/users/42"
 routes.user.href({ id: "42" }, { tab: "x" }); // "/users/42?tab=x"
 ```
 
@@ -133,7 +124,7 @@ For a raw pattern string (not part of a route map), use `createHref` directly:
 ```typescript
 import { createHref } from "@y-core/forge/router";
 
-createHref("/users/:id", { id: "42" });   // "/users/42"
+createHref("/users/:id", { id: "42" }); // "/users/42"
 ```
 
 ### Introspect the route table
@@ -149,17 +140,12 @@ routes declared `ANY`.
 ```typescript
 import { routePaths } from "@y-core/forge/router";
 
-const routes = route({
-  home: get("/"),
-  save: post("/api/save"),
-  importDoc: post("/api/import"),
-  health: new Route("ANY", "/health"),
-});
+const routes = route({ home: get("/"), save: post("/api/save"), importDoc: post("/api/import"), health: new Route("ANY", "/health") });
 
-routePaths(routes);                      // ["/", "/api/save", "/api/import", "/health"]
-routePaths(routes, { method: "POST" });  // ["/api/save", "/api/import", "/health"]
-routePaths(routes, { method: "GET" });   // ["/", "/health"]
-routePaths(routes, { method: "ANY" });   // ["/health"]
+routePaths(routes); // ["/", "/api/save", "/api/import", "/health"]
+routePaths(routes, { method: "POST" }); // ["/api/save", "/api/import", "/health"]
+routePaths(routes, { method: "GET" }); // ["/", "/health"]
+routePaths(routes, { method: "ANY" }); // ["/health"]
 ```
 
 A method filter that matches nothing in a route map that does contain routes **throws**. The result
@@ -173,35 +159,35 @@ does a route map with no routes at all.
 
 ### Route authoring
 
-| Symbol | Signature | Description |
-|---|---|---|
-| `route` | `route(defs)` / `route(base, defs)` | Build a typed `RouteMap` from a `RouteDefs` object. With a `base` pattern, joins it onto every child. Alias of `createRoutes`. |
-| `get` `post` `put` `patch` `del` `head` `options` | `(pattern) => Route` | Verb shorthands. Each returns a `Route` typed to that method and pattern (`del` ⇒ `DELETE`). |
-| `Route` | `new Route(method, pattern)` | A single route definition: `.method`, `.pattern` (parsed AST), and `.href(...args)`. |
-| `resource` | `resource(name, options?)` | Build the route map for a **singular** RESTful resource. See upstream docs. |
-| `resources` | `resources(name, options?)` | Build the route map for a **collection** RESTful resource. See upstream docs. |
-| `form` | `form(pattern, options?)` | Build a GET + POST pair for a form endpoint. See upstream docs. |
+| Symbol                                            | Signature                           | Description                                                                                                                    |
+| ------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `route`                                           | `route(defs)` / `route(base, defs)` | Build a typed `RouteMap` from a `RouteDefs` object. With a `base` pattern, joins it onto every child. Alias of `createRoutes`. |
+| `get` `post` `put` `patch` `del` `head` `options` | `(pattern) => Route`                | Verb shorthands. Each returns a `Route` typed to that method and pattern (`del` ⇒ `DELETE`).                                   |
+| `Route`                                           | `new Route(method, pattern)`        | A single route definition: `.method`, `.pattern` (parsed AST), and `.href(...args)`.                                           |
+| `resource`                                        | `resource(name, options?)`          | Build the route map for a **singular** RESTful resource. See upstream docs.                                                    |
+| `resources`                                       | `resources(name, options?)`         | Build the route map for a **collection** RESTful resource. See upstream docs.                                                  |
+| `form`                                            | `form(pattern, options?)`           | Build a GET + POST pair for a form endpoint. See upstream docs.                                                                |
 
 `route()` definitions (`RouteDef`) accept three shapes: a bare pattern string, a `RoutePattern`, or
 `{ method?, pattern }` (method defaults to `ANY` when omitted).
 
 ### Controllers and actions
 
-| Symbol | Signature | Description |
-|---|---|---|
+| Symbol             | Signature                              | Description                                                                                                                     |
+| ------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `createController` | `createController(routes, controller)` | Bind route names to actions. `controller` is `{ actions, middleware? }`. Action keys are structurally checked against `routes`. |
-| `createAction` | `createAction(route, action)` | Type a single action against its route so `context.params` is inferred. Returns the action unchanged. |
-| `Action` | _type_ | A handler `(context) => Response \| Promise<Response>`, or `{ middleware?, handler }`. |
-| `Controller` | _type_ | `{ actions, middleware? }` mapping a `RouteMap`'s leaves to actions. |
-| `RequestHandler` | _type_ | `(context) => Response \| Promise<Response>`. |
+| `createAction`     | `createAction(route, action)`          | Type a single action against its route so `context.params` is inferred. Returns the action unchanged.                           |
+| `Action`           | _type_                                 | A handler `(context) => Response \| Promise<Response>`, or `{ middleware?, handler }`.                                          |
+| `Controller`       | _type_                                 | `{ actions, middleware? }` mapping a `RouteMap`'s leaves to actions.                                                            |
+| `RequestHandler`   | _type_                                 | `(context) => Response \| Promise<Response>`.                                                                                   |
 
 An action is either a bare handler or an object with per-action middleware:
 
 ```typescript
 const controller = createController(routes, {
-  middleware: [requestLogger],   // runs before every action in this controller
+  middleware: [requestLogger], // runs before every action in this controller
   actions: {
-    home: homeController,                                   // bare handler
+    home: homeController, // bare handler
     save: { middleware: [csrfGuard], handler: saveAction }, // per-action middleware
   },
 });
@@ -211,34 +197,34 @@ Middleware order at dispatch: controller middleware → action middleware → ha
 
 ### Middleware and context
 
-| Symbol | Signature | Description |
-|---|---|---|
-| `createMiddleware` | `createMiddleware(...middleware)` | Preserve a middleware chain's exact tuple type when stored in a variable. Prefer plain inline arrays elsewhere. |
-| `createContextKey` | `createContextKey()` | Mint a typed key for storing per-request values on the context. |
-| `RequestContext` | _class_ | The base context object passed to every handler and middleware. forge extends it at runtime with the Workers `env`/`executionCtx` — see [`@y-core/forge/context`](../context/README.md). |
-| `Middleware` `MiddlewareContext` | _types_ | The middleware function type and the context it produces. |
+| Symbol                           | Signature                         | Description                                                                                                                                                                              |
+| -------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createMiddleware`               | `createMiddleware(...middleware)` | Preserve a middleware chain's exact tuple type when stored in a variable. Prefer plain inline arrays elsewhere.                                                                          |
+| `createContextKey`               | `createContextKey()`              | Mint a typed key for storing per-request values on the context.                                                                                                                          |
+| `RequestContext`                 | _class_                           | The base context object passed to every handler and middleware. forge extends it at runtime with the Workers `env`/`executionCtx` — see [`@y-core/forge/context`](../context/README.md). |
+| `Middleware` `MiddlewareContext` | _types_                           | The middleware function type and the context it produces.                                                                                                                                |
 
 ### Type-safe URL generation
 
-| Symbol | Signature | Description |
-|---|---|---|
-| `createHref` | `createHref(pattern, params?, searchParams?)` | Build a URL string from a raw pattern. `params` is required when the pattern has required params. Throws `CreateHrefError` on missing/invalid params or a hostname-only pattern. |
-| `CreateHrefError` | _class_ | Thrown by `createHref` / `Route.href` when args don't satisfy the pattern. Carries a `details` discriminant (`missing-params`, `missing-hostname`, `nameless-wildcard`, …). |
-| `joinPatterns` | `joinPatterns(a, b)` | Join two route-pattern segments into one normalized pattern (the same join `route(base, defs)` applies). |
-| `CreateHrefArgs` `JoinPatterns` | _types_ | The argument tuple for a pattern, and the joined-pattern type. |
+| Symbol                          | Signature                                     | Description                                                                                                                                                                      |
+| ------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createHref`                    | `createHref(pattern, params?, searchParams?)` | Build a URL string from a raw pattern. `params` is required when the pattern has required params. Throws `CreateHrefError` on missing/invalid params or a hostname-only pattern. |
+| `CreateHrefError`               | _class_                                       | Thrown by `createHref` / `Route.href` when args don't satisfy the pattern. Carries a `details` discriminant (`missing-params`, `missing-hostname`, `nameless-wildcard`, …).      |
+| `joinPatterns`                  | `joinPatterns(a, b)`                          | Join two route-pattern segments into one normalized pattern (the same join `route(base, defs)` applies).                                                                         |
+| `CreateHrefArgs` `JoinPatterns` | _types_                                       | The argument tuple for a pattern, and the joined-pattern type.                                                                                                                   |
 
 ### Route-table introspection (forge-specific)
 
 The only addition forge layers over the upstream engine.
 
-| Symbol | Signature | Description |
-|---|---|---|
-| `routePaths` | `routePaths(routeMap, filter?)` | Collect every `Route`'s path string from a `RouteMap`, in declaration order, recursing into nested maps. Throws when a method filter matches nothing in a map that does contain routes. |
+| Symbol        | Signature                             | Description                                                                                                                                                                                       |
+| ------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routePaths`  | `routePaths(routeMap, filter?)`       | Collect every `Route`'s path string from a `RouteMap`, in declaration order, recursing into nested maps. Throws when a method filter matches nothing in a map that does contain routes.           |
 | `RouteFilter` | `{ method?: RequestMethod \| "ANY" }` | Restrict `routePaths` to routes that serve the method — routes declared `ANY` serve every method and are always included. `"ANY"` selects only routes declared `ANY`. Omit `method` to match all. |
-| `forMethod` | `forMethod(method, middleware)` | Wrap `middleware` so it runs only for the given `RequestMethod` (or array of them) and calls `next()` otherwise. |
+| `forMethod`   | `forMethod(method, middleware)`       | Wrap `middleware` so it runs only for the given `RequestMethod` (or array of them) and calls `next()` otherwise.                                                                                  |
 
 **`app.use` is path-scoped only** — dispatch never consults the method — so a filtered `routePaths`
-list selects *paths*, not method-and-path pairs. Pair the two:
+list selects _paths_, not method-and-path pairs. Pair the two:
 
 ```typescript
 // Wire per-path middleware onto only the mutating endpoints.
@@ -262,11 +248,11 @@ matches on. Forge rewrites `HEAD` to `GET` before routing, so `forMethod("GET", 
 Most apps never touch these — `createApp` from [`@y-core/forge/app`](../app/README.md) builds and
 owns the router for you.
 
-| Symbol | Signature | Description |
-|---|---|---|
-| `createRouter` | `createRouter(options?)` | Construct a bare `Router`. Used internally by `createApp`; reach for it only when you need a router outside the forge app lifecycle. |
-| `RouterOptions` `RouterTypes` | _types_ | Router construction options and the router's context/type configuration. |
-| `RouteEntry` `MatchData` | _types_ | The normalized entry stored in the matcher (`pattern`, `handler`, `method`, `middleware`). |
+| Symbol                        | Signature                | Description                                                                                                                          |
+| ----------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `createRouter`                | `createRouter(options?)` | Construct a bare `Router`. Used internally by `createApp`; reach for it only when you need a router outside the forge app lifecycle. |
+| `RouterOptions` `RouterTypes` | _types_                  | Router construction options and the router's context/type configuration.                                                             |
+| `RouteEntry` `MatchData`      | _types_                  | The normalized entry stored in the matcher (`pattern`, `handler`, `method`, `middleware`).                                           |
 
 `RouterOptions` accepts `defaultHandler` (the no-match fallback, default `404`), a `matcher`, and
 router-wide `middleware`.
@@ -277,14 +263,14 @@ router-wide `middleware`.
 
 Re-exported types, grouped by concern:
 
-| Concern | Types |
-|---|---|
-| Route maps | `RouteMap`, `RouteDef`, `RouteDefs`, `BuildRoute`, `RequestMethod` |
-| Resource helpers | `ResourceMethod`, `ResourceOptions`, `ResourcesMethod`, `ResourcesOptions`, `FormOptions` |
-| Controllers / actions | `Action`, `Controller`, `RequestHandler`, `Middleware`, `MiddlewareContext` |
-| URL generation | `CreateHrefArgs`, `JoinPatterns` |
-| Router engine | `RouterOptions`, `RouterTypes`, `RouteEntry`, `MatchData` |
-| Introspection | `RouteFilter` |
+| Concern               | Types                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| Route maps            | `RouteMap`, `RouteDef`, `RouteDefs`, `BuildRoute`, `RequestMethod`                        |
+| Resource helpers      | `ResourceMethod`, `ResourceOptions`, `ResourcesMethod`, `ResourcesOptions`, `FormOptions` |
+| Controllers / actions | `Action`, `Controller`, `RequestHandler`, `Middleware`, `MiddlewareContext`               |
+| URL generation        | `CreateHrefArgs`, `JoinPatterns`                                                          |
+| Router engine         | `RouterOptions`, `RouterTypes`, `RouteEntry`, `MatchData`                                 |
+| Introspection         | `RouteFilter`                                                                             |
 
 ---
 

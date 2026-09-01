@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import pkg from "../../../../../package.json" with { type: "json" };
 import { findSubpathCitations, type SubpathCitation, uncitedSubpaths } from "./docs-parse";
 
@@ -74,8 +75,8 @@ describe("findSubpathCitations() — the shapes that are not citations", () => {
   });
 });
 
-function cite(...subpaths: string[]): SubpathCitation[] {
-  return subpaths.map((subpath, i) => ({ line: i + 1, raw: subpath.slice(1), subpath }));
+function cite(...cited: string[]): SubpathCitation[] {
+  return cited.map((subpath, i) => ({ line: i + 1, raw: subpath.slice(1), subpath }));
 }
 
 describe("uncitedSubpaths() — the coverage direction", () => {

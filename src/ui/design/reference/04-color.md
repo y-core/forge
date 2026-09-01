@@ -4,10 +4,10 @@ Forge's colour system is two layers, and it used to be three.
 
 Underneath is the **scale** in a scheme file — twelve numbered steps, `--gray-1` through `--gray-12`
 — alongside the fixed status hues in `theme-colors.css`. Each step holds a **literal value** covering both modes, and names a
-*position in the system*: the app background, a subtle border, a low-contrast text colour.
+_position in the system_: the app background, a subtle border, a low-contrast text colour.
 
 On top is the semantic layer in `theme-base.css`, which maps a step onto a name describing a
-*use*: `--background`, `--foreground`, `--card`, `--muted`, `--primary`, `--border`, and the rest.
+_use_: `--background`, `--foreground`, `--card`, `--muted`, `--primary`, `--border`, and the rest.
 That file declares the mapping, the `color-scheme` that picks each step's mode, and nothing else —
 no scale, and no colour value at all.
 
@@ -37,7 +37,7 @@ used to fake an intermediate grey — unless a brief introduces a brand hue, whi
 steps in a theme file like every other. <!-- rule:forge-ui-color-scale-ramp-only -->
 
 Default: two adjacent steps are not used together as a foreground/background pair — `--gray-9` on
-`--gray-10` is a contrast failure before it is an aesthetic one — unless the pair is a *decorative*
+`--gray-10` is a contrast failure before it is an aesthetic one — unless the pair is a _decorative_
 boundary against its own surface, where low contrast is the
 point. <!-- rule:forge-ui-color-scale-adjacent-stops -->
 
@@ -68,11 +68,11 @@ So the decorative token keeps Radix's step and the affordances move to steps tha
 `--border` is step 6, which is what a hairline should be and where Radix puts it; `--input` and
 `--track` are step 10 (3.33 in light, 3.76 in dark) and `--ring` is step 11 (5.19 / 7.67), preserving
 the one-step gap that keeps `focus:border-ring` from being a no-op. Adopting step 7 because it is
-*called* the UI element border would have re-introduced the 82-version defect under a better name.
+_called_ the UI element border would have re-introduced the 82-version defect under a better name.
 
 **Re-authoring steps 7 and 8 was left open as a second pass, and that pass has now been made: the
 values stay Radix's.** The two systems are not in disagreement — they answer different questions with
-different instruments. Radix's guarantee is about *text*, at steps 11 and 12, and is stated in APCA;
+different instruments. Radix's guarantee is about _text_, at steps 11 and 12, and is stated in APCA;
 1.4.11 is measured with WCAG 2.x's relative-luminance ratio, and 7 was never a number Radix put under
 that floor.
 
@@ -105,7 +105,7 @@ under `.dark`.
 be.** `--black-a1` through `--black-a12` and `--white-a1` through `--white-a12` are identical in both
 modes, and that mode-stability is the whole point. A per-scheme alpha step composites over its own
 scheme's step 1, which makes it page-relative and so mode-inverting — black over a light page, white
-over a dark one. A scrim has to darken whatever is behind it in *both* modes, so a page-relative step
+over a dark one. A scrim has to darken whatever is behind it in _both_ modes, so a page-relative step
 cannot express one, which is why forge ships no per-scheme alpha scale. `--overlay` is `--black-a6`,
 the dialog backdrop, where a hardcoded literal used to sit inline in a component rule.
 
@@ -114,9 +114,9 @@ the dialog backdrop, where a hardcoded literal used to sit inline in a component
 A semantic token does not name a colour. It names a **step**, and the step holds the value:
 
 ```css
---muted-foreground: var(--gray-11);                           /* declared once, for both modes */
---gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0));  /* also declared once — the branch is */
-                                                              /* picked by `color-scheme` */
+--muted-foreground: var(--gray-11); /* declared once, for both modes */
+--gray-11: light-dark(oklch(50.32% 0 0), oklch(76.99% 0 0)); /* also declared once — the branch is */
+/* picked by `color-scheme` */
 ```
 
 A step is a single declaration whichever mode is showing. There is no second block: a `.dark` rule
@@ -130,14 +130,14 @@ scheme. `theme-neutral.css` is achromatic, so its steps are Radix's `gray` uncha
 chroma and hue from Tailwind's `stone`, `gray` and `slate`, resampled at each one — see
 `## Sources`. Each position carries a stated meaning rather than a habit:
 
-| Step | Role | Step | Role |
-|---|---|---|---|
-| 1 | App background | 7 | UI element border and focus rings |
-| 2 | Subtle background | 8 | Hovered UI element border |
-| 3 | UI element background | 9 | Solid backgrounds |
-| 4 | Hovered UI element background | 10 | Hovered solid backgrounds |
-| 5 | Active / selected UI element background | 11 | Low-contrast text |
-| 6 | Subtle borders and separators | 12 | High-contrast text |
+| Step | Role                                    | Step | Role                              |
+| ---- | --------------------------------------- | ---- | --------------------------------- |
+| 1    | App background                          | 7    | UI element border and focus rings |
+| 2    | Subtle background                       | 8    | Hovered UI element border         |
+| 3    | UI element background                   | 9    | Solid backgrounds                 |
+| 4    | Hovered UI element background           | 10   | Hovered solid backgrounds         |
+| 5    | Active / selected UI element background | 11   | Low-contrast text                 |
+| 6    | Subtle borders and separators           | 12   | High-contrast text                |
 
 That table is **Radix's published vocabulary, not forge's mapping**. The two agree everywhere except
 the borders, for the measured reason the section above gives: reach for `--border`, `--input`,
@@ -145,7 +145,7 @@ the borders, for the measured reason the section above gives: reach for `--borde
 than inferring it from this table.
 
 **Steps 1 and 2 are swapped in the light branch, and only there.** Radix reads step 2 as one shade
-*toward* the foreground, so a light-mode panel recedes; forge's cards are raised, and `--card` has
+_toward_ the foreground, so a light-mode panel recedes; forge's cards are raised, and `--card` has
 always been lighter than `--background`. The swap lives in the scale rather than in the semantic
 layer because the scale is where a mode-specific value belongs, and it is what lets
 `--background: var(--gray-1)` stay a single declaration for both modes. In dark, "toward the
@@ -169,7 +169,7 @@ The scale runs in namespaces, and each is declared in full:
 `--red-contrast` and `--green-contrast` are `var(--gray-1)` with no `light-dark()` around it, which is
 worth stating rather than reading as an omission: step 1 is the page, near-white in light and near-black in
 dark, and those are exactly the two answers that token needs. `--yellow-contrast` is the exception —
-near-white on `--yellow-9` measures 1.83, so its foreground stays near-black in *both* modes, making
+near-white on `--yellow-9` measures 1.83, so its foreground stays near-black in _both_ modes, making
 it the one place a `light-dark()` selects between two different **steps** rather than two values:
 `--gray-12` in light, `--gray-1` in dark, which are the same colour seen from either mode.
 
@@ -182,32 +182,32 @@ wants a different muted foreground in dark mode re-declares `--gray-11` with a `
 than `--muted-foreground` — unless the value is meant to be the same in both modes, which is the
 semantic token's own job. <!-- rule:forge-ui-color-scale-override-step -->
 
-Overriding the token instead sets it in *both* modes, because the token is declared once and the
+Overriding the token instead sets it in _both_ modes, because the token is declared once and the
 mode difference is entirely below it. That failure is silent: the light mode keeps working, and only
 the dark half is wrong.
 
 ## The semantic layer, and what each token is for
 
-| Token pair | Use for |
-|---|---|
-| `--background` / `--foreground` | The page itself, and its default text |
-| `--card` / `--card-foreground` | A raised object — `Card` sets both |
-| `--popover` / `--popover-foreground` | Layered surfaces: `Menu`, `Popover`, `Tooltip` |
-| `--primary` / `--primary-foreground` | The one primary action; see `01-hierarchy.md` |
-| `--secondary` / `--secondary-foreground` | A filled but subordinate surface |
-| `--muted` / `--muted-foreground` | A recessed panel, and every line of supporting text |
-| `--accent` / `--accent-foreground` | Interactive state — hover, open, selected |
-| `--destructive` / `--destructive-foreground` | Error text and borders, and destructive fills — `Button variant='destructive'`. The app's colour to re-point |
-| `--success` / `--success-foreground` | A confirmed outcome, as a fill. The app's colour to re-point |
-| `--warning` / `--warning-foreground` | A caution, as a fill. The pair inverts — dark text on yellow. The app's colour to re-point |
-| `--border` | Decorative separation only — hairlines, dividers, surface edges. No contrast floor |
-| `--input` | A control's boundary — text fields, `Select`, `Textarea`, and every `border-input`. 3:1 |
-| `--track` | The off-state fill of a `Switch` or `Slider` track. Its own token on the same step as `--input`, not an alias of it. 3:1 |
-| `--ring` | The focus indicator. Sits one step beyond `--input`, so a focused control advances. 3:1 |
-| `--overlay` | The modal scrim, on an absolute alpha step so it darkens whatever is behind it in either mode |
+| Token pair                                   | Use for                                                                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `--background` / `--foreground`              | The page itself, and its default text                                                                                    |
+| `--card` / `--card-foreground`               | A raised object — `Card` sets both                                                                                       |
+| `--popover` / `--popover-foreground`         | Layered surfaces: `Menu`, `Popover`, `Tooltip`                                                                           |
+| `--primary` / `--primary-foreground`         | The one primary action; see `01-hierarchy.md`                                                                            |
+| `--secondary` / `--secondary-foreground`     | A filled but subordinate surface                                                                                         |
+| `--muted` / `--muted-foreground`             | A recessed panel, and every line of supporting text                                                                      |
+| `--accent` / `--accent-foreground`           | Interactive state — hover, open, selected                                                                                |
+| `--destructive` / `--destructive-foreground` | Error text and borders, and destructive fills — `Button variant='destructive'`. The app's colour to re-point             |
+| `--success` / `--success-foreground`         | A confirmed outcome, as a fill. The app's colour to re-point                                                             |
+| `--warning` / `--warning-foreground`         | A caution, as a fill. The pair inverts — dark text on yellow. The app's colour to re-point                               |
+| `--border`                                   | Decorative separation only — hairlines, dividers, surface edges. No contrast floor                                       |
+| `--input`                                    | A control's boundary — text fields, `Select`, `Textarea`, and every `border-input`. 3:1                                  |
+| `--track`                                    | The off-state fill of a `Switch` or `Slider` track. Its own token on the same step as `--input`, not an alias of it. 3:1 |
+| `--ring`                                     | The focus indicator. Sits one step beyond `--input`, so a focused control advances. 3:1                                  |
+| `--overlay`                                  | The modal scrim, on an absolute alpha step so it darkens whatever is behind it in either mode                            |
 
 The twenty `--status-*` tokens are the other half of the semantic layer, and they answer a different
-question — see *Status colour is forge's; the fills are the app's* below.
+question — see _Status colour is forge's; the fills are the app's_ below.
 
 Default: interactive feedback — hover, open, selected — is expressed with `--accent` and its
 paired foreground, as `buttonVariants` does for `secondary` and `ghost`, unless the element's
@@ -255,19 +255,19 @@ import { Badge } from "@y-core/forge/ui/core";
 `color-scheme: dark`, which picks the dark branch of every **step** those tokens resolve through. The
 values below are `theme-neutral.css`'s scale, which is what an app gets with no theme file of its own:
 
-| Token | Step | Light branch | Dark branch |
-|---|---|---|---|
-| `--background` | `--gray-1` | `#f9f9f9` | `#111111` |
-| `--foreground` | `--gray-12` | `#202020` | `#eeeeee` |
-| `--card` | `--gray-2` | `#fcfcfc` | `#191919` |
-| `--muted` | `--gray-3` | `#f0f0f0` | `#222222` |
-| `--muted-foreground` | `--gray-11` | `#646464` | `#b4b4b4` |
-| `--primary` | `--accent-12` | `#202020` | `#eeeeee` |
-| `--border` | `--gray-6` | `#d9d9d9` | `#3a3a3a` |
-| `--input` | `--gray-10` | `#838383` | `#7b7b7b` |
-| `--ring` | `--gray-11` | `#646464` | `#b4b4b4` |
+| Token                | Step          | Light branch | Dark branch |
+| -------------------- | ------------- | ------------ | ----------- |
+| `--background`       | `--gray-1`    | `#f9f9f9`    | `#111111`   |
+| `--foreground`       | `--gray-12`   | `#202020`    | `#eeeeee`   |
+| `--card`             | `--gray-2`    | `#fcfcfc`    | `#191919`   |
+| `--muted`            | `--gray-3`    | `#f0f0f0`    | `#222222`   |
+| `--muted-foreground` | `--gray-11`   | `#646464`    | `#b4b4b4`   |
+| `--primary`          | `--accent-12` | `#202020`    | `#eeeeee`   |
+| `--border`           | `--gray-6`    | `#d9d9d9`    | `#3a3a3a`   |
+| `--input`            | `--gray-10`   | `#838383`    | `#7b7b7b`   |
+| `--ring`             | `--gray-11`   | `#646464`    | `#b4b4b4`   |
 
-Read the last two columns as the two branches of the *step's* one declaration, not as the token's
+Read the last two columns as the two branches of the _step's_ one declaration, not as the token's
 value. Each token in the first column is declared exactly once and means the same thing in both modes — `--background` is the app
 background whichever mode is on. That is what makes the number of mode-varying decisions at the
 semantic layer zero, and it is why the override point for a per-mode value is the step.
@@ -322,7 +322,7 @@ Note the border went away as well — see `forge-ui-layout-muted-panel` in `02-l
 ## Contrast is per scheme, per mode
 
 `forge-ui-contrast-floor` fixes the ratios. What that Floor does not say, and what the layering makes
-easy to forget, is that a passing ratio is a property of *one scale in one mode*.
+easy to forget, is that a passing ratio is a property of _one scale in one mode_.
 
 There is no longer a worst case to take across five ramps, and the reason is stronger than the count
 changing. **All four shipped schemes are built on one lightness ramp and differ only in hue**, so
@@ -376,10 +376,10 @@ brand hue has to author them, and forge gives that job a shape that most colour 
 steps are not decoration, they are the operands of a mapping `theme-base.css` has already written.
 Read the mapping first, then pick values that survive it.
 
-The four shipped schemes are worked examples of the *shape* — twelve solid steps, once each, and
+The four shipped schemes are worked examples of the _shape_ — twelve solid steps, once each, and
 nothing else — but not of the authoring, because each of them sidesteps
 the hard half the same way: every step's lightness is Radix's, so no lightness in them was chosen
-against forge's mapping. Only the hue was chosen. The example of a scale with *authored* values in it
+against forge's mapping. Only the hue was chosen. The example of a scale with _authored_ values in it
 is in `src/ui/README.md`, and it is written in `oklch()`.
 
 Default: a scale is authored in a colour space that carries lightness as its own coordinate —
@@ -403,7 +403,7 @@ A scale that bleaches its ends spends its brand on the steps nobody looks at and
 page, which is the opposite of the intent that motivated authoring one at all.
 
 Default: the tint runs through the whole scale, not only its ends — the middle steps carry the same
-hue at a chroma low enough to read as neutral — which is the *only* thing separating the four
+hue at a chroma low enough to read as neutral — which is the _only_ thing separating the four
 shipped schemes from one another: `theme-stone.css` is warm, `theme-gray.css` cool and
 `theme-slate.css` strongly cool, `theme-neutral.css` sits at no tint at all, and the twelve
 lightnesses are otherwise the same decision. Unless a brief fixes untinted greys, usually because a
@@ -412,7 +412,7 @@ bending. <!-- rule:forge-ui-color-ramp-author-tinted-neutrals -->
 
 **How much tint is a question of what else carries the identity.** A neutral calibrated to sit under
 a saturated accent only has to lean toward it, because the accent is doing the work; a scheme that is
-*all* there is has to carry the identity itself, and a lean that reads as deliberate under an accent
+_all_ there is has to carry the identity itself, and a lean that reads as deliberate under an accent
 reads as a rendering artifact without one. Forge is the second case — `--accent-12` aliases
 `--gray-12`, near-black — and the headers of the tinted scheme files carry the measurement that
 settled how far their steps had to move. Measured as max−min across R/G/B at step 11, the muted-text
@@ -437,7 +437,7 @@ new scale only rotates the tint of an already-audited one at identical lightness
 carve-out `forge-ui-color-theme-per-theme-audit` already
 states. <!-- rule:forge-ui-color-ramp-author-audit-pairs -->
 
-Where a pair misses, the repair is to move that one *step's* lightness. It is **not** to lower the
+Where a pair misses, the repair is to move that one _step's_ lightness. It is **not** to lower the
 chroma of the scale until the numbers pass: draining chroma raises contrast for the pair you were
 looking at and turns the brand scale back into grey everywhere else, which converts a local failure
 into a global one. `--muted-foreground` on `--muted` is where this bites first, for the reason
@@ -450,11 +450,11 @@ into a global one. `--muted-foreground` on `--muted` is where this bites first, 
 border (`border-destructive`), and as a fill — where the pair supplies the foreground so no call
 site has to choose one.
 
-| You want | Do |
-|---|---|
-| Destructive text on a normal surface | `text-destructive` on `--background`, `--card` or `--muted` |
-| A filled destructive button | `Button variant='destructive'` |
-| A destructive badge or alert | `Badge variant='destructive'` or `Alert variant='destructive'`, and set no colours yourself |
+| You want                             | Do                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Destructive text on a normal surface | `text-destructive` on `--background`, `--card` or `--muted`                                 |
+| A filled destructive button          | `Button variant='destructive'`                                                              |
+| A destructive badge or alert         | `Badge variant='destructive'` or `Alert variant='destructive'`, and set no colours yourself |
 
 Default: `bg-destructive` is set together with `text-destructive-foreground` and never with a
 foreground picked by hand, unless the destructive colour is being used as text or as a border
@@ -462,21 +462,21 @@ rather than as a fill. <!-- rule:forge-ui-color-semantic-destructive-pair -->
 
 The rule id is older than the pair and is kept deliberately — it used to say the opposite, that
 `bg-destructive` required a hand-verified foreground because no token existed. Renaming it would
-strand every citation of it; the id names the *question*, and the answer is what changed.
+strand every citation of it; the id names the _question_, and the answer is what changed.
 
 ## Status colour is forge's; the fills are the app's
 
 Four intents — `danger`, `warning`, `success`, `info` — each with five roles, make up the
 `--status-*` family:
 
-| Role | Use for |
-|---|---|
-| `--status-danger-subtle` / `--status-danger-subtle-foreground` | The panel tier: `Alert`, `Toast`, and the banners `src/http/fragment.ts` renders |
+| Role                                                           | Use for                                                                                                               |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `--status-danger-subtle` / `--status-danger-subtle-foreground` | The panel tier: `Alert`, `Toast`, and the banners `src/http/fragment.ts` renders                                      |
 | `--status-danger-strong` / `--status-danger-strong-foreground` | The chip tier: `Badge`, which starts one stop in because a filled chip sits on a tinted surface rather than a panel's |
-| `--status-danger-border` | The edge of either tier |
+| `--status-danger-border`                                       | The edge of either tier                                                                                               |
 
 The other three intents take the same five roles, spelled `--status-warning-*`,
-`--status-success-*` and `--status-info-*`. The info intent has no *solid* pair — a saturated fill
+`--status-success-*` and `--status-info-*`. The info intent has no _solid_ pair — a saturated fill
 with a foreground sitting on it, the way `--destructive` and `--success` do — because no component
 renders one, and a token with no consumer is a token nobody checks.
 
@@ -498,7 +498,7 @@ counterpart. <!-- rule:forge-ui-color-semantic-variant-fixed -->
 because before the family existed there was no blue, emerald or yellow token to reach for, and
 `Alert`, `Badge` and `Toast` were its worked example. The id is kept and the sentence inverted, on
 the precedent `forge-ui-color-semantic-destructive-pair` set one section up: the id names the
-*question* — how does a status surface get its colour — and only the answer changed. Renaming it
+_question_ — how does a status surface get its colour — and only the answer changed. Renaming it
 would strand every citation.
 
 The `dark:` half is gone with it. A fixed light surface never became theme-independent under `.dark`
@@ -514,7 +514,7 @@ every gate run. `alert.tsx` carried them in a comment until the family landed, a
 there is what let four of them be wrong for as long as they were.
 
 `forge.css` now declares `@custom-variant dark (&:where(.dark, .dark *));` itself, so a consuming app
-no longer adds it — and, since that reconfigures the *app's* own `dark:` utilities too, the escape
+no longer adds it — and, since that reconfigures the _app's_ own `dark:` utilities too, the escape
 hatch is re-declaring the variant after the import. `src/ui/README.md` owns that setup.
 
 ## Radius is one decision, not four
@@ -542,13 +542,13 @@ is copied here at all.
 
 Forge takes numbers and not packages in both directions: neither library is a dependency, the values
 never change without a release, and a dependency would have to resolve through `node_modules`, which
-is the fragility `forge.css`'s `@source` comment already documents. The step *values* come from those
+is the fragility `forge.css`'s `@source` comment already documents. The step _values_ come from those
 two sources; **which role reaches for which step is forge's own decision**, and the border tokens are
 where forge and Radix deliberately disagree.
 
 The colour reasoning re-derived here — a finite scale of neutrals rather than shades invented per
 component, roles named before values, and colour as reinforcement of a signal that is already
-carried in text — draws on *Refactoring UI* by Adam Wathan and Steve Schoger. Every rule was
+carried in text — draws on _Refactoring UI_ by Adam Wathan and Steve Schoger. Every rule was
 rewritten against forge's own system: the twelve-step scale in the scheme files and the semantic
 layer in `theme-base.css`,
 the `color-scheme` that picks each step's mode, and the `--status-*` family the `Badge`, `Alert` and `Toast`
@@ -559,7 +559,7 @@ Three of that account's claims were read and deliberately **not** given rule ids
 
 - **"Prefer HSL to hex."** Forge's own worked scale in `src/ui/README.md` is `oklch()`. Publishing
   the preference would have the corpus contradict the example it points readers at, so the rule
-  above states what the notation has to *do* — carry lightness as its own coordinate — and lets the
+  above states what the notation has to _do_ — carry lightness as its own coordinate — and lets the
   example name the form.
 - **A count of shades per hue.** Already stated at the top of this file, where the twelve steps are
   argued for. A second id would be a second citation anchor for one sentence.

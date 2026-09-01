@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { findModernCssSourceViolations } from "./modern-css-source-parse";
 
 const TSX = "src/ui/core/fixture.tsx";

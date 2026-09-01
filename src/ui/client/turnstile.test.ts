@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { TURNSTILE } from "../contracts/turnstile-contract";
 import { FakeElement, fakeTree } from "./test-dom";
 import { findWidget, hasApi, restoreFocus } from "./turnstile";

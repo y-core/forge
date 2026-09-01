@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { formToObject } from "./to-object";
 import type { ReadonlyFormData } from "./types";
 

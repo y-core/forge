@@ -50,7 +50,7 @@ set** governed by §7a, which reaches the same obligation for a different reason
 
 **`isHxRequest` carries the complementary ruling, and this section owns it: `HX-Request` is a
 client-supplied header any caller can set, so the predicate is a UX routing hint and never a
-security boundary.** It decides *how to render*, never *whether the caller is allowed*. Neither the
+security boundary.** It decides _how to render_, never _whether the caller is allowed_. Neither the
 attribute values nor the request hint substitute for `originProtection`/`crossOriginProtection` and
 `csrfProtection` on mutation routes.
 
@@ -67,7 +67,7 @@ oversight, and the reason is what `safeUrl` does on rejection.**
 `href` it is a visibly dead link — the refusal is loud, and the user sees nothing happen. On an
 `hx-get` it is a valid same-origin URL naming the **current page**: htmx would issue a real request
 for it and swap the response into the target. Sanitizing here converts a loud refusal into a
-*successful wrong request* — a fetch-and-swap indistinguishable at the point of failure from the
+_successful wrong request_ — a fetch-and-swap indistinguishable at the point of failure from the
 behaviour the author intended. A guard whose failure mode is silent success is worse than no guard,
 because it also removes the pressure to supply a trustworthy value in the first place.
 
@@ -107,7 +107,7 @@ obligation is direct evaluation rather than a misrouted swap.
 `on*` filter anywhere in the JSX renderer; the only name-based gate is the attribute-name validity
 regex owned by `src/jsx/render-to-string.ts`, which `hx-on:click` satisfies, so the value is escaped
 and written like any other attribute. Escaping does not help: htmx reads the attribute from the DOM
-*after* the parser has decoded entities, so an escaped payload is decoded again before evaluation.
+_after_ the parser has decoded entities, so an escaped payload is decoded again before evaluation.
 
 A CSP without `'unsafe-eval'` is the **second** layer. htmx compiles an `hx-on:*` body with
 `new Function`, which forge's default `script-src` does not permit (`src/security/headers.ts`, and
@@ -140,7 +140,7 @@ form-scoped `closest form:abort` a field-validation helper would otherwise want.
 htmx resolves a `hx-sync` selector at request time and does not null-check the result, so a
 `closest form` default throws inside htmx's own trigger handler for any field with no enclosing
 `<form>` — no request, no `htmx:*` error event, nothing in the console tied to the attribute. The
-failure is invisible at exactly the call site that got it wrong. A caller that *is* inside a form
+failure is invisible at exactly the call site that got it wrong. A caller that _is_ inside a form
 and wants cross-field aborting passes `sync: "closest form:abort"` explicitly, which is the
 position in which the selector is known to resolve.
 

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import type { SpriteSource } from "../../assets/types";
 
 // `panel-open`/`panel-close` serves all four cases and mirrored under `rtl:`

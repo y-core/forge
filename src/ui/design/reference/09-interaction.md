@@ -6,7 +6,7 @@ any of it. The Floor rules it leans on (`forge-ui-focus-ring`, `forge-ui-hit-tar
 
 The through-line: **forge already implements the interaction models.** Almost every rule below is
 "call the controller forge ships" rather than "write this behaviour". A hand-written key handler is
-not merely more code, it is a *second* model of what an arrow key means, on a page that already has
+not merely more code, it is a _second_ model of what an arrow key means, on a page that already has
 one.
 
 ---
@@ -28,7 +28,7 @@ about not inventing a second treatment beside it. That measurement is also why
 outline tokens from the derived form it otherwise asks for.
 
 Default: use the `focus-visible` variant, never bare `focus` — unless the control is reachable
-*only* by pointer, which in practice never happens. <!-- rule:forge-ui-interaction-focus-visible -->
+_only_ by pointer, which in practice never happens. <!-- rule:forge-ui-interaction-focus-visible -->
 `focus` fires on a mouse click too, so a ring flashes on every button press and trains the reader to
 ignore it. `focus-visible` is the browser's own judgement about whether the user is navigating by
 keyboard, and it is a better judgement than any heuristic written at the call site.
@@ -70,7 +70,7 @@ island navigates as RTL, and returns a disposer.
 Default: leave a `RadioGroup` alone — do not mount `mountRovingFocus` on it — unless the group is
 not built from same-named `<input type="radio">` at all. <!-- rule:forge-ui-interaction-no-roving-radio -->
 The platform already supplies the whole roving-tabindex contract for radios sharing a `name`: one
-tab stop, arrow keys that move *and* check, Home/End. Mounting the controller beside it gives arrow
+tab stop, arrow keys that move _and_ check, Home/End. Mounting the controller beside it gives arrow
 keys two handlers, and the second one moves focus without checking, so the group's value and its
 focus stop agreeing.
 
@@ -100,9 +100,13 @@ amount of code is the side-effect import and nothing else.
 
 ```tsx
 // Wrong — a bare row of buttons, with arrow keys wired up by a hand-written listener elsewhere.
-<div class="flex gap-1" data-ref="tool-row">
-  {tools.map((t) => <button type="button" class="…">{t.label}</button>)}
-</div>
+<div class='flex gap-1' data-ref='tool-row'>
+  {tools.map((t) => (
+    <button type='button' class='…'>
+      {t.label}
+    </button>
+  ))}
+</div>;
 
 // Costs: two arrow-key models in one document; no typeahead, no Home/End, no disabled-skip, no RTL.
 
@@ -110,13 +114,11 @@ amount of code is the side-effect import and nothing else.
 import { Toolbar } from "@y-core/forge/ui/core";
 import { ACTIVE_COMPOSITE_ITEM } from "@y-core/forge/ui/contracts";
 
-<Toolbar aria-label="Tools">
+<Toolbar aria-label='Tools'>
   {tools.map((t) => (
-    <Toolbar.Button {...(t.id === activeTool ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {})}>
-      {t.label}
-    </Toolbar.Button>
+    <Toolbar.Button {...(t.id === activeTool ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {})}>{t.label}</Toolbar.Button>
   ))}
-</Toolbar>
+</Toolbar>;
 ```
 
 ---
@@ -125,16 +127,16 @@ import { ACTIVE_COMPOSITE_ITEM } from "@y-core/forge/ui/contracts";
 
 Three ways to withhold a control, and they communicate three different things. Choosing by
 convenience is how a reader ends up staring at a greyed button with no way to learn why. Withholding
-a whole *subtree* is a fourth thing and belongs to `forge-ui-platform-inert` in
+a whole _subtree_ is a fourth thing and belongs to `forge-ui-platform-inert` in
 [`16-platform.md`](./16-platform.md).
 
-| The situation | Use | What the reader learns |
-|---|---|---|
-| The action is unavailable *right now*, and something the reader can do would change that | enabled control + inline explanation, or `Alert` on attempt | what to do next |
-| The action is unavailable and nothing the reader does changes it in this view | `disabled` + adjacent text | that it exists, and that it is not for them here |
-| The value is real and worth reading, but not editable | `readonly` on the control | the value, and that it is settled |
-| The reader has no permission for this capability at all | omit it | nothing — correctly |
-| The control is mid-flight on a request | `hx-disabled-elt` (see [`11-htmx.md`](./11-htmx.md)) | that the request is running |
+| The situation                                                                            | Use                                                         | What the reader learns                           |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
+| The action is unavailable _right now_, and something the reader can do would change that | enabled control + inline explanation, or `Alert` on attempt | what to do next                                  |
+| The action is unavailable and nothing the reader does changes it in this view            | `disabled` + adjacent text                                  | that it exists, and that it is not for them here |
+| The value is real and worth reading, but not editable                                    | `readonly` on the control                                   | the value, and that it is settled                |
+| The reader has no permission for this capability at all                                  | omit it                                                     | nothing — correctly                              |
+| The control is mid-flight on a request                                                   | `hx-disabled-elt` (see [`11-htmx.md`](./11-htmx.md))        | that the request is running                      |
 
 Default: prefer an enabled control that explains its refusal over a disabled one that does not —
 unless the reason is visible within one glance of the control. <!-- rule:forge-ui-interaction-disabled-last -->
@@ -162,13 +164,13 @@ revealed by `focus-within`.
 ## Motion
 
 Forge's ratified motion dial is 3 of 10 ([`UI_DESIGN_GUIDANCE.md`](../../../../.decisions/implementation/UI_DESIGN_GUIDANCE.md) §8).
-That setting is what the rules below encode: movement that reads as the interface *responding*, and
+That setting is what the rules below encode: movement that reads as the interface _responding_, and
 never as the interface performing.
 
 Default: author one motion moment per interaction — unless a brief raises the motion dial for a
 named marketing surface. <!-- rule:forge-ui-interaction-one-moment -->
 A dialog that fades its backdrop, scales its panel, and slides its title is three moments where one
-was asked for, and the reader waits for all three. *Which* changes may carry motion at all is
+was asked for, and the reader waits for all three. _Which_ changes may carry motion at all is
 [`12-density.md`](./12-density.md)'s (`forge-ui-density-motion-budget`); this rule bounds how much
 motion any one of them gets.
 
@@ -195,7 +197,7 @@ Lay a popup's contents out on a child instead of on the popover element itself.
 Default: give a trigger its open-state feedback with a `:has()` rule that reads the popup's own
 `:popover-open`, rather than a listener or a mirrored attribute on the trigger — unless the popup is
 modal, whose `::backdrop` paints over the trigger regardless. <!-- rule:forge-ui-interaction-trigger-state -->
-The trigger is styled from a *sibling's* state, which no class on the trigger could know about, and
+The trigger is styled from a _sibling's_ state, which no class on the trigger could know about, and
 `:has()` is what makes that expressible with no runtime at all — the general form of that move, for
 any ancestor read from a descendant's state, is `forge-ui-platform-parent-state` in
 [`16-platform.md`](./16-platform.md). Match the structure: a trigger that is

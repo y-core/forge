@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { posix, relative, resolve, sep } from "node:path";
+
 import { type CheckResult, checkResult, type Finding, fail } from "../finding";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
 

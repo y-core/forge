@@ -1,4 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
+
 import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
 

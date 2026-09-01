@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
+
 import { type CheckResult, checkResult, type Finding, fail } from "../finding";
 import { findClassDeclarations, findSourceDirectives } from "./css-parse";
 

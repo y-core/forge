@@ -45,7 +45,7 @@ authored `::-webkit-slider-runnable-track` / `::-moz-range-track` and thumb rule
 `forge-ui.css`, because no utility class reaches a UA pseudo-element. On a `<select>` it leaves no
 arrow — `Select` reserves `pe-10` and positions its own `aria-hidden` `chevron-down` `Icon`. On a
 checkbox or radio it leaves nothing to mark checked — and it also gives up the exemption 1.4.11
-grants a control the author has not modified, so `CheckboxGroup` and `RadioGroup` replace *two*
+grants a control the author has not modified, so `CheckboxGroup` and `RadioGroup` replace _two_
 things: the box, with an explicit `border-input` boundary and a `checked:bg-primary` fill, and the
 user's own palette, with the `@media (forced-colors: active)` block in `forge-ui.css` §9 — without
 which a High Contrast reader gets two identically empty squares. `list-none` removes
@@ -107,7 +107,7 @@ siblings, and the fixed status hues — and each step holds one literal value co
 declared by `theme-neutral.css` (or whichever scheme file is imported after it) and, for the hues,
 `theme-colors.css`. `theme-base.css` holds the mapping, the `color-scheme` that picks each step's
 mode, and no colour values at all. That is what makes a theme swap a one-file change, and what makes
-a *per-mode* change an edit to the step rather than to the token.
+a _per-mode_ change an edit to the step rather than to the token.
 
 A Tailwind palette utility is permitted **only paired with its own `dark:` counterpart**, and only
 for a hue no forge token covers. A bare `bg-red-50` is not a literal, but it fails for the same

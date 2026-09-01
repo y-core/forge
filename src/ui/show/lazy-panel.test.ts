@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { fakeTree } from "../client/test-dom";
 import {
   LAZY_DEMO_LOADED,

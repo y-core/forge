@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createSignedCookie } from "./signed";
 
 const SECRET_32 = "a".repeat(32);

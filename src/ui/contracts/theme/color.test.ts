@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
+
 import { oklchToSrgb, toHex } from "../../../assets/build/color";
 import {
   ACCENT_RAMP,

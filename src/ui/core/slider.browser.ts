@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { mount, paintedHex } from "../client/browser-test-helper";
 import { Slider } from "./slider";
@@ -54,6 +55,7 @@ async function measureTrack(page: Page, thickness: Thickness): Promise<number> {
   // a `Buffer` and there is no `toString("base64")` on the `Uint8Array` it resolves to here.
   const png = Array.from(await page.screenshot({ type: "png" }));
   return page.evaluate(
+    // oxlint-disable-next-line eslint/no-shadow -- the callback runs in the browser realm and cannot close over the Node-side binding; the matching name is what documents the marshalled argument
     async ({ png, thickness, selector, trackPixel }) => {
       const bitmap = await createImageBitmap(new Blob([new Uint8Array(png)], { type: "image/png" }));
       const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);

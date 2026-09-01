@@ -6,7 +6,7 @@ description: "The published Result signatures, the http fragment renderers, and 
 # Error Handling
 
 > Owns forge's published `Result` signatures and domain aliases, the `http` fragment renderers,
-> and the router error boundary's header guarantees. The primitive's *rules* — narrowing, the
+> and the router error boundary's header guarantees. The primitive's _rules_ — narrowing, the
 > single failure channel, the taxonomy — are governance; this document owns the surface.
 >
 > Defers to: [`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) for the validation pipeline that
@@ -115,7 +115,7 @@ Renders the flat message list as a `<ul>`. Pass the `error` list from a `Validat
 
 `FragmentOptions` controls presentation only — `class`, `successAttr`, `ulClass`.
 
-**Every option *class* value is HTML-escaped before interpolation**, so a hostile class string
+**Every option _class_ value is HTML-escaped before interpolation**, so a hostile class string
 cannot break out of the attribute.
 
 **`successAttr` is interpolated verbatim** — it is by contract a developer-supplied raw
@@ -146,7 +146,7 @@ injection into pre-existing HTML strings.
 Escapes `&`, `<`, `>`, `"`, `'` to their entity equivalents.
 
 ```typescript
-escapeHtml('<script>alert("xss")</script>')
+escapeHtml('<script>alert("xss")</script>');
 // → '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
 ```
 
@@ -196,18 +196,19 @@ Three paths, with different header guarantees:
   yields a fully hardened error page; a guard that queues on the way out — `session`, `flash` — does
   not, which is what the innermost boundary depth still protects.
 
-**Queued-header precedence** is *last writer wins per name*, and inner middleware queues after
+**Queued-header precedence** is _last writer wins per name_, and inner middleware queues after
 outer, so an overlapping name resolves **inner-wins**. That is distinct from the pending-vs-Response
 rule below: pending always beats a header the handler baked into its own `Response`.
+
 - **Out-of-chain errors** (thrown in router internals, or by env/config resolution before routing)
   never reach the consumer's security middleware, so the handler emits a self-contained
   **baseline-hardened 500**:
 
-  | Header | Value |
-  |---|---|
-  | `X-Content-Type-Options` | `nosniff` |
+  | Header                    | Value                |
+  | ------------------------- | -------------------- |
+  | `X-Content-Type-Options`  | `nosniff`            |
   | `Content-Security-Policy` | `default-src 'none'` |
-  | `Referrer-Policy` | `no-referrer` |
+  | `Referrer-Policy`         | `no-referrer`        |
 
   On the in-chain path `applyPendingHeaders` set-overwrites these with the consumer's policy.
   No error path ships an unprotected response.

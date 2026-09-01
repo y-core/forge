@@ -93,12 +93,12 @@ function timingSafeEqualBytesFallback(a: Uint8Array, b: Uint8Array): boolean {
   if (a.byteLength !== b.byteLength) {
     // Must still run a full pass: an early `return false` here would leak length by timing.
     let acc = 1;
-    // biome-ignore lint/style/noNonNullAssertion: optional chaining would branch in constant-time code; bounds guaranteed by the loop condition.
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- optional chaining would branch in constant-time code; bounds guaranteed by the loop condition.
     for (let i = 0; i < a.byteLength; i++) acc |= a[i]! ^ a[i]!;
     return acc === 0;
   }
   let diff = 0;
-  // biome-ignore lint/style/noNonNullAssertion: optional chaining would branch in constant-time code; bounds guaranteed by the loop condition.
+  // oxlint-disable-next-line typescript/no-non-null-assertion -- optional chaining would branch in constant-time code; bounds guaranteed by the loop condition.
   for (let i = 0; i < a.byteLength; i++) diff |= a[i]! ^ b[i]!;
   return diff === 0;
 }

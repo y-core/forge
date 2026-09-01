@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { controlsReadout } from "./controls-demo-contract";
 
 describe("controlsReadout", () => {

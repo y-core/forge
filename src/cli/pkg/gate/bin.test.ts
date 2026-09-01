@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { createReleaseBinCommand } from "../release/release";
 import { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
 

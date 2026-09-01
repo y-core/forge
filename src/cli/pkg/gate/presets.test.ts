@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, type Step } from "./steps";
 
@@ -12,7 +13,7 @@ function fixerOf(step: Step | undefined): readonly string[] | undefined {
 
 describe("cloudflareWorkerSteps() — shape", () => {
   it("emits the fleet's order, minus the optional asset step", () => {
-    expect(labelsOf(cloudflareWorkerSteps())).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "test"]);
+    expect(labelsOf(cloudflareWorkerSteps())).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "format", "test"]);
   });
 
   it("inserts types:assets after the binding types and before the type check", () => {
@@ -22,6 +23,7 @@ describe("cloudflareWorkerSteps() — shape", () => {
       "types:assets",
       "typecheck",
       "lint",
+      "format",
       "test",
     ]);
   });
@@ -77,7 +79,7 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
   });
 
   it("omits both wrangler steps for an app that declares its binding types by hand", () => {
-    expect(labelsOf(cloudflareWorkerSteps({ wranglerTypes: false }))).toEqual(["typecheck", "lint", "test"]);
+    expect(labelsOf(cloudflareWorkerSteps({ wranglerTypes: false }))).toEqual(["typecheck", "lint", "format", "test"]);
   });
 
   it("emits the asset step with --out, since the emitter writes nothing useful without one", () => {
@@ -103,15 +105,23 @@ describe("cloudflareWorkerSteps() — options", () => {
   it("defaults the linted and tested paths to src/ and tests/", () => {
     const steps = cloudflareWorkerSteps();
 
-    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/", "tests/"]);
+    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["oxlint", "--deny-warnings", "src/", "tests/"]);
+    expect(steps.find((step) => step.label === "format")?.cmd).toEqual(["oxfmt", "--check", "src/", "tests/"]);
     expect(steps.find((step) => step.label === "test")?.cmd).toEqual(["bun", "test", "tests/"]);
   });
 
   it("threads sources through both the lint command and its fixer", () => {
     const lint = cloudflareWorkerSteps({ sources: ["src/", "tests/", "scripts/"] }).find((step) => step.label === "lint");
 
-    expect(lint?.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/", "tests/", "scripts/"]);
-    expect(fixerOf(lint)).toEqual(["biome", "check", "--write", "src/", "tests/", "scripts/"]);
+    expect(lint?.cmd).toEqual(["oxlint", "--deny-warnings", "src/", "tests/", "scripts/"]);
+    expect(fixerOf(lint)).toEqual(["oxlint", "--fix", "src/", "tests/", "scripts/"]);
+  });
+
+  it("threads sources through both the format command and its fixer", () => {
+    const format = cloudflareWorkerSteps({ sources: ["src/", "tests/", "scripts/"] }).find((step) => step.label === "format");
+
+    expect(format?.cmd).toEqual(["oxfmt", "--check", "src/", "tests/", "scripts/"]);
+    expect(fixerOf(format)).toEqual(["oxfmt", "src/", "tests/", "scripts/"]);
   });
 
   it("passes every test path to one bun test invocation", () => {
@@ -121,11 +131,29 @@ describe("cloudflareWorkerSteps() — options", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — the governance step", () => {
+  // The argv is published contract: a sibling's gate invokes exactly these words.
+  it("emits `gov sync --check` after format, with the sync itself as its fixer", () => {
+    const steps = cloudflareWorkerSteps({ governance: true });
+    const governance = steps.find((step) => step.label === "governance");
+
+    expect(governance?.cmd).toEqual(["gov", "sync", "--check"]);
+    expect(fixerOf(governance)).toEqual(["gov", "sync"]);
+    expect(labelsOf(steps)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "format", "governance", "test"]);
+  });
+
+  it("omits the step entirely for an app that does not clone the corpus", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("governance");
+    expect(labelsOf(cloudflareWorkerSteps({ governance: false }))).not.toContain("governance");
+  });
+});
+
 describe("cloudflareWorkerSteps() — fixers", () => {
-  it("gives lint the only fixer, so --fix never silently rewrites generated types", () => {
+  // `lint` before `format`: under `--fix` the formatter must write last and own the final layout.
+  it("gives lint and format the only fixers, so --fix never silently rewrites generated types", () => {
     const fixable = cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }).filter((step) => fixerOf(step) !== undefined);
 
-    expect(labelsOf(fixable)).toEqual(["lint"]);
+    expect(labelsOf(fixable)).toEqual(["lint", "format"]);
   });
 });
 
@@ -136,6 +164,7 @@ describe("forgeChecks() — shape", () => {
     expect(labelsOf(forgeChecks({ root: "/nowhere", pkg: PKG }))).toEqual([
       "typecheck",
       "lint",
+      "format",
       "test",
       "validate-exports",
       "validate-jsx",
@@ -168,14 +197,15 @@ describe("forgeChecks() — options", () => {
   it("defaults lint to src/ and tests the whole project", () => {
     const steps = forgeChecks({ root: "/nowhere", pkg: PKG });
 
-    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/"]);
+    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["oxlint", "--deny-warnings", "src/"]);
+    expect(steps.find((step) => step.label === "format")?.cmd).toEqual(["oxfmt", "--check", "src/"]);
     expect(steps.find((step) => step.label === "test")?.cmd).toEqual(["bun", "test"]);
   });
 
   it("threads sources and tests to the two steps that take them", () => {
     const steps = forgeChecks({ root: "/nowhere", pkg: PKG, sources: ["src/", "scripts/"], tests: ["tests/"] });
 
-    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["biome", "check", "--error-on-warnings", "src/", "scripts/"]);
+    expect(steps.find((step) => step.label === "lint")?.cmd).toEqual(["oxlint", "--deny-warnings", "src/", "scripts/"]);
     expect(steps.find((step) => step.label === "test")?.cmd).toEqual(["bun", "test", "tests/"]);
   });
 

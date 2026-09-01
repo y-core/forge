@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+
 import { render } from "../../testing/render";
 import { Menu } from "../core/menu";
 import { mount } from "./browser-test-helper";
@@ -50,6 +51,7 @@ async function sizeIt(page: Page): Promise<void> {
 
 async function openAt(page: Page, x: number, y: number): Promise<void> {
   await page.evaluate(
+    // oxlint-disable-next-line eslint/no-shadow -- the callback runs in the browser realm and cannot close over the Node-side binding; the matching name is what documents the marshalled argument
     ({ x, y }) => {
       const el = document.querySelector<HTMLElement>("#ctx");
       if (el) window.forgePopoverAnchor.openPopoverAt(el, x, y);
@@ -183,6 +185,7 @@ test.describe("openPopoverAt", () => {
 test.describe("openPopoverAt with flip", () => {
   async function openFlipped(page: Page, x: number, y: number): Promise<void> {
     await page.evaluate(
+      // oxlint-disable-next-line eslint/no-shadow -- the callback runs in the browser realm and cannot close over the Node-side binding; the matching name is what documents the marshalled argument
       ({ x, y }) => {
         const el = document.querySelector<HTMLElement>("#ctx");
         if (el) window.forgePopoverAnchor.openPopoverAt(el, x, y, { flip: true });

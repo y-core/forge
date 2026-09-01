@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+
 import type { DevVar } from "./devvars";
 import { editDevVars, GENERATE_MARKER, writeDevVars } from "./devvars";
 

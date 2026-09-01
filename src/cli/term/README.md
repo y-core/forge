@@ -72,7 +72,7 @@ mutating `process.env`.
 
 `createColorize(level)` is a chainable styler — 16, 256 and 24-bit, `hex` and
 `rgb`, degrading on the level integer. Two behaviours are worth knowing:
-nesting restores the *outer* style rather than resetting, so `red(green(x) + "y")`
+nesting restores the _outer_ style rather than resetting, so `red(green(x) + "y")`
 comes back red; and a style is closed at every newline and reopened after it, so a
 background colour cannot bleed to the right edge and a multi-line cell cannot
 break the grid drawn around it.
@@ -89,13 +89,13 @@ frozen level-0 styler that returns its input.
 Vendored and adapted logic, all MIT unless noted, all reproduced under the licence
 text below.
 
-| What | Upstream | Source |
-|---|---|---|
-| ANSI pattern, East-Asian and combining range tables, the OSC 8 measuring rule, the sticky-regex discipline | [`@visulima/string`](https://github.com/visulima/visulima) | `packages/data-manipulation/string/src/{constants,get-string-truncated-width}.ts` |
-| Border slot record and the zero-width-means-skip convention; `padAlign` | [`@visulima/tabular`](https://github.com/visulima/visulima) | `packages/terminal/tabular/src/style.ts`, `src/utils/pad-and-align-content.ts` |
-| Colour-support precedence order | [`@visulima/is-ansi-color-supported`](https://github.com/visulima/visulima), after [`chalk/supports-color`](https://github.com/chalk/supports-color) | `packages/terminal/is-ansi-color-supported/src/is-color-supported.server.ts` |
-| SGR code table, level degradation, the chainable engine's nesting and multi-line rewrites | [`@visulima/colorize`](https://github.com/visulima/visulima), after [`ansis`](https://github.com/webdiscus/ansis) (ISC, © 2023 webdiscus) | `packages/terminal/colorize/src/{ansi-codes,colorize.server}.ts` |
-| RGB → 256 → 16 conversions | [`color-convert`](https://github.com/Qix-/color-convert) (© 2011–2016 Heather Arthur, 2016–2021 Josh Junon) | `conversions.js` |
+| What                                                                                                       | Upstream                                                                                                                                             | Source                                                                            |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| ANSI pattern, East-Asian and combining range tables, the OSC 8 measuring rule, the sticky-regex discipline | [`@visulima/string`](https://github.com/visulima/visulima)                                                                                           | `packages/data-manipulation/string/src/{constants,get-string-truncated-width}.ts` |
+| Border slot record and the zero-width-means-skip convention; `padAlign`                                    | [`@visulima/tabular`](https://github.com/visulima/visulima)                                                                                          | `packages/terminal/tabular/src/style.ts`, `src/utils/pad-and-align-content.ts`    |
+| Colour-support precedence order                                                                            | [`@visulima/is-ansi-color-supported`](https://github.com/visulima/visulima), after [`chalk/supports-color`](https://github.com/chalk/supports-color) | `packages/terminal/is-ansi-color-supported/src/is-color-supported.server.ts`      |
+| SGR code table, level degradation, the chainable engine's nesting and multi-line rewrites                  | [`@visulima/colorize`](https://github.com/visulima/visulima), after [`ansis`](https://github.com/webdiscus/ansis) (ISC, © 2023 webdiscus)            | `packages/terminal/colorize/src/{ansi-codes,colorize.server}.ts`                  |
+| RGB → 256 → 16 conversions                                                                                 | [`color-convert`](https://github.com/Qix-/color-convert) (© 2011–2016 Heather Arthur, 2016–2021 Josh Junon)                                          | `conversions.js`                                                                  |
 
 Written fresh, with only the structure adopted: the width scanner, the capability
 resolver, the code factory.

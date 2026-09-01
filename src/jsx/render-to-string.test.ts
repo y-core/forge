@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { cloneElement, createElement as el, Fragment, isValidElement } from "./element";
 import { renderPage, renderToString } from "./render-to-string";
 import type { ComponentFn } from "./types";

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { type Align, applyStateAttrs, type Orientation, type Side, STATE_ATTRS, stateAttrs } from "./state-attrs";
 
 const UI_DIR = dirname(dirname(fileURLToPath(import.meta.url)));

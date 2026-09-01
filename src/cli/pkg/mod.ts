@@ -9,12 +9,14 @@ export {
   designStep,
   docsStep,
   exportsStep,
+  formatStep,
   jsxStep,
   lintStep,
   modernCssStep,
   namespaceGraphStep,
   ssrBoundaryStep,
   testStep,
+  typeAwareLintStep,
   typecheckStep,
 } from "./gate/builders";
 export type { AssetRootCheckConfig } from "./gate/checks/asset-root";

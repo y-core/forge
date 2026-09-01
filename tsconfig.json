@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "lib": [
-      "ESNext",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
@@ -24,10 +20,5 @@
     "jsx": "react-jsx",
     "jsxImportSource": "@y-core/forge/jsx"
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "config/**/*.ts",
-    ".types/**/*.d.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "config/**/*.ts", ".types/**/*.d.ts"]
 }

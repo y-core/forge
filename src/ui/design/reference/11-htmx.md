@@ -1,6 +1,6 @@
 # HTMX Surfaces
 
-This page is about the *design* consequences of swapping fragments. The API — `hxAttrs`,
+This page is about the _design_ consequences of swapping fragments. The API — `hxAttrs`,
 `hxHeaders`, the pattern helpers, `isHxRequest`, the trust posture on selector-valued attributes —
 belongs to [`HTMX.md`](../../../../.decisions/implementation/HTMX.md) and `src/html/README.md`, and is not
 restated here.
@@ -25,7 +25,7 @@ comes back has to be legible on its own.
 Default: give every swappable region three states of its own — empty, in-flight, and error — before
 writing the success case — unless the region can never be any of the three. <!-- rule:forge-ui-htmx-fragment-states -->
 `forge-ui-empty-state` is the Floor for the empty one; this rule extends the obligation to the other
-two, because a fragment's error path is a *response body*, not an exception the page handles.
+two, because a fragment's error path is a _response body_, not an exception the page handles.
 
 Default: return the empty state from the fragment handler itself rather than branching in the
 parent — unless the parent must also collapse a wrapper the fragment does not
@@ -47,7 +47,7 @@ it is a design decision that is almost always made by default — badly.
 
 Which placeholder a wait takes, and that it occupies the box the result will, are
 [`07-states.md`](./07-states.md)'s — `forge-ui-state-skeleton-shape`, `forge-ui-state-spinner-scope`
-and `forge-ui-state-preserve-layout`. What is specific to a swap is *when* the placeholder has to
+and `forge-ui-state-preserve-layout`. What is specific to a swap is _when_ the placeholder has to
 exist.
 
 Default: ship the swap target's placeholder in the **initial** page render, before any request goes
@@ -91,20 +91,20 @@ flight. <!-- rule:forge-ui-htmx-disable-inflight -->
 against a double submit. Building the same form by hand and forgetting it is the common route to
 two records.
 
-| The wait is for… | Indicator goes on | Placeholder |
-|---|---|---|
-| A form submission | the submitting `Button` (`disabledElt: "this"`) | none — the control's own state is the signal |
-| A region of content loading | the region | `Skeleton` at the incoming shape |
-| A live search | the search `Input`'s row | `Skeleton` rows in the reserved result box |
-| An appended page (`infiniteScroll`) | the sentinel at the list's end | `Skeleton` row where the next item lands |
-| A background action with no visible target | nothing on the page | `FlashOob` on completion |
+| The wait is for…                           | Indicator goes on                               | Placeholder                                  |
+| ------------------------------------------ | ----------------------------------------------- | -------------------------------------------- |
+| A form submission                          | the submitting `Button` (`disabledElt: "this"`) | none — the control's own state is the signal |
+| A region of content loading                | the region                                      | `Skeleton` at the incoming shape             |
+| A live search                              | the search `Input`'s row                        | `Skeleton` rows in the reserved result box   |
+| An appended page (`infiniteScroll`)        | the sentinel at the list's end                  | `Skeleton` row where the next item lands     |
+| A background action with no visible target | nothing on the page                             | `FlashOob` on completion                     |
 
 ---
 
 ## Where a result lands
 
 Default: send the outcome of a background or global action to the flash region out-of-band with
-`FlashOob`, rather than into the swapped surface — unless the message is *about* the swapped content
+`FlashOob`, rather than into the swapped surface — unless the message is _about_ the swapped content
 and belongs beside it. <!-- rule:forge-ui-htmx-oob-flash -->
 `FlashOob` defaults to a `beforeend` swap into `#flash-container`, which is the id `FlashContainer`
 renders — so a result reaches the notification region with no coordination between the two handlers.
@@ -136,7 +136,7 @@ from the top of the document, and a screen reader loses its position entirely. T
 defect that has to be planned for at layout time, not patched afterwards — it is the single most
 common way an otherwise correct HTMX page becomes unusable by keyboard.
 
-`forge-ui-focus-ring` guarantees focus is *visible*; nothing guarantees it still exists after the
+`forge-ui-focus-ring` guarantees focus is _visible_; nothing guarantees it still exists after the
 DOM under it is replaced.
 
 Default: choose a swap target that does not contain the control that triggered the request — unless

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { isChosen, paintControl, readControl } from "./bind";
 import { fakeTree } from "./test-dom";
 

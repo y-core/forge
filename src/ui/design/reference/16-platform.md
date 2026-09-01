@@ -85,7 +85,7 @@ A negative `z-index` does not put an element behind its sibling; it puts it behi
 background, and it escapes the parent's paint order entirely to do it. Forge's overlay layers all
 sit at `z-50` — `Popover.Content`, `Menu`, `Tooltip`, `Toast` — precisely so that the ordering is
 positive and local. The one case to look at before rewriting is a decorative layer that was
-*deliberately* painting behind an ancestor's background; isolating it brings it forward.
+_deliberately_ painting behind an ancestor's background; isolating it brings it forward.
 
 **Write inline-axis spacing logically.** <!-- rule:forge-ui-platform-logical-spacing -->
 `ms-` and `me-` for `ml-` and `mr-`, `ps-` and `pe-` for `pl-` and `pr-`, `border-s` and `border-e`,
@@ -285,11 +285,13 @@ theme is script's job by construction; a value that only ever follows the OS is 
 
 ```tsx
 // Wrong — a hand-built modal: the role claimed, the behaviour written, the tab order swept.
-<div role="dialog" aria-modal="true" class="fixed inset-0 z-50">
-  <div class="absolute top-1/2 left-1/2">
-    <button type="button" aria-expanded={open} onclick="togglePanel()">Details</button>
+<div role='dialog' aria-modal='true' class='fixed inset-0 z-50'>
+  <div class='absolute top-1/2 left-1/2'>
+    <button type='button' aria-expanded={open} onclick='togglePanel()'>
+      Details
+    </button>
   </div>
-</div>
+</div>;
 
 // Costs: three behaviours announced and none implemented — no top layer, no Escape, and a page
 // behind that is reachable by Tab while the reader is told it is not.
@@ -299,7 +301,7 @@ import { Dialog } from "@y-core/forge/ui/core";
 
 <Dialog modal>
   <Collapsible>
-    <Collapsible.Trigger icon="chevron-down">Details</Collapsible.Trigger>
+    <Collapsible.Trigger icon='chevron-down'>Details</Collapsible.Trigger>
     <Collapsible.Content>{detail}</Collapsible.Content>
   </Collapsible>
 </Dialog>;
@@ -318,7 +320,7 @@ Default: order a stylesheet's cascade in named `@layer` blocks, as `forge-ui.css
 `components` and `utilities` layers, rather than relying on source order — unless the sheet's rules
 must beat every layered rule in the document, as a preference override loaded last must, since an
 unlayered rule outranks every layer. <!-- rule:forge-ui-platform-layer -->
-That consequence is also the trap in a partial migration: moving *some* of a sheet into a layer
+That consequence is also the trap in a partial migration: moving _some_ of a sheet into a layer
 inverts the order it had, because everything left outside now wins.
 
 Default: author plain CSS and use native nesting rather than `.scss` or `.sass` — unless the file
@@ -425,8 +427,8 @@ the value that paints. <!-- rule:forge-ui-platform-color-mix -->
 
 **Ring, border and outline tokens are excluded outright**, and the exclusion is a finding rather than
 a preference. An earlier revision expressed the light `--ring` as a 50%-alpha `color-mix()`; because
-a mix with `transparent` composites against the backdrop, the ring measured *below the very border it
-was replacing* and under the 3:1 non-text floor WCAG 1.4.11 sets for a focus indicator.
+a mix with `transparent` composites against the backdrop, the ring measured _below the very border it
+was replacing_ and under the 3:1 non-text floor WCAG 1.4.11 sets for a focus indicator.
 [`09-interaction.md`](./09-interaction.md)'s `forge-ui-interaction-ring-token` records the outcome:
 `--ring` is a solid step in both modes, one beyond `--input`, resolving through `--gray-11`. A focus
 indicator cannot be expressed as a tint.
@@ -439,13 +441,17 @@ the ramp rather than faking the step in between.
 
 ```css
 /* Wrong — a second literal, and a ring expressed as a tint. */
-.panel-hover { background: #eceef0; }
+.panel-hover {
+  background: #eceef0;
+}
 
 /* Costs: a shade that stops tracking the token it came from, and a focus indicator whose measured
    ratio depends on whatever happens to be painted behind it. */
 
 /* Right — derive the shade, and take the ring from a solid step. */
-.panel-hover { background: color-mix(in oklch, var(--card), var(--foreground) 6%); }
+.panel-hover {
+  background: color-mix(in oklch, var(--card), var(--foreground) 6%);
+}
 ```
 
 ---

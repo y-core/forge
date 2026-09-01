@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { NONCE, TURNSTILE_CSP } from "./nonce";
 
 describe("NONCE", () => {

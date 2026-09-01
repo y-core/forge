@@ -99,7 +99,7 @@ short-retention debug namespace).
 reach the caller, and one failing channel does not hide the others' completion. This is the
 deliberate posture — logging describes work and must never fail the work it describes. It is
 load-bearing at the one call site that matters: `requestLogger` flushes inside a `finally` (§3),
-and a `finally` that throws *replaces* whatever was propagating, so a rejecting flush could discard
+and a `finally` that throws _replaces_ whatever was propagating, so a rejecting flush could discard
 a successful response or mask the handler error being rethrown.
 
 Absorbing the rejection removes the last place a persistence outage was visible, so
@@ -161,11 +161,11 @@ incorrectly, `requestId` will be undefined in every log record.
 `requestLogger` automatically assigns a `LogLevel` to each log record based on the
 HTTP response status code emitted by the handler:
 
-| Status range | Level | Meaning |
-|---|---|---|
-| `< 400` | `info` | Successful requests |
-| `4xx` | `warn` | Client errors — expected, not actionable by ops |
-| `5xx` | `error` | Server errors — unexpected, ops-actionable |
+| Status range | Level   | Meaning                                         |
+| ------------ | ------- | ----------------------------------------------- |
+| `< 400`      | `info`  | Successful requests                             |
+| `4xx`        | `warn`  | Client errors — expected, not actionable by ops |
+| `5xx`        | `error` | Server errors — unexpected, ops-actionable      |
 
 This convention keeps alert noise low: 404s and 422s stay at `warn` and do not page on-call.
 

@@ -1,4 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
+
 import { getAppContext } from "../context/types";
 import { err, ok } from "../result/result";
 import { SAFE_METHODS, verifyOrigin } from "./origin";

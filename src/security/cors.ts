@@ -1,4 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
+
 import type { CorsOptions } from "./types";
 
 /** Pure function: tests whether an origin matches an exact string or a subdomain wildcard pattern. @public */

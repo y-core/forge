@@ -1,4 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
+
 import { err, ok } from "../result/result";
 import type { OriginResult } from "./types";
 

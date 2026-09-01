@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import type { GuardResult, Result, ValidationResult } from "./result";
 import { err, ok, result, toError } from "./result";
 
@@ -27,12 +28,12 @@ describe("result — sync success", () => {
 
 describe("result — sync error", () => {
   it("returns { ok: false, error } for a thrown Error", () => {
-    const err = new Error("boom");
+    const cause = new Error("boom");
     const r = result(() => {
-      throw err;
+      throw cause;
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toBe(err);
+    if (!r.ok) expect(r.error).toBe(cause);
   });
 
   it("returns { ok: false, error } for a thrown string", () => {
@@ -83,10 +84,10 @@ describe("result — async success", () => {
 
 describe("result — async error", () => {
   it("resolves to { ok: false, error } for a rejected promise", async () => {
-    const err = new Error("async fail");
-    const r = await result(() => Promise.reject(err));
+    const cause = new Error("async fail");
+    const r = await result(() => Promise.reject(cause));
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toBe(err);
+    if (!r.ok) expect(r.error).toBe(cause);
   });
 
   it("resolves to { ok: false, error } for an async throw", async () => {
@@ -108,10 +109,10 @@ describe("result — bare promise", () => {
   });
 
   it("resolves to { ok: false, error } for a bare rejected promise", async () => {
-    const err = new Error("bare reject");
-    const r = await result(Promise.reject(err));
+    const cause = new Error("bare reject");
+    const r = await result(Promise.reject(cause));
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toBe(err);
+    if (!r.ok) expect(r.error).toBe(cause);
   });
 });
 
@@ -250,19 +251,19 @@ describe("GuardResult / ValidationResult narrowing", () => {
 
 describe("toError", () => {
   it("returns an Error instance unchanged", () => {
-    const err = new Error("original");
-    expect(toError(err)).toBe(err);
+    const cause = new Error("original");
+    expect(toError(cause)).toBe(cause);
   });
 
   it("wraps a thrown string into an Error with that message", () => {
-    const err = toError("plain string failure");
-    expect(err).toBeInstanceOf(Error);
-    expect(err.message).toBe("plain string failure");
+    const wrapped = toError("plain string failure");
+    expect(wrapped).toBeInstanceOf(Error);
+    expect(wrapped.message).toBe("plain string failure");
   });
 
   it("wraps a non-string, non-Error value into an Error", () => {
-    const err = toError({ code: 42 });
-    expect(err).toBeInstanceOf(Error);
-    expect(typeof err.message).toBe("string");
+    const wrapped = toError({ code: 42 });
+    expect(wrapped).toBeInstanceOf(Error);
+    expect(typeof wrapped.message).toBe("string");
   });
 });

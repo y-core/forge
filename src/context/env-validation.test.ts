@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { Forge } from "../app/forge-app";
 import { mapHandler } from "../testing/route";
 import { v } from "../validation/mod";
@@ -68,7 +69,7 @@ describe("validateBindings", () => {
     app.use("*", validateBindings(simpleSchema));
     let hasBindingsKey = false;
     mapHandler(app, "GET", "/", (c) => {
-      // biome-ignore lint/suspicious/noExplicitAny: intentional — verifying no extra property
+      // oxlint-disable-next-line typescript/no-explicit-any -- intentional — verifying no extra property
       hasBindingsKey = "bindings" in (c as any);
       return new Response("ok");
     });

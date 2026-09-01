@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { v } from "../validation/mod";
 import { defineAssetsConfig } from "./config";
 import type { AssetsConfig } from "./types";
@@ -69,6 +70,15 @@ describe("AssetsConfigSchema", () => {
       cursors: { target: "css/cursors.css", themes: { light: ":root" }, sources: [{ path: "src/svg/cursors", files: ["select.svg"] }] },
     };
     expect(() => v.parse(AssetsConfigSchema, raw)).toThrow();
+  });
+
+  it("rejects a raster entry with neither width nor height", () => {
+    expect(() => v.parse(AssetsConfigSchema, { rasters: [{ from: "a.svg", to: "a.png" }] })).toThrow();
+  });
+
+  it("accepts a width-only raster entry", () => {
+    const parsed = v.parse(AssetsConfigSchema, { rasters: [{ from: "a.svg", to: "a.png", width: 360 }] });
+    expect(parsed.rasters?.[0]).toEqual({ from: "a.svg", to: "a.png", width: 360 });
   });
 
   it("preserves cursors vars (flat and per-theme) through v.parse", () => {

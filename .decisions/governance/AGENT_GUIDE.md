@@ -184,6 +184,17 @@ See [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §2 for the Result primitive.
 A link resolves both its path and its cited section, so a link to a deleted or renumbered
 section is a defect — and a failing check wherever one runs.
 
+**The link form is the corpus's, and a two-letter `PREFIX §N` citation form is not adopted
+here.** A prefix form is path-independent, so it survives a document moving between
+directories where a relative link does not — a real advantage, and the reason a repository
+whose own documentation gate resolves prefixes may use one internally. The corpus declines it
+for two reasons that do not apply to a single repository. Prefixes must be unique across both
+directories, and `implementation/` differs per repository, so nothing shipped here can prove
+two documents are not claiming one prefix. And the corpus ships no resolver: a relative link
+resolves in any editor and any markdown viewer, while an unresolvable prefix is a citation
+that looks like evidence and points at nothing. Adopting one becomes worth revisiting when the
+corpus ships a checker that resolves citations.
+
 ### 5b. Intra-Document Section References
 
 Within one document, use the `§N` shorthand inline:
@@ -200,6 +211,13 @@ Implementation — because the index and the directories must agree in both dire
 document missing from the index, an index row naming a file that does not exist, or a row
 filed under the wrong table is a defect.
 
+**The same agreement holds for the agents the index names.** `CLAUDE.md` delegates the whole
+gate discipline to `cc-tester` by name and introduces the four agents that route work to it, so
+an agent named with no definition behind it delegates to nothing, and an agent defined and never
+named is one no reader is told exists. `gov sync --check` reconciles the names in
+`CLAUDE.md` against `.claude/agents/` in both directions. It measures existence only: what an
+agent *does* stays convention, enforced by the agent obeying its own stated boundaries.
+
 ### 5d. Crossing the Governance Boundary
 
 **Links run one way: implementation may cite governance; governance never cites
@@ -215,6 +233,11 @@ across, and states only what is local to the repository:
 Where a governance document genuinely must name a local artifact — a register, a catalog, a
 config file — it **names the path in prose and does not link it** (§8 is the standing case).
 Prose survives a repository that has not written that file yet; a link does not.
+
+`gov sync --check` enforces the direction: it reports any markdown link in
+`.decisions/governance/` whose target reaches into `implementation/`. A boundary with nothing
+checking it is the failure this corpus refuses, and the check is what makes §5d a gate step
+rather than a convention.
 
 ---
 

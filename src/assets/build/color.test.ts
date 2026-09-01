@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { oklchToSrgb, parseColor, toHex } from "./color";
 
 describe("oklchToSrgb()", () => {

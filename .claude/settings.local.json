@@ -46,14 +46,9 @@
     ]
   },
   "model": "opus[1m]",
-  "attribution": {
-    "commit": "",
-    "pr": ""
-  },
+  "attribution": { "commit": "", "pr": "" },
   "effortLevel": "medium",
-  "enabledMcpjsonServers": [
-    "ledger"
-  ],
+  "enabledMcpjsonServers": ["ledger"],
   "autoMemoryEnabled": false,
   "showClearContextOnPlanAccept": true
 }

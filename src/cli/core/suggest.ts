@@ -11,6 +11,7 @@ function distance(a: string, b: string): number {
   if (b.length === 0) return a.length;
 
   let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  // oxlint-disable-next-line unicorn/no-new-array -- a write-only scratch row of the distance matrix; every slot is assigned before it is read
   let current = new Array<number>(b.length + 1);
 
   for (let i = 1; i <= a.length; i++) {

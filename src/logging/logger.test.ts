@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import { createLogger } from "./logger";
 import type { LogChannel, LogRecord } from "./types";
 
@@ -380,7 +381,7 @@ function collector(): { errors: unknown[]; onChannelError: (error: unknown) => v
 /** A `Promise` that counts the handlers attached to this instance. */
 class TrackedPromise<T> extends Promise<T> {
   attachments = 0;
-  // biome-ignore lint/suspicious/noThenProperty: deliberate override on a real Promise subclass.
+  // oxlint-disable-next-line unicorn/no-thenable -- deliberate override on a real Promise subclass.
   override then<TResult1 = T, TResult2 = never>(
     onFulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | null | undefined,
     onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null | undefined,

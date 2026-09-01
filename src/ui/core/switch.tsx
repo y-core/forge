@@ -32,7 +32,6 @@ export const Switch: FC<PropsWithChildren<SwitchProps>> = ({
       {...stateAttrs({ orientation: "horizontal" })}
       data-label-position={orientation === "label-before" ? "before" : "after"}
       class={cn("inline-flex items-center gap-2", orientation === "label-before" && "flex-row-reverse", asClass(cls))}>
-      {/* biome-ignore lint/a11y/useAriaPropsForRole: a native checkbox conveys checked-state to the switch role via its `checked` property — a static aria-checked would be wrong */}
       <input data-slot={slotToken("switch-input", inherited)} type='checkbox' role='switch' class='peer sr-only' {...resolved} />
       <span data-slot='switch-track' aria-hidden='true' class={SWITCH_TRACK}>
         <span data-slot='switch-thumb' class={SWITCH_THUMB} />

@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { loadConfigModule } from "./config-module";
 
 const ROOT = mkdtempSync(join(tmpdir(), "forge-config-module-"));

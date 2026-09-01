@@ -29,7 +29,7 @@ The opacity here is the carve-out `forge-ui-color-scale-no-adhoc-tint` already n
 genuinely translucent over content it must not hide, which is the one case where an opacity
 modifier is the right instrument rather than a faked intermediate shade.
 
-Default: where a scrim would flatten detail the image is there to show, the *image* is treated
+Default: where a scrim would flatten detail the image is there to show, the _image_ is treated
 instead — `grayscale`, or a `mix-blend-multiply` against a token surface behind it — and never the
 text, which keeps its token colour, unless the image is decorative enough to crop the text off it
 entirely. <!-- rule:forge-ui-media-no-text-shadow -->
@@ -43,7 +43,7 @@ the decision in the layer that caused the problem.
 Default: an image whose proportions the surface does not control — an upload, an avatar, a
 third-party thumbnail — renders into a fixed box, `aspect-square` or `aspect-video` with
 `object-cover` and `overflow-hidden` on the container, rather than at whatever ratio the file
-happens to carry, unless the image *is* the content and its proportion is information, as a chart
+happens to carry, unless the image _is_ the content and its proportion is information, as a chart
 or a screenshot under review is. <!-- rule:forge-ui-media-fixed-crop -->
 
 A row of cards fed by uploads is the case that makes this concrete: without a fixed box, every card
@@ -92,7 +92,7 @@ An icon in the sprite was drawn at a small size, with a stroke weight chosen for
 times that, the stroke thins visibly against every other line on the surface and the shape reads as
 an illustration that lost its detail.
 
-This is orthogonal to `forge-ui-real-icons`, which is a Floor rule about *provenance* — that a glyph
+This is orthogonal to `forge-ui-real-icons`, which is a Floor rule about _provenance_ — that a glyph
 comes from `Icon` or a `createIcon` binding rather than from an inline `<svg>` or an emoji. That
 rule is satisfied by a sprite icon at any size at all. Size is the separate question, and it is a
 Default because a brief can rebut it.
@@ -102,13 +102,13 @@ Default: a sprite glyph renders at `size-4`, the 16px that `Accordion.Trigger` a
 carries more weight, unless the icon set is drawn for display sizes and states the size it was
 drawn at. <!-- rule:forge-ui-media-icon-intended-size -->
 
-Default: where a glyph has to anchor a large slot, the *enclosure* grows and the glyph does not — a
+Default: where a glyph has to anchor a large slot, the _enclosure_ grows and the glyph does not — a
 `size-10` or `size-12` `rounded-full bg-muted` shape with a `size-4` or `size-5` `Icon` centred in
 it — which is the composition `Avatar` already ships and the trade `Button size='icon'` makes at 36
 pixels around a 16-pixel glyph, unless the slot is a decorative illustration carrying no control and
 no state. <!-- rule:forge-ui-media-icon-enclosure -->
 
-Sizing an icon *button* is a different rule and it is `forge-ui-hierarchy-icon-button-size`: that
+Sizing an icon _button_ is a different rule and it is `forge-ui-hierarchy-icon-button-size`: that
 one fixes which `size` prop an icon-only `Button` takes. This one is about the glyph inside
 whatever box was chosen.
 

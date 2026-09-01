@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { ESC } from "./ansi";
 import { BORDERS } from "./border";
 import { definitionList, renderGrid } from "./grid";

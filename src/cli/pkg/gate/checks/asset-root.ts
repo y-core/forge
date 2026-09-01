@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { posix, relative, resolve } from "node:path";
+
 import { loadConfig } from "../../../../assets/config";
 import { SITE_OUTPUTS } from "../../../../assets/types";
 import { stripJsonc } from "../../../cf/config/jsonc";

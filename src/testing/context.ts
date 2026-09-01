@@ -5,7 +5,7 @@ import type { Logger } from "../logging/types";
 
 /** Returns an `ExecutionContext` whose `waitUntil`/`passThroughOnException` are no-ops. @public */
 export function mockExecutionContext(): ExecutionContext {
-  // biome-ignore lint/suspicious/noExplicitAny: mock context for testing only
+  // oxlint-disable-next-line typescript/no-explicit-any -- mock context for testing only
   return { waitUntil: () => {}, passThroughOnException: () => {} } as any;
 }
 

@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "lib": [
-      "ESNext",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
@@ -16,14 +12,7 @@
     "types": [],
     "jsx": "react-jsx",
     "jsxImportSource": "@y-core/forge/jsx",
-    "paths": {
-      "@y-core/forge/*": [
-        "../../../src/*"
-      ]
-    }
+    "paths": { "@y-core/forge/*": ["../../../src/*"] }
   },
-  "include": [
-    "main.ts",
-    "workerd-globals.d.ts"
-  ]
+  "include": ["main.ts", "workerd-globals.d.ts"]
 }

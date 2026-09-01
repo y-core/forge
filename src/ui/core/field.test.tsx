@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { render } from "../../testing/render";
 import {
   FIELD_LABEL_CLASSES,
@@ -422,7 +423,6 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("an empty caller aria-describedby leaves no leading space on the rendered attribute", async () => {
-    // biome-ignore lint/a11y/useValidAriaValues: an invalid empty IDREF list is the input this case exists to feed in
     expect(await render(<Input aria-describedby='' field={{ name: "email", description: true }} />)).toBe(
       `<input data-slot="input" class="${INPUT_CLASSES}" aria-describedby="field-email-description" id="field-email" name="email">`,
     );

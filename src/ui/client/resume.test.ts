@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { findScopes, hydrateState, scanRoot } from "./resume";
 import { FakeDocument, type FakeElement, fakeTree } from "./test-dom";
 

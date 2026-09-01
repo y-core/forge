@@ -8,14 +8,7 @@ PATH primitives** (`run`, `capture`, `requireTools`, `hasTool`, `probeOk`, `inse
 `[scope]`-prefixed logger for script output.
 
 ```ts
-import {
-  createCommand,
-  addCommand,
-  execute,
-  run,
-  requireTools,
-  scopeLogger,
-} from "@y-core/forge/cli";
+import { createCommand, addCommand, execute, run, requireTools, scopeLogger } from "@y-core/forge/cli";
 ```
 
 > **Runtime:** this namespace is **node-only**. `execute` reads `node:process`; `proc.ts` uses
@@ -54,22 +47,13 @@ A complete two-level CLI: a root `build` command with a persistent `--verbose` f
 sub-command that requires external tools and takes a typed `--profile` flag.
 
 ```ts
-import {
-  createCommand,
-  addCommand,
-  execute,
-  run,
-  requireTools,
-  scopeLogger,
-} from "@y-core/forge/cli";
+import { createCommand, addCommand, execute, run, requireTools, scopeLogger } from "@y-core/forge/cli";
 
 // 1. Root command — defines a persistent flag shared by all sub-commands.
 const root = createCommand({
   name: "forge-build",
   description: "Build the forge project",
-  flags: {
-    verbose: { type: "boolean", short: "v", description: "Verbose output", persistent: true },
-  },
+  flags: { verbose: { type: "boolean", short: "v", description: "Verbose output", persistent: true } },
 });
 
 // 2. Sub-command — its own typed flags plus the inherited `verbose`.
@@ -77,23 +61,13 @@ const wasm = createCommand({
   name: "wasm",
   description: "Compile the Rust kernel to WASM",
   args: { kind: "none" },
-  flags: {
-    profile: {
-      type: "string",
-      short: "p",
-      description: "Cargo profile",
-      default: "release",
-    },
-  },
+  flags: { profile: { type: "string", short: "p", description: "Cargo profile", default: "release" } },
   run: async (args, flags) => {
     // flags.profile : string     (has a default → never undefined)
     // flags.verbose : boolean    (inherited persistent boolean flag)
     const log = scopeLogger("wasm");
 
-    requireTools({
-      cargo: "install Rust: https://rustup.rs",
-      "wasm-opt": "npm i -g binaryen",
-    });
+    requireTools({ cargo: "install Rust: https://rustup.rs", "wasm-opt": "npm i -g binaryen" });
 
     log.info(`building with profile=${flags.profile}`);
     run("cargo", ["build", "--profile", flags.profile]);
@@ -145,13 +119,13 @@ await execute(root, ["wasm", "--profile", "dev"], io);
 Creates a command definition from a `CommandDefinition`. The generic flag type `F` is inferred from
 `config.flags`, so the `flags` argument passed to `run` is fully typed.
 
-| Field | Type | Description |
-|---|---|---|
-| `name` | `string` | Command name (matched against argv tokens). **Required.** |
-| `description` | `string` | One-line description shown in help. Defaults to `""`. |
-| `flags` | `FlagDefs` | Map of long-flag name → `FlagDef`. Defaults to `{}`. |
-| `args` | `ArgValidator` | Positional-argument count rule. Defaults to `{ kind: "none" }`. |
-| `run` | `(args, flags) => void \| Promise<void>` | Handler invoked when this command is selected. |
+| Field         | Type                                     | Description                                                     |
+| ------------- | ---------------------------------------- | --------------------------------------------------------------- |
+| `name`        | `string`                                 | Command name (matched against argv tokens). **Required.**       |
+| `description` | `string`                                 | One-line description shown in help. Defaults to `""`.           |
+| `flags`       | `FlagDefs`                               | Map of long-flag name → `FlagDef`. Defaults to `{}`.            |
+| `args`        | `ArgValidator`                           | Positional-argument count rule. Defaults to `{ kind: "none" }`. |
+| `run`         | `(args, flags) => void \| Promise<void>` | Handler invoked when this command is selected.                  |
 
 Returns a `Command<F>` with an empty `commands` array, ready to receive sub-commands via
 `addCommand`.
@@ -177,11 +151,11 @@ addCommand(root, createCommand({ name: "test", run: () => {} }));
 The main entry point. Resolves the target command and dispatches to its `run` handler. Returns
 `Promise<void>`.
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `root` | `CommandBase` | — | The root of the command tree. |
-| `argv` | `string[]` | `process.argv.slice(2)` | Raw argument tokens. |
-| `io` | `CliIO` | console-backed IO | Injectable output/exit sink. |
+| Parameter | Type          | Default                 | Description                   |
+| --------- | ------------- | ----------------------- | ----------------------------- |
+| `root`    | `CommandBase` | —                       | The root of the command tree. |
+| `argv`    | `string[]`    | `process.argv.slice(2)` | Raw argument tokens.          |
+| `io`      | `CliIO`       | console-backed IO       | Injectable output/exit sink.  |
 
 Behavior, in order:
 
@@ -210,14 +184,14 @@ use and testing.
 
 Parsing rules:
 
-| Form | Meaning |
-|---|---|
-| `--name value`, `-n value` | String flag with a separate value token. |
-| `--name=value`, `-n=value` | String flag with an inline value. |
-| `--flag`, `-f` | Boolean flag set to `true`. |
+| Form                       | Meaning                                                        |
+| -------------------------- | -------------------------------------------------------------- |
+| `--name value`, `-n value` | String flag with a separate value token.                       |
+| `--name=value`, `-n=value` | String flag with an inline value.                              |
+| `--flag`, `-f`             | Boolean flag set to `true`.                                    |
 | `--flag=false`, `--flag=0` | Boolean flag set to `false`; any other inline value is `true`. |
-| `--` | Stops flag parsing; all later tokens are positionals. |
-| `-` | Treated as a positional (e.g. stdin). |
+| `--`                       | Stops flag parsing; all later tokens are positionals.          |
+| `-`                        | Treated as a positional (e.g. stdin).                          |
 
 After parsing, unset boolean flags default to `false`, unset string flags fall back to their
 `default`, and a missing `required` string flag throws `CliError("missing-value", …)`. An unknown
@@ -238,13 +212,13 @@ name.
 
 Spawns `cmd args` synchronously with **inherited** stdio (child output goes straight to the parent's
 terminal). Returns the exit code (`0`) on success; throws
-`` Error: `<cmd> <args>` failed (exit <code>) `` on a non-zero exit.
+``Error: `<cmd> <args>` failed (exit <code>)`` on a non-zero exit.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `cmd` | `string` | Executable to run. |
-| `args` | `string[]` | Arguments. |
-| `opts.cwd` | `string` | Optional working directory; defaults to `process.cwd()`. |
+| Parameter  | Type       | Description                                              |
+| ---------- | ---------- | -------------------------------------------------------- |
+| `cmd`      | `string`   | Executable to run.                                       |
+| `args`     | `string[]` | Arguments.                                               |
+| `opts.cwd` | `string`   | Optional working directory; defaults to `process.cwd()`. |
 
 ```ts
 run("cargo", ["build", "--release"]);
@@ -257,17 +231,17 @@ Spawns `cmd args` synchronously with its output **buffered** rather than inherit
 throws** — the counterpart to `run` for callers that report a failure instead of aborting on it
 (a step runner, a gate). Returns a `CaptureResult`.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `cmd` | `string` | Executable to run. |
-| `args` | `string[]` | Arguments. |
-| `opts.cwd` | `string` | Optional working directory; defaults to `process.cwd()`. |
+| Parameter  | Type       | Description                                              |
+| ---------- | ---------- | -------------------------------------------------------- |
+| `cmd`      | `string`   | Executable to run.                                       |
+| `args`     | `string[]` | Arguments.                                               |
+| `opts.cwd` | `string`   | Optional working directory; defaults to `process.cwd()`. |
 
-| Field | Type | Description |
-|---|---|---|
-| `code` | `number` | Exit code; `1` when killed by a signal or never spawned. |
-| `output` | `string` | Combined stdout and stderr, interleaved in write order. |
-| `ms` | `number` | Wall-clock duration of the spawn. |
+| Field    | Type     | Description                                              |
+| -------- | -------- | -------------------------------------------------------- |
+| `code`   | `number` | Exit code; `1` when killed by a signal or never spawned. |
+| `output` | `string` | Combined stdout and stderr, interleaved in write order.  |
+| `ms`     | `number` | Wall-clock duration of the spawn.                        |
 
 Both streams are pointed at one temp-file descriptor, so `output` matches what `cmd > log 2>&1`
 would have written — `stdio: "pipe"` returns two independent buffers whose relative order is lost.
@@ -276,7 +250,7 @@ A spawn failure (a missing executable) produces no child output, so its error me
 process must never block waiting on a terminal.
 
 ```ts
-const { code, output, ms } = capture("biome", ["check", "src/"], { cwd: repoRoot });
+const { code, output, ms } = capture("oxfmt", ["--check", "src/"], { cwd: repoRoot });
 if (code !== 0) console.error(output.trimEnd().split("\n").slice(-20).join("\n"));
 ```
 
@@ -287,10 +261,7 @@ first missing tool with `Error: <cmd> not found — <hint>`, surfacing the insta
 `execute` reports it on stderr and exits 1.
 
 ```ts
-requireTools({
-  "wasm-snip": "cargo install wasm-snip",
-  "wasm-opt": "npm i -g binaryen",
-});
+requireTools({ "wasm-snip": "cargo install wasm-snip", "wasm-opt": "npm i -g binaryen" });
 ```
 
 #### `hasTool(cmd)`
@@ -303,10 +274,10 @@ use it for optional-tool branching. A thin wrapper over `probeOk(cmd, ["--versio
 Returns `true` when `cmd args` exits 0, with stdout and stderr discarded — a prerequisite check
 whose only signal is the exit code. Non-throwing.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `cmd` | `string` | Executable to run. |
-| `args` | `readonly string[]` | Arguments passed to it. |
+| Parameter | Type                | Description             |
+| --------- | ------------------- | ----------------------- |
+| `cmd`     | `string`            | Executable to run.      |
+| `args`    | `readonly string[]` | Arguments passed to it. |
 
 Reach for it when the prerequisite is **not** the presence of an executable on `PATH` — a
 downloaded browser, a running service, a provisioned credential — where `hasTool` would pass
@@ -337,10 +308,10 @@ insertPath(`${process.cwd()}/node_modules/.bin`);
 Returns a `ScopedLogger` whose every line is prefixed with `[scope]`. `info` and `done` write to
 stdout; `warn` writes to stderr.
 
-| Method | Stream | Output |
-|---|---|---|
-| `info(msg)` | stdout | `[scope] msg` — progress line |
-| `warn(msg)` | stderr | `[scope] msg` — warning line |
+| Method      | Stream | Output                          |
+| ----------- | ------ | ------------------------------- |
+| `info(msg)` | stdout | `[scope] msg` — progress line   |
+| `warn(msg)` | stderr | `[scope] msg` — warning line    |
 | `done(msg)` | stdout | `[scope] msg` — completion line |
 
 ```ts
@@ -380,12 +351,12 @@ new CliError(kind: CliErrorKind, message: string);
 
 `CliErrorKind` is one of:
 
-| Kind | Raised when |
-|---|---|
-| `unknown-flag` | An unrecognised flag token was passed. |
-| `missing-value` | A string flag is missing its value, or a `required` flag was omitted. |
-| `invalid-args` | The positional-argument count violates the command's `ArgValidator`. |
-| `missing-command` | A leaf command has no `run` handler. |
+| Kind              | Raised when                                                           |
+| ----------------- | --------------------------------------------------------------------- |
+| `unknown-flag`    | An unrecognised flag token was passed.                                |
+| `missing-value`   | A string flag is missing its value, or a `required` flag was omitted. |
+| `invalid-args`    | The positional-argument count violates the command's `ArgValidator`.  |
+| `missing-command` | A leaf command has no `run` handler.                                  |
 
 #### `formatError(err)`
 
@@ -395,22 +366,22 @@ Formats a `CliError` for display as `Error: <message>`.
 
 ### Types
 
-| Type | Description |
-|---|---|
-| `CommandDefinition<F>` | Input to `createCommand`: `name`, optional `description`, `flags`, `args`, `run`. |
-| `Command<F>` | A command definition with a typed `run`; extends `CommandBase`. |
-| `CommandBase` | Tree-structural command shape (`name`, `description`, `flags`, `args`, `parent`, `commands`) without the typed handler — used for parent/child links. |
-| `FlagDef` | A flag definition: `BooleanFlagDef \| StringFlagDef`. |
-| `BooleanFlagDef` | `{ type: "boolean"; short?; description?; persistent? }`. |
-| `StringFlagDef` | `BooleanFlagDef` fields plus `default?` and `required?`. |
-| `FlagDefs` | `Record<string, FlagDef>` — the long-flag name is the record key. |
-| `ResolvedFlags<F>` | Maps a `FlagDefs` to its inferred runtime flag-value shape. |
-| `ArgValidator` | Positional-count rule: `none`, `exact`, `min`, `max`, or `range`. |
-| `ToolHints` | `Record<string, string>` — tool command → install hint for `requireTools`. |
-| `CaptureResult` | `{ code; output; ms }` — the `capture` return type. |
-| `ScopedLogger` | `{ info; warn; done }` — the `scopeLogger` return type. |
-| `CliIO` | `{ stdout; stderr; exit }` — injectable IO for `execute`. |
-| `CliErrorKind` | Discriminant union of `CliError.kind` values. |
+| Type                   | Description                                                                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CommandDefinition<F>` | Input to `createCommand`: `name`, optional `description`, `flags`, `args`, `run`.                                                                     |
+| `Command<F>`           | A command definition with a typed `run`; extends `CommandBase`.                                                                                       |
+| `CommandBase`          | Tree-structural command shape (`name`, `description`, `flags`, `args`, `parent`, `commands`) without the typed handler — used for parent/child links. |
+| `FlagDef`              | A flag definition: `BooleanFlagDef \| StringFlagDef`.                                                                                                 |
+| `BooleanFlagDef`       | `{ type: "boolean"; short?; description?; persistent? }`.                                                                                             |
+| `StringFlagDef`        | `BooleanFlagDef` fields plus `default?` and `required?`.                                                                                              |
+| `FlagDefs`             | `Record<string, FlagDef>` — the long-flag name is the record key.                                                                                     |
+| `ResolvedFlags<F>`     | Maps a `FlagDefs` to its inferred runtime flag-value shape.                                                                                           |
+| `ArgValidator`         | Positional-count rule: `none`, `exact`, `min`, `max`, or `range`.                                                                                     |
+| `ToolHints`            | `Record<string, string>` — tool command → install hint for `requireTools`.                                                                            |
+| `CaptureResult`        | `{ code; output; ms }` — the `capture` return type.                                                                                                   |
+| `ScopedLogger`         | `{ info; warn; done }` — the `scopeLogger` return type.                                                                                               |
+| `CliIO`                | `{ stdout; stderr; exit }` — injectable IO for `execute`.                                                                                             |
+| `CliErrorKind`         | Discriminant union of `CliError.kind` values.                                                                                                         |
 
 > **Note on flag naming:** a flag's **long** name is its key in the `FlagDefs` record (e.g. `profile`
 > → `--profile`); the optional **short** alias is the `short` field (e.g. `"p"` → `-p`). There is no

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+
 import type { StringFlagDef } from "../../core/types";
 import { resolveColorLevel } from "../../term/capability";
 import { createColorize, PLAIN } from "../../term/color";

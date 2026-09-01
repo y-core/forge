@@ -1,0 +1,77 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise"],
+  // `suspicious` stays off — see .decisions/implementation/CODE_REVIEW.md
+  "categories": { "correctness": "error" },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-invalid-void-type": "error",
+    "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }],
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-wrapper-object-types": "error",
+    "eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "ignoreRestSiblings": true }],
+    "eslint/no-irregular-whitespace": ["error", { "skipComments": true }],
+    "unicorn/no-useless-spread": "off",
+    "eslint/prefer-arrow-callback": "error",
+    "eslint/preserve-caught-error": "error",
+    "eslint/no-shadow": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-base-to-string": "off",
+    "typescript/unbound-method": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/no-misused-spread": "off",
+    "typescript/require-array-sort-compare": "off",
+    "typescript/no-duplicate-type-constituents": "off",
+    "typescript/no-redundant-type-constituents": "off",
+    "eslint/no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
+            "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+          },
+          {
+            "group": ["valibot"],
+            "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    { "files": ["**/*.test.ts", "**/*.test.tsx"], "rules": { "typescript/no-non-null-assertion": "off" } },
+    {
+      "files": ["config/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              { "group": ["valibot"], "message": "Import `v` from the validation facade (../src/validation/mod) — never valibot directly." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/validation/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

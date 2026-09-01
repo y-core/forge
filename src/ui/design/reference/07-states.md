@@ -7,12 +7,12 @@ Every surface that displays data owes four states, not one. The success path is 
 designed; the other three are the ones a user actually meets on a slow network, a cold cache, or a
 first login.
 
-| State | Owed on | Forge primitives |
-|---|---|---|
-| Empty | any collection | `Alert`, `Button`, `Card` |
-| Loading | anything fetched | `Skeleton`, `Spinner`, `Progress` |
-| Error | anything that can fail | `Alert` `destructive`, `Toast` `destructive` |
-| Success | any mutation | `Toast` `success`, `Flash` |
+| State   | Owed on                | Forge primitives                             |
+| ------- | ---------------------- | -------------------------------------------- |
+| Empty   | any collection         | `Alert`, `Button`, `Card`                    |
+| Loading | anything fetched       | `Skeleton`, `Spinner`, `Progress`            |
+| Error   | anything that can fail | `Alert` `destructive`, `Toast` `destructive` |
+| Success | any mutation           | `Toast` `success`, `Flash`                   |
 
 **Default: design all four before shipping the surface.** <!-- rule:forge-ui-state-four -->
 `forge-ui-empty-state` makes the empty one a Floor obligation; the other three are Defaults because a
@@ -25,15 +25,16 @@ with no data and no mutation.
 
 The choice is not about duration. It is about whether you already know the shape of what is arriving.
 
-| Given | Choose |
-|---|---|
+| Given                                                       | Choose     |
+| ----------------------------------------------------------- | ---------- |
 | The result has a known shape and will occupy this exact box | `Skeleton` |
-| The shape is unknown, or the count is unknown | `Spinner` |
-| The wait lives inside a control rather than a region | `Spinner` |
-| The work is measurable and the total is known | `Progress` |
+| The shape is unknown, or the count is unknown               | `Spinner`  |
+| The wait lives inside a control rather than a region        | `Spinner`  |
+| The work is measurable and the total is known               | `Progress` |
 
 **Default: a region whose result shape is known renders `Skeleton` blocks in that shape.**
 <!-- rule:forge-ui-state-skeleton-shape -->
+
 `Skeleton` is `animate-pulse rounded-md bg-muted` and is `aria-hidden`, so it is a visual placeholder
 only. Override when the region may resolve to an empty state, and a skeleton would promise rows that
 never arrive.
@@ -46,11 +47,12 @@ known-shape region, where a skeleton flash is more disruptive than a small spinn
 
 **Default: the placeholder occupies the same box the result will.**
 <!-- rule:forge-ui-state-preserve-layout -->
+
 A skeleton shorter than its content makes the page jump when the content lands, which costs a click
 more often than the wait did. Override when the result's height is genuinely unbounded.
 
 **Default: one loading indicator per loading region.** <!-- rule:forge-ui-state-one-indicator -->
-A `Spinner` in the submit button *and* a skeleton over the table means two claims about one wait.
+A `Spinner` in the submit button _and_ a skeleton over the table means two claims about one wait.
 Override when two genuinely independent requests are in flight in two regions.
 
 ### Before / after
@@ -61,8 +63,8 @@ import { Card, createIcon, Spinner } from "@y-core/forge/ui/core";
 
 const AppIcon = createIcon("/assets/icons.svg");
 
-<Card.Content class="flex items-center justify-center py-12">
-  <Spinner icon={AppIcon} size="lg" />
+<Card.Content class='flex items-center justify-center py-12'>
+  <Spinner icon={AppIcon} size='lg' />
 </Card.Content>;
 ```
 
@@ -73,11 +75,11 @@ learns nothing about what is coming.
 // Right — the shape of the answer, drawn before the answer.
 import { Card, Skeleton } from "@y-core/forge/ui/core";
 
-<Card.Content class="flex flex-col gap-3">
-  <Skeleton class="h-5 w-1/3" />
-  <Skeleton class="h-4 w-full" />
-  <Skeleton class="h-4 w-full" />
-  <Skeleton class="h-4 w-2/3" />
+<Card.Content class='flex flex-col gap-3'>
+  <Skeleton class='h-5 w-1/3' />
+  <Skeleton class='h-4 w-full' />
+  <Skeleton class='h-4 w-full' />
+  <Skeleton class='h-4 w-2/3' />
 </Card.Content>;
 ```
 
@@ -95,18 +97,21 @@ would be here, and the one control that puts something here.
 
 **Default: an empty state is an `Alert` (or a `Card.Content` paragraph) plus one `Button` performing
 the action the user came for.** <!-- rule:forge-ui-state-empty-composed -->
-It satisfies `forge-ui-empty-state`; this rule fixes the *composition*. Override when the surface has
+It satisfies `forge-ui-empty-state`; this rule fixes the _composition_. Override when the surface has
 no user-initiated way to fill it — a log stream — where the sentence stands alone and says why.
 
 **Default: hide the controls that operate on nothing.**
 <!-- rule:forge-ui-state-hide-empty-controls -->
+
 `Tabs`, filter `Select`s, sort `ToggleGroup`s and bulk-action `Toolbar`s all render happily over zero
-rows and all mislead. Override when the filter is what *caused* the emptiness, in which case keep it
+rows and all mislead. Override when the filter is what _caused_ the emptiness, in which case keep it
 and add a control that clears it.
 
 ```tsx
 // Wrong — the absence of rows rendered as the absence of markup.
-{projects.length > 0 ? <ProjectTable projects={projects} /> : null}
+{
+  projects.length > 0 ? <ProjectTable projects={projects} /> : null;
+}
 ```
 
 Costs: a user who has just signed up sees a heading, a filter bar, and nothing — indistinguishable
@@ -116,19 +121,19 @@ from a failed load.
 // Right — a state, with the one action that resolves it.
 import { Alert, Button, Card } from "@y-core/forge/ui/core";
 
-{projects.length > 0 ? (
-  <ProjectTable projects={projects} />
-) : (
-  <Card.Content class="flex flex-col items-start gap-3">
-    <Alert>
-      <Alert.Title>No projects yet</Alert.Title>
-      <Alert.Description class="max-w-prose">
-        A project holds your deployments and their settings.
-      </Alert.Description>
-    </Alert>
-    <Button variant="primary">Create a project</Button>
-  </Card.Content>
-)}
+{
+  projects.length > 0 ? (
+    <ProjectTable projects={projects} />
+  ) : (
+    <Card.Content class='flex flex-col items-start gap-3'>
+      <Alert>
+        <Alert.Title>No projects yet</Alert.Title>
+        <Alert.Description class='max-w-prose'>A project holds your deployments and their settings.</Alert.Description>
+      </Alert>
+      <Button variant='primary'>Create a project</Button>
+    </Card.Content>
+  );
+}
 ```
 
 ---
@@ -142,11 +147,13 @@ content is known stale and showing it would mislead.
 
 **Default: a failure of work the user is no longer watching renders a `Toast` `destructive`.**
 <!-- rule:forge-ui-state-error-toast -->
+
 Background saves, long uploads, anything the user navigated away from. Override when the failure
 blocks the next step, which is a `Dialog` or an in-place `Alert`.
 
 **Default: every error state carries the retry, next to the message.**
 <!-- rule:forge-ui-state-error-retry -->
+
 A `secondary` `Button` in the same `Alert`. Override when retrying cannot help — a validation
 failure, a permission denial — where the correct control is the one that fixes the cause.
 
@@ -158,7 +165,7 @@ why `forge-ui-foreground-pairing` has nothing to pair here: both pairs are check
 variant. The hue is fixed; the lightness is not — each variant carries an explicit `dark:` half, so
 a status panel is a tinted region on a dark page rather than a near-white island. Do not "fix" it by passing `class="bg-destructive"`:
 `--destructive` does pair with `--destructive-foreground`, so the pairing is not the objection. The
-objection is that `--destructive` is the *application's* destructive colour and an app may
+objection is that `--destructive` is the _application's_ destructive colour and an app may
 legitimately re-point it, whereas a status panel has to stay red to mean "failed".
 
 ---
@@ -167,12 +174,14 @@ legitimately re-point it, whereas a status panel has to stay red to mean "failed
 
 **Default: a completed mutation is confirmed by a `Toast` `success`, not by an `Alert`.**
 <!-- rule:forge-ui-state-success-toast -->
+
 An `Alert` is a persistent property of a surface; a success is an event about an action. Override
-when the result changes what the surface *is* — a subscription that just ended — where a persistent
+when the result changes what the surface _is_ — a subscription that just ended — where a persistent
 `Alert` is the honest rendering.
 
 **Default: a confirmation that must survive a redirect goes through the flash primitives.**
 <!-- rule:forge-ui-state-flash-redirect -->
+
 `createFlash` sets the signed cookie server-side; `FlashContainer` renders the queue into a
 positioned `Toast.Container`; `Flash` renders the toasts alone inside a container you already have;
 `FlashOob` renders them as htmx out-of-band swaps into `#flash-container`. Override when the mutation
@@ -181,11 +190,12 @@ returns a fragment to the same page, where a `Toast` rendered directly is simple
 ```tsx
 import { FlashContainer } from "@y-core/forge/ui/server";
 
-<FlashContainer messages={messages} position="bottom-right" />;
+<FlashContainer messages={messages} position='bottom-right' />;
 ```
 
 **Default: a success message names what happened, not that something happened.**
 <!-- rule:forge-ui-state-success-specific -->
+
 `Toast.Title` carries the object, `Toast.Description` the consequence. Override for a bulk operation,
 where the count is the message.
 
@@ -196,14 +206,15 @@ where the count is the message.
 `Progress` and `Meter` render different elements for different claims, and they are not
 interchangeable.
 
-| Given | Choose |
-|---|---|
-| A task advancing toward completion, with a known total | `Progress` |
-| A quantity within a known range — disk used, quota, score | `Meter` |
-| A task with no known total | `Spinner` |
+| Given                                                     | Choose     |
+| --------------------------------------------------------- | ---------- |
+| A task advancing toward completion, with a known total    | `Progress` |
+| A quantity within a known range — disk used, quota, score | `Meter`    |
+| A task with no known total                                | `Spinner`  |
 
 **Default: `Progress` renders only when the total is known.**
 <!-- rule:forge-ui-state-progress-determinate -->
+
 Give it a `label`, which becomes its `aria-label`. Override never — an indeterminate progress bar is
 a spinner drawn as a lie about measurability.
 
@@ -217,8 +228,8 @@ range to sit in, which makes it a number, not a meter.
 import { Meter } from "@y-core/forge/ui/core";
 
 <Meter>
-  <Meter.Label for="storage">Storage</Meter.Label>
-  <Meter.Track id="storage" value={used} min={0} max={total} high={total * 0.9} />
+  <Meter.Label for='storage'>Storage</Meter.Label>
+  <Meter.Track id='storage' value={used} min={0} max={total} high={total * 0.9} />
   <Meter.Value>{label}</Meter.Value>
 </Meter>;
 ```

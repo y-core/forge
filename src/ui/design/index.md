@@ -2,7 +2,7 @@
 
 This corpus is design judgement for composing forge's UI namespace — `@y-core/forge/ui/core`,
 `@y-core/forge/ui/controls`, `@y-core/forge/ui/chrome`, `@y-core/forge/ui/server`,
-`@y-core/forge/ui/client`, and the tokens in `@y-core/forge/ui/assets`. It answers *which* primitive
+`@y-core/forge/ui/client`, and the tokens in `@y-core/forge/ui/assets`. It answers _which_ primitive
 to reach for, what a good surface looks like when it is built out of them, and which recurring
 output patterns mark work as machine-composed. It is **not** an API reference: props, signatures,
 variant lists, and worked call examples are owned by [`../README.md`](../README.md), and nothing
@@ -26,28 +26,28 @@ what the routing table below exists to make possible.
 
 One row per file, keyed by the question that sends you there.
 
-| The question in front of you | Read |
-|---|---|
-| What may I never do, whatever I was asked for? | [`floor.md`](./floor.md) |
-| Which component do I reach for? | [`catalog.md`](./catalog.md) |
-| Does this look like it was generated rather than designed? | [`tells.md`](./tells.md) |
-| Am I done? | [`preflight.md`](./preflight.md) |
-| Two things look equally important. | [`reference/01-hierarchy.md`](./reference/01-hierarchy.md) |
-| How much space goes between these, and why that much? | [`reference/02-layout.md`](./reference/02-layout.md) |
-| How many text sizes and weights, and how wide does the copy run? | [`reference/03-typography.md`](./reference/03-typography.md) |
-| Which token is this shade, and does it hold in dark mode? | [`reference/04-color.md`](./reference/04-color.md) |
-| Should this sit on a raised surface, or is a border enough? | [`reference/05-depth.md`](./reference/05-depth.md) |
-| How do I lay out a field, and where does its error go? | [`reference/06-forms.md`](./reference/06-forms.md) |
-| The list is empty, or loading, or it failed. | [`reference/07-states.md`](./reference/07-states.md) |
-| Where does this control live — the shell, a rail, or the page? | [`reference/08-navigation.md`](./reference/08-navigation.md) |
-| What happens on focus, on keyboard, while it is in flight? | [`reference/09-interaction.md`](./reference/09-interaction.md) |
+| The question in front of you                                           | Read                                                               |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| What may I never do, whatever I was asked for?                         | [`floor.md`](./floor.md)                                           |
+| Which component do I reach for?                                        | [`catalog.md`](./catalog.md)                                       |
+| Does this look like it was generated rather than designed?             | [`tells.md`](./tells.md)                                           |
+| Am I done?                                                             | [`preflight.md`](./preflight.md)                                   |
+| Two things look equally important.                                     | [`reference/01-hierarchy.md`](./reference/01-hierarchy.md)         |
+| How much space goes between these, and why that much?                  | [`reference/02-layout.md`](./reference/02-layout.md)               |
+| How many text sizes and weights, and how wide does the copy run?       | [`reference/03-typography.md`](./reference/03-typography.md)       |
+| Which token is this shade, and does it hold in dark mode?              | [`reference/04-color.md`](./reference/04-color.md)                 |
+| Should this sit on a raised surface, or is a border enough?            | [`reference/05-depth.md`](./reference/05-depth.md)                 |
+| How do I lay out a field, and where does its error go?                 | [`reference/06-forms.md`](./reference/06-forms.md)                 |
+| The list is empty, or loading, or it failed.                           | [`reference/07-states.md`](./reference/07-states.md)               |
+| Where does this control live — the shell, a rail, or the page?         | [`reference/08-navigation.md`](./reference/08-navigation.md)       |
+| What happens on focus, on keyboard, while it is in flight?             | [`reference/09-interaction.md`](./reference/09-interaction.md)     |
 | Can someone reach and read this without a mouse or full colour vision? | [`reference/10-accessibility.md`](./reference/10-accessibility.md) |
-| This region gets swapped in over the wire. | [`reference/11-htmx.md`](./reference/11-htmx.md) |
-| How tight, how plain, how much movement? | [`reference/12-density.md`](./reference/12-density.md) |
-| It is a landing page, not an app screen. | [`reference/13-marketing.md`](./reference/13-marketing.md) |
-| I am auditing someone else's surface. | [`reference/14-review.md`](./reference/14-review.md) |
-| There is a photograph or a glyph on this surface. | [`reference/15-media.md`](./reference/15-media.md) |
-| I am about to write this behaviour in script or in an older CSS idiom. | [`reference/16-platform.md`](./reference/16-platform.md) |
+| This region gets swapped in over the wire.                             | [`reference/11-htmx.md`](./reference/11-htmx.md)                   |
+| How tight, how plain, how much movement?                               | [`reference/12-density.md`](./reference/12-density.md)             |
+| It is a landing page, not an app screen.                               | [`reference/13-marketing.md`](./reference/13-marketing.md)         |
+| I am auditing someone else's surface.                                  | [`reference/14-review.md`](./reference/14-review.md)               |
+| There is a photograph or a glyph on this surface.                      | [`reference/15-media.md`](./reference/15-media.md)                 |
+| I am about to write this behaviour in script or in an older CSS idiom. | [`reference/16-platform.md`](./reference/16-platform.md)           |
 
 ## Two tiers, one citation scheme
 
@@ -67,7 +67,7 @@ shape it takes; do not reconstruct it from here.
 
 ## Sources
 
-The design principles these rules rest on are argued in *Refactoring UI* by Adam Wathan and Steve
+The design principles these rules rest on are argued in _Refactoring UI_ by Adam Wathan and Steve
 Schoger. Every rule in this corpus was re-derived against forge's own components, tokens, and
 utilities, and is stated in forge's terms rather than reproduced.
 

@@ -17,7 +17,78 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **The gate's `governance` step now invokes `gov sync`, not `governance-sync`.**
+  `@y-core/governance` renamed its bin in v0.4.4, so `cloudflareWorkerSteps({ governance: true })`
+  emits `["gov", "sync", "--check"]` with `["gov", "sync"]` as its fixer. **The preset version and
+  the `@y-core/governance` pin must move together**: a sibling on the new preset with an older pin
+  gets a gate invoking a binary it has not installed, and a sibling on the new pin with an older
+  preset invokes one that no longer exists. Nothing enforces the pairing. Bump the pin to
+  `refs/tags/v0.4.4` or later in the same change, and delete any stale
+  `node_modules/.bin/governance-sync` symlink the upgrade leaves behind — it points at a module
+  that lost its shebang and fails with `ENOEXEC` rather than "command not found".
+
+- **The gate's `lint` step now runs `oxlint`, and a new `format` step runs `oxfmt`.** Consumers
+  building a step table from `@y-core/forge/cli` get one more step and two more required
+  devDependencies: `oxlint` (and `oxlint-tsgolint` for the type-aware step) and `oxfmt`.
+  `lintStep` emits `oxlint --deny-warnings`; `formatStep` emits `oxfmt --check`, with a bare
+  `oxfmt` as its fixer. `lint` is ordered **before** `format` so that under `--fix` the formatter
+  writes last and owns the final byte layout. Suppression comments change spelling —
+  `// biome-ignore lint/<group>/<rule>: <reason>` becomes
+  `// oxlint-disable-next-line <plugin>/<rule> -- <reason>`. The two cannot coexist on one site:
+  both linters read only the immediately preceding line, so a directive one line further up is
+  inert.
+
+- **Biome is gone; `@biomejs/biome` is no longer a devDependency and `biome.json` is deleted.**
+  `oxfmt` replaces it for formatting and import sorting, configured by `.oxfmtrc.json`. Two
+  consequences for a consuming project. First, `formatStep`'s argv changes — the label stays
+  `format`, so `--only format` is unaffected, but a project that pinned the old `["biome", …]`
+  array in its own step table must edit it. Pre-1.0, there is no shim. Second, **oxfmt formats by
+  language, not by extension**: where Biome was restricted to `.ts`/`.tsx`, oxfmt also formats
+  Markdown, CSS, JSON, YAML and TOML, so pointing it at a directory reformats far more than
+  before. forge's own `format` step is now pointed at `.` rather than `src/` and `config/`.
+  Import sorting moves from Biome's `organizeImports` to oxfmt's `sortImports`, which uses a
+  different algorithm and inserts blank lines between import groups.
+
+### Added
+
+- **`typeAwareLintStep` — type-aware linting, `fullOnly`.** `oxlint --type-aware` enables
+  `no-floating-promises`, `no-misused-promises` and `await-thenable`, which Biome cannot express at
+  all and which matter on a Workers isolate that tears down at end-of-response. It builds its own
+  TypeScript program, so it stays off the fast loop. It also carries
+  `--report-unused-disable-directives-severity error`: this run is a superset of the syntax run, so
+  it is the only one that can tell a stale suppression from one a type-aware rule redeems.
+
+- **`rasters` — SVG-to-PNG rasterization for non-square art.** A new assets config block of
+  `{ from, to, width?, height? }` entries, rasterized by `buildRasters` into `paths.publicDir`
+  during `buildAll` (after `copy`) and reachable alone as `forge assets build rasters`. Setting one
+  dimension derives the other from the source's intrinsic ratio, so a lockup is scaled rather than
+  squashed; an entry setting neither is rejected by the schema. Outputs are not content-hashed and
+  do not enter the manifest — like `copy`, because a URL pasted into a mail client has to stay
+  stable. `sharp` stays an optional dynamic import; `currentColor` is not substituted, so give the
+  source an explicit fill.
+
+- **`formatStep`** — the formatting half of the old `lintStep`, exported from `@y-core/forge/cli`.
+
+- **Two rules taken from oxlint's `suspicious` category, named individually.**
+  `eslint/preserve-caught-error` caught one rethrow that discarded the original stack;
+  `eslint/no-shadow` caught locals shadowing an imported or same-module symbol the file also calls
+  — `err` from `result` inside a `catch` in `csrf.ts`, and the exported `env()` builder in
+  `config.ts`. The category itself stays **off**: enabling it would subscribe forge's published
+  gate to oxc's future editorial judgement, and 312 of its 357 findings here come from three rules
+  that collide with forge's own design. Reasoning is in `CODE_REVIEW.md` §7.
+
+### Fixed
+
+- **Seven `...(x ?? {})` spreads dropped their useless fallback**, and three `/^…/.test(s)` regexes
+  became `s.startsWith(…)`. A dead `_fetchFn` binding in `kv.test.ts` was removed. All were found
+  by oxlint rules Biome does not have.
+
+- **`mock.module` is now awaited in the three test files that install a `node:child_process` stub**
+  (`cf-env-command.test.ts`, `proc.test.ts`, `git.test.ts`). Each is followed immediately by a
+  top-level `await import(...)` of the module under test, so awaiting the registration is what
+  guarantees the stub is in place before the import resolves.
 
 ---
 
@@ -103,7 +174,7 @@ _Nothing yet._
 - **Verified Cloudflare zone-ruleset surface**, recorded in `src/cli/sync/api/endpoints.ts`:
   the phase-addressed entrypoint paths, the fact that `PUT` replaces the whole `rules` array, the
   per-phase token permissions, and the phase ordering — `http_request_dynamic_redirect` runs
-  *before* `http_request_firewall_custom`, so a host redirect terminates before the WAF sees the
+  _before_ `http_request_firewall_custom`, so a host redirect terminates before the WAF sees the
   request.
 
 ---
@@ -161,7 +232,7 @@ _Nothing yet._
 
 - **A flag repeated without `multiple` now throws, where it used to keep the last occurrence
   silently.** This is the point of the change: `forge verify --only typecheck --only
-  validate-exports --only validate-docs` used to run one check and report `1 of 1 steps run`,
+validate-exports --only validate-docs` used to run one check and report `1 of 1 steps run`,
   saying nothing about the two it dropped. A repeatable flag collects every occurrence; a
   single-valued one refuses the repeat and names what would have been lost. `selectSteps`,
   `parseResources` and `resolveRotation` are **widened** to `string | readonly string[]`, never
@@ -179,7 +250,7 @@ _Nothing yet._
   changed. `@y-core/forge/cli` still resolves, now to `src/cli/core/mod.ts`. A consuming
   `config/steps.ts` needs its one import path updated and nothing else.
 - **`cloudflareWorkerSteps` emits `["forge", "assets", "types", …]` instead of `["forge-assets",
-  "types", …]`.** A repository on the preset picks this up by upgrading; one that pinned the old
+"types", …]`.** A repository on the preset picks this up by upgrading; one that pinned the old
   `cmd` array in its own step table must edit it.
 
 - **CSP directive sources are validated, and a malformed one now throws.** Every string source in
@@ -195,7 +266,7 @@ _Nothing yet._
 - **`mergeSecurityHeaders` now falls back to a directive's default when the base omits it.**
   Previously each directive was concatenated from the two inputs alone, so merging onto a base that
   did not name a directive produced that directive from the override only — `mergeSecurityHeaders({},
-  { styleSrc: ["https://cdn.example.com"] })` emitted `style-src https://cdn.example.com`, dropping
+{ styleSrc: ["https://cdn.example.com"] })` emitted `style-src https://cdn.example.com`, dropping
   `'self'`, and the same shape merging `scriptSrc` dropped both `'self'` and the nonce placeholder,
   disabling every nonced inline script. The defaults now live in one `CSP_DEFAULTS` constant and
   seed the merge, so the example above emits `style-src 'self' https://cdn.example.com`.
@@ -250,7 +321,7 @@ _Nothing yet._
   `BASE_URL` of `https://example.com:8443` produced `https://www.example.com` — port 443 implied.
   Because `cors`/`originGuard` compare by exact string, that entry handed cross-origin write access
   to whatever real service answers on the `www` host's default port (a marketing site, a CDN host,
-  an XSS-able sibling) while *failing* to grant `https://www.example.com:8443`, the origin
+  an XSS-able sibling) while _failing_ to grant `https://www.example.com:8443`, the origin
   `includeWww: true` was asked for. The variant is now derived from the already-normalized
   `parsed.origin`, so the port travels with it and a redundant default port stays collapsed. Bases
   on a default port are unaffected — the emitted strings are byte-identical. Under the https-at-every-hop
@@ -264,14 +335,14 @@ _Nothing yet._
   text has changed**, which is visible to anyone matching on the issue string — pre-1.0, so no shim.
 
 - **The Turnstile widget stole focus from the field the user had just clicked into.** `mountTurnstile`
-  arms the lazy script load on the form's first `focusin`, so the trigger *is* that first click — and
+  arms the lazy script load on the form's first `focusin`, so the trigger _is_ that first click — and
   when Cloudflare's `render()` grabs focus into its own frame, the grab landed on the field the user
   was about to type in, every session. Nothing forge passes causes it and Turnstile exposes no render
   parameter that suppresses it. `renderWidget` now captures the active element immediately before
   `render()` and puts focus back with `preventScroll`, but only when focus actually ended up inside
   the widget and the original element is still connected — focus the user moved elsewhere in the
   meantime is left where they put it.
-- **Turnstile also stole focus *after* `render()` returned.** The synchronous restore above cannot
+- **Turnstile also stole focus _after_ `render()` returned.** The synchronous restore above cannot
   see a grab the widget's iframe makes once it has finished loading, nor a blur that lands on
   `document.body`, so the field the user was typing in still lost focus a beat later. A delegated
   `focusout` listener on the form is now armed for `TURNSTILE_FOCUS_GUARD_MS` (5000 ms) after
@@ -361,7 +432,7 @@ _Nothing yet._
   ```
 
   The gutter-reserving components (`Select`, `Toast`, `Alert`) are additionally written
-  *explicitly* logical — `ps-3 py-2 pe-10` rather than `px-3 py-2 pe-10` — so no shorthand/longhand
+  _explicitly_ logical — `ps-3 py-2 pe-10` rather than `px-3 py-2 pe-10` — so no shorthand/longhand
   pair is left for the consuming app's Tailwind build to order. One consequence is visible in
   rendered markup: `Toast` and `Alert` now drop their base `pe-*` when the dismissible variant sets
   its own, where the old `p-4` + `pr-10` pairing emitted both.
@@ -420,7 +491,7 @@ _Nothing yet._
 - **`mountAnchorBinding` and the `anchor-name` / `position-anchor` block are deleted.** A popup shown
   by an invoker gets an **implicit anchor** — its invoker — for `command`/`commandfor` exactly as for
   `popovertarget`, and `position-anchor`'s initial `auto` resolves to it. The stylesheet's own names
-  were *overriding* that anchor, which is what made a JavaScript binding look necessary. Placement
+  were _overriding_ that anchor, which is what made a JavaScript binding look necessary. Placement
   improves: each submenu now binds to its own row rather than to the parent panel's top corner.
   `Tooltip.Content` keeps `--forge-tooltip`, since it has no invoker to inherit an anchor from.
 
@@ -440,9 +511,9 @@ _Nothing yet._
 
 - **Writing a signal during an `effect` or `computed` run now throws.** It previously warned, and a
   write from inside a `computed` was not even warned about. This is what makes "an effect runs exactly
-  once per settled state" a guarantee: the edge that causes the double run is a *write* edge, which
+  once per settled state" a guarantee: the edge that causes the double run is a _write_ edge, which
   the read graph cannot see, so topological ordering would not have fixed it. Derive with `computed`,
-  command from the `on` handler, and defer with `queueMicrotask`. The refusal runs *before* the
+  command from the `on` handler, and defer with `queueMicrotask`. The refusal runs _before_ the
   equality check, so a write that happens to match the current value throws too — where the write was
   made is the rule, not what it carried.
 
@@ -479,7 +550,7 @@ _Nothing yet._
 - **`--accent-9` is no longer the same colour in both modes.** `ACCENT_RAMP.dark.lightness[8]` drops
   from `0.52` to `0.5075`, so the shipped dark solid moves `#375bd7` → `#3457d3` and
   `theme-neutral.css` declares the step as `light-dark(oklch(52.00% 0.1950 267.0), oklch(50.75%
-  0.1950 267.0))` — the last accent step that was written bare, precisely because the two modes used
+0.1950 267.0))` — the last accent step that was written bare, precisely because the two modes used
   to agree. This is what closes the `--primary-foreground` hazard recorded under **Fixed** below: one
   solid served both a near-white light foreground and a dark-mode `--gray-12` one, and dark had the
   smaller headroom. An app that copied forge's bare `oklch(52.00% 0.1950 267.0)` into its own scheme
@@ -535,7 +606,7 @@ _Nothing yet._
   `--primary-foreground` (`--accent-contrast` on `--accent-9`) be measured live rather than declared
   unreachable. `liveRatios` grows from twelve entries to fourteen, `scalePairs()` from six to seven.
 - **A copy control beside the generated scheme and beside the share link**, each a `Button
-  variant='secondary' size='sm'` that reads the DOM it sits next to — what is copied is exactly what
+variant='secondary' size='sm'` that reads the DOM it sits next to — what is copied is exactly what
   is displayed — confirms in its own visible label, and announces through a sibling `role='status'`
   span rather than an `aria-label` that would breach WCAG 2.5.3. Absent or rejected
   `navigator.clipboard` (every plain-HTTP deploy) says so and leaves the label alone. The output block
@@ -548,7 +619,7 @@ _Nothing yet._
   `interpolate-size: allow-keywords`. Measured: the opt-in only takes effect from `:root`, so it is
   declared there and takes effect only where an author transitions to or from a keyword.
 - **`safeStorage(win)`** in `ui/client` — a realm's `localStorage` or `null`. `typeof
-  win.localStorage` is not a sufficient test: in Safari's private mode the property is present and
+win.localStorage` is not a sufficient test: in Safari's private mode the property is present and
   `getItem` still throws `SecurityError`.
 - **`popover="hint"`** is now accepted by the JSX `popover` attribute type, and `<dialog>` accepts
   `closedby`.
@@ -602,7 +673,7 @@ _Nothing yet._
   both `collapsedAs='drawer'`. The `show-toc` scope wraps only the trailing rail now, so
   `mountScrollSpy`'s `a[href^='#']` default stops sweeping up the page links it never meant to mark.
 - **`Textarea` grows with its content.** The base now carries `field-sizing-content min-h-16
-  max-h-64`. Because `field-sizing: content` makes the `rows` attribute stop determining height, the
+max-h-64`. Because `field-sizing: content` makes the `rows` attribute stop determining height, the
   floor and the cap are part of the contract rather than styling: without them a consumer passing
   `rows` would get a collapsed one-line box, and a long paste would grow without bound. Override
   either with your own `min-h-*`/`max-h-*`.
@@ -610,8 +681,8 @@ _Nothing yet._
 - **`Select`'s chevron, and `Toast`'s and `Alert`'s dismiss button, are positioned with `end-*`**
   rather than `right-*`, so the reserved gutter and the control that occupies it stay on the same
   side under `dir="rtl"`.
-- **Every silent failure path now throws or reports**, by one rule: *throw when the outcome is a
-  property of the call site; report when it is a property of the page, the realm or the data.* A
+- **Every silent failure path now throws or reports**, by one rule: _throw when the outcome is a
+  property of the call site; report when it is a property of the page, the realm or the data._ A
   missing `root` in `mountScrollSpy` and an unresolvable target in `mountViewportCollapse` throw. A
   missing `IntersectionObserver`, `matchMedia` or `MutationObserver`, an absent optional widget, a
   `data-field` naming no signal, and a rejected `lazy` load with no `onError` all report.
@@ -653,7 +724,7 @@ _Nothing yet._
     and the UA-rendered controls forge cannot paint — the native `<select>` popup among them — now
     follow the theme rather than contradicting it.
   - **`getComputedStyle(...).getPropertyValue("--gray-11")` no longer returns a colour.**
-    `light-dark()` resolves at *used*-value time, and a custom property's computed value is the
+    `light-dark()` resolves at _used_-value time, and a custom property's computed value is the
     substituted text, so a token read this way is the same string in both modes. Read the colour off
     an element that paints it instead — set `style.color = "var(--gray-11)"` on a probe and read back
     `getComputedStyle(probe).color`.
@@ -673,7 +744,7 @@ _Nothing yet._
   - **A surface tint** — "slightly lighter", "slightly darker" — moves one step along the solid
     scale, per `forge-ui-color-scale-no-adhoc-tint`.
 
-  A per-scheme alpha step composites over its *own* scheme's step 1, which makes it page-relative and
+  A per-scheme alpha step composites over its _own_ scheme's step 1, which makes it page-relative and
   so mode-inverting: black over a light page, white over a dark one. A scrim has to darken in both
   modes, so the ramp could not express the one thing an alpha token is for. The shipped values
   carried a light-branch error besides — forge swaps steps 1 and 2 in light, and the alphas were
@@ -700,8 +771,12 @@ _Nothing yet._
 
   ```typescript
   const sum = computed(() => x.value + y.value);
-  effect(() => { observed = sum.value });
-  effect(() => { y.value = x.value });
+  effect(() => {
+    observed = sum.value;
+  });
+  effect(() => {
+    y.value = x.value;
+  });
   x.value = 1;
   // was: observed === 1 while x === 1 and y === 1.  now: 2
   ```
@@ -712,6 +787,7 @@ _Nothing yet._
   per node** per flush instead of 10 000 total, which makes the budget independent of graph size; a
   computed that reads its own value throws with the same `the graph is cyclic` message rather than
   recursing without bound.
+
 - **The theme customiser's preset dropdown applies on change.** Picking a scheme repaints the page
   immediately through the `customise` scope — no submit, no navigation, and the `Apply` button, the
   `<form>` around the control and its five hidden dial inputs are all gone. The picker moves its two
@@ -720,11 +796,12 @@ _Nothing yet._
   **The picker now needs JavaScript**, as the sliders beside it already did.
 
   It is the bound `ui/controls` `Select` on an `applyPreset` action, which writes the two gray dials
-  directly — what a preset *means* is the page's business, not the control's, and picking one is a
+  directly — what a preset _means_ is the page's business, not the control's, and picking one is a
   command rather than a field binding. Every dial's slider is now reconciled from its signal in the
   same effect that writes the readouts, so a dial moved by anything other than its own thumb no
   longer leaves the thumb behind, and which preset the dials name is derived at paint time rather
   than stored.
+
 - **The theme customiser's painter writes one `light-dark()` per property** and no longer watches
   `<html>`'s class list — the browser selects the branch, so the `MutationObserver` that existed only
   to re-paint on a theme toggle is deleted.
@@ -732,8 +809,8 @@ _Nothing yet._
 ### Fixed
 
 - **`<Dialog open>` floated over the page instead of sitting in the document flow.** `Dialog`
-  documents `open` as *"Render open and non-modal"*, but `forge-ui.css` §6's `inset: 1rem; margin:
-  auto` — written for the modal case, as its own comment says — matched **every**
+  documents `open` as _"Render open and non-modal"_, but `forge-ui.css` §6's `inset: 1rem; margin:
+auto` — written for the modal case, as its own comment says — matched **every**
   `[data-slot~="dialog"]`. Combined with the UA's `position: absolute` for an open dialog, a
   non-modal one took the viewport gutter and centred itself over the whole page from first paint.
   The rule is now scoped to `:modal`, and a companion `:not(:modal)` rule flows a non-modal dialog
@@ -755,7 +832,7 @@ _Nothing yet._
 - **Two theme toggles on one page cycled from each other's stale value.** Each `theme` scope hydrated
   its own `pref` signal from its own `data-state`, so a navbar toggle beside a settings or showcase
   toggle each mutated only its own: after cycling one, the other's next click advanced from the value
-  it held before. The preference is a property of the *document*, and `ui/chrome/client.ts` now holds
+  it held before. The preference is a property of the _document_, and `ui/chrome/client.ts` now holds
   it that way — a `WeakMap<Document, …>` with a `holders` refcount, the shape `resume.ts` already uses
   for its delegated listeners. The first scope in a document builds the `pref` signal, the `matchMedia`
   listener and the two effects that paint `<html>`; every later scope takes a share and re-points its
@@ -766,7 +843,7 @@ _Nothing yet._
 
 - **`mountTurnstile(within)` searched the whole document instead of the node it was given.** It widened
   its argument to `ownerDocument(within)` before querying, so every scoped mount on a page with more
-  than one `<Turnstile>` resolved to the *first* widget: the later ones never rendered, never revealed
+  than one `<Turnstile>` resolved to the _first_ widget: the later ones never rendered, never revealed
   their fallback, and — sharing one entry in the mounted-controller registry — disposing any of them
   removed the first one's live widget. It now looks the widget up within the passed element or
   fragment, and the fallback message up inside the widget itself; the arg-less call still widens to the
@@ -779,12 +856,12 @@ _Nothing yet._
   the reserved set.
 
 - **An effect created in a scope's `setup` outlived the scope's teardown.** Only what a `setup`
-  *returned* was disposed, so an effect whose disposer was discarded stayed in its signals'
+  _returned_ was disposed, so an effect whose disposer was discarded stayed in its signals'
   subscriber sets forever, holding a closure over detached DOM and still running on every later write.
   The scope runtime now owns every effect created while `setup` runs and disposes it with the scope,
   which makes the leak unwritable rather than fixing the two sites that had it. A `setup` returns a
   disposer only for what the runtime cannot see — listeners, observers, timers, controller handles —
-  and it runs *after* the scope's effects are disposed, so nothing reactive is alive while an author's
+  and it runs _after_ the scope's effects are disposed, so nothing reactive is alive while an author's
   teardown mutates the DOM ([`UI_CLIENT_RUNTIME.md`](.decisions/UI_CLIENT_RUNTIME.md) §2d). Three
   adjacent defects are fixed with it: a `setup` that threw left its root marked resumed with no
   disposer — unreachable by every teardown and inert on re-resume; a throwing disposer aborted the
@@ -799,7 +876,10 @@ _Nothing yet._
 
   ```typescript
   const sum = computed(() => x.value + y.value);
-  effect(() => { x.value = trigger.value; y.value = trigger.value; });
+  effect(() => {
+    x.value = trigger.value;
+    y.value = trigger.value;
+  });
   trigger.value = 5;
   // was: sum.value === 5, and stayed 5.  now: 10
   ```
@@ -839,9 +919,9 @@ _Nothing yet._
   + "verify": "forge-verify"
   ```
 
-- **`bun run lint` checks; `bun run fix` writes.** 
+- **`bun run lint` checks; `bun run fix` writes.**
 
-- **`loadConfig` takes an options object with a required `root`.** 
+- **`loadConfig` takes an options object with a required `root`.**
 
 ### Added
 
@@ -853,7 +933,7 @@ _Nothing yet._
 - **A pre-built step per check forge ships**, so a project names and configures a check in the step
   table rather than assembling one: `typecheckStep`, `lintStep`, `testStep`, `browserStep`,
   `exportsStep`, `namespaceGraphStep`, `jsxStep`, `docsStep`, `changelogStep`, `designStep`,
-  `contrastStep`, `cssSourcesStep`. 
+  `contrastStep`, `cssSourcesStep`.
 
 ---
 
@@ -862,7 +942,7 @@ _Nothing yet._
 ### Added
 
 - **`@y-core/forge/pkg` now publishes the verification gate.** `createGateCommand({ cwd, gate,
-  steps, binDir? })` builds the `check` / `verify` verbs over a step table the consuming project
+steps, binDir? })` builds the `check` / `verify` verbs over a step table the consuming project
   owns — fail-fast execution, `--only` / `--list` / `--fix`, the zero-selection refusal, machine
   prerequisite probes, and the full-log file. The runner was previously `scripts/lib/gate-command.ts`,
   unreachable from the exports map.
@@ -894,13 +974,13 @@ _Nothing yet._
 ## [0.0.83] — 2026-08-12
 
 **The semantic layer conflated a decorative hairline with a control affordance under one stop
-mapping.** `--border`, `--input` and `--ring` were documented as a single concern — *"separation,
-control outlines, and the focus ring"* — and mapped accordingly: `--border` and `--input` were both
+mapping.** `--border`, `--input` and `--ring` were documented as a single concern — _"separation,
+control outlines, and the focus ring"_ — and mapped accordingly: `--border` and `--input` were both
 `--palette-400` in light and both `--palette-700` in dark. That is the correct value for a `Card`
 edge and roughly **half** of what WCAG 1.4.11 requires of the only boundary a text field has. Every
 control outline forge shipped sat at 2.36:1 in light and **1.70:1** in dark, against a 3:1 floor.
 The light focus ring was worse: a 50%-alpha `color-mix` that composited to **1.63:1**, below the
-border it was meant to replace, so focusing a field made its outline *fainter*.
+border it was meant to replace, so focusing a field made its outline _fainter_.
 
 The audit that followed — oklch → oklab → linear sRGB → WCAG relative luminance, worst case across
 all five ramps in both modes — found the failures were systematic rather than local, and turned up
@@ -912,9 +992,9 @@ layer needed something mode-agnostic to point at, and the step layer does that j
 would have left two indirections answering one question. Every declaration is gone from every
 stylesheet forge ships.
 
-**Tinted neutrals could not carry a scheme on their own, and that is a design-intent.** They are 
-calibrated to sit *under* a saturated accent and only lean toward it; the accent carries the identity. 
-Forge has no accent — `--accent-12` aliases `--gray-12`, near-black — so the scheme itself has to. 
+**Tinted neutrals could not carry a scheme on their own, and that is a design-intent.** They are
+calibrated to sit _under_ a saturated accent and only lean toward it; the accent carries the identity.
+Forge has no accent — `--accent-12` aliases `--gray-12`, near-black — so the scheme itself has to.
 
 **Every colour changes, and that is the largest visual change in the release.** The greys move from
 the old Tailwind ramps to the new scale end to end — every surface, every border, every line of text.
@@ -967,10 +1047,10 @@ It is not a re-tint of a few tokens.
   it is now forge's to declare, after the theme imports. An app that has already added it is
   unaffected — the declaration is identical and `@custom-variant` is last-declaration-wins, so the
   consumer's copy restates forge's. **The reconfiguration is not scoped to forge's utilities.** A
-  custom variant is global, so this redefines `dark:` across the *consuming app's* stylesheet too,
+  custom variant is global, so this redefines `dark:` across the _consuming app's_ stylesheet too,
   and an app deliberately keyed to `prefers-color-scheme` loses its automatic dark theme with no
   error and no unmatched class. The escape hatch is the same cascade rule that makes a consumer's
-  own copy harmless — re-declare the variant *after* the import:
+  own copy harmless — re-declare the variant _after_ the import:
 
   ```css
   @import "@y-core/forge/ui/assets/css/forge.css";
@@ -990,6 +1070,7 @@ It is not a re-tint of a few tokens.
   `validate-contrast` parses the semantic layer by brace-counting `.dark { … }` and the block
   spelling would put a second thing that looks exactly like a mode block into the file that gate
   walks. See [`MIGRATION.md`](MIGRATION.md).
+
 - **The per-mode override point moved from the semantic token to the role scale.** Every semantic
   token is now declared once and means the same thing in both modes, so an app that wrote
   `:root { --primary: … }` and relied on forge's `.dark` twin to flip it back gets that value in
@@ -1002,7 +1083,7 @@ It is not a re-tint of a few tokens.
   one no compiler will ever mention; `validate-contrast` refuses an audited token declared in
   `.dark` at all, so forge's own theme files cannot re-introduce the old shape, but a consumer's
   stylesheet is outside that gate. See [`MIGRATION.md`](MIGRATION.md).
-- **`--input` and `--ring` are *lighter* than the values this release's audit first landed on.**
+- **`--input` and `--ring` are _lighter_ than the values this release's audit first landed on.**
   `--input` goes 4.34 → 3.33 in light and `--ring` 6.87 → 5.19, both still clear of the 3:1 floor
   1.4.11 binds them by, and both now measured as a single exact value rather than a worst case. The
   affordance fix is not weakened; the numbers move because the whole neutral scale moved under them.
@@ -1017,14 +1098,14 @@ It is not a re-tint of a few tokens.
   text.
 - **`--ring` must sit one stop beyond `--input`,** and that invariant is now what fixes its value. A
   ring at the same stop as the input would make `focus:border-ring` a no-op in light; in dark it
-  would make a focused control *recede*.
+  would make a focused control _recede_.
 - **There is no longer a `--palette-*` ramp to supply, and an app that supplied one is now
   supplying nothing.** This supersedes the previous instruction that a consumer must declare
   `--palette-50` … `--palette-950`. The eleven stops are deleted, not renamed: nothing in forge
   reads them, so a stylesheet still declaring a ramp compiles, renders forge's own scale, and gives
   no sign that the ramp is inert. The extension point moved down one layer and shrank — a theme now
   re-declares `--gray-1` … `--gray-12` (and their `--gray-a*` twins) in both blocks and nothing else,
-  and `theme-slate.css` is the worked example of exactly that shape. A brand *hue* is a different
+  and `theme-slate.css` is the worked example of exactly that shape. A brand _hue_ is a different
   extension point again: re-declare `--accent-12`, which `--primary` resolves through.
 - **The ratios below are single exact values, not worst cases.** Forge ships four neutral scales now
   rather than five, and all four sit on one lightness ramp, so a row measured against
@@ -1053,22 +1134,22 @@ Token by token. The **Was** column is 0.0.82's mapping and its worst case across
 release shipped; the **Now** column is a role step and a single exact ratio against
 `theme-neutral.css`, measured on the backdrop named beside it in `scripts/contrast-parse.ts`:
 
-| Token | Mode | Was | Now | Ratio | Floor | Criterion |
-|---|---|---|---|---|---|---|
-| `--muted-foreground` | `:root` | `--palette-500` | `--gray-11` | 4.34 → **5.19** | 4.5 | 1.4.3 |
-| `--muted-foreground` | `.dark` | `--palette-400` | `--gray-11` | 3.94 → **7.67** | 4.5 | 1.4.3 |
-| `--input` | `:root` | `--palette-400` | `--gray-10` | 2.36 → **3.33** | 3 | 1.4.11 |
-| `--input` | `.dark` | `--palette-700` | `--gray-10` | 1.70 → **3.76** | 3 | 1.4.11 |
-| `--ring` | `:root` | 50% `color-mix` | `--gray-11` | 1.63 → **5.19** | 3 | 1.4.11 |
-| `--ring` | `.dark` | `--palette-500` | `--gray-11` | 3.04 → **7.67** | 3 | 1.4.11 |
-| `--track` | `:root` | *(was `--input`)* | `--gray-10` | **3.60** | 3 | 1.4.11 |
-| `--track` | `.dark` | *(was `--input`)* | `--gray-10` | **4.46** | 3 | 1.4.11 |
-| `--destructive` | `:root` | `--color-red-500` | `--red-9` = `red-700` | 4.33 → **5.63** | 4.5 | 1.4.3 |
-| `--destructive` | `.dark` | `oklch(…)` = `red-400` | `--red-9` = `red-300` | 3.55 → **8.28** | 4.5 | 1.4.3 |
-| `--destructive-foreground` | `:root` | *(did not exist)* | `--red-contrast` = `--gray-1` | **6.10** | 4.5 | 1.4.3 |
-| `--destructive-foreground` | `.dark` | *(did not exist)* | `--red-contrast` = `--gray-1` | **9.83** | 4.5 | 1.4.3 |
-| `--warning-foreground` | `:root` | `--palette-50` | `--yellow-contrast` = `--gray-12` | 1.83 → **8.51** | 4.5 | 1.4.3 |
-| `--warning-foreground` | `.dark` | `--palette-950` | `--yellow-contrast` = `--gray-1` | **12.04** | 4.5 | 1.4.3 |
+| Token                      | Mode    | Was                    | Now                               | Ratio           | Floor | Criterion |
+| -------------------------- | ------- | ---------------------- | --------------------------------- | --------------- | ----- | --------- |
+| `--muted-foreground`       | `:root` | `--palette-500`        | `--gray-11`                       | 4.34 → **5.19** | 4.5   | 1.4.3     |
+| `--muted-foreground`       | `.dark` | `--palette-400`        | `--gray-11`                       | 3.94 → **7.67** | 4.5   | 1.4.3     |
+| `--input`                  | `:root` | `--palette-400`        | `--gray-10`                       | 2.36 → **3.33** | 3     | 1.4.11    |
+| `--input`                  | `.dark` | `--palette-700`        | `--gray-10`                       | 1.70 → **3.76** | 3     | 1.4.11    |
+| `--ring`                   | `:root` | 50% `color-mix`        | `--gray-11`                       | 1.63 → **5.19** | 3     | 1.4.11    |
+| `--ring`                   | `.dark` | `--palette-500`        | `--gray-11`                       | 3.04 → **7.67** | 3     | 1.4.11    |
+| `--track`                  | `:root` | _(was `--input`)_      | `--gray-10`                       | **3.60**        | 3     | 1.4.11    |
+| `--track`                  | `.dark` | _(was `--input`)_      | `--gray-10`                       | **4.46**        | 3     | 1.4.11    |
+| `--destructive`            | `:root` | `--color-red-500`      | `--red-9` = `red-700`             | 4.33 → **5.63** | 4.5   | 1.4.3     |
+| `--destructive`            | `.dark` | `oklch(…)` = `red-400` | `--red-9` = `red-300`             | 3.55 → **8.28** | 4.5   | 1.4.3     |
+| `--destructive-foreground` | `:root` | _(did not exist)_      | `--red-contrast` = `--gray-1`     | **6.10**        | 4.5   | 1.4.3     |
+| `--destructive-foreground` | `.dark` | _(did not exist)_      | `--red-contrast` = `--gray-1`     | **9.83**        | 4.5   | 1.4.3     |
+| `--warning-foreground`     | `:root` | `--palette-50`         | `--yellow-contrast` = `--gray-12` | 1.83 → **8.51** | 4.5   | 1.4.3     |
+| `--warning-foreground`     | `.dark` | `--palette-950`        | `--yellow-contrast` = `--gray-1`  | **12.04**       | 4.5   | 1.4.3     |
 
 `--track` is measured thumb-on-track rather than track-on-page: the thumb is what distinguishes a
 `Switch`'s off state from its on state, and it is the sole indicator of it.
@@ -1102,19 +1183,19 @@ which `forge-ui-color-scale-ramp-only` argues against.
   `package.json` exports `./ui/assets/css/*.css` by wildcard, so no export path changes shape and the
   export map needed no edit. The moves:
 
-  | You imported | Do |
-  |---|---|
-  | `theme-neutral.css` | Drop the import — `forge.css` already imports it. Keeping it restates the default and changes nothing |
-  | `theme-gray.css` | Keep it for the **cool** scheme, or drop it for the achromatic default. Same filename, entirely new values |
-  | `theme-zinc.css` | Import `theme-stone.css`, or drop the import; zinc has no successor |
-  | `theme-slate.css`, `theme-stone.css` | Keep the import; the values change |
+  | You imported                         | Do                                                                                                         |
+  | ------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+  | `theme-neutral.css`                  | Drop the import — `forge.css` already imports it. Keeping it restates the default and changes nothing      |
+  | `theme-gray.css`                     | Keep it for the **cool** scheme, or drop it for the achromatic default. Same filename, entirely new values |
+  | `theme-zinc.css`                     | Import `theme-stone.css`, or drop the import; zinc has no successor                                        |
+  | `theme-slate.css`, `theme-stone.css` | Keep the import; the values change                                                                         |
 
 - **`theme-zinc.css` carried a live WCAG failure to its grave, and it is the sharpest argument for
   the whole change.** Its dark `--warning-foreground` rendered near-white on `orange-500` at
   **2.77:1**, while the comment on the very next line claimed 6.83. The cause is not a bad value; it
   is a cascade race. `:root` and `.dark` both weigh 0-1-0, so source order decides between them —
-  and `theme-zinc.css` was imported *after* `theme-base.css`, so zinc's `:root { --warning-foreground:
-  var(--palette-50); }` won in **both** modes and the base's `.dark` twin was never reached. Zinc's
+  and `theme-zinc.css` was imported _after_ `theme-base.css`, so zinc's `:root { --warning-foreground:
+var(--palette-50); }` won in **both** modes and the base's `.dark` twin was never reached. Zinc's
   own `.dark` block said it "keeps the base's `--palette-950` foreground", which was true of the
   block and false of the page. This shipped on every release that had the file. It is what a
   mode-specific value at the semantic layer costs: correctness that depends on which stylesheet
@@ -1143,7 +1224,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
   resolved to `"top"` and rendered a full-width top strip that stayed permanently behind a hamburger,
   which is not a shape anyone asked for; it resolves to `"left"` and takes the rail classes. Two
   halves move, and **both are silent** — no compile error either way. The class string is one. The
-  other is the generated ids: `idBase` falls back to the *resolved* placement, so `navbar-menu-top-*`
+  other is the generated ids: `idBase` falls back to the _resolved_ placement, so `navbar-menu-top-*`
   becomes `navbar-menu-left-*` and `navbar-group-top-*` becomes `navbar-group-left-*`, which breaks
   any selector, test or fragment target pinned to the old names. Pass `placement="top"` to keep the
   old rendering, or an explicit `id` to pin the old ids. `collapsible !== "always"` still defaults to
@@ -1154,7 +1235,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
   label in a `<span class='flex-1 pl-1'>` beside a `chevron-down` `Icon` that rotates when open.
   Forge stays icon-agnostic, so the sprite-bound `ForgeIcon` is injected rather than imported; a
   required prop is what makes the replacement unforgettable. The root's group name also changes,
-  `group/collapsible` → `group/collapsible-item`, and *that* half is silent: a consumer writing
+  `group/collapsible` → `group/collapsible-item`, and _that_ half is silent: a consumer writing
   `group-open/collapsible:` inside a panel now matches nothing.
 - **`ToggleGroupItemSize` is removed — use `ButtonSize`,** exported from both `@y-core/forge/ui/core`
   and `@y-core/forge/ui/controls`. `ToggleGroup.Item` had its own three-entry `ITEM_SIZE` map, which
@@ -1168,7 +1249,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
 - **`Select` routes the caller's `class` to the wrapper, not the inner `<select>`.** The wrapper owns
   the geometry — the width, and the containing block the chevron is positioned against — so
   `class='w-64'` sized the inner control and left the box that is actually laid out untouched.
-  Forwarded *props* still land on the `<select>`, which is what a caller means by every native
+  Forwarded _props_ still land on the `<select>`, which is what a caller means by every native
   attribute, `data-*` hook and ARIA relation; `class` is the one split, and `conformance.test.tsx`
   records it as a `classSlot`. A caller passing a text or padding utility now sets it on the wrapper
   and inherits it into the control; one passing a border or background utility styles the wrapper's
@@ -1289,7 +1370,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
 - **`mountTurnstile` reported a failure it never attempted, on any page holding an element with
   `id="turnstile"`.** The loader tested `window.turnstile` for truthiness, but the DOM exposes every
   element with an `id` as a window property of that name — so a page with a `<section
-  id="turnstile">`, which is not an exotic page, answered a truthy `HTMLElement`. The loader took the
+id="turnstile">`, which is not an exotic page, answered a truthy `HTMLElement`. The loader took the
   "API already present" branch, found no `render` on an element, and revealed the fallback for a
   widget whose script had never been requested. It now asks the capability
   (`typeof win.turnstile?.render === "function"`) at all three sites, through one `hasApi` predicate.
@@ -1303,7 +1384,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
   a rendering change, nor a compile error:** a caller inside a `<form>` that relied on the old
   default for cross-field aborting now passes `sync: "closest form:abort"` explicitly.
 - **The showcase's inline-validation demo sent no field value.** The `inlineValidation()` spread sat
-  on a wrapper `<div>` outside the fragment. htmx sends the *triggering element's* own value on a
+  on a wrapper `<div>` outside the fragment. htmx sends the _triggering element's_ own value on a
   GET, so the request carried no `email` at all — and a spread outside the swap target survives the
   first swap and is then gone from the markup that came back. It now sits on the `<Input>` inside
   `ValidateFragment`. This is the surface the `sync` default above was found on: the standalone field
@@ -1321,7 +1402,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
   content, which is what let the inline-validation defect above be reproduced rather than reasoned
   about.
 - **A context menu opened from `contextmenu` was light-dismissed by the platform on its own
-  right-click** — it flashed and vanished. `contextmenu` fires *between* `pointerdown` and
+  right-click** — it flashed and vanished. `contextmenu` fires _between_ `pointerdown` and
   `pointerup`, and the dismiss pass on that trailing release compares the popover ancestor of the
   pointerdown target with the ancestor of the pointerup target. Neither is inside a popup: nothing was
   open when the button went down, and the pointer is over the surface rather than over the panel that
@@ -1332,15 +1413,16 @@ which `forge-ui-color-scale-ramp-only` argues against.
   showing there is still inside that one event and before any paint, and the pass finds nothing to
   dismiss. Callers pass `event.buttons !== 0` rather than a flat `true` — a keyboard-raised
   `contextmenu` (the Menu key, `Shift+F10`) reports no buttons and is followed by no release, so an
-  unconditional guard would arm a listener that the *next* unrelated click fires. `once`, so a later
+  unconditional guard would arm a listener that the _next_ unrelated click fires. `once`, so a later
   click still light-dismisses the menu exactly as it always did.
 
   **No existing test caught it because the fixture had no stylesheet.** `showcase.browser.ts` mounted
   the context-menu demo without `theme-base.css`, so the coordinate rule never applied, the popup fell
-  back to the UA's centred `[popover]` box — which lands *under* the pointer — and the release hit the
+  back to the UA's centred `[popover]` box — which lands _under_ the pointer — and the release hit the
   panel, making the dismiss pass decline to match. That mount now loads the theme, and three cases in
   `src/ui/core/menu-anchor.browser.ts` ("a context menu against the platform's light-dismiss pass")
   cover the guarded open, the unguarded control, and that a later click still dismisses.
+
 - **The showcase's closed rail column stretched to the full page height,** leaving a border running
   the length of the page beside a collapsed hamburger. The column is a flex item in a `min-h-dvh`
   row, and the closed-state override only narrowed it (`w-14`), so it still stretched and still drew
@@ -1348,7 +1430,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
   a second fixed track — plus `self-start` to stop the stretch and `border-r-0` to drop the rule that
   would otherwise hang beside it. The open state is unchanged.
 - **A rejected `channel.read` no longer escapes the log viewer to the error boundary.** For a fragment
-  request that boundary answers with a *page*, and HTMX swapped that page's body into the log table.
+  request that boundary answers with a _page_, and HTMX swapped that page's body into the log table.
   The failure is now caught and rendered in place as a `destructive` `Alert` with a retry, the table's
   own shape preserved around it. On the append path the cursor the read never consumed is kept, so the
   load-more control stays and becomes its own retry — reporting the stream complete there would have
@@ -1367,13 +1449,13 @@ which `forge-ui-color-scale-ramp-only` argues against.
   `<button class='cursor-pointer text-left hover:underline'>` — `forge-ui-focus-ring` and
   `forge-ui-hit-target`, two Floor failures on one element.
 - **Two browser specs were racing their own subjects** and failed under load. Both waited on a value
-  that is already correct *before* the event they actually depend on. `showcase.browser.ts`'s
+  that is already correct _before_ the event they actually depend on. `showcase.browser.ts`'s
   post-swap revalidation case counted requests, which the interceptor records when the request reaches
   the route handler — before the response is fulfilled and long before htmx has swapped — so the
   second `fill` could land on an input about to be replaced, taking its pending `change` with it.
   `viewport-collapse.browser.ts`'s user-override case waited on `<details>.open`, which moves
   synchronously, while `mountViewportCollapse` tells its own writes from the user's by counting
-  `toggle` events — and the HTML spec *coalesces* a pending toggle task, so a click landing before the
+  `toggle` events — and the HTML spec _coalesces_ a pending toggle task, so a click landing before the
   controller's event was dispatched produced one event where the controller expected two, and the
   override never registered. Both now wait on the thing they depend on. No product code changed.
 
@@ -1415,7 +1497,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
 
 - **A finding about the token layer, worth recording because it looks like it should work.** A
   nested `.dark` does **not** flip forge's semantic tokens. `--background: var(--gray-1)` is declared
-  once on `:root`, so it *computes there* — to a literal — and inherits as that literal; a descendant
+  once on `:root`, so it _computes there_ — to a literal — and inherits as that literal; a descendant
   carrying `.dark` re-declares `--gray-1` and never reaches the token above it. `.dark` works on
   `<html>` because both declarations compute on the same element, in order.
 
@@ -1503,7 +1585,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
   value moves until the measurement is re-derived. It deliberately builds **no** colour-resolution
   machinery: every colour forge resolves is now either a literal in a scheme file or a Tailwind
   stop it names, so nothing upstream can move a ratio without this repository changing, which makes
-  pinning the mapping the complete check with no colour arithmetic at run time. What it does *not*
+  pinning the mapping the complete check with no colour arithmetic at run time. What it does _not_
   do is re-measure; the
   manual procedure for that is written beside `TOKEN_CONTRACT` in `scripts/contrast-parse.ts`. It
   also reports any theme file that overrides an audited token, which is how zinc's `--warning`
@@ -1514,11 +1596,11 @@ which `forge-ui-color-scale-ramp-only` argues against.
   right — `Body` is the padded middle, and `Footer` is a `flex` action row opened by a `border-t`.
   Each is a plain `div` with a `data-slot`, so a caller composes them or ignores them.
 - **`Resumable` takes a `class`, emitted on the scope root.** The scope root is a real box in its
-  parent's layout — in a flex row it *is* the flex item — so width, `shrink` and border belong there
+  parent's layout — in a flex row it _is_ the flex item — so width, `shrink` and border belong there
   rather than on a component nested two boxes further in. This is what makes the rail's layout
   expressible at all; see the Breaking entry and `forge-ui-nav-rail-flex-item`.
 - **The composition band moved off the showcase catalog and onto the theme customiser.** The catalog
-  proves each component exists; a generated scheme has to be judged against a *composed* UI, and the
+  proves each component exists; a generated scheme has to be judged against a _composed_ UI, and the
   customiser is the one page where that judgement is the point rather than a side effect. The
   `compositions` row left `SECTIONS` with it — the rail and the catalog are both derived from that
   list, so leaving the row would have published a navigation link to an element no longer on the
@@ -1571,7 +1653,7 @@ which `forge-ui-color-scale-ramp-only` argues against.
 `classes.filter(Boolean).join(" ")` — it concatenated. So `cn("h-full", cls)` with a caller passing
 `h-5` emitted `"h-full h-5"`, two utilities in the same conflict group, and which one won was
 decided by their order in the generated stylesheet rather than by the caller. The prop was real, the
-merge was not, and the failure is silent in exactly the way that survives review: the class *is*
+merge was not, and the failure is silent in exactly the way that survives review: the class _is_
 present in the output, so an assertion that greps for it passes.
 
 `cn` now resolves conflicts, and `cva` composes base → variants → `class` through it, so the later
@@ -1602,7 +1684,7 @@ the rest is that they stop being coincidences.
   reconciled them afterwards. An out-of-range or unsnapped `value` therefore rendered a number the
   thumb was not pointing at. `sanitizeRangeValue` now applies the same algorithm the browser does —
   validity check with the midpoint default, clamp, then snap from the step base — reading the
-  *serialized attributes* rather than the props, so it parses byte-for-byte what the browser parses.
+  _serialized attributes_ rather than the props, so it parses byte-for-byte what the browser parses.
 - **`Field` derived ids from values that cannot be ids.** HTML forbids ASCII whitespace in an `id`
   and splits every IDREF list on it, so a `name` containing a space produced an `id` no IDREF could
   name and an `aria-describedby` that silently pointed at nothing. Every derivation now routes
@@ -1666,8 +1748,8 @@ the rest is that they stop being coincidences.
 ## [0.0.81] — 2026-08-09
 
 **Anchored placement worked for tooltips and for nothing else.** The block in `theme-base.css` that
-positioned `popover-content` and `toolbar-flyout` rested on a stated premise — *"a popover's implicit
-anchor is the button named by `commandfor`"* — that is false. The implicit anchor comes from
+positioned `popover-content` and `toolbar-flyout` rested on a stated premise — _"a popover's implicit
+anchor is the button named by `commandfor`"_ — that is false. The implicit anchor comes from
 `popovertarget`; the Invoker Commands API sets none, and `popovertarget` appears nowhere in forge
 outside `src/jsx/types.ts`. **Every `anchor()` in that block resolved to nothing** and the UA's
 `[popover]` default centred the panel. `menu-popup` was never in the block at all.
@@ -1678,7 +1760,7 @@ browser spec loaded any CSS, and none asserted geometry, so the suite structural
 class of defect. Both are now fixed.
 
 **Separately, `defineAction` stopped taking a validation step it could not check.** Its `parse` and
-`validate` callbacks fixed the *order* two arbitrary functions ran in and nothing more — neither was
+`validate` callbacks fixed the _order_ two arbitrary functions ran in and nothing more — neither was
 required to involve a schema, so `validate: (d) => ok(d)` compiled and was accepted, and a route
 could declare a validation step that validated nothing. It now names a schema, and `handle` is
 unreachable except through a passing `v.safeParse`. Forge reads the body itself, which is what let
@@ -1687,7 +1769,7 @@ it. See **Breaking Changes**.
 
 **The release also carries a follow-up review of the full source tree after 0.0.80,** written and
 held back rather than shipped on its own. Four verified defects — plus a fifth found
-while fixing the third — and every one of them is the same shape: work that was *started* and then
+while fixing the third — and every one of them is the same shape: work that was _started_ and then
 left outside the thing that keeps it alive. A purge outside the promise the isolate waits on. A
 rejected import with no handler on it. Timers outliving their disposer. A promise that resolved on
 an appended `<link>` rather than a loaded one. Each landed with tests that fail against the previous
@@ -1697,7 +1779,7 @@ the more useful half.
 ### Added
 
 - **`strictObject(entries, message?)`** (`validation`) — the strict object schema to use for anything
-  parsing untrusted input. Only a field the schema *actually declares* counts as declared, so an
+  parsing untrusted input. Only a field the schema _actually declares_ counts as declared, so an
   undeclared key is refused rather than silently dropped for **every** name a caller can send —
   `__proto__`, `constructor`, `toString`, `valueOf` and the rest of the inherited set included, with
   no branch naming any of them. The correction is applied at construction, so it survives `v.pipe`,
@@ -1708,14 +1790,14 @@ the more useful half.
   and CRLF→LF then trim. What the fold buys is a length that means one thing, and it is the fold's
   **presence** that buys it: under `v.pipe(formMultilineText(), v.maxLength(500))` each line break
   counts once, so a 500-character limit means the same whether the newline arrived as LF or CRLF,
-  instead of silently halving the budget for line breaks. Its position relative to the trim is *not*
+  instead of silently halving the budget for line breaks. Its position relative to the trim is _not_
   observable — `trim` treats `\r` and `\n` alike, so the two orderings agree on output — and
   `src/validation/form-text.ts` records that rather than arguing for one. `formText()` deliberately
   **preserves** CRLF — that is what makes it the `<input>` variant.
 - **`describeValidationIssue(issue)`** (`validation`) — names the field one issue is about and
   nothing else, bounded in path depth and in per-segment length. It reproduces no part of the
   submission (`issue.message`, `issue.input`) and no part of the schema (`issue.expected`), so a
-  refusal varies only with *which* field failed. Use it for anything a caller reads;
+  refusal varies only with _which_ field failed. Use it for anything a caller reads;
   `formatValidationIssues` stays the internal `Invalid environment: …` diagnostic.
 - **`formToObject(formData, options?)`** (`form`) — the whole-body read `defineAction` uses, now
   public for handlers outside that pipeline. Every entry passes through: absence stays absence, a
@@ -1767,7 +1849,7 @@ the more useful half.
   `Tooltip` (12 side × align cells) and the chrome `Toolbar` flyout (4 placements) got their first
   coverage with it.
 - **`lazy` accepts an `onError` callback.** Optional, and it rides on the already-exported
-  `LazyImportOptions`, so no barrel change and no existing call site changes. See *Fixed* for where
+  `LazyImportOptions`, so no barrel change and no existing call site changes. See _Fixed_ for where
   the rejection was going before.
 
 ### Fixed
@@ -1794,7 +1876,7 @@ the more useful half.
   would have reached `handle` as if it were user data. `constructor` is a real field name on
   construction and contracting forms. Entries now accumulate straight into an `Object.create(null)`
   bag, which also removes the intermediate `Map` and the second full pass `Object.fromEntries` cost
-  per request. The matching *entries*-side half is `strictObject` (see **Added**) — the two are
+  per request. The matching _entries_-side half is `strictObject` (see **Added**) — the two are
   independent and neither fix implies the other. Neither is a prototype-pollution fix: assignment on
   a prototype-less object cannot reach an inherited setter, so a caller sending `__proto__` gets an
   own key rather than a mutated prototype, exactly as before.
@@ -1820,7 +1902,7 @@ the more useful half.
   viewport, via an explicit `anchor-name` / `anchor-scope` / `position-anchor` binding — the pattern
   the tooltip section already had right.
 - **A submenu anchors to its parent panel, and to its own row once the client bundle loads.** Naming
-  the *rows* cannot work: an open popup is in the top layer, where the resolution algorithm returns
+  the _rows_ cannot work: an open popup is in the top layer, where the resolution algorithm returns
   "the last element in tree order", so every submenu but the last binds to the wrong row
   (csswg-drafts #11602, closed as intentional).
 - **`cloneAsChild` appends to `data-slot` rather than overwriting it.**
@@ -1838,7 +1920,7 @@ the more useful half.
   menu pattern does not permit.
 - **`mountAnchorBinding` leaves no inline `anchor-name` behind on a trigger it has stopped using.**
   It holds exactly one trigger — the one currently carrying the inline name — and unwinds it both on
-  the next open, before the incoming trigger gains its own, and again on dispose. Holding *every*
+  the next open, before the incoming trigger gains its own, and again on dispose. Holding _every_
   past trigger was considered and rejected on retention grounds: a menu whose rows are rebuilt
   between openings resolves a different first invoker each time, and keeping each one would pin every
   discarded row alive for as long as the popup lives — exactly the retention the `WeakMap` in this
@@ -1855,7 +1937,7 @@ the more useful half.
   guards a different thing (a visible element would otherwise spin), and the two bounds are not
   interchangeable.
 - **A throw from `lazy`'s `init` is reported instead of becoming an unhandled rejection.**
-  `load().then(onFulfilled, onRejected)` attaches the rejection handler as a *sibling* of the
+  `load().then(onFulfilled, onRejected)` attaches the rejection handler as a _sibling_ of the
   fulfilment handler, not downstream of it, so application code throwing inside `init` rejected with
   nobody attached — the exact failure the `onError` path was added to close, reintroduced one branch
   over. It now goes to `onError` and stops there: the load succeeded, so a retry would only re-run
@@ -1870,7 +1952,7 @@ the more useful half.
   complete while the purge was still listing and deleting. A Workers isolate may be suspended the
   moment the tracked work finishes — which is precisely the moment the sweep dies mid-pass, and
   precisely when the soft `maxLogs`/`highWater` cap stops being enforced. "Best-effort" was meant to
-  describe *whether* the purge runs and what it does with a failure; it had quietly come to also
+  describe _whether_ the purge runs and what it does with a failure; it had quietly come to also
   describe whether it survives. `write` now awaits both, and awaits them with
   `Promise.allSettled([putPromise, purgePromise])` rather than `Promise.all`: `all` rejects the
   instant the put does, which would stop the returned promise covering the still-running sweep in the
@@ -1885,7 +1967,7 @@ the more useful half.
   consumes. The regression test parks the deletes, which is the only arrangement in which a tracked
   purge and a detached one look different.
 - **A failed dynamic import became an unhandled rejection and could never retry.** `lazy` calls
-  `observer.disconnect()` *before* `options.load()`, and the returned promise carried only a success
+  `observer.disconnect()` _before_ `options.load()`, and the returned promise carried only a success
   handler — so one failed chunk fetch both raised an unhandled rejection into whatever
   application-level telemetry is listening and left the element unobserved forever, turning a
   transient network blip into a permanently dead control. The rejection now goes to `onError` and
@@ -1904,12 +1986,12 @@ the more useful half.
   `clearPending()` idiom `transition.ts` already uses), and `renderWidget()` and `showFallback()`
   return early once disposed, so a late `load` or poll hit neither renders into the detached
   container nor reveals a fallback that has left the page.
-- **The Turnstile poll's paired timeout stayed pending after a *successful* poll.** Unreported,
+- **The Turnstile poll's paired timeout stayed pending after a _successful_ poll.** Unreported,
   found while fixing the above: the success branch cleared the interval and nothing else, so the
   giving-up timeout — which had no work left to do — held the closure alive for the remainder of
   `TURNSTILE_SCRIPT_TIMEOUT_MS`. Both handles are now cleared together.
 - **A concurrent `loadStylesheet` caller resolved before the stylesheet had loaded.** Idempotence
-  was a `querySelector` for a matching `<link>`, and an appended link is findable *immediately* —
+  was a `querySelector` for a matching `<link>`, and an appended link is findable _immediately_ —
   long before its `load` event fires. A second caller arriving inside that window was told the sheet
   was ready and ran its dependent code unstyled (flash, wrong layout), and an eventual load failure
   was reported only to the first caller. The in-flight promise is now cached in a
@@ -1927,19 +2009,19 @@ the more useful half.
   the best-effort contract its own TSDoc states; a single failing channel both hid the others'
   completion and surfaced as a caller-visible error. `requestLogger` additionally `.catch()`-guards
   the flush before handing it to `waitUntil`, because the `await flush` on the no-`executionCtx`
-  branch sits in a `finally` — and a `finally` that throws *replaces* what was propagating, which
+  branch sits in a `finally` — and a `finally` that throws _replaces_ what was propagating, which
   meant a log failure could discard a successful response or mask the handler error being rethrown.
 
 - **`MenuPopupProps["side"]` takes the whole `Side`,** which now spans eight values rather than four
   — see the `Side` entry below. `navbar`'s nested `Menu.Popup` passes `side='inline-end'`, so a
-  submenu opens *beside* the panel that contains it rather than below it. The logical spelling rather
+  submenu opens _beside_ the panel that contains it rather than below it. The logical spelling rather
   than `right` because the panel's own edge is what "beside" means: in an RTL subtree that edge is its
   left, and the keyboard mirrors to match. The default is unchanged.
 
 - **`Side` widened from four physical values to eight,** adding the logical `block-start`,
   `block-end`, `inline-start` and `inline-end` (`src/ui/contracts/state-attrs.ts`). Physical and
   logical spellings share one value space because they share one `data-side` attribute: the physical
-  four are right wherever a popup must *not* mirror with the reader's direction, and the logical four
+  four are right wherever a popup must _not_ mirror with the reader's direction, and the logical four
   resolve against the element's own inherited directionality. A component that styles only the
   physical subset projects it with `Exclude`, so a value its stylesheet cannot express is
   unrepresentable rather than silently unstyled. The widening is what the `menu-popup` side × align
@@ -1985,7 +2067,9 @@ the more useful half.
   export const contactAction = defineAction<ContactInput, Bindings, AppConfig>({
     parse: (formData) => readFields(formData, ["name", "email", "message"]),
     validate: (data) => validateContact(data),
-    handle: async (data, c, config) => { /* … */ },
+    handle: async (data, c, config) => {
+      /* … */
+    },
   });
 
   // after — forge reads the body; `phone` can now genuinely be absent rather than ""
@@ -1999,7 +2083,9 @@ the more useful half.
   export const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
     schema: ContactSchema,
     honeypot: CONTACT_DECOY, // required if the view renders `<Honeypot />`
-    handle: async (data, c, config) => { /* … */ },
+    handle: async (data, c, config) => {
+      /* … */
+    },
   });
   ```
 
@@ -2075,7 +2161,7 @@ the more useful half.
 
 - **`honeypot` is now required for any `defineAction` route whose view renders a decoy, and
   `turnstile` for any route rendering the widget.** Both checks moved into the pipeline, and each
-  field is dropped *because* it was checked — so a route that does not name them gets neither the
+  field is dropped _because_ it was checked — so a route that does not name them gets neither the
   check nor the strip. This closes the sharpest consequence of the `defineAction` rewrite: the
   pipeline stripped the honeypot field **before** validation without ever checking it, and forge
   ships no honeypot or Turnstile middleware, so bot detection did not degrade on migration — it
@@ -2092,12 +2178,12 @@ the more useful half.
 
 - **`Honeypot` no longer renders `data-slot="form-honeypot"`.** Nothing read the attribute and it
   named the decoy outright, so a bot could match the wrapper without ever inspecting the field name
-  — which made hardening the *name* largely moot. **Breaking for a consumer selector or test
+  — which made hardening the _name_ largely moot. **Breaking for a consumer selector or test
   asserting on that attribute**; there is no replacement, by design.
 
 - **`readFields` and `readTextField` are removed from `@y-core/forge/form`.** Both returned `string`
   and never `string | undefined`, mapping an absent field, a `File` and a genuinely empty string onto
-  one value — an absence collapse that happened *before* any schema could observe it, which is what
+  one value — an absence collapse that happened _before_ any schema could observe it, which is what
   made `v.optional` unreachable through them. `defineAction` reads the body itself now; a route
   outside that pipeline uses `parseFormData` and hands the entries to `v.safeParse` directly, which
   the `form` README shows. The namespace deliberately ships no named-field reader.
@@ -2105,7 +2191,7 @@ the more useful half.
 - **The `FormFieldReader` type is removed.** It was declared as
   `(formData: ReadonlyFormData, field: string) => string` and its only documented meaning was the
   shape of `readTextField`. Keeping it as a dependency-injection seam was considered and rejected: the
-  signature returns `string`, so it *is* the absence-collapse above, and publishing it as the
+  signature returns `string`, so it _is_ the absence-collapse above, and publishing it as the
   extension point would have made the discarded contract the one consumers type against. No forge
   module and no consumer referenced it.
 
@@ -2134,7 +2220,7 @@ the more useful half.
   which escapes fine, so the omission read as an oversight. It is not. `safeUrl` refuses by rewriting
   to `"#"`, and `"#"` is inert on an `href` (a visibly dead link) but **live** on an `hx-get`: a valid
   same-origin URL naming the current page, which htmx fetches and swaps. Sanitizing here would convert
-  a loud refusal into a *successful wrong request*. Two runtime layers sit underneath and are named as
+  a loud refusal into a _successful wrong request_. Two runtime layers sit underneath and are named as
   backstops rather than controls — htmx dispatches an XHR and never navigates the value, so a
   `javascript:` pseudo-URL does not execute; and `htmx.config.selfRequestsOnly` plus a consumer's
   `connect-src` bound where a request may go. §7 is rescoped to the selector/JSON set it actually
@@ -2145,7 +2231,7 @@ the more useful half.
   and every `ui/core` prop type inherits it. A template index signature admits every key matching its
   pattern, so a misspelled event name would stop being an error library-wide, bought for autocomplete
   on a capability forge's default `script-src` already disables (htmx compiles the body with
-  `new Function`). Declined — and the absence is documented as *not* a guard, since the renderer has
+  `new Function`). Declined — and the absence is documented as _not_ a guard, since the renderer has
   no `on*` filter and emits the attribute verbatim.
 - **Three tripwire cases in `src/jsx/render-to-string.test.ts`** pin those decisions where a future
   change would silently reverse them: a `javascript:` `hx-get` renders verbatim; one value on both
@@ -2188,7 +2274,7 @@ the more useful half.
   requirement that makes its absence readable.
 - **`src/form/README.md`'s hand-rolled action example was wrong twice and is replaced.** It parsed
   with `Object.fromEntries(formData.entries())` — last-wins, where the real reader groups a repeated
-  key into an array — *and* it sat under a `csrfProtection` middleware while parsing with a
+  key into an array — _and_ it sat under a `csrfProtection` middleware while parsing with a
   `v.strictObject`, so as written it refused 100% of requests. The primary example is now a
   `defineAction` route; a second, smaller one shows `formToObject` with the `drop` set a CSRF guard
   makes necessary, for handlers outside the pipeline.
@@ -2200,7 +2286,7 @@ the more useful half.
   `lazy(() => import(…))` as deferring "until the browser is idle" — it is an IntersectionObserver
   keyed on a `data-ref` element, takes an options object and returns a disposer — and gave
   positional two-argument spellings for `loadScriptOnEvent` and `loadStylesheet`, the latter
-  omitting the *required* `integrity` argument. §3b now states the real signatures, notes that
+  omitting the _required_ `integrity` argument. §3b now states the real signatures, notes that
   `loadStylesheet` is the one positional member of the trio and why, and documents the retry cap and
   the concurrency join described above.
 - **`src/logging/README.md` and `kvLogChannel`'s TSDoc separate "best-effort" from "untracked."**
@@ -2219,7 +2305,7 @@ does so because something about it was invisible, and that is the part worth wri
 ### Breaking Changes
 
 - **`Form` no longer renders a honeypot; compose `<Honeypot />` yourself.** It rendered one
-  *unconditionally* — including on `method="get"`, a value the public `method?: "get" | "post"`
+  _unconditionally_ — including on `method="get"`, a value the public `method?: "get" | "post"`
   union explicitly permits. On GET the browser serialises the decoy into the query string, so
   `?…&__surname=` ended up in every shareable link, bookmark, history entry and outbound `Referer`,
   and a consumer validating search params against a strict schema got a 400. The honeypot has no
@@ -2239,33 +2325,33 @@ does so because something about it was invisible, and that is the part worth wri
   import { Form, Honeypot } from "@y-core/forge/ui/core";
 
   <Form method='post' csrfToken={token}>
-    <Honeypot />          {/* ← add this; pass `field` if you previously set `honeypotField` */}
+    <Honeypot /> {/* ← add this; pass `field` if you previously set `honeypotField` */}
     {/* … */}
   </Form>;
   ```
 
 - **`export type * from` is now banned in barrels.** `NAMESPACE_DESIGN.md` §1b banned `export *`
   and was silent on the type-only spelling, which the matcher could not see across the `type` token
-  — and `barrel-parse.test.ts` *pinned it as allowed*. Erasure at emit removes only the
+  — and `barrel-parse.test.ts` _pinned it as allowed_. Erasure at emit removes only the
   circular-dependency harm; the surface leak and the ungreppable API remain, and a barrel of nothing
   but `export type *` previously failed as the misleading "no value exports found in barrel". There
   are **zero** occurrences in `src/`, so nothing inside forge changes; a consumer whose own barrels
   are checked by this script may now fail. Name the types.
 
 - **Header-conflict precedence in `createSecurityHeaders` is now inner-wins, and is stated.** The
-  middleware queued its headers *after* `await next()`, which made an overlapping header name
-  resolve outer-wins. It now queues *before* `next()`, alongside the nonce, so a middleware
+  middleware queued its headers _after_ `await next()`, which made an overlapping header name
+  resolve outer-wins. It now queues _before_ `next()`, alongside the nonce, so a middleware
   registered deeper writes last and wins. Nothing inside forge overlaps — `createSecurityHeaders`
   owns its 8–9 names, `requestId` owns `x-request-id`, session and flash use `set-cookie` with
   `{ append: true }` — so only consumer middleware queuing one of those names is affected. **No
   test broke and no doc promised either direction**, which was the actual problem: the behaviour is
   now pinned by test and documented in `SECURITY_HARDENING.md` §2a and `ERROR_HANDLING.md` §5b.
-  See *Fixed* for the gap the move closed on the way past.
+  See _Fixed_ for the gap the move closed on the way past.
 
 - **`originProtection` now requires an app to list its own origin in `allowedOrigins`.** Previously
   a present `Sec-Fetch-Site` header caused an early return that skipped the `allowedOrigins` check
   **entirely**. Two things were wrong with that. `Sec-Fetch-Site` is a forbidden header name, so a
-  *browser* cannot be tricked into sending a false `same-origin` — but a non-browser client sets
+  _browser_ cannot be tricked into sending a false `same-origin` — but a non-browser client sets
   whatever it likes, and one forged header was enough to walk past the allowlist. It also put this
   tier in standing disagreement with its sibling `originGuard`, which enforces the allowlist
   unconditionally. The header is now a **veto, not a pass**: a bad value still rejects outright, but
@@ -2274,7 +2360,7 @@ does so because something about it was invisible, and that is the part worth wri
   the browser's vouching, and with no signal at all it fails closed. **This will break deployments
   that relied on the early return** — add your own origin to `allowedOrigins`.
 - **`Sec-Fetch-Site: same-site` is now rejected.** The check was a denylist naming only
-  `cross-site`, so `same-site` passed — and *any* sibling subdomain produces `same-site`. A single
+  `cross-site`, so `same-site` passed — and _any_ sibling subdomain produces `same-site`. A single
   XSS or a stale CNAME on one subdomain was enough to drive authenticated mutations against
   another. It is now an allowlist: only `same-origin` and `none` pass. Parity with Go's
   `http.CrossOriginProtection`. `CrossOriginResult` gains a distinct `"same-site"` error code,
@@ -2291,7 +2377,7 @@ does so because something about it was invisible, and that is the part worth wri
   `sql` can mint a fragment; everything else gets bound.
 - **`routePaths` now includes `ANY` routes in method-filtered results, and throws on a filtered
   miss.** Upstream `@remix-run/fetch-router` builds bare-string route definitions as method `ANY`
-  and dispatches them for *every* method. Filtering with `{method:"POST"}` used a strict `===` and
+  and dispatches them for _every_ method. Filtering with `{method:"POST"}` used a strict `===` and
   so omitted paths that genuinely accept POST — and the documented use of that result is
   `app.use(path, csrfGuard)`, so the guard silently attached to **nothing**. An empty list is
   indistinguishable from a correctly-empty one at the call site, so a method filter that matches no
@@ -2322,7 +2408,7 @@ does so because something about it was invisible, and that is the part worth wri
   Non-GET now dispatches to `action`, its result reaches the view as `actionData`, and errors route
   through the existing boundary.
 - **`csrfProtection` answers `413` instead of `403` when a body exceeds its cap**, and both
-  `defineAction` and `csrfProtection` accept `maxBytes`. See *Fixed* for why one without the other
+  `defineAction` and `csrfProtection` accept `maxBytes`. See _Fixed_ for why one without the other
   does nothing.
 
 ### Added
@@ -2356,7 +2442,7 @@ does so because something about it was invisible, and that is the part worth wri
   projection, so it is a per-table choice, not a default. Related: **`WITHOUT ROWID` is not the
   lever it looks like** — an ordinary rowid table's secondary indexes carry the implicit integer
   rowid, not the primary key, so a 36-character id costs two fixed copies per row however many
-  indexes exist; `WITHOUT ROWID` appends the id to every index entry and comes out *larger* past a
+  indexes exist; `WITHOUT ROWID` appends the id to every index entry and comes out _larger_ past a
   single index.
 - **`forMethod(method, middleware)`** (`@y-core/forge/router`) — wraps a middleware so it runs only
   for the given `RequestMethod` (or array of them) and calls `next()` otherwise. `app.use` is
@@ -2367,8 +2453,8 @@ does so because something about it was invisible, and that is the part worth wri
   `/health` on GET. No method-scoped registration existed anywhere in forge or the vendored
   `@remix-run/fetch-router` — `Router` has no `use` at all. Lives beside `routePaths`, so `router`
   stays a leaf namespace.
-- **`Honeypot`** (`@y-core/forge/ui/core`) — the decoy field extracted out of `Form`; see *Breaking
-  Changes*. Takes an optional `field` defaulting to `HONEYPOT_FIELD_DEFAULT`.
+- **`Honeypot`** (`@y-core/forge/ui/core`) — the decoy field extracted out of `Form`; see _Breaking
+  Changes_. Takes an optional `field` defaulting to `HONEYPOT_FIELD_DEFAULT`.
 - **`fieldDescribedBy(name, options)`** (`@y-core/forge/ui/core`) — the `aria-describedby`
   computation on its own, returning `undefined` when nothing to point at renders. `fieldControlProps`
   uses it, and so do `CheckboxGroup` and `RadioGroup`, which cannot adopt `fieldControlProps`
@@ -2382,11 +2468,11 @@ does so because something about it was invisible, and that is the part worth wri
 ### Fixed
 
 - **A 500 could be logged and then lost.** On the guard-throw path `requestLogger`'s `finally`
-  flushes *before* the app's error boundary writes its `unhandled error` record, and `flush()`
+  flushes _before_ the app's error boundary writes its `unhandled error` record, and `flush()`
   **splices** the pending buffer — so the boundary's record landed in a buffer nobody awaited. With
   the synchronous channel the tests use, both records are captured and everything looks fine; with a
   real asynchronous `kvLogChannel`, the boundary's record **may never persist before isolate
-  teardown**. Production therefore saw two records *or* one-plus-a-lost-one, nondeterministically.
+  teardown**. Production therefore saw two records _or_ one-plus-a-lost-one, nondeterministically.
   The boundary now schedules its own flush at the point of write, so both records sit inside an
   awaited window on both throw paths. The suite was structurally incapable of observing this; the
   regression tests use an asynchronous channel fixture, which is the only kind that can. The two
@@ -2394,7 +2480,7 @@ does so because something about it was invisible, and that is the part worth wri
 - **`closestAcross` and `contains` threw a `TypeError` on a detached subtree.** Both read
   `getRootNode().host` with no `nodeType === 11` guard — the defect fixed at one of the three sites
   in 0.0.80 and left at the other two, and `contains` was not recorded anywhere. For a detached
-  subtree `getRootNode()` returns the topmost ancestor *element*; on an `<a href>` that is the URL's
+  subtree `getRootNode()` returns the topmost ancestor _element_; on an `<a href>` that is the URL's
   host string, and the next hop calls a method on a string. A **relative** `href` is no safer, which
   is the non-obvious half: a detached anchor resolves it against the document base URL, so `host` is
   the page's own origin rather than `""`. Both are public API. All three reads now go through one
@@ -2403,7 +2489,7 @@ does so because something about it was invisible, and that is the part worth wri
   The disposer is the return value, so a throw means the caller never receives it — and the first
   run's own `cleanup` is a no-op, because `deps` is still empty when it runs. The dead node
   therefore stayed in the signal's `subs` with nothing able to remove it, and **every** later write
-  to that signal re-entered it and rethrew out of the *setter*, at an arbitrary unrelated call site,
+  to that signal re-entered it and rethrew out of the _setter_, at an arbitrary unrelated call site,
   for the signal's lifetime. `effect()` still throws — callers may rely on that — but now
   unsubscribes first, so a failed effect leaves no residue. The existing "does not stay installed"
   test could not catch this: its throwing body read no signal, so it never subscribed.
@@ -2412,7 +2498,7 @@ does so because something about it was invisible, and that is the part worth wri
   fixed in `field.tsx` in 0.0.80 and not fixed in these two. A dangling IDREF is not ignored by
   assistive technology; it is reported as an error. **This shipped on the component showcase**,
   which renders both groups with no `Description` child. Separately, `itemId()` did not thread the
-  `scope` param, so *every item id* — not just the description id — collided across two same-named
+  `scope` param, so _every item id_ — not just the description id — collided across two same-named
   groups on one page, and a click on the second group's item resolved to the first group's. Neither
   group had a unit test; both now do.
 - **The console error path dropped `name` and `stack` from unhandled errors.** `_handleError`
@@ -2424,10 +2510,10 @@ does so because something about it was invisible, and that is the part worth wri
 - **Security headers were missing from the error page when a guard threw.** They were queued only on
   the way back out of `createSecurityHeaders`, and on that path the response never comes back out —
   so a throw from any middleware registered after it produced a 500 with no CSP, no HSTS and no
-  `referrer-policy`. Queuing before `next()` (see *Breaking Changes*) fixes this as a side effect;
+  `referrer-policy`. Queuing before `next()` (see _Breaking Changes_) fixes this as a side effect;
   it is pinned by its own test.
 - **`makeKVStub` in `store.test.ts` handed out the stored `ArrayBuffer` by reference,** so
-  `bytesCodec().decode` wrapped it in a writable *view* onto the stub and mutating a retrieved value
+  `bytesCodec().decode` wrapped it in a writable _view_ onto the stub and mutating a retrieved value
   silently rewrote the store. Byte-faithful but reference-leaky — the write side was safe only by
   accident, because `encode` already slices. No test exercised it: a latent trap rather than a live
   bug. `get` now returns a copy, and the isolation property is asserted against both this stub and
@@ -2474,7 +2560,7 @@ does so because something about it was invisible, and that is the part worth wri
   hardening headers — and because `Config.get` caches only on success, it threw forever. It now
   resolves inside the `try`. The error boundary is additionally registered at an **outer** depth so
   a throwing `app.use` guard is caught with headers intact; the innermost instance is deliberately
-  kept, because `createSecurityHeaders` queues its headers *after* `await next()`, so a boundary
+  kept, because `createSecurityHeaders` queues its headers _after_ `await next()`, so a boundary
   sitting outside the guards would strip CSP and HSTS from every error page.
 - **Every 500 was persisted with no error detail at all.** `requestLogger`'s error branch was
   unreachable — it is registered outside the innermost error boundary, so a handler throw was
@@ -2497,12 +2583,12 @@ does so because something about it was invisible, and that is the part worth wri
   stripped only C0 controls and DEL, so non-Latin-1 characters survived and then threw on
   `Headers.set`. The fallback now folds accents via NFKD, collapses each remaining run of
   non-printable-ASCII to a single `_`, and emits `"` and `\` as quoted-pairs rather than stripping
-  them. Substituting *in place* means every ASCII character survives with no filename parsing at
+  them. Substituting _in place_ means every ASCII character survives with no filename parsing at
   all, so the extension is preserved: `年度報告.pdf` → `_.pdf`, `invoice-年度.pdf` →
   `invoice-_.pdf`.
 - **The Switch has never animated its thumb.** `peer-*` compiles to a **general-sibling**
   combinator, so it reaches only siblings of the input. The track is one and painted correctly; the
-  thumb is a *child of the track*, so `peer-checked:translate-x-4` matched nothing — in any release.
+  thumb is a _child of the track_, so `peer-checked:translate-x-4` matched nothing — in any release.
   A Tailwind selector that matches nothing produces no build error, no runtime error and no visual
   artifact, and the correct sibling selector next to it kept the component looking half-alive. The
   thumb now keys off a `data-slot`-anchored descendant selector, and
@@ -2533,16 +2619,16 @@ does so because something about it was invisible, and that is the part worth wri
 - **`Date`, `Map` and `Set` were persisted as `{}`.** `Object.fromEntries(Object.entries(v))` clones
   property-wise, and all three hold their payload outside enumerable own properties. They now
   serialize to ISO 8601 and tagged rebuildable forms. Cycles are cut with a `WeakSet` of the
-  *currently open path*, so a repeated sibling reference survives and only true ancestors become
+  _currently open path_, so a repeated sibling reference survives and only true ancestors become
   `"[circular]"` — the previous implementation was unbounded on a cycle.
 - **`?level=` was cast straight to `LogLevel`** with no validation, and echoed back into the rendered
   filter bar. It is now validated at the boundary with the `v` facade. An invalid value **drops the
-  filter and renders unfiltered** rather than erroring: the level filter *narrows* a row set the
+  filter and renders unfiltered** rather than erroring: the level filter _narrows_ a row set the
   caller was already authorised to read in full, so it is not an authorization input, and a 400
   would turn a stale bookmark into a broken admin page for no security gain.
 - **"Load more" destroyed the rows already loaded** and dropped the active `level` / `q` filters. It
   `outerHTML`-swapped the whole tbody; it now replaces only its own `<tr>` and carries the filters
-  into the next-page URL. (`beforeend` is wrong here: the control lives *inside* the tbody it would
+  into the next-page URL. (`beforeend` is wrong here: the control lives _inside_ the tbody it would
   append to, so it would survive below the new rows still pointing at the cursor just consumed.)
 - **`withQueryParam` discarded the scheme and host of an absolute `hx-get`**, silently rewriting an
   absolute endpoint into a path-relative one.
@@ -2557,7 +2643,7 @@ does so because something about it was invisible, and that is the part worth wri
 
 - **`validate-exports` catches two evasions it previously missed.** `export * as ns from` slipped
   past the `export *` ban by one token, and the `@public` lookahead was a fixed nine lines — so a
-  *well-documented* export was checked **less** than a sparse one. The window is now the TSDoc
+  _well-documented_ export was checked **less** than a sparse one. The window is now the TSDoc
   block's actual extent. A third defect surfaced while writing the fixtures: searching forward from
   the block's start makes an `export const` inside an `@example` look like the declaration, which
   the old code did. Neither fix flags anything new in `src/` — verified by diffing old against new
@@ -2575,7 +2661,7 @@ does so because something about it was invisible, and that is the part worth wri
 ### Documentation
 
 - **`PRODUCTION_TS_RULES.md` §1e states the browser-only carve-out.** §1a's prohibition on
-  module-level mutable state, and its rationale, are both scoped to *request-scoped* data under
+  module-level mutable state, and its rationale, are both scoped to _request-scoped_ data under
   Workers isolate recycling — but `ui/client` never executes in a Worker, and module state is the
   house style across seven files there with no exemption marker anywhere. The carve-out was implied
   by §1's framing plus `UI_CLIENT_RUNTIME.md` and never stated, so it kept resurfacing as a review
@@ -2605,7 +2691,7 @@ the substance of it.
 - **`generateAssetsTypes(config, options?)` and the `forge-assets types` command**
   (`@y-core/forge/assets/build`) — writes the generated assets module from `assets.config.ts` alone,
   with no CSS, JS, sprite, icon or font build and so no `tailwindcss`, `esbuild`, `sharp` or network.
-  Everything in that module which carries *type* information is derivable from config — the manifest
+  Everything in that module which carries _type_ information is derivable from config — the manifest
   keys and the sprite symbol ids that give `createIcon` its icon-name union — so a clean checkout can
   typecheck and run tests against a module no consumer commits. Only the values need a real build:
   emitted paths are the unhashed logical names and every `viewBox` is empty, and the artifact carries
@@ -2617,7 +2703,7 @@ the substance of it.
 ### Documentation
 
 - **`LIBRARY_ARCHITECTURE.md` §3d states where CSS source scanning stops.** Tailwind never scans
-  `node_modules`, so shipping raw source ships no *rules* — a class with no rule renders as an
+  `node_modules`, so shipping raw source ships no _rules_ — a class with no rule renders as an
   attribute that does nothing. `forge.css` carries `@source` paths written relative to itself, so
   they resolve wherever forge landed. The scope stops at `ui/` as a decision rather than as the reach
   of a relative path: a component library owes its consumers the classes its own components emit,
@@ -2634,16 +2720,16 @@ the substance of it.
 - **`forge.css` never scanned `ui/contracts`, so `Menu`'s row classes were generated for nobody.**
   The `@source` list named `core`, `chrome` and `controls` — the directory added alongside it in the
   same window was not on it. `MENU_ITEM_CLASS` in `contracts/menu-contract.ts` is the one place in
-  forge those 22 utilities are *written*; `core/menu.tsx` reads it as `const ITEM_BASE =
-  MENU_ITEM_CLASS`, an identifier Tailwind's textual scan cannot see through. The consequence was
+  forge those 22 utilities are _written_; `core/menu.tsx` reads it as `const ITEM_BASE =
+MENU_ITEM_CLASS`, an identifier Tailwind's textual scan cannot see through. The consequence was
   wider than the constant's stated purpose suggests: **forge's own SSR `Menu.Item` lost the rules
   too**, not merely a client-built row, and with it every consumer of `core/Menu`.
-  What kept it invisible is that the failure was *partial*. Most of the 22 are ordinary enough that
+  What kept it invisible is that the failure was _partial_. Most of the 22 are ordinary enough that
   unrelated scanned components — `core/popover.tsx`, `core/dialog.tsx`, `core/button.tsx` — emit
   them incidentally, so a menu still looked broadly right; only the five nothing else happened to
   use fell through, and they were `text-left` plus the `focus-visible:` and `aria-disabled:`
   affordances, i.e. exactly the keyboard-focus and disabled states a casual glance does not check.
-  A stylesheet that *mostly* works is harder to notice than one that does not.
+  A stylesheet that _mostly_ works is harder to notice than one that does not.
   **`bun run check` gains `validate-css-sources`**, which reads the direction that would have caught
   it: every directory under `src/ui/` must be covered by an `@source` path or listed as class-free
   with a reason, and each class-free claim is re-tested by a literal detector so an opt-out cannot
@@ -2662,7 +2748,7 @@ the substance of it.
   and light-dismiss both worked, `:popover-open` went false, and the menu stayed on screen. Nothing is
   lost by removing it: every row shape already carries `flex w-full`, so the rows were block-level
   boxes stacking on their own account. **`menu.browser.ts` gains the case that would have caught it**,
-  asserting the *computed* display rather than a class — every one of the 25 existing cases read
+  asserting the _computed_ display rather than a class — every one of the 25 existing cases read
   `:popover-open` or a state attribute, all of which were correct while the component was broken.
   The general rule: a popover or `<dialog>` must not carry a bare `display` utility.
 
@@ -2683,7 +2769,7 @@ the substance of it.
   to re-type forge's class string as a literal. `ITEM_BASE` in `core/menu.tsx` now reads the published
   constant rather than keeping a private copy beside it.
 - **A `flip` option on `openPopoverAt`.** Clamping and flipping both keep the panel on screen; they
-  differ in where the *point* ends up. Clamping leaves it inside the box, which for a context menu
+  differ in where the _point_ ends up. Clamping leaves it inside the box, which for a context menu
   pre-hovers the row under the cursor; flipping mirrors the box past the point, which is the desktop
   convention. Per axis, and a flip that would not fit falls back to clamping, so "the whole panel is
   on screen" stays unconditional.
@@ -2702,7 +2788,7 @@ the substance of it.
 
 ## [0.0.76] — 2026-08-01
 
-Add a logging withLevels() feature 
+Add a logging withLevels() feature
 
 ## [0.0.75] — 2026-08-01
 
@@ -2737,8 +2823,8 @@ discovery learns to see into shadow roots; the compound button bases are unified
    `h-6 w-px` to `Toolbar.Separator`'s own `h-px w-full` / `h-5 w-px`, with only the margins left as
    a caller class.
 
-   **No `tailwind-merge`, now or later.** It resolves conflicts between class *strings*; conflicts
-   between CSS *layers* are invisible to it. It would add a runtime dependency and a per-render cost
+   **No `tailwind-merge`, now or later.** It resolves conflicts between class _strings_; conflicts
+   between CSS _layers_ are invisible to it. It would add a runtime dependency and a per-render cost
    on a Workers SSR path and fix nothing.
 
 2. **`Popover.Content` no longer emits `data-closed` at render.** It emitted a hardcoded
@@ -2760,11 +2846,11 @@ discovery learns to see into shadow roots; the compound button bases are unified
 - **`mountPopupTriggerState(popup)`** in `ui/client` — the first producer of `data-popup-open`, the
   trigger's own state while its popup is open. CSS has no selector that walks from a popup to its
   trigger, so "the button that stays lit while its flyout is up" was previously inexpressible.
-  Triggers are resolved document-wide via `commandfor` and filtered on the command *verb*, so a
+  Triggers are resolved document-wide via `commandfor` and filtered on the command _verb_, so a
   `Menu.Item` or `Dialog.Close` naming the same target is not mistaken for one.
 - **`buttonVariants`** is exported from `ui/core`, with a new **`square`** size
   (`w-full aspect-square p-0`). `icon` and `icon-sm` name a size in pixels; `square` names a
-  *relationship* — take the parent's width, be as tall as you are wide — which is the only form an
+  _relationship_ — take the parent's width, be as tall as you are wide — which is the only form an
   app whose icon rail is a design token can consume without overriding the class it just asked for.
 - **`Toolbar.Button` and `Toolbar.Link` take `variant`, `size`, `pressed` and `asChild`.** `pressed`
   emits `aria-pressed`, `data-pressed` **and** `ACTIVE_COMPOSITE_ITEM` together — never one without
@@ -2781,7 +2867,7 @@ discovery learns to see into shadow roots; the compound button bases are unified
 
 - **`resume()` could not find an eager scope inside a shadow root.** Discovery used a flat
   `querySelectorAll`, which does not cross a shadow boundary, so a scope rendered inside a web
-  component was never *visited*: its `setup` never ran, and nothing warned. That is most of what the
+  component was never _visited_: its `setup` never ran, and nothing warned. That is most of what the
   UI refactor added — `toolbar`, `menu`, `tabs`, `tooltip`, `collapsible`, `number-field`, `theme`
   and `navbar` are all eager. A `core/Menu` inside a web component rendered, opened and
   light-dismissed (all platform) with **no arrow navigation, no typeahead and no focus restoration**
@@ -2812,7 +2898,7 @@ discovery learns to see into shadow roots; the compound button bases are unified
   `Toolbar.Link` rather than reimplemented per compound.
 - `core/toolbar.test.tsx` is new — `core/Toolbar`'s SSR markup previously had no unit coverage at all.
 - The `data-*` conformance guard gained `data-coords` as a declared **structural** attribute: it
-  names a placement *mode*, sibling to `data-placement`, not to `data-side`.
+  names a placement _mode_, sibling to `data-placement`, not to `data-side`.
 - Test counts: `bun test` 1931 → **1947** across 168 files; `bun run test:browser` 260 → **290**.
 
 ## [0.0.74] — 2026-08-01
@@ -2824,7 +2910,7 @@ all. Contains a **breaking change** to the cascade position of every component r
 ### ⚠️ Breaking Changes
 
 1. **`theme-base.css`'s component rules are now inside `@layer components`.** They were unlayered,
-   and unlayered CSS outranks *all* layered CSS whatever the selector weight — so those rules beat
+   and unlayered CSS outranks _all_ layered CSS whatever the selector weight — so those rules beat
    every Tailwind utility unconditionally, including the ones forge's own components set on the very
    elements they select. A `max-w-sm` on a `<dialog>` read as an override and never was one. Layering
    puts a component default where a caller's utility can win, which is the relationship a default is
@@ -2841,12 +2927,12 @@ all. Contains a **breaking change** to the cascade position of every component r
 - **`@y-core/forge/ui/contracts`** — a subpath of its own for the DOM contract both tiers share:
   `STATE_ATTRS`, `stateAttrs`, `applyStateAttrs`, `SCOPE_EVENTS`, and the scope-name and selector
   constants each keyboard primitive shares between its SSR and its client half. A consuming app has
-  to *address* this DOM; without an export its only option was to re-type every name as a string
+  to _address_ this DOM; without an export its only option was to re-type every name as a string
   literal, becoming a third writer of the same attribute in a repository forge's gate cannot see.
   The eight contract modules moved from `src/ui/*` into `src/ui/contracts/`.
 - **`@y-core/forge/ui/assets/css/*.css`** — the stylesheets are addressable, via a subpath
   **pattern** so every real file in the directory is reachable rather than merely declared.
-  **`forge.css`** is the one import an app needs (tokens *and* generated rules); **`forge-show.css`**
+  **`forge.css`** is the one import an app needs (tokens _and_ generated rules); **`forge-show.css`**
   covers the showcase.
 - **`@source` paths in `forge.css`, resolved relative to itself.** Tailwind v4's automatic content
   scan **ignores `node_modules`**, so without them none of forge's classes were ever generated: the
@@ -2864,7 +2950,7 @@ all. Contains a **breaking change** to the cascade position of every component r
 ### Internal / Tooling
 
 - **`validate-exports` expands subpath patterns from disk.** A literal key proves a subpath was
-  *declared*; an expanded pattern proves each real file is *reachable*. The absence of that second
+  _declared_; an expanded pattern proves each real file is _reachable_. The absence of that second
   check is what let forge ship 73 versions of unaddressable stylesheets.
 - `validate-docs` and `NAMESPACE_DESIGN.md` §3a updated for the new namespace.
 
@@ -2883,7 +2969,7 @@ props, no portals, and above all **no JavaScript re-creation of native `dialog`,
 
 ### ⚠️ Breaking Changes
 
-1. **`ToggleGroup` no longer emits `role="toolbar"`.** It emitted that for *every* group, which
+1. **`ToggleGroup` no longer emits `role="toolbar"`.** It emitted that for _every_ group, which
    announced a segmented control as a toolbar and offered assistive technology the wrong interaction
    model. It now emits **no `role`** — a `<fieldset>` already has an implicit `group` — and
    `aria-orientation` went with it, since ARIA does not define that for `group`. A widget that really
@@ -2907,8 +2993,8 @@ props, no portals, and above all **no JavaScript re-creation of native `dialog`,
    `[data-slot='switch'][data-orientation='label-before']` becomes
    `[data-slot='switch'][data-label-position='before']`. The `orientation` **prop** is unchanged.
 
-3. **`Navbar`'s in-menu leaves are `Menu.LinkItem`, not `data-slot="navbar-link"`.** A link *on the
-   bar* still renders `<a data-slot="navbar-link">`; a link *inside a dropdown* is now
+3. **`Navbar`'s in-menu leaves are `Menu.LinkItem`, not `data-slot="navbar-link"`.** A link _on the
+   bar_ still renders `<a data-slot="navbar-link">`; a link _inside a dropdown_ is now
    `<a role="menuitem" data-slot="menu-link-item">`, because a row in a `role="menu"` has to be a
    menu item. Nested dropdown triggers likewise become `data-slot="menu-submenu-trigger"`, and the
    `<div data-slot="popover">` wrapper around a nested submenu is gone — a wrapping element inside a
@@ -2978,7 +3064,7 @@ props, no portals, and above all **no JavaScript re-creation of native `dialog`,
   controller, and the role without the behaviour announces a keyboard interface that is not there.
 - **Every controller resolves its globals from a node** rather than reaching for `document`,
   `window`, `event.target` or `instanceof HTMLElement`. A widget inside an iframe now installs its
-  listeners on its own document, and one inside a web component reports the focused *item* rather
+  listeners on its own document, and one inside a web component reports the focused _item_ rather
   than the shadow host.
 
 ### Fixed
@@ -2987,7 +3073,7 @@ props, no portals, and above all **no JavaScript re-creation of native `dialog`,
   `data-on-*` interaction inside it — but the navbar's markup emits none at all (native `<details>`,
   native popovers, plain links). Runtime auth filtering therefore silently did nothing. It is now
   eager, as is every other setup-only scope.
-- **`mountRovingFocus` was not nestable.** A parent menu's item ring included its *closed* submenu's
+- **`mountRovingFocus` was not nestable.** A parent menu's item ring included its _closed_ submenu's
   rows, so arrow navigation walked into a `display: none` subtree and focus went nowhere. Items are
   now filtered to what is actually rendered, which also excludes a `hidden` filtered-out navbar row.
 - **Two nested composites both consumed the same key.** `keydown` bubbles from an open submenu to the
@@ -3023,9 +3109,9 @@ for apps that mount Turnstile or rely on the built-in honeypot — see the migra
 
    ```ts
    // before
-   mountTurnstile(isDark, { onSuccess: "remove" })
+   mountTurnstile(isDark, { onSuccess: "remove" });
    // after
-   mountTurnstile()
+   mountTurnstile();
    ```
 
    Migration: call `mountTurnstile()` with no arguments, and render the new `<Turnstile siteKey=… />`
@@ -3079,23 +3165,24 @@ see the migration guide below.
 
    ```ts
    // before (0.0.66)
-   verifyTurnstile(formData, secret, { expectedHostname }, "cf-turnstile-response", remoteIp)
-   verifyCsrfToken(keyOrRing, token, path, 3_600_000)
+   verifyTurnstile(formData, secret, { expectedHostname }, "cf-turnstile-response", remoteIp);
+   verifyCsrfToken(keyOrRing, token, path, 3_600_000);
    // after (0.0.67)
-   verifyTurnstile(formData, secret, { expectedHostname, tokenField: "cf-turnstile-response", remoteIp })
-   verifyCsrfToken(keyOrRing, token, path, { maxAgeMs: 3_600_000 })
+   verifyTurnstile(formData, secret, { expectedHostname, tokenField: "cf-turnstile-response", remoteIp });
+   verifyCsrfToken(keyOrRing, token, path, { maxAgeMs: 3_600_000 });
    ```
+
    `csrfProtection` now takes the named, exported `CsrfProtectionOptions` type (same shape).
 
 2. **`Config` is constructed via `createConfig()` — the public constructor is gone.**
 
    ```ts
    // before
-   import { Config } from "@y-core/forge/config"
-   const cfg = new Config(map, schema, overrides)
+   import { Config } from "@y-core/forge/config";
+   const cfg = new Config(map, schema, overrides);
    // after
-   import { createConfig } from "@y-core/forge/config"
-   const cfg = createConfig(map, schema, overrides)
+   import { createConfig } from "@y-core/forge/config";
+   const cfg = createConfig(map, schema, overrides);
    ```
 
 3. **`htmlResponse` / `fragmentResponse` now throw if you pass a `content-type` header.**
@@ -3160,10 +3247,11 @@ error model, security hardening, and UI component API consistency. This release 
 
    ```ts
    // before (0.0.65)
-   validate: (data) => data.email ? { ok: true, data } : { ok: false, errors: ["email required"] }
+   validate: (data) => (data.email ? { ok: true, data } : { ok: false, errors: ["email required"] });
    // after (0.0.66)
-   validate: (data) => data.email ? { ok: true, data } : { ok: false, error: ["email required"] }
+   validate: (data) => (data.email ? { ok: true, data } : { ok: false, error: ["email required"] });
    ```
+
    `onValidationError(errors, c)` still receives the message array — only the union field moved.
 
 2. **`@y-core/forge/render` removed — import renderer from `@y-core/forge/jsx`.**
@@ -3171,9 +3259,9 @@ error model, security hardening, and UI component API consistency. This release 
 
    ```ts
    // before
-   import { renderPage, renderToString, type FC } from "@y-core/forge/render"
+   import { renderPage, renderToString, type FC } from "@y-core/forge/render";
    // after
-   import { renderPage, renderToString, type FC } from "@y-core/forge/jsx"
+   import { renderPage, renderToString, type FC } from "@y-core/forge/jsx";
    ```
 
 3. **`csrfProtection` — `subject` is now required.**
@@ -3183,11 +3271,11 @@ error model, security hardening, and UI component API consistency. This release 
 
    ```ts
    // before
-   csrfProtection({ secret })
+   csrfProtection({ secret });
    // after — bind to the session…
-   csrfProtection({ secret, subject: (c) => c.session?.id })
+   csrfProtection({ secret, subject: (c) => c.session?.id });
    // …or explicitly opt out
-   csrfProtection({ secret, subject: false })
+   csrfProtection({ secret, subject: false });
    ```
 
 4. **Cloudflare header trust is now default-**distrust** (`trustCfHeaders`).**
@@ -3196,10 +3284,11 @@ error model, security hardening, and UI component API consistency. This release 
    are trustworthy, so **CF-deployed apps must opt in**:
 
    ```ts
-   requestId({ trustCfHeaders: true })
-   rateLimit({ limiter, trustCfHeaders: true })   // else the default key throws — or pass your own `key`
-   applyMiddlewareChain(app, { ...opts, trustCfHeaders: true })  // threads to both
+   requestId({ trustCfHeaders: true });
+   rateLimit({ limiter, trustCfHeaders: true }); // else the default key throws — or pass your own `key`
+   applyMiddlewareChain(app, { ...opts, trustCfHeaders: true }); // threads to both
    ```
+
    Off Cloudflare (the unsafe case), leave it off: `requestId()` mints a fresh UUID and
    `rateLimit` requires an explicit `key`.
 
@@ -3215,7 +3304,7 @@ error model, security hardening, and UI component API consistency. This release 
    export const logsPage = definePage({
      loader: (c) => loadLogViewer(c, { channel, access, icon: chevronDownIcon }),
      view: (_c, _cfg, s) => s.data, // loader returns a Response and short-circuits
-   })
+   });
    ```
 
 6. **JSX `style` prop removed from the attribute types.**
@@ -3261,7 +3350,7 @@ header casing.
 - **Origin-guard tiering:** `originProtection` (recommended combined default) now exempts safe
   methods before the Sec-Fetch-Site check, aligning with `originGuard`; `crossOriginProtection`
   (Sec-Fetch-Site only) and `originGuard` (Origin/Referer only) documented as the lower tiers.
-- **JSX renderer:** attribute *names* are now validated (unsafe keys from spreads are skipped);
+- **JSX renderer:** attribute _names_ are now validated (unsafe keys from spreads are skipped);
   enumerated attributes (`draggable`/`spellcheck`/`contenteditable`) emit `="true"`/`="false"`
   instead of a bare name.
 - `Button asChild` still throws on a non-element child (ratified as a programming-error

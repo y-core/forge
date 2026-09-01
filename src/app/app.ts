@@ -9,7 +9,7 @@ export function createApp<Bindings extends object = Record<string, unknown>>(opt
 
   if (options?.config) {
     registerConfig(app, options.config);
-    // biome-ignore lint/suspicious/noExplicitAny: Config<T> is generic; stored as unknown internally
+    // oxlint-disable-next-line typescript/no-explicit-any -- Config<T> is generic; stored as unknown internally
     app.configStore = options.config as any;
   }
   if (options?.onError) {

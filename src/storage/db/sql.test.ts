@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { isSqlFragment, SQL_PLACEHOLDER, sql } from "./sql";
 
 describe("sql tagged template — injection prevention", () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { ESC } from "./ansi";
 import { ansi256To16, createAnsiCodes, hexToRgb, rgbToAnsi256 } from "./codes";
 import { createColorize, PLAIN } from "./color";

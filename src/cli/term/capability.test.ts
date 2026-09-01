@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import type { CapabilityInput, ColorLevel } from "./capability";
 import { resolveColorLevel } from "./capability";
 

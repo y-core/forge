@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { aiHandler, createDeclarativeHandler, hyperdriveHandler, UNVERIFIED_DETAIL } from "./declarative";
 import type { HandlerContext } from "./types";
 

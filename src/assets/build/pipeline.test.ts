@@ -3,6 +3,7 @@ import * as childProcess from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import type { ResolvedConfig } from "../types";
 import { buildAll, generateAssetsTypes } from "./pipeline";
 
@@ -50,6 +51,7 @@ describe("buildAll() — emitHeaders", () => {
           css: [],
           js: { bundles: [] },
           copy: [],
+          rasters: [],
           sprites: {},
           fonts: { downloads: [] },
           icons: null,
@@ -81,6 +83,7 @@ describe("buildAll() — emitHeaders", () => {
           css: [],
           js: { bundles: [] },
           copy: [],
+          rasters: [],
           sprites: {},
           fonts: { downloads: [] },
           icons: null,
@@ -94,6 +97,49 @@ describe("buildAll() — emitHeaders", () => {
       expect(existsSync(headersPath)).toBe(true);
       const body = readFileSync(headersPath, "utf-8");
       expect(body).toContain("Cache-Control: public, max-age=31536000, immutable");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildAll() — rasters", () => {
+  it("writes a configured raster under publicDir and still emits the immutable header on a hashed build", async () => {
+    const tmpDir = join(tmpdir(), `forge-pipeline-rasters-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const publicDir = join(tmpDir, "public", "assets");
+    mkdirSync(publicDir, { recursive: true });
+
+    try {
+      const from = join(tmpDir, "logo.svg");
+      writeFileSync(
+        from,
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 315 95" width="315" height="95"><rect width="315" height="95"/></svg>`,
+      );
+
+      await buildAll(
+        {
+          paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
+          css: [],
+          js: { bundles: [] },
+          copy: [],
+          rasters: [{ from, to: "email/logo@2x.png", width: 360 }],
+          sprites: {},
+          fonts: { downloads: [] },
+          icons: null,
+          cursors: null,
+          site: null,
+        },
+        { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
+      );
+
+      const dest = join(publicDir, "email", "logo@2x.png");
+      expect(existsSync(dest)).toBe(true);
+      const bytes = readFileSync(dest);
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      expect(view.getUint32(16)).toBe(360);
+      expect(view.getUint32(20)).toBe(109);
+
+      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toContain("Cache-Control: public, max-age=31536000, immutable");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -126,6 +172,7 @@ describe("buildAll() — generated module available to the JS bundle", () => {
           css: [],
           js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
           copy: [],
+          rasters: [],
           sprites: {},
           fonts: { downloads: [] },
           icons: null,
@@ -166,6 +213,7 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
         css: [{ tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "styles.css" }],
         js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
         copy: [],
+        rasters: [],
         sprites: {
           ui: { target: "sprites/ui.svg", sources: [{ path: svgDir, files: ["arrow-right.svg"] }] },
           brand: { target: "sprites/brand.svg", prefix: "glyph-", sources: [{ path: svgDir, files: [{ key: "close", file: "x-mark.svg" }] }] },
@@ -228,6 +276,7 @@ describe("generateAssetsTypes() — glyph-name union", () => {
       css: [],
       js: { bundles: [] },
       copy: [],
+      rasters: [],
       sprites,
       fonts: { downloads: [] },
       icons: null,
@@ -296,6 +345,7 @@ describe("generateAssetsTypes() — derives from config alone", () => {
         css: [{ tool: "tailwindcss", input: join(missing, "app.css"), output: "styles.css" }],
         js: { bundles: [{ entry: join(missing, "main.ts"), outdir: "js", format: "esm" }] },
         copy: [],
+        rasters: [],
         sprites: {
           ui: {
             target: "sprites/ui.svg",

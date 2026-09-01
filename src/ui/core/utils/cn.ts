@@ -70,6 +70,7 @@ function resolveToken(token: string): TokenGroup | undefined {
 export function cn(...classes: (string | false | null | undefined)[]): string {
   const tokens = classes.filter(Boolean).join(" ").split(/\s+/).filter(Boolean);
 
+  // oxlint-disable-next-line unicorn/no-new-array -- a pre-sized dense buffer; Array.from would allocate a second time on this hot path
   const keep: boolean[] = new Array(tokens.length).fill(true);
   const consumed = new Set<string>();
 

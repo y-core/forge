@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { dnsName, prefixedName, sanitizeName } from "./naming";
 
 describe("prefixedName()", () => {

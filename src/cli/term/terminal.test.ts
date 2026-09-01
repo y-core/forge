@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { DEFAULT_WIDTH, terminalWidth } from "./terminal";
 
 describe("terminalWidth()", () => {
