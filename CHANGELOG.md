@@ -19,6 +19,20 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Breaking Changes
 
+- **`<Turnstile>` now loads Cloudflare's script eagerly, and its token reset is scoped to the
+  form's own submission.** The widget used to wait for the first `focusin` inside its form; it now
+  fetches `api.js` and renders at mount, which is what Cloudflare asks for and what gives a real
+  submitter a challenge that is already solved when they reach the button. **Every consumer's
+  widgets change behaviour on the version bump alone.** The old behaviour is `load='focus'` — give
+  it to any form that is incidental to its page (a footer contact form, a demo), because eager
+  means a challenge issued to everyone who loads the page, not only to those who submit. The reset
+  is the second change: the controller used to reset the widget — and `form.reset()` on success —
+  on **any** `htmx:afterRequest` bubbling out of the form, so every htmx request the form triggered
+  burned the single-use token. It now compares the answered URL against the form's own `hx-post`,
+  and a form declaring no `hx-post` keeps the old behaviour, since it has no URL to test and submits
+  through a descendant. An app that worked around the old reset by saving and restoring its fields
+  can drop that workaround.
+
 - **The gate's `governance` step now invokes `gov sync`, not `governance-sync`.**
   `@y-core/governance` renamed its bin in v0.4.4, so `cloudflareWorkerSteps({ governance: true })`
   emits `["gov", "sync", "--check"]` with `["gov", "sync"]` as its fixer. **The preset version and
@@ -53,6 +67,38 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Added
 
+- **`<Turnstile>` takes `challenge` and `appearance`, opting a form into one challenge run at
+  submit.** `challenge?: "render" | "submit"` defaults to `"render"`, which is today's behaviour
+  unchanged: the challenge runs as the widget mounts and its single-use token starts its 300-second
+  life there. `challenge="submit"` renders with Cloudflare's `execution: "execute"` and runs exactly
+  one challenge, at the press, from htmx's `htmx:confirm` seam — for a form that takes longer to
+  fill than the token lives, where the token can otherwise reach siteverify as
+  `timeout-or-duplicate` and cost the reader their submission. The press is held, not gated: the
+  submitter is marked `disabled` and `aria-busy` for the window, and the window always ends — on the
+  token the request is issued, and on a challenge error or `TURNSTILE_EXECUTE_TIMEOUT_MS` (15 s) the
+  fallback alert is revealed, the request is dropped rather than sent tokenless, and the button is
+  pressable again. It needs an htmx submission on the form or a descendant; without one the
+  controller reports the authoring error and falls back to `"render"`. `appearance?: "always" |
+"execute" | "interaction-only"` defaults to `"always"` and is passed to Cloudflare as-is; it is
+  independent of `challenge`, and `"interaction-only"` is the documented pairing for
+  `challenge="submit"`. Both attributes are stamped only away from their defaults, so an opted-out
+  widget renders the markup it always did.
+
+- **`TURNSTILE_EXECUTE_TIMEOUT_MS`** — how long a `challenge="submit"` press is held before it is
+  released as a failure, exported from `@y-core/forge/ui/contracts`.
+
+- **`<Turnstile>` takes `load` and `action`.** `load?: "eager" | "focus"` picks when the script is
+  fetched, defaulting to `"eager"` (see Breaking Changes). `action?: string` is written to
+  `data-action` and passed to `turnstile.render`, which is what makes the server's
+  `verifyTurnstile({ expectedAction })` usable: without it a token minted on one form verifies at
+  any other endpoint on the same host. There is no app-triggered third load mode.
+
+- **`TURNSTILE_SCRIPT_URL`** — the URL the controller injects, `TURNSTILE_SCRIPT_SRC` plus
+  `?render=explicit`, exported from `@y-core/forge/ui/contracts`. The controller renders every
+  widget itself, so Cloudflare's implicit document scan ran for nothing. `TURNSTILE_SCRIPT_SRC` is
+  unchanged and is now matched as a **prefix**, so a script an app loaded with parameters of its
+  own is still found rather than loaded twice.
+
 - **`typeAwareLintStep` — type-aware linting, `fullOnly`.** `oxlint --type-aware` enables
   `no-floating-promises`, `no-misused-promises` and `await-thenable`, which Biome cannot express at
   all and which matter on a Workers isolate that tears down at end-of-response. It builds its own
@@ -80,6 +126,13 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   that collide with forge's own design. Reasoning is in `CODE_REVIEW.md` §7.
 
 ### Fixed
+
+- **`buttonVariants`' base now carries `whitespace-nowrap`.** A multi-word label used to break
+  across two lines inside its own pill at narrow widths — a button is a control, and a control's
+  label is not prose to be reflowed. Every consumer that added the class locally (cornellaw's FICA
+  declaration buttons at 320px, for one) can drop it. The class rides the base, so `Button`,
+  `ToggleGroup` items and `Toolbar` items all inherit it; a label long enough to need wrapping
+  wants a shorter label, not a two-line button.
 
 - **Seven `...(x ?? {})` spreads dropped their useless fallback**, and three `/^…/.test(s)` regexes
   became `s.startsWith(…)`. A dead `_fetchFn` binding in `kv.test.ts` was removed. All were found

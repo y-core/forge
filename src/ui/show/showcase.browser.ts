@@ -388,10 +388,14 @@ const FAKE_TURNSTILE_SCRIPT = `
 /** Answers Cloudflare's script URL with the recorder above, so no case reaches the real endpoint. */
 async function serveTurnstileScript(page: Page): Promise<{ requests: () => number }> {
   let requests = 0;
-  await page.route(TURNSTILE_SCRIPT_SRC, (route) => {
-    requests += 1;
-    return route.fulfill({ contentType: "application/javascript", body: FAKE_TURNSTILE_SCRIPT });
-  });
+  // A URL predicate: the controller injects `?render=explicit`, which an exact URL would miss.
+  await page.route(
+    (url) => url.href.startsWith(TURNSTILE_SCRIPT_SRC),
+    (route) => {
+      requests += 1;
+      return route.fulfill({ contentType: "application/javascript", body: FAKE_TURNSTILE_SCRIPT });
+    },
+  );
   return { requests: () => requests };
 }
 
@@ -407,6 +411,7 @@ function turnstileState(page: Page) {
 }
 
 test.describe("the showcase's Turnstile demo", () => {
+  // Every demo carries `load='focus'`, against the eager default: see `components.tsx`.
   test("renders the widget once a reader engages with the form it sits in", async ({ page }) => {
     await mountShowcase(page, "interactive");
     await serveTurnstileScript(page);

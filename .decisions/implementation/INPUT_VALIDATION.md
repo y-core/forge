@@ -332,6 +332,11 @@ is usually the request's own.
 checked, so a token minted on an attacker-controlled site can be replayed against this one. A
 runtime warning is logged when it is omitted.
 
+**`expectedAction` is only usable when the widget minted the token with one.** The action rides on
+the token, so `<Turnstile action='…'>` ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2c) is the
+other half of this option — set one without the other and every token is either refused or
+unscoped, which lets a token minted on one form verify at another endpoint on the same host.
+
 **An unverifiable CAPTCHA fails closed.** A siteverify call that timed out or never landed says
 nothing about the caller, so the submission is refused anyway — but it is logged, because a run of
 those is an outage rather than an attack, and `onBotDetected` receives the reason so an app can

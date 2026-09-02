@@ -495,6 +495,9 @@ export const DEMO_COVERAGE: readonly CoverageDemo[] = [
     axes: [
       { axis: "size", value: "compact", marker: { kind: "attr", name: "data-size", value: "compact" } },
       { axis: "size", value: "flexible", marker: { kind: "attr", name: "data-size", value: "flexible" } },
+      { axis: "load", value: "focus", marker: { kind: "attr", name: "data-load", value: "focus" } },
+      { axis: "challenge", value: "submit", marker: { kind: "attr", name: "data-challenge", value: "submit" } },
+      { axis: "appearance", value: "interaction-only", marker: { kind: "attr", name: "data-appearance", value: "interaction-only" } },
     ],
   },
   {

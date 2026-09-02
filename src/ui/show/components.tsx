@@ -829,8 +829,10 @@ const FieldStackSection: FC = () => (
 /** Cloudflare's documented always-passes test key. */
 const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
 
-// The field is not decoration: `mountTurnstile` gates Cloudflare's script on the first `focusin`
-// within the enclosing form, so a form with nothing to focus never loads the widget.
+// `load='focus'` on all three, against the eager default: a catalog page is not three forms a reader
+// came to submit, and eager here would issue three challenges to anyone who scrolls past. The field
+// is not decoration either — under `load='focus'` the script waits on a `focusin` within the
+// enclosing form, so a form with nothing to focus never loads the widget.
 const TurnstileSection: FC = () => (
   // Not `turnstile`: the DOM publishes every `id` on `window`, and Cloudflare's `api.js` reads
   // `window.turnstile`'s truthiness to decide it has already loaded.
@@ -838,19 +840,27 @@ const TurnstileSection: FC = () => (
     <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
       <Honeypot />
       <Input type='email' name='turnstile-email' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='normal' />
+      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='normal' load='focus' />
       <Button type='submit'>Submit</Button>
     </Form>
     <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
       <Honeypot />
       <Input type='email' name='turnstile-email-compact' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='compact' />
+      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='compact' load='focus' />
       <Button type='submit'>Submit</Button>
     </Form>
     <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
       <Honeypot />
       <Input type='email' name='turnstile-email-flexible' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='flexible' />
+      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='flexible' load='focus' />
+      <Button type='submit'>Submit</Button>
+    </Form>
+    {/* `hx-post`, because the deferred challenge is run from htmx's `htmx:confirm` seam and a native
+        form has no request to hold; `interaction-only` is the pairing Cloudflare documents for it. */}
+    <Form action='#' method='post' hx-post='#' class='w-full max-w-xs space-y-3'>
+      <Honeypot />
+      <Input type='email' name='turnstile-email-submit' placeholder='you@example.com' />
+      <Turnstile siteKey={TURNSTILE_TEST_KEY} challenge='submit' appearance='interaction-only' />
       <Button type='submit'>Submit</Button>
     </Form>
   </CatalogSection>

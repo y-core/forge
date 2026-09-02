@@ -138,9 +138,15 @@ string, never the raw prop.**
 ### 1f. Turnstile — Server-Rendered Mount Point
 
 **`Turnstile` deliberately omits Cloudflare's `cf-turnstile` auto-render class** — the client
-controller owns rendering, so the widget lifecycle is deterministic rather than implicit.
-**`siteKey` is injected server-side from the Worker env, never hardcoded**, and the markup is inert
-without the client controller ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2c).
+controller owns rendering, so the widget lifecycle is deterministic rather than implicit. **`siteKey`
+is injected server-side from the Worker env, never hardcoded**, and the markup is inert without the
+controller, whose `load`, `action`, `challenge` and `appearance` are `data-` attributes rather than
+options ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2c).
+
+**`data-challenge` and `data-appearance` are stamped only away from their defaults**, the
+`data-action` treatment rather than the `data-size` one. Both defaults are today's behaviour, so a
+page that opts into neither renders the markup it always did — which is what makes the mode additive
+rather than a change to every existing widget.
 
 ### 1g. Composite Widgets
 

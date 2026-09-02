@@ -6,7 +6,7 @@ import { ToggleGroup } from "./toggle-group";
 const GROUP_CLASS = "flex justify-center min-w-0 border-0 m-0 p-0";
 
 const ITEM_CLASS =
-  "inline-flex items-center justify-center font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 " +
+  "inline-flex items-center justify-center whitespace-nowrap font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 " +
   "focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm " +
   "bg-transparent border border-input border-s-0 cursor-pointer rounded-none first:border-s first:rounded-s-md " +
   "last:rounded-e-md hover:text-accent-foreground " +

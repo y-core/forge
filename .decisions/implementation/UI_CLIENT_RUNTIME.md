@@ -20,7 +20,7 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §1 Runtime Boundary: pointer to the governance rule that owns it
 - §2 Mount Controllers: the browser controllers, their contracts, and what decides which are exported
 - §2b Theme Controller and FOUC Prevention: where the theme surface lives, and what earns a pre-paint script
-- §2c The `turnstile` scope — CAPTCHA controller: component-scoped, engagement-gated, self-healing, fails visible
+- §2c The `turnstile` scope — CAPTCHA controller: component-scoped, eager by default, self-healing, fails visible, and the opt-in challenge-at-submit mode
 - §2d The Disposer Contract: every controller returns one, and why
 - §2e mountMenu — Menu Keyboard Behaviour: arrow navigation, typeahead, focus, and the submenu arrows
 - §2f mountTabs — Selection and Panel Visibility: automatic versus manual activation
@@ -146,18 +146,67 @@ by rendering the component.
 
 Three behaviours are deliberate:
 
-- **Engagement-gated.** It loads Cloudflare's script on the first `focusin` within the form —
-  real intent to submit, not page load or scrolling — then renders the widget explicitly with
-  function-ref callbacks, so there are no global callback names and no implicit auto-render. It
-  renders on the async script's `load` event and **never calls `turnstile.ready()`**, which
-  throws when the script loads async.
-- **Self-healing token.** It resets the single-use token after **every** completed submission,
-  success or error, and on expiry or timeout, so a retry always carries a fresh token. It clears
-  the form only when the submission actually succeeded.
+- **Eager by default, deferrable per widget.** It loads Cloudflare's script at mount, because
+  Cloudflare asks for the script as early upon page entry as possible and because a challenge
+  solved before the reader reaches the submit button is one they never wait on. `load="focus"`
+  buys the old behaviour — the first `focusin` within the form — and is the right choice for a
+  form incidental to its page, where eager means a challenge issued to everyone who loads it.
+  **There is no third, app-triggered mode**: nothing has asked for one, and `"lazy"` would collide
+  with `ui/client`'s `lazy()`, which means an IntersectionObserver. It
+  injects `TURNSTILE_SCRIPT_URL` (`?render=explicit`), renders the widget itself with function-ref
+  callbacks, so there are no global callback names, no implicit auto-render and no document scan.
+  It renders on the async script's `load` event and **never calls `turnstile.ready()`**, which
+  throws when the script loads async. **The post-render focus restore and its guard act only on a
+  focus the user was already holding** — an eager render answers page entry, where `activeElement`
+  is the body and there is no position of theirs to put back.
+- **The token is scoped to the form's own action, and to its own submission.** An `action` prop
+  reaches `turnstile.render`, without which `verifyTurnstile`'s `expectedAction` / `expectedCData`
+  ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §4b) cannot be used at all and a token minted on
+  one form verifies at any endpoint on the same host. The reset tests the **answered URL** against
+  the form's `hx-post`, not the event's `elt`, which htmx also names the form in for a request the
+  form merely triggered; a form declaring no `hx-post` has no URL to test and treats every
+  completed request as its own, which is what a form submitting through a descendant needs.
+- **Self-healing token.** It resets the single-use token after every one of the form's own
+  completed submissions, success or error, and on expiry or timeout, so a retry always carries a
+  fresh token. It clears the form only when the submission actually succeeded. A request that was
+  never answered spent no token and resets nothing.
 - **Fails visible, never blocking.** On load or render failure it reveals the widget's hidden
-  fallback message. **The submit button is intentionally not gated on Turnstile** — the server's
-  `verifyTurnstile` ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §4b) is the single
-  fail-closed enforcement point, so a slow or blocked challenge can never brick the form.
+  fallback message. **Under the default `challenge="render"` the submit button is intentionally not
+  gated on Turnstile** — the server's `verifyTurnstile`
+  ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §4b) is the single fail-closed enforcement point,
+  so a slow or blocked challenge can never brick the form.
+- **When the challenge runs is a second axis, and `challenge="submit"` is the opt-in.** `load`
+  decides when the script is fetched; `challenge` decides when the challenge runs, and the two are
+  independent. The default `"render"` runs it as the widget mounts, which starts the 300-second
+  single-use token ageing immediately — fine for a short form, and wrong for one that takes longer
+  than five minutes to fill, where the token expires mid-fill and a backgrounded tab or a sleeping
+  laptop can miss Cloudflare's `refresh-expired` auto-refresh and hand siteverify a
+  `timeout-or-duplicate` token. Forge fails closed, so that costs the reader their submission.
+  `challenge="submit"` renders with `execution: "execute"` and runs exactly one challenge, at the
+  press, from htmx's `htmx:confirm` seam. It is opt-in and not the default because the prevalent
+  configuration in the wild is `execution: "render"`, and execute-at-submit is the documented remedy
+  for a specific case — long, multi-step or upload-bearing forms — rather than a general improvement.
+  `appearance` is its own prop rather than implied by the mode, because Cloudflare treats them as
+  independent settings; the recommended pairing is `challenge="submit"` with
+  `appearance="interaction-only"`.
+- **In submit mode the button is held, for a bounded window that always ends.** The press is
+  deferred, not gated: `verifyTurnstile` remains the single fail-closed enforcement point in either
+  mode. The controller marks the submitter `disabled` and `aria-busy` for the window, because htmx
+  applies `hx-disabled-elt` and its indicators only once the request is issued and the button would
+  otherwise look dead. The window is released on the token, on the `error-callback`, and on
+  `TURNSTILE_EXECUTE_TIMEOUT_MS` alike, and it is never held indefinitely. **On failure the held
+  request is dropped rather than issued** — a POST with no token answers with a refusal naming the
+  schema's first field, which reads as a form-validation error the reader cannot act on — so the
+  fallback alert is revealed, the widget is reset, and pressing submit again retries the challenge. A
+  second press inside the window is swallowed rather than queued; a press on an invalid form spends
+  no challenge, since htmx fires `htmx:confirm` before it validates; and a page whose script never
+  loaded lets the press through unheld, exactly as a blocked widget already does. The
+  `htmx:afterRequest` reset stays correct: resetting an execute-mode widget returns it to unstarted
+  without running a challenge, so the next press executes fresh.
+- **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx verb on it
+  or on a descendant fires no `htmx:confirm` and has no request to hold, so the controller reports
+  the authoring error and falls back to `challenge="render"` — a degraded but working form, never a
+  dead submit button. This is the same voice as the missing-widget and missing-form reports above.
 
 ### 2d. The Disposer Contract
 

@@ -6,7 +6,7 @@ import { render } from "../../testing/render";
 import { Toolbar } from "./toolbar";
 
 const ITEM_BASE =
-  "inline-flex items-center justify-center rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none " +
+  "inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none " +
   "focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent";
 
 describe("Toolbar", () => {
@@ -38,7 +38,7 @@ describe("Toolbar.Button", () => {
         </Toolbar.Button>,
       ),
     ).toBe(
-      '<button type="button" data-slot="toolbar-button" class="inline-flex items-center justify-center rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input text-foreground hover:bg-accent size-9 p-0" data-toolbar-item="">B</button>',
+      '<button type="button" data-slot="toolbar-button" class="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input text-foreground hover:bg-accent size-9 p-0" data-toolbar-item="">B</button>',
     );
   });
 

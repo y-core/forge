@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { TURNSTILE } from "../contracts/turnstile-contract";
 import { FakeElement, fakeTree } from "./test-dom";
-import { findWidget, hasApi, restoreFocus } from "./turnstile";
+import { findWidget, hasApi, hasHtmxSubmission, restoreFocus } from "./turnstile";
 
 const win = (turnstile?: unknown) => ({ turnstile }) as unknown as Window;
 
@@ -47,6 +47,34 @@ describe("findWidget", () => {
     const root = el();
     root.append(el("DIV", { "data-ref": TURNSTILE.fallback }));
     expect(findWidget(root as unknown as HTMLElement)).toBe(null);
+  });
+});
+
+describe("hasHtmxSubmission", () => {
+  const form = (attrs: Record<string, string>, child?: Record<string, string>) => {
+    const { el } = fakeTree();
+    const node = el("FORM", attrs);
+    if (child) node.append(el("BUTTON", child));
+    return node as unknown as Element;
+  };
+
+  it("is true for a form that posts through htmx", () => {
+    expect(hasHtmxSubmission(form({ "hx-post": "/contact" }))).toBe(true);
+  });
+
+  it("is true for every other htmx verb, and for the `data-` spelling", () => {
+    expect(hasHtmxSubmission(form({ "hx-put": "/contact" }))).toBe(true);
+    expect(hasHtmxSubmission(form({ "hx-patch": "/contact" }))).toBe(true);
+    expect(hasHtmxSubmission(form({ "hx-delete": "/contact" }))).toBe(true);
+    expect(hasHtmxSubmission(form({ "data-hx-post": "/contact" }))).toBe(true);
+  });
+
+  it("is true for a form submitting through a descendant", () => {
+    expect(hasHtmxSubmission(form({}, { "hx-post": "/contact" }))).toBe(true);
+  });
+
+  it("is false for a native form, which has no request for the challenge to defer", () => {
+    expect(hasHtmxSubmission(form({ action: "/contact", method: "post" }))).toBe(false);
   });
 });
 

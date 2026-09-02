@@ -18,6 +18,10 @@ const STRUCTURAL_ATTRS = new Set([
   "data-position",
   "data-sitekey",
   "data-size",
+  "data-load",
+  "data-challenge",
+  "data-appearance",
+  "data-action",
   "data-label-position",
   "data-theme",
   "data-nav",
@@ -56,7 +60,8 @@ const STRUCTURAL_ATTRS = new Set([
   "data-copy-status",
 ]);
 
-const STRUCTURAL_PREFIXES = ["data-on-"];
+// `data-hx-` is htmx's own `data-`-prefixed spelling, which forge reads in a selector and never emits.
+const STRUCTURAL_PREFIXES = ["data-on-", "data-hx-"];
 
 const DECLARED = new Set<string>(Object.values(STATE_ATTRS));
 

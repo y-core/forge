@@ -238,6 +238,10 @@ challenge appearing does not push the button the user is reaching for. Override 
 enough that the widget would be off-screen at submit time, in which case place it in view of the
 button.
 
+The widget loads eagerly, which is right for a form the page exists for. Give `load='focus'` to a
+form that is incidental to its page — a footer contact form, a demo — where loading eagerly issues a
+challenge to every reader who scrolls past rather than to the ones who submit.
+
 **Default: one `primary` `Button` per form, and it is the submit.**
 <!-- rule:forge-ui-form-one-primary -->
 
