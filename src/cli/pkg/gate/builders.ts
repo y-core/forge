@@ -5,6 +5,7 @@
 import { type AssetRootCheckConfig, checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
 import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
+import { checkClassOrder, type ClassOrderCheckConfig } from "./checks/class-order";
 import { type CoLocationCheckConfig, checkCoLocation } from "./checks/co-location";
 import { type ContrastCheckConfig, checkContrast } from "./checks/contrast";
 import { type CssSourcesCheckConfig, checkCssSources } from "./checks/css-sources";
@@ -146,6 +147,11 @@ export function designStep(config: DesignCheckConfig, options: StepOptions = {})
 /** Measures every audited foreground/background pair against its contrast criterion. @public */
 export function contrastStep(config: ContrastCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-contrast", () => checkContrast(config), options);
+}
+
+/** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */
+export function classOrderStep(config: ClassOrderCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-class-order", () => checkClassOrder(config), options);
 }
 
 /** Checks stylesheets and class literals for patterns the platform now expresses directly. @public */

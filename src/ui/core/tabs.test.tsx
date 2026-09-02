@@ -4,9 +4,7 @@ import { render } from "../../testing/render";
 import { Tabs } from "./tabs";
 
 const TAB_BASE =
-  "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground bg-transparent border-0 cursor-pointer outline-none no-underline " +
-  "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring " +
-  "aria-selected:bg-accent aria-selected:text-accent-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50";
+  "cursor-pointer rounded-md border-0 bg-transparent px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:pointer-events-none aria-disabled:opacity-50 aria-selected:bg-accent aria-selected:text-accent-foreground";
 
 const PANEL_BASE = "outline-none focus-visible:ring-2 focus-visible:ring-ring";
 

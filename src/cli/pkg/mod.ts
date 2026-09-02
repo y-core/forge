@@ -3,6 +3,7 @@ export {
   assetRootStep,
   browserStep,
   changelogStep,
+  classOrderStep,
   coLocationStep,
   contrastStep,
   cssSourcesStep,
@@ -31,6 +32,8 @@ export {
 export { hasChromium, resolveChromiumPath } from "./gate/checks/browser";
 export type { ChangelogCheckConfig } from "./gate/checks/changelog";
 export { checkChangelog, validateChangelog } from "./gate/checks/changelog";
+export type { ClassOrderCheckConfig } from "./gate/checks/class-order";
+export { checkClassOrder, droppedToken, validateClassOrder } from "./gate/checks/class-order";
 export { type CoLocationCheckConfig, checkCoLocation, testCandidates } from "./gate/checks/co-location";
 export { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./gate/checks/color";
 export type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, Measurement, Unresolved } from "./gate/checks/contrast";
@@ -52,11 +55,12 @@ export type { CssSourcesCheckConfig } from "./gate/checks/css-sources";
 export { checkCssSources } from "./gate/checks/css-sources";
 export type { DesignCheckConfig } from "./gate/checks/design";
 export { checkDesign } from "./gate/checks/design";
-export type { BarrelImport, CustomPropertyCitation, DesignFinding, RuleId, RuleMarker } from "./gate/checks/design-parse";
+export type { BarrelImport, ClassLiteral, CustomPropertyCitation, DesignFinding, RuleId, RuleMarker } from "./gate/checks/design-parse";
 export {
   findArbitraryValues,
   findBareFocus,
   findBarrelImports,
+  findClassLiterals,
   findColorLiterals,
   findCustomPropertyCitations,
   findInlineStyles,

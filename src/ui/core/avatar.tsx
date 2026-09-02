@@ -13,7 +13,7 @@ interface AvatarProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
 
 type AvatarFallbackProps = Omit<JSX.IntrinsicElements["span"], "children">;
 
-const sizeClasses: Record<AvatarSize, string> = { sm: "size-8 text-xs", md: "size-10 text-sm", lg: "size-14 text-base" };
+const sizeClasses: Record<AvatarSize, string> = { sm: cn("size-8 text-xs"), md: cn("size-10 text-sm"), lg: cn("size-14 text-base") };
 
 const AvatarRoot: FC<PropsWithChildren<AvatarProps>> = ({ size = "md", class: cls, children, "data-slot": inherited, ...rest }) => (
   <span

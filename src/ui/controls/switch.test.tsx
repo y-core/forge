@@ -13,7 +13,7 @@ describe("controls/Switch", () => {
       </Switch>,
     );
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" checked data-field="gridVisible"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-track motion-safe:transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background motion-safe:transition-transform [[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&amp;]:translate-x-4"></span></span>Grid</label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" checked data-field="gridVisible"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-track peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50 motion-safe:transition-colors"><span data-slot="switch-thumb" class="absolute top-0.5 left-0.5 size-4 rounded-full bg-background motion-safe:transition-transform [[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&amp;]:translate-x-4"></span></span>Grid</label>',
     );
   });
 
@@ -24,7 +24,7 @@ describe("controls/Switch", () => {
       </Switch>,
     );
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-ref="grid-switch" data-field="gridVisible"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-track motion-safe:transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background motion-safe:transition-transform [[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&amp;]:translate-x-4"></span></span>Grid</label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" data-ref="grid-switch" data-field="gridVisible"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-track peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50 motion-safe:transition-colors"><span data-slot="switch-thumb" class="absolute top-0.5 left-0.5 size-4 rounded-full bg-background motion-safe:transition-transform [[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&amp;]:translate-x-4"></span></span>Grid</label>',
     );
   });
 
@@ -35,7 +35,7 @@ describe("controls/Switch", () => {
       </Switch>,
     );
     expect(out).toBe(
-      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" checked data-field="shadows"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-track motion-safe:transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50"><span data-slot="switch-thumb" class="absolute left-0.5 top-0.5 size-4 rounded-full bg-background motion-safe:transition-transform [[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&amp;]:translate-x-4"></span></span>Shadows</label>',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2"><input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only" checked data-field="shadows"><span data-slot="switch-track" aria-hidden="true" class="relative h-5 w-9 shrink-0 rounded-full bg-track peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50 motion-safe:transition-colors"><span data-slot="switch-thumb" class="absolute top-0.5 left-0.5 size-4 rounded-full bg-background motion-safe:transition-transform [[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&amp;]:translate-x-4"></span></span>Shadows</label>',
     );
   });
 });

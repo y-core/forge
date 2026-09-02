@@ -51,7 +51,7 @@ const AccordionTrigger = <N extends string = string>({
   <summary
     data-slot={slotToken("accordion-trigger", inherited)}
     class={cn(
-      "flex items-center gap-2 cursor-pointer list-none select-none py-2 px-1 rounded text-sm font-medium outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
+      "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none select-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
       asClass(cls),
     )}
     {...rest}>
@@ -60,13 +60,13 @@ const AccordionTrigger = <N extends string = string>({
     <Icon
       name='chevron-down'
       viewBox='0 0 24 24'
-      class='size-4 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 group-open/accordion-item:rotate-180'
+      class='size-4 shrink-0 text-muted-foreground group-open/accordion-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200'
     />
   </summary>
 );
 
 const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("accordion-content", inherited)} class={cn("px-1 pb-3 pt-1", asClass(cls))} {...rest}>
+  <div data-slot={slotToken("accordion-content", inherited)} class={cn("px-1 pt-1 pb-3", asClass(cls))} {...rest}>
     {hint ? <p class='mb-2 text-xs text-muted-foreground'>{hint}</p> : null}
     {children}
   </div>

@@ -58,8 +58,8 @@ const READOUT_ORDER: (keyof ControlsDemoState)[] = [
   "toppings",
 ];
 
-const READOUT_CLASS = "text-sm tabular-nums text-muted-foreground";
-const LABEL_CLASS = "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50";
+const READOUT_CLASS = "text-sm text-muted-foreground tabular-nums";
+const LABEL_CLASS = "flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50";
 
 describe("ControlsDemos", () => {
   it("stamps exactly one resumable scope carrying the whole band state", () => {

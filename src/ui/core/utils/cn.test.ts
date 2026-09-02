@@ -94,6 +94,11 @@ describe("cn non-conflict regressions", () => {
     { input: ["border-b", "border-b-0"], expected: "border-b-0", why: "per-side border width is one group" },
     { input: ["border-0", "border"], expected: "border", why: "the bare border utility is a width" },
     { input: ["select-none", "select-wrapper"], expected: "select-none select-wrapper", why: "user-select is a closed value space" },
+    { input: ["text-muted-foreground", "text-pretty"], expected: "text-muted-foreground text-pretty", why: "text wrapping is not a colour" },
+    { input: ["text-pretty", "text-balance"], expected: "text-balance", why: "text wrapping is one group" },
+    { input: ["text-nowrap", "text-wrap"], expected: "text-wrap", why: "text wrapping is one group" },
+    { input: ["font-sans", "font-stretch-normal"], expected: "font-sans font-stretch-normal", why: "font stretch is not a family" },
+    { input: ["font-stretch-75%", "font-stretch-normal"], expected: "font-stretch-normal", why: "font stretch is one group" },
   ];
 
   for (const { input, expected, why } of cases) {
@@ -101,6 +106,12 @@ describe("cn non-conflict regressions", () => {
       expect(cn(input[0], input[1])).toBe(expected);
     });
   }
+
+  it("keeps a size, a colour and a wrapping mode from one literal", () => {
+    const literal = "text-sm text-muted-foreground text-pretty";
+
+    expect(cn(literal)).toBe(literal);
+  });
 
   it("keeps a group marker class alongside unrelated utilities", () => {
     expect(cn("group/select", "relative", "w-full")).toBe("group/select relative w-full");
@@ -192,10 +203,13 @@ describe("cn override relations", () => {
   }
 });
 
+// Held as consts, not written inline: a literal inside a `cn(…)` call is a position the formatter's
+// class sorter rewrites, and these cases are about the order `cn` itself preserves.
+const NAVBAR_BASE = "group z-40 bg-background/95 backdrop-blur";
+const NAVBAR_TOP = "sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto";
+
 describe("cn real component strings", () => {
   it("round-trips the navbar placement base and top variant byte-for-byte", () => {
-    expect(
-      cn("group z-40 border-border bg-background/95 backdrop-blur", "sticky left-0 inset-y-0 md:inset-x-0 md:top-0 md:bottom-auto md:right-auto"),
-    ).toBe("group z-40 border-border bg-background/95 backdrop-blur sticky left-0 inset-y-0 md:inset-x-0 md:top-0 md:bottom-auto md:right-auto");
+    expect(cn(NAVBAR_BASE, NAVBAR_TOP)).toBe(`${NAVBAR_BASE} ${NAVBAR_TOP}`);
   });
 });

@@ -14,7 +14,7 @@ export interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "chil
 
 /** Resolves the shared button base, variant and size classes for every button-shaped component. @public */
 export const buttonVariants = cva({
-  base: "inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  base: "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors",
   variants: {
     variant: {
       primary: "bg-primary text-primary-foreground hover:bg-primary/90",
@@ -28,7 +28,7 @@ export const buttonVariants = cva({
       lg: "h-12 px-6 text-base",
       icon: "size-9 p-0",
       "icon-sm": "size-8 p-0",
-      square: "w-full aspect-square p-0",
+      square: "aspect-square w-full p-0",
     },
   },
   defaultVariants: { variant: "primary", size: "md" },

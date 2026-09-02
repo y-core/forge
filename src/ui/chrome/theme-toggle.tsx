@@ -17,7 +17,7 @@ export interface ThemeToggleProps {
   class?: string;
 }
 
-const TOGGLE_BASE = "rounded-lg p-2 text-foreground motion-safe:transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring";
+const TOGGLE_BASE = cn("rounded-lg p-2 text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition");
 
 // The `theme-{light,dark,system}-icon` classes are matched by the shipped theme CSS, which shows one
 // span and sets the other two to `display: none` — that is also what leaves one `sr-only` label in

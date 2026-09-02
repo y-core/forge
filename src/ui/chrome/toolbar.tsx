@@ -128,9 +128,9 @@ const railVariants = cva({
   defaultVariants: { placement: "left" },
 });
 
-const FLYOUT_CLS = "min-w-52 p-2 pb-2.5 rounded-xl border border-border bg-popover text-popover-foreground shadow-md";
-const FLYOUT_TITLE_CLS = "text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-0.5 pb-1.5 px-0.5";
-const FLYOUT_BODY_CLS = "flex flex-col items-stretch gap-3.5 pt-1 pb-0.5 px-0.5 max-h-[60vh] overflow-y-auto";
+const FLYOUT_CLS = cn("min-w-52 rounded-xl border border-border bg-popover p-2 pb-2.5 text-popover-foreground shadow-md");
+const FLYOUT_TITLE_CLS = cn("px-0.5 pt-0.5 pb-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase");
+const FLYOUT_BODY_CLS = cn("flex max-h-[60vh] flex-col items-stretch gap-3.5 overflow-y-auto px-0.5 pt-1 pb-0.5");
 
 function isVerticalPlacement(placement: ToolbarPlacement): boolean {
   return placement === "left" || placement === "right";
@@ -166,7 +166,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
         class={cn(active && "active")}
         {...actionAttrs(item, ctx.commandTarget)}
         {...data}>
-        <Icon name={icon} viewBox='0 0 24 24' class='w-5 h-5' />
+        <Icon name={icon} viewBox='0 0 24 24' class='h-5 w-5' />
       </CoreToolbar.Button>
     );
   }
@@ -174,7 +174,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
   const { icon, label, ref, content, compact, titleAction } = item;
   const id = `toolbar-flyout-${ctx.idBase}-${ctx.seq.n++}`;
   return (
-    <div data-slot='toolbar-popover' class='relative flex flex-col items-center w-full'>
+    <div data-slot='toolbar-popover' class='relative flex w-full flex-col items-center'>
       <CoreToolbar.Button
         data-slot='toolbar-trigger'
         size='icon'
@@ -184,7 +184,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
         data-ref={ref}
         title={label}
         aria-label={label}>
-        <Icon name={icon} viewBox='0 0 24 24' class='w-5 h-5' />
+        <Icon name={icon} viewBox='0 0 24 24' class='h-5 w-5' />
       </CoreToolbar.Button>
       <div id={id} data-slot='toolbar-flyout' popover='auto' data-placement={placement} data-compact={compact ? "" : undefined} class={FLYOUT_CLS}>
         <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
@@ -200,7 +200,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
               title={titleAction.label}
               aria-label={titleAction.label}
               {...scopeAttrs<A>({ onClick: titleAction.action })}>
-              <Icon name={titleAction.icon} viewBox='0 0 24 24' class='w-4 h-4' />
+              <Icon name={titleAction.icon} viewBox='0 0 24 24' class='h-4 w-4' />
             </Button>
           )}
         </div>
@@ -215,7 +215,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
 function renderGroup<A extends string, G extends string>(group: ToolbarGroup<A, G>, ctx: RenderCtx<G>): JSXNode {
   const vertical = isVerticalPlacement(ctx.placement);
   return (
-    <div data-slot='toolbar-group' class={cn("flex", vertical ? "flex-col items-center gap-0.5 w-full" : "flex-row items-center gap-0.5")}>
+    <div data-slot='toolbar-group' class={cn("flex", vertical ? "w-full flex-col items-center gap-0.5" : "flex-row items-center gap-0.5")}>
       {group.items.map((item) => renderItem(item, ctx))}
     </div>
   );

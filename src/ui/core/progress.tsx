@@ -22,7 +22,7 @@ export const Progress: FC<ProgressProps> = ({
       data-slot={slotToken("progress", inherited)}
       {...stateAttrs({ orientation })}
       {...(resolvedAriaLabel !== undefined ? { "aria-label": resolvedAriaLabel } : {})}
-      class={cn(orientation === "vertical" ? "w-2 h-full" : "h-2 w-full", "rounded-full", asClass(cls))}
+      class={cn(orientation === "vertical" ? "h-full w-2" : "h-2 w-full", "rounded-full", asClass(cls))}
       {...props}
     />
   );

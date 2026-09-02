@@ -17,10 +17,11 @@ interface NumberFieldButtonProps extends Omit<JSX.IntrinsicElements["button"], "
   children?: JSXNode;
 }
 
-const BUTTON_BASE =
+const BUTTON_BASE = cn(
   "inline-flex size-8 items-center justify-center rounded-md border border-input bg-background " +
-  "text-foreground cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring " +
-  "disabled:pointer-events-none disabled:opacity-50";
+    "cursor-pointer text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring " +
+    "disabled:pointer-events-none disabled:opacity-50",
+);
 
 const NumberFieldRoot: FC<NumberFieldRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
@@ -37,8 +38,8 @@ const NumberFieldInput: FC<NumberFieldInputProps> = ({ class: cls, "data-slot": 
     type='number'
     data-slot={slotToken("number-field-input", inherited)}
     class={cn(
-      "w-20 rounded-md border border-input bg-background px-2 py-1 text-sm tabular-nums text-foreground",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+      "w-20 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground tabular-nums",
+      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
       asClass(cls),
     )}
     {...rest}

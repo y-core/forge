@@ -38,6 +38,8 @@ const TEXT_TRANSFORM = ["uppercase", "lowercase", "capitalize", "normal-case"] a
 
 const TEXT_DECORATION = ["underline", "overline", "line-through", "no-underline"] as const;
 
+const TEXT_WRAP = ["text-wrap", "text-nowrap", "text-balance", "text-pretty"] as const;
+
 const VISIBILITY = ["visible", "invisible", "collapse"] as const;
 
 const FONT_VARIANT_NUMERIC = [
@@ -236,6 +238,7 @@ const EXACT_GROUPS: ReadonlyMap<string, string> = new Map<string, string>([
   ...exactEntries(OBJECT_FIT, "object-fit"),
   ...exactEntries(TEXT_TRANSFORM, "text-transform"),
   ...exactEntries(TEXT_DECORATION, "text-decoration"),
+  ...exactEntries(TEXT_WRAP, "text-wrap"),
   ...exactEntries(VISIBILITY, "visibility"),
   ...exactEntries(FONT_VARIANT_NUMERIC, "font-variant-numeric"),
   ...exactEntries(SR_ONLY, "sr-only"),
@@ -304,6 +307,7 @@ const PREFIX_GROUPS: ReadonlyMap<string, Dispatcher> = new Map<string, Dispatche
   ["ring-", ringGroup],
   ["shadow-", shadowGroup],
   ["font-", fontGroup],
+  ["font-stretch-", constant("font-stretch")],
   ["outline-", outlineGroup],
   ["object-", constant("object-position")],
   ["stroke-", strokeGroup],

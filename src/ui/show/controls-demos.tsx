@@ -23,7 +23,7 @@ import { Resumable } from "../server/resumable";
 import { CatalogSection, type ShowIcon } from "./components";
 
 const Readout: FC<{ field: string; value: unknown }> = ({ field, value }) => (
-  <output {...bindTextAttr(field)} class='text-sm tabular-nums text-muted-foreground'>
+  <output {...bindTextAttr(field)} class='text-sm text-muted-foreground tabular-nums'>
     {controlsReadout(value)}
   </output>
 );
@@ -47,10 +47,10 @@ const BoundRow: FC<BoundRowProps> = ({ field, label, value, children }) => (
 
 const NativeAndBoundSection: FC = () => (
   <CatalogSection id='native-and-reactive' title='Native vs Bound'>
-    <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+    <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
       The same control twice: the native one is read by the server on submit, the bound one is read by a signal as it is typed.
     </p>
-    <div class='flex-1 min-w-56 space-y-2'>
+    <div class='min-w-56 flex-1 space-y-2'>
       <h3 class='text-sm font-semibold text-foreground'>Native SSR</h3>
       <Form action='#' method='post' class='space-y-2'>
         <Label for={fieldId("native-name")}>Display name</Label>
@@ -60,7 +60,7 @@ const NativeAndBoundSection: FC = () => (
         </Button>
       </Form>
     </div>
-    <div class='flex-1 min-w-56 space-y-2'>
+    <div class='min-w-56 flex-1 space-y-2'>
       <h3 class='text-sm font-semibold text-foreground'>Bound</h3>
       <BoundRow field='mirror' label='Display name' value={CONTROLS_DEMO_STATE.mirror}>
         <Input bind='mirror' type='text' field={{ name: "mirror" }} value={CONTROLS_DEMO_STATE.mirror} />

@@ -179,7 +179,7 @@ describe("Form — composed with Honeypot", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" class="absolute -left-[9999px] opacity-0 pointer-events-none"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" class="pointer-events-none absolute -left-[9999px] opacity-0"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
     );
   });
 });

@@ -136,10 +136,10 @@ const placementVariants = cva({
   base: "group z-40 bg-background/95 backdrop-blur",
   variants: {
     placement: {
-      top: "sticky left-0 inset-y-0 md:inset-x-0 md:top-0 md:bottom-auto md:right-auto",
-      bottom: "sticky right-0 inset-y-0 md:inset-x-0 md:bottom-0 md:top-auto md:left-auto",
-      left: "sticky top-0 inset-x-0 md:inset-y-0 md:left-0 md:right-auto md:bottom-auto",
-      right: "sticky bottom-0 inset-x-0 md:inset-y-0 md:right-0 md:left-auto md:top-auto",
+      top: "sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto",
+      bottom: "sticky inset-y-0 right-0 md:inset-x-0 md:top-auto md:bottom-0 md:left-auto",
+      left: "sticky inset-x-0 top-0 md:inset-y-0 md:right-auto md:bottom-auto md:left-0",
+      right: "sticky inset-x-0 bottom-0 md:inset-y-0 md:top-auto md:right-0 md:left-auto",
     },
   },
   defaultVariants: { placement: "top" },
@@ -150,8 +150,8 @@ const railPlacementVariants = cva({
   base: "group z-40 bg-background/95 backdrop-blur",
   variants: {
     placement: {
-      top: "sticky top-0 inset-x-0",
-      bottom: "sticky bottom-0 inset-x-0",
+      top: "sticky inset-x-0 top-0",
+      bottom: "sticky inset-x-0 bottom-0",
       left: "sticky top-0 left-0 max-h-dvh overflow-y-auto",
       right: "sticky top-0 right-0 max-h-dvh overflow-y-auto",
     },
@@ -163,60 +163,68 @@ const railPlacementVariants = cva({
 const RAIL_HEIGHT_CHAIN = "h-full";
 
 /** What the bar itself paints below `md` it would position against the bar, not the viewport. */
-const DRAWER_BAR_CLASS = "max-md:bg-transparent max-md:backdrop-blur-none";
+const DRAWER_BAR_CLASS = cn("max-md:bg-transparent max-md:backdrop-blur-none");
 
 /** The rail's own scrolling box has to be released too, or the out-of-flow panel is clipped by it. */
-const DRAWER_RAIL_CLASS = `${DRAWER_BAR_CLASS} max-md:max-h-none max-md:overflow-visible`;
+const DRAWER_RAIL_CLASS = cn(`${DRAWER_BAR_CLASS} max-md:max-h-none max-md:overflow-visible`);
 
 /** The off-canvas panel below `md`. `visibility`, not `display`: `display` is not transitionable and
  * `visibility` is, and `invisible` still keeps the closed panel out of the tab order and the a11y tree. */
-const DRAWER_PANEL_BASE =
-  "max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:invisible max-md:group-open:visible max-md:group-open:translate-x-0 max-md:transition-[transform,visibility] max-md:duration-200 motion-reduce:max-md:transition-none";
+const DRAWER_PANEL_BASE = cn(
+  "max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[transform,visibility] max-md:duration-200 max-md:group-open:visible max-md:group-open:translate-x-0 motion-reduce:max-md:transition-none",
+);
 
 /** Which edge the panel slides from — derived from `placement`, never configured separately. */
 type DrawerEdge = "leading" | "trailing";
 
 const DRAWER_EDGE_CLASS: Record<DrawerEdge, string> = {
-  leading: "max-md:start-0 max-md:border-e max-md:-translate-x-full max-md:rtl:translate-x-full",
-  trailing: "max-md:end-0 max-md:border-s max-md:translate-x-full max-md:rtl:-translate-x-full",
+  leading: cn("max-md:start-0 max-md:-translate-x-full max-md:border-e max-md:rtl:translate-x-full"),
+  trailing: cn("max-md:end-0 max-md:translate-x-full max-md:border-s max-md:rtl:-translate-x-full"),
 };
 
 /** The glyph pair is drawn once, for a leading edge in a left-to-right page, and mirrored into the other three cases */
 const DRAWER_GLYPH_CLASS: Record<DrawerEdge, string> = { leading: "rtl:-scale-x-100", trailing: "-scale-x-100 rtl:scale-x-100" };
 
 /** The scrim under the panel. A `<div>` rather than a `<button>`: it duplicates the summary's affordance, so it must not be a second tab stop. */
-const DRAWER_BACKDROP_CLASS =
-  "hidden max-md:block max-md:fixed max-md:inset-0 max-md:z-30 max-md:bg-foreground/40 max-md:invisible max-md:opacity-0 max-md:group-open:visible max-md:group-open:opacity-100 max-md:transition-[opacity,visibility]";
+const DRAWER_BACKDROP_CLASS = cn(
+  "hidden max-md:invisible max-md:fixed max-md:inset-0 max-md:z-30 max-md:block max-md:bg-foreground/40 max-md:opacity-0 max-md:transition-[opacity,visibility] max-md:group-open:visible max-md:group-open:opacity-100",
+);
 
 /** Keeps the toggle above both the scrim and the panel it opened — starts at the same edge and would otherwise cover the one control that shuts it*/
-const DRAWER_SUMMARY_CLASS = "max-md:relative max-md:z-50";
+const DRAWER_SUMMARY_CLASS = cn("max-md:relative max-md:z-50");
 
 /** Summary (toggle) classes per collapse mode; `"always"` keeps the toggle at every breakpoint. */
 const SUMMARY_CLASS: Record<NavCollapsible, string> = {
-  mobile: "md:hidden flex items-center justify-end p-3 list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
-  always:
-    "sticky top-0 flex items-center justify-start group-open:justify-end p-3 bg-background/95 list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
+  mobile: cn("flex cursor-pointer list-none items-center justify-end p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"),
+  always: cn(
+    "sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 outline-none group-open:justify-end focus-visible:ring-2 focus-visible:ring-ring",
+  ),
 };
 
 /** Panel classes per collapse mode; `"always"` stays a disclosed vertical stack at every breakpoint. */
 const PANEL_CLASS: Record<NavCollapsible, string> = {
-  mobile: "hidden group-open:flex md:flex flex-col md:flex-row md:items-center justify-between gap-4 p-2",
-  always: "hidden group-open:flex flex-col gap-4 p-2",
+  mobile: cn("hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"),
+  always: cn("hidden flex-col gap-4 p-2 group-open:flex"),
 };
 
 /** Panel classes per collapse mode in drawer mode: the `≥md` half of the inline table, restated so
  * that nothing unprefixed decides `display` — below `md` the overlay's own `max-md:flex` does. */
 const DRAWER_PANEL_CLASS: Record<NavCollapsible, string> = {
-  mobile: "md:flex flex-col md:flex-row md:items-center justify-between gap-4 p-2",
-  always: "md:hidden md:group-open:flex flex-col gap-4 p-2",
+  mobile: cn("flex-col justify-between gap-4 p-2 md:flex md:flex-row md:items-center"),
+  always: cn("flex-col gap-4 p-2 md:hidden md:group-open:flex"),
 };
 
 /** Section classes per collapse mode; `"always"` never turns the row horizontal. */
-const SECTION_CLASS: Record<NavCollapsible, string> = { mobile: "flex flex-col md:flex-row md:items-center gap-1", always: "flex flex-col gap-1" };
+const SECTION_CLASS: Record<NavCollapsible, string> = {
+  mobile: cn("flex flex-col gap-1 md:flex-row md:items-center"),
+  always: cn("flex flex-col gap-1"),
+};
 
 /** Bar-level styling; a bar link adds the focus ring and current-page cue `Menu.Trigger` already carries. */
-const BAR_ITEM = "inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground";
-const BAR_LINK = `${BAR_ITEM} cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-accent aria-[current]:text-accent-foreground aria-[current]:font-semibold`;
+const BAR_ITEM = cn("inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground");
+const BAR_LINK = cn(
+  `${BAR_ITEM} cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground`,
+);
 
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). */
 function filterAttrs(item: NavSectionItem, activeFilters: string[]): Record<string, unknown> {
@@ -322,7 +330,7 @@ function renderGroup(item: NavGroup, ctx: NavRenderCtx): JSXNode {
       aria-labelledby={headingId}
       class='flex flex-col gap-1'
       {...fattrs}>
-      <p id={headingId} data-slot='navbar-group-heading' class='px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+      <p id={headingId} data-slot='navbar-group-heading' class='px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
         {item.heading}
       </p>
       {item.group.map((child) => renderItem(child, 0, ctx))}

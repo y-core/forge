@@ -125,7 +125,35 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   gate to oxc's future editorial judgement, and 312 of its 357 findings here come from three rules
   that collide with forge's own design. Reasoning is in `CODE_REVIEW.md` §7.
 
+- **`@y-core/forge/ui/assets/css/tailwind.css` — Tailwind composed with forge, as one import.**
+  It is `@import "tailwindcss"` above `forge.css`, and it replaces the two lines an app used to
+  write itself. **The two-line form still works and is still correct** for an app that must pass
+  Tailwind import options (`source(none)`, a prefix), because an option cannot be added to an import
+  nested inside a file the app does not control — which is why `forge.css` still never imports
+  Tailwind. Take one path or the other, never both: two Tailwind imports emit preflight twice. The
+  value of having the file is that the composition is now stated once, in the package, where the
+  app's stylesheet, its Tailwind build and forge's own class sorter all read the same one.
+
+- **A `validate-class-order` gate step, shipped to consuming apps in `forgeChecks`.** It walks every
+  class position — a `class` / `className` attribute, and every argument to `cn`, `asClass` and
+  `cva` — and fails on any literal two of whose tokens claim the same conflict group, naming the
+  file, the literal and the token that would be dropped. Such a literal already contains dead code:
+  `cn` drops one of the two at render. Banning it is also what makes sorting a class literal
+  provably output-preserving (`UI_SSR_COMPONENTS.md` §3e). The oracle is the real `cn`, imported
+  rather than reimplemented. `classOrderStep({ root, sources })` is exported for a bespoke table;
+  `!`-prefixed entries exclude a file or subtree, which is how a spec whose fixtures are
+  deliberately self-conflicting opts out.
+
 ### Fixed
+
+- **`cn` no longer drops a text colour standing beside `text-wrap` / `text-nowrap` /
+  `text-balance` / `text-pretty`, nor a font family beside `font-stretch-*`.** The `text-`
+  dispatcher classed the four wrapping modes as colours, so
+  `cn("text-sm text-muted-foreground text-pretty")` rendered without the colour, and
+  `font-stretch-*` fell to `font-family` the same way. Both are now their own conflict groups. The
+  effect is a class kept that used to disappear: **a consumer passing either pair as `class` into a
+  forge component gets a rendered `class` attribute one token longer than before**, which is the
+  markup they asked for. Nothing that survived before starts being dropped.
 
 - **`buttonVariants`' base now carries `whitespace-nowrap`.** A multi-word label used to break
   across two lines inside its own pill at narrow widths — a button is a control, and a control's
@@ -142,6 +170,19 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   (`cf-env-command.test.ts`, `proc.test.ts`, `git.test.ts`). Each is followed immediately by a
   top-level `await import(...)` of the module under test, so awaiting the registration is what
   guarantees the stub is in place before the import resolves.
+
+### Changed
+
+- **`.oxfmtrc.json` enables `sortTailwindcss` over `cn` and `cva` calls**, so forge's class
+  literals are held in Tailwind's canonical order. This is forge's own formatting, not a published
+  behaviour change: it moved no token between literals, so `cn`'s cross-argument precedence and
+  `cva`'s `base → variants → class` layering are untouched, and every rewritten test expectation
+  was proved a token permutation before it was touched. Two consequences for an app adopting the
+  same config: a class const only reaches the sorter inside a call — forge's own are wrapped as
+  `const INPUT_BASE = cn("…")` — and `preserveDuplicates` defaults to `false`, so an exact
+  duplicate token is deleted. The sorter is pointed at the shipped
+  `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
+  each as unknown.
 
 ---
 

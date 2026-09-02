@@ -52,9 +52,9 @@ describe("Progress", () => {
     );
   });
 
-  it("vertical orientation stamps data-orientation and flips to w-2 h-full", async () => {
+  it("vertical orientation stamps data-orientation and flips to h-full w-2", async () => {
     expect(await render(<Progress orientation='vertical' />)).toBe(
-      '<progress data-slot="progress" data-orientation="vertical" class="w-2 h-full rounded-full"></progress>',
+      '<progress data-slot="progress" data-orientation="vertical" class="h-full w-2 rounded-full"></progress>',
     );
   });
 });

@@ -23,11 +23,11 @@ type ToastProps = JSX.IntrinsicElements["div"] & {
 };
 
 const toastVariantClasses: Record<ToastVariant, string> = {
-  default: "border-border bg-background text-foreground",
-  success: "border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground",
-  info: "border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground",
-  warning: "border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground",
-  destructive: "border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground",
+  default: cn("border-border bg-background text-foreground"),
+  success: cn("border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground"),
+  info: cn("border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground"),
+  warning: cn("border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground"),
+  destructive: cn("border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground"),
 };
 
 const positionClasses: Record<ToastPosition, string> = {
@@ -81,7 +81,7 @@ const ToastRoot: FC<ToastProps> = ({
       data-variant={variant}
       {...(interactive ? { "data-scope": "toast", "data-state": JSON.stringify({ duration }) } : {})}
       class={cn(
-        "relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg",
+        "relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg",
         toastVariantClasses[variant],
         dismissible && "pe-10",
         cls,
@@ -96,7 +96,7 @@ const ToastRoot: FC<ToastProps> = ({
           data-slot='toast-close'
           aria-label={dismissLabel}
           {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'>
+          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-safe:transition-opacity'>
           <span aria-hidden='true' class='text-sm leading-none'>
             ×
           </span>
@@ -107,7 +107,7 @@ const ToastRoot: FC<ToastProps> = ({
 };
 
 const ToastTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("toast-title", inherited)} class={cn("text-sm font-semibold leading-none", cls)} {...rest}>
+  <div data-slot={slotToken("toast-title", inherited)} class={cn("text-sm leading-none font-semibold", cls)} {...rest}>
     {children}
   </div>
 );

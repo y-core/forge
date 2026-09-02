@@ -11,10 +11,10 @@ type SelectProps = JSX.IntrinsicElements["select"] & { field?: FieldDescriptor; 
 type SelectOptionProps = JSX.IntrinsicElements["option"];
 type SelectOptGroupProps = JSX.IntrinsicElements["optgroup"];
 
-const SELECT_WRAPPER = "group/select relative w-full has-[select:disabled]:opacity-50";
-const SELECT_BASE = "w-full appearance-none rounded-lg border border-input bg-background ps-3 py-2 pe-10 text-sm text-foreground";
-const SELECT_FOCUS = "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20";
-const SELECT_DISABLED = "disabled:cursor-not-allowed disabled:pointer-events-none";
+const SELECT_WRAPPER = cn("group/select relative w-full has-[select:disabled]:opacity-50");
+const SELECT_BASE = cn("w-full appearance-none rounded-lg border border-input bg-background py-2 ps-3 pe-10 text-sm text-foreground");
+const SELECT_FOCUS = cn("focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none");
+const SELECT_DISABLED = cn("disabled:pointer-events-none disabled:cursor-not-allowed");
 
 const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({ class: cls, field, icon: Icon, children, "data-slot": inherited, ...props }) => {
   const resolved = field ? fieldControlProps(props, field) : props;

@@ -31,7 +31,7 @@ const OOB_MARKUP = '<div hx-swap-oob="beforeend:#flash-container"> … </div>';
 /** The Flash channel demo — server-pushed messages into the page's one live region. @internal */
 export const FlashSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
   <CatalogSection id='flash' title='Flash'>
-    <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+    <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
       Flash is the server channel to the reader: <code>createFlash</code> writes the messages onto a signed, single-read cookie, and the next render
       hands them to <code>FlashContainer</code> — the fixed container at the bottom right of this page, and the only live region on it.{" "}
       <code>FlashOob</code> swaps one message into that same container mid-page, with no reload.
@@ -39,7 +39,7 @@ export const FlashSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
     <Button variant='secondary' size='sm' hx-get={`${paths.toast}?type=info`} hx-swap='none'>
       Flash a message
     </Button>
-    <p class='w-full max-w-prose text-xs text-muted-foreground text-pretty'>
+    <p class='w-full max-w-prose text-xs text-pretty text-muted-foreground'>
       Each message renders as a dismissible Toast that removes itself after five seconds. Below is exactly what the three server components emit,
       rendered inline so the markup is on the page rather than only described by it.
     </p>
@@ -65,7 +65,7 @@ export const FlashSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
 export const LazySection: FC = () => (
   <CatalogSection id='lazy' title='Lazy'>
     <Resumable name={LAZY_DEMO_SCOPE} class='w-full space-y-3'>
-      <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
         <code>lazy()</code> holds a module back until its anchor is seen: the panel below names a <code>data-ref</code>, the scope observes it, and
         the module is fetched and evaluated the first time the panel enters the viewport. A rejected load is retried up to three times.
       </p>
@@ -74,7 +74,7 @@ export const LazySection: FC = () => (
           {LAZY_DEMO_PENDING}
         </p>
       </div>
-      <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
         The second anchor proves that last sentence rather than asserting it: its first {LAZY_RETRY_FAILURES} loads reject on purpose, its{" "}
         <code>onError</code> writes each attempt to the line below, and the third resolves.
       </p>

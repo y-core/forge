@@ -197,7 +197,7 @@ interface CatalogSectionProps {
 /** One catalog band: an anchored section headed by its component's name. @internal */
 export const CatalogSection: FC<CatalogSectionProps> = ({ id, title, children }) => (
   <section id={id} class='scroll-mt-24 space-y-4'>
-    <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>{title}</h2>
+    <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>{title}</h2>
     <div class='flex flex-wrap items-start gap-4'>{children}</div>
   </section>
 );
@@ -221,23 +221,23 @@ export const CatalogPanel: FC<CatalogPanelProps> = ({ id, title, description, ch
 
 const AlertSection: FC = () => (
   <CatalogSection id='alert' title='Alert'>
-    <Alert variant='default' class='flex-1 min-w-56'>
+    <Alert variant='default' class='min-w-56 flex-1'>
       <Alert.Title>Default</Alert.Title>
       <Alert.Description>A neutral informational alert.</Alert.Description>
     </Alert>
-    <Alert variant='info' class='flex-1 min-w-56'>
+    <Alert variant='info' class='min-w-56 flex-1'>
       <Alert.Title>Info</Alert.Title>
       <Alert.Description>Informational notice for the user.</Alert.Description>
     </Alert>
-    <Alert variant='success' class='flex-1 min-w-56'>
+    <Alert variant='success' class='min-w-56 flex-1'>
       <Alert.Title>Success</Alert.Title>
       <Alert.Description>Operation completed successfully.</Alert.Description>
     </Alert>
-    <Alert variant='warning' class='flex-1 min-w-56'>
+    <Alert variant='warning' class='min-w-56 flex-1'>
       <Alert.Title>Warning</Alert.Title>
       <Alert.Description>Something may need attention.</Alert.Description>
     </Alert>
-    <Alert variant='destructive' class='flex-1 min-w-56' dismissible>
+    <Alert variant='destructive' class='min-w-56 flex-1' dismissible>
       <Alert.Title>Destructive</Alert.Title>
       <Alert.Description>An error occurred. Dismiss to acknowledge.</Alert.Description>
     </Alert>
@@ -654,7 +654,7 @@ const DialogSection: FC = () => (
         </Dialog.Close>
       </Dialog.Header>
       <Dialog.Body>
-        <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+        <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
           Opened and closed by Invoker commands — the top layer, the backdrop and Escape are the platform's.
         </p>
       </Dialog.Body>
@@ -671,7 +671,7 @@ const DialogSection: FC = () => (
         <h3 class='text-base font-semibold text-foreground'>Open and non-modal</h3>
       </Dialog.Header>
       <Dialog.Body>
-        <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+        <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
           The close below runs <code>request-close</code>, the cancelable algorithm — a <code>cancel</code> listener can keep it open, which plain{" "}
           <code>close</code> cannot.
         </p>
@@ -856,7 +856,10 @@ const TurnstileSection: FC = () => (
       <Button type='submit'>Submit</Button>
     </Form>
     {/* `hx-post`, because the deferred challenge is run from htmx's `htmx:confirm` seam and a native
-        form has no request to hold; `interaction-only` is the pairing Cloudflare documents for it. */}
+        form has no request to hold; `interaction-only` is the pairing Cloudflare documents for it.
+        The eager `load` default is deliberate here, unlike the three demos above: the point of
+        `challenge='submit'` is a widget up from page load, holding its own space, with only the
+        challenge waiting for the press. */}
     <Form action='#' method='post' hx-post='#' class='w-full max-w-xs space-y-3'>
       <Honeypot />
       <Input type='email' name='turnstile-email-submit' placeholder='you@example.com' />
@@ -890,7 +893,7 @@ const ToolbarSection: FC = () => (
       <Toolbar.Separator orientation='horizontal' />
       <Toolbar.Link href='#toolbar'>Help</Toolbar.Link>
     </Toolbar>
-    <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+    <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
       <code>Toolbar.Link</code> renders forge's own anchor; <code>Toolbar.Button asChild</code> takes the caller's anchor and lends it the toolbar
       item's styling and roving-focus wiring.
     </p>
@@ -939,7 +942,7 @@ const MenuSection: FC = () => (
       </Menu.Popup>
     </Menu>
 
-    <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+    <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
       The View menu sets <code>side=top</code> and <code>align=end</code>: it opens upward, with its right edge on the trigger's.
     </p>
 
@@ -1145,7 +1148,7 @@ const ToastCatalog: FC = () => (
     </Toast>
 
     <div class='w-full space-y-3'>
-      <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
         Each box is one Toast.Container. The shipped container is fixed to the viewport — the flash container at the bottom right of this page is
         one — so these are demoted to absolute inside a bounded box.
       </p>
@@ -1167,7 +1170,7 @@ const ToastCatalog: FC = () => (
         <Toast.Title>Long-lived by design</Toast.Title>
         <Toast.Description>duration=600000 — the runtime removes this toast when it elapses.</Toast.Description>
       </Toast>
-      <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
         The duration is serialised into <code>data-state</code> and read by the eager toast scope. Flash ships 5000; this exemplar is deliberately
         long so it stays on the page.
       </p>
@@ -1282,7 +1285,7 @@ const RuntimeBody: FC<PageBodyProps> = ({ icon }) => (
 const HtmxBody: FC<PageBodyProps> = ({ paths, icon }) => (
   <div class='space-y-10'>
     <section id='htmx-demos' class='scroll-mt-24 space-y-6'>
-      <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>HTMX Demos</h2>
+      <h2 class='border-b border-border pb-2 text-xl font-semibold text-foreground'>HTMX Demos</h2>
       <PreviewSection paths={paths} icon={icon} />
       <ValidateSection paths={paths} icon={icon} />
       <SearchSection paths={paths} />
@@ -1318,7 +1321,7 @@ export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ShowIcon; page?: Sh
     <div class='flex min-h-dvh'>
       <Resumable
         name='navbar'
-        class='w-64 shrink-0 border-e border-border max-md:w-auto has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-e-0'>
+        class='w-64 shrink-0 border-e border-border has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-e-0 max-md:w-auto'>
         <Navbar
           config={pagesConfig(paths.page)}
           resolveHref={pageHref}
@@ -1330,9 +1333,9 @@ export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ShowIcon; page?: Sh
           aria-label='Showcase pages'
         />
       </Resumable>
-      <main id='main-content' class='flex-1 min-w-0 mx-auto max-w-4xl px-6 py-10 lg:px-10 space-y-12'>
+      <main id='main-content' class='mx-auto max-w-4xl min-w-0 flex-1 space-y-12 px-6 py-10 lg:px-10'>
         <div>
-          <h1 class='text-3xl font-bold text-foreground text-balance'>UI Component Showcase — {label}</h1>
+          <h1 class='text-3xl font-bold text-balance text-foreground'>UI Component Showcase — {label}</h1>
           <p class='mt-2 text-muted-foreground'>{needs}</p>
         </div>
 
@@ -1342,7 +1345,7 @@ export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ShowIcon; page?: Sh
       </main>
       <Resumable
         name='show-toc'
-        class='w-64 shrink-0 border-s border-border max-md:w-auto has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-s-0'>
+        class='w-64 shrink-0 border-s border-border has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-s-0 max-md:w-auto'>
         <Navbar
           config={sectionsConfig(page)}
           resolveHref={anchorHref}

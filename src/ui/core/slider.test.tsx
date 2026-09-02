@@ -18,7 +18,7 @@ describe("Slider", () => {
 
   it("wraps the input with a seeded output when output is set", async () => {
     expect(await render(<Slider min={0} max={10} value={4} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="10" value="4"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">4</output></div>`,
+      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="10" value="4"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">4</output></div>`,
     );
   });
 
@@ -63,19 +63,19 @@ describe("Slider", () => {
 
   it("vertical orientation with output wraps in a flex-col container", async () => {
     expect(await render(<Slider min={0} max={10} value={5} orientation='vertical' output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 flex-col items-center"><input data-slot="slider" type="range" class="${SLIDER_VERTICAL_CLASS}" data-on-input="sync" min="0" max="10" value="5"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">5</output></div>`,
+      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 flex-col items-center"><input data-slot="slider" type="range" class="${SLIDER_VERTICAL_CLASS}" data-on-input="sync" min="0" max="10" value="5"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">5</output></div>`,
     );
   });
 
   it("clamps the output readout to max while leaving the value attribute intact", async () => {
     expect(await render(<Slider min={0} max={100} value={150} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="100" value="150"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">100</output></div>`,
+      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="100" value="150"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">100</output></div>`,
     );
   });
 
   it("renders the range default in the readout for an array value the browser cannot parse", async () => {
     expect(await render(<Slider value={["a", "b"]} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" value="a,b"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">50</output></div>`,
+      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" value="a,b"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">50</output></div>`,
     );
   });
 
@@ -87,7 +87,7 @@ describe("Slider", () => {
 
   it("composes field wiring with a sanitized readout", async () => {
     expect(await render(<Slider field={{ name: "opacity" }} min={0} max={100} value={150} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="100" value="150" id="field-opacity" name="opacity"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">100</output></div>`,
+      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="100" value="150" id="field-opacity" name="opacity"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">100</output></div>`,
     );
   });
 });

@@ -4,10 +4,10 @@ import { render } from "../../testing/render";
 import { Toast } from "./toast";
 
 const DEFAULT_TOAST =
-  '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div></div>';
+  '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div></div>';
 
 const DISMISSIBLE_TOAST =
-  '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{}" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 py-4 shadow-lg border-border bg-background text-foreground pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>';
+  '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{}" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 shadow-lg border-border bg-background text-foreground pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-safe:transition-opacity"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>';
 
 describe("Toast", () => {
   it("renders with role=status and data-slot=toast", async () => {
@@ -16,31 +16,31 @@ describe("Toast", () => {
 
   it("defaults to the default variant", async () => {
     expect(await render(<Toast>Hello</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
+      '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
     );
   });
 
   it("renders success variant classes", async () => {
     expect(await render(<Toast variant='success'>Done</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="success" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Done</div></div>',
+      '<div data-slot="toast" data-variant="success" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Done</div></div>',
     );
   });
 
   it("renders info variant classes", async () => {
     expect(await render(<Toast variant='info'>Info</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="info" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Info</div></div>',
+      '<div data-slot="toast" data-variant="info" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Info</div></div>',
     );
   });
 
   it("renders warning variant classes", async () => {
     expect(await render(<Toast variant='warning'>Alert</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="warning" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Alert</div></div>',
+      '<div data-slot="toast" data-variant="warning" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Alert</div></div>',
     );
   });
 
   it("renders destructive variant classes", async () => {
     expect(await render(<Toast variant='destructive'>Error</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="destructive" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Error</div></div>',
+      '<div data-slot="toast" data-variant="destructive" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Error</div></div>',
     );
   });
 
@@ -70,7 +70,7 @@ describe("Toast", () => {
 
   it("stamps data-scope and data-state with duration when duration > 0", async () => {
     expect(await render(<Toast duration={3000}>Message</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{&quot;duration&quot;:3000}" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div></div>',
+      '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{&quot;duration&quot;:3000}" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div></div>',
     );
   });
 
@@ -90,13 +90,13 @@ describe("Toast", () => {
         </Toast>,
       ),
     ).toBe(
-      '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{&quot;duration&quot;:0}" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 py-4 shadow-lg border-border bg-background text-foreground pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 motion-safe:transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>',
+      '<div data-slot="toast" data-variant="default" data-scope="toast" data-state="{&quot;duration&quot;:0}" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 shadow-lg border-border bg-background text-foreground pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-safe:transition-opacity"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>',
     );
   });
 
   it("merges a custom class", async () => {
     expect(await render(<Toast class='my-toast'>Hello</Toast>)).toBe(
-      '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground my-toast"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
+      '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-border bg-background text-foreground my-toast"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
     );
   });
 
@@ -108,7 +108,7 @@ describe("Toast", () => {
         </Toast>,
       ),
     ).toBe(
-      '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground" id="t1" data-testid="toast" data-note="a&amp;b"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
+      '<div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-border bg-background text-foreground" id="t1" data-testid="toast" data-note="a&amp;b"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
     );
   });
 });
@@ -158,7 +158,7 @@ describe("Toast.Container", () => {
         </Toast.Container>,
       ),
     ).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"><div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border ps-4 pe-4 py-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div></section>',
+      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"><div data-slot="toast" data-variant="default" class="relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg border-border bg-background text-foreground"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div></section>',
     );
   });
 
@@ -172,7 +172,7 @@ describe("Toast.Container", () => {
 describe("Toast.Title and Toast.Description", () => {
   it("renders Toast.Title with data-slot=toast-title", async () => {
     expect(await render(<Toast.Title>Success</Toast.Title>)).toBe(
-      '<div data-slot="toast-title" class="text-sm font-semibold leading-none">Success</div>',
+      '<div data-slot="toast-title" class="text-sm leading-none font-semibold">Success</div>',
     );
   });
 
@@ -191,7 +191,7 @@ describe("Toast.Title and Toast.Description", () => {
         </>,
       ),
     ).toBe(
-      '<div data-slot="toast-title" class="text-sm font-semibold leading-none" id="tt">Saved</div><div data-slot="toast-description" class="text-sm opacity-90" data-note="a&amp;b">Detail</div>',
+      '<div data-slot="toast-title" class="text-sm leading-none font-semibold" id="tt">Saved</div><div data-slot="toast-description" class="text-sm opacity-90" data-note="a&amp;b">Detail</div>',
     );
   });
 });

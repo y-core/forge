@@ -8,9 +8,9 @@ import { asClass, cn } from "./utils/cn";
 
 type InputProps = JSX.IntrinsicElements["input"] & { field?: FieldDescriptor };
 
-const INPUT_BASE = "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground";
-const INPUT_FOCUS = "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20";
-const INPUT_DISABLED = "disabled:cursor-not-allowed disabled:opacity-50";
+const INPUT_BASE = cn("w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground");
+const INPUT_FOCUS = cn("focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none");
+const INPUT_DISABLED = cn("disabled:cursor-not-allowed disabled:opacity-50");
 
 /** A styled text `<input>`, wired to a `FieldDescriptor` when one is passed. @public */
 export const Input: FC<InputProps> = ({ class: cls, field, "data-slot": inherited, ...props }) => {

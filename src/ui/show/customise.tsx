@@ -45,6 +45,7 @@ import { fieldId } from "../core/field";
 import type { ForgeIcon } from "../core/icon";
 import { Label } from "../core/label";
 import { Select } from "../core/select";
+import { cn } from "../core/utils/cn";
 import { Resumable } from "../server/resumable";
 import { CompositionsSection } from "./compositions";
 
@@ -87,17 +88,17 @@ export function loadCustomise<Bindings = Record<string, unknown>>(c: AppContext<
 }
 
 /** The row template: family, then a (label, slider) pair per dial. */
-const LEVER_GRID = "grid items-center gap-x-3 gap-y-2 md:grid-cols-[4.5rem_7rem_minmax(0,1fr)_7rem_minmax(0,1fr)]";
+const LEVER_GRID = cn("grid items-center gap-x-3 gap-y-2 md:grid-cols-[4.5rem_7rem_minmax(0,1fr)_7rem_minmax(0,1fr)]");
 
 /** One dial's two cells: its label-with-value, and its slider. */
 const LeverCells: FC<{ dial: Dial; value: number; labelSpan?: string; controlSpan?: string }> = ({ dial, value, labelSpan, controlSpan }) => (
   <>
-    <div class={`flex items-baseline gap-2${labelSpan === undefined ? "" : ` ${labelSpan}`}`}>
+    <div class={cn("flex items-baseline gap-2", labelSpan)}>
       <Label for={fieldId(dial.field)}>
         {dial.group === null ? null : <span class='sr-only'>{`${dial.group} `}</span>}
         {dial.short}
       </Label>
-      <output data-readout={dial.field} class='text-xs tabular-nums text-muted-foreground'>
+      <output data-readout={dial.field} class='text-xs text-muted-foreground tabular-nums'>
         {`${value}${dial.unit}`}
       </output>
     </div>
@@ -157,7 +158,7 @@ const PresetPicker: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, i
 
 const LeversSection: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, icon }) => (
   <section id='levers' class='scroll-mt-24 space-y-4'>
-    <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>Levers</h2>
+    <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>Levers</h2>
     <p class='text-sm text-muted-foreground'>Hue and chroma over a fixed lightness ramp ensuring contrast ratios remain WCAG compliant.</p>
     <Resumable name={CUSTOMISE_SCOPE} state={dials} class='space-y-4'>
       <PresetPicker dials={dials} icon={icon} />
@@ -201,7 +202,7 @@ const ScaleRow: FC<{ id: string; scale: Scale<string> }> = ({ id, scale }) => (
       {STEPS.map((step) => (
         <td
           {...{ [HEX_ATTR]: step }}
-          class={`px-1 pb-2 pt-1 text-center text-xs leading-none tabular-nums text-muted-foreground ${boxEdge(step, "bottom")}`}>
+          class={`px-1 pt-1 pb-2 text-center text-xs leading-none text-muted-foreground tabular-nums ${boxEdge(step, "bottom")}`}>
           {scale[step]}
         </td>
       ))}
@@ -219,12 +220,12 @@ const BANDS = STEP_SEGMENTS.map((segment, i) => {
 // name in one namespace is the collision, and only one of them is public.
 const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
   <section id='preview' class='scroll-mt-24 space-y-4'>
-    <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>Scales</h2>
+    <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>Scales</h2>
     <p class='text-sm text-muted-foreground'>
       Both generated families, each drawn on the surface it belongs to. Every semantic token resolves through one of these forty-eight steps.
     </p>
     <div class='overflow-x-auto'>
-      <table class='w-full table-fixed border-separate border-spacing-0 min-w-[44rem]'>
+      <table class='w-full min-w-[44rem] table-fixed border-separate border-spacing-0'>
         <caption class='sr-only'>
           {`Every generated step, grouped as ${BANDS.map((band) => `${band.label.toLowerCase()} at steps ${band.from} to ${band.to}`).join(", ")}. Rows: ${SCALE_ROWS.map((row) => row.label.toLowerCase()).join(", then ")}`}
         </caption>
@@ -241,7 +242,7 @@ const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
           </tr>
           <tr>
             {STEPS.map((step) => (
-              <th scope='col' class='pb-1 text-center text-xs font-medium tabular-nums text-muted-foreground'>
+              <th scope='col' class='pb-1 text-center text-xs font-medium text-muted-foreground tabular-nums'>
                 {step + 1}
               </th>
             ))}
@@ -272,7 +273,7 @@ const WcagRow: FC<{ pair: ScalePair; ratios: ReadonlyMap<string, LiveRatio> }> =
   const cell = (mode: Mode) => {
     const key = ratioKey(pair.token, pair.background.token, mode);
     return (
-      <td data-ratio={key} class='py-2 pe-4 tabular-nums text-foreground'>
+      <td data-ratio={key} class='py-2 pe-4 text-foreground tabular-nums'>
         {ratios.get(key)?.text}
       </td>
     );
@@ -293,7 +294,7 @@ const WcagSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => {
   const ratios = new Map(liveRatios(theme).map((entry) => [entry.key, entry]));
   return (
     <section id='wcag' class='scroll-mt-24 space-y-4'>
-      <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>WCAG, live</h2>
+      <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>WCAG, live</h2>
       <p class='text-sm text-muted-foreground'>
         The seven audited pairs the levers can actually move — both sides generated from the scales above, so each recomputes as you drag. The other
         sixteen have a side on a fixed palette stop no dial reaches; they are checked against the shipped scheme by forge's own audit rather than
@@ -351,7 +352,7 @@ const OutputSection: FC<{ theme: GeneratedTheme; dials: DialValues; path: string
   const query = dialQuery(dials);
   return (
     <section id='output' class='scroll-mt-24 space-y-4'>
-      <h2 class='text-base font-semibold text-foreground border-b border-border pb-2'>Take it away</h2>
+      <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>Take it away</h2>
       <p class='text-sm text-muted-foreground'>
         A scheme file is exactly twelve steps per family. This is the scheme. Save it beside <code>theme-neutral.css</code> and import it after.
       </p>
@@ -377,9 +378,9 @@ const OutputSection: FC<{ theme: GeneratedTheme; dials: DialValues; path: string
 export const CustomiseContent: FC<{ data: CustomiseData; icon: CustomiseIcon }> = ({ data, icon }) => {
   const theme = buildTheme(data.dials);
   return (
-    <main id='main-content' class='flex-1 min-w-0 mx-auto max-w-4xl px-6 py-10 lg:px-10 space-y-6'>
+    <main id='main-content' class='mx-auto max-w-4xl min-w-0 flex-1 space-y-6 px-6 py-10 lg:px-10'>
       <div>
-        <h1 class='text-3xl font-bold text-foreground text-balance'>Theme customiser</h1>
+        <h1 class='text-3xl font-bold text-balance text-foreground'>Theme customiser</h1>
       </div>
 
       <LeversSection dials={data.dials} icon={icon} />

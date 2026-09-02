@@ -6,8 +6,7 @@ import { render } from "../../testing/render";
 import { Toolbar } from "./toolbar";
 
 const ITEM_BASE =
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent";
+  "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors text-foreground hover:bg-accent";
 
 describe("Toolbar", () => {
   it("renders the root with the scope, the role and the orientation pair", async () => {
@@ -38,7 +37,7 @@ describe("Toolbar.Button", () => {
         </Toolbar.Button>,
       ),
     ).toBe(
-      '<button type="button" data-slot="toolbar-button" class="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input text-foreground hover:bg-accent size-9 p-0" data-toolbar-item="">B</button>',
+      '<button type="button" data-slot="toolbar-button" class="inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors border border-input text-foreground hover:bg-accent size-9 p-0" data-toolbar-item="">B</button>',
     );
   });
 
@@ -50,7 +49,7 @@ describe("Toolbar.Button", () => {
         </Toolbar.Button>,
       ),
     ).toBe(
-      `<button type="button" data-slot="toolbar-button" class="${ITEM_BASE} w-full aspect-square p-0 my-item" data-toolbar-item="">B</button>`,
+      `<button type="button" data-slot="toolbar-button" class="${ITEM_BASE} aspect-square w-full p-0 my-item" data-toolbar-item="">B</button>`,
     );
   });
 
@@ -149,7 +148,7 @@ describe("Toolbar.Link", () => {
 describe("Toolbar.Input", () => {
   it("is a focus stop like any other item", async () => {
     expect(await render(<Toolbar.Input placeholder='Search' />)).toBe(
-      '<input data-slot="toolbar-input" data-toolbar-item="" class="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" placeholder="Search">',
+      '<input data-slot="toolbar-input" data-toolbar-item="" class="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" placeholder="Search">',
     );
   });
 });

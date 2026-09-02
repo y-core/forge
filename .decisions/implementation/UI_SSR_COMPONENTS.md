@@ -40,6 +40,7 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 - §2d Scoped Components Require the Client Scope Import: the `resume()` precondition
 - §3 Class Utilities: ratified public composition helpers
 - §3d Conflict Resolution and the Fail-Open Boundary: what the resolver decides, where it stops, and the ratified inversion
+- §3e Class Order Is Not Load-Bearing Within a Literal: the fixed-point invariant the gate enforces, and what a sorter cannot reach
 - §4 State Attribute Contract: one declaration two tiers must agree on
 - §4a Presence, Not Value: why `data-selected` and never `data-selected="true"`
 - §4b ARIA States Are Not Styling Hooks: why both are emitted
@@ -431,6 +432,59 @@ general Tailwind consumer.
 state needing its own eviction policy ([`CODE_RULES.md`](../governance/CODE_RULES.md)
 §1), and Cloudflare evicts isolates aggressively enough that a cold refill is paid often rather than
 amortised. It stays retrofittable behind the unchanged signature.
+
+### 3e. Class Order Is Not Load-Bearing Within a Literal
+
+**The invariant: every class literal is a fixed point of `cn`.** For any literal `L`,
+`cn(L) === L`. Equivalently, no two tokens in one literal claim the same conflict group. A literal
+that breaks it already contains dead code — one of the two tokens is dropped at render — so the
+rule costs nothing and buys everything below.
+
+**The gate enforces it; this paragraph does not.** `validate-class-order`
+(`src/cli/pkg/gate/checks/class-order.ts`) walks every class position — a `class` / `className`
+attribute, and every argument to `cn`, `asClass` and `cva` — and judges each literal with the real
+`cn`, imported rather than reimplemented, for the reason §3d gives about a second copy of the
+table. The check ships to consuming apps in `forgeChecks`, so an app gets the same guarantee
+against the same resolver.
+
+**What that buys: the formatter may sort classes.** `.oxfmtrc.json` enables `sortTailwindcss` over
+`cn` and `cva` calls, so forge's own literals are held in Tailwind's canonical order. A sorter
+**reorders tokens within one literal and never moves a token between literals**, so under the
+invariant sorting is provably output-preserving.
+
+**The sorter reads the same stylesheet an app compiles**, `src/ui/assets/css/tailwind.css` — the
+shipped entry that is `@import "tailwindcss"` above `forge.css`. Composition is stated once and
+every frame resolves to it, rather than each tool restating "Tailwind, then forge" in a form of its
+own. A sorter given only upstream Tailwind treats every forge token utility — `bg-primary`,
+`border-input` — as unknown and hoists it to the head of its literal, which is legible as a symptom
+and meaningless as an order.
+
+**What sorting cannot touch, and this is the consumer-facing guarantee:**
+
+- **Cross-argument precedence.** In `cn(BASE, asClass(cls))` the caller still wins, because the two
+  literals are separate arguments and no sorter merges them.
+- **`cva`'s layering.** `base → variants → class` is composition order, not token order inside any
+  one string.
+
+An app formatting its own tree with forge's `.oxfmtrc.json` therefore keeps both properties.
+
+**The formatter deletes exact duplicate tokens.** `preserveDuplicates` defaults to `false`, so
+`class='flex flex p-4'` is rewritten to `class='flex p-4'`. That is the same rendered result, since
+a repeated token adds nothing to the cascade.
+
+**Only literals in a class position are sorted.** A bare `const FOO = "…"` sits in no such
+position, so forge's own class consts are wrapped — `const INPUT_BASE = cn("…")` — which reaches
+them with a call the invariant proves is the identity. Two files cannot be: `src/http/fragment.ts`
+and `src/ui/contracts/menu-contract.ts` would need an `http → ui/core` or `ui/contracts → ui/core`
+import, and each closes a namespace cycle. Their literals are unsorted and unreachable by any
+sorter, which is exactly why they are also unbreakable by one.
+
+**A coverage-boundary amendment to §3d.** `text-wrap`, `text-nowrap`, `text-balance` and
+`text-pretty` are their own group, matched as exact entries because the value space is closed
+(§3d); `font-stretch-` is its own prefix group. Neither is a colour or a family, so
+`cn("text-muted-foreground text-pretty")` keeps both tokens. This is the narrowing kind of edit
+§3d describes: two families are resolved correctly rather than misfiled, and nothing the table
+drops today starts surviving.
 
 ---
 

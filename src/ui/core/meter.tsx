@@ -31,7 +31,7 @@ const MeterLabel: FC<JSX.IntrinsicElements["label"] & { for: string }> = ({
 );
 
 const MeterValue: FC<JSX.IntrinsicElements["span"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <span data-slot={slotToken("meter-value", inherited)} class={cn("text-sm tabular-nums text-muted-foreground", asClass(cls))} {...rest}>
+  <span data-slot={slotToken("meter-value", inherited)} class={cn("text-sm text-muted-foreground tabular-nums", asClass(cls))} {...rest}>
     {children}
   </span>
 );

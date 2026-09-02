@@ -70,7 +70,7 @@ interface LogFilterBarProps {
 /** Filter form for the log viewer — level selector, text search, and HTMX-powered submit. @internal */
 export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAction, icon }) => (
   <form
-    class='flex flex-wrap sm:flex-nowrap items-end gap-2'
+    class='flex flex-wrap items-end gap-2 sm:flex-nowrap'
     {...hxAttrs({
       get: formAction,
       target: `#${targetId}`,
@@ -79,11 +79,11 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
       indicator: `#${targetId}`,
       disabledElt: "find button[type='submit']",
     })}>
-    <FormField name='q' class='flex-1 min-w-xs'>
+    <FormField name='q' class='min-w-xs flex-1'>
       <FormField.Label name='q'>Search</FormField.Label>
       <Input name='q' type='search' placeholder='message, prefix, requestId…' value={q ?? ""} field={{ name: "q" }} />
     </FormField>
-    <FormField name='level' class='flex-1 max-w-xs'>
+    <FormField name='level' class='max-w-xs flex-1'>
       <FormField.Label name='level'>Level</FormField.Label>
       <Select name='level' field={{ name: "level" }} icon={icon}>
         <Select.Option value='' selected={!level}>
@@ -124,11 +124,11 @@ interface LogTableProps {
 export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAction, tbodyId, level, q, failed }) => (
   <table class='w-full border-collapse text-sm'>
     <thead>
-      <tr class='border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
-        <th class='py-2 pl-4 pr-4 whitespace-nowrap'>Timestamp</th>
+      <tr class='border-b border-border text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
+        <th class='py-2 pr-4 pl-4 whitespace-nowrap'>Timestamp</th>
         <th class='py-2 pr-4'>Level</th>
         <th class='py-2 pr-4'>Prefix</th>
-        <th class='py-2 pr-4 max-w-xs'>Message</th>
+        <th class='max-w-xs py-2 pr-4'>Message</th>
         <th class='py-2 pr-4'>Request ID</th>
       </tr>
     </thead>
@@ -209,12 +209,12 @@ const LogRowPair: FC<{ row: LogRow; loadMoreAction: string }> = ({ row, loadMore
   return (
     <>
       <tr class='border-b border-border hover:bg-accent'>
-        <td class='py-2 pl-4 pr-4 font-mono text-xs tabular-nums whitespace-nowrap text-muted-foreground'>{row.timestamp}</td>
+        <td class='py-2 pr-4 pl-4 font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums'>{row.timestamp}</td>
         <td class='py-2 pr-4'>
           <LogLevelBadge level={row.level} />
         </td>
         <td class='py-2 pr-4 font-mono text-xs text-muted-foreground'>{row.prefix}</td>
-        <td class='py-2 pr-4 max-w-xs truncate text-foreground'>
+        <td class='max-w-xs truncate py-2 pr-4 text-foreground'>
           <Button
             variant='ghost'
             size='sm'
@@ -338,7 +338,7 @@ export const LogDetailRow: FC<{ record: LogRecord | null; rowKey: string }> = ({
       {record === null ? (
         <span class='text-sm text-muted-foreground'>Log entry not found or expired.</span>
       ) : (
-        <pre class='max-w-2xl overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-muted p-2 font-mono text-xs text-foreground'>
+        <pre class='max-w-2xl overflow-x-auto rounded-lg bg-muted p-2 font-mono text-xs break-all whitespace-pre-wrap text-foreground'>
           {JSON.stringify(record, null, 2)}
         </pre>
       )}
@@ -375,7 +375,7 @@ export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"
             `min-h-0` lifts the automatic minimum size that would otherwise floor each box at its content.
             `max-h-dvh` is the fallback for a consumer whose layout is not a flex column, where `flex-1`
             is inert: the table then scrolls in a viewport-tall box rather than growing without bound. */}
-        <ScrollArea class='flex min-h-0 max-h-dvh flex-1 flex-col'>
+        <ScrollArea class='flex max-h-dvh min-h-0 flex-1 flex-col'>
           <ScrollArea.Viewport label='Log entries' class='min-h-0 flex-1'>
             <LogTable
               rows={data.rows}

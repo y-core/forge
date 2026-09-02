@@ -48,9 +48,9 @@ const fieldVariants = cva({
   base: "group/field flex w-full gap-3 data-[invalid]:text-destructive",
   variants: {
     orientation: {
-      horizontal: "flex-row items-start [&>[data-slot~=field-label]]:flex-auto [&>[data-slot~=field-content]]:flex-1",
+      horizontal: "flex-row items-start [&>[data-slot~=field-content]]:flex-1 [&>[data-slot~=field-label]]:flex-auto",
       responsive:
-        "flex-col [&>*]:w-full @md/field-group:flex-row @md/field-group:items-start @md/field-group:[&>*]:w-auto @md/field-group:[&>[data-slot~=field-label]]:flex-auto @md/field-group:[&>[data-slot~=field-content]]:flex-1",
+        "flex-col @md/field-group:flex-row @md/field-group:items-start [&>*]:w-full @md/field-group:[&>*]:w-auto @md/field-group:[&>[data-slot~=field-content]]:flex-1 @md/field-group:[&>[data-slot~=field-label]]:flex-auto",
       vertical: "flex-col [&>*]:w-full",
     },
   },
@@ -58,8 +58,9 @@ const fieldVariants = cva({
 });
 
 /** Shared Tailwind class string for FieldLabel and FieldTitle. */
-export const FIELD_LABEL_CLASSES =
-  "flex w-fit items-center gap-2 text-sm font-medium leading-snug text-foreground group-data-[disabled]/field:opacity-50";
+export const FIELD_LABEL_CLASSES = cn(
+  "flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50",
+);
 
 // HTML's ASCII whitespace set, deliberately not JS `\s`: U+00A0 and the Unicode spaces are legal id
 // characters that no parser treats as a token separator.

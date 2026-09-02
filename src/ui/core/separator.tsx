@@ -13,7 +13,7 @@ export const Separator: FC<SeparatorProps> = ({ orientation = "horizontal", clas
   <hr
     data-slot={slotToken("separator", inherited)}
     aria-orientation={orientation}
-    class={cn(orientation === "horizontal" ? "h-px w-full" : "self-stretch w-px", "border-0 bg-border", cls)}
+    class={cn(orientation === "horizontal" ? "h-px w-full" : "w-px self-stretch", "border-0 bg-border", cls)}
     {...rest}
   />
 );

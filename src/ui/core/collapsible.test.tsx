@@ -7,12 +7,10 @@ import { createIcon } from "./icon";
 const icon = createIcon("/sprite.svg");
 
 const TRIGGER_BASE =
-  "flex cursor-pointer list-none select-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none " +
-  "hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring";
+  "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none select-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring";
 
 const CHEVRON =
-  '<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 ' +
-  'group-open/collapsible-item:rotate-180" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg>';
+  '<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground group-open/collapsible-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg>';
 
 describe("Collapsible", () => {
   it("renders a closed details carrying only its slot and class", async () => {
@@ -41,8 +39,7 @@ describe("Collapsible", () => {
 
   it("escapes arbitrary data-* and aria-* values spread onto the root", async () => {
     expect(await render(<Collapsible data-note={`R&D's "advanced" <opts>`} aria-label={`R&D's options`} />)).toBe(
-      '<details data-slot="collapsible" class="group/collapsible-item" ' +
-        'data-note="R&amp;D&#39;s &quot;advanced&quot; &lt;opts&gt;" aria-label="R&amp;D&#39;s options"></details>',
+      '<details data-slot="collapsible" class="group/collapsible-item" data-note="R&amp;D&#39;s &quot;advanced&quot; &lt;opts&gt;" aria-label="R&amp;D&#39;s options"></details>',
     );
   });
 
@@ -57,8 +54,7 @@ describe("Collapsible", () => {
     ).toBe(
       '<details data-slot="collapsible" open class="group/collapsible-item">' +
         `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>` +
-        '<div data-slot="collapsible-panel" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div>' +
-        "</details>",
+        '<div data-slot="collapsible-panel" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div></details>',
     );
   });
 });
@@ -113,8 +109,7 @@ describe("Collapsible.Panel", () => {
         </Collapsible.Panel>,
       ),
     ).toBe(
-      '<div data-slot="collapsible-panel filters-panel" class="px-1 pb-2 text-sm text-muted-foreground pt-1">' +
-        "R&amp;D&#39;s &lt;options&gt;</div>",
+      '<div data-slot="collapsible-panel filters-panel" class="px-1 pb-2 text-sm text-muted-foreground pt-1">R&amp;D&#39;s &lt;options&gt;</div>',
     );
   });
 });

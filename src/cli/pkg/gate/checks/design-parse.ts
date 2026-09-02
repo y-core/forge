@@ -1,3 +1,5 @@
+import { blankComments } from "./modern-css-parse";
+
 /** A rule the design corpus states and this tooling enforces. */
 export type RuleId =
   | "forge-ui-color-token-only"
@@ -165,6 +167,66 @@ function quotedStrings(line: string): string[] {
     out.push(match[1] ?? match[2] ?? match[3] ?? "");
   }
   return out;
+}
+
+/** One class-shaped string literal and the line it starts on. */
+export interface ClassLiteral {
+  /** 1-indexed line the literal's opening quote sits on. */
+  line: number;
+  /** The literal's contents, quotes stripped. */
+  text: string;
+}
+
+const CLASS_POSITION_GLOBAL = /\bclass(?:Name)?\s*[=:]\s*|\bcn\(|\basClass\(|\bcva\(/g;
+
+const QUOTED = /"([^"]*)"|'([^']*)'|`([^`]*)`/g;
+
+const ANCHORED_QUOTED = /^(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/;
+
+function closingParen(source: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "(") depth++;
+    else if (source[i] === ")" && --depth === 0) return i;
+  }
+  return source.length - 1;
+}
+
+/** Every string literal sitting in a class position: a `class` / `className` attribute or property,
+ *  or an argument to `cn` / `asClass` / `cva`. A call's whole balanced argument list is scanned, so
+ *  a wrapped `cn(…)` list and a `cva` variant map are both reached. */
+export function findClassLiterals(source: string): ClassLiteral[] {
+  const scanned = blankComments(source);
+  const lineOf = (index: number): number => scanned.slice(0, index).split("\n").length;
+  const found: ClassLiteral[] = [];
+
+  for (const match of scanned.matchAll(CLASS_POSITION_GLOBAL)) {
+    const after = match.index + match[0].length;
+    if (match[0].endsWith("(")) {
+      // A call takes everything up to its own closing paren, which is what reaches a wrapped
+      // argument list and a `cva` variant map.
+      const span = scanned.slice(after, closingParen(scanned, after - 1));
+      let end = -1;
+      for (const quoted of span.matchAll(QUOTED)) {
+        const text = quoted[1] ?? quoted[2] ?? quoted[3] ?? "";
+        const previous = found.at(-1);
+        // `"a " + "b"` is one class string wrapped for line length, so the pair is judged joined:
+        // a conflict spanning the `+` is as dead as one inside a single literal.
+        if (previous !== undefined && end !== -1 && /^\s*\+\s*$/.test(span.slice(end, quoted.index))) {
+          found[found.length - 1] = { line: previous.line, text: previous.text + text };
+        } else {
+          found.push({ line: lineOf(after + quoted.index), text });
+        }
+        end = quoted.index + quoted[0].length;
+      }
+      continue;
+    }
+    // An attribute takes only the literal assigned to it; `class={cn(…)}` is reached by the `cn(`
+    // match instead.
+    const quoted = ANCHORED_QUOTED.exec(scanned.slice(after));
+    if (quoted !== null) found.push({ line: lineOf(after), text: quoted[1] ?? quoted[2] ?? quoted[3] ?? "" });
+  }
+  return found;
 }
 
 /** A `/* design-allow: <rule> — <reason> *​/` comment on `line` or the one above it. The reason is

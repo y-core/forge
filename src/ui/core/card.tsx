@@ -25,7 +25,7 @@ const CardHeader: FC<CardProps> = ({ class: cls, children, "data-slot": inherite
 );
 
 const CardTitle: FC<CardProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("card-title", inherited)} class={cn("font-semibold leading-none text-card-foreground", cls)} {...rest}>
+  <div data-slot={slotToken("card-title", inherited)} class={cn("leading-none font-semibold text-card-foreground", cls)} {...rest}>
     {children}
   </div>
 );

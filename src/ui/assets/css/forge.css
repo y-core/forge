@@ -2,11 +2,14 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    The one import a consuming app needs:
 
-     @import "tailwindcss";
-     @import "@y-core/forge/ui/assets/css/forge.css";
+     @import "@y-core/forge/ui/assets/css/tailwind.css";
 
-   That is the whole setup. There is nothing else to supply — no ramp, no custom variant, no theme
-   file. Everything below is imported for you, and each file has exactly one job:
+   That file is Tailwind composed with this one. Import this file directly instead only to pass
+   Tailwind import options of your own — `@import "tailwindcss" source(none);` above it — which is
+   why nothing here imports Tailwind. Take one path or the other, never both.
+
+   Either way that is the whole setup. There is nothing else to supply — no ramp, no custom variant,
+   no theme file. Everything below is imported for you, and each file has exactly one job:
 
      theme-neutral.css     the default colour scheme — `--gray-1` … `--gray-12`, each declared once
      theme-colors.css      the four status hues and the absolute alpha ramps — fixed, not themeable

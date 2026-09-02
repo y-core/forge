@@ -8,5 +8,5 @@ interface SkeletonProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
 
 /** A pulsing placeholder block standing in for content that has not loaded. @public */
 export const Skeleton: FC<SkeletonProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("skeleton", inherited)} aria-hidden='true' class={cn("motion-safe:animate-pulse rounded-md bg-muted", cls)} {...rest} />
+  <div data-slot={slotToken("skeleton", inherited)} aria-hidden='true' class={cn("rounded-md bg-muted motion-safe:animate-pulse", cls)} {...rest} />
 );

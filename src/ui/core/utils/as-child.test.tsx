@@ -16,25 +16,20 @@ const MESSAGE = "test compound with asChild requires exactly one JSX element chi
 const base = { slot: "probe", class: "probe-class", props: {}, message: MESSAGE };
 
 const BUTTON_BASE =
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors";
 const TOOLBAR_ITEM_CLASS = `${BUTTON_BASE} text-foreground hover:bg-accent h-8 px-3 text-sm`;
 
 const MENU_WITH_TOOLTIP_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const POPOVER_WITH_TOOLTIP_CLASS = "list-none cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const TOOLBAR_ITEM_WITH_TOOLTIP_CLASS =
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none " +
-  "disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm " +
-  "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors text-foreground hover:bg-accent h-8 px-3 text-sm cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const MENU_ITEM_WITH_TOOLTIP_CLASS =
   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 " +
   "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
   "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 " +
   "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS =
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors " +
-  "focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent " +
-  "h-8 px-3 text-sm cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors text-foreground hover:bg-accent h-8 px-3 text-sm cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 describe("cloneAsChild — button options the compound never set", () => {
   it("leaves a child button's own type alone when no type option is given", async () => {
@@ -132,7 +127,7 @@ describe("Toolbar.Link asChild — the compound that sets neither option", () =>
         </Toolbar.Link>,
       ),
     ).toBe(
-      '<button type="button" data-toolbar-item="" class="inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-foreground hover:bg-accent h-8 px-3 text-sm underline-offset-4 hover:underline" data-slot="toolbar-link">Docs</button>',
+      '<button type="button" data-toolbar-item="" class="inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors text-foreground hover:bg-accent h-8 px-3 text-sm underline-offset-4 hover:underline" data-slot="toolbar-link">Docs</button>',
     );
   });
 });

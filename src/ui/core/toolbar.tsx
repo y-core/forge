@@ -40,7 +40,7 @@ interface ToolbarSeparatorProps extends Omit<JSX.IntrinsicElements["hr"], "child
   orientation?: ToolbarOrientation;
 }
 
-const ROOT_BASE = "flex items-center gap-1";
+const ROOT_BASE = cn("flex items-center gap-1");
 
 function itemAttrs(pressed: boolean | undefined): Record<string, string> {
   return {
@@ -133,7 +133,7 @@ const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, "data-slot": inherite
     {...itemAttrs(undefined)}
     class={cn(
       "rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground",
-      "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      "placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       asClass(cls),
     )}
     {...rest}
@@ -142,7 +142,7 @@ const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, "data-slot": inherite
 
 /** Groups related items inside a toolbar. */
 const ToolbarGroup: FC<ToolbarGroupProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <fieldset data-slot={slotToken("toolbar-group", inherited)} class={cn("inline-flex items-center gap-1 border-0 m-0 p-0", asClass(cls))} {...rest}>
+  <fieldset data-slot={slotToken("toolbar-group", inherited)} class={cn("m-0 inline-flex items-center gap-1 border-0 p-0", asClass(cls))} {...rest}>
     {children}
   </fieldset>
 );

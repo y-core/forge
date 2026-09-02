@@ -12,6 +12,7 @@ import { resolveAppRoot } from "../src/cli/core/mod";
 import {
   browserStep,
   changelogStep,
+  classOrderStep,
   coLocationStep,
   contrastStep,
   cssSourcesStep,
@@ -136,6 +137,18 @@ export const STEPS: readonly Step[] = [
   // samples are counter-examples quoting the exact patterns this check forbids, so scanning it would
   // flag its own documentation.
   modernCssStep({ root: ROOT, sources: ["src/ui", "!src/ui/design"] }),
+  // The excluded specs pin `cn`'s own resolution or this check's own detection, so their fixtures
+  // are deliberately self-conflicting literals — the very input the rule forbids everywhere else.
+  classOrderStep({
+    root: ROOT,
+    sources: [
+      "src",
+      "!src/cli/pkg/gate/checks/class-order.test.ts",
+      "!src/cli/pkg/gate/checks/design-parse.test.ts",
+      "!src/cli/pkg/gate/checks/jsx-parse.test.ts",
+      "!src/ui/core/form.test.tsx",
+    ],
+  }),
   contrastStep({
     root: ROOT,
     cssDir: "src/ui/assets/css",

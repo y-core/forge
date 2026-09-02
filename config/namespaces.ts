@@ -34,7 +34,10 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   // `assets` and `cli/cf` are the asset-root check's two halves: it loads the assets config to learn
   // what is written to the asset tree's root, and reuses `cli/cf`'s JSONC parser to read the
   // wrangler exclusions it is compared against. Neither target reaches back into `cli/pkg`.
-  "cli/pkg": { assets: "value", "cli/cf": "value", "cli/core": "value", "cli/term": "value" },
+  // `ui/core` is the class-order check's oracle: it judges a literal with the real `cn`, so the
+  // conflict model has one home. `ui/core` reaches only `form`, `jsx`, `ui/client` and
+  // `ui/contracts`, so the edge cannot close a cycle.
+  "cli/pkg": { assets: "value", "cli/cf": "value", "cli/core": "value", "cli/term": "value", "ui/core": "value" },
   "cli/cf": { "cli/core": "value", "cli/term": "value", site: "value" },
   jsx: { http: "value" },
   // Type-only on purpose: `storage/kv → logging` is the runtime edge, so a value import here would

@@ -29,7 +29,7 @@ const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ icon: Icon, class: cl
   <summary
     data-slot={slotToken("collapsible-trigger", inherited)}
     class={cn(
-      "flex cursor-pointer list-none select-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none",
+      "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none select-none",
       "hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
       asClass(cls),
     )}
@@ -38,7 +38,7 @@ const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ icon: Icon, class: cl
     <Icon
       name='chevron-down'
       viewBox='0 0 24 24'
-      class='size-4 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 group-open/collapsible-item:rotate-180'
+      class='size-4 shrink-0 text-muted-foreground group-open/collapsible-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200'
     />
   </summary>
 );

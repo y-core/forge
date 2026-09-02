@@ -22,7 +22,7 @@ describe("Card", () => {
         </Card>,
       ),
     ).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5"><div data-slot="card-title" class="font-semibold leading-none text-card-foreground">Title</div><div data-slot="card-description" class="text-sm text-muted-foreground">Description</div><div data-slot="card-action" class="col-start-2 row-span-2 row-start-1 self-start justify-self-end">Action</div></div></div>',
+      '<div data-slot="card" class="flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5"><div data-slot="card-title" class="leading-none font-semibold text-card-foreground">Title</div><div data-slot="card-description" class="text-sm text-muted-foreground">Description</div><div data-slot="card-action" class="col-start-2 row-span-2 row-start-1 self-start justify-self-end">Action</div></div></div>',
     );
   });
 

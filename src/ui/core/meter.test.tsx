@@ -41,7 +41,7 @@ describe("Meter", () => {
       `<div data-slot="meter" class="${ROOT_BASE}">` +
         '<label data-slot="meter-label" for="disk" class="text-sm font-medium text-foreground">Disk usage</label>' +
         '<meter data-slot="meter-track" class="h-2 w-full" id="disk" value="0.72" low="0.3" high="0.8" optimum="0.2"></meter>' +
-        '<span data-slot="meter-value" class="text-sm tabular-nums text-muted-foreground">72%</span>' +
+        '<span data-slot="meter-value" class="text-sm text-muted-foreground tabular-nums">72%</span>' +
         "</div>",
     );
   });
@@ -86,13 +86,13 @@ describe("Meter.Track", () => {
 describe("Meter.Value", () => {
   it("renders the readout span with its base classes", async () => {
     expect(await render(<Meter.Value>72%</Meter.Value>)).toBe(
-      '<span data-slot="meter-value" class="text-sm tabular-nums text-muted-foreground">72%</span>',
+      '<span data-slot="meter-value" class="text-sm text-muted-foreground tabular-nums">72%</span>',
     );
   });
 
   it("escapes interpolated children", async () => {
     expect(await render(<Meter.Value>{`>72% of R&D's quota`}</Meter.Value>)).toBe(
-      '<span data-slot="meter-value" class="text-sm tabular-nums text-muted-foreground">&gt;72% of R&amp;D&#39;s quota</span>',
+      '<span data-slot="meter-value" class="text-sm text-muted-foreground tabular-nums">&gt;72% of R&amp;D&#39;s quota</span>',
     );
   });
 });

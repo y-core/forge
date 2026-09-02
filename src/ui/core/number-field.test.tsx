@@ -4,13 +4,10 @@ import { render } from "../../testing/render";
 import { NumberField } from "./number-field";
 
 const INPUT_BASE =
-  "w-20 rounded-md border border-input bg-background px-2 py-1 text-sm tabular-nums text-foreground " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+  "w-20 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50";
 
 const BUTTON_BASE =
-  "inline-flex size-8 items-center justify-center rounded-md border border-input bg-background " +
-  "text-foreground cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring " +
-  "disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex size-8 items-center justify-center rounded-md border border-input bg-background cursor-pointer text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
 describe("NumberField", () => {
   it("renders the root row with the scope the controller resumes on", async () => {
@@ -33,8 +30,7 @@ describe("NumberField", () => {
 
   it("escapes arbitrary data-* and aria-* values spread onto the root", async () => {
     expect(await render(<NumberField data-note={`R&D's "count" <n>`} aria-label={`R&D's count`} />)).toBe(
-      '<div data-slot="number-field" data-scope="number-field" class="inline-flex items-center gap-1" ' +
-        'data-note="R&amp;D&#39;s &quot;count&quot; &lt;n&gt;" aria-label="R&amp;D&#39;s count"></div>',
+      '<div data-slot="number-field" data-scope="number-field" class="inline-flex items-center gap-1" data-note="R&amp;D&#39;s &quot;count&quot; &lt;n&gt;" aria-label="R&amp;D&#39;s count"></div>',
     );
   });
 
@@ -88,9 +84,7 @@ describe("NumberField.Input", () => {
 
   it("merges a caller class and appends an inherited slot token", async () => {
     expect(await render(<NumberField.Input class='w-32' data-slot='quantity-input' />)).toBe(
-      '<input type="number" data-slot="number-field-input quantity-input" class="rounded-md border border-input bg-background ' +
-        "px-2 py-1 text-sm tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
-        'disabled:cursor-not-allowed disabled:opacity-50 w-32">',
+      '<input type="number" data-slot="number-field-input quantity-input" class="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 w-32">',
     );
   });
 });
@@ -110,10 +104,7 @@ describe("NumberField.Decrement", () => {
 
   it("lets a caller replace the default label in place, and override the conflicting size utility", async () => {
     expect(await render(<NumberField.Decrement aria-label={`Fewer R&D's`} class='size-6' data-slot='quantity-down' />)).toBe(
-      '<button type="button" data-slot="number-field-decrement quantity-down" aria-label="Fewer R&amp;D&#39;s" ' +
-        'class="inline-flex items-center justify-center rounded-md border border-input bg-background ' +
-        "text-foreground cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring " +
-        'disabled:pointer-events-none disabled:opacity-50 size-6">−</button>',
+      '<button type="button" data-slot="number-field-decrement quantity-down" aria-label="Fewer R&amp;D&#39;s" class="inline-flex items-center justify-center rounded-md border border-input bg-background cursor-pointer text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 size-6">−</button>',
     );
   });
 });

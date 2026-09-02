@@ -38,7 +38,7 @@ const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, "da
     command='toggle-popover'
     commandfor={id}
     {...invokerAttrs(id)}
-    class={cn("list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls))}
+    class={cn("cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls))}
     {...props}>
     {children}
   </button>

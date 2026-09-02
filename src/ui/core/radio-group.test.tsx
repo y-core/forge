@@ -20,7 +20,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
         </RadioGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="radio-group" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" id="field-plan-free" name="plan" value="free" class="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Free</label></fieldset>',
+      '<fieldset data-slot="radio-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" id="field-plan-free" name="plan" value="free" class="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Free</label></fieldset>',
     );
   });
 
@@ -32,7 +32,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
         </RadioGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="radio-group" aria-describedby="field-plan-description" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-plan-description">Change it any time.</p></fieldset>',
+      '<fieldset data-slot="radio-group" aria-describedby="field-plan-description" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-plan-description">Change it any time.</p></fieldset>',
     );
   });
 
@@ -44,7 +44,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
         </RadioGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="radio-group" aria-describedby="field-plan-error" data-invalid="" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-destructive" id="field-plan-error" role="alert">Choose a plan.</p></fieldset>',
+      '<fieldset data-slot="radio-group" aria-describedby="field-plan-error" data-invalid="" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-destructive" id="field-plan-error" role="alert">Choose a plan.</p></fieldset>',
     );
   });
 
@@ -72,7 +72,7 @@ describe("RadioGroup — a name must be a single id token", () => {
         </RadioGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="radio-group" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="pets" value="a b" class="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">A B</label></fieldset>',
+      '<fieldset data-slot="radio-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="pets" value="a b" class="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">A B</label></fieldset>',
     );
   });
 
@@ -86,7 +86,7 @@ describe("RadioGroup — a name must be a single id token", () => {
     );
 
     expect(html).toBe(
-      '<fieldset data-slot="radio-group" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="fav pet" value="cat" class="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Cat</label></fieldset>',
+      '<fieldset data-slot="radio-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="fav pet" value="cat" class="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Cat</label></fieldset>',
     );
     expect(idsAndRefs(html)).toEqual([]);
   });
@@ -101,7 +101,7 @@ describe("RadioGroup — a name must be a single id token", () => {
     );
 
     expect(html).toBe(
-      '<fieldset data-slot="radio-group" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="plan" value="free" class="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Free</label></fieldset>',
+      '<fieldset data-slot="radio-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="plan" value="free" class="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Free</label></fieldset>',
     );
     expect(idsAndRefs(html)).toEqual([]);
   });
@@ -129,7 +129,7 @@ describe("RadioGroup — a name must be a single id token", () => {
         </RadioGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="radio-group" data-orientation="vertical" class="flex gap-2 border-0 m-0 p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick one.</p></fieldset>',
+      '<fieldset data-slot="radio-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick one.</p></fieldset>',
     );
   });
 });

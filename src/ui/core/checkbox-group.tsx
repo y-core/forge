@@ -52,7 +52,7 @@ const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
       disabled={disabled}
       {...(describedBy !== undefined ? { "aria-describedby": describedBy } : {})}
       {...stateAttrs({ invalid, disabled, orientation })}
-      class={cn("flex gap-2 border-0 m-0 p-0", orientation === "vertical" ? "flex-col" : "flex-row flex-wrap", asClass(cls))}
+      class={cn("m-0 flex gap-2 border-0 p-0", orientation === "vertical" ? "flex-col" : "flex-row flex-wrap", asClass(cls))}
       {...rest}>
       {children}
     </fieldset>

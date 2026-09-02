@@ -20,7 +20,7 @@ describe("Popover", () => {
 });
 
 describe("Popover.Trigger — data-slot", () => {
-  const TRIGGER_CLASS = "list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const TRIGGER_CLASS = "cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
   it("emits its own token alone when none was inherited", async () => {
     expect(await render(<Popover.Trigger id='p' />)).toBe(
@@ -44,13 +44,13 @@ describe("Popover.Trigger — data-slot", () => {
 describe("Popover.Trigger", () => {
   it("renders a <button> invoker with command=toggle-popover targeting the content id", async () => {
     expect(await render(<Popover.Trigger id='menu-1'>Open</Popover.Trigger>)).toBe(
-      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">Open</button>',
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring">Open</button>',
     );
   });
 
   it("uses the id only as commandfor, never as the button's own id", async () => {
     expect(await render(<Popover.Trigger id='menu-1'>Open</Popover.Trigger>)).toBe(
-      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">Open</button>',
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring">Open</button>',
     );
   });
 
@@ -62,7 +62,7 @@ describe("Popover.Trigger", () => {
         </Popover.Trigger>,
       ),
     ).toBe(
-      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring my-trigger">Click</button>',
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring my-trigger">Click</button>',
     );
   });
 });
@@ -159,7 +159,7 @@ describe("Popover composition", () => {
         </Popover>,
       ),
     ).toBe(
-      '<div data-slot="popover" class="relative inline-block"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-file" aria-controls="menu-file" aria-expanded="false" class="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring">Open menu</button><div id="menu-file" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md"><div>Item 1</div></div></div>',
+      '<div data-slot="popover" class="relative inline-block"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-file" aria-controls="menu-file" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring">Open menu</button><div id="menu-file" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md"><div>Item 1</div></div></div>',
     );
   });
 });

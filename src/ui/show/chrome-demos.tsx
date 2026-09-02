@@ -50,7 +50,7 @@ const TOP_CONFIG: ToolbarDefinition<ChromeAction, ChromeGlyph> = { groups: [{ it
 const ChromeToolbarSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
   <CatalogSection id='chrome-toolbar' title='Chrome Toolbar'>
     <Resumable name='show-toolbar' id={TOOLBAR_SCOPE_ID} class='w-full space-y-4'>
-      <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
         The rail is built from a <code>ToolbarDefinition</code>: its items dispatch actions into the enclosing scope, which owns the panel beside
         it. The second rail is the same definition at <code>placement="top"</code>.
       </p>
@@ -67,7 +67,7 @@ const ChromeToolbarSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
           The panel the rail drives — fit it to its content, hide it, or reset it.
         </div>
       </div>
-      <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
         The <code>Slot</code> badge is a <code>slot</code> item: the seam where caller-supplied markup sits in the rail instead of a button.
       </p>
       <Toolbar
@@ -78,7 +78,7 @@ const ChromeToolbarSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
         commandTarget={TOOLBAR_SCOPE_ID}
         aria-label='Panel tools (horizontal)'
       />
-      <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
         The other two placements complete the set, on the same definition as the first rail. <code>placement</code> decides the axis the items run
         along, the side each separator is drawn across, and the edge a flyout opens away from — which is where the rail publishes it.
       </p>
@@ -141,7 +141,7 @@ const navHref = () => "#chrome-navbar";
 const ChromeNavbarSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
   <CatalogSection id='chrome-navbar' title='Chrome Navbar'>
     <Resumable name='show-navbar' class='w-full space-y-4'>
-      <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
         The bar is built from a <code>NavDefinition</code>: each <code>href</code> is a route-map key resolved through <code>resolveHref</code>, the
         trailing item is a <code>NavSlot</code>, and the Admin link is filtered — it starts hidden until its token is active. All four placements
         are below; <code>class='static'</code> is what keeps a placed bar inline here rather than pinned to the viewport.
@@ -153,7 +153,7 @@ const ChromeNavbarSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
           </Button>
         ))}
       </div>
-      <p class='w-full max-w-prose text-xs text-muted-foreground text-pretty'>
+      <p class='w-full max-w-prose text-xs text-pretty text-muted-foreground'>
         Each button dispatches the <code>navbar:filters</code> document event, which every navbar scope on the page listens for.
       </p>
       <div class='w-full rounded-lg border border-dashed border-border'>
@@ -183,7 +183,7 @@ const ChromeNavbarSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
           class='static max-h-none'
         />
       </div>
-      <p class='w-full max-w-prose text-sm text-muted-foreground text-pretty'>
+      <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
         <code>collapsedAs='drawer'</code> changes only what the collapsed panel does below <code>md</code>: it leaves the flow and slides in from
         the edge <code>placement</code> implies, over a backdrop that closes it. Narrow the window past the breakpoint to see it. The toggle stays a
         hamburger here — the panel pair is for a <code>collapsible='always'</code> rail, which the two rails framing this page are.

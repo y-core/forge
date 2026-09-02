@@ -1,0 +1,11 @@
+/* modern-css-allow: forge-ui-platform-layer — this file declares no rule of its own to order; it is two imports, and each imported sheet answers the layering question for itself. */
+/* Tailwind composed with forge — the one import an app needs, and the one statement of that
+   composition. `forge.css` deliberately does not import Tailwind itself: an app that must pass
+   import options (`source(none)`, `prefix(…)`) cannot opt out of an import nested inside a file it
+   does not control, and an app that wrote both lines would get preflight twice. So the composition
+   lives here, above it, and every reference frame reads it from this file — the app's stylesheet,
+   its Tailwind build, and the class sorter `.oxfmtrc.json` configures.
+
+   Import this, or import `forge.css` under a Tailwind import of your own. Never both. */
+@import "tailwindcss";
+@import "./forge.css";

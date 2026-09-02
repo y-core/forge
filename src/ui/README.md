@@ -44,9 +44,24 @@ Components are Tailwind utilities over semantic tokens, so an app needs both the
 the classes those components emit. One import supplies both:
 
 ```css
-@import "tailwindcss";
+@import "@y-core/forge/ui/assets/css/tailwind.css";
+```
+
+That file is `@import "tailwindcss"` followed by `forge.css`, and it is the one place forge states that composition —
+the app's stylesheet, its Tailwind build, and the class sorter in `.oxfmtrc.json` all read it. Import it from anywhere
+in the tree: `@import "tailwindcss"` resolves from the file's own location, which reaches forge's peer dependency under
+pnpm's strict layout and the app's own copy under a hoisted one.
+
+**Take the second path only if you must pass Tailwind import options** — `source(none)`, a prefix — since an option
+cannot be added to an import nested inside a file you do not control:
+
+```css
+@import "tailwindcss" source(none);
 @import "@y-core/forge/ui/assets/css/forge.css";
 ```
+
+`forge.css` never imports Tailwind itself, which is what keeps that path open. **Take one path or the other, never
+both** — two Tailwind imports emit preflight twice.
 
 Tailwind v4's content scan ignores `node_modules`, so `forge.css` carries an `@source` path for every directory under
 `src/ui/` whose files declare a utility class — resolved relative to itself, the only form that survives pnpm, a

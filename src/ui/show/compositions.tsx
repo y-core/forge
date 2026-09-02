@@ -33,7 +33,7 @@ const FEEDBACK_ROWS = [
 const RowTable: FC = () => (
   <table class='w-full border-collapse text-sm'>
     <thead>
-      <tr class='border-b border-border text-start text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+      <tr class='border-b border-border text-start text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
         <th class='py-2 pe-4'>Component</th>
         <th class='py-2'>Subpath</th>
       </tr>
@@ -74,7 +74,7 @@ export const CollectionSurface: FC = () => (
           <Card.Description>A state, not an absence.</Card.Description>
         </Card.Header>
         <Card.Content class='space-y-3'>
-          <p class='max-w-prose text-sm text-muted-foreground text-pretty'>
+          <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
             No components are pinned yet. Pin one from the catalog to start the list.
           </p>
           <Button variant='secondary' size='sm'>
@@ -218,7 +218,7 @@ export const FeedbackSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
 /** The composition band: the catalog's primitives assembled into the surfaces an application ships. @public */
 export const CompositionsSection: FC<{ icon: CompositionIcon }> = ({ icon }) => (
   <section id='compositions' class='scroll-mt-24 space-y-6'>
-    <h2 class='text-xl font-semibold text-foreground border-b border-border pb-2'>Compositions</h2>
+    <h2 class='border-b border-border pb-2 text-xl font-semibold text-foreground'>Compositions</h2>
     <CollectionSurface />
     <SettingsSurface icon={icon} />
     <FeedbackSurface icon={icon} />

@@ -24,7 +24,7 @@ describe("controls/Slider", () => {
   it("renders the output readout when output=true", async () => {
     const out = await render(<Slider bind='fov' min={10} max={120} value={75} output />);
     expect(out).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="10" max="120" value="75" data-field="fov"><output data-slot="slider-output" class="text-sm tabular-nums text-muted-foreground">75</output></div>`,
+      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="10" max="120" value="75" data-field="fov"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">75</output></div>`,
     );
   });
 });

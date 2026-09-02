@@ -61,7 +61,7 @@ type MenuSeparatorProps = Omit<JSX.IntrinsicElements["hr"], "children">;
 
 // No `display` utility: the UA rule `[popover]:not(:popover-open){display:none}` is not
 // `!important`, so an author-origin `display` here leaves a closed popup permanently visible.
-const POPUP_BASE = "z-50 min-w-[10rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none";
+const POPUP_BASE = cn("z-50 min-w-[10rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none");
 const ITEM_BASE = MENU_ITEM_CLASS;
 
 const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
@@ -181,7 +181,7 @@ const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ id, class: cls, child
 
 /** A labelled section of a menu. `<fieldset>` for its implicit `group` role, with the UA box reset. */
 const MenuGroup: FC<MenuGroupProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <fieldset data-slot={slotToken("menu-group", inherited)} class={cn("flex flex-col border-0 m-0 p-0", asClass(cls))} {...rest}>
+  <fieldset data-slot={slotToken("menu-group", inherited)} class={cn("m-0 flex flex-col border-0 p-0", asClass(cls))} {...rest}>
     {children}
   </fieldset>
 );

@@ -4,11 +4,7 @@ import { render } from "../../testing/render";
 import { Toggle } from "./toggle";
 
 const TOGGLE_CLASS =
-  "inline-flex items-center justify-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium " +
-  "bg-transparent text-foreground border border-input cursor-pointer outline-none " +
-  "hover:bg-accent hover:text-accent-foreground has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
-  "has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary " +
-  "has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium cursor-pointer border border-input bg-transparent text-foreground outline-none hover:bg-accent hover:text-accent-foreground has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50";
 
 describe("Toggle", () => {
   it("is a label wrapping a real checkbox, so it toggles and submits with no script", async () => {

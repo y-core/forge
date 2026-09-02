@@ -153,7 +153,7 @@ export const PaginateFragment: FC<{ data: PaginateData }> = ({ data }) => {
     <div id={SHOW_PAGINATE_ID}>
       <table class='w-full border-collapse text-sm'>
         <thead>
-          <tr class='border-b border-border text-start text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+          <tr class='border-b border-border text-start text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
             <th class='py-2 ps-4 pe-4'>#</th>
             <th class='py-2 pe-4'>Component</th>
             <th class='py-2 pe-4'>Category</th>
@@ -305,8 +305,8 @@ export const DependentSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinn
   icon: Icon,
 }) => (
   <CatalogPanel id='demo-dependent' title='Dependent Select' description='Choose a food category — the items select repopulates via HTMX GET.'>
-    <div class='flex flex-wrap gap-6 max-w-sm'>
-      <FormField name='category' class='flex-1 min-w-32 gap-1.5'>
+    <div class='flex max-w-sm flex-wrap gap-6'>
+      <FormField name='category' class='min-w-32 flex-1 gap-1.5'>
         <FormField.Label for='dependent-category'>Category</FormField.Label>
         <Select id='dependent-category' name='category' icon={Icon} {...dependentSelect({ get: paths.dependent, target: `#${SHOW_DEPENDENT_ID}` })}>
           <Select.Option value='fruit'>Fruit</Select.Option>
@@ -314,7 +314,7 @@ export const DependentSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinn
           <Select.Option value='grain'>Grain</Select.Option>
         </Select>
       </FormField>
-      <div class='flex-1 min-w-32'>
+      <div class='min-w-32 flex-1'>
         <DependentFragment data={{ category: "fruit" }} icon={Icon} />
       </div>
     </div>

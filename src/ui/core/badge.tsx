@@ -5,13 +5,13 @@ import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
 const variantClasses = {
-  default: "bg-primary text-primary-foreground border-transparent",
-  secondary: "bg-secondary text-secondary-foreground border-transparent",
-  destructive: "bg-status-danger-strong text-status-danger-strong-foreground border-status-danger-border",
-  info: "bg-status-info-strong text-status-info-strong-foreground border-status-info-border",
-  success: "bg-status-success-strong text-status-success-strong-foreground border-status-success-border",
-  warning: "bg-status-warning-strong text-status-warning-strong-foreground border-status-warning-border",
-  outline: "border-border text-foreground",
+  default: cn("border-transparent bg-primary text-primary-foreground"),
+  secondary: cn("border-transparent bg-secondary text-secondary-foreground"),
+  destructive: cn("border-status-danger-border bg-status-danger-strong text-status-danger-strong-foreground"),
+  info: cn("border-status-info-border bg-status-info-strong text-status-info-strong-foreground"),
+  success: cn("border-status-success-border bg-status-success-strong text-status-success-strong-foreground"),
+  warning: cn("border-status-warning-border bg-status-warning-strong text-status-warning-strong-foreground"),
+  outline: cn("border-border text-foreground"),
 };
 
 export type BadgeVariant = keyof typeof variantClasses;

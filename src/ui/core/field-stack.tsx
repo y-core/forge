@@ -9,7 +9,7 @@ type FieldOrientation = "vertical" | "horizontal";
 
 type FieldProps = Omit<JSX.IntrinsicElements["div"], "children"> & { label: JSXNode; orientation?: FieldOrientation };
 
-const FIELD_LAYOUT: Record<FieldOrientation, string> = { vertical: "flex flex-col gap-1", horizontal: "flex items-center gap-2" };
+const FIELD_LAYOUT: Record<FieldOrientation, string> = { vertical: cn("flex flex-col gap-1"), horizontal: cn("flex items-center gap-2") };
 
 /** A lightweight labelled control with a decorative `<span>` caption and no form semantics. @public */
 export const Field: FC<PropsWithChildren<FieldProps>> = ({

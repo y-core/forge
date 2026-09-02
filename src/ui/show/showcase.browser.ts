@@ -28,7 +28,7 @@ declare global {
     forgeResume: typeof import("../client/resume");
     forgeHtmx: typeof import("../client/htmx");
     /** Renders recorded by the fake Cloudflare script this spec serves. */
-    showcaseTurnstileRenders?: Array<{ sitekey: unknown; size: unknown; theme: unknown }>;
+    showcaseTurnstileRenders?: Array<{ sitekey: unknown; size: unknown; theme: unknown; execution: unknown; appearance: unknown }>;
     /** Swaps this spec has seen settle, counted by `observeHtmxSettles`. */
     showcaseHtmxSettles?: number;
   }
@@ -377,27 +377,37 @@ const FAKE_TURNSTILE_SCRIPT = `
   window.showcaseTurnstileRenders = [];
   window.turnstile = {
     render: function (el, params) {
-      window.showcaseTurnstileRenders.push({ sitekey: params.sitekey, size: params.size, theme: params.theme });
+      window.showcaseTurnstileRenders.push({
+        sitekey: params.sitekey,
+        size: params.size,
+        theme: params.theme,
+        execution: params.execution ?? null,
+        appearance: params.appearance ?? null,
+      });
       return "widget-1";
     },
     reset: function () {},
     remove: function () {},
+    execute: function () {},
   };
 `;
 
-/** Answers Cloudflare's script URL with the recorder above, so no case reaches the real endpoint. */
-async function serveTurnstileScript(page: Page): Promise<{ requests: () => number }> {
-  let requests = 0;
+let turnstileScriptRequests = 0;
+
+/** Cloudflare's script, answered for **every** case in this file rather than only the Turnstile ones.
+ *  The submit-mode demo renders eagerly, so any case that mounts the interactive page injects the
+ *  script tag — and would reach the real endpoint without this. */
+test.beforeEach(async ({ page }) => {
+  turnstileScriptRequests = 0;
   // A URL predicate: the controller injects `?render=explicit`, which an exact URL would miss.
   await page.route(
     (url) => url.href.startsWith(TURNSTILE_SCRIPT_SRC),
     (route) => {
-      requests += 1;
+      turnstileScriptRequests += 1;
       return route.fulfill({ contentType: "application/javascript", body: FAKE_TURNSTILE_SCRIPT });
     },
   );
-  return { requests: () => requests };
-}
+});
 
 /** What the demo widget has done: the renders recorded, and whether the failure message is hidden. */
 function turnstileState(page: Page) {
@@ -410,36 +420,41 @@ function turnstileState(page: Page) {
   );
 }
 
+/** The three `load='focus'` demos, recorded as the fake script sees them. */
+const focusRender = (size: string) => ({ sitekey: TURNSTILE_TEST_KEY, size, theme: "light", execution: null, appearance: null });
+
+/** The fourth demo. `challenge='submit'` takes the eager `load` default deliberately: Cloudflare
+ *  pairs `execution: "execute"` with a widget that is up from page load, so only the challenge
+ *  waits for the press — see `components.tsx`. */
+const SUBMIT_RENDER = { sitekey: TURNSTILE_TEST_KEY, size: "normal", theme: "light", execution: "execute", appearance: "interaction-only" };
+
 test.describe("the showcase's Turnstile demo", () => {
-  // Every demo carries `load='focus'`, against the eager default: see `components.tsx`.
   test("renders the widget once a reader engages with the form it sits in", async ({ page }) => {
     await mountShowcase(page, "interactive");
-    await serveTurnstileScript(page);
 
-    expect(await turnstileState(page)).toEqual({ renders: [], fallbackHidden: true });
+    // The submit-mode demo is already up; the three focus demos have rendered nothing.
+    await expect.poll(() => turnstileState(page)).toEqual({ renders: [SUBMIT_RENDER], fallbackHidden: true });
 
     await page.focus(TURNSTILE_FIELD);
 
-    await expect
-      .poll(() => turnstileState(page))
-      .toEqual({ renders: [{ sitekey: TURNSTILE_TEST_KEY, size: "normal", theme: "light" }], fallbackHidden: true });
+    await expect.poll(() => turnstileState(page)).toEqual({ renders: [SUBMIT_RENDER, focusRender("normal")], fallbackHidden: true });
   });
 
   test("mounts each demo form's own widget, on one shared load of Cloudflare's script", async ({ page }) => {
     await mountShowcase(page, "interactive");
-    const script = await serveTurnstileScript(page);
 
     for (const name of ["turnstile-email", "turnstile-email-compact", "turnstile-email-flexible"]) {
       await page.focus(`${TURNSTILE_SCOPE} input[name='${name}']`);
     }
 
     // One render per demo: the controller used to widen its lookup to the document and resolve all
-    // three scopes to the first widget. Sorted, because the arrival order is not a guarantee — the
-    // first mount injects the script and the others poll for it on their own 100ms interval.
+    // four scopes to the first widget. Keyed by size and execution, because two demos share a size
+    // and the arrival order is not a guarantee — the eager demo injects the script and the three
+    // focus demos poll for it on their own 100ms interval.
     await expect
-      .poll(async () => (await turnstileState(page)).renders.map((entry) => entry.size).sort())
-      .toEqual(["compact", "flexible", "normal"]);
-    expect(script.requests()).toBe(1);
+      .poll(async () => (await turnstileState(page)).renders.map((entry) => `${String(entry.size)}/${entry.execution ?? "render"}`).sort())
+      .toEqual(["compact/render", "flexible/render", "normal/execute", "normal/render"]);
+    expect(turnstileScriptRequests).toBe(1);
   });
 
   test("puts the widget between the field and the submit control", async ({ page }) => {

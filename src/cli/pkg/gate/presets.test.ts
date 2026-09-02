@@ -170,6 +170,7 @@ describe("forgeChecks() — shape", () => {
       "validate-jsx",
       "validate-docs",
       "validate-changelog",
+      "validate-class-order",
     ]);
   });
 

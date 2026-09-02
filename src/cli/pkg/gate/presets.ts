@@ -1,5 +1,17 @@
-import { assetRootStep, changelogStep, docsStep, exportsStep, formatStep, jsxStep, lintStep, testStep, typecheckStep } from "./builders";
+import {
+  assetRootStep,
+  changelogStep,
+  classOrderStep,
+  docsStep,
+  exportsStep,
+  formatStep,
+  jsxStep,
+  lintStep,
+  testStep,
+  typecheckStep,
+} from "./builders";
 import type { ChangelogCheckConfig } from "./checks/changelog";
+import type { ClassOrderCheckConfig } from "./checks/class-order";
 import type { DocsCheckConfig } from "./checks/docs";
 import type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
 import type { JsxCheckConfig } from "./checks/jsx";
@@ -101,6 +113,8 @@ export interface LibraryStepOptions {
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
   /** Merged over the changelog config derived from `pkg`. */
   changelog?: Omit<Partial<ChangelogCheckConfig>, "root">;
+  /** Merged over the class-order config derived from `root`; `sources` defaults to `["src"]`. */
+  classOrder?: Omit<Partial<ClassOrderCheckConfig>, "root">;
 }
 
 /** The baseline table for a library published under an `exports` map, in execution order. @public */
@@ -117,5 +131,6 @@ export function forgeChecks(options: LibraryStepOptions): readonly Step[] {
     jsxStep({ root, ...options.jsx }),
     docsStep({ ...derived, ...options.docs }),
     changelogStep({ root, packageVersion: pkg.version, ...options.changelog }),
+    classOrderStep({ root, sources: ["src"], ...options.classOrder }),
   ];
 }

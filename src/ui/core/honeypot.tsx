@@ -9,7 +9,7 @@ interface HoneypotProps {
 
 /** A decoy text input positioned off-screen that naive bots fill; pair with `isHoneypotFilled`. @public */
 export const Honeypot: FC<HoneypotProps> = ({ field = HONEYPOT_FIELD_DEFAULT }) => (
-  <div aria-hidden='true' class='absolute -left-[9999px] opacity-0 pointer-events-none'>
+  <div aria-hidden='true' class='pointer-events-none absolute -left-[9999px] opacity-0'>
     <input type='text' name={field} tabindex={-1} autocomplete='off' />
   </div>
 );

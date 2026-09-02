@@ -85,7 +85,7 @@ export const Slider: FC<SliderProps> = ({ class: cls, field, output, orientation
   return (
     <div data-slot='slider-wrapper' data-scope={SLIDER_SCOPE} class={cn("flex gap-2", isVertical ? "flex-col items-center" : "items-center")}>
       {control}
-      <output data-slot='slider-output' class='text-sm tabular-nums text-muted-foreground'>
+      <output data-slot='slider-output' class='text-sm text-muted-foreground tabular-nums'>
         {readout}
       </output>
     </div>

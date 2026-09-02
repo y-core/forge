@@ -97,10 +97,10 @@ describe("ShowcaseContent", () => {
     const out = await page();
 
     expect(pagesRail(out).match(/<div data-scope="navbar"[^>]*>/)?.[0]).toBe(
-      '<div data-scope="navbar" class="w-64 shrink-0 border-e border-border max-md:w-auto has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-e-0">',
+      '<div data-scope="navbar" class="w-64 shrink-0 border-e border-border has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-e-0 max-md:w-auto">',
     );
     expect(out.match(/<div data-scope="show-toc"[^>]*>/)?.[0]).toBe(
-      '<div data-scope="show-toc" class="w-64 shrink-0 border-s border-border max-md:w-auto has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-s-0">',
+      '<div data-scope="show-toc" class="w-64 shrink-0 border-s border-border has-[[data-slot~=navbar]:not([open])]:w-auto has-[[data-slot~=navbar]:not([open])]:self-start has-[[data-slot~=navbar]:not([open])]:border-s-0 max-md:w-auto">',
     );
 
     for (const id of ["showcase-pages", "showcase-toc"]) {
@@ -384,8 +384,8 @@ describe("ShowcaseContent", () => {
       "vertical",
     ]);
     expect(bars.filter((tag) => attrOf(tag, "data-orientation") === "vertical").map((tag) => attrOf(tag, "class"))).toEqual([
-      "w-2 h-full rounded-full",
-      "w-2 h-full rounded-full",
+      "h-full w-2 rounded-full",
+      "h-full w-2 rounded-full",
     ]);
   });
 
@@ -393,7 +393,7 @@ describe("ShowcaseContent", () => {
     const body = await bodyOf("separator");
     const rules = [...body.matchAll(/<hr[^>]*>/g)].map((match) => match[0]);
     expect(rules.map((tag) => attrOf(tag, "aria-orientation"))).toEqual(["horizontal", "vertical"]);
-    expect(rules[1]).toBe('<hr data-slot="separator" aria-orientation="vertical" class="self-stretch w-px border-0 bg-border">');
+    expect(rules[1]).toBe('<hr data-slot="separator" aria-orientation="vertical" class="w-px self-stretch border-0 bg-border">');
   });
 
   it("lays the horizontal scroll area's content out as one non-wrapping row", async () => {
