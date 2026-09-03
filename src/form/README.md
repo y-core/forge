@@ -209,8 +209,9 @@ Four properties are load-bearing, and each is why a named-field reader could not
   `body.hasOwnProperty(name)` is `undefined` rather than a method and calling it throws. Use
   `Object.hasOwn(body, name)` or `name in body`.
 
-Text normalization is deliberately **not** done here — it belongs to the schema, via `formText()` and
-`formMultilineText()` from `@y-core/forge/validation`. See
+Text normalization is deliberately **not** done here — it belongs to the schema, via `formText()`,
+`formMultilineText()` and `formDigits()` for a control whose separators are cosmetic, all from
+`@y-core/forge/validation`. See
 [`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1d for the four reasons.
 
 ### CSRF middleware — `csrfProtection`

@@ -120,6 +120,8 @@ A `unique symbol` placeholder. Place it in a CSP directive's source array (`scri
 
 The Cloudflare Turnstile CDN origin (`"https://challenges.cloudflare.com"`) as a typed constant. Add it to `scriptSrc`, `connectSrc`, and `frameSrc` when Turnstile is active, rather than hardcoding the string.
 
+> **It is no longer the only route for `script-src`.** `mountTurnstile` copies the page's own CSP nonce onto the `api.js` tag it injects, reading it from an already-nonced `<script>`'s `nonce` **property** — so `scriptSrc: ["'self'", NONCE, "'strict-dynamic'"]` covers Cloudflare's script and everything it loads in turn, with no CDN origin in `script-src` at all. `frameSrc` and `connectSrc` still need `TURNSTILE_CSP`: `strict-dynamic` governs script loading only, and the challenge runs in an iframe. A page that sets no nonce is unaffected — the tag is injected bare, and `scriptSrc: ["'self'", TURNSTILE_CSP]` is still the right shape for it.
+
 ### Widening `style-src` / `font-src`
 
 Both default to `["'self'"]` and take a source list like any other directive, for a third-party stylesheet or font host. `mergeSecurityHeaders` concatenates them, and a directive the base omits falls back to its default before the concatenation — so merging `{ styleSrc: ["https://cdn.example.com"] }` onto a base that never mentioned `styleSrc` yields `style-src 'self' https://cdn.example.com`, keeping the app's own stylesheet.

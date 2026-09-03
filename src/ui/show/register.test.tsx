@@ -42,6 +42,8 @@ describe("showcaseRoutes", () => {
     expect(r.ui.api.dependent.href()).toBe("/showcase/ui/api/dependent");
     expect(r.ui.api.toast.href()).toBe("/showcase/ui/api/toast");
     expect(r.ui.api.avatar.href()).toBe("/showcase/ui/api/avatar");
+    expect(r.ui.turnstile.href()).toBe("/showcase/ui/turnstile");
+    expect(r.ui.api.turnstileVerify.href()).toBe("/showcase/ui/api/turnstile-verify");
   });
 
   it("honours a custom base path", () => {
@@ -95,6 +97,29 @@ describe("registerShowcase", () => {
     const body = await res.text();
     expect(body).toContain(">100</output>");
     expect(body).toContain("0°");
+  });
+
+  it("answers the verify endpoint without a secret by saying so, rather than claiming a verification", async () => {
+    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", { method: "POST", body: new FormData() });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("No secret key is configured");
+  });
+
+  it("names the honeypot when the decoy is filled, before any token is looked at", async () => {
+    const body = new FormData();
+    body.append("__surname", "bot");
+    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", { method: "POST", body });
+    expect(res.status).toBe(422);
+    expect(await res.text()).toContain("Refused by the honeypot guard");
+  });
+
+  it("names the turnstile guard and its reason once a secret is configured", async () => {
+    const app = new Forge();
+    const routes = showcaseRoutes("/showcase/ui");
+    registerShowcase(app, routes.ui, { icon, context: async () => ({ title: "chrome" }), layout: Layout, turnstileSecret: () => "secret" });
+    const res = await app.request("/showcase/ui/api/turnstile-verify", { method: "POST", body: new FormData() });
+    expect(res.status).toBe(422);
+    expect(await res.text()).toContain("No token reached the server");
   });
 
   it("wires each of the seven API sub-routes", async () => {

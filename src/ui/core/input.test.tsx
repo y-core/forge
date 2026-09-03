@@ -67,3 +67,60 @@ describe("Input", () => {
     );
   });
 });
+
+const CLASSES =
+  'class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"';
+
+describe("Input — format", () => {
+  it("stamps the scope and the template, and never a format attribute", async () => {
+    expect(await render(<Input format='#### ####' />)).toBe(
+      `<input data-slot="input" data-scope="input-format" data-format="#### ####" ${CLASSES}>`,
+    );
+  });
+
+  it("emits neither attribute for an empty template, which is the unformatted render", async () => {
+    expect(await render(<Input format='' />)).toBe(`<input data-slot="input" ${CLASSES}>`);
+  });
+
+  it("paints an unformatted value on the server, so the no-JS render already reads grouped", async () => {
+    expect(await render(<Input format='#### #### #### ####' value='4111111111111111' />)).toBe(
+      `<input data-slot="input" data-scope="input-format" data-format="#### #### #### ####" ${CLASSES} value="4111 1111 1111 1111">`,
+    );
+  });
+
+  it("repaints an already formatted value to itself rather than accumulating separators", async () => {
+    expect(await render(<Input format='#### #### #### ####' value='4111 1111 1111 1111' />)).toBe(
+      `<input data-slot="input" data-scope="input-format" data-format="#### #### #### ####" ${CLASSES} value="4111 1111 1111 1111">`,
+    );
+  });
+
+  it("paints a numeric value through the same template", async () => {
+    expect(await render(<Input format='##/##' value={1226} />)).toBe(
+      `<input data-slot="input" data-scope="input-format" data-format="##/##" ${CLASSES} value="12/26">`,
+    );
+  });
+
+  it("emits no value at all when the caller passed none", async () => {
+    expect(await render(<Input format='##/##' name='expiry' />)).toBe(
+      `<input data-slot="input" data-scope="input-format" data-format="##/##" ${CLASSES} name="expiry">`,
+    );
+  });
+
+  it("escapes a template carrying HTML-significant characters", async () => {
+    expect(await render(<Input format='<#&#>' />)).toBe(
+      `<input data-slot="input" data-scope="input-format" data-format="&lt;#&amp;#&gt;" ${CLASSES}>`,
+    );
+  });
+
+  it("lets a caller's own data-scope win the spread, which is the forwarding contract", async () => {
+    expect(await render(<Input format='##/##' data-scope='mine' />)).toBe(
+      `<input data-slot="input" data-scope="mine" data-format="##/##" ${CLASSES}>`,
+    );
+  });
+
+  it("lets a caller's own data-format win the spread", async () => {
+    expect(await render(<Input format='##/##' data-format='##-##' />)).toBe(
+      `<input data-slot="input" data-scope="input-format" data-format="##-##" ${CLASSES}>`,
+    );
+  });
+});

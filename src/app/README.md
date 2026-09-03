@@ -192,7 +192,7 @@ Wires a `read → guard → validate → handle` pipeline into a POST handler th
 
 **Nothing is dropped on a guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them; the CSRF field is dropped because `csrfProtection` published the field it took the token from. A route with no CSRF middleware drops nothing for CSRF, so a submitted `_csrf` is an ordinary undeclared field that a strict schema refuses — which names the missing middleware instead of absorbing its absence. See [`.decisions/implementation/ROUTING_AND_MIDDLEWARE.md`](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §2b for the rule and the alternatives it rejects.
 
-**Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control and `formMultilineText()` for a `<textarea>` — both from `@y-core/forge/validation`. The body read passes values through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "`.
+**Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`, and `formDigits()` for a control whose separators are cosmetic — all from `@y-core/forge/validation`. The body read passes values through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "`.
 
 ```ts
 import { defineAction } from "@y-core/forge/app";

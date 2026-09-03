@@ -82,6 +82,14 @@ Via `Label`, via `FormField.Label`, or via visually-hidden text. An icon-only co
 - Wrong: `<Button size="icon"><AppIcon name="close" /></Button>`
 - Right: `<Button size="icon" aria-label="Dismiss"><AppIcon name="close" /></Button>`
 
+**Associate every `<label>` with its control.** <!-- rule:forge-ui-a11y-label-association -->
+Either carry a `for` pointing at the control's id, or wrap the control in the label. A label that
+does neither is styled text: clicking it moves no focus, and a screen reader reaching the control
+announces nothing.
+
+- Wrong: `<label>Email</label><input name="email" />`
+- Right: `<label for="email">Email</label><input id="email" name="email" />`
+
 **Never skip a heading level.** <!-- rule:forge-ui-heading-order -->
 `Card.Title` renders inside the level its section sits at; choosing a level for its type size is
 what produces the skip. Size with a class, not with the tag.

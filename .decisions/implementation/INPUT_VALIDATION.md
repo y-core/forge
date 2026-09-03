@@ -54,7 +54,7 @@ facade is what keeps the valibot version single-sourced and lets forge bound its
 
 **`v` is complete, but it is not alone.** The namespace also ships forge's own schema and issue
 helpers, and they are named exports sitting _beside_ `v`, never members of it: `strictObject`
-(§1d), `formText` and `formMultilineText` (§1d), and `describeValidationIssue` (§1b).
+(§1d), `formText`, `formMultilineText` and `formDigits` (§1d), and `describeValidationIssue` (§1b).
 `src/validation/mod.ts` is authoritative for the list. The import shape is what matters here,
 because `strictObject` and `v.strictObject` are two different functions and only one of them is
 the recommendation (§1d). `src/validation/README.md` shows the import and a worked schema.
@@ -144,6 +144,18 @@ same whether the newline arrived as LF or CRLF rather than silently halving the 
 belongs to the fold's _presence_, not to where it sits relative to the trim — that position is not
 observable from anywhere, including from a check the caller appends, and `src/validation/form-text.ts`
 records why so the justification is not invented a third time.
+
+**`formDigits()` removes every non-digit, for the same reason and with a sharper edge:** under
+`v.pipe(formDigits(), v.length(16))` a card number means one string however the user grouped it,
+so the length counts digits rather than the separators a rendering happened to carry. It only
+_removes_ — it never throws, never coerces, and never refuses, because a throwing pipe action is a
+route defect answered `500` rather than the `422` a bad value has earned, so refusing stays the
+job of a `v.length` or `v.minLength` composed after it. `v.string()` heads the pipe, so a `File`
+or the array a repeated key produces still yields a clean type issue carrying the field's path.
+The strip is `\D` without the `u` flag — exactly `[0-9]`, so a non-ASCII digit is discarded rather
+than accepted, and widening it to `\p{Nd}` would let a schema's length check pass on characters no
+payment processor will take. Unlike its siblings it discards significant characters, a leading `+`
+among them, so it is the wrong shape for a field that must preserve one.
 
 **`defineAction` calls `parseFormData(c)` internally**, so it enforces the body cap and surfaces
 `413` on oversized bodies (§2c). A refused body answers **`422`** — a well-formed request the
@@ -336,6 +348,12 @@ runtime warning is logged when it is omitted.
 the token, so `<Turnstile action='…'>` ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2c) is the
 other half of this option — set one without the other and every token is either refused or
 unscoped, which lets a token minted on one form verify at another endpoint on the same host.
+
+**`expectedCData` and `tokenField` each have a widget half too.** `<Turnstile cData='…'>` mints the
+customer data `expectedCData` compares against — the only way to tie a challenge to an app-side
+record — and `<Turnstile responseFieldName='…'>` renames the hidden token input `tokenField` reads,
+which is what lets two widgets live in one form. Both are named in
+[`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2c.
 
 **An unverifiable CAPTCHA fails closed.** A siteverify call that timed out or never landed says
 nothing about the caller, so the submission is refused anyway — but it is logged, because a run of

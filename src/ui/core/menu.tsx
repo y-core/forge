@@ -61,7 +61,7 @@ type MenuSeparatorProps = Omit<JSX.IntrinsicElements["hr"], "children">;
 
 // No `display` utility: the UA rule `[popover]:not(:popover-open){display:none}` is not
 // `!important`, so an author-origin `display` here leaves a closed popup permanently visible.
-const POPUP_BASE = cn("z-50 min-w-[10rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none");
+const POPUP_BASE = cn("z-50 min-w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none");
 const ITEM_BASE = MENU_ITEM_CLASS;
 
 const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (

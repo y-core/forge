@@ -11,6 +11,7 @@ export {
   type MenuItemAttrsOptions,
   menuItemAttrs,
 } from "./menu-contract";
+export { applyFormat, INPUT_FORMAT_ATTR, INPUT_FORMAT_SCOPE, stripFormat } from "./input-format-contract";
 export { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT } from "./navbar-contract";
 export { NUMBER_FIELD_SCOPE } from "./number-field-contract";
 export { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, invokerAttrs, POPOVER_COORDS_ATTR, POPOVER_SCOPE } from "./overlay-contract";
@@ -32,6 +33,8 @@ export { TOGGLE_GROUP_ITEM_SELECTOR, TOGGLE_GROUP_SCOPE, TOOLTIP_MOUNTED_ATTR, T
 export { TOOLBAR_ITEM_ATTR, TOOLBAR_ITEM_SELECTOR, TOOLBAR_SCOPE } from "./toolbar-contract";
 export {
   TURNSTILE,
+  TURNSTILE_ACTION_PATTERN,
+  TURNSTILE_CDATA_PATTERN,
   TURNSTILE_EXECUTE_TIMEOUT_MS,
   TURNSTILE_SCOPE,
   TURNSTILE_SCRIPT_SRC,

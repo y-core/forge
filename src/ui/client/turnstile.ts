@@ -1,5 +1,7 @@
 import {
   TURNSTILE,
+  TURNSTILE_ACTION_PATTERN,
+  TURNSTILE_CDATA_PATTERN,
   TURNSTILE_EXECUTE_TIMEOUT_MS,
   TURNSTILE_SCRIPT_SRC,
   TURNSTILE_SCRIPT_TIMEOUT_MS,
@@ -20,6 +22,9 @@ type ConfirmDetail = {
   triggeringEvent?: Event & { submitter?: EventTarget | null };
   issueRequest?: (skipConfirmation: boolean) => void;
 };
+
+/** What htmx hands `htmx:afterRequest`. */
+type AfterRequestDetail = { successful?: boolean; xhr?: XMLHttpRequest; requestConfig?: { elt?: EventTarget | null } };
 
 const HTMX_SUBMISSION = "[hx-post],[hx-put],[hx-patch],[hx-delete],[data-hx-post],[data-hx-put],[data-hx-patch],[data-hx-delete]";
 
@@ -89,14 +94,31 @@ export function mountTurnstile(root: HTMLElement): () => void {
   const sitekey = container.getAttribute("data-sitekey") ?? "";
   const size = container.getAttribute("data-size") ?? "normal";
   const action = container.getAttribute("data-action");
+  const cdata = container.getAttribute("data-cdata");
+  const responseFieldName = container.getAttribute("data-response-field-name");
   const appearance = container.getAttribute("data-appearance");
+  const language = container.getAttribute("data-language");
+  const tabindex = container.getAttribute("data-tabindex");
   const eager = container.getAttribute("data-load") !== "focus";
   let submitMode = container.getAttribute("data-challenge") === "submit";
   if (submitMode && !hasHtmxSubmission(form)) {
     console.warn('[turnstile] challenge="submit" needs an htmx submission on the form; falling back to challenge="render"');
     submitMode = false;
   }
+  if (action !== null && !TURNSTILE_ACTION_PATTERN.test(action)) {
+    console.warn(
+      `[turnstile] action "${action}" is outside Cloudflare's ${TURNSTILE_ACTION_PATTERN.source}; it is forwarded anyway and may be refused`,
+    );
+  }
+  if (cdata !== null && !TURNSTILE_CDATA_PATTERN.test(cdata)) {
+    console.warn(
+      `[turnstile] cData "${cdata}" is outside Cloudflare's ${TURNSTILE_CDATA_PATTERN.source}; it is forwarded anyway and may be refused`,
+    );
+  }
   let widgetId: string | undefined;
+  // Whether a press can be held: a widget that never rendered, or whose challenge errored, has no
+  // token to wait for, and holding one would only spend the execute timeout before failing.
+  let state: "unmounted" | "ready" | "dead" = "unmounted";
   let loadStarted = false;
   let disposed = false;
   let pollId = 0;
@@ -107,6 +129,9 @@ export function mountTurnstile(root: HTMLElement): () => void {
   let executeTimeoutId = 0;
   let pending: ((skipConfirmation: boolean) => void) | undefined;
   let submitter: HTMLElement | null = null;
+  let tokenIssued = false;
+  let renderedTheme: "dark" | "light" | undefined;
+  let themeObserver: MutationObserver | undefined;
 
   const clearTimers = () => {
     win.clearInterval(pollId);
@@ -115,28 +140,45 @@ export function mountTurnstile(root: HTMLElement): () => void {
     pollId = pollTimeoutId = scriptTimeoutId = 0;
   };
 
-  const showFallback = () => {
+  const reveal = (name: string, shown: boolean) => {
     if (disposed) return;
-    const fallback = ref(TURNSTILE.fallback, container);
-    if (fallback) fallback.hidden = false;
+    const message = ref(name, container);
+    if (message) message.hidden = !shown;
   };
+
+  const showFallback = () => reveal(TURNSTILE.fallback, true);
+  const hideFallback = () => reveal(TURNSTILE.fallback, false);
 
   const resetWidget = () => {
     if (widgetId !== undefined) win.turnstile?.reset(widgetId);
   };
 
+  // Guarded, so a `remove` that throws on an id whose container an htmx swap already took cannot
+  // skip the rest of a teardown and leave a stale `mounted` entry a later mount would be handed.
+  const removeWidget = () => {
+    if (widgetId === undefined) return;
+    try {
+      win.turnstile?.remove(widgetId);
+    } catch (error) {
+      console.warn("[turnstile] turnstile.remove() threw", error);
+    }
+    widgetId = undefined;
+    state = "unmounted";
+  };
+
+  const currentTheme = () => (doc.documentElement.classList.contains("dark") ? "dark" : "light");
+
   // htmx applies `hx-disabled-elt` and its indicators only once the request is issued, so between the
   // press and `issueRequest` the button would otherwise look dead.
-  const markBusy = () => {
+  const setBusy = (busy: boolean) => {
     if (!submitter) return;
-    (submitter as HTMLButtonElement).disabled = true;
-    submitter.setAttribute("aria-busy", "true");
+    (submitter as HTMLButtonElement).disabled = busy;
+    if (busy) submitter.setAttribute("aria-busy", "true");
+    else submitter.removeAttribute("aria-busy");
   };
 
   const clearBusy = () => {
-    if (!submitter) return;
-    (submitter as HTMLButtonElement).disabled = false;
-    submitter.removeAttribute("aria-busy");
+    setBusy(false);
     submitter = null;
   };
 
@@ -145,29 +187,65 @@ export function mountTurnstile(root: HTMLElement): () => void {
     executeTimeoutId = 0;
   };
 
-  const onToken = () => {
+  const releaseHeld = () => {
     clearExecuteTimeout();
-    const issue = pending;
     pending = undefined;
     clearBusy();
-    // `true`, so htmx does not then run the `window.confirm` this listener stepped in front of.
-    issue?.(true);
   };
 
-  // The held request is dropped rather than issued: a POST with no token answers with a 422 naming
-  // the schema's first field, which reads as a form error the reader cannot act on. A second press
-  // retries the challenge.
+  // The held request is dropped rather than issued: a POST with no token answers 422 naming the
+  // schema's first field, which reads as a form error the reader cannot act on.
   const onExecuteFailure = () => {
-    clearExecuteTimeout();
-    pending = undefined;
-    clearBusy();
+    releaseHeld();
     showFallback();
     resetWidget();
   };
 
-  const onErrorCallback = () => {
-    if (pending) onExecuteFailure();
-    else showFallback();
+  const armExecuteTimeout = () => {
+    executeTimeoutId = win.setTimeout(onExecuteFailure, TURNSTILE_EXECUTE_TIMEOUT_MS);
+  };
+
+  const onToken = () => {
+    state = "ready";
+    tokenIssued = true;
+    // Cloudflare retries on its own, so an error the widget then recovered from must take its
+    // message back down rather than leave every visitor reading it.
+    hideFallback();
+    const issue = pending;
+    releaseHeld();
+    // `true`, so htmx does not then run the `window.confirm` this listener stepped in front of.
+    issue?.(true);
+  };
+
+  const onErrorCallback = (code?: unknown) => {
+    console.warn(`[turnstile] challenge error ${String(code ?? "unknown")}`);
+    state = "dead";
+    releaseHeld();
+    showFallback();
+    // Non-falsy, or Cloudflare logs a warning of its own on top of this one — and under the default
+    // `retry: auto` it would log it once per retry for a single underlying fault.
+    return true;
+  };
+
+  const onUnsupported = () => {
+    state = "dead";
+    releaseHeld();
+    reveal(TURNSTILE.unsupported, true);
+  };
+
+  // Turnstile is asking the visitor to click something, so the execute budget is stood down: 15
+  // seconds is well short of a real person, and a button reading as mid-flight while they are
+  // being asked to act is a lie.
+  const onBeforeInteractive = () => {
+    if (!pending) return;
+    clearExecuteTimeout();
+    setBusy(false);
+  };
+
+  const onAfterInteractive = () => {
+    if (!pending) return;
+    setBusy(true);
+    armExecuteTimeout();
   };
 
   const onGuardFocusout = (event: Event) => {
@@ -183,6 +261,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
 
   // Not part of `clearTimers`: the poll-success path clears the timers immediately before rendering.
   const armGuard = () => {
+    win.clearTimeout(guardWindowId);
     guardWindowId = win.setTimeout(disarmGuard, TURNSTILE_FOCUS_GUARD_MS);
     form.addEventListener("focusout", onGuardFocusout);
   };
@@ -194,6 +273,22 @@ export function mountTurnstile(root: HTMLElement): () => void {
     form.removeEventListener("focusout", onGuardFocusout);
   };
 
+  // `documentElement`'s `dark` class, not `ui/chrome`'s theme signal: a `ui/client` → `ui/chrome`
+  // import would be a cross-namespace dependency, and the class is the contract either way.
+  const observeTheme = () => {
+    const Observer = (win as { MutationObserver?: typeof MutationObserver }).MutationObserver;
+    if (themeObserver || typeof Observer !== "function") return;
+    const observer = new Observer(() => {
+      // A solved token is never discarded to re-theme the widget: the visitor would pay for a
+      // second challenge to look at a colour, and in submit mode lose the one they just passed.
+      if (disposed || tokenIssued || state !== "ready" || renderedTheme === currentTheme()) return;
+      removeWidget();
+      renderWidget();
+    });
+    observer.observe(doc.documentElement, { attributeFilter: ["class"] });
+    themeObserver = observer;
+  };
+
   const renderWidget = () => {
     // A late script `load` or poll hit must not render into a container the app has already swapped
     // out; the widget would mount on a detached node nothing can reach to remove it again.
@@ -202,11 +297,9 @@ export function mountTurnstile(root: HTMLElement): () => void {
       showFallback();
       return;
     }
-    const theme = doc.documentElement.classList.contains("dark") ? "dark" : "light";
-    // Whatever the user's own focus is on when the widget mounts, which the grab `render` performs
-    // before it returns would otherwise take. Under `load="eager"` that is typically the body — the
-    // render answers page entry rather than anything the user did, so there is no focus of theirs
-    // to protect and neither the restore nor the guard has a position to act on.
+    const theme = currentTheme();
+    // `render` grabs focus before it returns, so the user's own position is held first; an eager
+    // render answers page entry, where the body holds it and there is nothing of theirs to protect.
     const previous = activeElement(container);
     const held = previous !== null && previous !== doc.body ? previous : null;
     const params: Record<string, unknown> = {
@@ -214,29 +307,39 @@ export function mountTurnstile(root: HTMLElement): () => void {
       size,
       theme,
       // The token is auto-written to the hidden `cf-turnstile-response` input inside the container.
-      "error-callback": submitMode ? onErrorCallback : showFallback,
+      callback: onToken,
+      "error-callback": onErrorCallback,
+      "unsupported-callback": onUnsupported,
+      "before-interactive-callback": onBeforeInteractive,
+      "after-interactive-callback": onAfterInteractive,
     };
-    // Nothing to expire or time out before a challenge has run, and `refresh-expired` is Cloudflare's
-    // to honour once one has.
-    if (!submitMode) {
-      params["expired-callback"] = resetWidget;
-      params["timeout-callback"] = resetWidget;
-    } else {
+    // No `expired-callback` or `timeout-callback`: `refresh-expired` and `refresh-timeout` both
+    // default to `auto`, so Cloudflare refreshes the token itself and a second `reset()` here would
+    // spend a further challenge on top of the one it has just re-presented.
+    if (submitMode) {
       params.execution = "execute";
-      params.callback = onToken;
     }
     if (appearance !== null) params.appearance = appearance;
+    if (language !== null) params.language = language;
+    if (tabindex !== null) params.tabindex = Number(tabindex);
     // Minting the token against the form's own action is what lets the server's `verifyTurnstile`
     // refuse one minted at another endpoint on the same host.
     if (action !== null) params.action = action;
+    // Cloudflare's own spellings: `cData` is camelCase and `response-field-name` is hyphenated.
+    if (cdata !== null) params.cData = cdata;
+    if (responseFieldName !== null) params["response-field-name"] = responseFieldName;
     try {
       widgetId = win.turnstile.render(container, params);
-    } catch {
+      state = "ready";
+      renderedTheme = theme;
+      observeTheme();
+    } catch (error) {
+      state = "dead";
+      console.warn("[turnstile] turnstile.render() threw; the widget will not mount", error);
       showFallback();
       return;
     }
-    if (!held) return;
-    restoreFocus(container, held);
+    if (held) restoreFocus(container, held);
     armGuard();
   };
 
@@ -270,6 +373,12 @@ export function mountTurnstile(root: HTMLElement): () => void {
     const script = doc.createElement("script");
     script.src = TURNSTILE_SCRIPT_URL;
     script.async = true;
+    // Read off the property, never a `data-` copy: the browser empties the `nonce` *content
+    // attribute* precisely to stop the value being exfiltrated through a CSS attribute selector,
+    // and copying it back into an attribute of forge's own would reopen that. Written with
+    // `setAttribute`, because assigning the property sets only the internal slot in some engines.
+    const nonce = doc.querySelector<HTMLScriptElement>("script[nonce]")?.nonce ?? "";
+    if (nonce) script.setAttribute("nonce", nonce);
     scriptTimeoutId = win.setTimeout(showFallback, TURNSTILE_SCRIPT_TIMEOUT_MS);
     script.addEventListener("load", () => {
       win.clearTimeout(scriptTimeoutId);
@@ -289,21 +398,19 @@ export function mountTurnstile(root: HTMLElement): () => void {
   form.addEventListener("focusin", loadScript, { once: true });
   if (eager) loadScript();
 
-  // By the answered URL and not the event's `elt`, which htmx also names the form in for a request
-  // the form merely triggered: every one of those would otherwise burn the single-use token. A form
-  // declaring no `hx-post` has no URL to test, and submits through a descendant or not at all.
-  const submitPath = form.getAttribute("hx-post");
-  const isOwnSubmission = (xhr: XMLHttpRequest | undefined) => {
-    if (submitPath === null) return true;
-    const answered = xhr?.responseURL;
-    // An empty `responseURL` is a request that never got an answer, so the token is still unspent.
-    if (typeof answered !== "string" || answered === "") return false;
-    return new URL(answered, form.baseURI).pathname === new URL(submitPath, form.baseURI).pathname;
+  // By the issuing element, not the answered URL: a descendant field's own htmx request bubbles to
+  // the form and would otherwise burn the single-use token.
+  const formDeclaresSubmission = form.matches(HTMX_SUBMISSION);
+  const isSubmitControl = (el: Element): boolean => el.matches("button:not([type]),button[type='submit'],input[type='submit'],input[type='image']");
+  const isOwnSubmission = (elt: Element | null): boolean => {
+    if (elt === null) return false;
+    if (formDeclaresSubmission) return elt === form;
+    return form.contains(elt) && elt.closest(HTMX_SUBMISSION) === elt && isSubmitControl(elt);
   };
 
   const onAfterRequest = (event: Event) => {
-    const detail = (event as CustomEvent<{ successful?: boolean; xhr?: XMLHttpRequest }>).detail;
-    if (!isOwnSubmission(detail?.xhr)) return;
+    const detail = (event as CustomEvent<AfterRequestDetail>).detail;
+    if (!isOwnSubmission(asElement(detail?.requestConfig?.elt))) return;
     resetWidget();
     if (detail?.successful) form.reset();
   };
@@ -311,20 +418,21 @@ export function mountTurnstile(root: HTMLElement): () => void {
 
   const onConfirm = (event: Event) => {
     const detail = (event as CustomEvent<ConfirmDetail>).detail;
-    if (typeof detail?.issueRequest !== "function") return;
+    if (!isOwnSubmission(asElement(detail?.elt))) return;
+    if (typeof detail.issueRequest !== "function") return;
     // htmx fires `htmx:confirm` before it validates the form, so an invalid form would otherwise
     // spend a challenge on a request htmx then halts.
     if (typeof form.checkValidity === "function" && !form.checkValidity()) return;
     // No API and no widget is a page where the challenge never loaded: let the request go and let
     // `verifyTurnstile` be the one that refuses it, as it already is for a blocked widget.
-    if (!hasApi(win) || widgetId === undefined) return;
+    if (!hasApi(win) || state !== "ready") return;
     event.preventDefault();
     // A second press while a challenge is in flight is swallowed rather than queued.
     if (pending) return;
     pending = detail.issueRequest;
     submitter = asElement(detail.triggeringEvent?.submitter) ?? asElement(detail.elt);
-    markBusy();
-    executeTimeoutId = win.setTimeout(onExecuteFailure, TURNSTILE_EXECUTE_TIMEOUT_MS);
+    setBusy(true);
+    armExecuteTimeout();
     try {
       win.turnstile.execute(container);
     } catch {
@@ -343,7 +451,9 @@ export function mountTurnstile(root: HTMLElement): () => void {
     form.removeEventListener("focusin", loadScript);
     form.removeEventListener("htmx:afterRequest", onAfterRequest);
     form.removeEventListener("htmx:confirm", onConfirm);
-    if (widgetId !== undefined) win.turnstile?.remove(widgetId);
+    themeObserver?.disconnect();
+    themeObserver = undefined;
+    removeWidget();
     mounted.delete(container);
   };
   mounted.set(container, cleanup);

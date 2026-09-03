@@ -70,13 +70,13 @@ describe("Popover.Trigger", () => {
 describe("Popover.Content", () => {
   it("renders a native popover <div> with the linking id and data-slot=popover-content", async () => {
     expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
   it("defaults to start align and bottom side", async () => {
     expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
@@ -88,7 +88,7 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="end" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="end" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
@@ -100,7 +100,7 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="center" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="center" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
@@ -112,13 +112,13 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="top" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="top" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
   it("renders the popover panel chrome classes", async () => {
     expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
@@ -130,7 +130,7 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md w-64">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md w-64">Items</div>',
     );
   });
 
@@ -142,7 +142,7 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md" role="menu" data-note="a&amp;b">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md" role="menu" data-note="a&amp;b">Items</div>',
     );
   });
 });
@@ -159,7 +159,7 @@ describe("Popover composition", () => {
         </Popover>,
       ),
     ).toBe(
-      '<div data-slot="popover" class="relative inline-block"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-file" aria-controls="menu-file" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring">Open menu</button><div id="menu-file" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md"><div>Item 1</div></div></div>',
+      '<div data-slot="popover" class="relative inline-block"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-file" aria-controls="menu-file" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring">Open menu</button><div id="menu-file" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md"><div>Item 1</div></div></div>',
     );
   });
 });

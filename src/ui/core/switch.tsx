@@ -34,6 +34,7 @@ export const Switch: FC<PropsWithChildren<SwitchProps>> = ({
       {...stateAttrs({ orientation: "horizontal" })}
       data-label-position={orientation === "label-before" ? "before" : "after"}
       class={cn("inline-flex items-center gap-2", orientation === "label-before" && "flex-row-reverse", asClass(cls))}>
+      {/* oxlint-disable-next-line jsx-a11y/role-has-required-aria-props -- a native checkbox supplies `aria-checked` from its own checkedness; writing it would desync on toggle. */}
       <input data-slot={slotToken("switch-input", inherited)} type='checkbox' role='switch' class='peer sr-only' {...resolved} />
       <span data-slot='switch-track' aria-hidden='true' class={SWITCH_TRACK}>
         <span data-slot='switch-thumb' class={SWITCH_THUMB} />

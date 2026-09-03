@@ -2,10 +2,10 @@
 
 Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge cf gen env`) under the `/cli` sub-path.
 
-| Import path                | Surface                                                                                                                                           |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `describeValidationIssue`, `formatValidationIssues`, `ValidationResult` |
-| `@y-core/forge/cli/cf`     | `forge cf gen env` env-schema generator API (also a `bin`)                                                                                        |
+| Import path                | Surface                                                                                                                                                         |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `formDigits`, `describeValidationIssue`, `formatValidationIssues`, `ValidationResult` |
+| `@y-core/forge/cli/cf`     | `forge cf gen env` env-schema generator API (also a `bin`)                                                                                                      |
 
 **Everything except `v` is a sibling of it, not a member.** `strictObject` and `v.strictObject` are two different functions, and the one without the prefix is the recommendation for untrusted input.
 
@@ -15,7 +15,7 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 
 - **Single valibot entry point** — `v` is the complete valibot namespace re-exported as one import, so every app uses the same pinned valibot version and never deep-imports the upstream package.
 - **`strictObject`** — the strict object schema to use for anything parsing untrusted input. Only a field the schema actually declares counts as declared, so an undeclared key is refused rather than silently dropped, for **every** key a caller can send.
-- **Form-text primitives** — `formText()` for a single-line control and `formMultilineText()` for a `<textarea>`. A form body reaches a schema exactly as submitted, so trimming and CRLF folding are the schema's job; these are the two shapes worth having.
+- **Form-value primitives** — `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`, and `formDigits()` for a control whose separators are cosmetic. A form body reaches a schema exactly as submitted, so trimming, CRLF folding, and separator removal are the schema's job. Each earns its place by making one downstream check mean one thing — a required-field check, a line-counted length, a digit-counted length — and that criterion, not a count, closes the set.
 - **Bounded issue descriptions** — `describeValidationIssue` names the field one issue is about and nothing else, so a refusal a caller reads cannot carry the submitted value, the schema's own rule, or a length the caller chose. `formatValidationIssues` is the internal diagnostic counterpart.
 - **`ValidationResult<T>`** — a domain alias of forge's one `Result` primitive, `Result<T, readonly string[]>` (`{ ok: true; data: T } | { ok: false; error: readonly string[] }`), the canonical return type for any service that validates its own input.
 - **`forge cf gen env` env-schema generator** — reads `wrangler.jsonc` bindings and `.dev.vars` keys and emits a committed, schema-first valibot `EnvSchema` (plus an inferred `type Env`), replacing the env half of `wrangler types`.
@@ -122,6 +122,28 @@ const MessageSchema = strictObject({
 **Why here and not in the body reader.** A form body reaches a schema exactly as submitted, so without one of these a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "` and every required-field check becomes bypassable with spaces. Normalizing in the reader was rejected for four reasons, and [`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1d owns them — the short version is that only the schema knows a field was a textarea.
 
 **The fold runs before the trim, and that ordering is about length, not output.** `trim` treats `\r` and `\n` alike, so the two operations produce the same string in either order. What the order decides is what the rest of the pipe sees: under `v.pipe(formMultilineText(), v.maxLength(500))` each line break counts once, so a 500-character limit means the same thing whether the newline arrived as LF or CRLF instead of silently halving the budget for line breaks.
+
+#### `formDigits()`
+
+```typescript
+function formDigits(): v.GenericSchema<string, string>; // every non-digit removed
+```
+
+The shape for a control whose separators are cosmetic — a card number the user reads as `4111 1111 1111 1111`, a phone number as `(555) 123-4567`. Every character outside `0`–`9` is removed, so one number reaches the schema as one string however it was rendered:
+
+```typescript
+import { formDigits, strictObject, v } from "@y-core/forge/validation";
+
+const PaymentSchema = strictObject({
+  card: v.pipe(formDigits(), v.length(16)), // accepts "4111 1111 1111 1111"
+});
+```
+
+**A composed length now counts digits, not characters.** That is the point of the primitive and also the trap: `v.maxLength(10)` under `formDigits()` bounds the number, while the same bound under `formText()` refuses `"(555) 123-4567"` for its punctuation. Pick the bound against the digits you mean to allow, not against the widest rendering.
+
+**A downstream character class is meaningless.** After the strip, the value cannot contain anything a `v.regex` would exclude, so a pattern like `/^[\d\s-]+$/` composed after `formDigits()` always passes and reads as a check that is not there. Bound the length; drop the pattern.
+
+**`formDigits()` is destructive in a way its siblings are not.** `formText()` and `formMultilineText()` only normalize whitespace, but this one discards significant characters: a leading `+` on an international number, an `x` before an extension, a letter in an alphanumeric code. A field that must preserve any of those stays on `formText()`.
 
 #### `describeValidationIssue(issue)` / `formatValidationIssues(issues)`
 

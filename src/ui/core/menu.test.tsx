@@ -5,7 +5,7 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { Menu } from "./menu";
 
-const POPUP_CLASS = "z-50 min-w-[10rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none";
+const POPUP_CLASS = "z-50 min-w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none";
 const TRIGGER_CLASS = "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const ITEM_CLASS =
   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 " +

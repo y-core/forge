@@ -6,17 +6,25 @@ import { fileURLToPath } from "node:url";
 import {
   type DesignFinding,
   findArbitraryValues,
+  findAriaReadonlyButtons,
   findBareFocus,
   findBarrelImports,
   findColorLiterals,
   findCustomPropertyCitations,
+  findExtraLiveRegions,
+  findHandWrittenStateAttrs,
   findInlineStyles,
+  findLivePoliteness,
   findNestedCards,
   findRawControls,
   findRawThemeUtilities,
+  findRemovedFocusRings,
   findRuleCitations,
   findRuleMarkers,
   findSourceViolations,
+  findTagSizedHeadings,
+  findUnassociatedLabels,
+  findUnguardedAnimations,
   findViewportUnits,
   formatDesignFinding,
   isSuppressed,
@@ -218,8 +226,15 @@ describe("findInlineStyles()", () => {
 });
 
 describe("findArbitraryValues() — arbitrary values on scale-bearing utilities", () => {
-  const flagged = ['<p class="text-[13px]" />', '<p class="p-[7px]" />', '<p class="bg-[#fff]" />', '<p class="md:p-[7px]" />'];
-  const hits = ["text-[13px]", "p-[7px]", "bg-[#fff]", "p-[7px]"];
+  const flagged = [
+    '<p class="text-[13px]" />',
+    '<p class="p-[7px]" />',
+    '<p class="bg-[#fff]" />',
+    '<p class="md:p-[7px]" />',
+    '<div class="min-w-[10rem]" />',
+    '<div class="max-h-[3.5rem]" />',
+  ];
+  const hits = ["text-[13px]", "p-[7px]", "bg-[#fff]", "p-[7px]", "min-w-[10rem]", "max-h-[3.5rem]"];
 
   for (const [i, line] of flagged.entries()) {
     const hit = hits[i] ?? "";
@@ -240,10 +255,9 @@ describe("findArbitraryValues() — the brackets it must not flag", () => {
     '<div class="supports-[display:grid]:grid" />',
     '<div class="aria-[current=page]:font-medium" />',
     '<div class="[&_svg]:size-4" />',
-    '<div class="[[data-slot~=control]]:w-full" />',
+    '<div class="data-[slot~=control]:w-full" />',
     '<div class="max-h-[60vh]" />',
-    '<div class="min-w-[10rem]" />',
-    '<div class="min-w-[8rem]" />',
+    '<div class="max-h-[inherit]" />',
     '<div class="rounded-[inherit]" />',
     '<div class="w-[calc(100%-2rem)]" />',
   ];
@@ -261,6 +275,403 @@ describe("findArbitraryValues() — the brackets it must not flag", () => {
     ].join("\n");
 
     expect(findArbitraryValues(source, FILE)).toEqual([]);
+  });
+});
+
+describe("findUnassociatedLabels()", () => {
+  const detail = "`<label>` with neither a `for` nor a wrapped control — it labels nothing";
+
+  it("flags a `<label>` that neither carries `for` nor wraps a control", () => {
+    const source = ["<div>", "  <label class='text-sm'>Email</label>", "  <input name='email' />", "</div>"].join("\n");
+
+    expect(findUnassociatedLabels(source, FILE)).toEqual([{ file: FILE, line: 2, ruleId: "forge-ui-a11y-label-association", detail }]);
+  });
+
+  it("passes a label carrying a literal `for`", () => {
+    expect(findUnassociatedLabels("<label for='email'>Email</label>", FILE)).toEqual([]);
+  });
+
+  it("passes a label whose `for` sits on a later line of a multi-line opening tag", () => {
+    const source = [
+      "<label",
+      "  data-slot='field-label'",
+      "  for={htmlFor ?? fieldId(name, scope)}",
+      "  {...props}>",
+      "  {children}",
+      "</label>",
+    ].join("\n");
+
+    expect(findUnassociatedLabels(source, FILE)).toEqual([]);
+  });
+
+  it("passes a label wrapping its control, the `checkbox-group` shape", () => {
+    const source = [
+      "<label data-slot='checkbox-group-item'>",
+      "  <input type='checkbox' name={name} value={value} />",
+      "  {children}",
+      "</label>",
+    ].join("\n");
+
+    expect(findUnassociatedLabels(source, FILE)).toEqual([]);
+  });
+
+  it("passes a label wrapping a forge control component", () => {
+    expect(findUnassociatedLabels(["<label>", "  <Select name='country' />", "</label>"].join("\n"), FILE)).toEqual([]);
+  });
+
+  it("flags a self-closing label, which has no children to wrap a control", () => {
+    expect(findUnassociatedLabels("<label class='sr-only' />", FILE)).toEqual([
+      { file: FILE, line: 1, ruleId: "forge-ui-a11y-label-association", detail },
+    ]);
+  });
+
+  it("does not read a `<label>` written inside a comment", () => {
+    expect(findUnassociatedLabels("/** A standalone `<label>`, with a required marker. */", FILE)).toEqual([]);
+  });
+
+  it("does not mistake an attribute ending in `for` for the `for` attribute", () => {
+    expect(findUnassociatedLabels("<label data-labelfor='email'>Email</label>", FILE)).toEqual([
+      { file: FILE, line: 1, ruleId: "forge-ui-a11y-label-association", detail },
+    ]);
+  });
+
+  it("honours a suppression carrying a reason", () => {
+    const source = [
+      "/* design-allow: forge-ui-a11y-label-association — the control is portalled in by the host app. */",
+      "<label>Email</label>",
+    ].join("\n");
+
+    expect(findUnassociatedLabels(source, FILE)).toEqual([]);
+  });
+});
+
+describe("findLivePoliteness()", () => {
+  it('passes `aria-live="polite"`', () => {
+    expect(findLivePoliteness("<section aria-live='polite' />", FILE)).toEqual([]);
+  });
+
+  it("flags a value that is neither `polite` nor `assertive`", () => {
+    expect(findLivePoliteness("<section aria-live='off' />", FILE)).toEqual([
+      { file: FILE, line: 1, ruleId: "forge-ui-a11y-live-politeness", detail: '`aria-live="off"` is neither `polite` nor `assertive`' },
+    ]);
+  });
+
+  it("flags `assertive` as owing a stated reason", () => {
+    expect(findLivePoliteness('<section aria-live="assertive" />', FILE)).toEqual([
+      {
+        file: FILE,
+        line: 1,
+        ruleId: "forge-ui-a11y-live-politeness",
+        detail: '`aria-live="assertive"` interrupts the reader — state why in a `design-allow`, or use `polite`',
+      },
+    ]);
+  });
+
+  it("leaves an expression-valued `aria-live` alone, since it resolves at render time", () => {
+    expect(findLivePoliteness("<section aria-live={urgent ? 'assertive' : 'polite'} />", FILE)).toEqual([]);
+  });
+
+  it("reports one finding per distinct value on a line", () => {
+    expect(findLivePoliteness("<div aria-live='off' /><span aria-live='off' />", FILE).length).toEqual(1);
+  });
+
+  it("honours a suppression carrying a reason", () => {
+    const source = [
+      "/* design-allow: forge-ui-a11y-live-politeness — six position samples, not announcements. */",
+      "<section aria-live='off' />",
+    ].join("\n");
+
+    expect(findLivePoliteness(source, FILE)).toEqual([]);
+  });
+});
+
+describe("findAriaReadonlyButtons()", () => {
+  const detail = (tag: string): string =>
+    `\`aria-readonly\` on \`<${tag}>\` — the button role does not support it; carry the state on the control the button acts on`;
+
+  for (const [line, tag] of [
+    ["<button aria-readonly='true' />", "button"],
+    ['<Button aria-readonly="true">Step</Button>', "Button"],
+    ["<div role='button' aria-readonly='true' />", "div"],
+  ] as const) {
+    it(`flags ${line}`, () => {
+      expect(findAriaReadonlyButtons(one(line), FILE)).toEqual([
+        { file: FILE, line: 1, ruleId: "forge-ui-a11y-no-aria-readonly-on-button", detail: detail(tag) },
+      ]);
+    });
+  }
+
+  for (const line of [
+    "<input readonly aria-readonly='true' />",
+    "<div role='textbox' aria-readonly='true' />",
+    "<button aria-disabled='true' />",
+    "<button class='aria-readonly-ish' />",
+  ]) {
+    it(`leaves ${line} alone`, () => {
+      expect(findAriaReadonlyButtons(one(line), FILE)).toEqual([]);
+    });
+  }
+
+  it("reads a `NumberField` stepper whose attributes wrap onto the following lines", () => {
+    const source = ["<button", "  type='button'", "  aria-readonly='true'", "  class={BUTTON_BASE}>", "</button>"].join("\n");
+
+    expect(findAriaReadonlyButtons(source, FILE)).toEqual([
+      { file: FILE, line: 1, ruleId: "forge-ui-a11y-no-aria-readonly-on-button", detail: detail("button") },
+    ]);
+  });
+
+  it("honours a suppression carrying a reason", () => {
+    const source = [
+      "/* design-allow: forge-ui-a11y-no-aria-readonly-on-button — the sample shows the attribute the rule forbids. */",
+      "<button aria-readonly='true' />",
+    ].join("\n");
+
+    expect(findAriaReadonlyButtons(source, FILE)).toEqual([]);
+  });
+});
+
+describe("findExtraLiveRegions()", () => {
+  const detail = (value: string): string =>
+    `\`aria-live="${value}"\` opens a second live region — route the announcement into \`Toast.Container\` or \`FlashContainer\``;
+
+  for (const value of ["polite", "assertive"]) {
+    it(`flags \`aria-live="${value}"\``, () => {
+      expect(findExtraLiveRegions(one(`<section aria-live='${value}' />`), FILE)).toEqual([
+        { file: FILE, line: 1, ruleId: "forge-ui-a11y-one-live-region", detail: detail(value) },
+      ]);
+    });
+  }
+
+  it("leaves `off` alone, since a silenced region announces nothing", () => {
+    expect(findExtraLiveRegions(one("<Toast.Container aria-live='off' />"), FILE)).toEqual([]);
+  });
+
+  it("leaves an expression-valued `aria-live` alone, since it resolves at render time", () => {
+    expect(findExtraLiveRegions(one("<section aria-live={urgent ? 'assertive' : 'polite'} />"), FILE)).toEqual([]);
+  });
+
+  it("leaves `Toast.Container`'s own file alone, because that is where the one region lives", () => {
+    expect(findExtraLiveRegions(one("<section aria-live='polite' />"), "src/ui/core/toast.tsx")).toEqual([]);
+  });
+
+  it("reports one finding per distinct value on a line", () => {
+    expect(findExtraLiveRegions(one("<div aria-live='polite' /><span aria-live='polite' />"), FILE).length).toEqual(1);
+  });
+
+  it("reports beside `findLivePoliteness()`, which judges a different thing about the same attribute", () => {
+    const source = one("<section aria-live='assertive' />");
+
+    expect([...findExtraLiveRegions(source, FILE), ...findLivePoliteness(source, FILE)].map((f) => f.ruleId)).toEqual([
+      "forge-ui-a11y-one-live-region",
+      "forge-ui-a11y-live-politeness",
+    ]);
+  });
+
+  it("honours a suppression carrying a reason", () => {
+    const source = [
+      "/* design-allow: forge-ui-a11y-one-live-region — the log stream must not interleave with notifications. */",
+      "<section aria-live='polite' />",
+    ].join("\n");
+
+    expect(findExtraLiveRegions(source, FILE)).toEqual([]);
+  });
+});
+
+describe("findHandWrittenStateAttrs()", () => {
+  const detail = (state: string): string =>
+    `hand-written \`data-${state}\` — emit it through \`stateAttrs\`, beside its \`aria-${state}\` counterpart`;
+
+  for (const [line, state] of [
+    ["<button data-pressed='' />", "pressed"],
+    ["<a data-selected />", "selected"],
+    ['<input data-checked="" />', "checked"],
+    ["<fieldset data-invalid={true} />", "invalid"],
+    ["<button data-disabled />", "disabled"],
+  ] as const) {
+    it(`flags ${line}`, () => {
+      expect(findHandWrittenStateAttrs(one(line), FILE)).toEqual([
+        { file: FILE, line: 1, ruleId: "forge-ui-a11y-aria-beside-data", detail: detail(state) },
+      ]);
+    });
+  }
+
+  for (const line of [
+    "<a class='aria-selected:bg-accent aria-selected:text-accent-foreground' />",
+    "<div class='data-selected:bg-accent' />",
+    "<div class='group-data-pressed:opacity-50' />",
+    "<div class='[&[data-invalid]]:border-destructive' />",
+    "<div {...stateAttrs({ pressed })} />",
+    "<div data-slot='toggle' data-position={position} />",
+  ]) {
+    it(`leaves ${line} alone`, () => {
+      expect(findHandWrittenStateAttrs(one(line), FILE)).toEqual([]);
+    });
+  }
+
+  it("reports each state on a line once", () => {
+    expect(findHandWrittenStateAttrs(one("<b data-pressed data-pressed data-checked />"), FILE).map((f) => f.detail)).toEqual([
+      detail("pressed"),
+      detail("checked"),
+    ]);
+  });
+
+  it("honours a suppression carrying a reason", () => {
+    const source = [
+      "/* design-allow: forge-ui-a11y-aria-beside-data — the sample shows the attribute written by hand. */",
+      "<button data-pressed='' />",
+    ].join("\n");
+
+    expect(findHandWrittenStateAttrs(source, FILE)).toEqual([]);
+  });
+});
+
+describe("findTagSizedHeadings()", () => {
+  const detail = (level: string): string =>
+    `\`<h${level}>\` takes its size from the tag — set the size with a \`text-*\` class and the level from the section's position`;
+
+  for (const [line, level] of [
+    ["<h2 class='font-semibold text-foreground'>Compositions</h2>", "2"],
+    ['<h4 className="border-b border-border pb-2">Levers</h4>', "4"],
+  ] as const) {
+    it(`flags ${line}`, () => {
+      expect(findTagSizedHeadings(one(line), FILE)).toEqual([
+        { file: FILE, line: 1, ruleId: "forge-ui-a11y-heading-size-by-class", detail: detail(level) },
+      ]);
+    });
+  }
+
+  for (const line of [
+    "<h1 class='text-3xl font-bold text-balance text-foreground'>UI Component Showcase</h1>",
+    "<h2 class='border-b border-border pb-2 text-xl font-semibold text-foreground'>Compositions</h2>",
+    "<h3 class='text-sm font-semibold text-foreground'>Native SSR</h3>",
+    "<h3 class={cn('font-semibold', cls)}>A collection</h3>",
+    "<hgroup class='font-semibold'>Title</hgroup>",
+  ]) {
+    it(`leaves ${line} alone`, () => {
+      expect(findTagSizedHeadings(one(line), FILE)).toEqual([]);
+    });
+  }
+
+  it("does not read `text-foreground` as a size", () => {
+    expect(findTagSizedHeadings(one("<h3 class='text-foreground'>Two out loud near neighbours</h3>"), FILE).map((f) => f.detail)).toEqual([
+      detail("3"),
+    ]);
+  });
+
+  it("reads a heading whose attributes wrap onto the following lines", () => {
+    const source = ["<h2", "  data-slot='section-title'", "  class='font-semibold text-foreground'>", "  Levers", "</h2>"].join("\n");
+
+    expect(findTagSizedHeadings(source, FILE)).toEqual([
+      { file: FILE, line: 1, ruleId: "forge-ui-a11y-heading-size-by-class", detail: detail("2") },
+    ]);
+  });
+
+  it("honours a suppression carrying a reason", () => {
+    const source = [
+      "/* design-allow: forge-ui-a11y-heading-size-by-class — the compound fixes the tag, as `Card.Title` does. */",
+      "<h2 class='font-semibold text-foreground'>Compositions</h2>",
+    ].join("\n");
+
+    expect(findTagSizedHeadings(source, FILE)).toEqual([]);
+  });
+});
+
+describe("findUnguardedAnimations()", () => {
+  const detail = (token: string): string =>
+    `\`${token}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` the settled state`;
+
+  for (const [line, token] of [
+    ["<div class='rounded-md bg-muted animate-pulse' />", "animate-pulse"],
+    ["const cls = cn('animate-spin size-4');", "animate-spin"],
+    ["<div class='hover:animate-bounce' />", "hover:animate-bounce"],
+  ] as const) {
+    it(`flags ${line}`, () => {
+      expect(findUnguardedAnimations(one(line), FILE)).toEqual([{ file: FILE, line: 1, ruleId: "forge-ui-reduced-motion", detail: detail(token) }]);
+    });
+  }
+
+  for (const line of [
+    "<div class='rounded-md bg-muted motion-safe:animate-pulse' />",
+    "const cls = cn('motion-safe:animate-spin', sizeClasses[size]);",
+    "<div class='motion-reduce:animate-none' />",
+    "<div class='max-md:transition-[opacity,visibility]' />",
+    "const label = 'animate-pulse is what the skeleton uses';",
+  ]) {
+    it(`leaves ${line} alone`, () => {
+      expect(findUnguardedAnimations(one(line), FILE)).toEqual([]);
+    });
+  }
+
+  it("reports each token on a line once", () => {
+    expect(findUnguardedAnimations(one("<div class='animate-spin animate-spin animate-pulse' />"), FILE).map((f) => f.detail)).toEqual([
+      detail("animate-spin"),
+      detail("animate-pulse"),
+    ]);
+  });
+
+  it("honours a suppression carrying a reason", () => {
+    const source = [
+      "/* design-allow: forge-ui-reduced-motion — the movement is the information and has no static equivalent. */",
+      "<div class='animate-pulse' />",
+    ].join("\n");
+
+    expect(findUnguardedAnimations(source, FILE)).toEqual([]);
+  });
+});
+
+describe("findRemovedFocusRings()", () => {
+  const detail = (token: string): string =>
+    `\`${token}\` on a pointer target with no \`focus-visible:ring-*\` beside it — the affordance is removed, not replaced`;
+
+  for (const [line, token] of [
+    ["<summary class='cursor-pointer list-none outline-none' />", "outline-none"],
+    ["const cls = cn('cursor-pointer rounded-md outline-hidden');", "outline-hidden"],
+  ] as const) {
+    it(`flags ${line}`, () => {
+      expect(findRemovedFocusRings(one(line), FILE)).toEqual([{ file: FILE, line: 1, ruleId: "forge-ui-focus-ring", detail: detail(token) }]);
+    });
+  }
+
+  for (const line of [
+    "<a class='cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring' />",
+    "const T = cn('cursor-pointer outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring');",
+    "const T = cn('cursor-pointer outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring');",
+    "const S = cn('cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring');",
+    "const P = cn('z-50 min-w-40 rounded-xl bg-popover shadow-md outline-none');",
+    "<div class='cursor-default outline-none' />",
+  ]) {
+    it(`leaves ${line} alone`, () => {
+      expect(findRemovedFocusRings(one(line), FILE)).toEqual([]);
+    });
+  }
+
+  it("joins a `cn()` call's arguments, since forge splits one class list across several of them", () => {
+    const source = [
+      "  class={cn(",
+      '    "flex cursor-pointer list-none items-center outline-none select-none",',
+      '    "hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",',
+      "    asClass(cls),",
+      "  )}",
+    ].join("\n");
+
+    expect(findRemovedFocusRings(source, FILE)).toEqual([]);
+  });
+
+  it("flags the same shape once the ring argument is gone", () => {
+    const source = ["  class={cn(", '    "flex cursor-pointer list-none items-center outline-none select-none",', "    asClass(cls),", "  )}"].join(
+      "\n",
+    );
+
+    expect(findRemovedFocusRings(source, FILE)).toEqual([{ file: FILE, line: 2, ruleId: "forge-ui-focus-ring", detail: detail("outline-none") }]);
+  });
+
+  it("honours a suppression carrying a reason", () => {
+    const source = [
+      "/* design-allow: forge-ui-focus-ring — the sample shows the removed affordance the rule forbids. */",
+      "<summary class='cursor-pointer outline-none' />",
+    ].join("\n");
+
+    expect(findRemovedFocusRings(source, FILE)).toEqual([]);
   });
 });
 
@@ -766,6 +1177,14 @@ describe("RULE_CORPUS_PATH", () => {
     "forge-ui-interaction-focus-visible",
     "forge-ui-catalog-wrong-raw-input",
     "forge-ui-contrast-floor",
+    "forge-ui-a11y-label-association",
+    "forge-ui-a11y-live-politeness",
+    "forge-ui-a11y-no-aria-readonly-on-button",
+    "forge-ui-a11y-one-live-region",
+    "forge-ui-a11y-aria-beside-data",
+    "forge-ui-a11y-heading-size-by-class",
+    "forge-ui-reduced-motion",
+    "forge-ui-focus-ring",
   ];
 
   it("carries exactly the enforced rules", () => {

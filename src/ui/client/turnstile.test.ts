@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { TURNSTILE } from "../contracts/turnstile-contract";
-import { FakeElement, fakeTree } from "./test-dom";
-import { findWidget, hasApi, hasHtmxSubmission, restoreFocus } from "./turnstile";
+import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./test-dom";
+import { findWidget, hasApi, hasHtmxSubmission, mountTurnstile, restoreFocus } from "./turnstile";
 
 const win = (turnstile?: unknown) => ({ turnstile }) as unknown as Window;
 
@@ -162,5 +162,125 @@ describe("restoreFocus", () => {
 
     expect(restore(container, null)).toBe(false);
     expect(doc.activeElement).toBe(frame);
+  });
+});
+
+class FakeForm extends FakeElement {
+  reset(): void {
+    for (const node of this.descendants()) node.value = "";
+  }
+}
+
+interface Scene {
+  form: FakeForm;
+  field: FakeElement;
+  calls: { executes: number; resets: number; params: Record<string, unknown> | null };
+  issued: boolean[];
+}
+
+/** A mounted controller over a form carrying `formAttrs`, with a descendant field that posts on its
+ * own — the `inlineValidation` shape whose request bubbles through the form's own listeners. */
+function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<string, string> = {}): Scene {
+  const doc = Object.assign(new FakeDocument(), { documentElement: { classList: { contains: () => false } } });
+  const calls: Scene["calls"] = { executes: 0, resets: 0, params: null };
+  Object.assign(doc.defaultView, {
+    turnstile: {
+      render: (_el: unknown, params: Record<string, unknown>) => {
+        calls.params = params;
+        return "widget-1";
+      },
+      execute: () => {
+        calls.executes += 1;
+      },
+      reset: () => {
+        calls.resets += 1;
+      },
+      remove: () => {},
+    },
+  });
+
+  const form = new FakeForm("FORM", formAttrs);
+  form.ownerDocument = doc;
+  const field = new FakeElement("INPUT", { name: "email", "hx-post": "/validate" });
+  const widget = new FakeElement("DIV", { "data-ref": TURNSTILE.widget, "data-sitekey": "site-key", ...widgetAttrs });
+  form.append(field, widget);
+  doc.body.append(form);
+
+  mountTurnstile(form as unknown as HTMLElement);
+  return { form, field, calls, issued: [] };
+}
+
+const afterRequest = (scene: Scene, from: FakeElement, detail: Record<string, unknown>): { resets: number; value: string } => {
+  from.dispatchEvent(new FakeEvent("htmx:afterRequest", { detail: { ...detail, requestConfig: { elt: from } } }));
+  return { resets: scene.calls.resets, value: scene.field.value };
+};
+
+const confirm = (scene: Scene, elt: FakeElement): { prevented: boolean; executes: number } => {
+  const event = new FakeEvent("htmx:confirm", {
+    detail: { elt, issueRequest: (skipConfirmation: boolean) => scene.issued.push(skipConfirmation) },
+  });
+  elt.dispatchEvent(event);
+  return { prevented: event.defaultPrevented, executes: scene.calls.executes };
+};
+
+/** What Cloudflare does when the deferred challenge passes: call the `callback` the render was given. */
+const completeChallenge = (scene: Scene): void => {
+  const callback = scene.calls.params?.callback as (() => void) | undefined;
+  callback?.();
+};
+
+describe("mountTurnstile — the reset is scoped to the element that issued the request", () => {
+  const verbs = ["hx-post", "hx-put", "hx-patch", "hx-delete", "data-hx-post"];
+
+  for (const verb of verbs) {
+    it(`resets the widget and clears the form for a successful request the form issued through ${verb}`, () => {
+      const scene = mountedScene({ [verb]: "/contact" });
+      scene.field.value = "typed@example.com";
+
+      expect(afterRequest(scene, scene.form, { successful: true })).toEqual({ resets: 1, value: "" });
+    });
+  }
+
+  it("leaves the token and the fields alone for a descendant field's own request", () => {
+    const scene = mountedScene({ "hx-post": "/contact" });
+    scene.field.value = "typed@example.com";
+
+    expect(afterRequest(scene, scene.field, { successful: true })).toEqual({ resets: 0, value: "typed@example.com" });
+  });
+
+  it("resets on the form's own submission however far the answering URL is from the declared one", () => {
+    const scene = mountedScene({ "hx-post": "/contact" });
+    scene.field.value = "typed@example.com";
+    const xhr = { responseURL: "https://example.test/thank-you" };
+
+    expect(afterRequest(scene, scene.form, { successful: true, xhr })).toEqual({ resets: 1, value: "" });
+  });
+
+  it("resets the token on an unsuccessful submission but keeps what the reader typed", () => {
+    const scene = mountedScene({ "hx-post": "/contact" });
+    scene.field.value = "typed@example.com";
+
+    expect(afterRequest(scene, scene.form, { successful: false })).toEqual({ resets: 1, value: "typed@example.com" });
+  });
+});
+
+describe("mountTurnstile — challenge='submit' holds the form's own press only", () => {
+  const submitScene = () => mountedScene({ "hx-post": "/contact" }, { "data-challenge": "submit" });
+
+  it("holds the press and releases the request once the challenge answers", () => {
+    const scene = submitScene();
+
+    expect(confirm(scene, scene.form)).toEqual({ prevented: true, executes: 1 });
+
+    completeChallenge(scene);
+
+    expect(scene.issued).toEqual([true]);
+  });
+
+  it("lets a descendant field's own request through unheld, spending no challenge on it", () => {
+    const scene = submitScene();
+
+    expect(confirm(scene, scene.field)).toEqual({ prevented: false, executes: 0 });
+    expect(scene.issued).toEqual([]);
   });
 });

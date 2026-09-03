@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import * as childProcess from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -152,5 +152,44 @@ describe("createGenEnv — run handler end-to-end", () => {
     const [cmd, args] = mockSpawnSync.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("oxfmt");
     expect(args).toEqual([outPath]);
+  });
+});
+
+describe("createGenEnv — an oxfmt that never formatted", () => {
+  const origLog = console.log;
+  const origError = console.error;
+
+  afterEach(() => {
+    console.log = origLog;
+    console.error = origError;
+    mockSpawnSync.mockImplementation(() => ({ status: 0 }));
+  });
+
+  it("falls back to the local binary and reports the failure rather than swallowing it", async () => {
+    const dir = tempDir();
+    const wranglerPath = join(dir, "wrangler.jsonc");
+    const outPath = join(dir, "env.schema.ts");
+    writeFileSync(wranglerPath, `{}`);
+    // A non-zero exit with no `error`: oxfmt ran and refused the file, which is not a spawn failure.
+    mockSpawnSync.mockImplementation(() => ({ status: 1 }));
+    mockSpawnSync.mockClear();
+    const err: string[] = [];
+    console.log = () => {};
+    console.error = (msg: string) => err.push(msg);
+
+    await execute(createGenEnvCommand(), [
+      "--wrangler",
+      wranglerPath,
+      "--dev-vars",
+      join(dir, "none"),
+      "--out",
+      outPath,
+      "--config",
+      join(dir, "absent.ts"),
+    ]);
+
+    expect(mockSpawnSync.mock.calls.map((call) => call[0])).toEqual(["oxfmt", join(process.cwd(), "node_modules", ".bin", "oxfmt")]);
+    expect(err).toEqual([`[cf gen env] oxfmt failed; ${outPath} is unformatted`]);
+    expect(readFileSync(outPath, "utf-8")).toBe(emit([]));
   });
 });

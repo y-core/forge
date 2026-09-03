@@ -28,10 +28,18 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   means a challenge issued to everyone who loads the page, not only to those who submit. The reset
   is the second change: the controller used to reset the widget — and `form.reset()` on success —
   on **any** `htmx:afterRequest` bubbling out of the form, so every htmx request the form triggered
-  burned the single-use token. It now compares the answered URL against the form's own `hx-post`,
-  and a form declaring no `hx-post` keeps the old behaviour, since it has no URL to test and submits
-  through a descendant. An app that worked around the old reset by saving and restoring its fields
-  can drop that workaround.
+  burned the single-use token. It now tests the element htmx issued the request from: a form
+  declaring an `hx-*` verb itself owns only the request issued by the form, and a form carrying no
+  verb owns the one issued by a descendant submit control that carries it. A descendant field's own
+  request no longer resets anything. An app that worked around the old reset by saving and restoring
+  its fields can drop that workaround.
+
+- **`Toolbar` (`ui/chrome`) renders `<div role="toolbar">`, not `<nav role="toolbar">`.** The
+  `role` was already replacing the element's navigation landmark, so the `<nav>` bought nothing and
+  misled assistive-technology users scanning by landmark. `ToolbarProps` accordingly extends the
+  `div` intrinsic attributes instead of `nav`'s — a consumer spreading a nav-only attribute through
+  the toolbar no longer typechecks, and selectors targeting `nav[role="toolbar"]` need the tag
+  dropped.
 
 - **The gate's `governance` step now invokes `gov sync`, not `governance-sync`.**
   `@y-core/governance` renamed its bin in v0.4.4, so `cloudflareWorkerSteps({ governance: true })`
@@ -66,6 +74,103 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   different algorithm and inserts blank lines between import groups.
 
 ### Added
+
+- **`<Turnstile>` takes `cData` and `responseFieldName`, the missing client halves of two server
+  options forge already published.** `cData` stamps `data-cdata` and reaches Cloudflare as `cData`;
+  it is what `verifyTurnstile({ expectedCData })` compares against, and until now nothing could mint
+  a token carrying it, so the option was unusable. It is the only way to tie a challenge to an
+  app-side record. `responseFieldName` stamps `data-response-field-name` and reaches Cloudflare as
+  `response-field-name`, renaming the hidden token input so two widgets can share one form — pair it
+  with the server's existing `tokenField`. A `cData` outside `TURNSTILE_CDATA_PATTERN` (new, beside
+  `TURNSTILE_ACTION_PATTERN`) is reported to the console and still forwarded, as `action` already
+  is, leaving the server the single enforcement point; `responseFieldName` carries no pattern,
+  because it is an HTML form field name. Both props are optional and elide when absent, so existing
+  markup is byte-identical. The showcase playground drives both.
+- **A Turnstile page in the showcase (`/showcase/ui/turnstile`), replacing the catalog band.** One
+  widget a reader reconfigures from a panel that drives every prop `TurnstileProps` declares —
+  `siteKey`, `size`, `load`, `challenge`, `appearance`, `action`, `language`, `tabindex` and the
+  fallback and unsupported copy — with the `<Turnstile>` call the settings correspond to printed
+  beside it. The query string is the whole configuration, as on the theme page, so a setting worth
+  reporting is a link. The sizes-and-modes band that used to sit on the Interactive page moves here
+  intact and still owns the component's coverage axes; three further bands show the two refusal
+  messages the controller reveals, the round trip through `defineAction`, and Cloudflare's dummy
+  sitekeys. The panel offers nothing Cloudflare's API has that forge does not expose: an option
+  forge has ruled against — `theme`, `retry`, `refreshExpired` — has no dial, because a control for
+  a prop the component cannot take would document a component forge does not ship. The sitekey is a
+  preset id rather than a free string, so no visitor can have a key of their own rendered under the
+  host's name.
+
+- **`registerShowcase` takes an optional `turnstileSecret`, and mounts a `turnstile-verify` action.**
+  The playground's form posts to an ordinary `defineAction` route with `honeypot` and `turnstile`
+  declared, and its verdict panel reports which guard refused and why — the one place the showcase
+  departs from what a real route must do, since an application answers every guard identically so a
+  bot cannot read the guard off the response. Without the secret the panel says it was not
+  configured rather than claiming a verification that never happened. New exports from
+  `@y-core/forge/ui/show`: `TurnstileDemos`, `loadTurnstileOptions`, `turnstileSiteKey`,
+  `turnstileSnippet`, `TurnstileVerdictFragment`, `renderTurnstileVerdict`, `TURNSTILE_TEST_KEYS`,
+  `TURNSTILE_PASS_KEY`, `TURNSTILE_DEMO_DEFAULTS`, `SHOW_TURNSTILE_VERDICT_ID`, and the types
+  `TurnstileDemoOptions`, `TurnstileTestKey` and `TurnstileVerdict`. `ShowcaseData` gains a
+  `turnstile` field, so an app calling `ShowcaseContent` directly passes `loadShowcase`'s output
+  unchanged and nothing else.
+
+- **`formDigits()` (`validation`) — a form value reduced to its ASCII digits.** The third form-value
+  primitive beside `formText()` and `formMultilineText()`, for a control whose separators are
+  cosmetic: `v.pipe(formDigits(), v.length(16))` accepts a card number however the user grouped it,
+  and the length then counts digits rather than the punctuation a rendering happened to carry. It
+  only removes — it never throws, coerces or refuses, so a bad value still earns a `422` from a
+  composed `v.length` rather than the `500` a throwing pipe action would produce. It is destructive
+  in a way its siblings are not, discarding a leading `+` among other significant characters; a
+  field that must keep one stays on `formText()`.
+
+- **`Input` takes `format` — opt-in cosmetic grouping, applied on blur.** `format='#### #### ####
+####'` regroups the value when focus leaves the field, and nothing reformats as the user types, so
+  the entire class of caret bugs is structurally impossible. The server renders the formatted value
+  itself, so a no-JS first paint and a re-render after a failed submit already read grouped and the
+  controller's first write is a no-op. **The formatted string is what the form posts** — pair the
+  field with `formDigits()` on the server, which is the documented other half of the contract.
+  `format` is never validation, and it does not compose with `bind`: a control carrying both is
+  refused with one warning. Reach for `inputmode`, `pattern`, `autocomplete` and `maxlength` first —
+  they need no script at all — and pair `format` with a `tabular-nums` class of your own.
+
+- **`ui/contracts` exports `INPUT_FORMAT_SCOPE`, `INPUT_FORMAT_ATTR`, `applyFormat` and
+  `stripFormat`.** The two pure functions both halves of the format feature share: `#` is a slot and
+  every other character a literal, no `RegExp` is ever built from a template, and `applyFormat`
+  always strips before it regroups — so it is idempotent, emits `""` rather than a bare skeleton that
+  would defeat `required`, grows no trailing separator on a partial value, and returns the bare
+  significant characters rather than truncating one that overflows the template.
+
+- **`inputmode` and `enterkeyhint` on every element's JSX attributes.** Both are global HTML
+  attributes, so both sit on `HTMLAttributes` — `<textarea inputmode='numeric'>` typechecks, not only
+  `<input>`. Each is a closed literal union rather than `string`.
+
+- **`<Turnstile>` takes `language`, `tabindex` and an `unsupported` message slot.** `language`
+  pins the widget to a language the page has chosen where the browser's own would differ;
+  `tabindex` sets the **widget iframe's** place in the form's tab order, which is an accessibility
+  concern rather than a preference. **`tabindex` replaces the container's own `tabindex`** — the
+  prop is omitted from the inherited `div` attributes, because Cloudflare's meaning is the one that
+  matters on this element. `unsupported` is a second, separately overridable message, shown when
+  Turnstile cannot run in the visitor's browser at all; the general fallback's "disable any ad or
+  script blockers" is advice that visitor cannot act on. The other Cloudflare render parameters
+  (`cData`, `retry`, `refresh-*`, `response-field-name`) stay out.
+
+- **`<Turnstile>` reserves the widget's box, so the eager render stops shifting the page during
+  first paint.** The reservation is keyed on `appearance`: `appearance="always"` holds Cloudflare's
+  published dimensions, and `execute` / `interaction-only` reserve nothing, since a widget that may
+  never appear would otherwise leave a permanent hole. **Consumers see a rendered `class` attribute
+  on the container where there was none** — Tailwind sizing utilities, merged ahead of any `class`
+  of the caller's, so a caller's own sizing still wins.
+
+- **`mountTurnstile` copies the page's CSP nonce onto the script it injects.** A
+  `script-src 'self' 'nonce-…' 'strict-dynamic'` policy now covers Cloudflare's `api.js` and
+  everything it loads in turn, with no CDN origin in `script-src`. `frameSrc` and `connectSrc` still
+  need `TURNSTILE_CSP` — `strict-dynamic` governs script loading only, and the challenge runs in an
+  iframe. The nonce is read off an already-nonced script's **property**, never a `data-` copy: the
+  browser empties the `nonce` content attribute precisely to stop the value being read back out
+  through a CSS attribute selector. A page that sets no nonce is unaffected.
+
+- **`TURNSTILE_ACTION_PATTERN` is exported from `ui/contracts`** — Cloudflare's
+  `^[a-zA-Z0-9_-]{1,32}$` for the `action` prop. The controller reports a value outside it and
+  **still forwards it**, so the server's `verifyTurnstile` stays the single enforcement point.
 
 - **`<Turnstile>` takes `challenge` and `appearance`, opting a form into one challenge run at
   submit.** `challenge?: "render" | "submit"` defaults to `"render"`, which is today's behaviour
@@ -146,6 +251,60 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Fixed
 
+- **`<Turnstile>`'s fallback message is no longer one-way, and no longer the same message for every
+  cause.** `showFallback` only ever revealed the alert; nothing took it back down. Under the new
+  eager default that stranded _every_ visitor to a page with a transient Turnstile error on "disable
+  any ad or script blockers", including the ones whose widget then solved itself on Cloudflare's
+  automatic retry. The controller now passes a success `callback` in render mode too — previously
+  only submit mode had one — and that callback re-hides the alert. Two consequences for a consumer:
+  the widget div gains a second hidden `<p>` (`data-ref="turnstile-unsupported"`), and the
+  `error-callback` now takes Cloudflare's error code, reports it once under the `[turnstile]`
+  prefix, and **returns a non-falsy value**, which stops Cloudflare logging a warning of its own for
+  each of its retries.
+
+- **A `challenge="submit"` press is no longer held for 15 seconds on a widget that cannot answer.**
+  The controller now tracks widget health as `unmounted | ready | dead`: a `turnstile.render()` that
+  throws — previously swallowed with no report at all — or an `error-callback` before the press
+  leaves the widget `dead`, and the next press goes through unheld for `verifyTurnstile` to refuse.
+  It used to sit disabled and `aria-busy` for the full `TURNSTILE_EXECUTE_TIMEOUT_MS` with no
+  request ever sent.
+
+- **An interactive Turnstile challenge is no longer discarded after 15 seconds while the visitor is
+  still solving it.** The execute timeout assumed a non-interactive challenge. When Turnstile
+  presents one the visitor must click, 15 seconds is well short of a real person, and their
+  submission was silently dropped with the ad-blocker message. The controller now wires
+  `before-interactive-callback` — clearing the timer and dropping the busy state, so the button
+  stops reading as mid-flight while they are being asked to act — and `after-interactive-callback`,
+  which re-arms both. Cloudflare's own `timeout-callback` covers abandonment.
+
+- **The widget re-renders on a theme flip, but only while no token has been issued.** A dark/light
+  toggle used to leave the widget in the colours it first rendered in. It now watches
+  `documentElement`'s class list and re-renders on a change — and stops doing so the moment a token
+  exists, because discarding a solved token to change a colour would cost the visitor a second
+  challenge, and in submit mode the one they had just passed.
+
+- **`<Turnstile>` no longer resets the widget on expiry or timeout.** Both `refresh-expired` and
+  `refresh-timeout` default to `auto`, and Cloudflare documents the timeout callback as resetting
+  the widget itself, so forge's own `reset()` was redundant at best and at worst spent a second
+  challenge on top of the one Turnstile had just re-presented. The two callbacks are no longer
+  wired at all. **This was settled from Cloudflare's reference documentation, not observed against a
+  live test sitekey** — worth one manual confirmation on a real key.
+
+- **A `turnstile.remove()` that throws no longer aborts the rest of the controller's teardown.** It
+  was called bare where `render` was wrapped, so a widget id whose container an htmx swap had
+  already taken could skip `mounted.delete(container)` and leave a stale WeakMap entry that a later
+  mount on the same node would be handed instead of a fresh controller.
+
+- **`<Turnstile>`'s post-render focus guard is now armed on every render, not only on one that had
+  a focus to restore.** The restore and the guard were one rule; they are two now, because a
+  restore needs somewhere to restore _to_ and the guard does not. Under the new eager default the
+  render lands at page entry with `body` focused, so there was no held focus and no guard — and
+  Turnstile steals focus a beat after `render` returns, by which time the reader has clicked the
+  first field and loses it. The guard ignores a `focusout` originating inside the widget, so
+  tabbing between fields is unaffected. The accepted trade: a reader who deliberately clicks into
+  the widget within five seconds of the render can have that focus pulled back to the field they
+  left.
+
 - **`cn` no longer drops a text colour standing beside `text-wrap` / `text-nowrap` /
   `text-balance` / `text-pretty`, nor a font family beside `font-stretch-*`.** The `text-`
   dispatcher classed the four wrapping modes as colours, so
@@ -172,6 +331,39 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   guarantees the stub is in place before the import resolves.
 
 ### Changed
+
+- **The design gate enforces two accessibility rules it had only published:**
+  `forge-ui-a11y-label-association` (a Floor rule, new to `floor.md`) fails a `<label>` that
+  neither carries `for` nor wraps its control, and `forge-ui-a11y-live-politeness` (already a
+  corpus sentence) fails an `aria-live` that is neither `polite` nor `assertive`, and requires a
+  stated reason for `assertive`. Both are suppressible per-site with `design-allow` and its
+  mandatory reason. Forge's own tree passes with one suppression, in the showcase's toast-position
+  demo. **This is forge's own gate, not a published behaviour change** — an app inherits the rule
+  ids as citable corpus, and runs the checks only if it runs forge's design step.
+
+- **The design gate now checks six more of the accessibility rules it publishes**, taking the
+  enforced set from two to eight: `forge-ui-a11y-no-aria-readonly-on-button` (the attribute on a
+  `<button>` or a `role="button"` element), `-one-live-region` (a live region opened outside
+  `Toast.Container`), `-aria-beside-data` (a `data-pressed`/`-checked`/`-selected`/`-disabled`/
+  `-invalid` written by hand rather than emitted through `stateAttrs`), `-heading-size-by-class`
+  (an `<h1>`–`<h6>` whose quoted class carries no `text-*` size), plus the two Floor ids
+  `forge-ui-reduced-motion` (an `animate-*` with no `motion-safe:`/`motion-reduce:` in its variant
+  chain) and `forge-ui-focus-ring` (`outline-none`/`outline-hidden` on a `cursor-pointer` target
+  with no `focus-visible:` ring beside it). Each is suppressible per-site with `design-allow` and
+  its mandatory reason, though on the two Floor ids a suppression is a defect to remove rather than
+  an override to accept. Forge's own tree passes all six with no new suppression. The remaining ten
+  published a11y ids have no mechanical form and are now recorded as review items with the reason
+  each resists one — including `forge-ui-a11y-state-attrs-source`, whose finder is blocked by a
+  single site. **This is forge's own gate, not a published behaviour change** — an app inherits the
+  rule ids as citable corpus, and runs the checks only if it runs forge's design step.
+
+- **`.oxlintrc.json` enables the `jsx-a11y` plugin**, so all 35 of its rules run under
+  `correctness` over forge's own JSX. It is a vocabulary check — misspelled `aria-*` attributes,
+  invalid role strings, malformed ARIA values — not a check on composition, which is the design
+  gate's. `prefer-tag-over-role` is off (its substitutions change the element's meaning), and
+  `control-has-associated-label`, `tabindex-no-positive` and `aria-proptypes` are off for test
+  files, which exist to feed adversarial markup. **`.oxlintrc.json` is not published**, so this
+  changes no consumer's lint result.
 
 - **`.oxfmtrc.json` enables `sortTailwindcss` over `cn` and `cva` calls**, so forge's class
   literals are held in Tailwind's canonical order. This is forge's own formatting, not a published
@@ -1114,7 +1306,7 @@ It is not a re-tint of a few tokens.
   `--accent-12` to supply its own brand — the extension point the old comment named — that
   declaration now does nothing, because `--primary` no longer resolves through step 12. Re-declare
   `--accent-9` and `--accent-contrast`, or the whole `--accent-*` scale, which is what a scheme file
-  is for. See `MIGRATION.md`.
+  is for.
 
   `TOKEN_CONTRACT` gains a `--primary-foreground` row, and it audits a pair that existed unaudited
   for 83 versions. `Button variant='primary'` has always been text on a filled surface, so 1.4.3 has
@@ -1133,8 +1325,7 @@ It is not a re-tint of a few tokens.
 > rendering — nothing else fails to compile and nothing throws, and four of those silent changes are
 > behavioural rather than cosmetic. One further silent change is neither tokens nor rendering:
 > `inlineValidation()`'s `sync` default moves from `"closest form:abort"` to `"this:abort"`, listed
-> under **Fixed** because the old default threw. Read the table, then look at a dark-mode form, then
-> read [`MIGRATION.md`](MIGRATION.md).
+> under **Fixed** because the old default threw. Read the table, then look at a dark-mode form.
 
 - **`forge.css` now declares `@custom-variant dark (&:where(.dark, .dark *));` itself, and that is a
   takeover rather than a convenience.** The line was going to be this release's one required action;
@@ -1163,7 +1354,7 @@ It is not a re-tint of a few tokens.
   written in **statement** form and in `forge.css` rather than `theme-base.css`, because
   `validate-contrast` parses the semantic layer by brace-counting `.dark { … }` and the block
   spelling would put a second thing that looks exactly like a mode block into the file that gate
-  walks. See [`MIGRATION.md`](MIGRATION.md).
+  walks.
 
 - **The per-mode override point moved from the semantic token to the role scale.** Every semantic
   token is now declared once and means the same thing in both modes, so an app that wrote
@@ -1176,7 +1367,7 @@ It is not a re-tint of a few tokens.
   both modes needs no change at all. This is the genuine breaking change of the sub-stage and the
   one no compiler will ever mention; `validate-contrast` refuses an audited token declared in
   `.dark` at all, so forge's own theme files cannot re-introduce the old shape, but a consumer's
-  stylesheet is outside that gate. See [`MIGRATION.md`](MIGRATION.md).
+  stylesheet is outside that gate.
 - **`--input` and `--ring` are _lighter_ than the values this release's audit first landed on.**
   `--input` goes 4.34 → 3.33 in light and `--ring` 6.87 → 5.19, both still clear of the 3:1 floor
   1.4.11 binds them by, and both now measured as a single exact value rather than a worst case. The
@@ -1215,7 +1406,6 @@ It is not a re-tint of a few tokens.
   defect above: the `@custom-variant dark` line this release requires could not have saved it. The
   shell is now the consumer's, exactly as `registerShowcase` has always taken it. `config` becomes
   the second argument, matching `definePage`'s own `(c, config, …)` shape, which `context` needs.
-  See [`MIGRATION.md`](MIGRATION.md).
 - **The log viewer's markup changes end to end**, which for a mounted viewer is the largest single
   rendering change in the release. Level chips are `Badge` variants (`error`→`destructive`,
   `warn`→`warning`, `info`→`info`, `debug`→`outline` — a neutral label, not a status signal). The
@@ -1304,8 +1494,7 @@ var(--palette-50); }` won in **both** modes and the base's `.dark` twin was neve
   it stops `bg-sidebar`, `text-sidebar-foreground`, `border-sidebar-border` and the rest of that
   family being generated at all — an app that used them loses the styling **silently**, with no
   build error and no unknown-class warning, because an unmatched utility is simply an unstyled
-  class. Re-declare the eight tokens and the bridge aliases in your own stylesheet;
-  [`MIGRATION.md`](MIGRATION.md) carries the block to paste.
+  class. Re-declare the eight tokens and the bridge aliases in your own stylesheet.
 - **`mountNav` and `NavControllerOptions` are removed from `@y-core/forge/ui/client`.** The
   controller drove `data-ref="nav-toggle" | "nav-menu" | "nav-link"` markup **no forge component
   emits**, so it could only ever have run against a consumer's hand-written nav. Its claims are all
@@ -2133,13 +2322,10 @@ the more useful half.
 
 ### Breaking Changes
 
-> **Upgrading a consuming app: read [`MIGRATION.md`](MIGRATION.md) as well as this section.** The
-> entries below are the record of what changed; the guide is the procedure, and it covers the four
-> breaks that are **silent** — an implicitly-optional schema field, a refusal whose status is
-> unchanged but whose body is not, a dropped `v.safeParse` config, and a hand-rolled
-> `Object.fromEntries` body read that is last-wins where the removed reader was first-wins. Each
-> compiles clean, returns `200`, and behaves differently in production. It closes with an audit
-> checklist of concrete greps.
+> **Upgrading a consuming app: four of the breaks below are silent** — an implicitly-optional schema
+> field, a refusal whose status is unchanged but whose body is not, a dropped `v.safeParse` config,
+> and a hand-rolled `Object.fromEntries` body read that is last-wins where the removed reader was
+> first-wins. Each compiles clean, returns `200`, and behaves differently in production.
 
 - **`defineAction` takes a `schema` instead of a `parse`/`validate` pair.** The two callbacks were
   arbitrary functions the type system could say nothing about: `parse` returned `Input` and

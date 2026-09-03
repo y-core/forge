@@ -69,9 +69,8 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   steps.push(typecheckStep(), lintStep({ sources }), formatStep({ sources }));
 
-  // Opt-in rather than on by default: the step runs `gov`, a binary from `@y-core/governance`, and a
-  // preset that assumed it would fail with "command not found" in every app that does not clone the
-  // corpus. Its fixer is the sync itself.
+  // Opt-in: the step runs `gov` from `@y-core/governance`, which is absent in an app that does not
+  // clone the corpus.
   if (options.governance) {
     steps.push({ label: "governance", tail: 20, cmd: ["gov", "sync", "--check"], fix: ["gov", "sync"] });
   }

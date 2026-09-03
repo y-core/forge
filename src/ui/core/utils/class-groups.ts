@@ -40,6 +40,8 @@ const TEXT_DECORATION = ["underline", "overline", "line-through", "no-underline"
 
 const TEXT_WRAP = ["text-wrap", "text-nowrap", "text-balance", "text-pretty"] as const;
 
+const WHITESPACE_VALUES = ["normal", "nowrap", "pre", "pre-line", "pre-wrap", "break-spaces"] as const;
+
 const VISIBILITY = ["visible", "invisible", "collapse"] as const;
 
 const FONT_VARIANT_NUMERIC = [
@@ -239,6 +241,7 @@ const EXACT_GROUPS: ReadonlyMap<string, string> = new Map<string, string>([
   ...exactEntries(TEXT_TRANSFORM, "text-transform"),
   ...exactEntries(TEXT_DECORATION, "text-decoration"),
   ...exactEntries(TEXT_WRAP, "text-wrap"),
+  ...valueEntries("whitespace-", WHITESPACE_VALUES, "whitespace"),
   ...exactEntries(VISIBILITY, "visibility"),
   ...exactEntries(FONT_VARIANT_NUMERIC, "font-variant-numeric"),
   ...exactEntries(SR_ONLY, "sr-only"),

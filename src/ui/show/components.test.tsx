@@ -7,6 +7,7 @@ import { render } from "../../testing/render";
 import { PAGE_ORDER, SECTIONS, ShowcaseContent, type ShowcasePage } from "./components";
 import { sectionBodies } from "./coverage";
 import { showcasePaths } from "./route";
+import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;
@@ -14,7 +15,8 @@ StubIcon.sprite = "/icons.svg";
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
-const page = (which: ShowcasePage = "index") => render(<ShowcaseContent data={{ paths: showcasePaths("/showcase") }} icon={icon} page={which} />);
+const page = (which: ShowcasePage = "index") =>
+  render(<ShowcaseContent data={{ paths: showcasePaths("/showcase"), turnstile: TURNSTILE_DEMO_DEFAULTS }} icon={icon} page={which} />);
 
 const pageOf = (id: string): ShowcasePage => SECTIONS.find((section) => section.id === id)?.page ?? "index";
 
@@ -71,7 +73,14 @@ describe("ShowcaseContent", () => {
     const out = await page("interactive");
     const hrefs = (html: string) => [...html.matchAll(/href="([^"]*)"/g)].map((match) => match[1] ?? "");
 
-    expect(hrefs(pagesRail(out))).toEqual(["/showcase", "/showcase/interactive", "/showcase/runtime", "/showcase/htmx", "/showcase/chrome"]);
+    expect(hrefs(pagesRail(out))).toEqual([
+      "/showcase",
+      "/showcase/interactive",
+      "/showcase/runtime",
+      "/showcase/htmx",
+      "/showcase/turnstile",
+      "/showcase/chrome",
+    ]);
 
     const anchors = hrefs(tocRail(out));
     expect(anchors.length).toBeGreaterThan(0);
@@ -294,10 +303,6 @@ describe("ShowcaseContent", () => {
       "Demo navigation (rail)",
       "Demo navigation (right)",
       "On this page",
-      "Panel tools",
-      "Panel tools (bottom)",
-      "Panel tools (horizontal)",
-      "Panel tools (right rail)",
       "Showcase pages",
     ]);
   });
@@ -480,28 +485,5 @@ describe("ShowcaseContent", () => {
     // `window.turnstile` truthiness check with an element and its `api.js` reports a double load.
     const reserved = new Set(["turnstile"]);
     expect(SECTIONS.map((section) => section.id).filter((id) => reserved.has(id))).toEqual([]);
-  });
-
-  it("guards each turnstile size with its own form, self-scoping widget and distinct email field", async () => {
-    const body = await bodyOf("turnstile-widget");
-    expect([...body.matchAll(/data-size="([^"]*)"/g)].map((match) => match[1])).toEqual(["normal", "compact", "flexible", "normal"]);
-
-    const forms = [...body.matchAll(/<form([^>]*)>([\s\S]*?)<\/form>/g)];
-    // The showcase adds no scope of its own — each widget carries `data-scope="turnstile"`, which is
-    // the whole wiring a consuming app needs.
-    expect(forms.map((form) => attrOf(`<form${form[1]}>`, "data-scope"))).toEqual([null, null, null, null]);
-    const widgets = forms.map((form) => (form[2] ?? "").match(/<div[^>]*data-ref="turnstile"[^>]*>/)?.[0] ?? "");
-    expect(widgets.map((widget) => attrOf(widget, "data-scope"))).toEqual(["turnstile", "turnstile", "turnstile", "turnstile"]);
-    // The deferred challenge needs an htmx submission to hold, which is the fourth form's `hx-post`.
-    expect(widgets.map((widget) => attrOf(widget, "data-challenge"))).toEqual([null, null, null, "submit"]);
-    expect(forms.map((form) => attrOf(`<form${form[1]}>`, "hx-post"))).toEqual([null, null, null, "#"]);
-
-    const parts = /<input[^>]*type="email"[^>]*>|<div[^>]*data-ref="turnstile"[^>]*>|<button[^>]*type="submit"[^>]*>/g;
-    for (const form of forms) {
-      expect([...(form[2] ?? "").matchAll(parts)].map((match) => match[0].match(/^<([a-z]+)/)?.[1])).toEqual(["input", "div", "button"]);
-    }
-
-    const emails = forms.map((form) => (form[2] ?? "").match(/<input[^>]*type="email"[^>]*>/)?.[0] ?? "").map((tag) => attrOf(tag, "name"));
-    expect(emails).toEqual(["turnstile-email", "turnstile-email-compact", "turnstile-email-flexible", "turnstile-email-submit"]);
   });
 });

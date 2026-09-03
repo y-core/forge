@@ -83,8 +83,9 @@ cannot be placed in one of the two is not yet a rule.
 ### 2a. Floor — Verify and Refuse
 
 **Tier 1, the Floor, is invariant.** A Floor rule is never overridden, by anyone, for any brief.
-Floor rules are mechanically checkable, anchored to a forge primitive, and stated as bare
-imperatives — no hedging, no "prefer", no "consider".
+Floor rules are checkable against a named forge primitive by a reviewer (§1a) — not necessarily by
+a command — anchored to that primitive, and stated as bare imperatives — no hedging, no "prefer",
+no "consider".
 
 The Floor is split into two halves, and the split is structural rather than cosmetic:
 

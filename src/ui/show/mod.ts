@@ -18,6 +18,7 @@ export {
   renderPreview,
   renderSearch,
   renderToast,
+  renderTurnstileVerdict,
   renderValidate,
   showcasePaths,
 } from "./route";
@@ -40,3 +41,15 @@ export {
   ValidateFragment,
   ValidateSection,
 } from "./sections";
+export type { TurnstileDemoOptions, TurnstileTestKey, TurnstileVerdict } from "./turnstile-demo";
+export {
+  loadTurnstileOptions,
+  SHOW_TURNSTILE_VERDICT_ID,
+  TURNSTILE_DEMO_DEFAULTS,
+  TURNSTILE_PASS_KEY,
+  TURNSTILE_TEST_KEYS,
+  TurnstileDemos,
+  TurnstileVerdictFragment,
+  turnstileSiteKey,
+  turnstileSnippet,
+} from "./turnstile-demo";

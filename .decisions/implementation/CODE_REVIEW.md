@@ -28,6 +28,7 @@ description: "How to review forge code: the blocking invariants, a detection com
 - §7 The oxlint Rule Set: why `suspicious` is off and which of its rules are named individually
 - §7a Why `categories.suspicious` is off: the default-deny, and the three rules that dominate its volume
 - §7b The two rules taken from it: what `preserve-caught-error` and `no-shadow` caught
+- §7c Why `jsx-a11y` is on, and what it does not see: the one rule off, the two site suppressions, the named blind spots, and the vocabulary-versus-composition split
 
 ---
 
@@ -70,16 +71,18 @@ pre-1.0 version number exists to avoid.
 **A rule with a gate step is not a review item.** Do not hand-review these; run the gate and
 read its output.
 
-| Rule                                                                                         | detect                                           |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Barrel discipline, `export *` ban, export-map drift, `@public` symbols reaching their barrel | `bun run verify --only validate-exports`         |
-| Leaf/integration classification, undeclared cross-namespace imports, stale declared edges    | `bun run verify --only validate-namespace-graph` |
-| JSX pragma present and correct in every `.tsx`                                               | `bun run verify --only validate-jsx`             |
-| Browser-only `ui/client` import reaching a Worker-executed `src/ui` file                     | `bun run verify --only validate-ssr-boundary`    |
-| No-sibling-barrel rule (oxlint `no-restricted-imports`)                                      | `bun run verify --only lint`                     |
-| Governing-doc import paths, numbering, references                                            | `bun run verify --only validate-docs`            |
-| Tailwind `@source` coverage of every `src/ui/` directory                                     | `bun run verify --only validate-css-sources`     |
-| Behaviour of the changed unit                                                                | `bun test <path>`                                |
+| Rule                                                                                                                                                                                                              | detect                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Barrel discipline, `export *` ban, export-map drift, `@public` symbols reaching their barrel                                                                                                                      | `bun run verify --only validate-exports`         |
+| Leaf/integration classification, undeclared cross-namespace imports, stale declared edges                                                                                                                         | `bun run verify --only validate-namespace-graph` |
+| JSX pragma present and correct in every `.tsx`                                                                                                                                                                    | `bun run verify --only validate-jsx`             |
+| Browser-only `ui/client` import reaching a Worker-executed `src/ui` file                                                                                                                                          | `bun run verify --only validate-ssr-boundary`    |
+| No-sibling-barrel rule (oxlint `no-restricted-imports`)                                                                                                                                                           | `bun run verify --only lint`                     |
+| Governing-doc import paths, numbering, references                                                                                                                                                                 | `bun run verify --only validate-docs`            |
+| Tailwind `@source` coverage of every `src/ui/` directory                                                                                                                                                          | `bun run verify --only validate-css-sources`     |
+| `forge-ui-a11y-label-association`, `-live-politeness`, `-one-live-region`, `-aria-beside-data`, `-no-aria-readonly-on-button`, `-heading-size-by-class`, plus `forge-ui-focus-ring` and `forge-ui-reduced-motion` | `bun run verify --only validate-design`          |
+| ARIA vocabulary validity — attribute names, role names, value shapes                                                                                                                                              | `bun run verify --only lint`                     |
+| Behaviour of the changed unit                                                                                                                                                                                     | `bun test <path>`                                |
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix
 the check, not the review.**
@@ -223,6 +226,27 @@ only the headline one?_ A `void work().catch(…)` branch is untracked, so the i
 before it settles — the shape to look for is a probabilistic or opportunistic side task detached
 from the promise the caller awaits ([`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §6).
 
+**The ten unchecked a11y rule ids.** Read every added or changed `.tsx` under `src/ui/`. _Does the
+markup meet each of these ids, none of which any gate step proves?_ The eight that are gated are
+§3a's; these ten are the remainder, and the reason each has no command is recorded below so it is
+not re-derived. Their sentences are
+[`floor.md`](../../src/ui/design/floor.md) and
+[`reference/10-accessibility.md`](../../src/ui/design/reference/10-accessibility.md); the corpus
+publishes them either way ([`UI_DESIGN_GUIDANCE.md`](./UI_DESIGN_GUIDANCE.md) §4a).
+
+| Rule id                             | Why no command decides it                                                                                                                                                                                                                                               |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `forge-ui-accessible-name`          | The name depends on the rendered subtree and on component internals a source scan cannot follow                                                                                                                                                                         |
+| `forge-ui-heading-order`            | Order is a property of the rendered document, not of one file — `compositions.tsx` correctly writes three `<h3>`s before its `<h2>`                                                                                                                                     |
+| `forge-ui-hit-target`               | Needs to know which element is interactive and what the unspecified axis resolves to at render                                                                                                                                                                          |
+| `forge-ui-not-color-alone`          | Turns on whether an icon and words _also_ convey the state                                                                                                                                                                                                              |
+| `forge-ui-a11y-icon-plus-text`      | Preferred form and permitted alternative are the same shape in source — the 25 `aria-label` sites in `show/components.tsx` alone would fire                                                                                                                             |
+| `forge-ui-a11y-label-element`       | The trigger is "the design has no room for a visible label", a fact about the design and not about the markup                                                                                                                                                           |
+| `forge-ui-a11y-required-marker`     | `Label`'s `required` prop already emits the marker, so no residual shape is left to match                                                                                                                                                                               |
+| `forge-ui-a11y-reduced-motion-pair` | Depends on whether the settled state is already the untransitioned default                                                                                                                                                                                              |
+| `forge-ui-a11y-spinner-announces`   | Scoped to "the region", a boundary source text does not delimit                                                                                                                                                                                                         |
+| `forge-ui-a11y-state-attrs-source`  | **A mechanical form exists** — an `aria-*` Tailwind variant naming a state `STATE_ATTRS` registers — and is unadopted only because it fires twice on `TAB_BASE` in `src/ui/core/tabs.tsx`, line 73. When that site changes, the finder lands and this line moves to §3a |
+
 ---
 
 ## 4. Severity Calibration
@@ -303,3 +327,51 @@ measured at migration time, 312 came from three rules that collide with forge's 
 
 **Type-aware rules are configured in the same file but only run under `lint:types`** — see
 [`TESTING.md`](./TESTING.md) §6 for why that step is `fullOnly`.
+
+### 7c. Why `jsx-a11y` is on, and what it does not see
+
+The plugin is enabled and every one of its 35 rules runs under `correctness`. Measured over
+`src/` and `config/` before adoption, it produced **9 findings and zero real defects**: six were
+correct ARIA the rules mis-advise, three were adversarial markup in test fixtures.
+
+**Unlike §7a's default-deny, a category is the right unit here** — and the reach is narrower than
+§7a's argument implies. `.oxlintrc.json` is not in `package.json`'s `files` array, so it does not
+ship. A consumer inherits the _invocation_ (`lintStep` → `oxlint --deny-warnings`) and writes its
+own rule table, so an oxc editorial change to `jsx-a11y` reaches forge's tree only, not every
+consumer's. Against that, the 35 rules are a fixed W3C vocabulary rather than a style opinion, and
+they cost nothing today.
+
+**One rule is off.** `prefer-tag-over-role` proposes `<output>` for `role="status"` and
+`address, details, fieldset, hgroup, optgroup` for `role="group"` — substitutions that change the
+element's meaning. It is off rather than suppressed per-site because it is the one rule that
+_recurs_: every future correct `role="status"` would owe a fresh suppression. Three rules are off
+for `*.test.{ts,tsx}` only — `control-has-associated-label`, `tabindex-no-positive`,
+`aria-proptypes` — because feeding a linter's own bad input is what those tests are for
+([`TESTING.md`](../governance/TESTING.md)).
+
+**Two sites carry a written suppression**, both load-bearing and both proven so by
+`report-unused-disable-directives-severity error` on `typeAwareLintStep`: `switch.tsx`
+(`role-has-required-aria-props` — a native checkbox supplies `aria-checked` itself) and
+`scroll-area.tsx` (`no-noninteractive-tabindex` — WCAG 2.1.1 requires the tab stop). Directives are
+honoured both in JSX attribute position and inside a `{/* … */}` container.
+
+**What it is blind to, so this section does not overclaim.** jsx-a11y is a React-ecosystem checker
+reading React prop spellings and lowercase intrinsics:
+
+| Blind spot                                                     | Why                                                                                          |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `no-autofocus`, `no-access-key`                                | Match `autoFocus` / `accessKey`; forge writes the HTML spellings                             |
+| `label-has-associated-control`                                 | Checks label _text_, not association — 0 findings across 94 labels                           |
+| `click-events-have-key-events` and the other interaction rules | Key on `onClick` / `onMouseOver`, of which forge has none: behaviour lives in `*.browser.ts` |
+| Anything a consumer writes                                     | `<Button>`, `<Field.Label>` are components, not intrinsics                                   |
+
+`settings["jsx-a11y"].attributes` was probed and **left out**: with and without
+`{ "for": ["for", "htmlFor"] }` the finding count is identical, including on a deliberately broken
+label. An inert setting reads as coverage that is not there.
+
+**The division of labour that follows.** jsx-a11y owns ARIA _vocabulary validity_ on forge's own
+intrinsic markup — a typo'd `aria-labeledby`, an invalid role string, a malformed value. Forge's
+own published a11y rules are the design gate's, over the composition jsx-a11y cannot read (§3a);
+`contrastStep` continues to own `forge-ui-contrast-floor`. Neither tool substitutes for the other,
+and no imported rule set closes the gap between forge's published a11y ids and its checked ones —
+the ten ids that gap still contains are owned as review items in §3c.

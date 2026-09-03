@@ -2,6 +2,7 @@
 
 import { mountRovingFocus } from "../client/composite";
 import { ownerWindow } from "../client/dom";
+import { mountInputFormat } from "../client/input-format";
 import { checkMenuItem, mountMenu } from "../client/menu";
 import { mountNumberField } from "../client/number-field";
 import { mountExpandedState, mountExpandedStates } from "../client/popover-expanded";
@@ -11,6 +12,7 @@ import { dismissToast } from "../client/toast";
 import { mountTooltip } from "../client/tooltip";
 import { mountTurnstile } from "../client/turnstile";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contract";
+import { INPUT_FORMAT_SCOPE } from "../contracts/input-format-contract";
 import { MENU_SCOPE, type MenuAction } from "../contracts/menu-contract";
 import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
 import { POPOVER_SCOPE } from "../contracts/overlay-contract";
@@ -84,6 +86,8 @@ registerScope(TOGGLE_GROUP_SCOPE, {
 });
 
 registerScope(NUMBER_FIELD_SCOPE, { eager: true, setup: ({ root }) => mountNumberField(root) });
+
+registerScope(INPUT_FORMAT_SCOPE, { eager: true, setup: ({ root }) => mountInputFormat(root) });
 
 registerScope<SliderAction>(SLIDER_SCOPE, {
   on: {

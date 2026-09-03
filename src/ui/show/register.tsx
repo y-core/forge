@@ -2,13 +2,16 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import { createController } from "@remix-run/fetch-router";
-import { get } from "@remix-run/fetch-router/routes";
+import { get, post } from "@remix-run/fetch-router/routes";
 
+import { defineAction } from "../../app/action";
 import type { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
 import type { AppContext } from "../../context/types";
+import { HONEYPOT_FIELD_DEFAULT } from "../../form/constants";
 import { renderPage } from "../../jsx/render-to-string";
 import type { FC } from "../../jsx/types";
+import { v } from "../../validation/validation";
 import type { ForgeIcon } from "../core/icon";
 import { ShowcaseContent, type ShowcasePage } from "./components";
 import { CustomiseContent, type CustomiseData, loadCustomise } from "./customise";
@@ -27,6 +30,7 @@ import {
   renderPreview,
   renderSearch,
   renderToast,
+  renderTurnstileVerdict,
   renderValidate,
   showcasePaths,
 } from "./route";
@@ -36,6 +40,9 @@ export type ShowcaseIcon = ForgeIcon<
   "spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close" | "panel-open" | "panel-close"
 >;
 
+/** The playground form's only declared field; the pipeline drops the decoy and the token itself. */
+const TURNSTILE_VERIFY_SCHEMA = v.strictObject({ email: v.optional(v.string()) });
+
 /** Builds the showcase route subtree under `base` (defaults to `"/showcase/ui"`). @public */
 export function showcaseRoutes(base = "/showcase/ui") {
   const api = `${base}/api`;
@@ -43,6 +50,7 @@ export function showcaseRoutes(base = "/showcase/ui") {
     ui: {
       index: get(base),
       interactive: get(`${base}/interactive`),
+      turnstile: get(`${base}/turnstile`),
       runtime: get(`${base}/runtime`),
       htmx: get(`${base}/htmx`),
       chrome: get(`${base}/chrome`),
@@ -55,6 +63,7 @@ export function showcaseRoutes(base = "/showcase/ui") {
         dependent: get(`${api}/dependent`),
         toast: get(`${api}/toast`),
         avatar: get(`${api}/avatar`),
+        turnstileVerify: post(`${api}/turnstile-verify`),
       },
     },
   };
@@ -71,6 +80,8 @@ export interface ShowcaseOptions<Bindings extends object, Config, Ctx> {
   context: (c: AppContext<Bindings>, config: Config) => Promise<Ctx>;
   /** Layout component that wraps the showcase page content as `children`. */
   layout: FC<{ ctx: Ctx }>;
+  /** Siteverify secret for the Turnstile page's verification panel; without it nothing is sent to Cloudflare. */
+  turnstileSecret?: (c: AppContext<Bindings>, config: Config) => string | Promise<string>;
 }
 
 /** Registers every showcase route, including the seven API endpoints, on `app`. @public */
@@ -112,6 +123,22 @@ export function registerShowcase<Bindings extends object, Config, Ctx>(
 
   const avatar = definePage({ view: () => renderAvatar() });
 
+  const secretKey = opts.turnstileSecret;
+  const turnstileVerify = defineAction<typeof TURNSTILE_VERIFY_SCHEMA, Bindings, Config>({
+    schema: TURNSTILE_VERIFY_SCHEMA,
+    honeypot: HONEYPOT_FIELD_DEFAULT,
+    ...(secretKey === undefined ? {} : { turnstile: { secretKey, verify: (c: AppContext<Bindings>) => ({ expectedHostname: c.url.hostname }) } }),
+    // The one place a showcase departs from a real route: an app answers every guard the same way,
+    // so a bot cannot read off which one spoke. Naming it is the whole point of this page.
+    onBotDetected: (rejection) =>
+      renderTurnstileVerdict(
+        rejection.guard === "turnstile"
+          ? { kind: "rejected", guard: "turnstile", reason: rejection.reason }
+          : { kind: "rejected", guard: "honeypot" },
+      ),
+    handle: () => renderTurnstileVerdict(secretKey === undefined ? { kind: "unconfigured" } : { kind: "verified" }),
+  });
+
   const themePath = uiRoutes.theme.href();
   const theme = definePage<Bindings, Config, CustomiseData>({
     loader: (c) => loadCustomise(c, { path: themePath }),
@@ -130,10 +157,14 @@ export function registerShowcase<Bindings extends object, Config, Ctx>(
     interactive: contentPage("interactive"),
     runtime: contentPage("runtime"),
     htmx: contentPage("htmx"),
+    turnstile: contentPage("turnstile"),
     chrome: contentPage("chrome"),
     theme,
   };
 
   app.map(uiRoutes, createController(uiRoutes, { actions }));
-  app.map(uiRoutes.api, createController(uiRoutes.api, { actions: { preview, validate, search, paginate, dependent, toast, avatar } }));
+  app.map(
+    uiRoutes.api,
+    createController(uiRoutes.api, { actions: { preview, validate, search, paginate, dependent, toast, avatar, turnstileVerify } }),
+  );
 }

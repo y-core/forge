@@ -17,6 +17,7 @@ import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent } from "./compone
 import { type CoverageReport, coverageKeys, coverageReport, DEMO_COVERAGE, explainGap, explainStale } from "./coverage";
 import { COVERAGE_MISSING } from "./coverage-missing";
 import { showcasePaths } from "./route";
+import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 
 // A real sprite binding, not a null stub: a component returning `null` renders no `<use href>`, so
 // no glyph marker in the manifest could ever match, and every icon-dependent axis was unmeasurable
@@ -49,7 +50,9 @@ beforeAll(async () => {
   // Rendered page by page and merged, never joined: a joined string would let one page's last
   // section body absorb the next page's rail, and the check would pass on markup outside the section.
   const html = await Promise.all(
-    PAGE_ORDER.map((page) => render(<ShowcaseContent data={{ paths: showcasePaths("/showcase") }} icon={icon} page={page} />)),
+    PAGE_ORDER.map((page) =>
+      render(<ShowcaseContent data={{ paths: showcasePaths("/showcase"), turnstile: TURNSTILE_DEMO_DEFAULTS }} icon={icon} page={page} />),
+    ),
   );
   report = coverageReport({ html, sectionIds: SECTIONS.map((section) => section.id), demos: DEMO_COVERAGE });
 });

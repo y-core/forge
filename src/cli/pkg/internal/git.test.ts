@@ -1,8 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
+import * as childProcess from "node:child_process";
 
-// Install mock before ./git is loaded so its top-level import gets the stub.
+// `mock.module` is process-global and must land before ./git loads, so the real module is spread to preserve exports a sibling test file mocks.
 const mockExecSync = mock((_cmd: string, _args?: string[], _opts?: unknown): string | Buffer => "");
-await mock.module("node:child_process", () => ({ execFileSync: mockExecSync }));
+await mock.module("node:child_process", () => ({ ...childProcess, execFileSync: mockExecSync }));
 
 const { gitExec, isWorkingTreeClean, getLatestTag, getCommitsSinceTag, getLastCommitMessage, createTag, commit, tagExists } = await import("./git");
 

@@ -177,7 +177,7 @@ const LeversSection: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, 
 );
 
 /** The step numbers, printed once for the whole table rather than once per swatch. */
-const STEPS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const STEPS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
 
 /** The box's outline, assembled from the cells on its edge. */
 // A `<tbody>` cannot carry the frame: `border-radius` does not apply to table elements in the
@@ -193,7 +193,7 @@ const ScaleRow: FC<{ id: string; scale: Scale<string> }> = ({ id, scale }) => (
   <tbody {...{ [SCALE_ROW_ATTR]: id }}>
     <tr>
       {STEPS.map((step) => (
-        <td class={`px-1 pt-2 ${boxEdge(step, "top")}`}>
+        <td aria-label={scale[step]} class={`px-1 pt-2 ${boxEdge(step, "top")}`}>
           <div data-swatch={step} class='h-10 w-full rounded-sm border' />
         </td>
       ))}
@@ -225,7 +225,7 @@ const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
       Both generated families, each drawn on the surface it belongs to. Every semantic token resolves through one of these forty-eight steps.
     </p>
     <div class='overflow-x-auto'>
-      <table class='w-full min-w-[44rem] table-fixed border-separate border-spacing-0'>
+      <table class='w-full min-w-176 table-fixed border-separate border-spacing-0'>
         <caption class='sr-only'>
           {`Every generated step, grouped as ${BANDS.map((band) => `${band.label.toLowerCase()} at steps ${band.from} to ${band.to}`).join(", ")}. Rows: ${SCALE_ROWS.map((row) => row.label.toLowerCase()).join(", then ")}`}
         </caption>
@@ -310,7 +310,7 @@ const WcagSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => {
         the number here rather than trusting the dials.
       </p>
       <div class='overflow-x-auto'>
-        <table class='w-full min-w-[36rem] text-start text-xs'>
+        <table class='w-full min-w-144 text-start text-xs'>
           <thead>
             <tr class='border-b border-border text-muted-foreground'>
               <th class='py-2 pe-4 font-medium'>Token</th>

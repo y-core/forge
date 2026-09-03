@@ -8,6 +8,7 @@ import { ShowcaseContent, type ShowcasePage } from "./components";
 import { sectionBodies } from "./coverage";
 import { LAZY_DEMO_LOADED, LAZY_DEMO_PENDING, LAZY_DEMO_REF, LAZY_DEMO_SCOPE } from "./lazy-contract";
 import { showcasePaths } from "./route";
+import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;
@@ -15,7 +16,8 @@ StubIcon.sprite = "/icons.svg";
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
-const page = (which: ShowcasePage) => render(<ShowcaseContent data={{ paths: showcasePaths("/showcase") }} icon={icon} page={which} />);
+const page = (which: ShowcasePage) =>
+  render(<ShowcaseContent data={{ paths: showcasePaths("/showcase"), turnstile: TURNSTILE_DEMO_DEFAULTS }} icon={icon} page={which} />);
 
 // Cut at the close tag: `sectionBodies` slices to the next section, so the last section on a page
 // would otherwise swallow the shared FlashContainer that follows the body.

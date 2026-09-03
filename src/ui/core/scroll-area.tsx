@@ -31,6 +31,7 @@ const ScrollAreaViewport: FC<ScrollAreaViewportProps> = ({ label, class: cls, ch
   <section
     data-slot={slotToken("scroll-area-viewport", inherited)}
     aria-label={label}
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- WCAG 2.1.1 requires a scrollable region to be a keyboard tab stop; the rule does not model overflow.
     tabindex={0}
     class={cn(
       // `max-h-[inherit]` is what makes a root bounded by `max-h-*` work: `h-full` resolves to `auto`

@@ -22,6 +22,7 @@ import {
   lazyRetryAttempt,
 } from "./lazy-contract";
 import { renderValidate, showcasePaths } from "./route";
+import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 
 declare global {
   interface Window {
@@ -124,7 +125,9 @@ interface MountShowcaseOptions {
 }
 
 async function mountShowcase(page: Page, which: ShowcasePage, options: MountShowcaseOptions = {}): Promise<void> {
-  const html = await render(ShowcaseContent({ data: { paths: showcasePaths("/showcase") }, icon, page: which }));
+  const html = await render(
+    ShowcaseContent({ data: { paths: showcasePaths("/showcase"), turnstile: TURNSTILE_DEMO_DEFAULTS }, icon, page: which }),
+  );
   const themed = options.themed === true;
   const prelude = options.geometry === true ? GEOMETRY_STYLE : "";
   const css = [...(themed ? TOKEN_CSS : []), ...(options.components === true ? [COMPONENT_CSS] : [])];
@@ -365,12 +368,14 @@ test.describe("the showcase's inline-validation demo", () => {
   });
 });
 
-/** Cloudflare's documented always-passes test key, which is what the section renders. */
+/** Cloudflare's documented always-passes test key, which is what every band on the page renders. */
 const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
 // The demo forms carry no scope of the showcase's own: `<Turnstile>` stamps `data-scope="turnstile"`
 // on itself, so the widget is what resumes and the enclosing form is found from there.
 const TURNSTILE_SCOPE = "form:has([data-scope='turnstile'])";
 const TURNSTILE_FIELD = `${TURNSTILE_SCOPE} input[name='turnstile-email']`;
+/** The bands' focus-loaded fields, in the order the page renders them. */
+const TURNSTILE_FOCUS_FIELDS = ["turnstile-email", "turnstile-email-compact", "turnstile-email-flexible", "turnstile-email-resilient"];
 
 /** Stands in for Cloudflare's `api.js`: installs a recording `window.turnstile` and nothing else. */
 const FAKE_TURNSTILE_SCRIPT = `
@@ -394,9 +399,9 @@ const FAKE_TURNSTILE_SCRIPT = `
 
 let turnstileScriptRequests = 0;
 
-/** Cloudflare's script, answered for **every** case in this file rather than only the Turnstile ones.
- *  The submit-mode demo renders eagerly, so any case that mounts the interactive page injects the
- *  script tag — and would reach the real endpoint without this. */
+// Every case, not only the Turnstile ones: the playground and the submit-mode demo both render
+// eagerly, so any case that mounts the Turnstile page injects the script tag and would otherwise
+// reach the real endpoint.
 test.beforeEach(async ({ page }) => {
   turnstileScriptRequests = 0;
   // A URL predicate: the controller injects `?render=explicit`, which an exact URL would miss.
@@ -420,45 +425,51 @@ function turnstileState(page: Page) {
   );
 }
 
-/** The three `load='focus'` demos, recorded as the fake script sees them. */
-const focusRender = (size: string) => ({ sitekey: TURNSTILE_TEST_KEY, size, theme: "light", execution: null, appearance: null });
+// Keyed by size and execution rather than compared in order: the arrival order is not a guarantee —
+// the eager demos inject the script and the focus demos poll for it on their own 100ms interval.
+async function renderSignatures(page: Page): Promise<string[]> {
+  const { renders } = await turnstileState(page);
+  return renders.map((entry) => `${String(entry.size)}/${entry.execution ?? "render"}`).sort();
+}
 
-/** The fourth demo. `challenge='submit'` takes the eager `load` default deliberately: Cloudflare
- *  pairs `execution: "execute"` with a widget that is up from page load, so only the challenge
- *  waits for the press — see `components.tsx`. */
-const SUBMIT_RENDER = { sitekey: TURNSTILE_TEST_KEY, size: "normal", theme: "light", execution: "execute", appearance: "interaction-only" };
+/** Every render carries the one test key, the app's theme, and no appearance it did not ask for. */
+async function renderKeys(page: Page): Promise<string[]> {
+  const { renders } = await turnstileState(page);
+  return [...new Set(renders.map((entry) => `${String(entry.sitekey)}/${String(entry.theme)}`))];
+}
 
-test.describe("the showcase's Turnstile demo", () => {
+test.describe("the showcase's Turnstile page", () => {
   test("renders the widget once a reader engages with the form it sits in", async ({ page }) => {
-    await mountShowcase(page, "interactive");
+    await mountShowcase(page, "turnstile");
 
-    // The submit-mode demo is already up; the three focus demos have rendered nothing.
-    await expect.poll(() => turnstileState(page)).toEqual({ renders: [SUBMIT_RENDER], fallbackHidden: true });
+    // Two widgets are up from page load: the playground, and the deferred-challenge demo whose
+    // `execution: "execute"` holds only the challenge back. The four focus demos have rendered nothing.
+    await expect.poll(() => renderSignatures(page)).toEqual(["normal/execute", "normal/render"]);
+    await expect.poll(async () => (await turnstileState(page)).fallbackHidden).toBe(true);
 
     await page.focus(TURNSTILE_FIELD);
 
-    await expect.poll(() => turnstileState(page)).toEqual({ renders: [SUBMIT_RENDER, focusRender("normal")], fallbackHidden: true });
+    await expect.poll(() => renderSignatures(page)).toEqual(["normal/execute", "normal/render", "normal/render"]);
   });
 
   test("mounts each demo form's own widget, on one shared load of Cloudflare's script", async ({ page }) => {
-    await mountShowcase(page, "interactive");
+    await mountShowcase(page, "turnstile");
 
-    for (const name of ["turnstile-email", "turnstile-email-compact", "turnstile-email-flexible"]) {
-      await page.focus(`${TURNSTILE_SCOPE} input[name='${name}']`);
+    for (const name of TURNSTILE_FOCUS_FIELDS) {
+      await page.focus(`form:has([data-scope='turnstile']) input[name='${name}']`);
     }
 
-    // One render per demo: the controller used to widen its lookup to the document and resolve all
-    // four scopes to the first widget. Keyed by size and execution, because two demos share a size
-    // and the arrival order is not a guarantee — the eager demo injects the script and the three
-    // focus demos poll for it on their own 100ms interval.
+    // One render per form: the controller used to widen its lookup to the document and resolve every
+    // scope to the first widget.
     await expect
-      .poll(async () => (await turnstileState(page)).renders.map((entry) => `${String(entry.size)}/${entry.execution ?? "render"}`).sort())
-      .toEqual(["compact/render", "flexible/render", "normal/execute", "normal/render"]);
+      .poll(() => renderSignatures(page))
+      .toEqual(["compact/render", "flexible/render", "normal/execute", "normal/render", "normal/render", "normal/render"]);
     expect(turnstileScriptRequests).toBe(1);
+    expect(await renderKeys(page)).toEqual([`${TURNSTILE_TEST_KEY}/light`]);
   });
 
   test("puts the widget between the field and the submit control", async ({ page }) => {
-    await mountShowcase(page, "interactive");
+    await mountShowcase(page, "turnstile");
 
     const order = await page.evaluate(
       ({ scope, widgetRef }) => {
@@ -483,7 +494,9 @@ const CONTEXT_POPUP_ID = "show-context-menu-popup";
 
 /** The showcase, with the context-menu demo left in place or relocated into an open shadow root. */
 async function mountContextMenu(page: Page, tree: Tree): Promise<void> {
-  const html = await render(ShowcaseContent({ data: { paths: showcasePaths("/showcase") }, icon, page: "interactive" }));
+  const html = await render(
+    ShowcaseContent({ data: { paths: showcasePaths("/showcase"), turnstile: TURNSTILE_DEMO_DEFAULTS }, icon, page: "interactive" }),
+  );
   // Unstyled, the `[popover][data-coords]` rule never applies and the popup falls back to the UA's
   // centred box under the pointer, where the right-click release light-dismisses it.
   await mount(page, html, { ...EXPOSE, css: ["./ui/assets/css/forge-ui.css"] });
@@ -632,7 +645,14 @@ test.describe("the component catalog's table of contents", () => {
 
     expect(layout.pagesX).toBeLessThan(layout.mainX);
     expect(layout.tocX).toBeGreaterThan(layout.mainX);
-    expect(layout.pageHrefs).toEqual(["/showcase", "/showcase/interactive", "/showcase/runtime", "/showcase/htmx", "/showcase/chrome"]);
+    expect(layout.pageHrefs).toEqual([
+      "/showcase",
+      "/showcase/interactive",
+      "/showcase/runtime",
+      "/showcase/htmx",
+      "/showcase/turnstile",
+      "/showcase/chrome",
+    ]);
     expect(layout.anchorCount).toBeGreaterThan(0);
     expect(layout.anchorsAreFragments).toBe(true);
   });
@@ -766,7 +786,9 @@ test.describe("the two rails as edge drawers on a phone", () => {
   const panelOf = (rail: string) => `${rail} [data-slot~='navbar-backdrop'] + div`;
 
   async function mountPhone(page: Page): Promise<void> {
-    const html = await render(ShowcaseContent({ data: { paths: showcasePaths("/showcase") }, icon, page: "index" }));
+    const html = await render(
+      ShowcaseContent({ data: { paths: showcasePaths("/showcase"), turnstile: TURNSTILE_DEMO_DEFAULTS }, icon, page: "index" }),
+    );
     await mount(page, GEOMETRY_STYLE + DRAWER_STYLE + html, EXPOSE);
     await page.evaluate(() => window.forgeResume.resume());
   }

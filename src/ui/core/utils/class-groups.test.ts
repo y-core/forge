@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { buttonVariants } from "../button";
 import { classGroup, GROUP_OVERRIDES } from "./class-groups";
+import { cn } from "./cn";
 
 describe("classGroup exact families", () => {
   const cases: { utility: string; expected: string }[] = [
@@ -24,6 +26,10 @@ describe("classGroup exact families", () => {
     { utility: "text-nowrap", expected: "text-wrap" },
     { utility: "text-balance", expected: "text-wrap" },
     { utility: "text-pretty", expected: "text-wrap" },
+    { utility: "whitespace-nowrap", expected: "whitespace" },
+    { utility: "whitespace-normal", expected: "whitespace" },
+    { utility: "whitespace-pre-wrap", expected: "whitespace" },
+    { utility: "whitespace-break-spaces", expected: "whitespace" },
     { utility: "invisible", expected: "visibility" },
     { utility: "tabular-nums", expected: "font-variant-numeric" },
     { utility: "sr-only", expected: "sr-only" },
@@ -226,5 +232,21 @@ describe("GROUP_OVERRIDES", () => {
 
   it("returns undefined for a group with no longhands", () => {
     expect(GROUP_OVERRIDES.get("display")).toBeUndefined();
+  });
+});
+
+// Held as consts, not written inline: a literal inside a `cn(…)` call is a position the formatter's
+// class sorter rewrites, and these cases are about the order `cn` itself produces.
+const NOWRAP_THEN_NORMAL = "whitespace-nowrap whitespace-normal";
+const BUTTON_WRAPPING_NORMALLY =
+  "inline-flex items-center justify-center rounded-lg font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm whitespace-normal";
+
+describe("cn whitespace group", () => {
+  it("resolves two whitespace utilities in one string to the later one", () => {
+    expect(cn(NOWRAP_THEN_NORMAL)).toBe("whitespace-normal");
+  });
+
+  it("lets a caller's whitespace-normal displace the button base's whitespace-nowrap", () => {
+    expect(cn(buttonVariants(), "whitespace-normal")).toBe(BUTTON_WRAPPING_NORMALLY);
   });
 });

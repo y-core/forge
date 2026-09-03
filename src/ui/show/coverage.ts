@@ -338,6 +338,7 @@ export const DEMO_COVERAGE: readonly CoverageDemo[] = [
       { axis: "invalid", value: "descriptor", marker: { kind: "pattern", source: 'data-slot="input"[^>]*aria-invalid' } },
       { axis: "readonly", value: "true", marker: { kind: "pattern", source: 'data-slot="input"[^>]*readonly' } },
       { axis: "required", value: "true", marker: { kind: "pattern", source: 'data-slot="input"[^>]*required' } },
+      { axis: "format", value: "template", marker: { kind: "attr", name: "data-format", value: "#### #### #### ####" } },
     ],
   },
   {
@@ -490,8 +491,8 @@ export const DEMO_COVERAGE: readonly CoverageDemo[] = [
   {
     name: "Turnstile",
     barrel: "core",
-    section: "turnstile-widget",
-    where: "TurnstileSection",
+    section: "turnstile-variants",
+    where: "VariantsSection",
     axes: [
       { axis: "size", value: "compact", marker: { kind: "attr", name: "data-size", value: "compact" } },
       { axis: "size", value: "flexible", marker: { kind: "attr", name: "data-size", value: "flexible" } },

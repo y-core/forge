@@ -41,7 +41,6 @@ import { Toggle } from "../core/toggle";
 import { ToggleGroup } from "../core/toggle-group";
 import { Toolbar } from "../core/toolbar";
 import { Tooltip } from "../core/tooltip";
-import { Turnstile } from "../core/turnstile";
 import { FlashContainer } from "../server/flash";
 import { Resumable } from "../server/resumable";
 import { ChromeDemos } from "./chrome-demos";
@@ -49,6 +48,7 @@ import { ControlsDemos } from "./controls-demos";
 import { FlashSection, LazySection } from "./extra-demos";
 import type { ShowcaseData, ShowcasePaths } from "./route";
 import { DependentSection, PaginateSection, PreviewSection, SearchSection, ToastSection, ValidateSection } from "./sections";
+import { TurnstileDemos, type TurnstileDemoOptions } from "./turnstile-demo";
 
 /** The showcase's bound sprite. Named once because a dozen section signatures take it. @internal */
 export type ShowIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close" | "panel-open" | "panel-close">;
@@ -57,7 +57,7 @@ export type ShowIcon = ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "
 type ShowcaseGroup = "Primitives" | "Forms & Controls" | "Bound Controls" | "Interaction & Overlay" | "Feedback" | "Chrome" | "Behaviour";
 
 /** The route a catalog entry is served on — pages are cut by what a consumer must wire up. */
-export type ShowcasePage = "index" | "interactive" | "runtime" | "htmx" | "chrome";
+export type ShowcasePage = "index" | "interactive" | "runtime" | "htmx" | "turnstile" | "chrome";
 
 /** Every catalog entry, keyed by the kebab-cased name of the component it shows. */
 export const SECTIONS: { id: string; label: string; group: ShowcaseGroup; page: ShowcasePage }[] = [
@@ -97,7 +97,11 @@ export const SECTIONS: { id: string; label: string; group: ShowcaseGroup; page: 
   { id: "meter", label: "Meter", group: "Primitives", page: "index" },
   { id: "number-field", label: "NumberField", group: "Forms & Controls", page: "interactive" },
   { id: "scroll-area", label: "ScrollArea", group: "Behaviour", page: "index" },
-  { id: "turnstile-widget", label: "Turnstile", group: "Forms & Controls", page: "interactive" },
+  { id: "turnstile-widget", label: "Turnstile playground", group: "Forms & Controls", page: "turnstile" },
+  { id: "turnstile-variants", label: "Turnstile sizes and modes", group: "Forms & Controls", page: "turnstile" },
+  { id: "turnstile-resilience", label: "Turnstile resilience", group: "Forms & Controls", page: "turnstile" },
+  { id: "turnstile-verify", label: "Turnstile verification", group: "Forms & Controls", page: "turnstile" },
+  { id: "turnstile-keys", label: "Turnstile test keys", group: "Forms & Controls", page: "turnstile" },
   { id: "htmx-demos", label: "HTMX Demos", group: "Behaviour", page: "htmx" },
   { id: "theme", label: "Theme", group: "Chrome", page: "chrome" },
   { id: "resumable", label: "Resumable", group: "Behaviour", page: "runtime" },
@@ -143,6 +147,12 @@ export const SHOWCASE_PAGES: Record<ShowcasePage, { slug: string; label: string;
     needs:
       'Import "@y-core/forge/ui/client/htmx" and serve the seven api.* endpoints registerShowcase mounts. Flash reads here because its message links the toast demo in the HTMX band.',
   },
+  turnstile: {
+    slug: "turnstile",
+    label: "Turnstile",
+    needs:
+      'Import "@y-core/forge/ui/core/client" and call resume(), plus "@y-core/forge/ui/client/htmx" — the deferred challenge is run from the htmx:confirm seam. Pass registerShowcase a turnstileSecret for the verification panel to reach siteverify.',
+  },
   chrome: {
     slug: "chrome",
     label: "Chrome",
@@ -151,7 +161,7 @@ export const SHOWCASE_PAGES: Record<ShowcasePage, { slug: string; label: string;
 };
 
 /** The order the pages are offered in — the rail lists them, and nothing else orders pages. */
-export const PAGE_ORDER: ShowcasePage[] = ["index", "interactive", "runtime", "htmx", "chrome"];
+export const PAGE_ORDER: ShowcasePage[] = ["index", "interactive", "runtime", "htmx", "turnstile", "chrome"];
 
 /** The order the groups are read in — plainest primitives first, page-level behaviour last. */
 const GROUP_ORDER: ShowcaseGroup[] = [
@@ -401,6 +411,20 @@ const InputSection: FC = () => (
     <Input type='text' field={{ name: "invalid-input", invalid: true }} placeholder='Invalid' class='max-w-xs' />
     <Input type='text' name='readonly-input' value='Read only' readonly class='max-w-xs' />
     <Input type='text' name='required-input' placeholder='Required' required class='max-w-xs' />
+    {/* Tier 0 and Tier 1 carry the affordances — `inputmode`, `autocomplete`, `maxlength`, and
+        `tabular-nums` as a caller class. `format` only regroups the value on blur, and the `value`
+        here arrives already grouped from the server. */}
+    <Input
+      type='text'
+      inputmode='numeric'
+      autocomplete='cc-number'
+      maxlength={19}
+      name='card-input'
+      format='#### #### #### ####'
+      value='4111111111111111'
+      placeholder='Card number'
+      class='max-w-xs tabular-nums'
+    />
   </CatalogSection>
 );
 
@@ -826,49 +850,6 @@ const FieldStackSection: FC = () => (
   </CatalogSection>
 );
 
-/** Cloudflare's documented always-passes test key. */
-const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
-
-// `load='focus'` on all three, against the eager default: a catalog page is not three forms a reader
-// came to submit, and eager here would issue three challenges to anyone who scrolls past. The field
-// is not decoration either — under `load='focus'` the script waits on a `focusin` within the
-// enclosing form, so a form with nothing to focus never loads the widget.
-const TurnstileSection: FC = () => (
-  // Not `turnstile`: the DOM publishes every `id` on `window`, and Cloudflare's `api.js` reads
-  // `window.turnstile`'s truthiness to decide it has already loaded.
-  <CatalogSection id='turnstile-widget' title='Turnstile'>
-    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='turnstile-email' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='normal' load='focus' />
-      <Button type='submit'>Submit</Button>
-    </Form>
-    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='turnstile-email-compact' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='compact' load='focus' />
-      <Button type='submit'>Submit</Button>
-    </Form>
-    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='turnstile-email-flexible' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_TEST_KEY} size='flexible' load='focus' />
-      <Button type='submit'>Submit</Button>
-    </Form>
-    {/* `hx-post`, because the deferred challenge is run from htmx's `htmx:confirm` seam and a native
-        form has no request to hold; `interaction-only` is the pairing Cloudflare documents for it.
-        The eager `load` default is deliberate here, unlike the three demos above: the point of
-        `challenge='submit'` is a widget up from page load, holding its own space, with only the
-        challenge waiting for the press. */}
-    <Form action='#' method='post' hx-post='#' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='turnstile-email-submit' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_TEST_KEY} challenge='submit' appearance='interaction-only' />
-      <Button type='submit'>Submit</Button>
-    </Form>
-  </CatalogSection>
-);
-
 const ToolbarSection: FC = () => (
   <CatalogSection id='toolbar' title='Toolbar'>
     <Toolbar aria-label='Formatting'>
@@ -1155,6 +1136,7 @@ const ToastCatalog: FC = () => (
       <div class='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
         {TOAST_POSITIONS.map((position) => (
           <div key={position} class='relative h-32 rounded-lg border border-dashed border-border'>
+            {/* design-allow: forge-ui-a11y-live-politeness — six containers render at once as position samples, not as announcements; leaving them live would queue six utterances the reader never asked for. */}
             <Toast.Container position={position} aria-label={`Notifications (${position})`} aria-live='off' class='absolute w-auto max-w-none p-2'>
               <Toast variant='default' class='w-auto'>
                 <Toast.Description>{position}</Toast.Description>
@@ -1225,6 +1207,7 @@ const ResumableSection: FC = () => (
 interface PageBodyProps {
   paths: ShowcasePaths;
   icon: ShowIcon;
+  turnstile: TurnstileDemoOptions;
 }
 
 const IndexBody: FC<PageBodyProps> = ({ paths, icon }) => (
@@ -1270,9 +1253,10 @@ const InteractiveBody: FC<PageBodyProps> = () => (
     <ToggleGroupSection />
     <ToolbarSection />
     <TooltipSection />
-    <TurnstileSection />
   </div>
 );
+
+const TurnstileBody: FC<PageBodyProps> = ({ paths, icon, turnstile }) => <TurnstileDemos data={turnstile} paths={paths} icon={icon} />;
 
 const RuntimeBody: FC<PageBodyProps> = ({ icon }) => (
   <div class='space-y-10'>
@@ -1309,12 +1293,13 @@ const PAGE_BODY: Record<ShowcasePage, FC<PageBodyProps>> = {
   interactive: InteractiveBody,
   runtime: RuntimeBody,
   htmx: HtmxBody,
+  turnstile: TurnstileBody,
   chrome: ChromeBody,
 };
 
 /** One showcase page — Layout-less; the consuming app wraps this in its own Layout. @public */
 export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ShowIcon; page?: ShowcasePage }> = ({ data, icon, page = "index" }) => {
-  const { paths } = data;
+  const { paths, turnstile } = data;
   const { label, needs } = SHOWCASE_PAGES[page];
   const Body = PAGE_BODY[page];
   return (
@@ -1339,7 +1324,7 @@ export const ShowcaseContent: FC<{ data: ShowcaseData; icon: ShowIcon; page?: Sh
           <p class='mt-2 text-muted-foreground'>{needs}</p>
         </div>
 
-        <Body paths={paths} icon={icon} />
+        <Body paths={paths} icon={icon} turnstile={turnstile} />
 
         <FlashContainer />
       </main>

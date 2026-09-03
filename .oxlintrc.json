@@ -1,9 +1,11 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise"],
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "jsx-a11y"],
   // `suspicious` stays off — see .decisions/implementation/CODE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {
+    // `prefer-tag-over-role` off — its substitutions are wrong for forge's markup; see .decisions/implementation/CODE_REVIEW.md §7c
+    "jsx-a11y/prefer-tag-over-role": "off",
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error",
     "typescript/no-invalid-void-type": "error",
@@ -43,7 +45,16 @@
     ]
   },
   "overrides": [
-    { "files": ["**/*.test.ts", "**/*.test.tsx"], "rules": { "typescript/no-non-null-assertion": "off" } },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      // a test's job is to feed adversarial markup — see .decisions/governance/TESTING.md
+      "rules": {
+        "typescript/no-non-null-assertion": "off",
+        "jsx-a11y/control-has-associated-label": "off",
+        "jsx-a11y/tabindex-no-positive": "off",
+        "jsx-a11y/aria-proptypes": "off"
+      }
+    },
     {
       "files": ["config/**"],
       "rules": {

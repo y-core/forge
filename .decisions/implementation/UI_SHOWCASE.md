@@ -25,6 +25,7 @@ description: "What the ui/show showcase is for, how an app registers it, and the
 - §1a Registration Supplies the App's Shell: forge renders the body, the app renders everything around it
 - §1b Routes Are Derived From One Base Path: the path table, the six pages cut by consumer prerequisite, and the theme page's separate owner
 - §1c The Catalog Declaration: what the section list owns, the page it names, and why it is not barrelled
+- §1d The Turnstile Page Demonstrates Forge's Own Surface: why it has its own page, the preset-only sitekey, and the one rule it deliberately breaks
 - §2 Coverage Contract: the anti-drift rule that keeps the catalog honest
 - §2a The Demo Manifest: one entry per published component, and the axes a demo owes
 - §2b Coverage Is Read From Rendered Markup: why the check renders the catalog rather than reading source
@@ -76,8 +77,8 @@ draws, so an app whose sprite lacks one fails to type-check rather than renderin
 is written.** The page, the fragment endpoints and the markup that targets them all read that
 table, so a relocated showcase moves as a unit and no HTMX target can point at a path that moved.
 
-There are six pages — five catalog pages and the theme customiser — and the rest are HTMX fragment
-endpoints demonstrating the patterns in [`HTMX.md`](./HTMX.md). **The catalog is cut by consumer
+There are seven pages — five catalog pages, the Turnstile page (§1d) and the theme customiser — and
+the rest are HTMX endpoints demonstrating the patterns in [`HTMX.md`](./HTMX.md). **The catalog is cut by consumer
 prerequisite, not by taxonomy**: the page a section lands on is what a reader must install for it to
 work, from a page that needs nothing through to one that needs a client import, an endpoint set or a
 configuration object. Sorting by component family would have grouped things a reader already knows
@@ -96,6 +97,32 @@ reader's problem.
 **It is deliberately not in the barrel.** It is internal structure a consumer never composes
 against: the published surface is the page component and the registration helpers
 ([`NAMESPACE_DESIGN.md`](../governance/NAMESPACE_DESIGN.md) §1c permits an unbarrelled non-`@public` symbol).
+
+### 1d. The Turnstile Page Demonstrates Forge's Own Surface
+
+**Turnstile has its own page because it is the one component whose demo is a configuration, not a
+variant.** A catalog band shows a component's axes side by side; the widget's behaviour depends on
+ten props at once, so what a reader needs is one widget they can reconfigure. Its state model is
+the customiser's — the query string is the whole configuration, so a setting worth reporting is a
+link.
+
+**The panel offers exactly the props `TurnstileProps` declares, and nothing Cloudflare's API has
+that forge does not expose.** A control for an option the component cannot take would document a
+component forge does not ship, and the reader could not tell which half was real. Options forge has
+ruled against — `theme`, derived from the app theme; `retry` and `refreshExpired`, left at
+Cloudflare's `auto` so the controller's own refresh is not doubled — are argued in
+[`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md), not offered as dials here.
+
+**The sitekey is a preset id, never a free string.** A sitekey read off the query string would let
+any visitor have a widget of their own choosing rendered under this origin's name. The presets are
+Cloudflare's published dummy keys, so no submission on the page is really challenged.
+
+**The verification panel names the guard that refused, which a real route must never do.** An
+application answers honeypot and Turnstile refusals identically, so a bot cannot read the guard off
+the response ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md)); naming it is the whole point of a
+demonstrator, and the page says so where it does it. The siteverify secret is an optional
+registration argument — without it the panel says it was not configured rather than claiming a
+verification that never happened.
 
 ---
 

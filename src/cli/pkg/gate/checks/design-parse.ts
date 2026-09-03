@@ -10,7 +10,15 @@ export type RuleId =
   | "forge-ui-no-nested-card"
   | "forge-ui-interaction-focus-visible"
   | "forge-ui-catalog-wrong-raw-input"
-  | "forge-ui-contrast-floor";
+  | "forge-ui-contrast-floor"
+  | "forge-ui-a11y-label-association"
+  | "forge-ui-a11y-live-politeness"
+  | "forge-ui-a11y-no-aria-readonly-on-button"
+  | "forge-ui-a11y-one-live-region"
+  | "forge-ui-a11y-aria-beside-data"
+  | "forge-ui-a11y-heading-size-by-class"
+  | "forge-ui-reduced-motion"
+  | "forge-ui-focus-ring";
 
 /** The corpus file that justifies each rule this tooling enforces. */
 export const RULE_CORPUS_PATH: Readonly<Record<RuleId, string>> = {
@@ -23,6 +31,14 @@ export const RULE_CORPUS_PATH: Readonly<Record<RuleId, string>> = {
   "forge-ui-interaction-focus-visible": "src/ui/design/reference/09-interaction.md",
   "forge-ui-catalog-wrong-raw-input": "src/ui/design/catalog.md",
   "forge-ui-contrast-floor": "src/ui/design/floor.md",
+  "forge-ui-a11y-label-association": "src/ui/design/floor.md",
+  "forge-ui-a11y-live-politeness": "src/ui/design/reference/10-accessibility.md",
+  "forge-ui-a11y-no-aria-readonly-on-button": "src/ui/design/reference/10-accessibility.md",
+  "forge-ui-a11y-one-live-region": "src/ui/design/reference/10-accessibility.md",
+  "forge-ui-a11y-aria-beside-data": "src/ui/design/reference/10-accessibility.md",
+  "forge-ui-a11y-heading-size-by-class": "src/ui/design/reference/10-accessibility.md",
+  "forge-ui-reduced-motion": "src/ui/design/floor.md",
+  "forge-ui-focus-ring": "src/ui/design/floor.md",
 };
 
 /** One violated rule at one place, with enough in it to print the whole failure line. */
@@ -192,9 +208,7 @@ function closingParen(source: string, open: number): number {
   return source.length - 1;
 }
 
-/** Every string literal sitting in a class position: a `class` / `className` attribute or property,
- *  or an argument to `cn` / `asClass` / `cva`. A call's whole balanced argument list is scanned, so
- *  a wrapped `cn(…)` list and a `cva` variant map are both reached. */
+/** Every string literal in a class position: a `class`/`className` attribute or an argument to `cn`/`asClass`/`cva`. */
 export function findClassLiterals(source: string): ClassLiteral[] {
   const scanned = blankComments(source);
   const lineOf = (index: number): number => scanned.slice(0, index).split("\n").length;
@@ -397,6 +411,10 @@ const SCALE_UTILITIES = [
   "size",
   "w",
   "h",
+  "min-w",
+  "min-h",
+  "max-w",
+  "max-h",
   "bg",
 ];
 
@@ -528,6 +546,301 @@ export function findRawControls(source: string, file: string): DesignFinding[] {
   return findings;
 }
 
+const LABEL_CONTROLS = /<(?:input|select|textarea|button|meter|progress|Input|Select|Textarea|Switch|Slider|NumberField|Toggle)(?=[\s/>])/;
+
+/** The index just past the `>` closing the tag opened at `start`, ignoring `>` inside braces or quotes. */
+function endOfOpeningTag(source: string, start: number): number {
+  let depth = 0;
+  let quote = "";
+
+  for (let i = start; i < source.length; i++) {
+    const char = source[i] ?? "";
+    if (quote) {
+      if (char === quote) quote = "";
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") quote = char;
+    else if (char === "{") depth++;
+    else if (char === "}") depth--;
+    else if (char === ">" && depth === 0) return i + 1;
+  }
+  return source.length;
+}
+
+/** A `<label>` that neither carries `for` nor wraps its control — styled text that focuses nothing. */
+export function findUnassociatedLabels(source: string, file: string): DesignFinding[] {
+  const scanned = blankComments(source);
+  const lines = source.split("\n");
+  const findings: DesignFinding[] = [];
+
+  for (const open of scanned.matchAll(/<label(?=[\s/>])/g)) {
+    const tagEnd = endOfOpeningTag(scanned, open.index);
+    const openingTag = scanned.slice(open.index, tagEnd);
+    if (/(?<![\w-])for[=\s]/.test(openingTag)) continue;
+
+    // A self-closing label has no children, so wrapping cannot be what associates it.
+    const selfClosing = openingTag.trimEnd().endsWith("/>");
+    const closeIdx = scanned.indexOf("</label>", tagEnd);
+    const body = selfClosing ? "" : closeIdx === -1 ? scanned.slice(tagEnd) : scanned.slice(tagEnd, closeIdx);
+    if (LABEL_CONTROLS.test(body)) continue;
+
+    const line = source.slice(0, open.index).split("\n").length;
+    if (isSuppressed(lines, line, "forge-ui-a11y-label-association")) continue;
+
+    findings.push({
+      file,
+      line,
+      ruleId: "forge-ui-a11y-label-association",
+      detail: "`<label>` with neither a `for` nor a wrapped control — it labels nothing",
+    });
+  }
+  return findings;
+}
+
+/** An `aria-live` that is not `polite`, or an `assertive` that has not stated why it interrupts. */
+export function findLivePoliteness(source: string, file: string): DesignFinding[] {
+  const lines = blankComments(source).split("\n");
+  const raw = source.split("\n");
+  const findings: DesignFinding[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (isSuppressed(raw, i + 1, "forge-ui-a11y-live-politeness")) continue;
+
+    const hits = new Set<string>();
+    // Only quoted literals are judgeable; a `{expr}` value is resolved at render time.
+    for (const match of line.matchAll(/aria-live=(['"])([^'"]*)\1/g)) {
+      const value = match[2] ?? "";
+      if (value !== "polite") hits.add(value);
+    }
+
+    for (const hit of hits) {
+      findings.push({
+        file,
+        line: i + 1,
+        ruleId: "forge-ui-a11y-live-politeness",
+        detail:
+          hit === "assertive"
+            ? '`aria-live="assertive"` interrupts the reader — state why in a `design-allow`, or use `polite`'
+            : `\`aria-live="${hit}"\` is neither \`polite\` nor \`assertive\``,
+      });
+    }
+  }
+  return findings;
+}
+
+const ROLE_BUTTON = /(?<![\w-])role=(['"])button\1/;
+
+const ARIA_READONLY = /(?<![\w-])aria-readonly(?![\w-])/;
+
+/** `aria-readonly` on a `<button>` or a `role="button"` element, which supports no such state. */
+export function findAriaReadonlyButtons(source: string, file: string): DesignFinding[] {
+  const scanned = blankComments(source);
+  const lines = source.split("\n");
+  const findings: DesignFinding[] = [];
+
+  for (const open of scanned.matchAll(/<([A-Za-z][\w.]*)(?=[\s/>])/g)) {
+    const tag = open[1] ?? "";
+    const openingTag = scanned.slice(open.index, endOfOpeningTag(scanned, open.index));
+    if (tag !== "button" && tag !== "Button" && !ROLE_BUTTON.test(openingTag)) continue;
+    if (!ARIA_READONLY.test(openingTag)) continue;
+
+    const line = source.slice(0, open.index).split("\n").length;
+    if (isSuppressed(lines, line, "forge-ui-a11y-no-aria-readonly-on-button")) continue;
+
+    findings.push({
+      file,
+      line,
+      ruleId: "forge-ui-a11y-no-aria-readonly-on-button",
+      detail: `\`aria-readonly\` on \`<${tag}>\` — the button role does not support it; carry the state on the control the button acts on`,
+    });
+  }
+  return findings;
+}
+
+/** A live region opened outside `Toast.Container`, which is already the page's one announcer. */
+export function findExtraLiveRegions(source: string, file: string): DesignFinding[] {
+  // `toast.tsx` is where the one region lives, so it cannot be a second one.
+  if (file === "src/ui/core/toast.tsx") return [];
+
+  const lines = blankComments(source).split("\n");
+  const raw = source.split("\n");
+  const findings: DesignFinding[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (isSuppressed(raw, i + 1, "forge-ui-a11y-one-live-region")) continue;
+
+    const hits = new Set<string>();
+    for (const match of line.matchAll(/aria-live=(['"])([^'"]*)\1/g)) {
+      const value = match[2] ?? "";
+      if (value !== "off") hits.add(value);
+    }
+
+    for (const hit of hits) {
+      findings.push({
+        file,
+        line: i + 1,
+        ruleId: "forge-ui-a11y-one-live-region",
+        detail: `\`aria-live="${hit}"\` opens a second live region — route the announcement into \`Toast.Container\` or \`FlashContainer\``,
+      });
+    }
+  }
+  return findings;
+}
+
+const STATE_ATTR = /(?<![\w-])data-(pressed|checked|selected|disabled|invalid)(?![\w:\]-])/g;
+
+/** A `data-*` state attribute written by hand rather than emitted through `stateAttrs`. */
+export function findHandWrittenStateAttrs(source: string, file: string): DesignFinding[] {
+  // A Tailwind variant always ends in `:` and an arbitrary selector in `]`, so the negative
+  // lookahead in `STATE_ATTR` is what leaves a class string alone.
+  const lines = blankComments(source).split("\n");
+  const raw = source.split("\n");
+  const findings: DesignFinding[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (isSuppressed(raw, i + 1, "forge-ui-a11y-aria-beside-data")) continue;
+
+    const hits = new Set<string>();
+    for (const match of line.matchAll(STATE_ATTR)) hits.add(match[1] ?? "");
+
+    for (const hit of hits) {
+      findings.push({
+        file,
+        line: i + 1,
+        ruleId: "forge-ui-a11y-aria-beside-data",
+        detail: `hand-written \`data-${hit}\` — emit it through \`stateAttrs\`, beside its \`aria-${hit}\` counterpart`,
+      });
+    }
+  }
+  return findings;
+}
+
+const HEADING_CLASS = /(?<![\w-])class(?:Name)?\s*=\s*(?:"([^"]*)"|'([^']*)')/;
+
+const TEXT_SIZE = /(?<![\w-])text-(?:xs|sm|base|lg|xl|[2-9]xl)(?![\w-])/;
+
+/** An `<h1>`–`<h6>` whose size comes from the tag, which is what turns a size choice into a skip. */
+export function findTagSizedHeadings(source: string, file: string): DesignFinding[] {
+  const scanned = blankComments(source);
+  const lines = source.split("\n");
+  const findings: DesignFinding[] = [];
+
+  for (const open of scanned.matchAll(/<h([1-6])(?=[\s/>])/g)) {
+    const openingTag = scanned.slice(open.index, endOfOpeningTag(scanned, open.index));
+    // Only a quoted class is judgeable; an expression-valued one resolves at render time.
+    const written = HEADING_CLASS.exec(openingTag);
+    if (written === null) continue;
+    if (TEXT_SIZE.test(written[1] ?? written[2] ?? "")) continue;
+
+    const line = source.slice(0, open.index).split("\n").length;
+    if (isSuppressed(lines, line, "forge-ui-a11y-heading-size-by-class")) continue;
+
+    findings.push({
+      file,
+      line,
+      ruleId: "forge-ui-a11y-heading-size-by-class",
+      detail: `\`<h${open[1]}>\` takes its size from the tag — set the size with a \`text-*\` class and the level from the section's position`,
+    });
+  }
+  return findings;
+}
+
+/** An `animate-*` utility with no `motion-safe:` or `motion-reduce:` in its variant chain. */
+export function findUnguardedAnimations(source: string, file: string): DesignFinding[] {
+  const lines = source.split("\n");
+  const findings: DesignFinding[] = [];
+
+  for (const literal of findClassLiterals(source)) {
+    if (isSuppressed(lines, literal.line, "forge-ui-reduced-motion")) continue;
+
+    const hits = new Set<string>();
+    for (const token of literal.text.split(/\s+/)) {
+      const cut = token.lastIndexOf(":");
+      if (!token.slice(cut + 1).startsWith("animate-")) continue;
+      const variants = token.slice(0, cut + 1).split(":");
+      if (variants.includes("motion-safe") || variants.includes("motion-reduce")) continue;
+      hits.add(token);
+    }
+
+    for (const hit of hits) {
+      findings.push({
+        file,
+        line: literal.line,
+        ruleId: "forge-ui-reduced-motion",
+        detail: `\`${hit}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` the settled state`,
+      });
+    }
+  }
+  return findings;
+}
+
+/** One whole class expression: every literal a single class position contributes, joined. */
+interface ClassExpression {
+  /** 1-indexed line the expression's first literal sits on. */
+  line: number;
+  /** Every literal in the expression, joined with a space. */
+  text: string;
+}
+
+/** Every class position in `source` as one string — a `cn()` call's arguments joined rather than
+ *  read one at a time, since forge splits a single class list across several of them. */
+function classExpressions(source: string): ClassExpression[] {
+  const scanned = blankComments(source);
+  const lineOf = (index: number): number => scanned.slice(0, index).split("\n").length;
+  const found: ClassExpression[] = [];
+
+  for (const match of scanned.matchAll(CLASS_POSITION_GLOBAL)) {
+    const after = match.index + match[0].length;
+    if (match[0].endsWith("(")) {
+      const span = scanned.slice(after, closingParen(scanned, after - 1));
+      const parts: string[] = [];
+      let line = -1;
+      for (const quoted of span.matchAll(QUOTED)) {
+        if (line === -1) line = lineOf(after + quoted.index);
+        parts.push(quoted[1] ?? quoted[2] ?? quoted[3] ?? "");
+      }
+      if (line !== -1) found.push({ line, text: parts.join(" ") });
+      continue;
+    }
+    const quoted = ANCHORED_QUOTED.exec(scanned.slice(after));
+    if (quoted !== null) found.push({ line: lineOf(after), text: quoted[1] ?? quoted[2] ?? quoted[3] ?? "" });
+  }
+  return found;
+}
+
+const OUTLINE_SUPPRESSOR = /(?<![\w-])(outline-none|outline-hidden)(?![\w-])/;
+
+const FOCUS_VISIBLE_RING = /focus-visible[^\s]*:ring/;
+
+const POINTER_TARGET = /(?<![\w-])cursor-pointer(?![\w-])/;
+
+/** `outline-none` on a pointer target with no `focus-visible:` ring put back in its place. */
+export function findRemovedFocusRings(source: string, file: string): DesignFinding[] {
+  const lines = source.split("\n");
+  const findings: DesignFinding[] = [];
+
+  for (const expression of classExpressions(source)) {
+    // `cursor-pointer` is what separates a focus target from a surface: `menu.tsx`'s popup panel
+    // suppresses its outline and owes no ring, because nothing focuses it.
+    if (!POINTER_TARGET.test(expression.text)) continue;
+    const suppressor = OUTLINE_SUPPRESSOR.exec(expression.text);
+    if (suppressor === null) continue;
+    if (FOCUS_VISIBLE_RING.test(expression.text)) continue;
+    if (isSuppressed(lines, expression.line, "forge-ui-focus-ring")) continue;
+
+    findings.push({
+      file,
+      line: expression.line,
+      ruleId: "forge-ui-focus-ring",
+      detail: `\`${suppressor[1]}\` on a pointer target with no \`focus-visible:ring-*\` beside it — the affordance is removed, not replaced`,
+    });
+  }
+  return findings;
+}
+
 /** Every source check over one `.tsx` file, in rule order, then by line. */
 export function findSourceViolations(source: string, file: string): DesignFinding[] {
   return [
@@ -539,5 +852,13 @@ export function findSourceViolations(source: string, file: string): DesignFindin
     ...findNestedCards(source, file),
     ...findBareFocus(source, file),
     ...findRawControls(source, file),
+    ...findUnassociatedLabels(source, file),
+    ...findLivePoliteness(source, file),
+    ...findAriaReadonlyButtons(source, file),
+    ...findExtraLiveRegions(source, file),
+    ...findHandWrittenStateAttrs(source, file),
+    ...findTagSizedHeadings(source, file),
+    ...findUnguardedAnimations(source, file),
+    ...findRemovedFocusRings(source, file),
   ].sort((a, b) => a.line - b.line || a.ruleId.localeCompare(b.ruleId));
 }

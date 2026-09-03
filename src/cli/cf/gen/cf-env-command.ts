@@ -22,11 +22,11 @@ export async function loadOptions(configPath?: string): Promise<GenOptions> {
   return { ...DEFAULT_OPTIONS, ...(mod.options ?? mod.default) };
 }
 
-function formatGenerated(outPath: string, cwd: string): void {
+function formatGenerated(outPath: string, cwd: string): boolean {
   const oxfmt = spawnSync("oxfmt", [outPath], { stdio: "inherit", cwd });
-  if (oxfmt.status !== 0 && oxfmt.error) {
-    spawnSync(resolve(cwd, "node_modules/.bin/oxfmt"), [outPath], { stdio: "inherit", cwd });
-  }
+  if (oxfmt.status === 0) return true;
+  const local = spawnSync(resolve(cwd, "node_modules/.bin/oxfmt"), [outPath], { stdio: "inherit", cwd });
+  return local.status === 0;
 }
 
 /** Builds the env-schema generator command: read wrangler+dev-vars → collect → emit → format. @public */
@@ -59,7 +59,7 @@ export function createGenEnvCommand(): CommandBase {
 
       const entries = [...collectBindings(cfg, options), ...collectVars(devVars, wranglerVars, options)];
       writeFileSync(outPath, emit(entries));
-      formatGenerated(outPath, cwd);
+      if (!formatGenerated(outPath, cwd)) log.warn(`oxfmt failed; ${outPath} is unformatted`);
 
       log.info(`wrote ${entries.length} entries to ${outPath}`);
     },

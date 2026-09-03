@@ -91,7 +91,7 @@ export interface ToolbarDefinition<A extends string = string, G extends string =
 export type ToolbarPlacement = "left" | "right" | "top" | "bottom";
 
 /** Props for {@link Toolbar}; the tree is built from `config`, so `children` is removed. @public */
-export interface ToolbarProps<A extends string = string, G extends string = string> extends Omit<JSX.IntrinsicElements["nav"], "children"> {
+export interface ToolbarProps<A extends string = string, G extends string = string> extends Omit<JSX.IntrinsicElements["div"], "children"> {
   config: ToolbarDefinition<A, G>;
   /** App sprite icon — glyph names are app-defined. Required. */
   icon: ForgeIcon<G>;
@@ -189,7 +189,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
       <div id={id} data-slot='toolbar-flyout' popover='auto' data-placement={placement} data-compact={compact ? "" : undefined} class={FLYOUT_CLS}>
         <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
           <span>{label}</span>
-          {/* Unmarked on purpose: roving focus queries the whole `<nav>` subtree, so a toolbar-item
+          {/* Unmarked on purpose: roving focus queries the whole rail subtree, so a toolbar-item
               marker here would splice flyout buttons into the rail's arrow-key ring. */}
           {titleAction && (
             <Button
@@ -242,7 +242,7 @@ export const Toolbar = <A extends string = string, G extends string = string>({
   const orientation = isVerticalPlacement(placement) ? "vertical" : "horizontal";
 
   return (
-    <nav
+    <div
       {...(id === undefined ? {} : { id })}
       role='toolbar'
       data-slot={slotToken("toolbar", inherited)}
@@ -252,6 +252,6 @@ export const Toolbar = <A extends string = string, G extends string = string>({
       class={cn(railVariants({ placement }), asClass(cls))}
       {...rest}>
       {children}
-    </nav>
+    </div>
   );
 };

@@ -104,6 +104,8 @@ export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   popover?: "" | "auto" | "manual" | "hint";
   accesskey?: string;
   autocapitalize?: "none" | "off" | "on" | "sentences" | "words" | "characters";
+  inputmode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
+  enterkeyhint?: "enter" | "done" | "go" | "next" | "previous" | "search" | "send";
   children?: JSXNode;
   key?: unknown;
   [key: `data-${string}`]: unknown;

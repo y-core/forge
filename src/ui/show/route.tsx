@@ -7,6 +7,7 @@ import { fragmentResponse } from "../../http/response";
 import { renderToString } from "../../jsx/render-to-string";
 import type { ForgeIcon } from "../core/icon";
 import { DependentFragment, PaginateFragment, PreviewFragment, SearchFragment, ToastFragment, ValidateFragment } from "./sections";
+import { loadTurnstileOptions, type TurnstileDemoOptions, type TurnstileVerdict, TurnstileVerdictFragment } from "./turnstile-demo";
 
 /** URL paths for the showcase module — single source of truth so page and controller never drift. @public */
 export interface ShowcasePaths {
@@ -18,6 +19,8 @@ export interface ShowcasePaths {
   dependent: string;
   toast: string;
   avatar: string;
+  turnstile: string;
+  turnstileVerify: string;
 }
 
 /** Returns all showcase paths derived from a base path. Pass `apiPath` to serve API
@@ -34,20 +37,23 @@ export function showcasePaths(basePath: string, apiPath?: string): ShowcasePaths
     dependent: joinPath(api, "dependent"),
     toast: joinPath(api, "toast"),
     avatar: joinPath(api, "avatar"),
+    turnstile: joinPath(page, "turnstile"),
+    turnstileVerify: joinPath(api, "turnstile-verify"),
   };
 }
 
 /** Data returned by `loadShowcase`. @public */
 export interface ShowcaseData {
   paths: ShowcasePaths;
+  turnstile: TurnstileDemoOptions;
 }
 
 /** Loader for the main showcase page. @public */
 export function loadShowcase<Bindings = Record<string, unknown>>(
-  _c: AppContext<Bindings>,
+  c: AppContext<Bindings>,
   opts: { basePath?: string; apiPath?: string } = {},
 ): ShowcaseData {
-  return { paths: showcasePaths(opts.basePath ?? "/showcase", opts.apiPath) };
+  return { paths: showcasePaths(opts.basePath ?? "/showcase", opts.apiPath), turnstile: loadTurnstileOptions(c.url.searchParams) };
 }
 
 /** @public */
@@ -155,6 +161,12 @@ export function loadToast<Bindings = Record<string, unknown>>(c: AppContext<Bind
 export async function renderToast(data: ToastData): Promise<Response> {
   const body = await renderToString(<ToastFragment data={data} />);
   return fragmentResponse(body);
+}
+
+/** Renders the verdict the Turnstile verify action reached. @public */
+export async function renderTurnstileVerdict(verdict: TurnstileVerdict): Promise<Response> {
+  const body = await renderToString(<TurnstileVerdictFragment verdict={verdict} />);
+  return fragmentResponse(body, verdict.kind === "rejected" ? 422 : 200);
 }
 
 const AVATAR_SVG =

@@ -348,16 +348,8 @@ export const LogDetailRow: FC<{ record: LogRecord | null; rowKey: string }> = ({
 
 /** Full log viewer content — heading, filter bar, and the bounded table. @internal */
 export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"chevron-down"> }> = ({ data, icon }) => (
-  // `flex-1 min-h-0` claims the column's leftover height from the consumer's layout and lets the chain
-  // below shrink past its content rather than flooring at it.
-  //
-  // `data-fill-viewport` is the half a page cannot do for itself. `min-h-dvh` on the shell leaves the
-  // column's height *indefinite*, and a flex container sized that way takes its height from its items'
-  // content — so a long table grows the document however the items are flexed (`min-h-0` and a definite
-  // `height: 0` were both measured; neither holds it). Only a definite shell height does, and only the
-  // shell can set one. The attribute is the handle a layout switches on:
-  //   <body class='flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden'>
-  // A layout that ignores it still renders correctly — the table then falls back to the `max-h-dvh` box.
+  // Only a definite shell height bounds a flex column, and only the consumer's layout can set one:
+  // `data-fill-viewport` is the handle it switches on (`LogViewerOptions.layout`).
   <main id='main-content' data-fill-viewport class='mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-10 lg:px-10'>
     <h1 class='text-2xl font-semibold tracking-tight text-foreground'>Request Log</h1>
     <LogFilterBar

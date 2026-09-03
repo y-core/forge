@@ -7,6 +7,7 @@ import { render } from "../../testing/render";
 import { ShowcaseContent } from "./components";
 import { sectionBodies } from "./coverage";
 import { showcasePaths } from "./route";
+import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;
@@ -14,7 +15,8 @@ StubIcon.sprite = "/icons.svg";
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
-const page = () => render(<ShowcaseContent data={{ paths: showcasePaths("/showcase") }} icon={icon} page='chrome' />);
+const page = () =>
+  render(<ShowcaseContent data={{ paths: showcasePaths("/showcase"), turnstile: TURNSTILE_DEMO_DEFAULTS }} icon={icon} page='chrome' />);
 
 const bodyOf = async (id: string) => sectionBodies(await page()).get(id) ?? "";
 

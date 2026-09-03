@@ -59,7 +59,7 @@ const PopoverContent: FC<PopoverContentProps> = ({
     data-scope={POPOVER_SCOPE}
     popover='auto'
     {...stateAttrs({ side, align })}
-    class={cn("z-50 min-w-[8rem] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}
+    class={cn("z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}
     {...rest}>
     {children}
   </div>
