@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.0] — 2026-09-03
+
 ### Breaking Changes
 
 - **`<Turnstile>` now loads Cloudflare's script eagerly, and its token reset is scoped to the
@@ -3669,6 +3675,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.0]: https://github.com/y-core/forge/compare/v0.0.91...v0.1.0
 [0.0.91]: https://github.com/y-core/forge/compare/v0.0.90...v0.0.91
 [0.0.90]: https://github.com/y-core/forge/compare/v0.0.89...v0.0.90
 [0.0.89]: https://github.com/y-core/forge/compare/v0.0.88...v0.0.89

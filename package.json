@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.0.91",
+  "version": "0.1.0",
   "bin": {
     "forge": "./src/cli/root/bin.ts"
   },
