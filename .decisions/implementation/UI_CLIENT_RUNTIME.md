@@ -225,14 +225,38 @@ Its deliberate behaviours:
   widget health**: a render that threw or a pre-press `error-callback` leaves the widget dead, and a
   press then goes through unheld for `verifyTurnstile` to refuse, rather than sitting disabled for
   the full `TURNSTILE_EXECUTE_TIMEOUT_MS` on a widget that was never going to answer. **An
-  interactive challenge stands the budget down** — the timer is cleared and the busy state dropped
-  while the reader is being asked to click, re-armed afterwards, with Cloudflare's
-  `timeout-callback` covering abandonment. **On failure the held request is dropped rather than
-  issued**, because a POST with no token answers with a refusal naming the schema's first field,
-  which reads as a form-validation error the reader cannot act on; the fallback is revealed and
-  pressing submit again retries. A second press inside the window is swallowed rather than queued; a
-  press on an invalid form spends no challenge, since htmx fires `htmx:confirm` before it validates;
-  and a page whose script never loaded lets the press through unheld.
+  interactive challenge swaps the budget rather than standing it down** — the busy state is dropped
+  while the reader is being asked to click, and the 15s timer gives way to
+  `TURNSTILE_INTERACTIVE_TIMEOUT_MS` (60s), far past a deliberate click and well inside the token's
+  ~300s life, so a challenge the visitor walked away from cannot wedge the form for the page's life.
+  **On failure the held request is dropped rather than issued**, because a POST with no token
+  answers with a refusal naming the schema's first field, which reads as a form-validation error the
+  reader cannot act on; the fallback is revealed and pressing submit again retries. A page whose
+  script never loaded lets the press through unheld.
+- **Forge bails on an invalid form only where htmx would have halted it anyway.** `htmx:confirm`
+  fires before htmx validates, so a press on a form htmx _would_ halt must spend no challenge — but
+  `form.checkValidity()` is the static algorithm and ignores `novalidate`, which htmx honours.
+  `htmxWillValidate` mirrors htmx's own gate exactly: `hx-validate="true"` read off the issuing
+  element alone (no inheritance, both spellings), `novalidate` honoured unless that attribute
+  overrides it, and `formnovalidate` reaching the decision only when the issuing element is the form.
+  **On a `novalidate` form, or a button-issued submission, an invalid press therefore spends a
+  challenge** — htmx sends the request either way, the author has declared constraint validation is
+  not the gate, and the alternative is a request leaving with an empty token.
+- **Last press wins, and every dropped press is reported.** The hold is one record of the request
+  and the control it was pressed on, so a token can never answer a different control's request: htmx
+  records the pressed control as the form's `lastButtonClicked` and reads it back when the request is
+  finally issued, so answering an earlier press would send one button's URL under the other's name. A
+  second press displaces the first and re-arms the window, but rides the challenge already in flight
+  — one press stays one challenge. Every way a hold ends without a request dispatches
+  `TURNSTILE_ABANDONED_EVENT` on the **form**, bubbling and not cancelable, carrying
+  `TurnstileAbandonedDetail` — `reason` (`timeout`, `interactive-timeout`, `error`, `unsupported`,
+  `superseded`) and the `submitter` — un-busied before the dispatch, so a handler that focuses the
+  control finds a live target. The event deliberately does not carry the held `issueRequest`:
+  reviving it is the tokenless POST the drop exists to prevent. Teardown is the one exception and
+  drops the hold silently, since it normally runs mid-swap and would dispatch into a page that is
+  already going away. A reset from the form's own `htmx:afterRequest` cannot land on a live hold —
+  a hold requires a healthy widget and an unheld request only leaves on a dead one — and if it ever
+  did, the hold would still end as a reported timed abandonment rather than a silent drop.
 - **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx verb on it
   or on a descendant fires no `htmx:confirm` and has no request to hold, so the controller reports
   the authoring error and falls back to `challenge="render"` — a degraded but working form, never a

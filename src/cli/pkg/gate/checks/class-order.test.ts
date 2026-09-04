@@ -89,6 +89,22 @@ describe("validateClassOrder", () => {
     expect(validateClassOrder("src/a.ts", 'const a = cn("p-4", "p-8");\n')).toEqual([]);
   });
 
+  it("fails on a class position whose span never closes, naming the file and the line", () => {
+    expect(validateClassOrder("src/a.ts", 'const a = cn("p-4", "p-8";\n')).toEqual([
+      {
+        level: "fail",
+        message: "class position could not be read — refusing to report a green class-order gate that skipped it",
+        file: "src/a.ts",
+        line: 1,
+        detail: ["`cn(`", "the span never closes, so every class literal in it went unjudged"],
+      },
+    ]);
+  });
+
+  it("reports no skip finding for a well-formed call", () => {
+    expect(validateClassOrder("src/a.ts", 'const a = cn("flex p-4", "gap-2");\n')).toEqual([]);
+  });
+
   it("reports one finding per literal, not one per token pair", () => {
     expect(validateClassOrder("src/a.tsx", "const A = () => <div class='p-4 p-6 p-8' />;\n")).toHaveLength(1);
   });
@@ -129,12 +145,48 @@ describe("checkClassOrder", () => {
     expect(checkClassOrder({ root, sources: ["src", "!src/fixtures"] }).ok).toBe(true);
   });
 
+  it("refuses a green verdict for a tree holding a class position it cannot read", () => {
+    const root = fixtureRoot({ "src/a.tsx": 'const A = () => <div class=\'flex gap-2\' />;\nconst b = cn("p-4", "p-8";\n' });
+    const result = checkClassOrder({ root, sources: ["src"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((f) => ({ file: f.file, line: f.line, message: f.message }))).toEqual([
+      { file: "src/a.tsx", line: 2, message: "class position could not be read — refusing to report a green class-order gate that skipped it" },
+    ]);
+  });
+
   it("refuses a green verdict when it scanned nothing", () => {
     const root = fixtureRoot({ "src/a.css": ".a { color: red; }\n" });
     const result = checkClassOrder({ root, sources: ["src"] });
 
     expect(result.ok).toBe(false);
     expect(result.findings[0]?.message).toBe("`src` matched no source — refusing to report a green class-order gate that scanned nothing");
+  });
+});
+
+describe("validateClassOrder — the shapes the formatter sorts beyond a quoted attribute", () => {
+  it("reports a conflicting pair inside a template chunk, at the chunk's line", () => {
+    const source = ["const A = () => (", "  <div", "    class={`p-4 flex p-8 ${x} gap-2`}", "  />", ");", ""].join("\n");
+
+    expect(validateClassOrder("src/a.tsx", source).map((f) => ({ line: f.line, detail: f.detail?.[0] }))).toEqual([
+      { line: 3, detail: "`p-4 flex p-8 `" },
+    ]);
+  });
+
+  it("reports a conflicting pair in a string inside an expression container", () => {
+    expect(validateClassOrder("src/a.tsx", 'const A = () => <div class={"p-4 flex p-8"} />;\n').map((f) => f.line)).toEqual([1]);
+  });
+
+  it("reports a conflicting pair in either branch of a ternary", () => {
+    expect(validateClassOrder("src/a.tsx", 'const A = () => <div class={c ? "flex gap-2" : "h-4 h-8"} />;\n').map((f) => f.line)).toEqual([1]);
+  });
+
+  it("does not judge a literal inside a `//` comment", () => {
+    expect(validateClassOrder("src/a.tsx", '// const A = () => <div class="p-4 p-8" />;\nconst a = 1;\n')).toEqual([]);
+  });
+
+  it("does not report a container-wrapped `cn` call twice", () => {
+    expect(validateClassOrder("src/a.tsx", 'const A = () => <div class={cn("p-4 flex p-8")} />;\n').map((f) => f.line)).toEqual([1]);
   });
 });
 

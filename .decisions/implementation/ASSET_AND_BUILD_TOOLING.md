@@ -34,13 +34,14 @@ description: "The asset pipeline and its generated module, the content-hash mani
 - §4d CommandBase and Command Are Not Mergeable: the variance that forces two interfaces
 - §5 pkg Namespace — Project Tooling: the blessed release path and the published gate
 - §5a createReleaseCommand — Automated Release Workflow: the ordered steps and the refusals
+- §5b The Export Surface a Release Compares: the symbol set behind the shrink guard, and what it ignores
 - §5c Git and Manifest Internals: the unpublished helpers the two factories are built from
 - §5d Changelog Promotion — the Unreleased Contract: what release does to `CHANGELOG.md`
 - §5e Changelog Gate Invariants: what is checked before a release, and what deliberately is not
 - §5f createGateCommand — the Published Verification Gate: one runner, one table per project
 - §5g cloudflareWorkerSteps — the Fleet Preset: a step-table factory, not new machinery
 - §5h Roots Are Stated or Derived, Never Discovered: no function walks the disk to find the project
-- §5i Checks Are Functions, Not Scripts: the published validators and the verb vocabulary
+- §5i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
 - §6 Generated Assets Module: the git-ignored artifact the build exists to write
 - §6a The Ordered Stages and the Two Codegen Passes: why codegen straddles `buildJS`
 - §6b Build and Types Artifacts Are Shape-Identical: the header split and the idempotent write
@@ -257,7 +258,7 @@ prose commit. A project with no changelog stages `package.json` alone, because `
 for what a release touches _beyond_ its own writes — a lockfile, a monorepo's sibling manifests,
 a version constant in source — and those callers state the full list deliberately.
 
-Four refusals are guards, not conveniences:
+Five refusals are guards, not conveniences:
 
 | Refusal                                          | Why, and when it is reached                                                                                                            | Override                                                                                       |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -265,6 +266,7 @@ Four refusals are guards, not conveniences:
 | Tag already exists                               | Checked after the version is resolved, so a botched release cannot be re-cut over its own tag                                          | none                                                                                           |
 | Nothing to release                               | No commits since the latest tag; reports "already at" and stops. `package.json` disagreeing with the tag there is an error, not a bump | none                                                                                           |
 | Empty `[Unreleased]`, with commits since the tag | Shipping a release nobody wrote a line for is the drift the changelog prevents                                                         | `--allow-empty-changelog` (§5d); a _malformed_ changelog is a separate refusal no flag reaches |
+| Public export surface shrank under an auto-patch | The bump is derived from subject prefixes alone; a removed symbol shipped as a patch breaks every consumer pinned to a `^` range (§5b) | `--allow-semver`                                                                               |
 
 **A refusal `throw`s a `ReleaseError`; it does not call `exit`.** `execute` renders any `Error`
 as `Error: <message>` and exits 1 (§4c), so the operator sees the same output while the guard
@@ -275,13 +277,45 @@ written**, so no mutation can precede a refusal.
 **`--dry` prints the resolved version and what would be promoted, then stops before any write.**
 It skips the clean-tree check too, so it is safe to run at any time — but it resolves from
 `<latest-tag>..HEAD`, so running it _before_ committing reports "nothing to release" rather than
-the version a release would produce. Commit first, then dry-run.
+the version a release would produce. Commit first, then dry-run. **It skips only the clean-tree
+check** — every other refusal, the shrinking-surface guard included, fires under `--dry`, because
+a preview that hides the refusal it is previewing is worse than no preview.
+
+**An automatic bump prints the evidence for itself**, as a `because:` row beside `next:`: the
+short sha and subject of the commit whose prefix won, or — for a patch, which no commit asks for —
+`no major:/minor: subject in <n> commits since <tag>`. The row is printed in a real release too,
+not only under `--dry`. Only an `auto-*` reason carries evidence; an explicit version, a first
+release and an in-sync run print no row, because no commit derived their version.
 
 **The bump is the highest one any commit in `<latest-tag>..HEAD` asks for**: a `major:` subject
 prefix bumps major, a `minor:` prefix bumps minor, a range with neither is a patch. Scanning the
 whole range rather than the tip is the point — a cycle holding a `major:` commit followed by
 `fix typo` must not ship as a patch. An explicit version as the command's single positional
 argument overrides the scan, and is rejected unless it is greater than the current tag.
+
+### 5b. The Export Surface a Release Compares
+
+**The surface is a set of `<specifier>#<exportName>` pairs**, harvested from every `mod.ts` the
+`exports` map names as a target — the same barrel parse `checkExports` uses, not a second parser.
+`removedSurfaceSince` builds it twice: at the latest tag, from `git show <tag>:<path>` (§5c), and
+from the working tree, so a `--dry` run reflects uncommitted work. An entry the tag published and
+the tree omits is the finding.
+
+**The bar the guard holds to is `auto-minor`, never `auto-major`.** A shrinking surface refuses an
+`auto-patch` and nothing else; `auto-minor`, `auto-major`, an explicit version and a first release
+all pass. A major-version decision is too consequential to be driven by a heuristic over barrel
+names, so this check never demands one — its whole job is catching an accidental patch across the
+patch→minor line, which is where a `^` range silently breaks.
+
+Three things are deliberately not compared: **subpath patterns** (a `*` specifier names no barrel,
+and forge's two publish files, not symbols), **non-barrel targets** (an entry pointing at anything
+but `.../mod.ts`), and **type-level narrowing** — a symbol surviving with a tighter signature needs
+a type checker, not a name set, and that gap is why the guard has an override rather than a veto.
+
+**A whole subpath deleted from the map reports every one of its symbols as removed**, not one
+"subpath removed" line: the honest reading of a symbol-keyed set, and it needs no extra machinery.
+**A `package.json` this command cannot parse yields an empty set**, making the guard a no-op rather
+than a new way for a differently-shaped repository to fail its release.
 
 ### 5c. Git and Manifest Internals
 
@@ -300,6 +334,13 @@ scan strips the abbreviated sha itself. The helper answers two questions at once
 subjects are, and whether the range holds anything at all — and a subject-only format would emit
 an empty line for a commit with an empty subject, which the emptiness filter drops. A range of
 such commits would then read as "nothing to release", the worse failure of the two.
+
+**`readFileAtRef` returns `null` rather than throwing when the path is absent at the ref.** It is
+the one helper that reads a file out of history — `git show <ref>:<path>` — and its caller (§5b)
+compares two points in time, where a barrel absent at the old tag is data, not a failure: it
+published nothing then, so it can have lost nothing since. Every other git failure collapses into
+the same `null`, which is the cost of that reading — acceptable because the guard is overridable,
+so a surface it under-reports blocks nothing.
 
 ### 5d. Changelog Promotion — the Unreleased Contract
 
@@ -522,6 +563,12 @@ silent green is indistinguishable from a check that walked nothing.
 
 **Two levels, not a scale.** `fail` fails the check; `warn` is reported and does not. A third level
 invites "does `major` fail the gate?", which is the question a level should answer.
+
+**A drift check over a generated module compares content, not layout.** Layout is the formatter's
+business — every `gen:*` script pipes its written module through `oxfmt` — so both sides are
+canonicalised before comparison: whitespace removed, and the trailing comma the formatter adds when
+it expands a literal dropped. Comparing raw text would fail the gate on formatting the generator is
+not responsible for.
 
 **Every check takes an explicit `root` (§5h) and every forge-specific allowlist as config**, which
 is what keeps it from being forge's script wearing a config parameter. **That configuration lives

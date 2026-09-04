@@ -12,7 +12,9 @@
    no theme file. Everything below is imported for you, and each file has exactly one job:
 
      theme-neutral.css     the default colour scheme — `--gray-1` … `--gray-12`, each declared once
-     theme-colors.css      the four status hues and the absolute alpha ramps — fixed, not themeable
+     theme-colors.css      the four status hues, the absolute alpha ramps, and the `--cast-a*` /
+                           `--rim-a*` elevation families — outside the colour-scheme swap below,
+                           and documented there for the app that wants to re-declare one
      theme-base.css        the mapping — `--background: var(--gray-1)`, the `color-scheme` that picks
                            each step's mode, and the `@theme inline` bridge
      forge-ui.css          seperate layers for component defaults a caller's utility should be able to override
@@ -38,6 +40,20 @@
 
    A brand colour goes on `--accent-12`, which forge aliases to `--gray-12` precisely because it
    ships no brand hue of its own.
+
+   ── Adding your own scale tokens ─────────────────────────────────────────────
+
+   A theme token whose value is a **scale step** is declared in a namespace no colour utility reads.
+   A font size is `--text-size-*`:
+
+     @theme { --text-size-hero: 3.5rem; }   →   the utility `text-size-hero`
+
+   Not `--text-hero`. Tailwind's `--text-*` namespace carries font size, but the `text-*` utility
+   also carries colour, so `text-hero` is indistinguishable from a colour to anything reading the
+   class name — including `cn`, which reads it as one and drops it: `cn("text-hero text-red-500")`
+   returns `text-red-500` alone, in your markup, with no error. Under the reserved spelling
+   `text-size-hero` merges against `text-2xl` and coexists with `text-red-500`, which is what it
+   means.
 
    Note the override point for a *per-mode* value is the **scale**, never the semantic token. Each
    semantic token is declared once and means the same thing in both modes; only a scale step carries

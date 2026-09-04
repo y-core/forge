@@ -16,6 +16,8 @@
   },
   "scripts": {
     "fix": "bun run src/cli/root/bin.ts verify --fix",
+    "gen:class-groups": "bun run src/cli/pkg/gate/checks/class-groups.ts && oxfmt src/ui/core/utils/class-groups.ts",
+    "gen:design-scale": "bun run src/cli/pkg/gate/checks/design-scale.ts && oxfmt src/cli/pkg/lint/data/design-scale.ts",
     "lint": "bun run src/cli/root/bin.ts verify --only lint",
     "release": "bun run src/cli/root/bin.ts release",
     "test": "bun test",
@@ -100,6 +102,10 @@
     "./cli/pkg": {
       "types": "./src/cli/pkg/mod.ts",
       "import": "./src/cli/pkg/mod.ts"
+    },
+    "./cli/pkg/lint": {
+      "types": "./src/cli/pkg/lint.ts",
+      "import": "./src/cli/pkg/lint.ts"
     },
     "./cli/term": {
       "types": "./src/cli/term/mod.ts",
@@ -271,6 +277,7 @@
     "src/ui/",
     "src/validation/",
     "!**/*-test-helper.ts",
+    "!**/test-support.ts",
     "!**/*.browser.ts",
     "!**/*.test.ts",
     "!**/*.test.tsx"

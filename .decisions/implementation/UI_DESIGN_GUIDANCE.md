@@ -30,10 +30,11 @@ description: "Why the src/ui/design corpus exists, its two-tier rule model, the 
 - §2c Override Authority — the Written Brief: who may rebut a Default, and who may not
 - §3 Rule Identifier Scheme: the corpus's stable citation anchor
 - §3a Marker Syntax and Placement: the trailing HTML comment, one per normative sentence
-- §3b Identifier Stability and Citation: ids are never renamed, never renumbered, never reused
+- §3b Identifier Stability and Citation: ids are never renamed, never renumbered, never reused; the retired list
 - §3c The Forge-Primitive Admission Test: what a candidate rule must name to be admitted
 - §4 Anti-Drift Contract with the Design Gate: the corpus may not describe an API forge lacks
 - §4a Gate Enforcement Across Both Tiers: the gate's second direction, and why a gated rule is not thereby a Floor rule
+- §4b Two Enforcement Mechanisms: the check step and the oxlint plugin, and the two registers that keep them honest
 - §5 Three-Way Documentation Boundary: which of three homes owns a given statement
 - §5a Routing Rule for a New Design Rule: design rules and anti-patterns never land in `.decisions/`
 - §6 Format Exemption and This Document's Scope: the corpus is exempt; this file is not
@@ -165,6 +166,11 @@ section numbers:
 Ids are unordered. They carry no sequence and no hierarchy — grouping is the corpus's headings'
 job, not the identifier's.
 
+**Retired ids.** `forge-ui-viewport-units` is retired. `h-screen` and `w-screen` are two class
+names, which is a restriction list rather than a rule that admits judgement, and the guidance prose
+in `floor.md` states it as well without one. The id stays retired rather than reassigned: a citation
+that outlived it lands on nothing rather than on a different sentence.
+
 ### 3c. The Forge-Primitive Admission Test
 
 **A rule that cannot name a forge component, token, utility, or class does not belong in the
@@ -235,6 +241,57 @@ rather than an override to accept.
 
 Which rules are in the enforced set, what each one matches, and the marker's exact syntax are the
 script's, per §4's non-restatement rule.
+
+### 4b. Two Enforcement Mechanisms
+
+A corpus rule is enforced by one of two mechanisms, and which one is a property of what the rule
+reads rather than of its tier.
+
+**The check step** — `validate-design` — reads source as text. It owns every rule whose subject is
+markup structure: a tag's attributes, an element's ancestors, the body between two tags.
+
+**forge's oxlint plugin** — `@y-core/forge/cli/pkg/lint`, run by the `lint` step — owns every rule
+whose subject is a **class string**. The linter has already parsed the file, so the plugin reads a
+class literal off the AST instead of guessing at one with a regular expression; a CSS property name
+in a generated table, a sentence containing the word `prose`, and a class name quoted in an
+assertion are not class strings, because the parser says they are not. A plugin rule's
+per-site suppression is `oxlint-disable-next-line forge/<key> -- <why>`, whose reason is mandatory
+by the same argument §4a makes for `design-allow`, and enforced by `forge/suppression-needs-reason`.
+
+The plugin's rule key is the corpus id minus its `forge-ui-` prefix, derived in both directions and
+never hand-kept. **Two registers name the mechanism, one per rule family**, and an author adding a
+rule declares its enforcer in the register that already holds the rule:
+
+- `src/cli/pkg/gate/checks/design-rules.ts` routes every corpus rule, through `RULE_ENFORCER`. It
+  imports nothing, deliberately: the plugin reaches it through `lint/report.ts` and ships as raw
+  TypeScript, so a module it loads may not drag `tailwindcss` or `oxlint` in behind it
+  ([`NAMESPACES.md`](./NAMESPACES.md) §3c).
+- `src/cli/pkg/gate/checks/modern-css-rules.ts` routes every modern-platform rule, through the
+  optional `enforcer` field on the rule's own row — absent meaning the modern-CSS check's own
+  detector. `design-rules.ts` names no platform rule at all.
+
+`validate-design` holds each register's rows against the mechanism they name — so deleting a plugin
+rule fails the gate by name exactly as deleting a detector did — and holds the plugin in the other
+direction against both registers together: a rule the plugin registers that neither register routes
+fails too, because its findings would print an id no register states. The suppression meta-rule
+above is the one exemption, having no corpus id to route.
+
+That guarantee is bounded by what the check can read: it holds a plugin rule against the config's
+top-level `rules` block only, so a rule turned off in an `overrides` entry still reads as enabled.
+
+**Which rules sit on which side is not restated here**, for the reason §4 gives: each register is
+one file, and a second copy in prose is indistinguishable from an amendment the first time the two
+disagree.
+
+Two of the plugin's rules resolve a class against the design system itself — which utility roots take
+a spacing value, which take a colour, and what steps the scale offers. Those facts are generated from
+the compiled stylesheet into `src/cli/pkg/lint/data/design-scale.ts` and held there by
+`validate-design-scale`, on the same drift contract `validate-class-groups` holds `cn`'s table to.
+
+**The two derivations are parallel and are deliberately not folded into one.** Both read the same
+compiled design system, which is the source of truth they actually share; but the other one's
+output is `cn`'s conflict model ([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §3f), and
+coupling the linter's data to it would make each a hostage of the other's changes.
 
 ---
 

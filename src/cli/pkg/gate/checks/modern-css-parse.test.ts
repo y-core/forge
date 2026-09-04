@@ -13,11 +13,9 @@ import {
   findTranslateCentering,
   findWebkitScrollbar,
   isModernCssSuppressed,
-  logicalUtility,
 } from "./modern-css-parse";
 
 const CSS = "src/ui/assets/css/fixture.css";
-const TSX = "src/ui/core/fixture.tsx";
 
 describe("blankComments()", () => {
   it("replaces the comment body with spaces and keeps the length", () => {
@@ -201,28 +199,6 @@ describe("findDuplicatedColorScheme()", () => {
   });
 });
 
-describe("logicalUtility()", () => {
-  const swaps: [string, string][] = [
-    ["ml-2", "ms-2"],
-    ["mr-2", "me-2"],
-    ["pl-4", "ps-4"],
-    ["pr-10", "pe-10"],
-    ["border-l", "border-s"],
-    ["border-r-2", "border-e-2"],
-    ["rounded-l-md", "rounded-s-md"],
-    ["rounded-r", "rounded-e"],
-    ["text-left", "text-start"],
-    ["text-right", "text-end"],
-    ["first:md:rounded-l-md", "first:md:rounded-s-md"],
-  ];
-
-  for (const [physical, logical] of swaps) {
-    it(`maps ${physical} to ${logical}`, () => {
-      expect(logicalUtility(physical)).toBe(logical);
-    });
-  }
-});
-
 describe("findPhysicalSpacing() — stylesheets", () => {
   it("flags a physical inline margin", () => {
     expect(findPhysicalSpacing(".a {\n  margin-left: 1rem;\n}", CSS)).toEqual([
@@ -255,70 +231,6 @@ describe("findPhysicalSpacing() — stylesheets", () => {
       ".a {\n  /* modern-css-allow: forge-ui-platform-logical-spacing — the caller asked for a physical side */\n  margin-left: 1rem;\n}";
 
     expect(findPhysicalSpacing(source, CSS)).toEqual([]);
-  });
-});
-
-describe("findPhysicalSpacing() — class literals", () => {
-  it("flags a physical utility inside a class declaration", () => {
-    expect(findPhysicalSpacing('const cls = "flex items-center pr-10";', TSX)).toEqual([
-      { file: TSX, line: 1, ruleId: "forge-ui-platform-logical-spacing", detail: "physical utility `pr-10` — use `pe-10`" },
-    ]);
-  });
-
-  it("keeps the variant prefix in both spellings", () => {
-    expect(findPhysicalSpacing('const cls = "flex first:rounded-l-md";', TSX).map((f) => f.detail)).toEqual([
-      "physical utility `first:rounded-l-md` — use `first:rounded-s-md`",
-    ]);
-  });
-
-  it("does not flag a word that only looks like a utility", () => {
-    expect(findPhysicalSpacing('const prose = "the pr-10 in this sentence is prose";', TSX)).toEqual([]);
-  });
-
-  it("does not flag rounded-lg, which is a radius and not a side", () => {
-    expect(findPhysicalSpacing('const cls = "flex rounded-lg border-lime-500";', TSX)).toEqual([]);
-  });
-
-  it("does not read stylesheet properties out of a .tsx file", () => {
-    expect(findPhysicalSpacing("const style = { left: 0, marginLeft: 4 };", TSX)).toEqual([]);
-  });
-
-  it("flags a fractional value, which no anchor test accepts", () => {
-    expect(findPhysicalSpacing("<span class='ml-0.5 text-destructive'>", TSX).map((f) => f.detail)).toEqual([
-      "physical utility `ml-0.5` — use `ms-0.5`",
-    ]);
-  });
-
-  it("flags a one-token literal inside a `cn()` call on the same line", () => {
-    expect(
-      findPhysicalSpacing('class={cn("relative grid", variantClasses[variant], dismissible && "pr-8", cls)}', TSX).map((f) => f.detail),
-    ).toEqual(["physical utility `pr-8` — use `pe-8`"]);
-  });
-
-  it("flags a one-token literal on a wrapped `cn()` argument line", () => {
-    const source = ["      class={cn(", '        "relative flex w-full",', '        dismissible && "pr-10",', "        cls,", "      )}"].join(
-      "\n",
-    );
-
-    expect(findPhysicalSpacing(source, TSX)).toEqual([
-      { file: TSX, line: 3, ruleId: "forge-ui-platform-logical-spacing", detail: "physical utility `pr-10` — use `pe-10`" },
-    ]);
-  });
-
-  it("flags a two-token literal whose other token is no anchor", () => {
-    expect(findPhysicalSpacing("<span class='flex-1 pl-1'>{children}</span>", TSX).map((f) => f.detail)).toEqual([
-      "physical utility `pl-1` — use `ps-1`",
-    ]);
-  });
-
-  it("still flags a module-level class constant in no class position", () => {
-    const source = 'const SELECT_BASE = "w-full appearance-none rounded-lg border px-3 py-2 pr-10 text-sm";';
-
-    expect(findPhysicalSpacing(source, TSX).map((f) => f.detail)).toEqual(["physical utility `pr-10` — use `pe-10`"]);
-  });
-
-  it("does not flag a one-token literal outside any class position", () => {
-    expect(findPhysicalSpacing('const label = "pr-10";', TSX)).toEqual([]);
   });
 });
 

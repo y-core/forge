@@ -152,4 +152,28 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Tailwind's own shadow geometry, unchanged, with every colour slot re-pointed at the elevation
+     families in `theme-colors.css` — so light renders exactly as it did, and dark, where the cast
+     layers resolve to `transparent`, is carried instead by a 1px inset rim and a soft outer falloff
+     whose radius is the level. Both are white at 10% and 5%: a clean edge, not a glow.
+
+     All seven sizes are defined, not the five forge renders, because a consumer's `shadow-2xl` on a
+     forge page would otherwise be the one elevation that still vanishes in dark. `--shadow-2xl`'s
+     alpha moves from Tailwind's off-grid 0.25 to the ramp's 0.2 — the one light-mode change here,
+     and lighter rather than absent.
+
+     Mode-free by construction: every `light-dark()` sits one hop away, in the step. */
+  --shadow-2xs: 0 1px var(--cast-a1);
+  --shadow-xs: 0 1px 2px 0 var(--cast-a1);
+
+  --shadow-sm: 0 1px 3px 0 var(--cast-a2), 0 1px 2px -1px var(--cast-a2), inset 0 0 0 1px var(--rim-a2), 0 0 8px var(--rim-a1);
+
+  --shadow-md: 0 4px 6px -1px var(--cast-a2), 0 2px 4px -2px var(--cast-a2), inset 0 0 0 1px var(--rim-a2), 0 0 12px var(--rim-a1);
+
+  --shadow-lg: 0 10px 15px -3px var(--cast-a2), 0 4px 6px -4px var(--cast-a2), inset 0 0 0 1px var(--rim-a2), 0 0 20px var(--rim-a1);
+
+  --shadow-xl: 0 20px 25px -5px var(--cast-a2), 0 8px 10px -6px var(--cast-a2), inset 0 0 0 1px var(--rim-a2), 0 0 28px var(--rim-a1);
+
+  --shadow-2xl: 0 25px 50px -12px var(--cast-a4), inset 0 0 0 1px var(--rim-a2), 0 0 40px var(--rim-a1);
 }

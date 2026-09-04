@@ -40,6 +40,7 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/cli`                 | CLI command framework                                                | [src/cli/core/README.md](src/cli/core/README.md)     |
 | `@y-core/forge/cli/assets`          | Asset pipeline command tree (`forge assets`)                         | [src/assets/README.md](src/assets/README.md)         |
 | `@y-core/forge/cli/pkg`             | Project tooling — verification gate & release (Node/Bun only)        | [src/cli/pkg/README.md](src/cli/pkg/README.md)       |
+| `@y-core/forge/cli/pkg/lint`        | forge's oxlint plugin — name it in `.oxlintrc.json`'s `jsPlugins`    | [src/cli/pkg/README.md](src/cli/pkg/README.md)       |
 | `@y-core/forge/cli/cf`              | Cloudflare — account bindings, zone rules, env schema (`forge cf`)   | [src/cli/cf/README.md](src/cli/cf/README.md)         |
 | `@y-core/forge/cli/term`            | Terminal rendering — width, wrapping, grids & colour                 | [src/cli/term/README.md](src/cli/term/README.md)     |
 | `@y-core/forge/config`              | Environment config                                                   | [src/config/README.md](src/config/README.md)         |

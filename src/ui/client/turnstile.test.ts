@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { TURNSTILE } from "../contracts/turnstile-contract";
+import { TURNSTILE, TURNSTILE_ABANDONED_EVENT, type TurnstileAbandonedDetail } from "../contracts/turnstile-contract";
 import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./test-dom";
-import { findWidget, hasApi, hasHtmxSubmission, mountTurnstile, restoreFocus } from "./turnstile";
+import { findWidget, hasApi, hasHtmxSubmission, htmxWillValidate, mountTurnstile, restoreFocus } from "./turnstile";
 
 const win = (turnstile?: unknown) => ({ turnstile }) as unknown as Window;
 
@@ -75,6 +75,53 @@ describe("hasHtmxSubmission", () => {
 
   it("is false for a native form, which has no request for the challenge to defer", () => {
     expect(hasHtmxSubmission(form({ action: "/contact", method: "post" }))).toBe(false);
+  });
+});
+
+describe("htmxWillValidate", () => {
+  const node = (tag: string, attrs: Record<string, string> = {}, props: Record<string, unknown> = {}) =>
+    Object.assign(new FakeElement(tag, attrs), props) as unknown as Element;
+
+  const willValidate = (elt: Element, submitter: Element | null = null) => htmxWillValidate(elt, submitter);
+
+  it("is true for a plain form, which is the case htmx validates", () => {
+    expect(willValidate(node("FORM"))).toBe(true);
+  });
+
+  it("is false for a form the author marked novalidate", () => {
+    expect(willValidate(node("FORM", {}, { noValidate: true }))).toBe(false);
+  });
+
+  it("is true when hx-validate overrides novalidate, as htmx's own || does", () => {
+    expect(willValidate(node("FORM", { "hx-validate": "true" }, { noValidate: true }))).toBe(true);
+  });
+
+  it("is false when the pressed control carries formnovalidate", () => {
+    expect(willValidate(node("FORM"), node("BUTTON", {}, { formNoValidate: true }))).toBe(false);
+    expect(willValidate(node("FORM", { "hx-validate": "true" }), node("BUTTON", {}, { formNoValidate: true }))).toBe(false);
+  });
+
+  it("is false for a button-issued submission, which htmx never validates on its own", () => {
+    expect(willValidate(node("BUTTON"), node("BUTTON", {}, { formNoValidate: true }))).toBe(false);
+    expect(willValidate(node("BUTTON"))).toBe(false);
+  });
+
+  it("is true for a button asking for validation, in either spelling", () => {
+    expect(willValidate(node("BUTTON", { "hx-validate": "true" }))).toBe(true);
+    expect(willValidate(node("BUTTON", { "data-hx-validate": "true" }))).toBe(true);
+  });
+
+  it("is still true for a validating button whose press carries formnovalidate", () => {
+    // htmx reads `formnovalidate` off the form's own data, which a button-issued press never reaches.
+    expect(willValidate(node("BUTTON", { "hx-validate": "true" }), node("BUTTON", {}, { formNoValidate: true }))).toBe(true);
+  });
+
+  it("is false for a button whose ancestor form declares hx-validate, which htmx does not inherit", () => {
+    const { el } = fakeTree();
+    const form = el("FORM", { "hx-validate": "true" });
+    const button = el("BUTTON", { "hx-post": "/contact" });
+    form.append(button);
+    expect(willValidate(button as unknown as Element)).toBe(false);
   });
 });
 
@@ -175,7 +222,8 @@ interface Scene {
   form: FakeForm;
   field: FakeElement;
   calls: { executes: number; resets: number; params: Record<string, unknown> | null };
-  issued: boolean[];
+  /** Which press each released request answered, and the `skipConfirmation` it carried. */
+  issued: Array<{ from: string; skip: boolean }>;
 }
 
 /** A mounted controller over a form carrying `formAttrs`, with a descendant field that posts on its
@@ -215,9 +263,10 @@ const afterRequest = (scene: Scene, from: FakeElement, detail: Record<string, un
   return { resets: scene.calls.resets, value: scene.field.value };
 };
 
-const confirm = (scene: Scene, elt: FakeElement): { prevented: boolean; executes: number } => {
+const confirm = (scene: Scene, elt: FakeElement, submitter?: FakeElement): { prevented: boolean; executes: number } => {
+  const from = submitter?.id || elt.tagName.toLowerCase();
   const event = new FakeEvent("htmx:confirm", {
-    detail: { elt, issueRequest: (skipConfirmation: boolean) => scene.issued.push(skipConfirmation) },
+    detail: { elt, ...(submitter ? { triggeringEvent: { submitter } } : {}), issueRequest: (skip: boolean) => scene.issued.push({ from, skip }) },
   });
   elt.dispatchEvent(event);
   return { prevented: event.defaultPrevented, executes: scene.calls.executes };
@@ -267,6 +316,13 @@ describe("mountTurnstile — the reset is scoped to the element that issued the 
 describe("mountTurnstile — challenge='submit' holds the form's own press only", () => {
   const submitScene = () => mountedScene({ "hx-post": "/contact" }, { "data-challenge": "submit" });
 
+  /** A submit control the press can be attributed to, which is what the hold is keyed on. */
+  const button = (scene: Scene, id: string) => {
+    const control = new FakeElement("BUTTON", { id, type: "submit" });
+    scene.form.append(control);
+    return control;
+  };
+
   it("holds the press and releases the request once the challenge answers", () => {
     const scene = submitScene();
 
@@ -274,7 +330,7 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
 
     completeChallenge(scene);
 
-    expect(scene.issued).toEqual([true]);
+    expect(scene.issued).toEqual([{ from: "form", skip: true }]);
   });
 
   it("lets a descendant field's own request through unheld, spending no challenge on it", () => {
@@ -282,5 +338,37 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
 
     expect(confirm(scene, scene.field)).toEqual({ prevented: false, executes: 0 });
     expect(scene.issued).toEqual([]);
+  });
+
+  it("answers the press that displaced the first, and no other", () => {
+    const scene = submitScene();
+    const first = button(scene, "submit");
+    const second = button(scene, "preview");
+
+    confirm(scene, scene.form, first);
+    // One press is one challenge, so the displacement rides the one already in flight.
+    expect(confirm(scene, scene.form, second)).toEqual({ prevented: true, executes: 1 });
+    expect({ first: first.disabled, second: second.disabled }).toEqual({ first: false, second: true });
+
+    completeChallenge(scene);
+
+    expect(scene.issued).toEqual([{ from: "preview", skip: true }]);
+  });
+
+  it("reports a dropped press to the form rather than losing it", () => {
+    const scene = submitScene();
+    const pressed = button(scene, "submit");
+    const reported: TurnstileAbandonedDetail[] = [];
+    scene.form.addEventListener(TURNSTILE_ABANDONED_EVENT, (event) => {
+      reported.push((event as unknown as CustomEvent<TurnstileAbandonedDetail>).detail);
+    });
+
+    confirm(scene, scene.form, pressed);
+    const errored = scene.calls.params?.["error-callback"] as (code?: unknown) => void;
+    errored(300010);
+
+    expect(reported).toEqual([{ reason: "error", submitter: pressed as unknown as HTMLElement }]);
+    expect(scene.issued).toEqual([]);
+    expect({ disabled: pressed.disabled, busy: pressed.getAttribute("aria-busy") }).toEqual({ disabled: false, busy: null });
   });
 });

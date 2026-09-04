@@ -4,16 +4,24 @@ import { definitionList } from "../../term/grid";
 import { loadConfigModule } from "../internal/config-module";
 import { commit, createTag, isWorkingTreeClean, tagExists } from "../internal/git";
 import { readChangelog, readRepositoryUrl, updatePackageVersion, writeChangelog } from "../internal/pkg-json";
-import type { ReleaseCommandConfig, ReleaseDeps } from "../types";
+import type { BumpEvidence, ReleaseCommandConfig, ReleaseDeps } from "../types";
 import { ReleaseError } from "../types";
 import { formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
+import { removedSurfaceSince } from "./surface";
 import { resolveVersion } from "./version";
 
 const releaseFlags = {
   dry: { type: "boolean" as const, short: "n", description: "Show what would happen without making changes" },
   "allow-dirty": { type: "boolean" as const, description: "Skip clean working tree check" },
   "allow-empty-changelog": { type: "boolean" as const, description: "Release even though [Unreleased] carries no entry" },
+  "allow-semver": { type: "boolean" as const, description: "Release despite a shrinking public export surface" },
 };
+
+function becauseRow(evidence: BumpEvidence, previous: string | null): string {
+  if (evidence.commit) return `${evidence.commit.sha} ${evidence.commit.subject}`;
+  const commits = `${evidence.commitCount} commit${evidence.commitCount === 1 ? "" : "s"}`;
+  return `no major:/minor: subject in ${commits} since ${previous ?? "the initial commit"}`;
+}
 
 /** Creates the CLI command that bumps the version, promotes the changelog, and creates a git tag. */
 export function createReleaseCommand(
@@ -28,6 +36,7 @@ export function createReleaseCommand(
     readChangelog,
     writeChangelog,
     readRepositoryUrl,
+    removedSurfaceSince,
     now: () => new Date(),
   },
 ): Command<typeof releaseFlags> {
@@ -43,6 +52,7 @@ export function createReleaseCommand(
       const dry = Boolean(flags.dry);
       const allowDirty = Boolean(flags["allow-dirty"]);
       const allowEmptyChangelog = Boolean(flags["allow-empty-changelog"]);
+      const allowSemver = Boolean(flags["allow-semver"]);
 
       if (!dry && !allowDirty && !deps.isWorkingTreeClean(cwd)) {
         throw new ReleaseError("working-tree-dirty", "Working tree is not clean. Commit or stash changes first, or use --allow-dirty.");
@@ -53,6 +63,18 @@ export function createReleaseCommand(
       if (result.reason === "in-sync") {
         console.log(`Already at ${result.version} — nothing to release.`);
         return;
+      }
+
+      if (!allowSemver && result.reason === "auto-patch" && result.previous !== null) {
+        const removed = deps.removedSurfaceSince(cwd, result.previous);
+        if (removed.length > 0) {
+          throw new ReleaseError(
+            "surface-shrink",
+            `Public export surface shrank since ${result.previous}, but the resolved bump is auto-patch:\n` +
+              `${removed.map((entry) => `  ${entry}`).join("\n")}\n` +
+              "Prefix a commit `minor:` or pass an explicit version, or use --allow-semver.",
+          );
+        }
       }
 
       const tag = `${tagPrefix}${result.version}`;
@@ -93,6 +115,7 @@ export function createReleaseCommand(
         [
           { term: "previous:", description: result.previous ?? "(none)" },
           { term: "next:", description: `${result.version}  (${result.reason})` },
+          ...(result.evidence ? [{ term: "because:", description: becauseRow(result.evidence, result.previous) }] : []),
           { term: "tag:", description: tag },
           { term: "changelog:", description: changelogNote },
         ],
@@ -116,11 +139,18 @@ export function createReleaseCommand(
       // Default to exactly what this command wrote: `commit` runs `git add`, so naming a changelog
       // that was never promoted would fail on a project that has none.
       const staged = stageFiles ?? (promoted !== null ? ["package.json", changelogFile] : ["package.json"]);
-      const committed = deps.commit(cwd, `chore: release ${result.version}`, staged);
+      const message = `chore: release ${result.version}`;
+      const committed = deps.commit(cwd, message, staged);
       if (!committed) {
         console.log(`  package.json already at ${result.version} — skipping commit.`);
       }
-      deps.createTag(cwd, tag);
+
+      try {
+        deps.createTag(cwd, tag);
+      } catch (err) {
+        const landed = committed ? `Commit "${message}" landed unpushed and untagged; ` : "";
+        throw new ReleaseError("git-error", `${landed}creating tag ${tag} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
 
       console.log(`\nTagged ${tag}. Push:`);
       console.log(`  git push && git push --tags`);

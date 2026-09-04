@@ -184,12 +184,41 @@ describe("cn negative and fractional values", () => {
   }
 });
 
+describe("cn logical inset utilities", () => {
+  const cases: { input: [string, string]; expected: string }[] = [
+    { input: ["start-0", "start-4"], expected: "start-4" },
+    { input: ["end-0", "end-4"], expected: "end-4" },
+    { input: ["start-0", "start-[3px]"], expected: "start-[3px]" },
+    { input: ["max-md:start-0", "max-md:start-8"], expected: "max-md:start-8" },
+    { input: ["max-md:end-0", "max-md:end-8"], expected: "max-md:end-8" },
+    { input: ["start-4", "end-4"], expected: "start-4 end-4" },
+    { input: ["start-4", "inset-s-0"], expected: "inset-s-0" },
+  ];
+
+  for (const { input, expected } of cases) {
+    it(`cn("${input[0]}", "${input[1]}") === "${expected}"`, () => {
+      expect(cn(input[0], input[1])).toBe(expected);
+    });
+  }
+});
+
 describe("cn override relations", () => {
   const cases: { shorthand: string; longhand: string; collapsed: string; narrowed: string }[] = [
     { shorthand: "p-4", longhand: "px-2", collapsed: "p-4", narrowed: "p-4 px-2" },
     { shorthand: "size-6", longhand: "w-4", collapsed: "size-6", narrowed: "size-6 w-4" },
     { shorthand: "inset-y-2", longhand: "top-0", collapsed: "inset-y-2", narrowed: "inset-y-2 top-0" },
     { shorthand: "rounded-lg", longhand: "rounded-tl-md", collapsed: "rounded-lg", narrowed: "rounded-lg rounded-tl-md" },
+    { shorthand: "scroll-p-4", longhand: "scroll-pl-2", collapsed: "scroll-p-4", narrowed: "scroll-p-4 scroll-pl-2" },
+    { shorthand: "scroll-m-4", longhand: "scroll-mt-2", collapsed: "scroll-m-4", narrowed: "scroll-m-4 scroll-mt-2" },
+    { shorthand: "flex-1", longhand: "basis-1/2", collapsed: "flex-1", narrowed: "flex-1 basis-1/2" },
+    {
+      shorthand: "place-content-center",
+      longhand: "content-start",
+      collapsed: "place-content-center",
+      narrowed: "place-content-center content-start",
+    },
+    { shorthand: "place-items-end", longhand: "items-center", collapsed: "place-items-end", narrowed: "place-items-end items-center" },
+    { shorthand: "place-self-center", longhand: "self-start", collapsed: "place-self-center", narrowed: "place-self-center self-start" },
   ];
 
   for (const { shorthand, longhand, collapsed, narrowed } of cases) {
@@ -203,13 +232,78 @@ describe("cn override relations", () => {
   }
 });
 
-// Held as consts, not written inline: a literal inside a `cn(…)` call is a position the formatter's
-// class sorter rewrites, and these cases are about the order `cn` itself preserves.
+// Held as consts: the formatter's class sorter rewrites a literal written inside a `cn(…)` call.
 const NAVBAR_BASE = "group z-40 bg-background/95 backdrop-blur";
 const NAVBAR_TOP = "sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto";
 
 describe("cn real component strings", () => {
   it("round-trips the navbar placement base and top variant byte-for-byte", () => {
     expect(cn(NAVBAR_BASE, NAVBAR_TOP)).toBe(`${NAVBAR_BASE} ${NAVBAR_TOP}`);
+  });
+});
+
+describe("cn non-conflicting utilities that share a prefix", () => {
+  const cases: { literal: string }[] = [
+    { literal: "bg-red-500 bg-blend-multiply" },
+    { literal: "bg-red-500 bg-clip-padding" },
+    { literal: "bg-red-500 bg-origin-border" },
+    { literal: "text-red-500 text-shadow-md" },
+    { literal: "text-shadow-md text-shadow-red-500" },
+    { literal: "ring-offset-2 ring-offset-red-500" },
+    { literal: "border-red-500 border-be-2" },
+    { literal: "inset-0 inset-be-4" },
+    { literal: "ordinal tabular-nums" },
+  ];
+
+  for (const { literal } of cases) {
+    it(`keeps both classes in "${literal}"`, () => {
+      expect(cn(literal)).toBe(literal);
+    });
+  }
+});
+
+// Held as consts: the formatter's class sorter rewrites a literal written inside a `cn(…)` call.
+const LENGTH_THEN_COLOR = "text-[14px] text-red-500";
+const TWO_TEXT_COLORS = "text-red-500 text-blue-500";
+const TOP_THEN_LEFT_CORNERS = "rounded-t-md rounded-l-lg";
+const SCALE_THEN_COLOR = "text-size-hero text-red-500";
+const SCALE_THEN_SIZE = "text-size-hero text-2xl";
+const AMBIGUOUS_THEN_COLOR = "text-hero text-red-500";
+
+describe("cn arbitrary-value discrimination", () => {
+  it("reads an arbitrary length under `text-` as a font size, not a colour", () => {
+    expect(cn(LENGTH_THEN_COLOR)).toBe(LENGTH_THEN_COLOR);
+  });
+
+  it("still resolves two colours under `text-` to the later one", () => {
+    expect(cn(TWO_TEXT_COLORS)).toBe("text-blue-500");
+  });
+});
+
+describe("cn partially overlapping corners", () => {
+  it("keeps both when neither corner set contains the other", () => {
+    expect(cn(TOP_THEN_LEFT_CORNERS)).toBe(TOP_THEN_LEFT_CORNERS);
+  });
+});
+
+describe("cn and the reserved `text-size-*` namespace", () => {
+  it("keeps an app's size step beside a colour, because the two set different concerns", () => {
+    expect(cn(SCALE_THEN_COLOR)).toBe(SCALE_THEN_COLOR);
+  });
+
+  it("resolves it against a Tailwind size, which is the concern it shares", () => {
+    expect(cn(SCALE_THEN_SIZE)).toBe("text-2xl");
+  });
+
+  it("lets a named step displace an arbitrary one, which is the concern the two spellings share", () => {
+    expect(cn("text-size-[20px]", "text-size-hero")).toBe("text-size-hero");
+  });
+
+  it("keeps a later arbitrary size beside a named step, which also carries a line height", () => {
+    expect(cn("text-size-hero", "text-size-[20px]")).toBe("text-size-hero text-size-[20px]");
+  });
+
+  it("still drops the same step declared as `--text-hero`, which is what the reserved namespace exists to avoid", () => {
+    expect(cn(AMBIGUOUS_THEN_COLOR)).toBe("text-red-500");
   });
 });

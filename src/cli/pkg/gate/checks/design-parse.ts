@@ -1,45 +1,6 @@
+import { RULE_CORPUS_PATH, type RuleId } from "./design-rules";
 import { blankComments } from "./modern-css-parse";
-
-/** A rule the design corpus states and this tooling enforces. */
-export type RuleId =
-  | "forge-ui-color-token-only"
-  | "forge-ui-color-theme-no-raw-utility"
-  | "forge-ui-no-inline-style"
-  | "forge-ui-spacing-scale-only"
-  | "forge-ui-viewport-units"
-  | "forge-ui-no-nested-card"
-  | "forge-ui-interaction-focus-visible"
-  | "forge-ui-catalog-wrong-raw-input"
-  | "forge-ui-contrast-floor"
-  | "forge-ui-a11y-label-association"
-  | "forge-ui-a11y-live-politeness"
-  | "forge-ui-a11y-no-aria-readonly-on-button"
-  | "forge-ui-a11y-one-live-region"
-  | "forge-ui-a11y-aria-beside-data"
-  | "forge-ui-a11y-heading-size-by-class"
-  | "forge-ui-reduced-motion"
-  | "forge-ui-focus-ring";
-
-/** The corpus file that justifies each rule this tooling enforces. */
-export const RULE_CORPUS_PATH: Readonly<Record<RuleId, string>> = {
-  "forge-ui-color-token-only": "src/ui/design/floor.md",
-  "forge-ui-color-theme-no-raw-utility": "src/ui/design/reference/04-color.md",
-  "forge-ui-no-inline-style": "src/ui/design/floor.md",
-  "forge-ui-spacing-scale-only": "src/ui/design/floor.md",
-  "forge-ui-viewport-units": "src/ui/design/floor.md",
-  "forge-ui-no-nested-card": "src/ui/design/floor.md",
-  "forge-ui-interaction-focus-visible": "src/ui/design/reference/09-interaction.md",
-  "forge-ui-catalog-wrong-raw-input": "src/ui/design/catalog.md",
-  "forge-ui-contrast-floor": "src/ui/design/floor.md",
-  "forge-ui-a11y-label-association": "src/ui/design/floor.md",
-  "forge-ui-a11y-live-politeness": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-no-aria-readonly-on-button": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-one-live-region": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-aria-beside-data": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-a11y-heading-size-by-class": "src/ui/design/reference/10-accessibility.md",
-  "forge-ui-reduced-motion": "src/ui/design/floor.md",
-  "forge-ui-focus-ring": "src/ui/design/floor.md",
-};
+import { balancedSpan, blankSourceComments } from "./source-scan";
 
 /** One violated rule at one place, with enough in it to print the whole failure line. */
 export interface DesignFinding {
@@ -171,20 +132,6 @@ export function parseDeclaredCustomProperties(css: string): Set<string> {
   return names;
 }
 
-const COLOR_LITERAL = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\(/;
-
-const COLOR_LITERAL_GLOBAL = new RegExp(COLOR_LITERAL.source, "g");
-
-const CLASS_POSITION = /\bclass(?:Name)?\s*[=:]|\bcn\(|\basClass\(/;
-
-function quotedStrings(line: string): string[] {
-  const out: string[] = [];
-  for (const match of line.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`/g)) {
-    out.push(match[1] ?? match[2] ?? match[3] ?? "");
-  }
-  return out;
-}
-
 /** One class-shaped string literal and the line it starts on. */
 export interface ClassLiteral {
   /** 1-indexed line the literal's opening quote sits on. */
@@ -195,52 +142,158 @@ export interface ClassLiteral {
 
 const CLASS_POSITION_GLOBAL = /\bclass(?:Name)?\s*[=:]\s*|\bcn\(|\basClass\(|\bcva\(/g;
 
-const QUOTED = /"([^"]*)"|'([^']*)'|`([^`]*)`/g;
-
 const ANCHORED_QUOTED = /^(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/;
 
-function closingParen(source: string, open: number): number {
-  let depth = 0;
-  for (let i = open; i < source.length; i++) {
-    if (source[i] === "(") depth++;
-    else if (source[i] === ")" && --depth === 0) return i;
-  }
-  return source.length - 1;
+/** Every literal one class position contributes, and the source ranges reading it consumed. */
+interface ClassGroup {
+  literals: ClassLiteral[];
+  /** Half-open ranges an enclosing span already read, with each `${…}` interior left out of them. */
+  consumed: [number, number][];
+  /** Positions the span was abandoned at because a literal inside it never closes. */
+  skipped: SkippedClassPosition[];
 }
 
-/** Every string literal in a class position: a `class`/`className` attribute or an argument to `cn`/`asClass`/`cva`. */
-export function findClassLiterals(source: string): ClassLiteral[] {
-  const scanned = blankComments(source);
-  const lineOf = (index: number): number => scanned.slice(0, index).split("\n").length;
-  const found: ClassLiteral[] = [];
+/** Reads every string and template literal in `[start, end)` as class text, one literal per quoted
+ *  string and one per interpolation-delimited template chunk — the unit the formatter sorts. */
+function harvestSpan(scanned: string, start: number, end: number, lineOf: (index: number) => number): ClassGroup {
+  const literals: ClassLiteral[] = [];
+  const consumed: [number, number][] = [];
+  const skipped: SkippedClassPosition[] = [];
+  let cursor = start;
+  let mergeable = false;
+  let lastEnd = -1;
 
-  for (const match of scanned.matchAll(CLASS_POSITION_GLOBAL)) {
-    const after = match.index + match[0].length;
-    if (match[0].endsWith("(")) {
-      // A call takes everything up to its own closing paren, which is what reaches a wrapped
-      // argument list and a `cva` variant map.
-      const span = scanned.slice(after, closingParen(scanned, after - 1));
-      let end = -1;
-      for (const quoted of span.matchAll(QUOTED)) {
-        const text = quoted[1] ?? quoted[2] ?? quoted[3] ?? "";
-        const previous = found.at(-1);
-        // `"a " + "b"` is one class string wrapped for line length, so the pair is judged joined:
-        // a conflict spanning the `+` is as dead as one inside a single literal.
-        if (previous !== undefined && end !== -1 && /^\s*\+\s*$/.test(span.slice(end, quoted.index))) {
-          found[found.length - 1] = { line: previous.line, text: previous.text + text };
-        } else {
-          found.push({ line: lineOf(after + quoted.index), text });
-        }
-        end = quoted.index + quoted[0].length;
+  const emit = (from: number, to: number): void => {
+    const text = scanned.slice(from, to);
+    if (text.trim() === "") {
+      mergeable = false;
+      lastEnd = to;
+      return;
+    }
+    const previous = literals.at(-1);
+    // `"a " + "b"` is one class string wrapped for line length, so the pair is judged joined:
+    // a conflict spanning the `+` is as dead as one inside a single literal.
+    if (previous !== undefined && mergeable && /^\s*\+\s*$/.test(scanned.slice(lastEnd + 1, from - 1))) {
+      literals[literals.length - 1] = { line: previous.line, text: previous.text + text };
+    } else {
+      literals.push({ line: lineOf(from), text });
+    }
+    mergeable = true;
+    lastEnd = to;
+  };
+
+  const abandon = (at: number): void => {
+    const lineEnd = scanned.indexOf("\n", at);
+    skipped.push({ line: lineOf(at), text: scanned.slice(at, lineEnd === -1 || lineEnd > end ? end : lineEnd) });
+  };
+
+  for (let i = start; i < end; i++) {
+    const char = scanned[i];
+    if (char !== "'" && char !== '"' && char !== "`") continue;
+
+    if (char !== "`") {
+      let close = i + 1;
+      for (; close < end; close++) {
+        if (scanned[close] === "\\") close++;
+        else if (scanned[close] === char) break;
       }
+      if (close >= end) {
+        abandon(i);
+        break;
+      }
+      emit(i + 1, close);
+      i = close;
       continue;
     }
-    // An attribute takes only the literal assigned to it; `class={cn(…)}` is reached by the `cn(`
-    // match instead.
-    const quoted = ANCHORED_QUOTED.exec(scanned.slice(after));
-    if (quoted !== null) found.push({ line: lineOf(after), text: quoted[1] ?? quoted[2] ?? quoted[3] ?? "" });
+
+    let chunk = i + 1;
+    let j = chunk;
+    for (; j < end; j++) {
+      if (scanned[j] === "\\") {
+        j++;
+        continue;
+      }
+      if (scanned[j] === "`") break;
+      if (scanned[j] !== "$" || scanned[j + 1] !== "{") continue;
+      const close = balancedSpan(scanned, j + 1);
+      if (close === -1) break;
+      emit(chunk, j);
+      consumed.push([cursor, j + 2]);
+      cursor = close;
+      j = close;
+      chunk = close + 1;
+    }
+    if (j >= end) {
+      abandon(i);
+      break;
+    }
+    emit(chunk, j);
+    i = j;
   }
-  return found;
+
+  consumed.push([cursor, end]);
+  return { literals, consumed, skipped };
+}
+
+/** A class position the scan dropped because its span never closes. */
+export interface SkippedClassPosition {
+  /** 1-indexed line the position starts on. */
+  line: number;
+  /** The position as written: up to its opening bracket, or the line the unclosed literal opens on. */
+  text: string;
+}
+
+/** Every class position in `source`, split into the ones read and the ones dropped unread. */
+interface ClassScan {
+  groups: ClassGroup[];
+  skipped: SkippedClassPosition[];
+}
+
+/** Every class position in `source` with the literals it contributes, `//`-commented ones excluded. */
+function scanClassGroups(source: string): ClassScan {
+  const scanned = blankSourceComments(source);
+  const lineOf = (index: number): number => scanned.slice(0, index).split("\n").length;
+  const groups: ClassGroup[] = [];
+  const skipped: SkippedClassPosition[] = [];
+  const consumed: [number, number][] = [];
+
+  for (const match of scanned.matchAll(CLASS_POSITION_GLOBAL)) {
+    if (consumed.some(([from, to]) => match.index >= from && match.index < to)) continue;
+    const after = match.index + match[0].length;
+
+    // A call takes everything up to its own closing paren, which is what reaches a wrapped argument
+    // list and a `cva` variant map; an expression container takes its balanced brace. An unbalanced
+    // span is skipped rather than guessed at — a phantom literal is worse than a missed one.
+    const open = match[0].endsWith("(") ? after - 1 : scanned[after] === "{" ? after : -1;
+    if (open !== -1) {
+      const close = balancedSpan(scanned, open);
+      if (close === -1) {
+        skipped.push({ line: lineOf(match.index), text: scanned.slice(match.index, open + 1) });
+        continue;
+      }
+      const group = harvestSpan(scanned, open + 1, close, lineOf);
+      consumed.push(...group.consumed);
+      skipped.push(...group.skipped);
+      groups.push(group);
+      continue;
+    }
+
+    const quoted = ANCHORED_QUOTED.exec(scanned.slice(after));
+    if (quoted !== null)
+      groups.push({ literals: [{ line: lineOf(after), text: quoted[1] ?? quoted[2] ?? quoted[3] ?? "" }], consumed: [], skipped: [] });
+  }
+  return { groups, skipped };
+}
+
+/** Every string literal in a class position: a `class`/`className` attribute — quoted or in an
+ *  expression container — or an argument to `cn`/`asClass`/`cva`. */
+export function findClassLiterals(source: string): ClassLiteral[] {
+  return scanClassGroups(source).groups.flatMap((group) => group.literals);
+}
+
+/** Every class position dropped unread, so a span the scan cannot close is reportable rather than silent. */
+export function findSkippedClassPositions(source: string): SkippedClassPosition[] {
+  return scanClassGroups(source).skipped;
 }
 
 /** A `/* design-allow: <rule> — <reason> *​/` comment on `line` or the one above it. The reason is
@@ -250,39 +303,6 @@ export function isSuppressed(lines: readonly string[], line: number, ruleId: Rul
   // suppress; the lookahead excludes it so the mandatory reason cannot be bypassed.
   const marker = new RegExp(`/\\*\\s*design-allow:\\s*${ruleId}\\s+—\\s+(?!\\*/)\\S`);
   return [lines[line - 1], lines[line - 2]].some((candidate) => candidate !== undefined && marker.test(candidate));
-}
-
-/** Colour literals inside a class string. */
-export function findColorLiterals(source: string, file: string): DesignFinding[] {
-  const lines = source.split("\n");
-  const findings: DesignFinding[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (isSuppressed(lines, i + 1, "forge-ui-color-token-only")) continue;
-
-    const hits = new Set<string>();
-    for (const match of line.matchAll(/[a-z][a-z0-9-]*-\[([^\]]*)\]/g)) {
-      const value = match[1] ?? "";
-      const literal = value.match(COLOR_LITERAL);
-      if (literal) hits.add(literal[0]);
-    }
-    if (CLASS_POSITION.test(line)) {
-      for (const text of quotedStrings(line)) {
-        for (const match of text.matchAll(COLOR_LITERAL_GLOBAL)) hits.add(match[0]);
-      }
-    }
-
-    for (const hit of hits) {
-      findings.push({
-        file,
-        line: i + 1,
-        ruleId: "forge-ui-color-token-only",
-        detail: `raw colour literal \`${hit}\` in a class string — resolve the colour through a semantic token`,
-      });
-    }
-  }
-  return findings;
 }
 
 const PALETTE_HUES = [
@@ -381,91 +401,6 @@ export function findInlineStyles(source: string, file: string): DesignFinding[] 
       ruleId: "forge-ui-no-inline-style",
       detail: "`style=` attribute — the renderer drops it; express the rule as a class",
     });
-  }
-  return findings;
-}
-
-const SCALE_UTILITIES = [
-  "text",
-  "p",
-  "px",
-  "py",
-  "pt",
-  "pr",
-  "pb",
-  "pl",
-  "ps",
-  "pe",
-  "m",
-  "mx",
-  "my",
-  "mt",
-  "mr",
-  "mb",
-  "ml",
-  "ms",
-  "me",
-  "gap",
-  "gap-x",
-  "gap-y",
-  "size",
-  "w",
-  "h",
-  "min-w",
-  "min-h",
-  "max-w",
-  "max-h",
-  "bg",
-];
-
-const ARBITRARY_VALUE = new RegExp(`(?<![\\w-])(${SCALE_UTILITIES.join("|")})-\\[([^\\]]+)\\]`, "g");
-
-const SCALE_COMPARABLE = /^\d+(?:\.\d+)?(?:px|rem)$/;
-
-/** Arbitrary Tailwind values on scale-bearing utilities. */
-export function findArbitraryValues(source: string, file: string): DesignFinding[] {
-  const lines = source.split("\n");
-  const findings: DesignFinding[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (isSuppressed(lines, i + 1, "forge-ui-spacing-scale-only")) continue;
-
-    const hits = new Set<string>();
-    for (const match of line.matchAll(ARBITRARY_VALUE)) {
-      const utility = match[1] ?? "";
-      const value = match[2] ?? "";
-      if (!SCALE_COMPARABLE.test(value) && !COLOR_LITERAL.test(value)) continue;
-      hits.add(`${utility}-[${value}]`);
-    }
-
-    for (const hit of hits) {
-      findings.push({ file, line: i + 1, ruleId: "forge-ui-spacing-scale-only", detail: `arbitrary value \`${hit}\` where a scale value exists` });
-    }
-  }
-  return findings;
-}
-
-/** `h-screen` / `w-screen`, which `100vh` makes wrong on mobile — `min-h-dvh` is the replacement. */
-export function findViewportUnits(source: string, file: string): DesignFinding[] {
-  const lines = source.split("\n");
-  const findings: DesignFinding[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (isSuppressed(lines, i + 1, "forge-ui-viewport-units")) continue;
-
-    const hits = new Set<string>();
-    for (const match of line.matchAll(/(?<![\w-])[hw]-screen(?![\w-])/g)) hits.add(match[0]);
-
-    for (const hit of hits) {
-      findings.push({
-        file,
-        line: i + 1,
-        ruleId: "forge-ui-viewport-units",
-        detail: `\`${hit}\` measures the layout viewport — use \`min-h-dvh\``,
-      });
-    }
   }
   return findings;
 }
@@ -718,65 +653,6 @@ export function findHandWrittenStateAttrs(source: string, file: string): DesignF
   return findings;
 }
 
-const HEADING_CLASS = /(?<![\w-])class(?:Name)?\s*=\s*(?:"([^"]*)"|'([^']*)')/;
-
-const TEXT_SIZE = /(?<![\w-])text-(?:xs|sm|base|lg|xl|[2-9]xl)(?![\w-])/;
-
-/** An `<h1>`–`<h6>` whose size comes from the tag, which is what turns a size choice into a skip. */
-export function findTagSizedHeadings(source: string, file: string): DesignFinding[] {
-  const scanned = blankComments(source);
-  const lines = source.split("\n");
-  const findings: DesignFinding[] = [];
-
-  for (const open of scanned.matchAll(/<h([1-6])(?=[\s/>])/g)) {
-    const openingTag = scanned.slice(open.index, endOfOpeningTag(scanned, open.index));
-    // Only a quoted class is judgeable; an expression-valued one resolves at render time.
-    const written = HEADING_CLASS.exec(openingTag);
-    if (written === null) continue;
-    if (TEXT_SIZE.test(written[1] ?? written[2] ?? "")) continue;
-
-    const line = source.slice(0, open.index).split("\n").length;
-    if (isSuppressed(lines, line, "forge-ui-a11y-heading-size-by-class")) continue;
-
-    findings.push({
-      file,
-      line,
-      ruleId: "forge-ui-a11y-heading-size-by-class",
-      detail: `\`<h${open[1]}>\` takes its size from the tag — set the size with a \`text-*\` class and the level from the section's position`,
-    });
-  }
-  return findings;
-}
-
-/** An `animate-*` utility with no `motion-safe:` or `motion-reduce:` in its variant chain. */
-export function findUnguardedAnimations(source: string, file: string): DesignFinding[] {
-  const lines = source.split("\n");
-  const findings: DesignFinding[] = [];
-
-  for (const literal of findClassLiterals(source)) {
-    if (isSuppressed(lines, literal.line, "forge-ui-reduced-motion")) continue;
-
-    const hits = new Set<string>();
-    for (const token of literal.text.split(/\s+/)) {
-      const cut = token.lastIndexOf(":");
-      if (!token.slice(cut + 1).startsWith("animate-")) continue;
-      const variants = token.slice(0, cut + 1).split(":");
-      if (variants.includes("motion-safe") || variants.includes("motion-reduce")) continue;
-      hits.add(token);
-    }
-
-    for (const hit of hits) {
-      findings.push({
-        file,
-        line: literal.line,
-        ruleId: "forge-ui-reduced-motion",
-        detail: `\`${hit}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` the settled state`,
-      });
-    }
-  }
-  return findings;
-}
-
 /** One whole class expression: every literal a single class position contributes, joined. */
 interface ClassExpression {
   /** 1-indexed line the expression's first literal sits on. */
@@ -788,27 +664,10 @@ interface ClassExpression {
 /** Every class position in `source` as one string — a `cn()` call's arguments joined rather than
  *  read one at a time, since forge splits a single class list across several of them. */
 function classExpressions(source: string): ClassExpression[] {
-  const scanned = blankComments(source);
-  const lineOf = (index: number): number => scanned.slice(0, index).split("\n").length;
-  const found: ClassExpression[] = [];
-
-  for (const match of scanned.matchAll(CLASS_POSITION_GLOBAL)) {
-    const after = match.index + match[0].length;
-    if (match[0].endsWith("(")) {
-      const span = scanned.slice(after, closingParen(scanned, after - 1));
-      const parts: string[] = [];
-      let line = -1;
-      for (const quoted of span.matchAll(QUOTED)) {
-        if (line === -1) line = lineOf(after + quoted.index);
-        parts.push(quoted[1] ?? quoted[2] ?? quoted[3] ?? "");
-      }
-      if (line !== -1) found.push({ line, text: parts.join(" ") });
-      continue;
-    }
-    const quoted = ANCHORED_QUOTED.exec(scanned.slice(after));
-    if (quoted !== null) found.push({ line: lineOf(after), text: quoted[1] ?? quoted[2] ?? quoted[3] ?? "" });
-  }
-  return found;
+  return scanClassGroups(source).groups.flatMap((group) => {
+    const first = group.literals[0];
+    return first === undefined ? [] : [{ line: first.line, text: group.literals.map((literal) => literal.text).join(" ") }];
+  });
 }
 
 const OUTLINE_SUPPRESSOR = /(?<![\w-])(outline-none|outline-hidden)(?![\w-])/;
@@ -841,24 +700,29 @@ export function findRemovedFocusRings(source: string, file: string): DesignFindi
   return findings;
 }
 
+/** The detector behind each rule this file enforces, keyed by the id it reports under. */
+const SOURCE_DETECTORS: Readonly<Partial<Record<RuleId, (source: string, file: string) => DesignFinding[]>>> = {
+  "forge-ui-color-theme-no-raw-utility": findRawThemeUtilities,
+  "forge-ui-no-inline-style": findInlineStyles,
+  "forge-ui-no-nested-card": findNestedCards,
+  "forge-ui-interaction-focus-visible": findBareFocus,
+  "forge-ui-catalog-wrong-raw-input": findRawControls,
+  "forge-ui-a11y-label-association": findUnassociatedLabels,
+  "forge-ui-a11y-live-politeness": findLivePoliteness,
+  "forge-ui-a11y-no-aria-readonly-on-button": findAriaReadonlyButtons,
+  "forge-ui-a11y-one-live-region": findExtraLiveRegions,
+  "forge-ui-a11y-aria-beside-data": findHandWrittenStateAttrs,
+  "forge-ui-focus-ring": findRemovedFocusRings,
+};
+
+// Derived, never hand-listed: this is what `checkDesign` holds a `RULE_ENFORCER: "gate"` row
+// against, so deleting a detector fails `validate-design` by name rather than silently.
+/** Every rule id this file's detectors report under. */
+export const SOURCE_DETECTOR_IDS: readonly RuleId[] = Object.keys(SOURCE_DETECTORS) as RuleId[];
+
 /** Every source check over one `.tsx` file, in rule order, then by line. */
 export function findSourceViolations(source: string, file: string): DesignFinding[] {
-  return [
-    ...findColorLiterals(source, file),
-    ...findRawThemeUtilities(source, file),
-    ...findInlineStyles(source, file),
-    ...findArbitraryValues(source, file),
-    ...findViewportUnits(source, file),
-    ...findNestedCards(source, file),
-    ...findBareFocus(source, file),
-    ...findRawControls(source, file),
-    ...findUnassociatedLabels(source, file),
-    ...findLivePoliteness(source, file),
-    ...findAriaReadonlyButtons(source, file),
-    ...findExtraLiveRegions(source, file),
-    ...findHandWrittenStateAttrs(source, file),
-    ...findTagSizedHeadings(source, file),
-    ...findUnguardedAnimations(source, file),
-    ...findRemovedFocusRings(source, file),
-  ].sort((a, b) => a.line - b.line || a.ruleId.localeCompare(b.ruleId));
+  return Object.values(SOURCE_DETECTORS)
+    .flatMap((detect) => detect(source, file))
+    .sort((a, b) => a.line - b.line || a.ruleId.localeCompare(b.ruleId));
 }

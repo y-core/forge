@@ -393,3 +393,45 @@ describe("the accent dials against the --primary-foreground floor", () => {
     }
   });
 });
+
+describe("the elevation families", () => {
+  const colors = readFileSync(new URL("../../assets/css/theme-colors.css", import.meta.url).pathname, "utf-8");
+  const base = readFileSync(new URL("../../assets/css/theme-base.css", import.meta.url).pathname, "utf-8");
+
+  it("declares every --cast-* and --rim-* as a light-dark() with transparent on exactly one side", () => {
+    const declared = [...colors.matchAll(/(--(?:cast|rim)-a\d{1,2}):\s*([^;]+);/g)].map((match) => [match[1], match[2]?.trim()] as const);
+    expect(declared.map(([property]) => property)).toEqual(["--cast-a1", "--cast-a2", "--cast-a4", "--rim-a1", "--rim-a2"]);
+
+    for (const [property, value] of declared) {
+      const branches = /^light-dark\((.+), (.+)\)$/.exec(value ?? "");
+      expect([property, branches?.[1], branches?.[2]]).toEqual(
+        property?.startsWith("--cast-")
+          ? [property, `var(--black-${property.slice("--cast-".length)})`, "transparent"]
+          : [property, "transparent", `var(--white-${property?.slice("--rim-".length)})`],
+      );
+    }
+  });
+
+  it("colours every --shadow-* slot in theme-base.css from those families, never from a literal", () => {
+    const declared = [...base.matchAll(/(--shadow-[a-z0-9]+):([^;]+);/g)].map((match) => [match[1], match[2]] as const);
+    expect(declared.map(([property]) => property)).toEqual([
+      "--shadow-2xs",
+      "--shadow-xs",
+      "--shadow-sm",
+      "--shadow-md",
+      "--shadow-lg",
+      "--shadow-xl",
+      "--shadow-2xl",
+    ]);
+
+    for (const [property, value] of declared) {
+      const layers = (value ?? "").split(",").map((layer) => layer.trim().replace(/\s+/g, " "));
+      for (const layer of layers) {
+        // A layer whose colour is a literal has no `var()` tail, so it fails as its whole self —
+        // which is the regression: a mode-blind shadow reintroduced into the family.
+        const colour = /var\(--[a-z0-9-]+\)$/.exec(layer)?.[0] ?? `${property}: ${layer}`;
+        expect(colour).toMatch(/^var\(--(?:cast|rim)-a\d{1,2}\)$/);
+      }
+    }
+  });
+});

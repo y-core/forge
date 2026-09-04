@@ -5,12 +5,20 @@ import * as childProcess from "node:child_process";
 const mockExecSync = mock((_cmd: string, _args?: string[], _opts?: unknown): string | Buffer => "");
 await mock.module("node:child_process", () => ({ ...childProcess, execFileSync: mockExecSync }));
 
-const { gitExec, isWorkingTreeClean, getLatestTag, getCommitsSinceTag, getLastCommitMessage, createTag, commit, tagExists } = await import("./git");
+const { gitExec, isWorkingTreeClean, getLatestTag, getCommitsSinceTag, getLastCommitMessage, createTag, commit, tagExists, readFileAtRef } =
+  await import("./git");
 
 describe("gitExec()", () => {
   it("returns trimmed stdout", () => {
     mockExecSync.mockReturnValue("  hello world  ");
     expect(gitExec(["status"], "/cwd")).toBe("hello world");
+  });
+
+  it("captures stderr rather than letting git print it to the terminal", () => {
+    mockExecSync.mockReturnValue("");
+    mockExecSync.mockClear();
+    gitExec(["show", "v1.0.0:package.json"], "/cwd");
+    expect(mockExecSync.mock.calls[0]![2]).toMatchObject({ stdio: ["ignore", "pipe", "pipe"] });
   });
 
   it("throws ReleaseError when execSync throws", () => {
@@ -86,6 +94,52 @@ describe("getLastCommitMessage()", () => {
   it("returns the trimmed subject of the last commit", () => {
     mockExecSync.mockReturnValue("minor: add new feature");
     expect(getLastCommitMessage("/cwd")).toBe("minor: add new feature");
+  });
+});
+
+describe("readFileAtRef()", () => {
+  it("returns the file contents at the ref", () => {
+    mockExecSync.mockReturnValue("export { thing } from './thing';");
+    expect(readFileAtRef("/cwd", "v1.0.0", "src/http/mod.ts")).toBe("export { thing } from './thing';");
+  });
+
+  it("asks git for `<ref>:<path>`", () => {
+    mockExecSync.mockReturnValue("");
+    mockExecSync.mockClear();
+    readFileAtRef("/cwd", "v1.0.0", "src/http/mod.ts");
+    expect(mockExecSync.mock.calls[0]![1]).toEqual(["show", "v1.0.0:src/http/mod.ts"]);
+  });
+
+  it("returns null when the path did not exist at a resolvable ref", () => {
+    mockExecSync.mockImplementation((_cmd, args) => {
+      if ((args as string[])[0] === "show") {
+        throw { stderr: "fatal: path 'src/new/mod.ts' does not exist in 'v1.0.0'", stdout: "", message: "Command failed" };
+      }
+      return "0f1e2d3";
+    });
+    expect(readFileAtRef("/cwd", "v1.0.0", "src/new/mod.ts")).toBeNull();
+    mockExecSync.mockReturnValue("");
+  });
+
+  it("verifies the ref itself before reading an absent path as data", () => {
+    mockExecSync.mockImplementation((_cmd, args) => {
+      if ((args as string[])[0] === "show") throw { stderr: "fatal: path does not exist", stdout: "", message: "Command failed" };
+      return "0f1e2d3";
+    });
+    mockExecSync.mockClear();
+    readFileAtRef("/cwd", "v1.0.0", "src/new/mod.ts");
+    expect(mockExecSync.mock.calls[1]![1]).toEqual(["rev-parse", "--verify", "v1.0.0^{object}"]);
+    mockExecSync.mockReturnValue("");
+  });
+
+  it("throws instead of returning null when git cannot resolve the ref", () => {
+    mockExecSync.mockImplementation(() => {
+      throw { stderr: "fatal: invalid object name 'v99.99.99'", stdout: "", message: "Command failed" };
+    });
+    expect(() => readFileAtRef("/cwd", "v99.99.99", "package.json")).toThrow(
+      "git could not resolve v99.99.99: git show failed: fatal: invalid object name 'v99.99.99'",
+    );
+    mockExecSync.mockReturnValue("");
   });
 });
 

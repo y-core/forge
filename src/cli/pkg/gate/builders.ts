@@ -5,11 +5,15 @@
 import { type AssetRootCheckConfig, checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
 import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
+import { type ClassGroupsCheckConfig, checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder, type ClassOrderCheckConfig } from "./checks/class-order";
 import { type CoLocationCheckConfig, checkCoLocation } from "./checks/co-location";
 import { type ContrastCheckConfig, checkContrast } from "./checks/contrast";
 import { type CssSourcesCheckConfig, checkCssSources } from "./checks/css-sources";
+import { type CssTokensCheckConfig, checkCssTokens } from "./checks/css-tokens";
 import { checkDesign, type DesignCheckConfig } from "./checks/design";
+import { checkDesignScale, type DesignScaleCheckConfig } from "./checks/design-scale";
+import { hasTailwind } from "./checks/design-system";
 import { checkDocs, type DocsCheckConfig } from "./checks/docs";
 import { checkExports, type ExportsCheckConfig } from "./checks/exports";
 import { checkJsx, type JsxCheckConfig } from "./checks/jsx";
@@ -149,6 +153,27 @@ export function contrastStep(config: ContrastCheckConfig, options: StepOptions =
   return checkStep("validate-contrast", () => checkContrast(config), options);
 }
 
+/** Regenerates `cn`'s conflict table from the design system and fails on any drift from the committed
+ *  copy. Always `--full`, and legally so: `tailwindcss` is an optional peer, so a fast run on a
+ *  consumer that does not install it must not be a failure. @public */
+export function classGroupsStep(config: ClassGroupsCheckConfig, options: { hint?: string } & StepOptions = {}): CheckStep {
+  return {
+    ...checkStep("validate-class-groups", () => checkClassGroups(config), options, true),
+    requires: { tool: "tailwindcss", probe: hasTailwind, hint: options.hint ?? "bun add -D tailwindcss" },
+  };
+}
+
+/** Regenerates the design-scale data forge's oxlint plugin reads and fails on any drift from the
+ *  committed copy. Always `--full`, for the same reason `classGroupsStep` is: `tailwindcss` is an
+ *  optional peer. Separate from that step, and deliberately: the two files drift independently, and
+ *  a reader has to be told which one did. @public */
+export function designScaleStep(config: DesignScaleCheckConfig, options: { hint?: string } & StepOptions = {}): CheckStep {
+  return {
+    ...checkStep("validate-design-scale", () => checkDesignScale(config), options, true),
+    requires: { tool: "tailwindcss", probe: hasTailwind, hint: options.hint ?? "bun add -D tailwindcss" },
+  };
+}
+
 /** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */
 export function classOrderStep(config: ClassOrderCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-class-order", () => checkClassOrder(config), options);
@@ -162,4 +187,14 @@ export function modernCssStep(config: ModernCssCheckConfig, options: StepOptions
 /** Checks every class-bearing directory is reached by an `@source` directive. @public */
 export function cssSourcesStep(config: CssSourcesCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-css-sources", () => checkCssSources(config), options);
+}
+
+/** Checks no `@theme` token is declared in a namespace the utility vocabulary overloads. Always
+ *  `--full`, for the same reason `classGroupsStep` is: it compiles the design system, and
+ *  `tailwindcss` is an optional peer. @public */
+export function cssTokensStep(config: CssTokensCheckConfig, options: { hint?: string } & StepOptions = {}): CheckStep {
+  return {
+    ...checkStep("validate-css-tokens", () => checkCssTokens(config), options, true),
+    requires: { tool: "tailwindcss", probe: hasTailwind, hint: options.hint ?? "bun add -D tailwindcss" },
+  };
 }

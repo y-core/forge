@@ -17,9 +17,9 @@ describe("ThemeToggle", () => {
   });
 
   it("merges a custom class onto the button", async () => {
-    const html = String(await renderToString(<ThemeToggle icon={icon} class='ml-2' />));
+    const html = String(await renderToString(<ThemeToggle icon={icon} class='ms-2' />));
     expect(html).toBe(
-      '<div data-scope="theme" data-state="{&quot;pref&quot;:&quot;system&quot;}"><button type="button" class="rounded-lg p-2 text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition ml-2" data-on-click="cycleTheme"><span class="theme-light-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-sun"></use></svg><span class="sr-only">Switch theme — currently light</span></span><span class="theme-dark-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-moon"></use></svg><span class="sr-only">Switch theme — currently dark</span></span><span class="theme-system-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-monitor"></use></svg><span class="sr-only">Switch theme — currently system</span></span></button></div>',
+      '<div data-scope="theme" data-state="{&quot;pref&quot;:&quot;system&quot;}"><button type="button" class="rounded-lg p-2 text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition ms-2" data-on-click="cycleTheme"><span class="theme-light-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-sun"></use></svg><span class="sr-only">Switch theme — currently light</span></span><span class="theme-dark-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-moon"></use></svg><span class="sr-only">Switch theme — currently dark</span></span><span class="theme-system-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-monitor"></use></svg><span class="sr-only">Switch theme — currently system</span></span></button></div>',
     );
   });
 });

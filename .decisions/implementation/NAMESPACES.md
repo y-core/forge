@@ -23,6 +23,7 @@ description: "Barrel export rules, the authoritative subpath catalog, leaf-versu
 - §3 Authoritative Namespace Catalog: every subpath and its classification
 - §3a Public Export Paths: the catalog table
 - §3b Internal Namespaces: sealed-internal `crypto`
+- §3c `cli/pkg/lint` — an Export Target Without a Barrel: the one published file, and the private directory behind it
 - §4 Namespace Classification: the leaf/integration split
 - §4a Leaf Namespace Rules: no cross-namespace forge imports beyond the §4c primitives
 - §4b Integration Namespace Rules: where edges are declared, and what the graph gate proves
@@ -95,6 +96,7 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/cli`                 | `src/cli/core/mod.ts`        | `createCommand`, `addCommand`, `execute`, `CliError`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `@y-core/forge/cli/assets`          | `src/cli/assets/mod.ts`      | `createAssetsCommands` — the `forge assets` subtree; imports `cli/core`, `assets`, `assets/build`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `@y-core/forge/cli/pkg`             | `src/cli/pkg/mod.ts`         | project tooling, both verbs — the release command factory and the gate command factory, with their step presets and transforms. The git/manifest helpers and the gate's formatters are `@internal` ([`ASSET_AND_BUILD_TOOLING.md`](./ASSET_AND_BUILD_TOOLING.md) §5c, §5f)                                                                                                                                                                                                                                                                                                                                                           |
+| `@y-core/forge/cli/pkg/lint`        | `src/cli/pkg/lint.ts`        | forge's oxlint JS plugin, default-exported for `.oxlintrc.json`'s `jsPlugins`. A concrete-file subpath inside an existing namespace, on the `./ui/core/client` precedent — the rules are project tooling, which is what `cli/pkg` already is, so minting a namespace for them would fail all four of §5a's tests. Loaded as raw TypeScript: oxlint resolves the source directly, so the plugin ships with no build step. Its types are structural restatements of oxlint's own, because `oxlint` is a devDependency and a published module must not depend on it                                                                     |
 | `@y-core/forge/cli/cf`              | `src/cli/cf/mod.ts`          | `createCfCommands` — the whole `forge cf` subtree. `createSyncAccountCommand`, `syncBindings` and the resource handlers (`account/`); `createSyncZoneCommand` (`zone/`); `createGenEnvCommand` (`gen/`); and the pieces both scopes share — `createCfClient`, `loadWranglerConfig`, `renderSections`, `detectTarget`. Imports `cli/core`, `cli/term`, `site`                                                                                                                                                                                                                                                                         |
 | `@y-core/forge/cli/term`            | `src/cli/term/mod.ts`        | `stringWidth`, `truncate`, `wrapLines`, `padAlign`, `terminalWidth`, `renderGrid`, `definitionList`, `BORDERS`, `resolveColorLevel`, `createColorize`, `PLAIN` — terminal rendering, and a sink: it imports `node:process` and nothing else in this repository, so `cli/{core,pkg,cf}` may import it and it may import none of them                                                                                                                                                                                                                                                                                                  |
 | `@y-core/forge/config`              | `src/config/mod.ts`          | `Config`, `createConfig`, `env`, `resolveConfig`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -165,6 +167,23 @@ source → barrel pass walks the source files each _exported_ namespace owns, so
 living in `src/crypto/` is outside every namespace it scans. Nothing mechanical will catch a
 public crypto symbol that was never added to a surfacing barrel — that entry is manual
 discipline, unlike everywhere else in forge where the gate proves it.
+
+### 3c. `cli/pkg/lint` — an Export Target Without a Barrel
+
+**`src/cli/pkg/lint.ts` is the whole public surface behind the `./cli/pkg/lint` subpath**, and it
+publishes the plugin object and its default alias, nothing else. The `lint/` directory beside it is
+private: it has no `mod.ts`, which would mint a namespace out of a private directory, and it holds
+no `@public` symbol.
+
+**No file under `lint/` may carry a publication tag.** Only `lint.ts` is an export target, so
+`validate-exports` treats everything under `lint/` as owned by `src/cli/pkg/mod.ts`, whose barrel
+would then have to name it. `lint.test.ts` asserts both halves of the rule; this section holds the
+reason for it.
+
+**A published module may not import a build-time package, so oxlint's types are restated in
+`lint/types.ts` rather than imported from it.** oxlint is a devDependency, and an import of its
+types would make every consumer of forge depend on it. The same constraint reaches anything the
+plugin loads at runtime.
 
 ---
 

@@ -3,9 +3,11 @@ import { expect, type Page, test } from "@playwright/test";
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
 import {
+  TURNSTILE_ABANDONED_EVENT,
   TURNSTILE_ACTION_PATTERN,
   TURNSTILE_CDATA_PATTERN,
   TURNSTILE_EXECUTE_TIMEOUT_MS,
+  TURNSTILE_INTERACTIVE_TIMEOUT_MS,
   TURNSTILE_SCRIPT_SRC,
   TURNSTILE_SCRIPT_TIMEOUT_MS,
   TURNSTILE_SCRIPT_URL,
@@ -26,8 +28,10 @@ declare global {
       executes: number;
       params: Record<string, unknown> | null;
     };
-    /** The `skipConfirmation` argument of every request the held submission released. */
-    turnstileIssued: boolean[];
+    /** Which press each released request answered, and the `skipConfirmation` it carried. */
+    turnstileIssued: Array<{ from: string; skip: boolean }>;
+    /** Every `turnstile:abandoned` the form dispatched, by reason and by the control pressed. */
+    turnstileAbandoned: Array<{ reason: string; submitter: string | null }>;
     /** Cleanup returned by the controller, parked so a later evaluate can call it. */
     turnstileCleanup?: () => void;
     /** Delays of every `setTimeout` the page scheduled, and of every one that actually fired. */
@@ -107,38 +111,67 @@ function controlSubmissionMarkup(): Promise<string> {
   );
 }
 
-/** An htmx form whose challenge is deferred to the press, with the submit button the seam marks busy. */
-function submitModeMarkup(options: { appearance?: "execute" | "interaction-only"; required?: boolean; htmx?: boolean } = {}): Promise<string> {
-  const { appearance, required = false, htmx = true } = options;
+/** An htmx form whose challenge is deferred to the press, with the submit button the seam marks busy.
+ * The options are the shapes htmx's own validation gate turns on: where the verb is declared, whether
+ * the form or the press waives constraint validation, and whether a second submit control exists. */
+function submitModeMarkup(
+  options: {
+    appearance?: "execute" | "interaction-only";
+    required?: boolean;
+    htmx?: boolean;
+    novalidate?: boolean;
+    onButton?: boolean;
+    validateAttr?: boolean;
+    formNoValidate?: boolean;
+    second?: boolean;
+  } = {},
+): Promise<string> {
+  const { appearance, required = false, htmx = true, novalidate = false, onButton = false } = options;
+  const { validateAttr = false, formNoValidate = false, second = false } = options;
+  const verb = htmx ? { "hx-post": "/contact" } : { action: "/contact", method: "post" };
   return render(
     jsx("form", {
       id: "form",
-      ...(htmx ? { "hx-post": "/contact" } : { action: "/contact", method: "post" }),
+      ...(onButton ? {} : verb),
+      ...(novalidate ? { novalidate: true } : {}),
       children: [
         jsx("input", { id: "field", name: "email", required }),
         Turnstile({ siteKey: "site-key", size: "normal", challenge: "submit", ...(appearance ? { appearance } : {}) }),
-        jsx("button", { id: "submit", type: "submit", children: "Send" }),
+        ...(second ? [jsx("button", { id: "preview", type: "submit", formaction: "/preview", children: "Preview" })] : []),
+        jsx("button", {
+          id: "submit",
+          type: "submit",
+          ...(onButton ? { "hx-post": "/contact" } : {}),
+          ...(validateAttr ? { "hx-validate": "true" } : {}),
+          ...(formNoValidate ? { formnovalidate: true } : {}),
+          children: "Send",
+        }),
       ],
     }),
   );
 }
 
-/** The `htmx:confirm` htmx fires before it issues a request, carrying the closure that releases it. */
-const pressSubmit = (page: Page, from = "#form") =>
-  page.evaluate((selector) => {
+/** The `htmx:confirm` htmx fires before it issues a request, carrying the closure that releases it.
+ * `elt` is the element htmx names as issuing the request, `submitter` the control that was pressed,
+ * and `on` the node the event is dispatched from — which is `elt` unless a case needs otherwise. */
+const pressSubmit = (page: Page, options: { on?: string; elt?: string; submitter?: string } = {}) =>
+  page.evaluate((opts) => {
     window.turnstileIssued = window.turnstileIssued ?? [];
+    const elt = document.querySelector(opts.elt ?? "#form");
+    const submitter = document.querySelector(opts.submitter ?? "#submit");
+    const from = submitter?.id ?? "";
     const event = new CustomEvent("htmx:confirm", {
       bubbles: true,
       cancelable: true,
       detail: {
-        elt: document.querySelector("#form"),
-        triggeringEvent: { submitter: document.querySelector("#submit") },
-        issueRequest: (skipConfirmation: boolean) => window.turnstileIssued.push(skipConfirmation),
+        elt,
+        triggeringEvent: { submitter },
+        issueRequest: (skipConfirmation: boolean) => window.turnstileIssued.push({ from, skip: skipConfirmation }),
       },
     });
-    document.querySelector(selector)?.dispatchEvent(event);
+    document.querySelector(opts.on ?? opts.elt ?? "#form")?.dispatchEvent(event);
     return { prevented: event.defaultPrevented, executes: window.turnstileCalls.executes };
-  }, from);
+  }, options);
 
 /** What Cloudflare does when the deferred challenge passes: write the token input, then call back. */
 const completeChallenge = (page: Page) =>
@@ -307,10 +340,30 @@ async function seedRecorder(page: Page): Promise<void> {
 }
 
 async function mountController(page: Page, selector = "#form"): Promise<void> {
-  await page.evaluate((root) => {
-    window.turnstileCleanup = window.forgeTurnstile.mountTurnstile(document.querySelector(root) as HTMLElement);
-  }, selector);
+  await page.evaluate(
+    ({ root, event }) => {
+      // Listened for on the document, which is where a consuming app's own handler would sit: the
+      // event is dispatched on the form and bubbles.
+      window.turnstileAbandoned = [];
+      document.addEventListener(event, (fired) => {
+        const detail = (fired as CustomEvent<{ reason: string; submitter: HTMLElement | null }>).detail;
+        window.turnstileAbandoned.push({ reason: detail.reason, submitter: detail.submitter?.id ?? null });
+      });
+      window.turnstileCleanup = window.forgeTurnstile.mountTurnstile(document.querySelector(root) as HTMLElement);
+    },
+    { root: selector, event: TURNSTILE_ABANDONED_EVENT },
+  );
 }
+
+/** Every dropped press the page was told about, in order. */
+const abandonments = (page: Page) => page.evaluate(() => window.turnstileAbandoned ?? []);
+
+/** What one control says about itself while a press is held. */
+const buttonState = (page: Page, selector: string) =>
+  page.evaluate((one) => {
+    const button = document.querySelector<HTMLButtonElement>(one);
+    return { disabled: button?.disabled ?? null, busy: button?.getAttribute("aria-busy") };
+  }, selector);
 
 /** Real engagement: a bubbling `focusin` from the form's own field, which is what gates the load. */
 async function engage(page: Page): Promise<void> {
@@ -1155,10 +1208,16 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await completeChallenge(page);
 
     // `true` is the `skipConfirmation` that keeps htmx from running its own `window.confirm`.
-    expect(await submitState(page)).toEqual({ issued: [true], executes: 1, disabled: false, busy: null, token: "token-1" });
+    expect(await submitState(page)).toEqual({
+      issued: [{ from: "submit", skip: true }],
+      executes: 1,
+      disabled: false,
+      busy: null,
+      token: "token-1",
+    });
   });
 
-  test("swallows a second press while the challenge is in flight, so one press is one request", async ({ page }) => {
+  test("spends no second challenge on a re-press of the same button, reporting the press it displaced", async ({ page }) => {
     await serveScript(page);
     await mount(page, await submitModeMarkup(), EXPOSE);
     await mountController(page);
@@ -1166,9 +1225,38 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await pressSubmit(page);
     expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
+    // Re-armed on the second press, and the first is reported lost rather than silently dropped.
+    expect(await abandonments(page)).toEqual([{ reason: "superseded", submitter: "submit" }]);
+
     await completeChallenge(page);
 
-    expect(await submitState(page)).toEqual({ issued: [true], executes: 1, disabled: false, busy: null, token: "token-1" });
+    expect(await submitState(page)).toEqual({
+      issued: [{ from: "submit", skip: true }],
+      executes: 1,
+      disabled: false,
+      busy: null,
+      token: "token-1",
+    });
+  });
+
+  test("answers the press that displaced the first, never the earlier control's request", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await submitModeMarkup({ second: true }), EXPOSE);
+    await mountController(page);
+    await expect.poll(() => rendered(page)).toBe(1);
+
+    await pressSubmit(page);
+    // htmx reads the form's `lastButtonClicked` back when it issues, so the earlier press's request
+    // would go out under the later button's name.
+    expect(await pressSubmit(page, { submitter: "#preview" })).toEqual({ prevented: true, executes: 1 });
+
+    expect(await abandonments(page)).toEqual([{ reason: "superseded", submitter: "submit" }]);
+    expect(await buttonState(page, "#submit")).toEqual({ disabled: false, busy: null });
+    expect(await buttonState(page, "#preview")).toEqual({ disabled: true, busy: "true" });
+
+    await completeChallenge(page);
+
+    expect(await page.evaluate(() => window.turnstileIssued)).toEqual([{ from: "preview", skip: true }]);
   });
 
   test("a failed challenge reveals the fallback, issues nothing, and leaves the button pressable", async ({ page }) => {
@@ -1184,6 +1272,21 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     // No reset of its own: `retry` defaults to `auto`, so Cloudflare is already retrying, and a
     // second `reset()` would spend a further challenge on top of the one it re-presented.
     expect(await page.evaluate(() => window.turnstileCalls.resets)).toBe(0);
+    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await abandonments(page)).toEqual([{ reason: "error", submitter: "submit" }]);
+  });
+
+  test("reports the press a browser Turnstile cannot run at all drops", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await submitModeMarkup(), EXPOSE);
+    await mountController(page);
+    await expect.poll(() => rendered(page)).toBe(1);
+    await pressSubmit(page);
+
+    await fireCallback(page, "unsupported-callback");
+
+    await expect(page.locator("[data-ref='turnstile-unsupported']")).toBeVisible();
+    expect(await abandonments(page)).toEqual([{ reason: "unsupported", submitter: "submit" }]);
     expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
   });
 
@@ -1221,7 +1324,62 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: true, busy: "true", token: null });
 
     await completeChallenge(page);
-    expect(await submitState(page)).toEqual({ issued: [true], executes: 1, disabled: false, busy: null, token: "token-1" });
+    expect(await submitState(page)).toEqual({
+      issued: [{ from: "submit", skip: true }],
+      executes: 1,
+      disabled: false,
+      busy: null,
+      token: "token-1",
+    });
+  });
+
+  test("ends an interactive challenge the visitor abandoned, at the human-scale ceiling", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page);
+    await mount(page, await submitModeMarkup({ appearance: "interaction-only" }), EXPOSE);
+    await mountController(page);
+    await expect.poll(() => rendered(page)).toBe(1);
+    await pressSubmit(page);
+
+    await fireCallback(page, "before-interactive-callback");
+    await page.clock.fastForward(TURNSTILE_EXECUTE_TIMEOUT_MS * 2);
+    expect(await abandonments(page)).toEqual([]);
+    await expect(page.locator("#submit")).toBeEnabled();
+
+    await page.clock.fastForward(TURNSTILE_INTERACTIVE_TIMEOUT_MS);
+
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
+    expect(await abandonments(page)).toEqual([{ reason: "interactive-timeout", submitter: "submit" }]);
+    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+  });
+
+  test("keeps the human-scale ceiling for a press made while the interactive challenge is still up", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page);
+    await mount(page, await submitModeMarkup({ appearance: "interaction-only" }), EXPOSE);
+    await mountController(page);
+    await expect.poll(() => rendered(page)).toBe(1);
+    await pressSubmit(page);
+
+    await fireCallback(page, "before-interactive-callback");
+    // The second press re-arms the hold, and must not re-arm it on the 15s budget the visitor is
+    // in the middle of being asked to beat.
+    await pressSubmit(page);
+    await page.clock.fastForward(TURNSTILE_EXECUTE_TIMEOUT_MS * 2);
+
+    expect(await abandonments(page)).toEqual([{ reason: "superseded", submitter: "submit" }]);
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
+
+    await fireCallback(page, "after-interactive-callback");
+    await completeChallenge(page);
+
+    expect(await submitState(page)).toEqual({
+      issued: [{ from: "submit", skip: true }],
+      executes: 1,
+      disabled: false,
+      busy: null,
+      token: "token-1",
+    });
   });
 
   test("re-arms the budget after an interactive challenge, so an abandoned one still ends", async ({ page }) => {
@@ -1253,6 +1411,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
     expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await abandonments(page)).toEqual([{ reason: "timeout", submitter: "submit" }]);
   });
 
   test("spends no challenge on a form htmx would halt as invalid", async ({ page }) => {
@@ -1265,6 +1424,57 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await page.locator("#field").fill("typed@example.com");
     expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
+  });
+
+  test("holds an invalid press on a novalidate form, where htmx sends the request either way", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await submitModeMarkup({ required: true, novalidate: true }), EXPOSE);
+    await mountController(page);
+    await expect.poll(() => rendered(page)).toBe(1);
+
+    // The author declared constraint validation is not the gate, so the press spends a challenge
+    // rather than letting the request leave with an empty token.
+    expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
+
+    await completeChallenge(page);
+
+    expect(await submitState(page)).toEqual({
+      issued: [{ from: "submit", skip: true }],
+      executes: 1,
+      disabled: false,
+      busy: null,
+      token: "token-1",
+    });
+  });
+
+  test("holds an invalid press issued by the button, which htmx does not validate", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await submitModeMarkup({ required: true, onButton: true }), EXPOSE);
+    await mountController(page);
+    await expect.poll(() => rendered(page)).toBe(1);
+
+    expect(await pressSubmit(page, { elt: "#submit" })).toEqual({ prevented: true, executes: 1 });
+  });
+
+  test("holds an invalid press the control waived validation for with formnovalidate", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await submitModeMarkup({ required: true, formNoValidate: true }), EXPOSE);
+    await mountController(page);
+    await expect.poll(() => rendered(page)).toBe(1);
+
+    expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
+  });
+
+  test("spends no challenge on a button-issued press that asks htmx to validate", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await submitModeMarkup({ required: true, onButton: true, validateAttr: true }), EXPOSE);
+    await mountController(page);
+    await expect.poll(() => rendered(page)).toBe(1);
+
+    expect(await pressSubmit(page, { elt: "#submit" })).toEqual({ prevented: false, executes: 0 });
+
+    await page.locator("#field").fill("typed@example.com");
+    expect(await pressSubmit(page, { elt: "#submit" })).toEqual({ prevented: true, executes: 1 });
   });
 
   test("lets a press through unheld when the script never loaded, leaving the refusal to the server", async ({ page }) => {
@@ -1308,6 +1518,9 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
+    // Silently: teardown runs mid-swap, and the listener the event would reach is on a page that is
+    // already going away.
+    expect(await abandonments(page)).toEqual([]);
   });
 
   test("refuses the mode on a native form, reporting it and rendering the challenge instead", async ({ page }) => {

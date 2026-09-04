@@ -24,6 +24,14 @@ Every one of those shadow classes is what the primitive already renders — `Car
 `shadow-sm border border-border bg-card text-card-foreground`, `Dialog` is `shadow-lg`, `Menu.Popup`
 is `shadow-md`. Reaching for the right level therefore means reaching for the right component.
 
+The two modes spell that claim differently, and the shadow token does the switching so a component
+does not. In light a level is a cast shadow. In dark black ink over a near-black surface would render
+nothing, so the same value drops the cast layers and carries the level with a 1px inset rim plus a
+soft outer falloff whose radius is the level — a clean edge transition, not a glow, and the falloff
+is the fainter of the two for exactly that reason. Both spellings come out of the `--cast-*` and
+`--rim-*` families in `src/ui/assets/css/theme-colors.css`; the geometry is Tailwind's, unchanged, in
+`theme-base.css`. Nothing about choosing a level changes: it is still the primitive you reach for.
+
 **Default: express elevation by picking the primitive that already sits at that level, not by adding
 a shadow utility to a lower one.** <!-- rule:forge-ui-depth-primitive-first -->
 Override only when a surface genuinely has no matching primitive — a drag preview, a sticky column

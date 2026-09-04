@@ -207,5 +207,5 @@ import { ScrollArea } from "@y-core/forge/ui/core";
 
 `ScrollArea.Viewport` keeps the platform's own scrolling and its own scrollbar, so the bound costs
 nothing in behaviour. Height comes from the scale like every other distance —
-`forge-ui-spacing-scale-only` applies to `h-*` as much as to `gap-*`, and
-`forge-ui-viewport-units` governs when a viewport-relative height is legitimate instead.
+`forge-ui-spacing-scale-only` applies to `h-*` as much as to `gap-*`, and [`../floor.md`](../floor.md)
+states when a viewport-relative height is legitimate instead.

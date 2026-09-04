@@ -112,7 +112,7 @@ decoration. <!-- rule:forge-ui-tell-numbered-sections -->
 Override for a genuine procedure — an onboarding sequence, a setup guide — where a step number is
 what the reader refers to.
 
-**`h-screen`.** A Floor violation — `forge-ui-viewport-units`. It persists because it is the obvious
+**`h-screen`.** A Floor violation, stated in [`floor.md`](./floor.md). It persists because it is the obvious
 way to say "fill the window" and because it looks correct on the desktop viewport it was written
 against; the failure is only visible on a phone, under the browser chrome.
 Default: a full-height shell is `min-h-dvh`, and a bounded inner region takes a height from the

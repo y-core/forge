@@ -1,9 +1,6 @@
-import { blankComments, findCssBlocks, isModernCssSuppressed, type ModernCssFinding } from "./modern-css-parse";
+import { findCssBlocks, isModernCssSuppressed, type ModernCssFinding } from "./modern-css-parse";
 import type { ModernCssReportedId } from "./modern-css-rules";
-
-function blankSource(source: string): string {
-  return blankComments(source).replace(/^([ \t]*)\/\/.*$/gm, (line, indent: string) => indent + " ".repeat(line.length - indent.length));
-}
+import { balancedSpan, blankSourceComments } from "./source-scan";
 
 function lineAt(source: string, index: number): number {
   return source.slice(0, index).split("\n").length;
@@ -23,7 +20,7 @@ function emit(out: Emitter, index: number, ruleId: ModernCssReportedId, detail: 
 }
 
 function emitter(source: string, file: string): Emitter {
-  return { file, lines: source.split("\n"), scanned: blankSource(source), findings: [] };
+  return { file, lines: source.split("\n"), scanned: blankSourceComments(source), findings: [] };
 }
 
 /** The balanced argument list of every call whose head matches `pattern`; the pattern must end at the `(`. */
@@ -31,14 +28,9 @@ function callRegions(source: string, pattern: RegExp): { start: number; body: st
   const out: { start: number; body: string }[] = [];
   for (const match of source.matchAll(pattern)) {
     const open = match.index + match[0].length - 1;
-    let depth = 0;
-    for (let i = open; i < source.length; i++) {
-      if (source[i] === "(") depth++;
-      else if (source[i] === ")" && --depth === 0) {
-        out.push({ start: open + 1, body: source.slice(open + 1, i) });
-        break;
-      }
-    }
+    const close = balancedSpan(source, open);
+    if (close === -1) continue;
+    out.push({ start: open + 1, body: source.slice(open + 1, close) });
   }
   return out;
 }
@@ -111,17 +103,6 @@ function findNativeDetails(out: Emitter): void {
     "forge-ui-platform-native-details",
     /(?<![\w-])aria-expanded(?=[\s=])/g,
     () => "`aria-expanded` toggled from a click handler — express the disclosure with `<details>` and `<summary>`",
-  );
-}
-
-function findEntryMotion(out: Emitter): void {
-  scanCalls(
-    out,
-    "forge-ui-platform-entry-motion",
-    RAF,
-    /classList\s*\.\s*(?:add|remove|toggle)\s*\(/,
-    () =>
-      "a class added inside `requestAnimationFrame` to start an entry transition — declare it with `@starting-style` and `transition-behavior: allow-discrete`",
   );
 }
 
@@ -264,49 +245,6 @@ function findAnchorPositioning(out: Emitter): void {
   );
 }
 
-const HEADING_SIZE = /(?<![\w-])text-(?:2xl|3xl|4xl|5xl|6xl|7xl)(?![\w-])/;
-
-const PROSE_CLASS = /(?<![\w-])(?:prose|max-w-prose|leading-relaxed)(?![\w-])/;
-
-function findWrapUtilities(out: Emitter): void {
-  for (const literal of classLiterals(out.scanned)) {
-    const heading = HEADING_SIZE.exec(literal.text);
-    if (heading !== null && !/(?<![\w-])text-balance(?![\w-])/.test(literal.text)) {
-      emit(
-        out,
-        literal.index,
-        "forge-ui-platform-text-balance",
-        `\`${heading[0]}\` heading with no \`text-balance\` — balance the line breaks with \`text-wrap: balance\``,
-      );
-    }
-    const prose = PROSE_CLASS.exec(literal.text);
-    if (prose !== null && !/(?<![\w-])text-pretty(?![\w-])/.test(literal.text)) {
-      emit(
-        out,
-        literal.index,
-        "forge-ui-platform-text-pretty",
-        `\`${prose[0]}\` prose with no \`text-pretty\` — avoid the orphan with \`text-wrap: pretty\``,
-      );
-    }
-  }
-}
-
-const MOTION_UTILITY = /(?<![\w-])(transition(?:-[a-z]+)?|animate-[a-z0-9-]+)(?![\w-])/g;
-
-function findUngatedMotion(out: Emitter): void {
-  for (const literal of classLiterals(out.scanned)) {
-    if (/motion-safe:|motion-reduce:/.test(literal.text)) continue;
-    const motion = new RegExp(MOTION_UTILITY.source).exec(literal.text);
-    if (motion === null) continue;
-    emit(
-      out,
-      literal.index,
-      "forge-ui-reduced-motion",
-      `\`${motion[1]}\` with no \`motion-safe:\` or \`motion-reduce:\` variant beside it — gate authored motion on \`prefers-reduced-motion\``,
-    );
-  }
-}
-
 function findFieldSizingAdoption(out: Emitter): void {
   if (/field-sizing/.test(out.scanned)) return;
   scanLines(
@@ -371,7 +309,6 @@ function findSourceViolations(source: string, file: string): ModernCssFinding[] 
   findNativeDialog(out);
   findNativePopover(out);
   findNativeDetails(out);
-  findEntryMotion(out);
   findParentState(out);
   findInert(out);
   findThemeDetection(out);
@@ -386,8 +323,6 @@ function findSourceViolations(source: string, file: string): ModernCssFinding[] 
   findCarousel(out);
   findFieldSizing(out);
   findAnchorPositioning(out);
-  findWrapUtilities(out);
-  findUngatedMotion(out);
   findFieldSizingAdoption(out);
   findAccentColor(out);
   findViewTransition(out);

@@ -82,20 +82,29 @@ row. Those live in governance, where they belong.
 
 Each of these checks **owns the rule set it enforces**. Read the check, not a prose summary of it.
 
-| Owns                                                                                 | File                                                                                              |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| Barrel rules as _enforced_                                                           | `src/cli/pkg/gate/checks/exports.ts` + `src/cli/pkg/gate/checks/barrel-parse.ts`                  |
-| The namespace graph as _enforced_                                                    | `src/cli/pkg/gate/checks/namespace-graph.ts` + `src/cli/pkg/gate/checks/namespace-graph-parse.ts` |
-| Governing-doc format as _enforced_                                                   | `src/cli/pkg/gate/checks/docs.ts`                                                                 |
-| `@source` coverage as _enforced_                                                     | `src/cli/pkg/gate/checks/css-sources.ts`                                                          |
-| The modern-CSS rule catalog as _enforced_ — every id, tier, severity and replacement | `src/cli/pkg/gate/checks/modern-css-rules.ts`                                                     |
-| Token contrast mappings and their measured ratios, as _enforced_                     | `src/cli/pkg/gate/checks/contrast.ts` + `src/cli/pkg/gate/checks/contrast-parse.ts`               |
-| The design corpus's rule ids, citations and source rules as _enforced_               | `src/cli/pkg/gate/checks/design.ts` + `src/cli/pkg/gate/checks/design-parse.ts`                   |
-| JSX pragma lines and the slot-clobber rule as _enforced_                             | `src/cli/pkg/gate/checks/jsx.ts` + `src/cli/pkg/gate/checks/jsx-parse.ts`                         |
-| Test co-location, and the modules exempt from it, as _enforced_                      | `src/cli/pkg/gate/checks/co-location.ts`                                                          |
-| The SSR/browser import boundary as _enforced_                                        | `src/cli/pkg/gate/checks/ssr-boundary.ts`                                                         |
-| Changelog and package-version agreement as _enforced_                                | `src/cli/pkg/gate/checks/changelog.ts`                                                            |
-| Which modern-CSS findings fail, warn, or are deferred, as _enforced_                 | `src/cli/pkg/gate/checks/modern-css.ts` + `src/cli/pkg/gate/checks/modern-css-deferred.ts`        |
+A check whose rule set is _derived_ rather than declared has no row here, and that is decided
+rather than missing: `validate-css-tokens`, `validate-class-order`, `validate-class-groups` and
+`validate-design-scale` each enforce one invariant against a table computed from the compiled
+stylesheet, so there is no enumeration a prose copy could disagree with (§1b). Where such a check
+commits its derived table, the committed module is the row — `class-groups.ts` and
+`design-scale.ts` in §2d.
+
+| Owns                                                                                                               | File                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| Barrel rules as _enforced_                                                                                         | `src/cli/pkg/gate/checks/exports.ts` + `src/cli/pkg/gate/checks/barrel-parse.ts`                  |
+| The namespace graph as _enforced_                                                                                  | `src/cli/pkg/gate/checks/namespace-graph.ts` + `src/cli/pkg/gate/checks/namespace-graph-parse.ts` |
+| Governing-doc format as _enforced_                                                                                 | `src/cli/pkg/gate/checks/docs.ts`                                                                 |
+| `@source` coverage as _enforced_                                                                                   | `src/cli/pkg/gate/checks/css-sources.ts`                                                          |
+| The modern-CSS rule catalog as _enforced_ — every id, tier, severity, replacement, and which mechanism enforces it | `src/cli/pkg/gate/checks/modern-css-rules.ts`                                                     |
+| Token contrast mappings and their measured ratios, as _enforced_                                                   | `src/cli/pkg/gate/checks/contrast.ts` + `src/cli/pkg/gate/checks/contrast-parse.ts`               |
+| Every corpus rule id, the corpus file that states it, and which mechanism enforces it                              | `src/cli/pkg/gate/checks/design-rules.ts`                                                         |
+| The design corpus's citations and its markup rules as _enforced_                                                   | `src/cli/pkg/gate/checks/design.ts` + `src/cli/pkg/gate/checks/design-parse.ts`                   |
+| Every corpus rule about a class string, as _enforced_                                                              | `src/cli/pkg/lint.ts` and the rules under `src/cli/pkg/lint/`                                     |
+| JSX pragma lines and the slot-clobber rule as _enforced_                                                           | `src/cli/pkg/gate/checks/jsx.ts` + `src/cli/pkg/gate/checks/jsx-parse.ts`                         |
+| Test co-location, and the modules exempt from it, as _enforced_                                                    | `src/cli/pkg/gate/checks/co-location.ts`                                                          |
+| The SSR/browser import boundary as _enforced_                                                                      | `src/cli/pkg/gate/checks/ssr-boundary.ts`                                                         |
+| Changelog and package-version agreement as _enforced_                                                              | `src/cli/pkg/gate/checks/changelog.ts`                                                            |
+| Which modern-CSS findings fail, warn, or are deferred, as _enforced_                                               | `src/cli/pkg/gate/checks/modern-css.ts` + `src/cli/pkg/gate/checks/modern-css-deferred.ts`        |
 
 ### 2c. Cloudflare Reconciliation
 
@@ -119,6 +128,7 @@ row names the file that decides it; no prose here restates a naming rule or a ha
 | Owns                                                                | File                                                          |
 | ------------------------------------------------------------------- | ------------------------------------------------------------- |
 | Tailwind conflict-group table                                       | `src/ui/core/utils/class-groups.ts`                           |
+| The spacing scale, spacing and colour roots, and colour tokens      | `src/cli/pkg/lint/data/design-scale.ts`                       |
 | Forge's own UI glyph names, and the sprite sources that supply them | `src/ui/assets/sprites.ts`                                    |
 | Audited contrast pairs and the criterion binding each               | `src/ui/contracts/theme/contrast-pairs.ts`                    |
 | Accepted contrast exemptions, their pinned values and reasons       | `src/ui/contracts/theme/contrast-accepted.ts`                 |

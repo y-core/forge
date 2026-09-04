@@ -17,7 +17,262 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **Eight design rules moved from `validate-design` and `validate-modern-css` to forge's oxlint
+  plugin, and their detectors are gone from the public surface.** `findArbitraryValues`,
+  `findColorLiterals`, `findTagSizedHeadings`, `findUnguardedAnimations`, `findViewportUnits` and
+  `logicalUtility` are no longer exported from `@y-core/forge/cli/pkg`, and nothing replaces them on
+  that barrel — the plugin owns the detection now. `RuleId` and `RULE_CORPUS_PATH` moved from
+  `gate/checks/design-parse` to `gate/checks/design-rules`, under the same names. A consuming app
+  that names steps through `config/steps.ts` adds three steps — `classGroupsStep`, `cssTokensStep`
+  and `designScaleStep`, each described under **Added** below — and all three are `--full` only.
+
+- **`forge-ui-viewport-units` is retired.** Two class names are a restriction list rather than a
+  rule, and `floor.md`'s prose says the same thing without an id. The guidance stays; the marker,
+  the detector and the `MODERN_CSS_CITED_RULES` entry are gone. Per
+  `UI_DESIGN_GUIDANCE.md` §3b the id is never reassigned, so a citation that outlived it lands on
+  nothing rather than on a different rule.
+
+### Added
+
+- **Eight class-string rules now read the AST instead of the line.** `forge/spacing-scale-only`,
+  `forge/color-token-only`, `forge/a11y-heading-size-by-class`, `forge/reduced-motion`,
+  `forge/platform-entry-motion`, `forge/platform-logical-spacing`, `forge/platform-text-balance` and
+  `forge/platform-text-pretty` live in `@y-core/forge/cli/pkg/lint` and run under the `lint` step.
+  Three competing regex extractors became one, anchored to a real class position — a
+  `class`/`className` attribute, a `class:` object property, or an argument to `cn`/`cva`/`asClass`
+  — which removes a whole class of false positive by construction: `validate-modern-css` no longer
+  reads the CSS property names in the generated `class-groups.ts` as class strings, nor the word
+  "prose" in an English sentence.
+
+  Four consequences worth knowing before upgrading, each of which can turn a green tree red.
+
+  **The three Tier-B/C rules became blocking.** `validate-modern-css` forced
+  `forge/platform-entry-motion` (Tier B), `forge/platform-text-balance` and
+  `forge/platform-text-pretty` (Tier C) to `warn`; `lint` runs `--deny-warnings`, so each is now an
+  error rather than a warning.
+
+  **Three rules report input the old detectors passed in silence.**
+  `forge/platform-text-balance` reads `text-8xl` and `text-9xl` beside the `text-2xl`–`text-7xl` it
+  already covered. `forge/platform-logical-spacing` reads a negative inline margin, reporting
+  `-ml-4` as `-ms-4` and `hover:-mr-2` as `hover:-me-2`. `forge/color-token-only` reports a palette
+  custom property written without its namespace — `bg-(--red-500)` — because the palette is declared
+  as `--color-red-500` and only that spelling resolves to a token.
+
+  **`forge-ui-reduced-motion` was enforced twice with different scopes and is now enforced once, as
+  the union** — `animate-*` _and_ `transition*`, at `error`, gated on the whole class expression so
+  a `motion-reduce:` in a sibling `cn()` argument still counts.
+
+  **The scope widened**: oxlint reads every `.ts`/`.tsx` under `src/` and `config/`, where
+  `validate-design` walked only non-test `.tsx` and `validate-modern-css` only `src/ui`.
+  Suppression follows the mechanism — a plugin rule takes
+  `oxlint-disable-next-line forge/<key> -- <why>`, not `design-allow`, and a `design-allow` marker
+  left behind for a migrated rule now suppresses nothing. Entry motion, for one, is
+  `// oxlint-disable-next-line forge/platform-entry-motion -- <why>`.
+
+- **`validate-design-scale` and `bun run gen:design-scale`.** `src/cli/pkg/lint/data/design-scale.ts`
+  is generated from the compiled stylesheet and holds what the two data-driven rules resolve
+  against: the `--spacing` step size, the roots that read it, the steps the scale offers, the
+  colour-bearing roots and the theme's colour tokens. That file is the register — read the counts
+  there rather than from prose that would drift. `spacing-scale-only` therefore names the
+  utility that would replace an arbitrary value — `p-[8px]` reports `p-2` — instead of refusing
+  every `px`/`rem` value on a hand-listed set of 31 roots. The step is `--full` only, for the reason
+  `validate-class-groups` is: `tailwindcss` is an optional peer.
+
+- **`validate-design` now holds each rule against the mechanism that enforces it.**
+  `gate/checks/design-rules.ts` names, per corpus id, whether a check step or the plugin enforces
+  it; the gate fails by name when a detector is deleted, when the plugin stops registering a rule,
+  or when `.oxlintrc.json` stops enabling one. Without it a `RULE_CORPUS_PATH` row for a migrated
+  rule would have asserted nothing.
+
+- **A scale token is namespaced away from colour, and `--text-size-*` is the reserved spelling.**
+  Tailwind's `--text-*` namespace carries font size while the `text-*` utility also carries colour,
+  so an app's `--text-hero` produced a class indistinguishable from a colour — and `cn` read it as
+  one: `cn("text-hero text-red-500")` returned `text-red-500` alone, in the app's markup, with no
+  error. Declaring the step `--text-size-hero` instead gives `text-size-hero`, which the conflict
+  table now resolves to the font-size group the design system itself states, so it merges against
+  `text-2xl` and coexists with `text-red-500`. The convention is published in the `forge.css` header
+  and `src/ui/README.md`; the reasoning is `UI_SSR_COMPONENTS.md` §5f. The arbitrary form is
+  deliberately narrower and does not merge against the named one: `cn("text-size-hero
+text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the arbitrary value
+  does not.
+
+  Forge cannot enforce this in a consumer's stylesheet — an app's theme is not in forge's compile —
+  so a token that keeps the old spelling behaves exactly as it did. **New gate step
+  `validate-css-tokens`** holds forge's own `@theme` tokens to the rule, deriving the overloaded
+  namespaces from the compiled design system rather than a hand-kept list. It walks the CSS
+  directory recursively and fails rather than passing when the directory matched no stylesheet, so a
+  mis-pointed `cssDir` reads as a failure and not as a clean run. Like the other two steps that
+  compile it, it is `--full` only, because `tailwindcss` is an optional peer.
+
+- **`@y-core/forge/cli/pkg/lint` — forge's own oxlint plugin, shipped as raw TypeScript.** oxlint's
+  `jsPlugins` resolves a package subpath and loads TypeScript source directly, so the plugin needs no
+  build step and no new package: it is a concrete-file subpath inside `cli/pkg`, on the
+  `./ui/core/client` precedent. A consuming app names it in `.oxlintrc.json`:
+
+  ```json
+  { "jsPlugins": ["@y-core/forge/cli/pkg/lint"], "rules": { "forge/suppression-needs-reason": "error" } }
+  ```
+
+  The subpath publishes exactly two things — `lintPlugin` and the default export that aliases it,
+  which is what `jsPlugins` loads. The rule objects and the oxlint ABI types the plugin is written
+  against stay internal to `cli/pkg/lint/`, which has no `mod.ts` and mints no namespace: they are
+  structural restatements of oxlint's own types rather than imports, because `oxlint` is a
+  devDependency and a published module must not depend on one, and restating an ABI is not a
+  contract forge is willing to hold a consumer to.
+
+- **`forge/suppression-needs-reason` — every lint suppression states why.** The rule reads
+  `context.sourceCode.getDisableDirectives()` and reports any `oxlint-disable*` whose justification
+  is empty, so the mandatory reason is AST-anchored rather than matched by a `(?!\*/)` lookahead over
+  raw lines, and it covers **every** rule rather than only `design-allow`. It composes with the
+  `--report-unused-disable-directives-severity error` that `lint:types` already passes: that one says
+  a suppression must still be needed, this one says it must say why.
+
+- **`validate-class-groups` fails the gate when the committed conflict table drifts.** The step
+  recompiles the stylesheet, re-derives the table and compares it to
+  `src/ui/core/utils/class-groups.ts` byte for byte, so a `tailwindcss` release or a theme edit that
+  moves the ground truth is reported rather than silently corrupting `cn`. It is `--full` only and
+  declares `requires: { tool: "tailwindcss" }`: `tailwindcss` is an _optional_ peer, so a fast run
+  on a consumer that has not installed it must not fail. `prepublishOnly` runs `verify:full`, which
+  makes drift a release gate. Exposed as `classGroupsStep`, `checkClassGroups`,
+  `ClassGroupsCheckConfig`, `deriveClassGroups`, `renderClassGroups`, `signature`, `reach` and
+  `SHORTHAND_CLOSURE` from `@y-core/forge/cli/pkg`. The stylesheet loader the three compiling steps
+  share is exported beside them, from the new `gate/checks/design-system` module: `loadDesignSystem`,
+  `hasTailwind`, `canonical`, `fileURLToPathish` and the `DesignSystem` and `CssNode` types.
+
+- **`forge release` prints the evidence for the version it derived.** A `because:` row beside
+  `next:` names the commit whose `major:`/`minor:` prefix won the bump — short sha and subject — so
+  a reviewer no longer re-scans `git log` to find out what asked for a version jump. Where nothing
+  asked, the row says so: `no major:/minor: subject in 7 commits since v1.0.0`. The row prints in a
+  real release as well as under `--dry`, and only for an automatic bump — an explicit version, a
+  first release and an in-sync run print none. `VersionResult` carries the same fact as an optional
+  `evidence` field for a consumer building its own release output.
+
+- **`forge release` refuses a patch release whose public export surface shrank.** The bump is
+  derived from commit subject prefixes alone, so a symbol dropped from a barrel under an unprefixed
+  subject used to ship as `auto-patch` and break every consumer pinned to a `^` range. The release
+  now compares the `<specifier>#<exportName>` set the latest tag published against the working
+  tree's, and refuses an `auto-patch` that lost an entry, naming each one. `--allow-semver`
+  overrides it. The bar is deliberately `auto-minor`: `auto-minor`, `auto-major`, an explicit
+  version and a first release all pass, because a major-version decision is not one a heuristic
+  over barrel names should demand. The guard fires under `--dry` too.
+
+  It reads every non-wildcard entry in the exports map, not just the `mod.ts` barrels, so the nine
+  concrete-file subpaths — `./cli/pkg/lint`, `./jsx/jsx-runtime`, `./jsx/jsx-dev-runtime`,
+  `./jsx/register`, `./ui/assets/glyphs`, `./ui/chrome/client`, `./ui/client/htmx`,
+  `./ui/core/client` and `./ui/show/client` — are covered rather than invisible. It also fails
+  closed: a ref git cannot resolve raises `ReleaseError` kind `git-error` and a manifest it cannot
+  parse raises the new kind `manifest-malformed`, where both used to read as "nothing was
+  published" and let the release through. An `export { x as y }` counts as `y` alone, so renaming
+  the local binding behind an unchanged public name no longer reads as a removal.
+
+- **A `challenge="submit"` press that ends without a request now tells the page.**
+  `TURNSTILE_ABANDONED_EVENT` (`"turnstile:abandoned"`) is dispatched on the **form**, bubbling and
+  not cancelable, with a `TurnstileAbandonedDetail` naming the `reason` — `TurnstileAbandonReason`
+  is `"timeout" | "interactive-timeout" | "error" | "unsupported" | "superseded"` — and the
+  `submitter` the press was made on, re-enabled before the event fires so a handler can focus it.
+  The held request is deliberately not carried: reviving it is the tokenless POST the drop exists to
+  prevent. `TURNSTILE_INTERACTIVE_TIMEOUT_MS` (60s) is the new ceiling on a press held while an
+  interactive challenge is up. All four are exported from `@y-core/forge/ui/contracts`.
+
+### Fixed
+
+- **`cn` no longer drops nine kinds of non-conflicting utility.** `class-groups.ts` merged concerns
+  Tailwind keeps separate, so a class an app author wrote vanished from the rendered markup with no
+  error and no gate failure: `cn("bg-red-500 bg-blend-multiply")` returned only
+  `bg-blend-multiply`, and the same went for `bg-clip-*`, `bg-origin-*`, `text-shadow-*` against a
+  text colour, `text-shadow-md` against `text-shadow-<color>`, `ring-offset-2` against
+  `ring-offset-<color>`, the logical sides `border-be-*` and `inset-be-*` — added to Tailwind after
+  the hand table was written — and `ordinal` against `tabular-nums`. All nine now keep both classes.
+  `validate-class-order` could not have caught any of them: it proved class literals were fixed
+  points of `cn` using the same table as its oracle, so the check and its subject failed together.
+
+- **Twelve physical spacing utilities and an ungated transition, all of them outside the scope the
+  old checks walked.** `logging/show/components.tsx` used `pr-4`, `pl-4` and `text-left` where the
+  logical spellings mirror, and its `text-2xl` page heading carried no `text-balance` — invisible
+  because `validate-modern-css` scanned `src/ui` alone. `http/fragment.ts`'s default error-list
+  class used `pl-5`. The navbar's backdrop scrim transitioned `opacity` and `visibility` with no
+  `motion-reduce:` beside it, where the panel it dims already had one.
+
+- **`validate-class-order` refuses a green verdict on a class position it could not read.** A `cn(`
+  or `class=` whose span never closes leaves every class literal inside it unjudged, which is not
+  the same fact as "the classes are ordered". The step now fails, naming the file and the line, so a
+  tree holding such a position fails the gate until the source is fixed rather than passing on a
+  check that never ran.
+
+- **A `challenge="submit"` press on a form htmx does not validate no longer leaves with an empty
+  token.** The controller bailed on `!form.checkValidity()` without cancelling the event, on the
+  assumption that htmx would halt the request — but `checkValidity()` is the static algorithm and
+  ignores `novalidate`, which htmx honours, and htmx never validates a button-issued submission at
+  all. On such a form the request went out with no token and the server saw a bot. Forge now mirrors
+  htmx's own gate (`hx-validate` read off the issuing element only, both spellings; `formnovalidate`
+  only when that element is the form), and where htmx would not have validated, the press spends a
+  challenge instead — the author declaring `novalidate` has declared constraint validation is not
+  the gate.
+
+- **A second press can no longer be answered by the first press's request.** The held request and
+  the control it was pressed on were separate module-level slots shared by every submitter in scope,
+  so pressing Submit could be answered by the Preview control's request — htmx reads the form's
+  `lastButtonClicked` back when it issues. The hold is now one record keyed to its submitter, and
+  the last press wins: it displaces the first, re-arms the window, reports the displaced press as
+  `superseded`, and rides the challenge already in flight, so one press remains one challenge.
+
+- **An abandoned interactive challenge no longer wedges the form for the page's life.**
+  `before-interactive-callback` stood the execute budget down entirely — the normal path under
+  `appearance="interaction-only"` — leaving a press held with no ceiling. It now swaps the 15s
+  budget for `TURNSTILE_INTERACTIVE_TIMEOUT_MS`, far past a deliberate click and well inside the
+  token's ~300s life. A press arriving mid-interaction inherits the same ceiling.
+
+### Changed
+
+- **Elevation is now visible in dark mode.** Every level above a hairline was a Tailwind default
+  shadow — black at 5–25% alpha — so on a near-black surface levels 2, 3 and 4 rendered nothing and
+  a `Card`, a `Menu.Popup` and a `Dialog` read as coplanar. `theme-base.css` now redefines the whole
+  `--shadow-*` family with Tailwind's geometry unchanged and every colour slot pointed at two new
+  fixed families in `theme-colors.css`: `--cast-a1` / `-a2` / `-a4`, ink in light and `transparent`
+  in dark, and `--rim-a1` / `-a2`, the reverse. In dark a level is carried by a 1px inset rim at 10%
+  white plus a soft outer falloff at 5% whose radius is the level — a clean edge transition, not a
+  glow. **No component class changes**, and light mode renders as it did with one exception below.
+  All seven sizes are defined rather than the five forge renders, so a consumer's `shadow-2xl` is
+  not the one elevation that still vanishes in dark.
+
+- **`shadow-2xl` is marginally lighter in light mode.** Tailwind's value uses alpha `0.25`, which is
+  off-grid between `--black-a4` (0.2) and `--black-a5` (0.3); it maps to `--cast-a4`. Adding an
+  off-ramp alpha step would be the ad-hoc tint `forge-ui-color-scale-no-adhoc-tint` forbids, so the
+  shift is taken rather than worked around. Forge itself renders no `shadow-2xl`.
+
+- **`cn`'s conflict table is derived from the design system rather than hand-written.**
+  `src/ui/core/utils/class-groups.ts` is now generated from the stylesheet `.oxfmtrc.json` already
+  names, `src/ui/assets/css/tailwind.css`, by `bun run gen:class-groups`. A group id is the CSS
+  signature a utility writes — its `--tw-*` variables when it sets any, its ordinary properties
+  otherwise, which is what keeps `ring-2` and `shadow-md` apart though both write `box-shadow` —
+  and `GROUP_OVERRIDES` states which of those signatures a CSS shorthand swallows. `cn`'s algorithm
+  is unchanged, `classGroup` and `GROUP_OVERRIDES` keep their shapes, and both stay `@internal`.
+  Two facts remain hand-authored, and neither moves when Tailwind ships a minor: the vars-preferred
+  signature rule and the CSS shorthand closure, both stated in
+  `.decisions/implementation/UI_SSR_COMPONENTS.md` §3f. **No new dependency** — `tailwindcss` is
+  already a peer, and the two loader callbacks `@tailwindcss/node` exists to supply are ten lines
+  of `node:fs`.
+
+  The generated table covers every utility the stylesheet compiles to, where the hand table covered
+  a fraction of them, so a few that used to fall through now resolve — `backdrop-blur`, for one.
+  The artifact is correspondingly larger, and remains immaterial against an isolate limit of
+  3–10 MB; `src/ui/core/utils/class-groups.ts` is the table itself.
+
+  A root the generator cannot enumerate a scale for is now probed directly with two scale values —
+  `getClassList()` reports one for `left` and none for `start` — and a derivation that would put two
+  groups with identical reach into an override edge throws rather than emitting a table whose
+  override runs both ways. Neither changes `cn`'s input-to-output for any class the old table
+  already resolved.
+
+- **`cn` merges four more shorthand families, so a class that survived before is now dropped.**
+  Tailwind treats each as one concern and the derived table now says so: a `scroll-p*` / `scroll-m*`
+  longhand under its shorthand, `basis-*` under `flex-*`, and `content-*` / `items-*` / `self-*`
+  under the matching `place-*`. `cn("scroll-pt-4 scroll-p-2")` returned both and now returns
+  `scroll-p-2`; `cn("items-center place-items-start")` returns `place-items-start`. Where an app
+  relied on the pair surviving, order the classes so the one that must win comes last, or drop the
+  shorthand.
 
 ---
 

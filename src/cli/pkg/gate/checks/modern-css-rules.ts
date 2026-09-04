@@ -1,5 +1,5 @@
 import type { FindingLevel } from "../finding";
-import type { RuleId } from "./design-parse";
+import type { RuleEnforcer, RuleId } from "./design-rules";
 
 /** A modern-platform CSS rule this check enforces. @public */
 export type ModernCssRuleId =
@@ -47,7 +47,7 @@ export type ModernCssRuleId =
 // `UI_DESIGN_GUIDANCE.md` §3b makes a rule id permanent and corpus-unique, so a pattern the corpus
 // already names is reported under the id it already has rather than under a second one here.
 /** Rule ids the design corpus owns, which this check reports under rather than minting again. @public */
-export type ModernCssCitedRuleId = Extract<RuleId, "forge-ui-viewport-units" | "forge-ui-interaction-focus-visible"> | "forge-ui-reduced-motion";
+export type ModernCssCitedRuleId = Extract<RuleId, "forge-ui-interaction-focus-visible">;
 
 /** Any id this check reports a finding under. @public */
 export type ModernCssReportedId = ModernCssRuleId | ModernCssCitedRuleId;
@@ -65,11 +65,11 @@ export interface ModernCssRule {
   replacement: string;
   /** What has to be confirmed by hand before taking the replacement. */
   verify: string;
+  /** Which mechanism enforces it. Absent means `"gate"` — a detector in this check. */
+  enforcer?: RuleEnforcer;
 }
 
 const CORPUS = "src/ui/design/reference/16-platform.md";
-
-const FLOOR = "src/ui/design/floor.md";
 
 /** Every rule this check enforces, keyed by id. @public */
 export const MODERN_CSS_RULES: Readonly<Record<ModernCssRuleId, ModernCssRule>> = {
@@ -121,6 +121,7 @@ export const MODERN_CSS_RULES: Readonly<Record<ModernCssRuleId, ModernCssRule>> 
     corpus: CORPUS,
     replacement: "the logical property or utility on the same axis",
     verify: "a rule that is physical on purpose — anchored placement, a mirrored glyph — states so rather than being rewritten",
+    enforcer: "lint",
   },
   "forge-ui-platform-scrollbar": {
     tier: "A",
@@ -157,6 +158,7 @@ export const MODERN_CSS_RULES: Readonly<Record<ModernCssRuleId, ModernCssRule>> 
     corpus: CORPUS,
     replacement: "@starting-style with transition-behavior: allow-discrete",
     verify: "the starting style applies on the first style change after insertion, so an element already in the DOM never enters",
+    enforcer: "lint",
   },
   "forge-ui-platform-parent-state": {
     tier: "B",
@@ -312,6 +314,7 @@ export const MODERN_CSS_RULES: Readonly<Record<ModernCssRuleId, ModernCssRule>> 
     corpus: CORPUS,
     replacement: "text-wrap: balance",
     verify: "balancing is capped at a few lines, so it silently does nothing on a heading that wraps past the limit",
+    enforcer: "lint",
   },
   "forge-ui-platform-text-pretty": {
     tier: "C",
@@ -319,6 +322,7 @@ export const MODERN_CSS_RULES: Readonly<Record<ModernCssRuleId, ModernCssRule>> 
     corpus: CORPUS,
     replacement: "text-wrap: pretty",
     verify: "pretty wrapping changes line breaks, so a block whose height was measured for a fixed box may now take another line",
+    enforcer: "lint",
   },
   "forge-ui-platform-field-sizing-adopt": {
     tier: "C",
@@ -359,26 +363,12 @@ export const MODERN_CSS_RULES: Readonly<Record<ModernCssRuleId, ModernCssRule>> 
 
 /** The rules this check reports under an id the design corpus already owns. @public */
 export const MODERN_CSS_CITED_RULES: Readonly<Record<ModernCssCitedRuleId, ModernCssRule>> = {
-  "forge-ui-viewport-units": {
-    tier: "C",
-    severity: "warn",
-    corpus: FLOOR,
-    replacement: "the dynamic viewport units",
-    verify: "the dynamic units change as the mobile toolbars retract, so a box sized from one moves where the static unit did not",
-  },
   "forge-ui-interaction-focus-visible": {
     tier: "C",
     severity: "warn",
     corpus: "src/ui/design/reference/09-interaction.md",
     replacement: ":focus-visible",
     verify: "a control reachable only by pointer never matches :focus-visible, so it would lose its indicator entirely",
-  },
-  "forge-ui-reduced-motion": {
-    tier: "C",
-    severity: "warn",
-    corpus: FLOOR,
-    replacement: "the motion-safe: and motion-reduce: variants",
-    verify: "a transition that only conveys state, rather than motion, may be the accessible form already",
   },
 };
 

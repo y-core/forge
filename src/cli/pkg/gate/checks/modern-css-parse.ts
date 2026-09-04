@@ -1,4 +1,3 @@
-import { isClassAnchor } from "./css-parse";
 import type { ModernCssReportedId, ModernCssRuleId } from "./modern-css-rules";
 
 /** One modern-platform rule violated at one place. @public */
@@ -225,32 +224,6 @@ const LOGICAL_PROPERTY: Readonly<Record<string, string>> = {
 
 const PHYSICAL_PROPERTY = /(?<![\w-])((?:margin|padding)-(?:left|right)|left|right)\s*:([^;}]*)/g;
 
-const PHYSICAL_UTILITY =
-  /(?<![\w-])(?:[a-z][a-z0-9-]*:)*(?:[mp][lr]-[a-z0-9./[\]-]+|(?:border|rounded)-[lr](?![a-z])[a-z0-9./[\]-]*|text-(?:left|right))(?![\w])/g;
-
-const UTILITY_SWAP: readonly (readonly [RegExp, string])[] = [
-  [/^ml-/, "ms-"],
-  [/^mr-/, "me-"],
-  [/^pl-/, "ps-"],
-  [/^pr-/, "pe-"],
-  [/^border-l\b/, "border-s"],
-  [/^border-r\b/, "border-e"],
-  [/^rounded-l\b/, "rounded-s"],
-  [/^rounded-r\b/, "rounded-e"],
-  [/^text-left$/, "text-start"],
-  [/^text-right$/, "text-end"],
-];
-
-/** The logical spelling of a physical Tailwind utility, variants preserved. @public */
-export function logicalUtility(token: string): string {
-  const variants = token.slice(0, token.lastIndexOf(":") + 1);
-  const base = token.slice(variants.length);
-  for (const [physical, logical] of UTILITY_SWAP) {
-    if (physical.test(base)) return `${variants}${base.replace(physical, logical)}`;
-  }
-  return token;
-}
-
 function findPhysicalProperties(source: string, file: string): ModernCssFinding[] {
   const scanned = blankComments(source).split("\n");
   const lines = source.split("\n");
@@ -277,66 +250,10 @@ function findPhysicalProperties(source: string, file: string): ModernCssFinding[
   return findings;
 }
 
-const CLASS_POSITION = /\bclass(?:Name)?\s*[=:]|\bcn\(|\basClass\(/g;
-
-function quotedStrings(text: string): string[] {
-  const out: string[] = [];
-  for (const match of text.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`/g)) out.push(match[1] ?? match[2] ?? match[3] ?? "");
-  return out;
-}
-
-function closingParen(source: string, open: number): number {
-  let depth = 0;
-  for (let i = open; i < source.length; i++) {
-    if (source[i] === "(") depth++;
-    else if (source[i] === ")" && --depth === 0) return i;
-  }
-  return source.length - 1;
-}
-
-function findClassPositionLines(source: string): Set<number> {
-  const scanned = blankComments(source);
-  const found = new Set<number>();
-  for (const match of scanned.matchAll(CLASS_POSITION)) {
-    const start = lineAt(scanned, match.index);
-    // A `cn(` argument list wraps, so `dismissible && "pr-10"` sits lines below the call it belongs
-    // to; balancing the call is what reaches it.
-    const end = match[0].endsWith("(") ? lineAt(scanned, closingParen(scanned, match.index + match[0].length - 1)) : start;
-    for (let line = start; line <= end; line++) found.add(line);
-  }
-  return found;
-}
-
-function findPhysicalUtilities(source: string, file: string): ModernCssFinding[] {
-  const classPosition = findClassPositionLines(source);
-  const scanned = blankComments(source).split("\n");
-  const lines = source.split("\n");
-  const findings: ModernCssFinding[] = [];
-
-  for (let i = 0; i < scanned.length; i++) {
-    if (isModernCssSuppressed(lines, i + 1, "forge-ui-platform-logical-spacing")) continue;
-    const literals = quotedStrings(scanned[i] ?? "");
-    const declares = literals.some((literal) => literal.split(/\s+/).filter(isClassAnchor).length >= 2);
-    if (!classPosition.has(i + 1) && !declares) continue;
-    const hits = new Set<string>();
-    for (const literal of literals) {
-      for (const match of literal.matchAll(PHYSICAL_UTILITY)) hits.add(match[0]);
-    }
-    for (const hit of hits) {
-      findings.push({
-        file,
-        line: i + 1,
-        ruleId: "forge-ui-platform-logical-spacing",
-        detail: `physical utility \`${hit}\` — use \`${logicalUtility(hit)}\``,
-      });
-    }
-  }
-  return findings;
-}
-
-/** Physical spacing: CSS properties in a stylesheet, Tailwind utilities in a class literal. @public */
+/** Physical spacing properties in a stylesheet. The utility half is `forge/platform-logical-spacing`
+ *  in forge's oxlint plugin, which reads a class literal off the AST rather than off the line. @public */
 export function findPhysicalSpacing(source: string, file: string): ModernCssFinding[] {
-  return file.endsWith(".css") ? findPhysicalProperties(source, file) : findPhysicalUtilities(source, file);
+  return file.endsWith(".css") ? findPhysicalProperties(source, file) : [];
 }
 
 /** Every Tier A rule over one file, in rule order, then by line. @public */

@@ -3,7 +3,7 @@ import { relative, resolve } from "node:path";
 
 import { cn } from "../../../../ui/core/utils/cn";
 import { type CheckResult, checkResult, type Finding, fail } from "../finding";
-import { findClassLiterals } from "./design-parse";
+import { findClassLiterals, findSkippedClassPositions } from "./design-parse";
 
 /** What the class-order check needs to know about the project. @public */
 export interface ClassOrderCheckConfig {
@@ -47,6 +47,16 @@ export function droppedToken(literal: string): string | null {
 export function validateClassOrder(file: string, source: string): Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
+
+  for (const skipped of findSkippedClassPositions(source)) {
+    findings.push(
+      fail("class position could not be read — refusing to report a green class-order gate that skipped it", {
+        file,
+        line: skipped.line,
+        detail: [`\`${skipped.text}\``, "the span never closes, so every class literal in it went unjudged"],
+      }),
+    );
+  }
 
   for (const literal of findClassLiterals(source)) {
     const dropped = droppedToken(literal.text);

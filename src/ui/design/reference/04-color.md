@@ -109,6 +109,12 @@ over a dark one. A scrim has to darken whatever is behind it in _both_ modes, so
 cannot express one, which is why forge ships no per-scheme alpha scale. `--overlay` is `--black-a6`,
 the dialog backdrop, where a hardcoded literal used to sit inline in a component rule.
 
+The `--cast-*` and `--rim-*` families in `theme-colors.css` are the sanctioned mode-swapping
+composition of those two ramps: each is a `light-dark()` that selects one absolute step against
+`transparent`, so a single shadow value can carry ink in light and a rim in dark. See `05-depth.md`
+for what they express; anything else built this way belongs beside them, as a step, rather than in a
+component rule.
+
 ## The scale, and what a step means
 
 A semantic token does not name a colour. It names a **step**, and the step holds the value:

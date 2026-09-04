@@ -55,10 +55,6 @@ describe("findModernCssSourceViolations() — Tier B behaviour", () => {
     expect(ids("<summary aria-expanded='false'>", TSX)).toEqual([]);
   });
 
-  it("flags a class added inside `requestAnimationFrame`", () => {
-    expect(ids('requestAnimationFrame(() => {\n  el.classList.add("is-open");\n});', TS)).toEqual(["forge-ui-platform-entry-motion"]);
-  });
-
   it("flags a class set on an ancestor from a descendant", () => {
     expect(ids('el.closest("[data-scope]")?.classList.add("has-error");', TS)).toEqual(["forge-ui-platform-parent-state"]);
   });
@@ -245,18 +241,6 @@ describe("findModernCssSourceViolations() — Tier C adoption", () => {
     expect(ids('doc.startViewTransition(() => {\n  win.location.href = "/next";\n});', TS)).toEqual([]);
   });
 
-  it("flags a heading with no `text-balance`", () => {
-    expect(ids("<h1 class='text-3xl font-semibold'>Title</h1>", TSX)).toEqual(["forge-ui-platform-text-balance"]);
-  });
-
-  it("flags prose with no `text-pretty`", () => {
-    expect(ids("<p class='max-w-prose text-sm'>Body</p>", TSX)).toEqual(["forge-ui-platform-text-pretty"]);
-  });
-
-  it("does not flag markup that already declares both", () => {
-    expect(ids("<h1 class='text-3xl text-balance'>T</h1>\n<p class='max-w-prose text-pretty'>B</p>", TSX)).toEqual([]);
-  });
-
   it("flags a textarea with no `field-sizing-content`", () => {
     expect(ids("<textarea class='w-full rounded border' />", TSX)).toEqual(["forge-ui-platform-field-sizing-adopt"]);
   });
@@ -320,23 +304,5 @@ describe("findModernCssSourceViolations() — Tier C adoption", () => {
     ].join("\n");
 
     expect(ids(source, CSS)).toEqual([]);
-  });
-});
-
-describe("findModernCssSourceViolations() — the cited reduced-motion rule", () => {
-  it("reports an ungated transition under the corpus's own id", () => {
-    expect(findModernCssSourceViolations("<div class='transition-colors duration-200'>", TSX)).toEqual([
-      {
-        file: TSX,
-        line: 1,
-        ruleId: "forge-ui-reduced-motion",
-        detail:
-          "`transition-colors` with no `motion-safe:` or `motion-reduce:` variant beside it — gate authored motion on `prefers-reduced-motion`",
-      },
-    ]);
-  });
-
-  it("does not report a transition already gated by a variant", () => {
-    expect(ids("<div class='motion-safe:transition-colors duration-200'>", TSX)).toEqual([]);
   });
 });

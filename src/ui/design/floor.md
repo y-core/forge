@@ -142,7 +142,7 @@ is what makes two different gaps read as deliberate rather than as a mistake.
 - Wrong: `class="p-[7px] gap-[13px] text-[13px]"`
 - Right: `class="p-2 gap-3 text-sm"`
 
-**Never use `h-screen` or `w-screen`.** <!-- rule:forge-ui-viewport-units -->
+**Never use `h-screen` or `w-screen`.**
 Mobile browser chrome makes `100vh` taller than the visible viewport, so the bottom of the layout
 sits under the URL bar. Use `min-h-dvh`.
 

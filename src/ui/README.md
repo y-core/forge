@@ -94,6 +94,13 @@ is a _step_ override, and steps carrying text or a control boundary have measure
 one-declaration-site rule is [`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §5; the
 ramps, dials and audited pairs are [`ui/contracts/theme`](#y-coreforgeuicontractstheme)'s.
 
+**A scale token you add is namespaced away from colour.** A font size is `@theme { --text-size-hero: 3.5rem; }`, giving
+`text-size-hero` — not `--text-hero`. Tailwind's `--text-*` namespace carries font size while the `text-*` utility also
+carries colour, so `text-hero` reads as a colour to anything working from the class name, `cn` included:
+`cn("text-hero text-red-500")` returns `text-red-500` alone, with no error. Under the reserved spelling the class merges
+against `text-2xl` and coexists with `text-red-500`. The reasoning is
+[`UI_SSR_COMPONENTS.md`](../../.decisions/implementation/UI_SSR_COMPONENTS.md) §5f.
+
 **Status colours are tokens, not palette utilities.** `Alert`, `Toast`, `Badge` and the banners `@y-core/forge/http`
 renders take their colour from a `--status-*` family — four intents (`danger`, `warning`, `success`, `info`) by five
 roles (`-subtle`, `-subtle-foreground`, `-strong`, `-strong-foreground`, `-border`), each bridged to a Tailwind
@@ -317,10 +324,27 @@ default every page entry opens the connection:
 Under `challenge="submit"` the press is held while the challenge runs — the controller marks the submitter `disabled` and
 `aria-busy`, because htmx's own indicators have not started yet. The window always ends: on the token the request is
 issued, and on a challenge error or `TURNSTILE_EXECUTE_TIMEOUT_MS` the fallback alert is revealed, the request is dropped
-rather than sent tokenless, and the button is pressable again for a retry. An **interactive** challenge stands that
-budget down for as long as the visitor is being asked to act, and a widget that has already errored lets the press
-through unheld rather than holding it for a token that will never arrive. The fallback is taken back down if a retried
-challenge then succeeds.
+rather than sent tokenless, and the button is pressable again for a retry. An **interactive** challenge swaps that budget
+for `TURNSTILE_INTERACTIVE_TIMEOUT_MS` while the visitor is being asked to act, so an abandoned one still ends. A widget
+that has already errored lets the press through unheld rather than holding it for a token that will never arrive, and the
+fallback is taken back down if a retried challenge then succeeds.
+
+**A press is only refused for an invalid form where htmx itself would have halted it** — `novalidate`, a button-issued
+submission, or `formnovalidate` on the press all mean htmx sends the request either way, so the press spends a challenge
+and the server stays the enforcement point. **The last press wins**: a second press displaces the first, re-arms the
+window and rides the challenge already in flight, so a token can never answer a different control's request. **Every hold
+that ends without a request tells the page**: `TURNSTILE_ABANDONED_EVENT` is dispatched on the form and bubbles, with
+`TurnstileAbandonedDetail` naming the `reason` (`timeout`, `interactive-timeout`, `error`, `unsupported`, `superseded`)
+and the `submitter`, which is re-enabled before the event fires.
+
+```typescript
+import { TURNSTILE_ABANDONED_EVENT, type TurnstileAbandonedDetail } from "@y-core/forge/ui/contracts";
+
+form.addEventListener(TURNSTILE_ABANDONED_EVENT, (event) => {
+  const { reason, submitter } = (event as CustomEvent<TurnstileAbandonedDetail>).detail;
+  submitter?.focus();
+});
+```
 
 ---
 
@@ -451,6 +475,7 @@ retains one table rather than fifteen.
 | `INPUT_FORMAT_SCOPE`, `INPUT_FORMAT_ATTR`, `applyFormat(template, value)`, `stripFormat(template, value)`                                                                 | const, function        | The scope a `format=` `Input` stamps, the attribute carrying its template, and the two pure functions both halves share. `#` is a slot and every other character a literal; `applyFormat` always strips before it regroups, so it is idempotent, emits `""` rather than a bare skeleton, grows no trailing separator, and returns the bare significant characters rather than truncating an over-long value. |
 | `NAVBAR_FILTERS_EVENT`                                                                                                                                                    | const                  | The document event the `navbar` scope listens for to re-sync its auth filters — dispatch it with the new token array as `detail`.                                                                                                                                                                                                                                                                            |
 | `TURNSTILE`, `TURNSTILE_SCOPE`, `TURNSTILE_SCRIPT_SRC`, `TURNSTILE_SCRIPT_URL`, `TURNSTILE_SCRIPT_TIMEOUT_MS`, `TURNSTILE_EXECUTE_TIMEOUT_MS`, `TURNSTILE_ACTION_PATTERN` | const                  | The `data-ref` values, the scope name, the script URL matched as a prefix, the `?render=explicit` URL the controller injects, the load budget shared by `<Turnstile>` and its controller, how long a `challenge="submit"` press is held before it is released as a failure, and the charset Cloudflare accepts for `action`.                                                                                 |
+| `TURNSTILE_INTERACTIVE_TIMEOUT_MS`, `TURNSTILE_ABANDONED_EVENT`, `TurnstileAbandonReason`, `TurnstileAbandonedDetail`                                                     | const, type            | The ceiling on a held press while an interactive challenge is up, and the form event a dropped press dispatches — its `reason` and the `submitter` it was pressed on.                                                                                                                                                                                                                                        |
 
 **Boolean states are emitted by presence with an empty value — `data-selected=""`, never `"true"`;** `aria-*` keeps
 its string form because WAI-ARIA requires it

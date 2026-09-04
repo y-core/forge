@@ -33,7 +33,7 @@ async function markup(coords = true): Promise<string> {
     Menu.Popup({
       id: "ctx",
       ...(coords ? { coords: true } : {}),
-      class: "w-[120px] h-[80px]",
+      class: "h-20 w-[120px]",
       children: Menu.Item({ id: "row", for: "ctx", children: "Row" }),
     }),
   );

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
+import plugin from "../../lint";
 import { type CheckResult, checkResult, type Finding, fail } from "../finding";
 import { parseConsumerExportNames } from "./barrel-parse";
 import {
@@ -11,11 +12,12 @@ import {
   findSourceViolations,
   isValidRuleId,
   parseDeclaredCustomProperties,
-  RULE_CORPUS_PATH,
-  type RuleId,
+  SOURCE_DETECTOR_IDS,
 } from "./design-parse";
+import { lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER, type RuleId } from "./design-rules";
 import { findSubpathCitations } from "./docs-parse";
 import type { ExportsMap } from "./exports";
+import { MODERN_CSS_RULES } from "./modern-css-rules";
 
 /** What the design check needs to know about the project. @public */
 export interface DesignCheckConfig {
@@ -31,6 +33,8 @@ export interface DesignCheckConfig {
   cssDir: string;
   /** Source root walked for rule violations, relative to `root`. Defaults to `src`. */
   sourceDir?: string;
+  /** The oxlint config the plugin's rules must be enabled in, relative to `root`. Defaults to `.oxlintrc.json`. */
+  oxlintConfig?: string;
 }
 
 /** Every file under `dir` matching `accept`, repo-relative and sorted. */
@@ -47,6 +51,23 @@ function collectFiles(root: string, dir: string, accept: (name: string) => boole
   };
   walk(base);
   return out.sort();
+}
+
+/** The rules an oxlint config turns on, or `undefined` when the file could not be read. Comment
+ *  lines are dropped: oxlint accepts them, `JSON.parse` does not. */
+function readEnabledRules(path: string): Set<string> | undefined {
+  let parsed: { rules?: Record<string, unknown> };
+  try {
+    const stripped = readFileSync(path, "utf-8")
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("//"))
+      .join("\n");
+    parsed = JSON.parse(stripped) as { rules?: Record<string, unknown> };
+  } catch {
+    return undefined;
+  }
+  const entries = Object.entries(parsed.rules ?? {});
+  return new Set(entries.filter(([, level]) => (Array.isArray(level) ? level[0] : level) !== "off").map(([rule]) => rule));
 }
 
 /** Run every check. @public */
@@ -151,8 +172,16 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
     }
   }
 
+  // Which side of the split enforces a rule, held against the side itself: a detector deleted from
+  // `design-parse.ts`, a rule dropped from the plugin, or a rule left out of the oxlint config all
+  // fail here by name. Without it a `RULE_CORPUS_PATH` row for a migrated rule would assert nothing.
+  const detectors = new Set<string>(SOURCE_DETECTOR_IDS);
+  const registered = new Set(Object.keys(plugin.rules));
+  const oxlintConfig = config.oxlintConfig ?? ".oxlintrc.json";
+  const enabled = readEnabledRules(resolve(root, oxlintConfig));
+
   const corpusSet = new Set(corpusFiles);
-  const table = "design-parse.ts";
+  const table = "design-rules.ts";
   for (const [ruleId, corpusPath] of Object.entries(RULE_CORPUS_PATH) as [RuleId, string][]) {
     if (!defined.has(ruleId)) {
       findings.push(fail(`RULE_CORPUS_PATH names \`${ruleId}\`, which no corpus file defines with a marker`, { file: table }));
@@ -160,7 +189,49 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
     if (!corpusSet.has(corpusPath)) {
       findings.push(fail(`RULE_CORPUS_PATH routes \`${ruleId}\` to \`${corpusPath}\`, which is not a corpus file`, { file: table }));
     }
+
+    const enforcer = RULE_ENFORCER[ruleId];
+    if (enforcer === "gate" && !detectors.has(ruleId)) {
+      findings.push(fail(`RULE_ENFORCER calls \`${ruleId}\` a gate rule, but no detector in design-parse.ts reports it`, { file: table }));
+    }
+    if (enforcer !== "lint") continue;
+
+    const key = lintKeyOf(ruleId);
+    if (detectors.has(ruleId)) {
+      findings.push(
+        fail(`RULE_ENFORCER calls \`${ruleId}\` a lint rule, but design-parse.ts still detects it — it would be reported twice`, { file: table }),
+      );
+    }
+    if (!registered.has(key))
+      findings.push(fail(`RULE_ENFORCER calls \`${ruleId}\` a lint rule, but the plugin registers no \`${key}\``, { file: table }));
+    if (enabled !== undefined && !enabled.has(`forge/${key}`)) {
+      findings.push(fail(`\`forge/${key}\` is not enabled — a registered rule that no config turns on reports nothing`, { file: oxlintConfig }));
+    }
   }
+  // The same contract over the modern-platform register, which routes four of its ids to the plugin.
+  const routed = new Set<string>();
+  for (const [ruleId, rule] of Object.entries(MODERN_CSS_RULES)) {
+    if (rule.enforcer !== "lint") continue;
+    const key = lintKeyOf(ruleId);
+    routed.add(key);
+    if (!registered.has(key))
+      findings.push(
+        fail(`MODERN_CSS_RULES calls \`${ruleId}\` a lint rule, but the plugin registers no \`${key}\``, { file: "modern-css-rules.ts" }),
+      );
+    if (enabled !== undefined && !enabled.has(`forge/${key}`)) {
+      findings.push(fail(`\`forge/${key}\` is not enabled — a registered rule that no config turns on reports nothing`, { file: oxlintConfig }));
+    }
+  }
+
+  // And the other direction: a rule the plugin registers under no register's authority would print
+  // an id neither `RULE_CORPUS_PATH` nor `MODERN_CSS_RULES` states.
+  for (const [ruleId, enforcedBy] of Object.entries(RULE_ENFORCER)) if (enforcedBy === "lint") routed.add(lintKeyOf(ruleId));
+  for (const key of registered) {
+    if (key === "suppression-needs-reason" || routed.has(key)) continue;
+    findings.push(fail(`the plugin registers \`forge/${key}\`, which no rule register routes to it`, { file: "lint.ts" }));
+  }
+
+  if (enabled === undefined) findings.push(fail("could not be read, so no plugin rule could be held against it", { file: oxlintConfig }));
 
   // `*.test.tsx` files assert on rendered HTML, so a class-literal check on them would flag every
   // deliberate arbitrary value the assertion itself requires — hence the exclusion below.

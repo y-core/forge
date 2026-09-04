@@ -1,15 +1,14 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   type DesignFinding,
-  findArbitraryValues,
   findAriaReadonlyButtons,
   findBareFocus,
   findBarrelImports,
-  findColorLiterals,
+  findClassLiterals,
   findCustomPropertyCitations,
   findExtraLiveRegions,
   findHandWrittenStateAttrs,
@@ -21,17 +20,13 @@ import {
   findRemovedFocusRings,
   findRuleCitations,
   findRuleMarkers,
+  findSkippedClassPositions,
   findSourceViolations,
-  findTagSizedHeadings,
   findUnassociatedLabels,
-  findUnguardedAnimations,
-  findViewportUnits,
   formatDesignFinding,
   isSuppressed,
   isValidRuleId,
   parseDeclaredCustomProperties,
-  RULE_CORPUS_PATH,
-  type RuleId,
 } from "./design-parse";
 
 const FILE = "src/ui/core/fixture.tsx";
@@ -40,70 +35,6 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 function one(line: string): string {
   return line;
 }
-
-describe("findColorLiterals() — literals inside a class position", () => {
-  const flagged: { line: string; hit: string }[] = [
-    { line: '<div class="bg-[#fff]" />', hit: "#fff" },
-    { line: '<div class="text-[#1a2b3c]" />', hit: "#1a2b3c" },
-    { line: 'const cls = cn("bg-[rgb(0_0_0)]");', hit: "rgb(" },
-    { line: 'const cls = cn("bg-[rgba(0,0,0,0.5)]");', hit: "rgba(" },
-    { line: 'const cls = asClass("bg-[hsl(0_0%_0%)]");', hit: "hsl(" },
-    { line: '<div class="bg-[oklch(0.7_0.19_22)]" />', hit: "oklch(" },
-  ];
-
-  for (const { line, hit } of flagged) {
-    it(`flags \`${hit}\` in ${line}`, () => {
-      expect(findColorLiterals(one(line), FILE)).toEqual([
-        {
-          file: FILE,
-          line: 1,
-          ruleId: "forge-ui-color-token-only",
-          detail: `raw colour literal \`${hit}\` in a class string — resolve the colour through a semantic token`,
-        },
-      ]);
-    });
-  }
-
-  it("reports a literal once, however many patterns see it", () => {
-    expect(findColorLiterals(one('<div class="bg-[#fff] text-[#fff]" />'), FILE)).toHaveLength(1);
-  });
-
-  it("reports the 1-indexed line", () => {
-    const source = ["<div>", '  <span class="bg-[#fff]" />', "</div>"].join("\n");
-
-    expect(findColorLiterals(source, FILE).map((f) => f.line)).toEqual([1 + 1]);
-  });
-});
-
-describe("findColorLiterals() — the constructs it must not flag", () => {
-  const allowed: string[] = [
-    '<div class="bg-red-50 border-red-200 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-200" />',
-    '<div class="bg-emerald-50 border-emerald-200 dark:bg-emerald-950 dark:border-emerald-800" />',
-    '<div class="border-blue-200 dark:border-blue-800" />',
-    "<path stroke='#163030' stroke-width='2' />",
-    'const brand = "#163030";',
-  ];
-
-  for (const line of allowed) {
-    it(`leaves ${line} alone`, () => {
-      expect(findColorLiterals(one(line), FILE)).toEqual([]);
-    });
-  }
-
-  it("honours a suppression comment on the line above", () => {
-    const source = ["/* design-allow: forge-ui-color-token-only — the brand mark is fixed by the trademark. */", '<div class="bg-[#fff]" />'].join(
-      "\n",
-    );
-
-    expect(findColorLiterals(source, FILE)).toEqual([]);
-  });
-
-  it("does not honour a suppression naming a different rule", () => {
-    const source = ["/* design-allow: forge-ui-viewport-units — unrelated. */", '<div class="bg-[#fff]" />'].join("\n");
-
-    expect(findColorLiterals(source, FILE)).toHaveLength(1);
-  });
-});
 
 describe("findRawThemeUtilities() — a palette utility with no dark counterpart", () => {
   const detail = (written: string, family: string): string =>
@@ -222,59 +153,6 @@ describe("findInlineStyles()", () => {
     expect(
       findInlineStyles(one('<div style="--x: 1" /> /* design-allow: forge-ui-no-inline-style — a custom property the renderer forwards. */'), FILE),
     ).toEqual([]);
-  });
-});
-
-describe("findArbitraryValues() — arbitrary values on scale-bearing utilities", () => {
-  const flagged = [
-    '<p class="text-[13px]" />',
-    '<p class="p-[7px]" />',
-    '<p class="bg-[#fff]" />',
-    '<p class="md:p-[7px]" />',
-    '<div class="min-w-[10rem]" />',
-    '<div class="max-h-[3.5rem]" />',
-  ];
-  const hits = ["text-[13px]", "p-[7px]", "bg-[#fff]", "p-[7px]", "min-w-[10rem]", "max-h-[3.5rem]"];
-
-  for (const [i, line] of flagged.entries()) {
-    const hit = hits[i] ?? "";
-    it(`flags \`${hit}\` in ${line}`, () => {
-      expect(findArbitraryValues(one(line), FILE)).toEqual([
-        { file: FILE, line: 1, ruleId: "forge-ui-spacing-scale-only", detail: `arbitrary value \`${hit}\` where a scale value exists` },
-      ]);
-    });
-  }
-});
-
-describe("findArbitraryValues() — the brackets it must not flag", () => {
-  const allowed: string[] = [
-    '<div class="data-[popup-open]:rotate-180" />',
-    '<div class="has-[select:disabled]:opacity-50" />',
-    '<div class="group-[.is-open]:block" />',
-    '<div class="peer-[.is-invalid]:text-destructive" />',
-    '<div class="supports-[display:grid]:grid" />',
-    '<div class="aria-[current=page]:font-medium" />',
-    '<div class="[&_svg]:size-4" />',
-    '<div class="data-[slot~=control]:w-full" />',
-    '<div class="max-h-[60vh]" />',
-    '<div class="max-h-[inherit]" />',
-    '<div class="rounded-[inherit]" />',
-    '<div class="w-[calc(100%-2rem)]" />',
-  ];
-
-  for (const line of allowed) {
-    it(`leaves ${line} alone`, () => {
-      expect(findArbitraryValues(one(line), FILE)).toEqual([]);
-    });
-  }
-
-  it("honours the JSX expression-container suppression the corpus's own components use", () => {
-    const source = [
-      "{/* design-allow: forge-ui-spacing-scale-only — no font-size step equals 11px; `text-xs` is 12px. */}",
-      "{hint ? <p class='mb-2 text-[11px] text-muted-foreground'>{hint}</p> : null}",
-    ].join("\n");
-
-    expect(findArbitraryValues(source, FILE)).toEqual([]);
   });
 });
 
@@ -525,100 +403,6 @@ describe("findHandWrittenStateAttrs()", () => {
   });
 });
 
-describe("findTagSizedHeadings()", () => {
-  const detail = (level: string): string =>
-    `\`<h${level}>\` takes its size from the tag — set the size with a \`text-*\` class and the level from the section's position`;
-
-  for (const [line, level] of [
-    ["<h2 class='font-semibold text-foreground'>Compositions</h2>", "2"],
-    ['<h4 className="border-b border-border pb-2">Levers</h4>', "4"],
-  ] as const) {
-    it(`flags ${line}`, () => {
-      expect(findTagSizedHeadings(one(line), FILE)).toEqual([
-        { file: FILE, line: 1, ruleId: "forge-ui-a11y-heading-size-by-class", detail: detail(level) },
-      ]);
-    });
-  }
-
-  for (const line of [
-    "<h1 class='text-3xl font-bold text-balance text-foreground'>UI Component Showcase</h1>",
-    "<h2 class='border-b border-border pb-2 text-xl font-semibold text-foreground'>Compositions</h2>",
-    "<h3 class='text-sm font-semibold text-foreground'>Native SSR</h3>",
-    "<h3 class={cn('font-semibold', cls)}>A collection</h3>",
-    "<hgroup class='font-semibold'>Title</hgroup>",
-  ]) {
-    it(`leaves ${line} alone`, () => {
-      expect(findTagSizedHeadings(one(line), FILE)).toEqual([]);
-    });
-  }
-
-  it("does not read `text-foreground` as a size", () => {
-    expect(findTagSizedHeadings(one("<h3 class='text-foreground'>Two out loud near neighbours</h3>"), FILE).map((f) => f.detail)).toEqual([
-      detail("3"),
-    ]);
-  });
-
-  it("reads a heading whose attributes wrap onto the following lines", () => {
-    const source = ["<h2", "  data-slot='section-title'", "  class='font-semibold text-foreground'>", "  Levers", "</h2>"].join("\n");
-
-    expect(findTagSizedHeadings(source, FILE)).toEqual([
-      { file: FILE, line: 1, ruleId: "forge-ui-a11y-heading-size-by-class", detail: detail("2") },
-    ]);
-  });
-
-  it("honours a suppression carrying a reason", () => {
-    const source = [
-      "/* design-allow: forge-ui-a11y-heading-size-by-class — the compound fixes the tag, as `Card.Title` does. */",
-      "<h2 class='font-semibold text-foreground'>Compositions</h2>",
-    ].join("\n");
-
-    expect(findTagSizedHeadings(source, FILE)).toEqual([]);
-  });
-});
-
-describe("findUnguardedAnimations()", () => {
-  const detail = (token: string): string =>
-    `\`${token}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` the settled state`;
-
-  for (const [line, token] of [
-    ["<div class='rounded-md bg-muted animate-pulse' />", "animate-pulse"],
-    ["const cls = cn('animate-spin size-4');", "animate-spin"],
-    ["<div class='hover:animate-bounce' />", "hover:animate-bounce"],
-  ] as const) {
-    it(`flags ${line}`, () => {
-      expect(findUnguardedAnimations(one(line), FILE)).toEqual([{ file: FILE, line: 1, ruleId: "forge-ui-reduced-motion", detail: detail(token) }]);
-    });
-  }
-
-  for (const line of [
-    "<div class='rounded-md bg-muted motion-safe:animate-pulse' />",
-    "const cls = cn('motion-safe:animate-spin', sizeClasses[size]);",
-    "<div class='motion-reduce:animate-none' />",
-    "<div class='max-md:transition-[opacity,visibility]' />",
-    "const label = 'animate-pulse is what the skeleton uses';",
-  ]) {
-    it(`leaves ${line} alone`, () => {
-      expect(findUnguardedAnimations(one(line), FILE)).toEqual([]);
-    });
-  }
-
-  it("reports each token on a line once", () => {
-    expect(findUnguardedAnimations(one("<div class='animate-spin animate-spin animate-pulse' />"), FILE).map((f) => f.detail)).toEqual([
-      detail("animate-spin"),
-      detail("animate-pulse"),
-    ]);
-  });
-
-  it("honours a suppression carrying a reason", () => {
-    const source = [
-      "/* design-allow: forge-ui-reduced-motion — the movement is the information and has no static equivalent. */",
-      "<div class='animate-pulse' />",
-    ].join("\n");
-
-    expect(findUnguardedAnimations(source, FILE)).toEqual([]);
-  });
-});
-
 describe("findRemovedFocusRings()", () => {
   const detail = (token: string): string =>
     `\`${token}\` on a pointer target with no \`focus-visible:ring-*\` beside it — the affordance is removed, not replaced`;
@@ -672,33 +456,6 @@ describe("findRemovedFocusRings()", () => {
     ].join("\n");
 
     expect(findRemovedFocusRings(source, FILE)).toEqual([]);
-  });
-});
-
-describe("findViewportUnits()", () => {
-  const detail = (hit: string): string => `\`${hit}\` measures the layout viewport — use \`min-h-dvh\``;
-
-  for (const [line, hit] of [
-    ['<div class="h-screen" />', "h-screen"],
-    ['<div class="w-screen" />', "w-screen"],
-    ['<div class="md:h-screen" />', "h-screen"],
-  ] as const) {
-    it(`flags \`${hit}\` in ${line}`, () => {
-      expect(findViewportUnits(one(line), FILE)).toEqual([{ file: FILE, line: 1, ruleId: "forge-ui-viewport-units", detail: detail(hit) }]);
-    });
-  }
-
-  for (const line of ['<div class="max-h-screen" />', '<div class="min-h-screen" />', '<div class="h-screen-ish" />']) {
-    it(`leaves ${line} alone`, () => {
-      expect(findViewportUnits(one(line), FILE)).toEqual([]);
-    });
-  }
-
-  it("reports both units on a line once each", () => {
-    expect(findViewportUnits(one('<div class="h-screen w-screen h-screen" />'), FILE).map((f) => f.detail)).toEqual([
-      detail("h-screen"),
-      detail("w-screen"),
-    ]);
   });
 });
 
@@ -913,10 +670,10 @@ describe("findRuleMarkers()", () => {
   });
 
   it("reads both markers on one line, in order", () => {
-    const source = ["<!-- rule:forge-ui-viewport-units --> <!-- rule:forge-ui-no-nested-card -->"].join("\n");
+    const source = ["<!-- rule:forge-ui-focus-ring --> <!-- rule:forge-ui-no-nested-card -->"].join("\n");
 
     expect(findRuleMarkers(source)).toEqual([
-      { line: 1, id: "forge-ui-viewport-units" },
+      { line: 1, id: "forge-ui-focus-ring" },
       { line: 1, id: "forge-ui-no-nested-card" },
     ]);
   });
@@ -945,18 +702,18 @@ describe("findRuleCitations()", () => {
   });
 
   it("reads both citations on one line", () => {
-    expect(findRuleCitations("`forge-ui-viewport-units` and `forge-ui-no-nested-card`")).toEqual([
-      { line: 1, id: "forge-ui-viewport-units" },
+    expect(findRuleCitations("`forge-ui-focus-ring` and `forge-ui-no-nested-card`")).toEqual([
+      { line: 1, id: "forge-ui-focus-ring" },
       { line: 1, id: "forge-ui-no-nested-card" },
     ]);
   });
 
   it("ignores an unbackticked id, which is prose rather than a citation", () => {
-    expect(findRuleCitations("The rule forge-ui-viewport-units applies here.")).toEqual([]);
+    expect(findRuleCitations("The rule forge-ui-focus-ring applies here.")).toEqual([]);
   });
 
   it("ignores a definition marker, which is never in a code span", () => {
-    expect(findRuleCitations("<!-- rule:forge-ui-viewport-units -->")).toEqual([]);
+    expect(findRuleCitations("<!-- rule:forge-ui-focus-ring -->")).toEqual([]);
   });
 });
 
@@ -1095,27 +852,24 @@ describe("parseDeclaredCustomProperties()", () => {
 
 describe("findSourceViolations()", () => {
   it("returns every check's findings, sorted by line then rule id", () => {
-    const source = [
-      '<div class="h-screen">',
-      '  <span class="text-[13px]" />',
-      '  <b class="bg-[#fff]" />',
-      '  <i style="color: red" />',
-      "</div>",
-    ].join("\n");
+    const source = ['<div class="bg-yellow-100">', '  <label class="text-sm">Email</label>', '  <i style="color: red" />', "</div>"].join("\n");
 
     expect(findSourceViolations(source, FILE)).toEqual([
-      { file: FILE, line: 1, ruleId: "forge-ui-viewport-units", detail: "`h-screen` measures the layout viewport — use `min-h-dvh`" },
-      { file: FILE, line: 2, ruleId: "forge-ui-spacing-scale-only", detail: "arbitrary value `text-[13px]` where a scale value exists" },
+      {
+        file: FILE,
+        line: 1,
+        ruleId: "forge-ui-color-theme-no-raw-utility",
+        detail: "`bg-yellow-100` has no `dark:bg-yellow-*` counterpart beside it — a raw palette utility survives the theme switch",
+      },
+      {
+        file: FILE,
+        line: 2,
+        ruleId: "forge-ui-a11y-label-association",
+        detail: "`<label>` with neither a `for` nor a wrapped control — it labels nothing",
+      },
       {
         file: FILE,
         line: 3,
-        ruleId: "forge-ui-color-token-only",
-        detail: "raw colour literal `#fff` in a class string — resolve the colour through a semantic token",
-      },
-      { file: FILE, line: 3, ruleId: "forge-ui-spacing-scale-only", detail: "arbitrary value `bg-[#fff]` where a scale value exists" },
-      {
-        file: FILE,
-        line: 4,
         ruleId: "forge-ui-no-inline-style",
         detail: "`style=` attribute — the renderer drops it; express the rule as a class",
       },
@@ -1136,12 +890,8 @@ describe("findSourceViolations()", () => {
     expect(findSourceViolations(source, FILE)).toEqual([]);
   });
 
-  it("includes the theme check, sorted in beside the colour-literal one it does not overlap", () => {
-    expect(findSourceViolations(one('<div class="bg-[#fff] bg-yellow-100" />'), FILE).map((f) => f.ruleId)).toEqual([
-      "forge-ui-color-theme-no-raw-utility",
-      "forge-ui-color-token-only",
-      "forge-ui-spacing-scale-only",
-    ]);
+  it("includes the theme check, which the plugin's colour rule does not overlap", () => {
+    expect(findSourceViolations(one('<div class="bg-yellow-100" />'), FILE).map((f) => f.ruleId)).toEqual(["forge-ui-color-theme-no-raw-utility"]);
   });
 });
 
@@ -1160,44 +910,132 @@ describe("formatDesignFinding()", () => {
   });
 
   it("routes each rule to its own corpus path", () => {
-    const finding: DesignFinding = { file: "a.tsx", line: 1, ruleId: "forge-ui-viewport-units", detail: "d" };
+    const finding: DesignFinding = { file: "a.tsx", line: 1, ruleId: "forge-ui-focus-ring", detail: "d" };
 
-    expect(formatDesignFinding(finding)).toBe("a.tsx:1: forge-ui-viewport-units — d (src/ui/design/floor.md)");
+    expect(formatDesignFinding(finding)).toBe("a.tsx:1: forge-ui-focus-ring — d (src/ui/design/floor.md)");
   });
 });
 
-describe("RULE_CORPUS_PATH", () => {
-  const ids: RuleId[] = [
-    "forge-ui-color-token-only",
-    "forge-ui-color-theme-no-raw-utility",
-    "forge-ui-no-inline-style",
-    "forge-ui-spacing-scale-only",
-    "forge-ui-viewport-units",
-    "forge-ui-no-nested-card",
-    "forge-ui-interaction-focus-visible",
-    "forge-ui-catalog-wrong-raw-input",
-    "forge-ui-contrast-floor",
-    "forge-ui-a11y-label-association",
-    "forge-ui-a11y-live-politeness",
-    "forge-ui-a11y-no-aria-readonly-on-button",
-    "forge-ui-a11y-one-live-region",
-    "forge-ui-a11y-aria-beside-data",
-    "forge-ui-a11y-heading-size-by-class",
-    "forge-ui-reduced-motion",
-    "forge-ui-focus-ring",
+describe("findClassLiterals() — every class position the formatter sorts", () => {
+  const harvested: { source: string; literals: { line: number; text: string }[]; label: string }[] = [
+    { source: '<div class="p-4 flex" />', literals: [{ line: 1, text: "p-4 flex" }], label: "a quoted attribute" },
+    { source: '<div class={"p-4 flex"} />', literals: [{ line: 1, text: "p-4 flex" }], label: "a string in an expression container" },
+    {
+      source: "<div class={`a ${x} b`} />",
+      literals: [
+        { line: 1, text: "a " },
+        { line: 1, text: " b" },
+      ],
+      label: "a template, one literal per interpolation-delimited chunk",
+    },
+    {
+      source: '<div class={c ? "x" : "y"} />',
+      literals: [
+        { line: 1, text: "x" },
+        { line: 1, text: "y" },
+      ],
+      label: "both branches of a ternary",
+    },
+    {
+      source: '<div class={cn("a", "b")} />',
+      literals: [
+        { line: 1, text: "a" },
+        { line: 1, text: "b" },
+      ],
+      label: "a `cn` call inside a container, reached once rather than twice",
+    },
+    {
+      source: '<div class={`x ${cn("p-4 flex")} y`} />',
+      literals: [
+        { line: 1, text: "x " },
+        { line: 1, text: " y" },
+        { line: 1, text: "p-4 flex" },
+      ],
+      label: "a call inside an interpolation, beside the chunks around it",
+    },
+    {
+      source: 'const a = cn("a(b)", "c");',
+      literals: [
+        { line: 1, text: "a(b)" },
+        { line: 1, text: "c" },
+      ],
+      label: "a paren inside a string",
+    },
+    { source: 'const a = cn("a " + "b");', literals: [{ line: 1, text: "a b" }], label: "a `+`-joined pair, judged joined" },
+    {
+      source: 'const a = cva({\n  base: "p-4 flex",\n});',
+      literals: [{ line: 2, text: "p-4 flex" }],
+      label: "a `cva` variant map, at its own line",
+    },
   ];
 
-  it("carries exactly the enforced rules", () => {
-    expect(Object.keys(RULE_CORPUS_PATH).sort()).toEqual([...ids].sort());
+  for (const { source, literals, label } of harvested) {
+    it(`harvests ${label}`, () => {
+      expect(findClassLiterals(source)).toEqual(literals);
+    });
+  }
+
+  describe("a trailing // comment beside a class position", () => {
+    const literals = [
+      { line: 2, text: "px-2 px-4" },
+      { line: 3, text: "py-2 py-4" },
+    ];
+
+    it("harvests both literals past a comment holding an apostrophe", () => {
+      const source = ["const a = cn(", `  "px-2 px-4", // don't reorder`, '  "py-2 py-4",', ");"].join("\n");
+
+      expect(findClassLiterals(source)).toEqual(literals);
+    });
+
+    it("harvests both literals past a comment holding a URL", () => {
+      const source = ["const a = cn(", '  "px-2 px-4", // see https://x.test/y', '  "py-2 py-4",', ");"].join("\n");
+
+      expect(findClassLiterals(source)).toEqual(literals);
+    });
   });
 
-  it("routes every rule to a file that exists under src/ui/design/", () => {
-    const missing = Object.entries(RULE_CORPUS_PATH).filter(([, path]) => !path.startsWith("src/ui/design/") || !existsSync(resolve(ROOT, path)));
+  describe("the constructs it must not flag", () => {
+    const ignored: { source: string; label: string }[] = [
+      { source: "<div class={IDENT} />", label: "an identifier-valued container" },
+      { source: '  // <div class="flex flex" />', label: "a commented-out literal" },
+      { source: '  // const a = cn("flex flex");', label: "a commented-out call" },
+      { source: 'const a = cn("a", "b";', label: "an unbalanced call span" },
+      { source: "<div class={`${A} ${B}`} />", label: "whitespace-only template chunks" },
+      { source: '<div data-x="p-4 flex" />', label: "an attribute the formatter does not sort" },
+    ];
 
-    expect(missing).toEqual([]);
+    for (const { source, label } of ignored) {
+      it(`harvests nothing from ${label}`, () => {
+        expect(findClassLiterals(source)).toEqual([]);
+      });
+    }
+
+    it("harvests nothing from its own source, whose comments name every class position", () => {
+      const own = readFileSync(resolve(ROOT, "src/cli/pkg/gate/checks/design-parse.ts"), "utf-8");
+
+      expect(findClassLiterals(own)).toEqual([]);
+    });
+  });
+});
+
+describe("findSkippedClassPositions() — what the scan dropped unread", () => {
+  it("reports the position whose span never closes", () => {
+    expect(findSkippedClassPositions('const a = cn("a", "b";')).toEqual([{ line: 1, text: "cn(" }]);
   });
 
-  it("names a well-formed id for every key", () => {
-    expect(Object.keys(RULE_CORPUS_PATH).filter((id) => !isValidRuleId(id))).toEqual([]);
+  it("reports the line the dropped position sits on", () => {
+    const source = ["const a = 1;", 'const b = cn("x", "y";'].join("\n");
+
+    expect(findSkippedClassPositions(source)).toEqual([{ line: 2, text: "cn(" }]);
+  });
+
+  it("reports nothing for a position a trailing comment used to break", () => {
+    const source = ["const a = cn(", `  "px-2 px-4", // don't reorder`, '  "py-2 py-4",', ");"].join("\n");
+
+    expect(findSkippedClassPositions(source)).toEqual([]);
+  });
+
+  it("reports nothing for a well-formed call", () => {
+    expect(findSkippedClassPositions('const a = cn("a", "b");')).toEqual([]);
   });
 });

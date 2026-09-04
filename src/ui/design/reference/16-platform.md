@@ -17,8 +17,8 @@ the shape of the sentence.
   `Default:` too, and its override is usually a specificity or a containment consequence rather than
   a design one.
 
-Three patterns in this territory are already named elsewhere and keep the ids they have:
-`forge-ui-viewport-units` and `forge-ui-reduced-motion` in [`../floor.md`](../floor.md), and
+Two patterns in this territory are already named elsewhere and keep the ids they have:
+`forge-ui-reduced-motion` in [`../floor.md`](../floor.md), and
 `forge-ui-interaction-focus-visible` in [`09-interaction.md`](./09-interaction.md). They are cited
 from here, never restated, because an id is a permanent citation anchor and a second one for the
 same sentence splits every finding that rests on it.

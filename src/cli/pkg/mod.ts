@@ -3,10 +3,13 @@ export {
   assetRootStep,
   browserStep,
   changelogStep,
+  classGroupsStep,
   classOrderStep,
   coLocationStep,
   contrastStep,
   cssSourcesStep,
+  cssTokensStep,
+  designScaleStep,
   designStep,
   docsStep,
   exportsStep,
@@ -32,6 +35,12 @@ export {
 export { hasChromium, resolveChromiumPath } from "./gate/checks/browser";
 export type { ChangelogCheckConfig } from "./gate/checks/changelog";
 export { checkChangelog, validateChangelog } from "./gate/checks/changelog";
+export type { ClassGroupsCheckConfig } from "./gate/checks/class-groups";
+export { checkClassGroups, deriveTable, writeClassGroups } from "./gate/checks/class-groups";
+export type { ClassGroupTable, RootRow } from "./gate/checks/class-groups-parse";
+export { deriveClassGroups, reach, renderClassGroups, SHORTHAND_CLOSURE, signature } from "./gate/checks/class-groups-parse";
+export type { CssNode, DesignSystem } from "./gate/checks/design-system";
+export { canonical, fileURLToPathish, hasTailwind, loadDesignSystem } from "./gate/checks/design-system";
 export type { ClassOrderCheckConfig } from "./gate/checks/class-order";
 export { checkClassOrder, droppedToken, validateClassOrder } from "./gate/checks/class-order";
 export { type CoLocationCheckConfig, checkCoLocation, testCandidates } from "./gate/checks/co-location";
@@ -53,16 +62,20 @@ export type { ClassDeclaration } from "./gate/checks/css-parse";
 export { findClassDeclarations, findSourceDirectives, isClassAnchor, stripComments } from "./gate/checks/css-parse";
 export type { CssSourcesCheckConfig } from "./gate/checks/css-sources";
 export { checkCssSources } from "./gate/checks/css-sources";
+export type { CssTokensCheckConfig } from "./gate/checks/css-tokens";
+export { checkCssTokens, findThemeTokens, overloadedRoots } from "./gate/checks/css-tokens";
+export type { DesignScaleCheckConfig } from "./gate/checks/design-scale";
+export { checkDesignScale, deriveScale, writeDesignScale } from "./gate/checks/design-scale";
+export type { DesignScale } from "./gate/checks/design-scale-parse";
+export { deriveDesignScale, renderDesignScale } from "./gate/checks/design-scale-parse";
 export type { DesignCheckConfig } from "./gate/checks/design";
 export { checkDesign } from "./gate/checks/design";
-export type { BarrelImport, ClassLiteral, CustomPropertyCitation, DesignFinding, RuleId, RuleMarker } from "./gate/checks/design-parse";
+export type { BarrelImport, ClassLiteral, CustomPropertyCitation, DesignFinding, RuleMarker } from "./gate/checks/design-parse";
 export {
-  findArbitraryValues,
   findAriaReadonlyButtons,
   findBareFocus,
   findBarrelImports,
   findClassLiterals,
-  findColorLiterals,
   findCustomPropertyCitations,
   findExtraLiveRegions,
   findHandWrittenStateAttrs,
@@ -75,16 +88,14 @@ export {
   findRuleCitations,
   findRuleMarkers,
   findSourceViolations,
-  findTagSizedHeadings,
   findUnassociatedLabels,
-  findUnguardedAnimations,
-  findViewportUnits,
   formatDesignFinding,
   isSuppressed,
   isValidRuleId,
   parseDeclaredCustomProperties,
-  RULE_CORPUS_PATH,
 } from "./gate/checks/design-parse";
+export type { RuleEnforcer, RuleId } from "./gate/checks/design-rules";
+export { corpusIdOf, lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER } from "./gate/checks/design-rules";
 export type { DocsCheckConfig } from "./gate/checks/docs";
 export { checkDocs, parseSections, stripFences, validateFrontmatter, validateNoRot } from "./gate/checks/docs";
 export type { SubpathCitation } from "./gate/checks/docs-parse";
@@ -113,7 +124,6 @@ export {
   findTranslateCentering,
   findWebkitScrollbar,
   isModernCssSuppressed,
-  logicalUtility,
 } from "./gate/checks/modern-css-parse";
 export type { ModernCssCitedRuleId, ModernCssReportedId, ModernCssRule, ModernCssRuleId, ModernCssTier } from "./gate/checks/modern-css-rules";
 export { MODERN_CSS_CITED_RULES, MODERN_CSS_RULES, modernCssRule } from "./gate/checks/modern-css-rules";
@@ -141,6 +151,7 @@ export {
   resolveSpecifier,
   sectionWindow,
 } from "./gate/checks/namespace-graph-parse";
+export { balancedSpan, blankSourceComments } from "./gate/checks/source-scan";
 export { boundaryViolation, checkSsrBoundary, type SsrBoundaryCheckConfig, validateSsrBoundary } from "./gate/checks/ssr-boundary";
 export type { GateCommandConfig } from "./gate/command";
 export { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./gate/command";

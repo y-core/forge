@@ -67,4 +67,22 @@
   --white-a10: rgba(255, 255, 255, 0.8);
   --white-a11: rgba(255, 255, 255, 0.9);
   --white-a12: rgba(255, 255, 255, 0.95);
+
+  /* ── elevation ─────────────────────────────────────────────────────────────
+     A cast shadow is black ink, so above a near-black surface it renders nothing and levels 2, 3
+     and 4 collapse onto whatever borders they happen to carry. These two families let one shadow
+     value express the same claim in both modes: the cast layers are ink in light and absent in
+     dark, the rim and its falloff absent in light and present in dark. The geometry stays in
+     `theme-base.css`, which is mode-free by construction — only the colour swaps, and it swaps
+     here, in a role step, because that is the only layer allowed to differ by mode.
+
+     Each step is named for the ramp step it resolves to, so the indirection reads at the use site.
+     The falloff is deliberately the *fainter* of the two: it is a clean edge transition, not a
+     halo. An app that wants a lit edge re-declares `--rim-a1`. */
+  --cast-a1: light-dark(var(--black-a1), transparent);
+  --cast-a2: light-dark(var(--black-a2), transparent);
+  --cast-a4: light-dark(var(--black-a4), transparent);
+
+  --rim-a1: light-dark(transparent, var(--white-a1));
+  --rim-a2: light-dark(transparent, var(--white-a2));
 }

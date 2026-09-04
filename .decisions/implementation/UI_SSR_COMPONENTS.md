@@ -41,6 +41,8 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 - §3 Class Utilities: ratified public composition helpers
 - §3d Conflict Resolution and the Fail-Open Boundary: what the resolver decides, where it stops, and the ratified inversion
 - §3e Class Order Is Not Load-Bearing Within a Literal: the fixed-point invariant the gate enforces, and what a sorter cannot reach
+- §3f The Table Is Derived From the Compiled Design System: the generator, the drift gate, the scale probe and its agreement condition, the equal-reach throw
+- §3g A Narrower Later Utility Layers Rather Than Displaces: why `text-size-hero` and `text-size-[20px]` both survive
 - §4 State Attribute Contract: one declaration two tiers must agree on
 - §4a Presence, Not Value: why `data-selected` and never `data-selected="true"`
 - §4b ARIA States Are Not Styling Hooks: why both are emitted
@@ -51,6 +53,7 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 - §5c Status Hues Are Forge's: which colour roles an app may re-point, and which carry meaning
 - §5d The dark: Variant Is Class-Driven: the takeover a consumer stylesheet inherits
 - §5e A Consumer Rule Loses by Layer: why the remedy is a layer and never specificity
+- §5f Scale Tokens Are Namespaced Away From Colour: the reserved `--text-size-*` spelling, and what it fixes
 
 ---
 
@@ -346,11 +349,12 @@ table is indistinguishable from an amendment the moment the two disagree. A util
 prefix** and its **importance marker** both belong to the key, so `hover:h-5` never displaces
 `h-full`.
 
-**The coverage boundary.** The table covers the families forge's own primitives emit plus those a
-consumer override plausibly targets. **It is not a complete map of Tailwind and will never be.** A
-utility outside it passes through untouched, so two conflicting utilities from an uncovered family
-are _both_ emitted and stylesheet order decides — the behaviour every consumer had before conflict
-resolution existed. An uncovered family is a gap, not a regression.
+**The coverage boundary.** The table covers every utility the stylesheet compiles to (§3f) and
+nothing beyond it. A consumer's own theme name, a utility from a Tailwind release newer than that
+compile, and a bespoke class alike pass through untouched, so two conflicting utilities from an
+uncovered family are _both_ emitted and stylesheet order decides — the behaviour every consumer had
+before conflict resolution existed. An uncovered family is a gap, not a regression — and not the
+only way the table is wrong about an app's own theme, §5f being the other.
 
 **Fail-open, and the inversion is deliberate.** An unrecognised utility is always kept, inverting
 the fail-closed posture of [`BOUNDARIES.md`](../governance/BOUNDARIES.md) §5a. The reasoning is
@@ -370,11 +374,6 @@ prefix.** The reason is false positives: a `select-` prefix entry would let a co
 `select-wrapper` claim the user-select concern and silently delete a real `select-none`. A value
 space that can be enumerated is enumerated.
 
-**Extending the table is a data edit, not a decision.** Adding a family is one line in
-`class-groups.ts` plus a test case, and needs no governing-document change, because additions
-strictly **narrow** behaviour: a family moves from pass-through to resolved, and nothing the table
-already drops starts surviving.
-
 **The ratified decision is an in-house resolver, with tailwind-merge as a design reference only.**
 A Workers library pays a runtime dependency's cost into every consumer bundle and again per render
 on the SSR path, against a general-purpose Tailwind parser almost none of which forge needs. The
@@ -392,10 +391,19 @@ retrofittable behind the unchanged signature.
 that breaks it already contains dead code — one of the two tokens is dropped at render — so the
 rule costs nothing and buys everything below.
 
-**The gate enforces it; this paragraph does not.** `validate-class-order` judges every class
-position with the real `cn`, imported rather than reimplemented, for the reason §3d gives about a
-second copy of the table. It ships to consuming apps, so an app gets the same guarantee against the
-same resolver.
+**The gate enforces it; this paragraph does not.** `validate-class-order` judges class positions
+with the real `cn`, imported rather than reimplemented, for the reason §3d gives about a second copy
+of the table. It ships to consuming apps, so an app gets the same guarantee against the same
+resolver.
+
+**The positions it reaches are the ones the formatter sorts**, which is what makes the two agree: a
+quoted `class`/`className` attribute; an expression container, whose string literals — both branches
+of a ternary among them — are each judged, and whose template literals are judged one chunk at a
+time, split at every `${…}`, because that chunk is the unit a sorter reorders; and the argument span
+of a `cn`, `asClass` or `cva` call, wrapped across lines or nested inside a container. A `//`- or
+block-commented literal is dead code and is not judged. **One carve-out:** a span whose brackets do
+not balance is skipped rather than guessed at — a fabricated literal would fail the gate on source
+that does not exist.
 
 **What that buys: the formatter may sort classes**, holding forge's literals in Tailwind's canonical
 order. A sorter **reorders tokens within one literal and never moves a token between literals**, so
@@ -413,6 +421,69 @@ position, so forge's own class consts are wrapped — `const INPUT_BASE = cn("�
 them with a call the invariant proves is the identity. Two files cannot be wrapped, because reaching
 `cn` would close a namespace cycle; their literals are unsorted and unreachable by any sorter, which
 is exactly why they are also unbreakable by one.
+
+### 3f. The Table Is Derived From the Compiled Design System
+
+**The table is generated, not authored.** `gen:class-groups` compiles
+`src/ui/assets/css/tailwind.css` to a Tailwind design system, asks it what each utility actually
+writes, and renders `class-groups.ts` from the answers — so the table states what Tailwind states
+rather than a hand-written approximation of it. `src/cli/pkg/gate/checks/class-groups-parse.ts` is
+the derivation, and is authoritative over what it authors rather than derives — the signature rule
+and the shorthand closure immediately below.
+
+**A group id is the CSS signature a utility writes: the `--tw-*` custom properties it sets when it
+sets any, and its ordinary CSS properties otherwise.** Variables take precedence because `ring-2`
+and `shadow-md` both write `box-shadow` and must not conflict; the variables are what tell them
+apart.
+
+**`GROUP_OVERRIDES` names which of those signatures a CSS shorthand swallows**, property identity
+being unable to see that `padding` hides `padding-left`. That closure is CSS-standard fact rather
+than a Tailwind one, so — unlike everything else in the table — it does not move when Tailwind
+ships a minor. Its edges run one way: accepting a shorthand marks its longhands consumed, never the
+reverse.
+
+**Merging `sr-only` with `not-sr-only` into one group is forge's ruling, not a fact the design
+system states** — Tailwind gives the two different signatures. Their shared id is therefore not a
+CSS signature at all, so it takes part in no shorthand closure and carries no override edge.
+
+**The rendered module interns value sets and not group ids.** The `mask-*` roots share one long
+list of named values between them, so interning it removes a real repetition; a group id is its own
+documentation at the point of use, and gzip already collapses the repetition an index would.
+
+**`validate-class-groups` regenerates the table and fails the gate on any difference**, so a
+`tailwindcss` release that moves the ground truth is reported rather than silently absorbed, and a
+hand edit to the generated file fails the same way. The step compiles CSS, and `tailwindcss` is an
+optional peer, so it runs under `--full` only ([`TESTING.md`](./TESTING.md) §6).
+
+**The class list is not authoritative for a root's named values.** `getClassList()` enumerates a
+value scale for `left`, `right` and `inset-s` but nothing for `start` and `end` beyond three
+statics — which is the whole reason `start-*` and `end-*` once failed to merge against each other
+at all. A root the class list leaves with no enumerated named value is therefore asked the design
+system directly, with `${root}-0` and `${root}-4`, **and gains a named group only when both probes
+agree.**
+
+**The agreement condition is what keeps the probe honest, and it is not optional.** Deriving a
+named group from the statics instead handed `cursor` one, breaking the pinned ruling that
+`classGroup("cursor-brand")` stays `undefined` so a consumer's bespoke class survives (§3d). A root
+that genuinely takes a scale value answers both probes the same way; a root whose names are keywords
+compiles nothing for either and is left alone.
+
+**Two groups reaching exactly the same properties is a derivation-time throw, not a silent
+no-edge.** Equal reach is never a legitimate table state, and a proper-subset check would emit no
+edge and leave the ambiguity invisible — surfacing later as `cn` dropping both classes at runtime
+depending on argument order. Throwing surfaces it as a named `validate-class-groups` failure
+instead, which is how the derivation already treats its other two ambiguity conditions.
+
+### 3g. A Narrower Later Utility Layers Rather Than Displaces
+
+**`cn("text-size-hero", "text-size-[20px]")` keeps both, by design.** The named form writes
+`font-size` and `line-height`; the arbitrary form writes only `font-size`. The later utility is
+therefore strictly narrower than the earlier one, and an override edge runs from the wider group to
+the narrower and not back (§3f), so it layers over it — exactly as `cn("p-4", "px-2")` does. The
+reverse order does collapse, the wider group covering the narrower.
+
+This is the resolver working, not a gap in it. Reading it as a defect leads to an edge that would
+make `cn("p-4", "px-2")` drop the padding a caller asked for.
 
 ---
 
@@ -562,3 +633,27 @@ The consequence runs the other way too: a rule an app puts in `@layer components
 every forge utility in `@layer utilities`, whatever its specificity. **The remedy is a layer, not a
 selector** — one declared after `utilities`. Reaching for higher specificity instead appears to work
 until the next utility is added.
+
+### 5f. Scale Tokens Are Namespaced Away From Colour
+
+**A theme token whose value is a scale step is declared in a namespace no colour utility reads. A
+font-size step is `--text-size-*`, never a bare `--text-*`** — so its concern is legible from its
+name, to a reader and to a table alike.
+
+Tailwind's `--text-*` namespace carries font size while the `text-*` utility also carries colour, so
+`--text-hero` and `--color-hero` produce the same class name. A conflict table cannot tell them
+apart, guesses colour — what nearly every unenumerated name under `text-` is — and drops the other:
+`cn("text-hero text-red-500")` returns `text-red-500` alone, in a consuming app's markup, silently.
+
+**Forge cannot close this from its own stylesheet, which is why the answer is a namespace and not a
+heuristic.** The table is derived from what `tailwind.css` compiles to (§3f), and an app's theme is not in
+that compile; a discriminator inside `cn` would be forge encoding a guess about someone else's
+naming. Forge reserves one root instead: `text-size` resolves to the size group the design system
+itself states, so the conforming spelling merges against `text-2xl` and coexists with
+`text-red-500`. A non-conforming token keeps §3d's behaviour, unchanged and still silent.
+
+**The gate holds forge to it, and can hold nobody else to it.** `validate-css-tokens` fails any
+`@theme` token forge declares in an overloaded namespace, deriving _overloaded_ from the compiled
+design system rather than a hand-kept list that would age: a root whose enumerated values mean one
+concern and whose other names mean another. A consumer's stylesheet is out of reach, so the
+convention is published where an app reads it — the `forge.css` header and `src/ui/README.md`.

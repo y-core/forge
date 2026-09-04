@@ -12,10 +12,13 @@ import { resolveAppRoot } from "../src/cli/core/mod";
 import {
   browserStep,
   changelogStep,
+  classGroupsStep,
   classOrderStep,
   coLocationStep,
   contrastStep,
   cssSourcesStep,
+  cssTokensStep,
+  designScaleStep,
   designStep,
   docsStep,
   type ExportsMap,
@@ -132,7 +135,14 @@ export const STEPS: readonly Step[] = [
   // itself the single source of truth for which steps run in which mode, so a reader must be able
   // to answer that from this table alone.
   changelogStep({ root: ROOT, packageVersion: pkg.version }, { fullOnly: true }),
-  designStep({ root: ROOT, packageName: pkg.name, exports: EXPORTS, designDir: "src/ui/design", cssDir: "src/ui/assets/css" }),
+  designStep({
+    root: ROOT,
+    packageName: pkg.name,
+    exports: EXPORTS,
+    designDir: "src/ui/design",
+    cssDir: "src/ui/assets/css",
+    oxlintConfig: ".oxlintrc.json",
+  }),
   // `src/ui/design` is excluded for the reason it is not `@source`-scanned either: half the corpus's
   // samples are counter-examples quoting the exact patterns this check forbids, so scanning it would
   // flag its own documentation.
@@ -146,9 +156,17 @@ export const STEPS: readonly Step[] = [
       "!src/cli/pkg/gate/checks/class-order.test.ts",
       "!src/cli/pkg/gate/checks/design-parse.test.ts",
       "!src/cli/pkg/gate/checks/jsx-parse.test.ts",
+      "!src/cli/pkg/gate/checks/source-scan.test.ts",
       "!src/ui/core/form.test.tsx",
     ],
   }),
+  // `--full` only, and it must be: `tailwindcss` is an optional peer, so a fast run on a consumer
+  // that has not installed it would otherwise fail for a reason that is not about their code.
+  // `prepublishOnly` runs `verify:full`, which makes table drift a release gate.
+  classGroupsStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/ui/core/utils/class-groups.ts" }),
+  // A second step rather than a second assertion inside the first: the two generated files drift for
+  // different reasons, and a reader has to be told which one to regenerate.
+  designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/cli/pkg/lint/data/design-scale.ts" }),
   contrastStep({
     root: ROOT,
     cssDir: "src/ui/assets/css",
@@ -175,6 +193,9 @@ export const STEPS: readonly Step[] = [
     ]),
     consumerScanned: new Map([["show", '@source "../../node_modules/@y-core/forge/src/ui/show";']]),
   }),
+  // Beside `cssSourcesStep` rather than beside the two generator steps it shares a compile with: this
+  // one judges what the stylesheets declare, not whether a generated file has drifted.
+  cssTokensStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" }),
   browserStep({ fullOnly: true }),
 ];
 

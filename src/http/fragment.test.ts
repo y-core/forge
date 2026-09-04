@@ -72,46 +72,47 @@ describe("renderError", () => {
 describe("renderValidationErrors", () => {
   it("renders a list of errors", () => {
     expect(String(renderValidationErrors(["Name is required.", "Email is invalid."]))).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"><li>Name is required.</li><li>Email is invalid.</li></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>Name is required.</li><li>Email is invalid.</li></ul></div>',
     );
   });
 
   it("HTML-encodes each error message", () => {
-    const html = String(renderValidationErrors(['Field <b>x</b> is "bad"']));
-    expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
-    expect(html).toContain("&quot;bad&quot;");
-    expect(html).not.toContain("<b>");
+    expect(String(renderValidationErrors(['Field <b>x</b> is "bad"']))).toBe(
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>Field &lt;b&gt;x&lt;/b&gt; is &quot;bad&quot;</li></ul></div>',
+    );
   });
 
   it("renders an empty list when no errors are passed", () => {
     const html = String(renderValidationErrors([]));
     expect(html).toBe(
-      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc pl-5"></ul></div>',
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"></ul></div>',
     );
   });
 
   it("accepts a custom class", () => {
-    const html = String(renderValidationErrors(["Required."], { class: "val-box" }));
-    expect(html).toContain('class="val-box"');
+    expect(String(renderValidationErrors(["Required."], { class: "val-box" }))).toBe(
+      '<div class="val-box"><p>Please correct the following fields.</p><ul class="mt-2 list-disc ps-5"><li>Required.</li></ul></div>',
+    );
   });
 });
 
 describe("fragment option escaping", () => {
+  // Each option value below closes the `class` attribute and opens a tag, the injection the escaping exists to stop.
   it("escapes a malicious class value in renderError", () => {
-    const html = String(renderError("oops", { class: '"><script>alert(1)</script>' }));
-    expect(html).toContain("&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;");
-    expect(html).not.toContain("<script>");
+    expect(String(renderError("oops", { class: '"><script>alert(1)</script>' }))).toBe(
+      '<div class="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"><p>oops</p></div>',
+    );
   });
 
   it("escapes a malicious class value in renderSuccess", () => {
-    const html = String(renderSuccess("ok", { class: '"><img src=x onerror=alert(1)>' }));
-    expect(html).toContain("&quot;&gt;&lt;img");
-    expect(html).not.toContain("<img");
+    expect(String(renderSuccess("ok", { class: '"><img src=x onerror=alert(1)>' }))).toBe(
+      '<div class="&quot;&gt;&lt;img src=x onerror=alert(1)&gt;" data-success><p>ok</p></div>',
+    );
   });
 
   it("escapes a malicious ulClass value in renderValidationErrors", () => {
-    const html = String(renderValidationErrors(["bad"], { ulClass: '"><script>x</script>' }));
-    expect(html).toContain("&quot;&gt;&lt;script&gt;");
-    expect(html).not.toContain("<script>x");
+    expect(String(renderValidationErrors(["bad"], { ulClass: '"><script>x</script>' }))).toBe(
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Please correct the following fields.</p><ul class="&quot;&gt;&lt;script&gt;x&lt;/script&gt;"><li>bad</li></ul></div>',
+    );
   });
 });

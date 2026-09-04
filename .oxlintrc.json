@@ -1,9 +1,27 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "jsx-a11y"],
+  // forge's own rules, loaded as raw TypeScript. A consuming app names the published subpath
+  // "@y-core/forge/cli/pkg/lint" here instead of this relative path.
+  "jsPlugins": ["./src/cli/pkg/lint.ts"],
   // `suspicious` stays off — see .decisions/implementation/CODE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {
+    // AST-anchored, and it covers every rule rather than only `design-allow`. `lint:types` already
+    // passes --report-unused-disable-directives-severity error, so a stale suppression is a failure
+    // there; this states the other half — a live suppression says why it is one.
+    "forge/suppression-needs-reason": "error",
+    // The design corpus's class-string rules, read off the AST rather than line by line. Their ids
+    // are `forge-ui-` + the key here; `.decisions/implementation/UI_DESIGN_GUIDANCE.md` states them
+    // and `validate-design` fails when this list and `design-rules.ts`'s register disagree.
+    "forge/a11y-heading-size-by-class": "error",
+    "forge/color-token-only": "error",
+    "forge/platform-entry-motion": "error",
+    "forge/platform-logical-spacing": "error",
+    "forge/platform-text-balance": "error",
+    "forge/platform-text-pretty": "error",
+    "forge/reduced-motion": "error",
+    "forge/spacing-scale-only": "error",
     // `prefer-tag-over-role` off — its substitutions are wrong for forge's markup; see .decisions/implementation/CODE_REVIEW.md §7c
     "jsx-a11y/prefer-tag-over-role": "off",
     "typescript/no-explicit-any": "error",
@@ -45,6 +63,17 @@
     ]
   },
   "overrides": [
+    {
+      // These three specs pin the line-scanning detectors themselves, so their fixtures are the
+      // exact patterns the rules forbid — the same reason `classOrderStep` excludes four specs.
+      // `src/ui/design` is markdown the linter never reads; it is excluded where it is scanned.
+      "files": [
+        "src/cli/pkg/gate/checks/design-parse.test.ts",
+        "src/cli/pkg/gate/checks/modern-css-parse.test.ts",
+        "src/cli/pkg/gate/checks/modern-css-source-parse.test.ts"
+      ],
+      "rules": { "forge/a11y-heading-size-by-class": "off", "forge/platform-entry-motion": "off", "forge/platform-logical-spacing": "off" }
+    },
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],
       // a test's job is to feed adversarial markup — see .decisions/governance/TESTING.md

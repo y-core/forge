@@ -18,7 +18,7 @@ function gitErrorDetail(err: unknown): string {
 /** Runs a git command in `cwd` and returns its trimmed stdout, throwing a {@link ReleaseError} on failure. */
 export function gitExec(args: string[], cwd: string): string {
   try {
-    const result = execFileSync("git", args, { cwd, encoding: "utf-8" });
+    const result = execFileSync("git", args, { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
     return (result as string).trim();
   } catch (err) {
     throw new ReleaseError("git-error", `git ${args[0]} failed: ${gitErrorDetail(err)}`);
@@ -44,6 +44,25 @@ export function getCommitsSinceTag(cwd: string, tag: string): string[] {
   const output = gitExec(["log", `${tag}..HEAD`, "--oneline"], cwd);
   if (!output) return [];
   return output.split("\n").filter(Boolean);
+}
+
+function assertRefResolvable(cwd: string, ref: string, cause: unknown): void {
+  try {
+    gitExec(["rev-parse", "--verify", `${ref}^{object}`], cwd);
+  } catch {
+    throw new ReleaseError("git-error", `git could not resolve ${ref}: ${gitErrorDetail(cause)}`);
+  }
+}
+
+/** The file's contents at `ref`, or `null` when the path did not exist there; throws when git cannot resolve `ref`. */
+export function readFileAtRef(cwd: string, ref: string, path: string): string | null {
+  try {
+    return gitExec(["show", `${ref}:${path}`], cwd);
+  } catch (err) {
+    // A path absent at a resolvable ref is data; a ref git cannot answer for must not read as "nothing was published".
+    assertRefResolvable(cwd, ref, err);
+    return null;
+  }
 }
 
 /** Returns the subject line of the most recent commit. */

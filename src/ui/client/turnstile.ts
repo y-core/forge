@@ -1,8 +1,12 @@
 import {
   TURNSTILE,
+  TURNSTILE_ABANDONED_EVENT,
   TURNSTILE_ACTION_PATTERN,
+  type TurnstileAbandonedDetail,
+  type TurnstileAbandonReason,
   TURNSTILE_CDATA_PATTERN,
   TURNSTILE_EXECUTE_TIMEOUT_MS,
+  TURNSTILE_INTERACTIVE_TIMEOUT_MS,
   TURNSTILE_SCRIPT_SRC,
   TURNSTILE_SCRIPT_TIMEOUT_MS,
   TURNSTILE_SCRIPT_URL,
@@ -22,6 +26,9 @@ type ConfirmDetail = {
   triggeringEvent?: Event & { submitter?: EventTarget | null };
   issueRequest?: (skipConfirmation: boolean) => void;
 };
+
+/** A press waiting on the challenge: the request it would release, and the control it was made on. */
+type Hold = { issue: (skipConfirmation: boolean) => void; submitter: HTMLElement | null };
 
 /** What htmx hands `htmx:afterRequest`. */
 type AfterRequestDetail = { successful?: boolean; xhr?: XMLHttpRequest; requestConfig?: { elt?: EventTarget | null } };
@@ -52,6 +59,14 @@ export const hasApi = (win: Window): win is Window & { turnstile: TurnstileAPI }
 
 /** Whether the form submits through htmx, which is what `challenge="submit"` defers on. @internal */
 export const hasHtmxSubmission = (form: Element): boolean => form.matches(HTMX_SUBMISSION) || form.querySelector(HTMX_SUBMISSION) !== null;
+
+/** Whether htmx itself would validate this submission. @internal */
+export function htmxWillValidate(elt: Element, submitter: Element | null): boolean {
+  const isForm = elt.tagName === "FORM";
+  const declared = (elt.getAttribute("hx-validate") ?? elt.getAttribute("data-hx-validate")) === "true";
+  if (!((isForm && (elt as HTMLFormElement).noValidate !== true) || declared)) return false;
+  return !(isForm && (submitter as HTMLButtonElement | null)?.formNoValidate === true);
+}
 
 /** How long after the render a stolen focus is still put back. @internal */
 export const TURNSTILE_FOCUS_GUARD_MS = 5_000;
@@ -127,8 +142,9 @@ export function mountTurnstile(root: HTMLElement): () => void {
   let guardWindowId = 0;
   let guardSettleId = 0;
   let executeTimeoutId = 0;
-  let pending: ((skipConfirmation: boolean) => void) | undefined;
-  let submitter: HTMLElement | null = null;
+  // One record, so the request and the control it was pressed on can never answer for each other.
+  let held: Hold | null = null;
+  let interactive = false;
   let tokenIssued = false;
   let renderedTheme: "dark" | "light" | undefined;
   let themeObserver: MutationObserver | undefined;
@@ -170,16 +186,11 @@ export function mountTurnstile(root: HTMLElement): () => void {
 
   // htmx applies `hx-disabled-elt` and its indicators only once the request is issued, so between the
   // press and `issueRequest` the button would otherwise look dead.
-  const setBusy = (busy: boolean) => {
-    if (!submitter) return;
-    (submitter as HTMLButtonElement).disabled = busy;
-    if (busy) submitter.setAttribute("aria-busy", "true");
-    else submitter.removeAttribute("aria-busy");
-  };
-
-  const clearBusy = () => {
-    setBusy(false);
-    submitter = null;
+  const setBusy = (el: HTMLElement | null, busy: boolean) => {
+    if (!el) return;
+    (el as HTMLButtonElement).disabled = busy;
+    if (busy) el.setAttribute("aria-busy", "true");
+    else el.removeAttribute("aria-busy");
   };
 
   const clearExecuteTimeout = () => {
@@ -189,20 +200,51 @@ export function mountTurnstile(root: HTMLElement): () => void {
 
   const releaseHeld = () => {
     clearExecuteTimeout();
-    pending = undefined;
-    clearBusy();
+    setBusy(held?.submitter ?? null, false);
+    held = null;
   };
 
-  // The held request is dropped rather than issued: a POST with no token answers 422 naming the
-  // schema's first field, which reads as a form error the reader cannot act on.
-  const onExecuteFailure = () => {
+  const abandonHeld = (reason: TurnstileAbandonReason) => {
+    const lost = held;
     releaseHeld();
+    // Un-busied by `releaseHeld` first, so a handler that focuses the control finds a live target.
+    if (disposed || lost === null) return;
+    const detail: TurnstileAbandonedDetail = { reason, submitter: lost.submitter };
+    form.dispatchEvent(new CustomEvent(TURNSTILE_ABANDONED_EVENT, { bubbles: true, detail }));
+  };
+
+  const onExecuteFailure = (reason: TurnstileAbandonReason) => {
+    interactive = false;
+    abandonHeld(reason);
     showFallback();
     resetWidget();
   };
 
-  const armExecuteTimeout = () => {
-    executeTimeoutId = win.setTimeout(onExecuteFailure, TURNSTILE_EXECUTE_TIMEOUT_MS);
+  // Busy state and budget together, both read off `interactive`, so a press arriving mid-interaction
+  // inherits the human-scale ceiling rather than the 15s one.
+  const armHold = () => {
+    setBusy(held?.submitter ?? null, !interactive);
+    clearExecuteTimeout();
+    executeTimeoutId = win.setTimeout(
+      () => onExecuteFailure(interactive ? "interactive-timeout" : "timeout"),
+      interactive ? TURNSTILE_INTERACTIVE_TIMEOUT_MS : TURNSTILE_EXECUTE_TIMEOUT_MS,
+    );
+  };
+
+  // Last press wins: htmx reads the form's `lastButtonClicked` back when the request is finally
+  // issued, so answering the earlier press would send one button's URL under the other's name.
+  const takeHold = (next: Hold) => {
+    const running = held !== null;
+    if (held) abandonHeld("superseded");
+    held = next;
+    armHold();
+    // One press is one challenge: a displacement rides the challenge already in flight.
+    if (running) return;
+    try {
+      win.turnstile?.execute(container);
+    } catch {
+      onExecuteFailure("error");
+    }
   };
 
   const onToken = () => {
@@ -211,16 +253,17 @@ export function mountTurnstile(root: HTMLElement): () => void {
     // Cloudflare retries on its own, so an error the widget then recovered from must take its
     // message back down rather than leave every visitor reading it.
     hideFallback();
-    const issue = pending;
+    const hold = held;
+    interactive = false;
     releaseHeld();
     // `true`, so htmx does not then run the `window.confirm` this listener stepped in front of.
-    issue?.(true);
+    hold?.issue(true);
   };
 
   const onErrorCallback = (code?: unknown) => {
     console.warn(`[turnstile] challenge error ${String(code ?? "unknown")}`);
     state = "dead";
-    releaseHeld();
+    abandonHeld("error");
     showFallback();
     // Non-falsy, or Cloudflare logs a warning of its own on top of this one — and under the default
     // `retry: auto` it would log it once per retry for a single underlying fault.
@@ -229,23 +272,18 @@ export function mountTurnstile(root: HTMLElement): () => void {
 
   const onUnsupported = () => {
     state = "dead";
-    releaseHeld();
+    abandonHeld("unsupported");
     reveal(TURNSTILE.unsupported, true);
   };
 
-  // Turnstile is asking the visitor to click something, so the execute budget is stood down: 15
-  // seconds is well short of a real person, and a button reading as mid-flight while they are
-  // being asked to act is a lie.
   const onBeforeInteractive = () => {
-    if (!pending) return;
-    clearExecuteTimeout();
-    setBusy(false);
+    interactive = true;
+    if (held) armHold();
   };
 
   const onAfterInteractive = () => {
-    if (!pending) return;
-    setBusy(true);
-    armExecuteTimeout();
+    interactive = false;
+    if (held) armHold();
   };
 
   const onGuardFocusout = (event: Event) => {
@@ -301,7 +339,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     // `render` grabs focus before it returns, so the user's own position is held first; an eager
     // render answers page entry, where the body holds it and there is nothing of theirs to protect.
     const previous = activeElement(container);
-    const held = previous !== null && previous !== doc.body ? previous : null;
+    const heldFocus = previous !== null && previous !== doc.body ? previous : null;
     const params: Record<string, unknown> = {
       sitekey,
       size,
@@ -339,7 +377,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
       showFallback();
       return;
     }
-    if (held) restoreFocus(container, held);
+    if (heldFocus) restoreFocus(container, heldFocus);
     armGuard();
   };
 
@@ -418,35 +456,26 @@ export function mountTurnstile(root: HTMLElement): () => void {
 
   const onConfirm = (event: Event) => {
     const detail = (event as CustomEvent<ConfirmDetail>).detail;
-    if (!isOwnSubmission(asElement(detail?.elt))) return;
+    const elt = asElement(detail?.elt);
+    if (elt === null || !isOwnSubmission(elt)) return;
     if (typeof detail.issueRequest !== "function") return;
-    // htmx fires `htmx:confirm` before it validates the form, so an invalid form would otherwise
-    // spend a challenge on a request htmx then halts.
-    if (typeof form.checkValidity === "function" && !form.checkValidity()) return;
+    const pressed = asElement(detail.triggeringEvent?.submitter) ?? elt;
+    if (htmxWillValidate(elt, pressed) && typeof form.checkValidity === "function" && !form.checkValidity()) return;
     // No API and no widget is a page where the challenge never loaded: let the request go and let
     // `verifyTurnstile` be the one that refuses it, as it already is for a blocked widget.
     if (!hasApi(win) || state !== "ready") return;
     event.preventDefault();
-    // A second press while a challenge is in flight is swallowed rather than queued.
-    if (pending) return;
-    pending = detail.issueRequest;
-    submitter = asElement(detail.triggeringEvent?.submitter) ?? asElement(detail.elt);
-    setBusy(true);
-    armExecuteTimeout();
-    try {
-      win.turnstile.execute(container);
-    } catch {
-      onExecuteFailure();
-    }
+    takeHold({ issue: detail.issueRequest, submitter: pressed });
   };
   if (submitMode) form.addEventListener("htmx:confirm", onConfirm);
 
   const cleanup = () => {
     disposed = true;
     clearTimers();
-    clearExecuteTimeout();
-    pending = undefined;
-    clearBusy();
+    // Silently: teardown normally runs mid-swap, and an abandonment dispatched from a form htmx is
+    // removing would reach a listener whose page is already gone.
+    interactive = false;
+    releaseHeld();
     disarmGuard();
     form.removeEventListener("focusin", loadScript);
     form.removeEventListener("htmx:afterRequest", onAfterRequest);

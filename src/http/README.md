@@ -194,7 +194,7 @@ your own stylesheet, or override `class` and `ulClass` with your own.
 | ------------- | -------- | -------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `class`       | `string` | banner-specific Tailwind classes | all three                | Overrides the wrapper `<div>` class.                                                                               |
 | `successAttr` | `string` | `"data-success"`                 | `renderSuccess`          | Marker attribute name on the success wrapper. Must match `^[A-Za-z_][A-Za-z0-9_-]*$`, else `renderSuccess` throws. |
-| `ulClass`     | `string` | `"mt-2 list-disc pl-5"`          | `renderValidationErrors` | Class of the inner `<ul>`.                                                                                         |
+| `ulClass`     | `string` | `"mt-2 list-disc ps-5"`          | `renderValidationErrors` | Class of the inner `<ul>`.                                                                                         |
 
 ### Safe HTML — `html`, `rawHtml`, `isSafeHtml`, `SafeHtml`
 

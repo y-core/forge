@@ -17,7 +17,9 @@ export type ReleaseErrorKind =
   | "pkg-update"
   | "working-tree-dirty"
   | "changelog-empty"
-  | "changelog-malformed";
+  | "changelog-malformed"
+  | "manifest-malformed"
+  | "surface-shrink";
 
 /** An error raised by the release pipeline, tagged with its {@link ReleaseErrorKind}. */
 export class ReleaseError extends Error {
@@ -30,11 +32,21 @@ export class ReleaseError extends Error {
   }
 }
 
+/** Why an automatic bump came out the way it did. */
+export interface BumpEvidence {
+  /** The commit whose subject prefix won the bump; absent for a patch, which no commit asks for. */
+  commit?: { sha: string; subject: string };
+  /** How many commits `<latest-tag>..HEAD` held. */
+  commitCount: number;
+}
+
 /** The version {@link resolveVersion} resolved to, and why. */
 export interface VersionResult {
   version: string;
   reason: "explicit" | "auto-patch" | "auto-minor" | "auto-major" | "first-release" | "in-sync";
   previous: string | null;
+  /** Set only on an `auto-*` reason — no other path derives a bump from commits. */
+  evidence?: BumpEvidence;
 }
 
 /** Configuration for {@link createReleaseCommand}. */
@@ -62,6 +74,8 @@ export interface ReleaseDeps {
   writeChangelog: (cwd: string, file: string, source: string) => void;
   /** The repository's normalised base URL for compare links, or `null` when unknown. */
   readRepositoryUrl: (cwd: string) => string | null;
+  /** Public-surface entries present at `ref` and gone from the working tree. */
+  removedSurfaceSince: (cwd: string, ref: string) => string[];
   /** The release moment. Injected so a test needs no clock. */
   now: () => Date;
 }

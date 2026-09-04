@@ -124,12 +124,12 @@ interface LogTableProps {
 export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAction, tbodyId, level, q, failed }) => (
   <table class='w-full border-collapse text-sm'>
     <thead>
-      <tr class='border-b border-border text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
-        <th class='py-2 pr-4 pl-4 whitespace-nowrap'>Timestamp</th>
-        <th class='py-2 pr-4'>Level</th>
-        <th class='py-2 pr-4'>Prefix</th>
-        <th class='max-w-xs py-2 pr-4'>Message</th>
-        <th class='py-2 pr-4'>Request ID</th>
+      <tr class='border-b border-border text-start text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
+        <th class='py-2 ps-4 pe-4 whitespace-nowrap'>Timestamp</th>
+        <th class='py-2 pe-4'>Level</th>
+        <th class='py-2 pe-4'>Prefix</th>
+        <th class='max-w-xs py-2 pe-4'>Message</th>
+        <th class='py-2 pe-4'>Request ID</th>
       </tr>
     </thead>
     <LogTableBody
@@ -167,7 +167,7 @@ export const LogLoadMoreRow: FC<LogLoadMoreRowProps> = ({ cursor, complete, load
   <tr id={LOG_LOAD_MORE_ID} {...(oob !== undefined ? { "hx-swap-oob": oob } : {})}>
     <td colspan={LOG_COLUMNS} class='px-4 py-2 text-center'>
       {failed ? (
-        <Alert variant='destructive' class='mb-2 text-left'>
+        <Alert variant='destructive' class='mb-2 text-start'>
           <Alert.Title>Could not load the next page</Alert.Title>
           <Alert.Description>The channel did not answer. The entries already loaded are unaffected.</Alert.Description>
         </Alert>
@@ -209,12 +209,12 @@ const LogRowPair: FC<{ row: LogRow; loadMoreAction: string }> = ({ row, loadMore
   return (
     <>
       <tr class='border-b border-border hover:bg-accent'>
-        <td class='py-2 pr-4 pl-4 font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums'>{row.timestamp}</td>
-        <td class='py-2 pr-4'>
+        <td class='py-2 ps-4 pe-4 font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums'>{row.timestamp}</td>
+        <td class='py-2 pe-4'>
           <LogLevelBadge level={row.level} />
         </td>
-        <td class='py-2 pr-4 font-mono text-xs text-muted-foreground'>{row.prefix}</td>
-        <td class='max-w-xs truncate py-2 pr-4 text-foreground'>
+        <td class='py-2 pe-4 font-mono text-xs text-muted-foreground'>{row.prefix}</td>
+        <td class='max-w-xs truncate py-2 pe-4 text-foreground'>
           <Button
             variant='ghost'
             size='sm'
@@ -230,7 +230,7 @@ const LogRowPair: FC<{ row: LogRow; loadMoreAction: string }> = ({ row, loadMore
             {row.message}
           </Button>
         </td>
-        <td class='py-2 pr-4 font-mono text-xs text-muted-foreground'>{row.requestId ?? "—"}</td>
+        <td class='py-2 pe-4 font-mono text-xs text-muted-foreground'>{row.requestId ?? "—"}</td>
       </tr>
       <tr id={detailId} class='hidden border-b border-border [&.htmx-request]:table-row'>
         <td colspan={LOG_COLUMNS} class='px-4 py-2'>
@@ -351,7 +351,7 @@ export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"
   // Only a definite shell height bounds a flex column, and only the consumer's layout can set one:
   // `data-fill-viewport` is the handle it switches on (`LogViewerOptions.layout`).
   <main id='main-content' data-fill-viewport class='mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-10 lg:px-10'>
-    <h1 class='text-2xl font-semibold tracking-tight text-foreground'>Request Log</h1>
+    <h1 class='text-2xl font-semibold tracking-tight text-balance text-foreground'>Request Log</h1>
     <LogFilterBar
       {...(data.level !== undefined ? { level: data.level } : {})}
       {...(data.q !== undefined ? { q: data.q } : {})}
@@ -361,12 +361,6 @@ export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"
     />
     <Card class='min-h-0 flex-1'>
       <Card.Content class='flex min-h-0 flex-1 flex-col p-0'>
-        {/* Every link here grows by `flex-1`, never by a percentage. `h-full` cannot be used: a layout
-            bounded by `min-h-dvh` has no *definite* height, so `height: 100%` resolves to `auto` and the
-            table grows the page instead of scrolling. `flex-1` needs no definite parent, and the paired
-            `min-h-0` lifts the automatic minimum size that would otherwise floor each box at its content.
-            `max-h-dvh` is the fallback for a consumer whose layout is not a flex column, where `flex-1`
-            is inert: the table then scrolls in a viewport-tall box rather than growing without bound. */}
         <ScrollArea class='flex max-h-dvh min-h-0 flex-1 flex-col'>
           <ScrollArea.Viewport label='Log entries' class='min-h-0 flex-1'>
             <LogTable

@@ -45,8 +45,8 @@ Non-negotiable. Twenty-one items, no overrides, and a failure here outranks ever
     `forge-ui-no-inline-style`
 13. **Grep** `rg -o '\b[a-z]+-\[[0-9]' | wc -l` for arbitrary sizing and spacing values. Expect 0.
     `forge-ui-spacing-scale-only`
-14. **Grep** `rg 'h-screen|w-screen'`. Expect 0 hits; `min-h-dvh` is the replacement.
-    `forge-ui-viewport-units`
+14. **Grep** `rg 'h-screen|w-screen'`. Expect 0 hits; `min-h-dvh` is the replacement — a Floor rule
+    that carries no id, because two class names are a restriction list rather than a rule.
 15. **Count** `Card` elements that have a `Card` ancestor. Expect 0. `forge-ui-no-nested-card`
 16. **Count** background token utilities, then count paired foregrounds on the same element or its
     parent. Expect equal, and expect `rg 'text-white/|text-black/'` to return 0 hits.

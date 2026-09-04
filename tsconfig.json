@@ -4,6 +4,9 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    // oxlint loads `src/cli/pkg/lint.ts` through Node's ESM resolver, which does not resolve an
+    // extensionless specifier — so the plugin's own imports must name the `.ts` file.
+    "allowImportingTsExtensions": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
