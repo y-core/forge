@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.1] — 2026-09-04
+
 ### Breaking Changes
 
 - **Eight design rules moved from `validate-design` and `validate-modern-css` to forge's oxlint
@@ -3930,6 +3936,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.1]: https://github.com/y-core/forge/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/y-core/forge/compare/v0.0.91...v0.1.0
 [0.0.91]: https://github.com/y-core/forge/compare/v0.0.90...v0.0.91
 [0.0.90]: https://github.com/y-core/forge/compare/v0.0.89...v0.0.90
