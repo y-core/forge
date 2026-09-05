@@ -2,10 +2,10 @@
   "name": "@y-core/forge",
   "version": "0.1.1",
   "bin": {
-    "forge": "./src/cli/root/bin.ts"
+    "forge": "./src/tooling/root/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities and an integrated command layer for Cloudflare Workers — HTMX + Tailwind",
+  "description": "Server-rendered web utilities and an integrated command layer for Cloudflare Workers \u2014 HTMX + Tailwind",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/y-core/forge.git"
@@ -15,15 +15,16 @@
     "kind": "libs"
   },
   "scripts": {
-    "fix": "bun run src/cli/root/bin.ts verify --fix",
-    "gen:class-groups": "bun run src/cli/pkg/gate/checks/class-groups.ts && oxfmt src/ui/core/utils/class-groups.ts",
-    "gen:design-scale": "bun run src/cli/pkg/gate/checks/design-scale.ts && oxfmt src/cli/pkg/lint/data/design-scale.ts",
-    "lint": "bun run src/cli/root/bin.ts verify --only lint",
-    "release": "bun run src/cli/root/bin.ts release",
+    "fix": "bun run src/tooling/root/bin.ts verify --fix",
+    "gen:class-groups": "bun run src/tooling/gate/checks/class-groups.ts && oxfmt src/ui/core/utils/class-groups.ts",
+    "gen:design-scale": "bun run src/tooling/gate/checks/design-scale.ts && oxfmt src/tooling/lint/data/design-scale.ts",
+    "lint": "bun run src/tooling/root/bin.ts verify --only lint",
+    "release": "bun run src/tooling/root/bin.ts release",
     "test": "bun test",
     "test:browser": "playwright test",
-    "verify": "bun run src/cli/root/bin.ts verify",
-    "verify:full": "bun run src/cli/root/bin.ts verify --full",
+    "test:install": "playwright install chromium",
+    "verify": "bun run src/tooling/root/bin.ts verify",
+    "verify:full": "bun run src/tooling/root/bin.ts verify --full",
     "prepublishOnly": "bun run verify:full"
   },
   "sideEffects": [
@@ -78,38 +79,6 @@
     "./assets": {
       "types": "./src/assets/mod.ts",
       "import": "./src/assets/mod.ts"
-    },
-    "./assets/build": {
-      "types": "./src/assets/build/mod.ts",
-      "import": "./src/assets/build/mod.ts"
-    },
-    "./assets/manifest": {
-      "types": "./src/assets/manifest/mod.ts",
-      "import": "./src/assets/manifest/mod.ts"
-    },
-    "./cli": {
-      "types": "./src/cli/core/mod.ts",
-      "import": "./src/cli/core/mod.ts"
-    },
-    "./cli/assets": {
-      "types": "./src/cli/assets/mod.ts",
-      "import": "./src/cli/assets/mod.ts"
-    },
-    "./cli/cf": {
-      "types": "./src/cli/cf/mod.ts",
-      "import": "./src/cli/cf/mod.ts"
-    },
-    "./cli/pkg": {
-      "types": "./src/cli/pkg/mod.ts",
-      "import": "./src/cli/pkg/mod.ts"
-    },
-    "./cli/pkg/lint": {
-      "types": "./src/cli/pkg/lint.ts",
-      "import": "./src/cli/pkg/lint.ts"
-    },
-    "./cli/term": {
-      "types": "./src/cli/term/mod.ts",
-      "import": "./src/cli/term/mod.ts"
     },
     "./config": {
       "types": "./src/config/mod.ts",
@@ -191,9 +160,41 @@
       "types": "./src/testing/mod.ts",
       "import": "./src/testing/mod.ts"
     },
+    "./tooling/assets": {
+      "types": "./src/tooling/assets/mod.ts",
+      "import": "./src/tooling/assets/mod.ts"
+    },
+    "./tooling/cf": {
+      "types": "./src/tooling/cf/mod.ts",
+      "import": "./src/tooling/cf/mod.ts"
+    },
+    "./tooling/cli": {
+      "types": "./src/tooling/cli/mod.ts",
+      "import": "./src/tooling/cli/mod.ts"
+    },
+    "./tooling/gate": {
+      "types": "./src/tooling/gate/mod.ts",
+      "import": "./src/tooling/gate/mod.ts"
+    },
+    "./tooling/lint": {
+      "types": "./src/tooling/lint/mod.ts",
+      "import": "./src/tooling/lint/mod.ts"
+    },
+    "./tooling/release": {
+      "types": "./src/tooling/release/mod.ts",
+      "import": "./src/tooling/release/mod.ts"
+    },
+    "./tooling/term": {
+      "types": "./src/tooling/term/mod.ts",
+      "import": "./src/tooling/term/mod.ts"
+    },
     "./ui/assets": {
       "types": "./src/ui/assets/mod.ts",
       "import": "./src/ui/assets/mod.ts"
+    },
+    "./ui/assets/build": {
+      "types": "./src/ui/assets/build/mod.ts",
+      "import": "./src/ui/assets/build/mod.ts"
     },
     "./ui/assets/css/*.css": "./src/ui/assets/css/*.css",
     "./ui/assets/glyphs": {
@@ -258,7 +259,6 @@
     "README.md",
     "src/app/",
     "src/assets/",
-    "src/cli/",
     "src/config/",
     "src/context/",
     "src/crypto/",
@@ -274,12 +274,13 @@
     "src/site/",
     "src/storage/",
     "src/testing/",
+    "src/tooling/",
     "src/ui/",
     "src/validation/",
     "!**/*-test-helper.ts",
-    "!**/test-support.ts",
     "!**/*.browser.ts",
     "!**/*.test.ts",
-    "!**/*.test.tsx"
+    "!**/*.test.tsx",
+    "!**/test-support.ts"
   ]
 }

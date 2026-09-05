@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import { resume, resumeScope } from "../client/resume";
+import { FakeElement, FakeEvent, fakeTree } from "../client/test-dom";
+import { ISLAND_STATE_ATTR } from "../contracts/island-contract";
+import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "../contracts/navbar-contract";
+import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
 import { isDark } from "./client";
 import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
@@ -99,7 +103,7 @@ class FakeDocument {
   }
 
   addTheme(): FakeScopeRoot {
-    const root = new FakeScopeRoot(this, "theme", { pref: DEFAULT_PREF });
+    const root = new FakeScopeRoot(this, THEME_SCOPE, { pref: DEFAULT_PREF });
     this.roots.push(root);
     return root;
   }
@@ -278,6 +282,106 @@ describe("theme scope — one preference per document", () => {
     expect(warnings.filter((warning) => /matchMedia is unavailable/.test(warning))).toHaveLength(1);
 
     dispose();
+  });
+});
+
+/** A `<details>` bar: the drawer and viewport-collapse controllers both duck-type on `open`. */
+class FakeBar extends FakeElement {
+  open = true;
+}
+
+class FakeMql {
+  readonly matches = false;
+
+  addEventListener(): void {}
+
+  removeEventListener(): void {}
+}
+
+function navbarTree(options: { drawer?: boolean; filters?: string[] } = {}) {
+  const { doc, el } = fakeTree();
+  (doc.defaultView as unknown as { matchMedia: () => FakeMql }).matchMedia = () => new FakeMql();
+
+  const root = el("DIV", { "data-scope": NAVBAR_SCOPE, [ISLAND_STATE_ATTR]: JSON.stringify({ filters: options.filters ?? [] }) });
+  const bar = new FakeBar("DETAILS", { "data-slot": "navbar", ...(options.drawer === true ? { [NAVBAR_DRAWER_ATTR]: "" } : {}) });
+  bar.ownerDocument = doc;
+  const member = el("A", { "data-filter": "member" });
+  const admin = el("A", { "data-filter": "admin" });
+  const anyone = el("A", { "data-on-click": "closeNav" });
+  bar.append(member, admin, anyone);
+  root.append(bar);
+  doc.root.append(root);
+
+  const hiddenByFilter = () => ({ member: member.hidden, admin: admin.hidden, anyone: anyone.hidden });
+  return { doc, bar, anyone, hiddenByFilter };
+}
+
+describe("navbar scope — auth filters", () => {
+  it("hides every filtered element the hydrated token list does not name, and nothing unfiltered", () => {
+    const tree = navbarTree({ filters: ["member"] });
+
+    const release = resume(tree.doc as never);
+
+    expect(tree.hiddenByFilter()).toEqual({ member: false, admin: true, anyone: false });
+    release();
+  });
+
+  // The listener count, not "nothing moved after release": disposing the effect owner already makes
+  // a leaked listener invisible, so the outcome would hold with the removal deleted (TESTING.md §3d).
+  it("re-syncs on the filters event while resumed and takes its document listener off on release", () => {
+    const tree = navbarTree({ filters: ["member"] });
+    const release = resume(tree.doc as never);
+    const armed = tree.doc.listeners.get(NAVBAR_FILTERS_EVENT)?.length ?? 0;
+
+    tree.doc.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: ["admin"] }));
+    const live = tree.hiddenByFilter();
+
+    release();
+
+    expect({ armed, live, released: tree.doc.listeners.get(NAVBAR_FILTERS_EVENT)?.length ?? 0 }).toEqual({
+      armed: 1,
+      live: { member: true, admin: false, anyone: false },
+      released: 0,
+    });
+  });
+
+  it("ignores a filters event whose detail is not a token array", () => {
+    const tree = navbarTree({ filters: ["member"] });
+    const release = resume(tree.doc as never);
+
+    tree.doc.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: "admin" }));
+
+    expect(tree.hiddenByFilter()).toEqual({ member: false, admin: true, anyone: false });
+    release();
+  });
+});
+
+describe("navbar scope — the drawer gate", () => {
+  it("arms the drawer only on a bar carrying the drawer attribute, and disarms it on release", () => {
+    const armed = navbarTree({ drawer: true });
+    const plain = navbarTree();
+
+    const releaseArmed = resume(armed.doc as never);
+    const releasePlain = resume(plain.doc as never);
+    const mounted = { armed: armed.doc.listeners.get("keydown")?.length ?? 0, plain: plain.doc.listeners.get("keydown")?.length ?? 0 };
+
+    releaseArmed();
+    releasePlain();
+
+    expect({ mounted, disarmed: armed.doc.listeners.get("keydown")?.length ?? 0 }).toEqual({ mounted: { armed: 1, plain: 0 }, disarmed: 0 });
+  });
+});
+
+describe("navbar scope — closeNav", () => {
+  it("shuts the disclosure when a link inside it fires the action", () => {
+    const tree = navbarTree();
+    const release = resume(tree.doc as never);
+    const before = tree.bar.open;
+
+    tree.anyone.dispatchEvent(new FakeEvent("click"));
+
+    expect({ before, after: tree.bar.open }).toEqual({ before: true, after: false });
+    release();
   });
 });
 

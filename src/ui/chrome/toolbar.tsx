@@ -5,12 +5,12 @@ import { invokerAttrs } from "../contracts/overlay-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
+import type { Size } from "../contracts/vocabulary";
 import { Button } from "../core/button";
 import type { ForgeIcon } from "../core/icon";
 import { Toolbar as CoreToolbar } from "../core/toolbar";
 import { slotToken } from "../core/utils/as-child";
-import { asClass, cn } from "../core/utils/cn";
-import { cva } from "../core/utils/cva";
+import { cn } from "../core/utils/cn";
 import { commandAttrs } from "../server/command-attrs";
 
 /** Root rail item that fires a delegated action immediately on click. @public */
@@ -22,14 +22,15 @@ export interface ToolbarAction<A extends string = string, G extends string = str
   label: string;
   action: A;
   /** How the action reaches a handler: `"scope"` emits `data-on-click`, `"command"` a native Invoker command. */
-  dispatch?: "scope" | "command";
+  dispatch?: "scope" | "command" | undefined;
   /** data-ref (test/parity hook). */
-  ref?: string;
-  data?: Record<string, string>;
-  /** Stamps class="active" at SSR for boot highlight. */
-  active?: boolean;
-  /** Forge Button size; default "icon". */
-  size?: "icon" | "icon-sm";
+  ref?: string | undefined;
+  data?: Record<string, string> | undefined;
+  /** Stamps class="active" at SSR for boot highlight. Tri-state: `false` announces an unpressed
+   *  toggle, absent announces a plain action button. */
+  active?: boolean | undefined;
+  /** Height of the icon-shaped item; default `md`. */
+  size?: Size | undefined;
 }
 
 /** An action button rendered inline on a popover's flyout title row. @public */
@@ -40,7 +41,7 @@ export interface ToolbarTitleAction<A extends string = string, G extends string 
   label: string;
   action: A;
   /** data-ref (test/parity hook). */
-  ref?: string;
+  ref?: string | undefined;
 }
 
 /** Root rail item that opens a placement-aware flyout of arbitrary content. @public */
@@ -51,12 +52,12 @@ export interface ToolbarPopover<A extends string = string, G extends string = st
   /** Trigger aria-label + flyout title-chip text. */
   label: string;
   /** data-ref on the trigger button. */
-  ref?: string;
+  ref?: string | undefined;
   /** The app's control primitives rendered inside the flyout body. */
   content: JSXNode;
   /** Shrink flyout to content width (no min-w-52 floor). */
-  compact?: boolean;
-  titleAction?: ToolbarTitleAction<A, G>;
+  compact?: boolean | undefined;
+  titleAction?: ToolbarTitleAction<A, G> | undefined;
 }
 
 /** @public */
@@ -96,13 +97,13 @@ export interface ToolbarProps<A extends string = string, G extends string = stri
   /** App sprite icon — glyph names are app-defined. Required. */
   icon: ForgeIcon<G>;
   /** Edge the rail pins to. Default `"left"`. */
-  placement?: ToolbarPlacement;
+  placement?: ToolbarPlacement | undefined;
   /** `commandfor` sink (element id, bare or `#id`) for actions with `dispatch:"command"`. */
-  commandTarget?: string;
+  commandTarget?: string | undefined;
   /** DOM id for the rail; also namespaces the generated flyout ids, which two same-placement rails
    * on one page would otherwise collide on. */
-  id?: string;
-  class?: string;
+  id?: string | undefined;
+  class?: string | undefined;
 }
 
 /** Threaded through the item renderers. */
@@ -115,25 +116,17 @@ interface RenderCtx<G extends string> {
   seq: { n: number };
 }
 
-const railVariants = cva({
-  base: "group",
-  variants: {
-    placement: {
-      left: "flex flex-col items-center",
-      right: "flex flex-col items-center",
-      top: "flex flex-row items-center",
-      bottom: "flex flex-row items-center",
-    },
-  },
-  defaultVariants: { placement: "left" },
-});
-
-const FLYOUT_CLS = cn("min-w-52 rounded-xl border border-border bg-popover p-2 pb-2.5 text-popover-foreground shadow-md");
-const FLYOUT_TITLE_CLS = cn("px-0.5 pt-0.5 pb-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase");
-const FLYOUT_BODY_CLS = cn("flex max-h-[60vh] flex-col items-stretch gap-3.5 overflow-y-auto px-0.5 pt-1 pb-0.5");
+const FLYOUT_CLS = "min-w-52 rounded-box border border-border bg-popover p-2 pb-2.5 text-popover-foreground shadow-md";
+const FLYOUT_TITLE_CLS = "px-0.5 pt-0.5 pb-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase";
+const FLYOUT_BODY_CLS = "flex max-h-[60vh] flex-col items-stretch gap-3.5 overflow-y-auto px-0.5 pt-1 pb-0.5";
 
 function isVerticalPlacement(placement: ToolbarPlacement): boolean {
   return placement === "left" || placement === "right";
+}
+
+/** The rail's own box: a column on the side placements, a row on the end ones. */
+function railClass(placement: ToolbarPlacement): string {
+  return `group ${isVerticalPlacement(placement) ? "flex flex-col items-center" : "flex flex-row items-center"}`;
 }
 
 /** `core/Toolbar.Separator` with the rail's own margins; the rule's axis is across the rail. */
@@ -154,12 +147,13 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
   if (item.kind === "slot") return item.slot;
 
   if (item.kind === "action") {
-    const { icon, label, ref, data = {}, active, size = "icon" } = item;
+    const { icon, label, ref, data = {}, active, size = "md" } = item;
     return (
       <CoreToolbar.Button
         data-slot={slotToken("toolbar-action", data["data-slot"])}
+        shape='icon'
         size={size}
-        {...(active ? { pressed: true } : {})}
+        {...(active === undefined ? {} : { pressed: active })}
         data-ref={ref}
         title={label}
         aria-label={label}
@@ -177,7 +171,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
     <div data-slot='toolbar-popover' class='relative flex w-full flex-col items-center'>
       <CoreToolbar.Button
         data-slot='toolbar-trigger'
-        size='icon'
+        shape='icon'
         command='toggle-popover'
         commandfor={id}
         {...invokerAttrs(id)}
@@ -186,7 +180,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
         aria-label={label}>
         <Icon name={icon} viewBox='0 0 24 24' class='h-5 w-5' />
       </CoreToolbar.Button>
-      <div id={id} data-slot='toolbar-flyout' popover='auto' data-placement={placement} data-compact={compact ? "" : undefined} class={FLYOUT_CLS}>
+      <div id={id} data-slot='toolbar-flyout' popover='auto' data-side={placement} data-compact={compact ? "" : undefined} class={FLYOUT_CLS}>
         <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
           <span>{label}</span>
           {/* Unmarked on purpose: roving focus queries the whole rail subtree, so a toolbar-item
@@ -195,8 +189,10 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
             <Button
               data-slot='toolbar-title-action'
               data-ref={titleAction.ref}
-              variant='ghost'
-              size='icon-sm'
+              tone='neutral'
+              appearance='ghost'
+              shape='icon'
+              size='sm'
               title={titleAction.label}
               aria-label={titleAction.label}
               {...scopeAttrs<A>({ onClick: titleAction.action })}>
@@ -243,13 +239,13 @@ export const Toolbar = <A extends string = string, G extends string = string>({
 
   return (
     <div
-      {...(id === undefined ? {} : { id })}
+      id={id}
       role='toolbar'
       data-slot={slotToken("toolbar", inherited)}
       data-scope={TOOLBAR_SCOPE}
       {...stateAttrs({ orientation })}
       aria-orientation={orientation}
-      class={cn(railVariants({ placement }), asClass(cls))}
+      class={cn(railClass(placement), cls)}
       {...rest}>
       {children}
     </div>

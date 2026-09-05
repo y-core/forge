@@ -7,6 +7,7 @@ import { Separator } from "./separator";
 const SEPARATOR = "[data-slot~='separator']";
 
 const UTILITY_CSS: Record<string, string> = {
+  "h-auto": "height: auto",
   "h-full": "height: 100%",
   "min-h-full": "min-height: 100%",
   "self-stretch": "align-self: stretch",

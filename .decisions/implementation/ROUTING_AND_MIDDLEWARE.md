@@ -21,6 +21,7 @@ description: "Declarative route maps, controllers, the page and action pipeline 
 - §1a Declarative Route Map Pattern: one `routes.ts`, name → method + pattern
 - §1b Controller — Mapping Route Names to Actions: where route middleware lives
 - §1c Registering Routes with app.map: ordering against global middleware
+- §1d No `head` Verb Export: why a HEAD route could never match
 - §2 Page and Action Route Patterns: the three handler factories
 - §2a Full-Page Routes with definePage: loader, view, the render state, and the optional schema
 - §2b Action-Only Routes with defineAction: the handle terminal step and the derive-only drop rule
@@ -76,6 +77,17 @@ matched route.
 
 **The HTTP method comes from the map entry — no method is inferred from the handler.**
 
+### 1d. No `head` Verb Export
+
+**`router` exports no `head` verb.** `Forge.fetch` rewrites a `HEAD` request into a derived `GET`
+before dispatch, and `dispatchMatches` compares `route.method` strictly — so a route declared
+`head(...)` can never be reached through Forge, and exporting the shorthand advertises a shape that
+does not work.
+
+**A `HEAD` branch inside a middleware or a unit is still correct**, because such a unit may be
+composed onto a bare `createRouter` where no rewrite happens; those branches encode HTTP method
+semantics, not an assumption about `Forge.fetch`.
+
 ---
 
 ## 2. Page and Action Route Patterns
@@ -104,6 +116,13 @@ declared without an `action` guards nothing, because there is no mutation step t
 `onValidationError` and `maxBytes` are declared on the page exactly as on an action (§2d), so a
 self-posting page answers a refused body by re-rendering its own view with its field errors —
 `onValidationError` replaces the default `422` fragment and receives the issues themselves.
+
+**`cache` is a default, not an override; `headers` is an override.** The configured `cache` is set
+only on a response that carries no `cache-control` of its own, so a redirect, or a refusal that
+answered `no-store`, keeps what it stated — a page's cache policy must not make a one-off response
+publicly cacheable. `headers` is still applied last and still wins, which is the escape hatch for a
+route that does want to overwrite. The header is computed once when the page is defined, not per
+request.
 
 **`data` comes last because that is where this family already puts its payload** — `view(c,
 config, state)` does the same — and because a data-first shape could not have been additive: an
@@ -199,6 +218,16 @@ An action must declare a schema; a page may, and a page that declares none is no
 at all. Everything else is inherited rather than restated, because a second hand-maintained list is
 how the two builders diverged the first time.
 
+**A pipeline option without a `schema` is refused, at the type level and at registration.** Without
+a schema there is no pipeline to configure, so `honeypot`, `turnstile` and the rest were accepted
+and silently ignored — a page could declare a bot guard that never ran. `PageDefinition` is a union
+of a `{ schema: S }` arm carrying the pipeline options and a `{ schema?: never }` arm forbidding
+each of them, the forbidding arm being a **mapped type over the same projection**, so a member added
+to the pipeline extends both arms at once. `definePage` also **throws at registration** naming the
+stated keys, because a union's own diagnostic ("not assignable to either arm") is not what a
+developer can act on. The key list lives once, as `PIPELINE_ONLY_KEYS` in `pipeline.ts`, and both
+the type and the guard read it.
+
 **What the builders do not share is the recovery arm: a throw from inside the sequence lands on the
 builder's own, deliberately.** The sequence answers what it can answer — a refused body, a tripped
 guard, an oversized body — and lets a throw escape, because they already recover differently and
@@ -261,6 +290,12 @@ encodes the canonical order once so consumers stop re-deriving it**:
 
     requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders)
       → validateBindings(bindings) → session → per-path guards (origin → rateLimit → middleware[])
+
+**A guard group registers each of its guards once, for all of its `paths` at once** — the group's
+paths compile into one matcher, which `app.use(paths, handler)` accepts. Registering per path would
+instantiate one `rateLimit` per path, so two overlapping patterns (`/api/*` and `/api/users`) spent
+a request's budget twice and halved the effective limit. Registration is therefore guard-major, not
+path-major, which is the only order that exists once there is one instance per guard.
 
 **Every slot except `securityHeaders` is optional**; omitted slots are skipped without
 disturbing the relative order of the rest. `session` and per-path `middleware[]` accept prebuilt

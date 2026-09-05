@@ -3,7 +3,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { createIcon } from "../core/icon";
-import { Navbar, type NavDefinition } from "./navbar";
+import { Navbar } from "./navbar";
+import type { NavDefinition } from "./navbar-items";
 
 declare global {
   interface Window {
@@ -248,13 +249,55 @@ const PANEL = "[data-slot~='navbar-backdrop'] + div";
 const BACKDROP = "[data-slot~='navbar-backdrop']";
 const TOGGLE = "[data-slot~='navbar-toggle']";
 
-async function mountDrawer(page: Page): Promise<void> {
-  const html = await render(Navbar({ config: CONFIG, resolveHref: (key: string) => `#${key}`, icon, collapsedAs: "drawer" }));
-  await mount(page, `${DETAILS_CONTENT_RULE}${DRAWER_STYLE}${html}<div id="page">page content</div>`, EXPOSE);
+// Flat, for the trap tests alone: a collapsed nested disclosure leaves its links in the DOM and
+// unfocusable, so "the last panel item" would name an element no keyboard can reach.
+const FLAT: NavDefinition = {
+  sections: [
+    {
+      items: [
+        { label: "Home", href: "home" },
+        { label: "Docs", href: "docs" },
+        { label: "About", href: "about" },
+      ],
+    },
+  ],
+};
+
+async function mountDrawer(page: Page, config: NavDefinition = CONFIG): Promise<void> {
+  const html = await render(Navbar({ config, resolveHref: (key: string) => `#${key}`, icon, collapsedAs: "drawer" }));
+  // Reduced motion keeps this a geometry assertion: a settled rect, whatever transition the panel gains later.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  // A focusable ahead of the drawer, so an untrapped Shift+Tab out of the summary has somewhere to
+  // land other than the document's own wrap-around.
+  await mount(
+    page,
+    `${DETAILS_CONTENT_RULE}${DRAWER_STYLE}<a id="before" href="#before">before</a>${html}<div id="page">page content</div>`,
+    EXPOSE,
+  );
   await page.evaluate(() => window.forgeResume.resume());
 }
 
 const isDrawerOpen = (page: Page) => page.evaluate(() => document.querySelector<HTMLDetailsElement>("[data-slot~='navbar']")?.open ?? null);
+
+/** The trap's own candidate list, resolved against the live panel rather than restated as a label. */
+const PANEL_FOCUSABLE =
+  "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex='-1'])";
+
+/** Focuses the panel's last focusable item and reports its text, so no test hardcodes which it is. */
+const focusLastPanelItem = (page: Page): Promise<string | undefined> =>
+  page.evaluate(
+    ([selector, focusable]) => {
+      const panel = document.querySelector(selector);
+      const items = [...(panel?.querySelectorAll<HTMLElement>(focusable) ?? [])].filter((n) => !n.hidden);
+      const last = items.at(-1);
+      if (last === undefined) throw new Error("the drawer panel holds no focusable item");
+      last.focus();
+      return last.textContent?.trim();
+    },
+    [PANEL, PANEL_FOCUSABLE] as [string, string],
+  );
+
+const focusedSlot = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []);
 
 /** Where the page content sits, and where the panel sits over it. */
 function geometry(page: Page, panel: string) {
@@ -347,6 +390,50 @@ test.describe("Navbar — the drawer at phone width", () => {
     await expect.poll(wheelThenScrollY).toBeGreaterThan(0);
     expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("overflow"))).toBe("");
   });
+
+  // The summary is a sibling of the panel and draws the only visible way out, so a trap scoped to
+  // the panel leaves a reader who does not know Escape with no exit at all — WCAG 2.1.2.
+  test("cycles Tab through its own toggle, so the visible close is reachable", async ({ page }) => {
+    await mountDrawer(page, FLAT);
+    await page.click(TOGGLE);
+    await expect.poll(() => focusedText(page)).toBe("Home");
+
+    await focusLastPanelItem(page);
+    await page.keyboard.press("Tab");
+
+    expect(await focusedSlot(page)).toContain("navbar-toggle");
+  });
+
+  test("cycles Shift+Tab back from its toggle to the last panel item", async ({ page }) => {
+    await mountDrawer(page, FLAT);
+    await page.click(TOGGLE);
+    // The open handler moves focus into the panel a task later; taking the toggle before it lands
+    // would make this a race rather than an assertion about the trap.
+    await expect.poll(() => focusedText(page)).toBe("Home");
+    const last = await focusLastPanelItem(page);
+    await page.focus(TOGGLE);
+
+    await page.keyboard.press("Shift+Tab");
+
+    expect(await focusedText(page)).toBe(last);
+  });
+
+  test("closes from its own toggle once the keyboard reaches it", async ({ page }) => {
+    await mountDrawer(page, FLAT);
+    await page.click(TOGGLE);
+    expect(await isDrawerOpen(page)).toBe(true);
+    // Same wait as the two trap tests above: the open handler moves focus into the panel a task
+    // later, so taking the last item before it lands lets it steal focus back to "Home" — Tab then
+    // reaches the second link and Enter follows it, leaving the drawer open with nothing to say why.
+    await expect.poll(() => focusedText(page)).toBe("Home");
+
+    await focusLastPanelItem(page);
+    await page.keyboard.press("Tab");
+    expect(await focusedSlot(page)).toContain("navbar-toggle");
+    await page.keyboard.press("Enter");
+
+    await expect.poll(() => isDrawerOpen(page)).toBe(false);
+  });
 });
 
 test.describe("Navbar — the rail keeps its disclosure at desktop width", () => {
@@ -361,5 +448,64 @@ test.describe("Navbar — the rail keeps its disclosure at desktop width", () =>
 
     await page.click("[data-slot~='navbar-toggle']");
     await expect.poll(isRailOpen).toBe(false);
+  });
+});
+
+const MEGA: NavDefinition = {
+  sections: [
+    {
+      items: [
+        { label: "Home", href: "home" },
+        {
+          label: "Products",
+          groups: [
+            { heading: "Build", group: [{ label: "Forge", href: "forge" }] },
+            { heading: "Ship", group: [{ label: "Deploy", href: "deploy" }] },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+const MEGA_EXPOSE = { expose: { ...EXPOSE.expose, forgeCoreClient: "./ui/core/client" } };
+
+async function mountMega(page: Page): Promise<void> {
+  const html = await render(Navbar({ config: MEGA, resolveHref: (key: string) => `#${key}`, icon }));
+  await mount(page, `${DETAILS_CONTENT_RULE}<a id="before" href="#before">before</a>${html}`, MEGA_EXPOSE);
+  await page.evaluate(() => window.forgeResume.resume());
+}
+
+test.describe("Navbar — megamenu", () => {
+  test("opens on the popover API and Tab reaches its first link", async ({ page }) => {
+    await mountMega(page);
+    expect(await isOpen(page, "navbar-menu-top-0")).toBe(false);
+
+    await page.click("[data-slot~='popover-trigger']");
+    await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(true);
+    await expect.poll(() => page.getAttribute("[data-slot~='popover-trigger']", "aria-expanded")).toBe("true");
+
+    await page.keyboard.press("Tab");
+    expect(await focusedText(page)).toBe("Forge");
+  });
+
+  test("Escape closes it and returns focus to the trigger", async ({ page }) => {
+    await mountMega(page);
+    await page.click("[data-slot~='popover-trigger']");
+    await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(true);
+    await page.keyboard.press("Tab");
+
+    await page.keyboard.press("Escape");
+    await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(false);
+    expect(await focusedText(page)).toBe("Products");
+  });
+
+  test("a click outside closes it, with no listener of forge's own", async ({ page }) => {
+    await mountMega(page);
+    await page.click("[data-slot~='popover-trigger']");
+    await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(true);
+
+    await page.click("#before");
+    await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(false);
   });
 });

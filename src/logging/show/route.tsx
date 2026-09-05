@@ -35,21 +35,7 @@ export type LogViewerOptions<Bindings = Record<string, unknown>, Config = unknow
   icon: ForgeIcon<"chevron-down">;
   /** Async context factory called per request; its resolved value is the `ctx` prop of `layout`. */
   context: (c: AppContext<Bindings>, config: Config) => Promise<Ctx>;
-  /**
-   * Layout component wrapping the viewer page, receiving `ctx` from `context` and the content as `children`.
-   *
-   * The viewer's `<main>` is `flex-1 min-h-0` and carries `data-fill-viewport`, so it fills the height the
-   * layout leaves it and scrolls the table inside that box rather than growing the document. To get that,
-   * make `children` a direct child of a flex column that goes *definite* for a filling page:
-   *
-   * ```
-   * <body class='flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden'>
-   * ```
-   *
-   * `min-h-dvh` alone is not enough: an indefinite column takes its height from its items' content, so a
-   * long table grows the page. Any other layout still renders correctly; the table then falls back to a
-   * `max-h-dvh` box instead of filling the space between header and footer.
-   */
+  /** Layout component wrapping the viewer page, receiving `ctx` from `context` and the content as `children`. */
   layout: FC<{ ctx: Ctx }>;
   basePath?: string;
 };
@@ -128,9 +114,10 @@ async function renderLogFragment(data: LogViewerLoaderData): Promise<Response> {
       id={LOG_TBODY_ID}
       rows={data.rows}
       loadMoreAction={data.basePath}
-      {...(data.level !== undefined ? { level: data.level } : {})}
-      {...(data.q !== undefined ? { q: data.q } : {})}
-      {...(data.failed !== undefined ? { failed: data.failed } : {})}
+      level={data.level}
+      q={data.q}
+      failed={data.failed}
+      more={!data.complete && data.cursor !== undefined}
     />,
   );
   return fragmentResponse(body);

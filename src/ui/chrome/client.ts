@@ -7,7 +7,8 @@ import { registerScope } from "../client/resume";
 import type { ReadonlySignal, Signal } from "../client/signal";
 import { computed, createSignal, effect, withOwner } from "../client/signal";
 import { mountViewportCollapse } from "../client/viewport-collapse";
-import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT } from "../contracts/navbar-contract";
+import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "../contracts/navbar-contract";
+import { THEME_SCOPE, type ThemeAction } from "../contracts/theme-toggle-contract";
 import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 const CONSTANT_FALSE: ReadonlySignal<boolean> = {
@@ -100,7 +101,7 @@ function releaseTheme(theme: ThemeDocument): void {
   if (theme.holders <= 0) theme.release();
 }
 
-registerScope<"cycleTheme">("theme", {
+registerScope<ThemeAction>(THEME_SCOPE, {
   eager: true,
   setup({ root, state }) {
     const theme = acquireTheme(ownerDocument(root));
@@ -120,7 +121,7 @@ registerScope<"cycleTheme">("theme", {
 });
 
 // Eager: the navbar emits no `data-on-*`, so a lazy scope would never resume.
-registerScope<"closeNav">("navbar", {
+registerScope<"closeNav">(NAVBAR_SCOPE, {
   eager: true,
   setup: ({ root, state }) => {
     const filters = state.filters;

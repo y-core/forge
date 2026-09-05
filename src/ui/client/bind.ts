@@ -10,6 +10,15 @@ interface ControlElement extends HTMLElement {
 
 const FIELD_SELECTOR = "[data-field]";
 
+/** Tag-name rather than `instanceof`: a control inside a shadow tree may come from another document. */
+function isMultiSelect(el: ControlElement): el is ControlElement & HTMLSelectElement {
+  return el.tagName === "SELECT" && (el as ControlElement & HTMLSelectElement).multiple;
+}
+
+function isFileInput(el: ControlElement): boolean {
+  return el.tagName === "INPUT" && (el as ControlElement & HTMLInputElement).type === "file";
+}
+
 /** Reads a control as the type the signal it drives already holds.
  *
  * Inference from the current value is what lets a button group express a boolean, a number or a
@@ -17,6 +26,9 @@ const FIELD_SELECTOR = "[data-field]";
 export function readControl(el: ControlElement, current: unknown): unknown {
   const tagged = el.dataset.value;
   if (Array.isArray(current)) {
+    // A multi-select carries the whole answer in `selectedOptions`; there is no per-item `data-value`
+    // to flip, so without this the signal never moves at all.
+    if (isMultiSelect(el)) return [...el.selectedOptions].map((option) => option.value);
     if (tagged === undefined) return current;
     // A real checkbox already carries the answer; reading it rather than flipping membership is what
     // makes this idempotent, and it has to be — one interaction on an input fires `input`, `change`
@@ -27,7 +39,10 @@ export function readControl(el: ControlElement, current: unknown): unknown {
   }
   if (typeof current === "boolean") return tagged === undefined ? el.checked === true : true;
   const raw = tagged ?? el.value ?? "";
-  return typeof current === "number" ? Number(raw) : raw;
+  // `Number("")` is 0, which would refill a numeric field the reader has just cleared. NaN keeps the
+  // signal a number — so the inference above still holds — and `paintControl` declines to paint it.
+  if (typeof current === "number") return raw.trim() === "" ? Number.NaN : Number(raw);
+  return raw;
 }
 
 /** Whether a group item is the one `value` selects. @internal */
@@ -56,6 +71,27 @@ export function paintControl(el: ControlElement, value: unknown): void {
   }
   if (typeof value === "boolean") {
     if (el.checked !== value) el.checked = value;
+    return;
+  }
+  // The `value` setter on a file input throws `InvalidStateError` for anything but `""`, and `effect`
+  // rethrows on its first run — which would abort `bindControls`' `.map()` and leave every sibling
+  // control in the scope unbound.
+  if (isFileInput(el)) return;
+  if (typeof value === "number") {
+    // NaN is what `readControl` reports for a cleared or unparseable numeric field (`""`, `-`).
+    if (!Number.isFinite(value)) return;
+    // A numeric compare, not the string one below: `1.` reads back as 1, and painting `"1"` over it
+    // would delete the decimal point the reader is typing past. An empty field is not a 0 to keep.
+    const raw = el.value ?? "";
+    if (raw.trim() !== "" && Number(raw) === value) return;
+  }
+  if (isMultiSelect(el)) {
+    // `el.value = "a,b"` matches no option and wipes the server-rendered selection.
+    const wanted = new Set((Array.isArray(value) ? value : [value]).map(String));
+    for (const option of el.options) {
+      const chosen = wanted.has(option.value);
+      if (option.selected !== chosen) option.selected = chosen;
+    }
     return;
   }
   const next = String(value);

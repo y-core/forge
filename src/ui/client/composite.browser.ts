@@ -8,6 +8,8 @@ declare global {
     disposeComposite?: () => void;
     /** Elements `getComputedStyle` was asked about, recorded by the direction-read instrumentation. */
     styleReads: string[];
+    /** Selectors `Element.prototype.querySelectorAll` was asked for, recorded by the item-scan instrumentation. */
+    itemScans: string[];
   }
 }
 
@@ -238,6 +240,77 @@ test.describe("the direction read is narrowed to the keys that can consume it", 
 
     expect(reads).toEqual({ ArrowLeft: [], ArrowDown: [] });
     expect(await focusedId(page)).toBe("b1");
+  });
+});
+
+/** The item scan itself — a `querySelectorAll` plus a `checkVisibility()` per hit — which no focus
+ * assertion can distinguish from its own absence, because a key the composite ignores leaves focus
+ * where it was whether the ring was resolved first or not. */
+test.describe("the item scan is narrowed to the keys that can consume it", () => {
+  /** Wraps `Element.prototype.querySelectorAll` and records what it was asked for. `Document`'s own
+   * method is a separate slot, so the spec's own `document.querySelectorAll` helpers stay invisible. */
+  async function instrumentItemScans(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      window.itemScans = [];
+      const real = Element.prototype.querySelectorAll;
+      Element.prototype.querySelectorAll = function (this: Element, selector: string) {
+        window.itemScans.push(selector);
+        return real.call(this, selector);
+      } as typeof Element.prototype.querySelectorAll;
+    });
+  }
+
+  /** The selectors queried below any element while handling exactly one key press. */
+  async function scansWhilePressing(page: Page, key: string): Promise<string[]> {
+    await page.evaluate(() => {
+      window.itemScans = [];
+    });
+    await page.keyboard.press(key);
+    return page.evaluate(() => window.itemScans);
+  }
+
+  test("a key outside the claimed set, and a modified arrow, scan nothing; a plain arrow scans and moves focus", async ({ page }) => {
+    await mount(page, toolbar({ count: 3 }), EXPOSE);
+    await install(page);
+
+    await page.focus("#b0");
+    await instrumentItemScans(page);
+
+    const scans: Record<string, string[]> = {};
+    for (const key of ["PageDown", "Escape", "Control+ArrowRight", "ArrowRight"]) {
+      scans[key] = await scansWhilePressing(page, key);
+    }
+
+    // ArrowRight scans twice: once in the key handler, once in `focusin` as the move lands.
+    expect(scans).toEqual({ PageDown: [], Escape: [], "Control+ArrowRight": [], ArrowRight: ["[data-item]", "[data-item]"] });
+    expect(await focusedId(page)).toBe("b1");
+  });
+
+  test("an ordinary character typed into a toolbar's text field scans nothing", async ({ page }) => {
+    await mount(
+      page,
+      '<div id="root"><button id="b0" data-item>Apple</button><input id="field" data-item value="hello"><button id="b2" data-item>Cherry</button></div>',
+      EXPOSE,
+    );
+    await install(page, { typeahead: true });
+
+    await page.focus("#field");
+    await instrumentItemScans(page);
+
+    expect(await scansWhilePressing(page, "c")).toEqual([]);
+    expect(await focusedId(page)).toBe("field");
+    expect(await page.evaluate(() => document.querySelector<HTMLInputElement>("#field")?.value)).toBe("chello");
+  });
+
+  test("a character typed outside a text field still scans, and still jumps", async ({ page }) => {
+    await mount(page, toolbar({ labels: ["Apple", "Banana", "Cherry"] }), EXPOSE);
+    await install(page, { typeahead: true });
+
+    await page.focus("#b0");
+    await instrumentItemScans(page);
+
+    expect(await scansWhilePressing(page, "c")).toEqual(["[data-item]", "[data-item]"]);
+    expect(await focusedId(page)).toBe("b2");
   });
 });
 

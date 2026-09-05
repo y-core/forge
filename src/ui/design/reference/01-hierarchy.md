@@ -1,31 +1,32 @@
 # Hierarchy
 
 Hierarchy is the answer to one question a user asks of every screen: _what am I supposed to do
-here?_ Forge's primitives already encode an answer. `buttonVariants` ships three variants and no
-more, and that is not a shortage — it is the action pyramid, spelled as an API.
+here?_ Forge's primitives already encode an answer. `Button` ships three resting looks for an
+action, and that is not a shortage — it is the action pyramid, spelled as an API.
 
-## The action pyramid is `buttonVariants`
+## The action pyramid is `Button`'s three looks
 
-| Tier      | Variant     | What it is for                                                 | How many per surface                |
-| --------- | ----------- | -------------------------------------------------------------- | ----------------------------------- |
-| Primary   | `primary`   | The one thing the surface exists for                           | Exactly one                         |
-| Secondary | `secondary` | The real alternative a user might take instead                 | Zero or one, usually                |
-| Tertiary  | `ghost`     | Everything else — cancel, dismiss, back, row-level affordances | As many as the surface honestly has |
+| Tier      | Button                                | What it is for                                                 | How many per surface                |
+| --------- | ------------------------------------- | -------------------------------------------------------------- | ----------------------------------- |
+| Primary   | the default — `tone='primary'`        | The one thing the surface exists for                           | Exactly one                         |
+| Secondary | `tone='neutral' appearance='outline'` | The real alternative a user might take instead                 | Zero or one, usually                |
+| Tertiary  | `tone='neutral' appearance='ghost'`   | Everything else — cancel, dismiss, back, row-level affordances | As many as the surface honestly has |
 
-Default: exactly one `primary` button renders per surface — a page, a `Dialog`, or a `Card` each
+Default: exactly one primary button renders per surface — a page, a `Dialog`, or a `Card` each
 count as one surface — unless a written brief describes a surface with two genuinely co-equal
 outcomes, such as an accept/decline decision with no default. <!-- rule:forge-ui-hierarchy-one-primary -->
 
-Default: `secondary` is reserved for the action a user would plausibly take _instead_ of the
+Default: the outline button is reserved for the action a user would plausibly take _instead_ of the
 primary one, not for the second-most-visible thing on the surface, unless a brief calls for a
 paired control set where both members carry equal commitment. <!-- rule:forge-ui-hierarchy-secondary-alternative -->
 
-Default: every remaining action uses `ghost`, including cancel and dismiss, unless the action is
+Default: every remaining action uses `appearance='ghost'`, including cancel and dismiss, unless the action is
 the sole control on an otherwise empty surface and would read as decoration without a border. <!-- rule:forge-ui-hierarchy-ghost-remainder -->
 
-The variants themselves make the case: `primary` fills with `--primary`, `secondary` draws a
-border from `--input` and no fill, and `ghost` is text with a hover wash of `--accent`. Three
-levels of ink, in descending order. Reaching outside them means fighting the system.
+The paints themselves make the case: the primary button fills with `--primary`, the outline one
+draws a border from `--input` and no fill, and the ghost one is text with a hover wash of
+`--accent`. Three levels of ink, in descending order. Reaching outside them means fighting the
+system.
 
 ### Before / after — the three-primary dialog
 
@@ -33,9 +34,9 @@ levels of ink, in descending order. Reaching outside them means fighting the sys
 import { Button, Card } from "@y-core/forge/ui/core";
 
 <Card.Footer>
-  <Button variant='primary'>Delete project</Button>
-  <Button variant='primary'>Archive instead</Button>
-  <Button variant='primary'>Cancel</Button>
+  <Button>Delete project</Button>
+  <Button>Archive instead</Button>
+  <Button>Cancel</Button>
 </Card.Footer>;
 ```
 
@@ -46,9 +47,13 @@ opinion, so the eye has to read all three labels before it can act.
 import { Button, Card } from "@y-core/forge/ui/core";
 
 <Card.Footer class='justify-end'>
-  <Button variant='ghost'>Cancel</Button>
-  <Button variant='secondary'>Archive instead</Button>
-  <Button variant='primary'>Delete project</Button>
+  <Button tone='neutral' appearance='ghost'>
+    Cancel
+  </Button>
+  <Button tone='neutral' appearance='outline'>
+    Archive instead
+  </Button>
+  <Button>Delete project</Button>
 </Card.Footer>;
 ```
 
@@ -59,10 +64,11 @@ always, is to make its neighbours quieter — a surface has a fixed budget of at
 lowering three things raises the fourth for free.
 
 Default: when an element does not read as prominent enough, lower the weight of its neighbours
-before raising its own — reach for `ghost` over `secondary`, and `Badge` `outline` over `Badge`
-`default` — unless a brief sets Variance above forge's ratified default. <!-- rule:forge-ui-hierarchy-deemphasize-first -->
+before raising its own — reach for `appearance='ghost'` over `appearance='outline'`, and a
+`Badge` with `appearance='outline'` over a filled one — unless a brief sets Variance above forge's
+ratified default. <!-- rule:forge-ui-hierarchy-deemphasize-first -->
 
-Default: a `Badge` used as a neutral label rather than a status signal uses `outline`, unless the
+Default: a `Badge` used as a neutral label rather than a status signal uses `appearance='outline'`, unless the
 badge is the only element distinguishing two otherwise identical rows. <!-- rule:forge-ui-hierarchy-badge-outline-first -->
 
 Two text colors and stop. `--foreground` (or `--card-foreground` inside a `Card`) carries the
@@ -72,47 +78,50 @@ built as that exact pair — copy the relationship rather than inventing a new o
 
 ## Icon-only actions
 
-`Button` `size` offers `icon` and `icon-sm` as fixed square boxes, and `square` as a
+`Button` `shape` offers `icon` as a square box the size scale drives, and `square` as a
 _relationship_ — full width, aspect-ratio 1.
 
-| You have                                                      | Use              | Why                                                                                    |
-| ------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------- |
-| A standalone icon action beside `md` controls                 | `size='icon'`    | 36px square — the nearest neighbour to the 40px `md` row                               |
-| An icon action inside a dense toolbar or beside `sm` controls | `size='icon-sm'` | 32px square — exactly the `sm` row's height, so the two line up                        |
-| An icon action in a rail whose width the app owns             | `size='square'`  | Takes the parent's width and stays square, so the rail's token stays the single source |
+| You have                                                      | Use                      | Why                                                                                    |
+| ------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------- |
+| A standalone icon action beside `md` controls                 | `shape='icon'`           | A 40px square — `--control-h-md`, so it matches the `md` row exactly                   |
+| An icon action inside a dense toolbar or beside `sm` controls | `shape='icon' size='sm'` | A 32px square — `--control-h-sm`, so the two line up                                   |
+| An icon action beside `lg` controls                           | `shape='icon' size='lg'` | A 48px square — `--control-h-lg`                                                       |
+| An icon action in a rail whose width the app owns             | `shape='square'`         | Takes the parent's width and stays square, so the rail's token stays the single source |
 
-Default: an icon-only `Button` uses `icon` or `icon-sm` and never a text size with a hand-tuned
+Default: an icon-only `Button` uses `shape='icon'` and never a text size with a hand-tuned
 padding override, unless the button sits in a container whose width is set by the app, in which
-case `square` is the correct choice. <!-- rule:forge-ui-hierarchy-icon-button-size -->
+case `shape='square'` is the correct choice. <!-- rule:forge-ui-hierarchy-icon-button-size -->
 
-Default: `square` is used only where the parent supplies a definite width, unless a brief
+Default: `shape='square'` is used only where the parent supplies a definite width, unless a brief
 specifies a fluid grid of equal cells. <!-- rule:forge-ui-hierarchy-square-needs-width -->
 
 Every icon-only button still needs an accessible name — `forge-ui-accessible-name` is a Floor
 rule, and a `Tooltip` is not a substitute for one.
 
-## Severity is a ladder, and `default` is the bottom rung
+## Severity is a ladder, and `neutral` is the bottom rung
 
-`Alert` and `Toast` both ship `default` / `destructive` / `info` / `success` / `warning`. Each
-non-`default` variant is a claim about how much the message matters. Making that claim when the
-message does not carry it is the fastest way to teach a user to ignore the component.
+`Alert` and `Toast` take the same `tone` scale — `neutral` / `destructive` / `info` / `success` /
+`warning`, `neutral` being the default. Each non-`neutral` tone is a claim about how much the
+message matters. Making that claim when the message does not carry it is the fastest way to teach
+a user to ignore the component.
 
-| The message says                                        | Variant       | Note                                                    |
+| The message says                                        | Tone          | Note                                                    |
 | ------------------------------------------------------- | ------------- | ------------------------------------------------------- |
-| Here is context you may want                            | `default`     | The correct choice far more often than it gets used     |
+| Here is context you may want                            | `neutral`     | The correct choice far more often than it gets used     |
 | This succeeded and the outcome is not visible elsewhere | `success`     | If the outcome _is_ visible, say nothing                |
 | Something needs attention but nothing is broken         | `warning`     | Not for "are you sure"                                  |
 | An operation failed, or data will be lost               | `destructive` | Reserve it; spending it on validation noise devalues it |
-| A neutral fact worth a colour of its own                | `info`        | Rarely earns its place over `default`                   |
+| A neutral fact worth a colour of its own                | `info`        | Rarely earns its place over `neutral`                   |
 
-Default: an `Alert` or `Toast` uses `default` unless the message names a specific failure, a
+Default: an `Alert` or `Toast` uses `tone='neutral'` unless the message names a specific failure, a
 specific risk, or a completed action whose result the user cannot otherwise see. <!-- rule:forge-ui-hierarchy-severity-default-first -->
 
-Default: `destructive` is reserved for loss and failure, never for a confirmation prompt or a
+Default: `tone='destructive'` is reserved for loss and failure, never for a confirmation prompt or a
 field-level validation message, unless a brief defines a domain where the two are the same event. <!-- rule:forge-ui-hierarchy-destructive-reserve -->
 
-The same ladder governs `Badge`: `default` fills with `--primary` and is the loudest thing a badge
-can be. A list where every row carries a `default` badge has a list with no signal in it.
+The same ladder governs `Badge`, whose own default is `tone='neutral' appearance='soft'`:
+`tone='primary' appearance='solid'` fills with `--primary` and is the loudest thing a badge can be.
+A list where every row carries a filled primary badge has a list with no signal in it.
 
 Colour alone never carries the severity — `forge-ui-not-color-alone` is a Floor rule, and an
 `Alert.Title` is the usual way to satisfy it.

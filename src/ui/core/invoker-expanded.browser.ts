@@ -27,7 +27,7 @@ function expanded(page: Page, selector: string): Promise<string | null | undefin
 
 const MENU = () =>
   render(
-    Menu({ children: [Menu.Trigger({ id: "m", children: "File" }), Menu.Popup({ id: "m", children: Menu.Item({ for: "m", children: "New" }) })] }),
+    Menu({ children: [Menu.Trigger({ for: "m", children: "File" }), Menu.Popup({ id: "m", children: Menu.Item({ for: "m", children: "New" }) })] }),
   );
 
 test.describe("popover invokers expose their expanded state", () => {
@@ -77,7 +77,7 @@ test.describe("popover invokers expose their expanded state", () => {
 
   test("Popover.Trigger tracks its content the same way", async ({ page }) => {
     const html = await render(
-      Popover({ children: [Popover.Trigger({ id: "p", children: "Open" }), Popover.Content({ id: "p", children: "Panel" })] }),
+      Popover({ children: [Popover.Trigger({ for: "p", children: "Open" }), Popover.Content({ id: "p", children: "Panel" })] }),
     );
     await mount(page, html, EXPOSE);
     await start(page);
@@ -106,8 +106,8 @@ test.describe("popover invokers expose their expanded state", () => {
     const html = await render(
       Menu({
         children: [
-          Menu.Trigger({ id: "m", children: "File" }),
-          Menu.Popup({ id: "m", children: Menu.SubmenuTrigger({ id: "sub", children: "More" }) }),
+          Menu.Trigger({ for: "m", children: "File" }),
+          Menu.Popup({ id: "m", children: Menu.SubmenuTrigger({ for: "sub", children: "More" }) }),
           Menu.Popup({ id: "sub", children: Menu.Item({ for: "sub", children: "Deep" }) }),
         ],
       }),

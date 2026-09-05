@@ -17,7 +17,968 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`validate-build-time-boundary` — a runtime module that imports build-time code now fails the
+  gate.** The `src/tooling/` restructure made membership in the container _be_ the Web-APIs-only
+  exemption, but nothing enforced it: a runtime namespace could import the asset pipeline and the
+  only signal was `validate-namespace-graph` asking for a declared edge — which anyone could grant,
+  one edge at a time. The step fails any source outside `src/tooling/` or `src/ui/assets/build/`
+  that names one of their modules at value, whether by relative path, by directory (`../tooling/assets`
+  → its `mod.ts`), or by published subpath (`@y-core/forge/tooling/assets`) — the last of which
+  resolves to nothing relative and so was invisible to every existing check. Side-effect and dynamic
+  imports count. A **type-only** import is allowed, because it is erased before anything is bundled;
+  the layering it still represents stays `validate-namespace-graph`'s to judge. Specs are exempt: a
+  `.test.ts` or `.browser.ts` is never in a bundle. The rule is deliberately stronger than the
+  reachability `LIBRARY_ARCHITECTURE.md` §1e states — reachability from a published subpath is blind
+  to a module no barrel exports yet, and over forge's own tree it computes exactly the set a
+  per-file scan already sees.
+
+- **`validate-readme-exports` — a README export table that drifts from its barrel now fails the gate.**
+  `src/ui/README.md` listed 8 of `ui/controls`' 13 exports, and the drift was silent in both
+  directions: a symbol added to a barrel and not to the table is undocumented for anyone who reads
+  the README rather than the source, and a row naming a symbol a rename removed is an import that
+  does not resolve. The new step keys on the `> Import path: … → …` line every subpath section
+  already opens with, so it covers exactly where the drift was found and any other README opts in by
+  adopting the anchor. A **value** export needs a table row; a **type** export needs a row or a
+  `**Types:**` mention, which is how sections such as `ui/chrome` already document theirs. Thirteen
+  further undocumented exports across `ui/core`, `ui/contracts`, `ui/client`, `ui/server` and
+  `ui/chrome` were found by it and documented.
+
+- **`validate-co-location` covers all of `src`, not just `src/ui`.** Sixty-three modules outside
+  `src/ui` had no test beside them and nothing said so. Twenty-one carried real behaviour and now
+  carry real specs — `Forge` itself, the three `jsx` runtime modules, `cli/term`'s `ansi`/`border`/
+  `codes`, the Cloudflare API endpoint builders and error classification, `logging`'s level parsing,
+  the `assets` and `site` config schemas, `storage/r2`'s error type, and the `types.ts` modules that
+  smuggle a class or a helper. The other 42 are exempt with a stated reason: type declarations,
+  constant tables, one generated file, three `bin.ts` entry points and the test fixtures. **A stale
+  exempt entry fails the check**, so the list can only shrink.
+
+- **Every gate-check module under `src/cli/pkg/gate/checks/` now has a co-located spec.** Five had
+  none — `changelog.ts`, `css-sources.ts`, `design-system.ts`, `exports.ts` and
+  `modern-css-rules.ts` — which is the worst failure mode a check body can have: with no spec it
+  reports green either way. 87 new tests pin every finding message each one emits, and each spec
+  covers the check's refusal to pass vacuously. `design-system.test.ts` skips cleanly on a machine
+  without `tailwindcss`. One gap the specs found is **pinned as it behaves, not fixed**:
+  `fileURLToPathish` does not percent-decode, so a `node_modules` path containing a space fails with
+  `ENOENT`. (The vacuous-match gap these specs also pinned was **not** confined to `checkCssSources`
+  and `checkExports`, and the sibling checks did not all have the refusal — it was 7 of 19. See the
+  vacuity entry below, which fixes it and rewrites the two specs that pinned it.)
+
+- **`validate-readme-exports` now covers `src/storage/README.md` and `src/testing/README.md`.** Both
+  drifted through the September review with nothing reading them: the storage README's three
+  export-shaped type tables sat under a `## Types` section _separate_ from the subpath headings, so
+  an anchor could never have seen them, and roughly 29 value exports were documented only in prose.
+  Each subpath section now carries the `> Import path:` anchor and its own `### Exports` table
+  covering the whole barrel — including the six UUID values and two types `storage/db` re-exports
+  from the sealed-internal `crypto` namespace, and `storage/r2`'s previously undocumented
+  `CONTENT_TYPE_DEFAULT` and `inferContentType`. `src/testing/README.md` gains the anchor and the
+  missing `FakeD1Options` row. `ReadmeExportsCheckConfig.readme` becomes **`readmes`**, a list.
+
+- **`validate-class-tokens` — a class that names no utility now fails the gate.** `link.tsx` shipped
+  `focus-ring-outset-outset`, which matches no `@utility` and no Tailwind utility, so every `Link`
+  rendered `outline-none` with nothing put back and the gate stayed green: nothing in it read class
+  tokens for existence. The new step compiles `src/ui/assets/css/tailwind.css` and reports any token
+  the design system produces no CSS for. It reads every string literal rather than only class
+  positions — that typo lived in a module-level `const` — and names a token only when some
+  dash-prefix of it is a declared utility, which is what keeps prose and non-class literals out.
+  Skipped, not failed, on a machine without `tailwindcss`; specs are not scanned.
+
+- **`mountCarouselDots` — the `Carousel` dot row now follows the strip.** `Carousel` is a scroll-snap
+  strip with no script, so the server's `current` dot was a guess that stopped being true the moment
+  the reader pressed a dot or swiped: the slide moved and the highlight stayed on slide one. The new
+  controller observes the slides **against the strip** and moves the dot row's own server-rendered
+  selected class onto the dot for the most-visible slide — both spellings are read off the rendered
+  row, so a theme, a size or a caller class stays the component's business. Exported from
+  `@y-core/forge/ui/client` with `CarouselDotsOptions`; the showcase wires it as the `show-carousel`
+  scope. **No autoplay** is added, here or anywhere: the strip advances only when the reader moves it.
+
+### Changed
+
+- **`validate-design`'s eleven source detectors became eleven oxlint rules, and the step now checks
+  only what a per-file linter cannot.** The detectors read markup out of raw text: a tag-frame walker
+  (`endOfOpeningTag`) that tracked quote and brace depth to find where an opening tag ended, an
+  `indexOf("</label>")` standing in for an element's body, and a line-at-a-time scan that could not
+  tell `<Card>` inside a `<Card.Content>` from `<Card>` after it. Every one of those questions is a
+  `JSXOpeningElement`, an attribute list, or a parent walk. **`UI_DESIGN_GUIDANCE.md` §4b is re-cut
+  to match**: the split is what a rule has to _read_ — one parsed file, or more than one — not
+  markup versus class string, which was only ever a description of what the plugin happened to
+  support when the boundary was drawn.
+
+  Three consequences. **The suppression vocabulary changed**: the two live
+  `/* design-allow: <id> — <why> */` comments in `src/ui/show/components.tsx` are now
+  `{/* oxlint-disable-next-line forge/a11y-live-politeness -- <why> */}`, whose reason
+  `forge/suppression-needs-reason` enforces. **Every migrated rule is fixable-eligible**, which a
+  `CheckStep` can never be. And **two rules that were scoped by a file-path test inside the detector
+  are now scoped by `.oxlintrc.json`** — `catalog-wrong-raw-input` to `src/ui/show/**`,
+  `a11y-one-live-region` off for `src/ui/core/toast.tsx` — which is the same scope, stated where a
+  reader looks for it.
+
+  **`validate-design` still runs**, holding the corpus against forge's API and both rule registers
+  against the plugin: neither is a per-file question. Its `RULE_ENFORCER` register now has no `gate`
+  row at all, and a row that claimed one would fail by name. `design-parse.ts` keeps the class-position
+  scanner, which `validate-class-order` is the other consumer of — it executes the real `cn()` on each
+  literal, so it needs the literals a text scan finds.
+
+  **One coupling had to be broken by hand.** `forge/a11y-aria-beside-data` derived its vocabulary
+  from `stateAttrs(EVERY_STATE)`, and `tooling/lint` is a leaf namespace that may not import `ui`.
+  The rule hand-lists the six presence flags, and `src/ui/contracts/state-attrs.test.ts` holds the
+  two lists together — so a seventh flag fails a test rather than going quietly unenforced.
+
+- **`validate-exact-assertions` became `forge/exact-markup-assertion`, and the gate lost a step.**
+  The check ran a fixpoint dataflow approximation over **eight passes** of regular expressions — a
+  hand-rolled `statementEnd` that guessed where a statement ended from a line-continuation pattern, a
+  `receiverBefore` that guessed backwards from a `.includes(`, and a comment-blanking pass so none of
+  it tripped on prose. All of it existed to answer a question about scope, which is exactly what an
+  AST gives away. The rule reproduces the check's finding set on `src/ui` **exactly** — the same four
+  sites, each of which was already suppressed — and is more precise in one place the regex was blunt:
+  `PRODUCES_LIST` matched `.split(` anywhere in a binding's text, where the rule asks what the value
+  the binding _is_, including through a `?? []` fallback. The four `/* exact-allow: exact-assertion —
+<why> */` comments became `// oxlint-disable-next-line forge/exact-markup-assertion -- <why>`,
+  whose reason `forge/suppression-needs-reason` now enforces rather than the check's own parser. The
+  `exempt` option is gone with the step: it was empty, and `.oxlintrc.json`'s `overrides` is where a
+  file is excused now. **Scope is unchanged** — an `overrides` entry holds the rule to `src/ui`'s
+  test and browser files, the tree `config/steps.ts` pointed the step at.
+
+- **The slot-clobber rule moved from `validate-jsx` to `forge/data-slot-before-spread`, and its
+  hand-written JSX scanner is gone.** `jsx-parse.ts` was a 195-line character-level tag-frame scanner
+  — tracking quote modes, brace depth and a tag stack — written to answer one question the AST
+  answers directly: does a literal `data-slot` precede a bare-identifier spread in the same
+  `JSXOpeningElement`'s attribute list? The oxlint rule is that question, so the scanner and the
+  JSX-text apostrophe class of bug it kept relapsing into are both deleted. Two consequences worth
+  knowing: the rule now also reads `data-slot={"card"}`, which the quote-matching scanner could not
+  see, and it is **fixable-eligible** — a `CheckStep` can never carry a fixer, an oxlint rule can.
+  `.oxlintrc.json` turns it off for `*.test.tsx`, which is exactly the set `validate-jsx` never
+  walked. **`validate-jsx` still runs**: its other half is a file-presence check for the two JSX
+  pragma lines, which no per-node rule can state.
+
+- **`forge/optional-prop-undefined` enforces the `?: T | undefined` convention, which was asserted as
+  universal with no detector.** Every other convention here carries a `detect:` command
+  ([`CODE_REVIEW.md`](.decisions/governance/CODE_REVIEW.md) §3b); this one was ~90% applied with
+  nothing to notice the next exception, and the exceptions kept arriving. The rule reports an
+  optional property signature whose annotation admits no `undefined`, and it found **seven component
+  files** the convention had missed — `field.tsx`, `field-stack.tsx`, `timeline.tsx`, `navbar.tsx`
+  and the three `ui/controls` group controls — all now widened.
+
+  **It is scoped to `ui/core`, `ui/controls` and `ui/chrome` component files, and that scope is the
+  point.** Run repo-wide it reports 836 properties, almost all of them the internal option objects
+  `UI_SSR_COMPONENTS.md` §1n explicitly exempts — a syntactic rule cannot tell "a consumer constructs
+  a value of this type" from "this is an options bag", so the scope is stated in `.oxlintrc.json`
+  rather than guessed at per node. The corpus rule lives in `reference/10-accessibility.md` because
+  the reason is an accessibility one: a bare `?:` under `exactOptionalPropertyTypes` forces
+  `aria-label` into a spread, and a spread is opaque to `jsx-a11y`.
+
+  **`checkDesign` now reads `overrides[].rules` as well as the top-level block.** It previously
+  treated a rule enabled only in an override as disabled and failed the gate for it — which would
+  have blocked any path-scoped rule, not just this one.
+
+- **`catalog.md` covers every published component, and a barrel export with no row now fails the
+  build.** CLAUDE.md's Growth Rules name `src/ui/design/` as the single home for "which component to
+  reach for", and **19 of the 58 published components had no "Job → component" row** — nine
+  (`Breadcrumbs`, `Drawer`, `EmptyState`, `FileInput`, `Kbd`, `Stat`, `Status`, `Steps`, `Timeline`)
+  appeared nowhere in the corpus at all, and ten more only under `reference/`. The same changeset
+  that added them had built two enforcement mechanisms for two _other_ documentation surfaces — the
+  README export tables and the showcase coverage contract — while the surface the Growth Rules
+  actually point builders at drifted silently behind an 18-component addition. All 19 rows are
+  written, and the contract lands with them rather than after them.
+
+  **It is a `bun test` beside `show/coverage.test.tsx`, not a gate check**, because the
+  component-vs-utility predicate both existing sweeps use is runtime-only — a capitalised _function_
+  on the barrel — and statically `FOUC_SCRIPT` is indistinguishable from a component. Parsing differs
+  from the README precedent too: `catalog.md` has no `> Import path:` anchor, no `### Exports`
+  heading, and names components in **column 2**, where `parseExportsTableSymbols` hard-codes cell 1 —
+  so only `rootIdentifiers` is shared, and it becomes exported for the purpose. The escape hatch is
+  `CATALOG_MISSING`, modelled on `COVERAGE_MISSING`: shrink-only, every gap requiring a non-empty
+  `owner`, staleness asserted. It ships **empty**.
+
+- **The `data-*` wiring vocabulary is declared once and derived from the constants that already name
+  it.** Two independent hand-written allowlists enforced the closed-world sweep — `WIRING_ATTRS` in
+  `conformance.test.tsx` (32 entries) and `STRUCTURAL_ATTRS` in `contracts/state-attrs.test.ts` (55) —
+  with 31 names maintained in both and no link between them. Worse, 16 of those names were **already
+  exported constants** and were being restated as string literals anyway; only `data-island-state` was
+  resolved through its declaration. `contracts/wiring-attrs.ts` now declares the union as a name →
+  reason record, taking eleven names from their constants directly. The five declared in
+  `contracts/theme/` stay literal because `ui/contracts` is a LEAF namespace and
+  `validate-namespace-graph` refuses the edge to its own subnamespace — the spec asserts them against
+  those constants instead, a test being outside the graph. The table is read by **tests only**, so
+  the frozen-hook technique `state-attrs.ts` documents is untouched and emitters keep their literal
+  keys.
+
+  **A stale entry now fails, so the list can only shrink** — the guard the co-location and
+  exact-assertion lists already had and this one did not. Five names were exempting nothing:
+  `data-duration`, `data-nav` and `data-theme` appeared nowhere but the allowlists, and `data-setting`
+  and `data-tool` only in `.test.tsx` files the sweep excludes. (`data-duration` traces to
+  `toast-contract.ts`'s `TOAST_DURATION_KEY = "duration"`, a dataset key never spelled `data-duration`
+  in source.) The assertion belongs to the **source** sweep alone, which reads every non-test file
+  under `src/ui` and can tell "unused" from "not rendered here"; the render sweep mounts only
+  `ui/core` and `ui/controls` and would call most of the table stale. `data-probe`, the render
+  sweep's own forwarded fixture attribute, is declared as its extra. `STATE_ATTRIBUTES.md` §4 now
+  describes both sweeps and their scopes rather than one, and states the wiring-versus-enum boundary:
+  `data-placement`, `data-position`, `data-decoration` and `data-as` drive `cva` variants and sit in
+  wiring, which is recorded rather than left silent.
+
+- **A gate check whose scan set is empty now fails instead of reporting a green summary.** Twelve of
+  the nineteen `check*` entry points could pass having walked nothing: `checkCssSources` initialised
+  `registered = 0`, and a mistyped `uiDir` made the walk empty and printed
+  `0 src/ui directories are @source-scanned or registered` as a **pass** — the check silently disabled
+  by a config typo. Guards now cover `jsx`, `ssr-boundary`, `co-location`, `exact-assertions`,
+  `namespace-graph`, `css-sources`, `docs`, `exports` and `design`, whose second source walk was
+  unguarded so every corpus rule could go unapplied while the summary still counted them. One
+  `scannedNothing(what, gate, verb?)` helper carries the wording, with `verb` preserving `contrast`'s
+  "measured nothing" rather than forcing one word onto a unit that is a config array.
+
+  **The guard reads the raw walk and returns before any finding accumulates**, both of which are
+  load-bearing: guarding `modules.length - exempt.size` would let an all-exempt tree report
+  `0 modules` green beside a wall of stale-exemption failures, and guarding late made the refusal
+  _discard_ what the check had already found. Where the count is only knowable at the end, the
+  refusal is additionally conditioned on there being no findings — a check already red has no green
+  to refuse.
+
+  **Three checks stay unguarded and now say why in TSDoc.** `checkClassGroups` and `checkDesignScale`
+  are single-artifact diffs with no walk; `checkAssetRoot` passes with no `assets.directory` because
+  a Worker with no static assets is a valid project. Two more are guarded on their _config_ instead,
+  because reaching zero is supported: `checkReadmeExports`, whose `> Import path:` anchor is opt-in,
+  and `checkChangelog`, where a document holding only `[Unreleased]` is a pre-first-release project.
+  `ASSET_AND_BUILD_TOOLING.md` §5i is rewritten accordingly: the count in `summary` stays, now stated
+  as necessary but not sufficient.
+
+- **`contrast.ts` had an abandoned vacuity guard: `measurements.length === 0 ? findings : findings`,
+  both branches identical.** It is removed rather than completed. `measurePairs` emits one
+  measurement per pair per mode, so the count is `pairs.length * 2` and reaches zero only when the
+  pair list is empty — which the refusal at the top of the function already covers, making any second
+  guard unreachable. The dead ternary is replaced by the reasoning, and a spec pins that two rows are
+  measured per pair.
+
+- **Three specs and three fixtures were themselves relying on vacuous walks.** `css-sources.test.ts`
+  and `exports.test.ts` asserted `ok === true` over a `0 …` summary in as many words ("_no refusal
+  branch guards a vacuous scan_"), and `jsx.test.ts` pinned a zero-file walk as a pass; all three are
+  rewritten to assert the refusal. Worse, `design.test.ts`'s fixture carried no `.tsx` source at all,
+  so once the check refused an empty source walk **all three of its oxlint-config cases would have
+  passed without reading a config** — the same defect the epic exists to fix, one level up in the
+  specs. New vacuity specs cover `co-location`, `exact-assertions`, `ssr-boundary`, `namespace-graph`,
+  `design` and `contrast`; `checkSsrBoundary`'s entry point had no spec of any kind.
+
+- **The eight shape tokens are now held as a set, not counted in prose.** `theme-base.css` declares
+  them and a shape file re-declares exactly them, and nothing checked that: a token added to the base
+  and missed in `shape-compact.css` leaves that shape silently inheriting the default, and one
+  carried only by the shape file is a token no other shape can override. Neither renders as a broken
+  page — the value is simply wrong. A co-located spec reads the set off the declaration block's own
+  banner comment and asserts equality in both directions, plus that no `theme-*.css` declares one,
+  which is the assumption the contrast audit walks on. **It is a `bun test`, deliberately, not a
+  `validate-css-tokens` rule**: that step is `requires`-gated on `tailwindcss` and reports _skipped_
+  without it, which would hide a pure-CSS invariant behind an optional peer dependency.
+
+- **`?: T | undefined` reaches the types a consumer constructs a value of, not just `*Props`.** Eight
+  declarations still carried a bare `?:` — `Indicator.Item`'s `placement`, `Kbd`'s `size`, both
+  `Menu` checkable items' `checked`, all six of `ToolbarItemStyling`, and `NavSlot`, `NavMegaMenu`
+  and `ToolbarPopover` in `ui/chrome`. Under `exactOptionalPropertyTypes` each one forces a consumer
+  into the guard-form spread `{...(x !== undefined ? { … } : {})}` that the convention exists to
+  eliminate. The last three are why `UI_SSR_COMPONENTS.md` §1n's test changes from "every `*Props`"
+  to **"does a consumer construct a value of this type"**: a definition object handed to a component
+  is a consumer input as much as an attribute bag is, and reading the rule off the name let three
+  such types drift.
+
+- **A state recipe now travels as one token of the base literal, in every component that uses one.**
+  `UI_SSR_COMPONENTS.md` §3h had already ruled this — a recipe painting only under `&[aria-invalid]`
+  cannot contend with one that paints unconditionally, so a `cn` argument of its own buys no
+  separation — but the rule sat mid-paragraph inside the `signature()` discussion and named only
+  `radio-group.tsx` and `checkbox-group.tsx`. Seven files disagreed with it: `input.tsx`,
+  `textarea.tsx`, `select.tsx`, `file-input.tsx`, `slider.tsx` and `toggle.tsx` passed
+  `state-invalid` as a second argument. It is now a standalone statement in §3h with its own
+  admission test, and every call site follows it. **The rendered class strings change token order and
+  nothing else**, and each affected spec is re-pinned. What still earns its own argument is a
+  base-scope token that genuinely contends: `slider.tsx` and `toggle.tsx` keep `cursor-pointer`
+  separate because `state-busy` paints `cursor: progress`, which is a real conflict — `state-invalid`
+  had merely been riding along in that argument.
+
+- **`PRESSED_PAINT` moved from `state-classes.ts` into `utils/recipes.ts`,** which is where §3i
+  already routes a module-scope class const. The two-line module was split from its only neighbour
+  for no reason, and its presence in the co-location exempt list was a second defect: it sat under the
+  `contracts/*` block whose stated reason describes `bind-contract` alone. `recipes.ts` now has a
+  real spec carrying both former assertions, so the exemption is **removed** rather than re-filed —
+  `config/steps.ts:82` says the list may only shrink.
+
+- **`Table` uses the shared vocabulary helpers instead of two hand-written spreads.** A one-off
+  `classProp` helper existed to omit an `undefined` class; `renderToString` already skips an
+  `undefined` attribute value (§1n), so nine other sites just write `class={cls}` and these four now
+  do too. `Table.Row`'s `{...(tone ? { "data-tone": tone } : {})}` becomes
+  `presentationAttrs({ tone })`, the declared home for that attribute. Rendered markup is unchanged.
+
+- **A build-time module now has a routing rule: does it drive an external builder, or is it one?**
+  `src/assets` exists to shell out — Tailwind, esbuild, a font download, a file copy — and that
+  orchestration is the whole warrant for its Node-API exemption, which
+  [`LIBRARY_ARCHITECTURE.md`](.decisions/governance/LIBRARY_ARCHITECTURE.md) §1e states as
+  reachability rather than as a path glob. Four modules compute their artifact instead of driving a
+  tool and so have no reason to sit there: `build/sprites.ts` (197 lines), `build/color.ts` (172),
+  `build/cursors.ts` (126) and `build/css-tokens.ts` (91) — ~586 lines behind no external builder.
+  The debt is named with a `build/` directory under `src/ui/assets` as its agreed destination; the move is not scheduled,
+  but the rule is settled, so no fifth module joins the list by default
+  ([`ASSET_AND_BUILD_TOOLING.md`](.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §2c).
+
+- **The comment budget is enforced everywhere outside `src/ui`.** Ten section banners, 49 TSDoc
+  blocks over 400 characters, and 80 runs of three or more consecutive `//` lines were cut to one
+  sentence plus a tag, or deleted where the prose restated the code or defended a choice no caller
+  can observe ([`CODE_RULES.md`](.decisions/governance/CODE_RULES.md) §5b). Rationale worth keeping
+  moved to its single home — the `SyncAction` vocabulary and the `ResolvedFlags` `as const` trap to
+  their namespace READMEs, `RE_ANSI`'s never-scan-with-it warning to `src/cli/term/README.md`, the
+  log viewer's `data-fill-viewport` requirement to `src/logging/README.md`. Upstream MIT/ISC
+  attribution headers are left exactly as written: a licence notice is not prose.
+
+- **`CODE_REVIEW.md` §3b gains a sixth detection command, and the five it had gain the `config/**`
+  glob.** No command detected a long run of `//` lines at all, so the cap §5a form 3 puts on an
+  inline _why_ — one or two lines — was unenforceable; and only the first command scanned `config/`,
+  so `config/steps.ts`, the file with the most `//` runs in the repository, was read by nothing.
+
+- **`src/app`'s markup assertions are exact.** Twenty-eight `toContain` calls on rendered HTML across
+  `error-page.test.ts`, `app.test.ts` and `assets.test.ts` passed on the right substring with the
+  wrong encoding around it — `toContain("&lt;script&gt;")` says nothing about what follows it. The
+  `Forge` boundary's 500 document is short enough to assert whole; the styled error page is not, so
+  each test extracts the one fragment carrying the message — `renderError`'s banner, the `<title>`,
+  the `<link>`, the `<a>` — and asserts `toBe` on it, rendering once and asserting once
+  ([`TESTING.md`](.decisions/governance/TESTING.md) §3b, §3c). The `not.toContain` leak checks stay:
+  proving a secret appears **nowhere** in a document is not something an exact match can say.
+
+- **Every gate check walks the filesystem through one module.** Twenty-two `readdirSync` walkers
+  across twelve check modules disagreed on three axes — whether findings came back sorted, whether a
+  Windows separator was normalised, and which files were excluded — and three of them were duplicated
+  verbatim. `source-scan.ts` now exports `collectFiles`, `collectSource`, `listFiles` and
+  `listDirectories`, and every check reaches the disk through them. **Finding order is sorted and
+  path spelling posix-normalised everywhere**, which changes the order some checks reported in.
+  `lineAt` and a `suppressedBy(marker)` factory join them, replacing four copies of the first and
+  two character-identical copies of the second. The gate's OKLCh conversion composes its per-channel
+  clipping over `assets/build`'s OKLab matrix and sRGB transfer function instead of restating them;
+  the clipping behaviour, the strict alpha-rejecting parser and every pinned answer are unchanged.
+
+- **A stale entry in the co-location exempt list now fails the check.** Nothing held an exemption
+  against the modules actually walked, and the summary subtracted the list's length regardless — so
+  a path left behind by a rename both under-reported the count and silently exempted nothing. The
+  list can only shrink now, which is the rule the modern-CSS deferral list already followed.
+  `namespace-graph` also stopped reading the 334 test files `buildGraph` immediately discards, and
+  the modern-CSS check reads each file once rather than twice.
+
+- **A `cf sync` list that 404s now reports `unavailable`, not `error`.** The four provisioning
+  handlers — D1, KV, Queues, R2 — each hand-built the same ten-step ladder and their own list-failure
+  row, so a not-found never became `unavailable`, no permission was ever named, and the row never
+  said which surface it was compared against. They are now four specs over one
+  `createProvisionedHandler`, and every list and create failure goes through the shared
+  `failureRows`. **The detail text changes**: it gains the `worker script · ` / `pages project · `
+  prefix, and an auth failure names the permission the surface needs.
+
+- **`.dev.vars` values now follow dotenv's rules, which is what wrangler pushes.** An unquoted value
+  ends at the first ` #`, so `API_KEY=abc123 # prod key` pushes `abc123` rather than the comment with
+  it — the README's own rotation example was mis-parsed. `\n` and `\r` inside double quotes expand;
+  single quotes stay literal; a quoted `#` is kept. Everything else is unchanged: the first-`=` split,
+  full-line comments, the rotate markers, and the line index. `editDevVars` carries an inline comment
+  across a rotation instead of dropping it.
+
+- **`src/ui/chrome/navbar.tsx` is split at the item-tree / shell seam.** 496 lines became
+  `navbar-items.tsx` (the config vocabulary and the recursive renderers) and `navbar.tsx` (the shell).
+  A pure move: no renames, no signature changes, no change to the emitted markup, and
+  `@y-core/forge/ui/chrome`'s exported names and shapes are unchanged. Both halves stay `.tsx`, so the
+  conformance sweep over `chrome/*.tsx` keeps covering both. Code importing from the concrete module
+  rather than the barrel takes the new path for the item types and for `filterAttrs`.
+
+- **`.decisions/implementation/UI_SSR_COMPONENTS.md` §3h now carries a verdict for all nine `@utility`
+  recipes.** `border-field`, `field-chrome`, `otp-cells` and `otp-editor` pass the admission test;
+  `focus-ring` and `focus-ring-outset` are near misses on `state-invalid`'s shape. Every signature and
+  scope behind those verdicts is pinned in `state-recipes.test.ts`, which is the only place in the
+  repo that compiles the design system in a `bun test`.
+
+- **Every optional prop forge accepts is now declared `?: T | undefined`.** Under
+  `exactOptionalPropertyTypes`, a bare `?:` forced a consumer to write
+  `{...(x !== undefined ? { "aria-label": x } : {})}` instead of `aria-label={x}` — and that spread
+  is invisible to `jsx-a11y`, so forty-seven of forge's own attribute sites were unlinted. The
+  renderer already treats an absent and an `undefined` attribute identically, so the distinction the
+  flag guards does not exist here. Rendered HTML is unchanged. This is `@types/react`'s convention
+  for the same reason.
+
+- **The pressed paint shared by `Toggle`, `ToggleGroup.Item` and `Filter.Item` is one const,**
+  `PRESSED_PAINT`, rather than the same `has-[:checked]:*` triple written three times. It cannot be
+  an `@utility`: the class-group derivation flattens a recipe's nested declarations into a
+  base-scope signature, so a paint recipe would subsume — and delete — the resting `bg-transparent`
+  and `text-foreground` beside it. Recorded as an admission test in `UI_SSR_COMPONENTS.md` §3h.
+  Dead `state-disabled focus-ring` tokens that `buttonVariants` already supplies are dropped from
+  `ToggleGroup.Item` and `Filter.Item`; the rendered class sets are unchanged.
+
+- **`Toggle` and `ToggleGroup.Item` take their border width from `border-field` like every other
+  control.** Both hand-wrote `border`, which pins 1px and ignores `--border-width` — so a theme that
+  moved the token moved four controls and left these two behind.
+
+- **`toneTokens(tone)` returns the tone's declaration directly** instead of rendering the whole solid
+  recipe through `cva` and `cn` and then filtering the paint back out by prefix. Same string, every
+  tone, and a test now pins that equivalence for all seven rather than for `neutral` alone.
+
+- **The empty `buttonPaint` recipe is gone.** Its twelve variant cells were all `""`; the two compound
+  rules it existed for — `neutral/outline` and `neutral/ghost` — are now a two-entry lookup applied
+  after `toneVariants`, where the override order they depend on is visible. `buttonVariants` output is
+  unchanged, so its six call sites are unaffected.
+
+- **`Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger` and `Drawer.Close` no longer drop an explicit
+  `class=""`.** They tested the caller's class for truthiness, which discards an intentionally empty
+  string along with an absent one; the test is now `!== undefined`.
+
+- **`Drawer` slides in from its edge instead of appearing on the frame it opens.** 200ms in, 150ms
+  out, with `display` and `overlay` riding the same duration so the panel stays painted for the whole
+  exit, and the backdrop cross-fading with it. Behind `prefers-reduced-motion: no-preference`, so a
+  reader who asked for less motion still gets the instant open. `<Drawer open>` — the non-modal panel
+  in the page — is untouched.
+
+- **`NumberField.Input` aligns its value to the end of the field.** Digits are compared down a column,
+  not read left to right, so a number field belongs on the same alignment as a numeric table column.
+  `text-end`, not `text-right`, so it mirrors in an RTL page; a caller's own `text-center` still wins
+  on merge order.
+
+- **The showcase's `Popover` band puts its triggers on a row of their own, spaced apart.** The
+  `side=top` specimen opened over the band's note, which is exactly the thing a reader needs while
+  looking at it.
+
+- **The showcase's `Toast` band is one grid instead of three disconnected rows.** It was five loose
+  toasts with no container, six position boxes each holding the same meaningless toast, and a
+  `duration=600000` specimen nobody was ever going to watch elapse. The six boxes stay and now carry
+  a tone each — neutral, success, warning, destructive, a dismissible info — so position and look are
+  read in one pass. The sixth box runs the real behaviour: a dismissible `duration=5000` toast that
+  the eager `toast` scope removes when it elapses, which the showcase puts back 2000ms later so the
+  cycle is watchable. **The re-arm is showcase-only** (`show-toast-cycle`, in `ui/show`); `Toast`
+  itself still removes a toast for good. The tone × appearance matrix is unchanged.
+
+### Breaking Changes
+
+- **`src/cli` and the build-time half of `src/assets` are now `src/tooling`, and eight subpaths are
+  renamed.** `cli` named an _interface_ — a terminal — where the tree actually holds everything that
+  runs on a developer's machine or in CI. The new container's membership _is_ the build-time
+  exemption `LIBRARY_ARCHITECTURE.md` §1e states as reachability, so a Worker-reachable module under
+  `src/tooling/` is now a visible contradiction rather than an argument to re-litigate per module.
+  Pre-1.0, so there are no deprecation shims — update the import.
+
+  | Was                             | Now                                                            |
+  | ------------------------------- | -------------------------------------------------------------- |
+  | `@y-core/forge/cli`             | `@y-core/forge/tooling/cli`                                    |
+  | `@y-core/forge/cli/term`        | `@y-core/forge/tooling/term`                                   |
+  | `@y-core/forge/cli/cf`          | `@y-core/forge/tooling/cf`                                     |
+  | `@y-core/forge/cli/assets`      | `@y-core/forge/tooling/assets`                                 |
+  | `@y-core/forge/assets/build`    | `@y-core/forge/tooling/assets`                                 |
+  | `@y-core/forge/cli/pkg`         | `@y-core/forge/tooling/gate` + `@y-core/forge/tooling/release` |
+  | `@y-core/forge/cli/pkg/lint`    | `@y-core/forge/tooling/lint`                                   |
+  | `@y-core/forge/assets/manifest` | `@y-core/forge/assets`                                         |
+
+- **`@y-core/forge/assets` is now runtime-only, and is the subpath a Worker imports.** Its barrel
+  published `loadConfig`, which imports `node:path`, so the name promised Worker-safety the module
+  could not keep. It now exports `createManifest` and `createSpriteRegistry` and nothing else; the
+  config authoring surface (`defineAssetsConfig`, `loadConfig`, `AssetsConfigSchema` and the config
+  types) moved to `@y-core/forge/tooling/assets` beside the pipeline that reads it. The generated
+  `.forge/assets.ts` now imports `@y-core/forge/assets`; regenerate it with `forge assets build`.
+  `tests/fixtures/workers-consumer/worker.ts` is the new guard — a Node built-in reached through a
+  runtime subpath fails to typecheck there.
+
+- **`@y-core/forge/cli/pkg` is split three ways.** One ~200-name barrel fused the verification gate,
+  the oxlint plugin and the release workflow, with a real import cycle between the first two. The
+  rule catalogs `RULE_CORPUS_PATH` / `RULE_ENFORCER` and `MODERN_CSS_RULES` now live in
+  `@y-core/forge/tooling/lint`, which the gate reads one-way; the changelog and semver parsers live
+  in `@y-core/forge/tooling/gate`, which `@y-core/forge/tooling/release` builds its workflow on and
+  never the reverse.
+
+- **`forgeUiSpriteSources()` moved off `@y-core/forge/ui/assets` to the new
+  `@y-core/forge/ui/assets/build`.** It imports `node:path` and `node:url`, and a bundler resolves
+  before it tree-shakes, so importing the parent barrel for the glyph names alone failed under
+  `esbuild --platform=neutral`. The parent barrel is now runtime-neutral. The same subpath took the
+  four compute-not-orchestrate modules `ASSET_AND_BUILD_TOOLING.md` §2c named as debt — the OKLCh
+  conversion, the theme-token reader, the cursor baker and the SVG-symbol half of the sprite
+  builder. `buildSprites` itself stayed in `tooling/assets`: it fetches, hashes and writes, which is
+  orchestration by §2c's own rule.
+
+- **`oklchToSrgb` is no longer exported from `@y-core/forge/assets/build`.** It was a second copy of
+  a policy that already had a home: the same 20-iteration chroma-reduction bisection, the same
+  `l >= 1` / `l <= 0` short-circuits and the same epsilon as `toSrgbGamut` in
+  `ui/contracts/theme/color.ts`, which `THEME_GENERATION.md` §2b names as the owner of the arithmetic.
+  It now calls `toSrgbGamut` and converts the mapped coordinate; the private `inGamut` and
+  `GAMUT_EPSILON` are gone, and `clip01` stays because `toHex` also uses it. **Every pinned answer in
+  `assets/build/color.test.ts` and `ui/contracts/theme/color.test.ts` is unchanged**, including the
+  hue sweep that cross-checks the two implementations against each other — that sweep reaches the
+  function by deep path, not through the barrel, which is what makes the barrel removal safe and
+  keeps it as the proof. **Migration:** no caller exists in the fleet; the two internal callers
+  (`parseColor`'s `oklch(…)` branch and `parseColorMix`'s `in oklch` branch) are unaffected. Anyone
+  needing the conversion should reach for `toSrgbGamut` plus `oklabToLinearSrgb`, which is what the
+  function now is. §2b is corrected accordingly: the chroma reduction was never a second policy, only
+  a duplicate. The one genuinely separate policy is the gate's `oklchToPaintedHex`, which clips per
+  channel because a browser does.
+
+- **`Pagination` no longer accepts a root `size`; pass it to the children.** The prop was inert: it
+  stamped `data-size` on the `<nav>`, which nothing reads — no CSS selector, no controller — while
+  every child (`.Item`, `.Previous`, `.Next`) carries its own `size` and defaults to `sm`
+  independently. `<Pagination size='lg'>` therefore changed an attribute and painted nothing, and
+  `Carousel.Dots` was forwarding it. The root now takes no `size`, the convention `ToggleGroup`
+  already sets, and `Carousel.Dots` keeps the per-item `size` — the one that works. **Migration:**
+  move `size` from the root onto the items, which is where it always took effect. `.Ellipsis` also
+  moves from `h-control-sm w-control-sm` to `size-control-sm`, matching `STEP_MARKER`.
+
+- **`store.serveObject` returns `Promise<Result<Response>>`.** It was the only one of `ObjectStore`'s
+  six operations not wrapped in `result()`, against its own interface TSDoc claiming _every_
+  operation returns a `Result`: it caught everything and answered a bare `500` with a `null` body and
+  nothing logged, so a bucket outage was indistinguishable from a bug. A key rejected by
+  `normalizeKey` now carries the same `{ ok: false, error }` the store's other operations do, instead
+  of a bare `400`. **No `logger` option is added** — a store reports a fault by returning it. The
+  free `serveObject(backend, …)` still returns a bare `Response`: a `404` or a `416` is a rendered
+  failure, not an absent value. Callers unwrap: `served.ok ? served.data : …`.
+
+- **`oklabToLinearSrgb` and `srgbGamma` move barrels: `assets/build` → `ui/contracts/theme`.** The
+  twelve-coefficient OKLab matrix and the sRGB transfer function were written out three times — in
+  `ui/contracts/theme/color.ts`, in `assets/build/color.ts`, and by import in the gate's contrast
+  check — which is three places to drift while every test kept passing. `ui/contracts/theme` is LEAF,
+  and LEAF constrains outgoing edges only, so it is the one of the three that can hold the shared
+  function; the other two import it. Import from `@y-core/forge/ui/contracts` (or the `theme` module
+  directly), not from `assets/build`. **Both gamut policies stay:** the generator reduces chroma at
+  constant lightness and hue per CSS Color 4, the gate clips per channel because a browser clips.
+
+- **A stream that is not a terminal now gets no colour, whatever `TERM` advertises.**
+  `resolveColorLevel` consulted `isTTY` only in its last-but-two rule, so `COLORTERM=truecolor`,
+  `WT_SESSION`, kitty/ghostty/wezterm, iTerm and any `-256color` `TERM` all answered above zero for a
+  redirected stream — and `cli/core/execute.ts`, which passes `process.stdout.isTTY === true`
+  precisely so "the redirected stdout stays clean", got escape sequences written into the file. The
+  check now sits between the CI branch and the first advertisement: **CI runners are never TTYs**, so
+  a GitHub Actions or CircleCI log keeps its truecolor, and `FORCE_COLOR` still overrides everything.
+  A caller that omits `isTTY` is unaffected — the gate is `=== false`, not falsy.
+
+- **`TruncateResult` gains `index`, the offset in the input the cut was made at.** `truncate` already
+  computed it and threw it away, and `wrapLines`' hard break had no way to ask: it sliced by
+  `text.length`, which includes a reset `truncate` appends whenever the head bears an escape, so a
+  styled word broken across lines **lost four visible characters at every break**. Any code
+  constructing a `TruncateResult` literal, or asserting one with `toEqual`, adds the field.
+
+- **`stripComments` is removed from the `cli/pkg` barrel and `blankComments` moves to
+  `gate/checks/source-scan`.** The two were near-duplicates of `blankSourceComments` that differed
+  only in being wrong: `stripComments` collapsed a block comment to one space, destroying the offsets
+  its callers computed line numbers from. Call `blankSourceComments` for TS/TSX and `blankComments`
+  for CSS, which is block comments only — `//` is not a comment there.
+
+- **A sprite symbol's root presentation attributes are emitted on a wrapping `<g>`, not injected per
+  shape.** `svgToSymbol` copied the root `fill`/`stroke`/`stroke-*` onto every shape element, which
+  overrode an enclosing `<g>`'s own value — `<svg fill="none"><g fill="red"><path/></g></svg>` emitted
+  the path as `fill="none"` — and, because the shape-name alternation had no trailing boundary, also
+  rewrote `<linearGradient>` as if it were `<line>`. The attributes now sit once on a wrapper `<g>`
+  (sharing the node with the viewBox translate when there is one, and omitted entirely when there is
+  neither), so SVG's own inheritance resolves nested overrides. **Emitted sprite and cursor markup
+  changes**: an icon with root attributes gains one `<g>` inside its `<symbol>`. Rendering through
+  `<use>` is unaffected; CSS selecting descendants of a symbol by element still matches, but a
+  selector depending on the attribute being _on the shape_ does not. `propagateRootAttrs` is removed
+  (it was never exported from the `assets/build` barrel); `extractRootAttrs` now requires an
+  attribute boundary, so a root `data-stroke="…"` no longer contributes a `stroke`.
+
+- **A cursor token that resolves to an unparseable colour now throws instead of baking black.**
+  `buildCursors` mapped a `parseColor` failure to `#000000` while a _missing_ token already threw, so
+  a malformed value shipped a black cursor with no diagnostic. Both parse-failure paths (the
+  `data-cursor-token` signal and `cssvar()`) now throw
+  `[forge-assets] cursor "…" token "…" resolved to an unparseable colour: …`. The `#000000` **default**
+  for a cursor that declares no `data-cursor-token` at all is unchanged.
+
+- **`JSXElement` is branded with a private symbol, and an unrenderable tag now throws.** The brand was
+  `$jsx: true`, a plain JSON value, so any `JSON.parse`'d object satisfied `isValidElement` and
+  `renderToString` emitted its `type` verbatim as the tag name — `{ "type": "img src=x onerror=…" }`
+  walked past escaping, `safeUrl` and the attribute-name regex. The brand alone does not close it,
+  because `createElement` is public and takes an arbitrary tag string, so `renderToString` also tests
+  the tag against `/^[A-Za-z][A-Za-z0-9-]*$/` and throws `Invalid JSX tag name: "…"` on a failure (the
+  app's error boundary turns that into its own 500). `JSXElement` can no longer be satisfied by an
+  object literal — construct elements with `createElement` or the JSX transform. `cloneElement` is
+  unchanged: object spread copies enumerable symbol keys.
+
+- **`head` is removed from `@y-core/forge/router`.** `Forge.fetch` rewrites a `HEAD` request into a
+  derived `GET` before dispatch and `dispatchMatches` compares `route.method` strictly, so a route
+  declared with `head(...)` could never match — the export advertised a shape that does not work.
+  Nothing in forge used it. The `HEAD` branches inside `assets.ts` and `csrf.ts` stay: they encode
+  HTTP method semantics for a unit that may be composed onto a bare `createRouter`.
+
+- **The derived `GET` is copy-constructed, and the discarded body is cancelled.** `Forge.fetch` built
+  the internal GET from url + headers, which dropped `signal`, `cf`, `redirect` and `credentials` —
+  a handler could not observe a client disconnect and Cloudflare's request metadata was invisible.
+  It is now `new Request(request, { method: "GET" })`, safe because the branch is guarded by `isHead`
+  and a HEAD request carries no body. Both HEAD returns also `await res.body?.cancel()` before
+  answering, instead of abandoning the stream.
+
+- **A guard group registers each guard once, not once per path — and `Forge.use` accepts an array.**
+  `applyMiddlewareChain` looped `for (path of group.paths)` and registered a fresh `originProtection`,
+  `rateLimit` and `middleware[]` per path, so a group naming two overlapping patterns (`/api/*` and
+  `/api/users`) ran two limiters against one request and halved the effective budget. The group's
+  paths now compile into one matcher — a single path keeps today's `createMatcher` fast path, several
+  use a `MultiMatcher`, `"*"` stays the catch-all, and an empty array registers nothing. `Forge.use`
+  is widened to `(path: string | readonly string[], …)` rather than gaining a private registration
+  path, so there stays one documented way to register, and `MiddlewareGuardGroup.paths` is now
+  `readonly string[]`. Registration order changes from path-major to guard-major.
+
+- **`PageDefinition` is a schema-gated union, and `definePage`'s `cache` no longer clobbers a
+  response's own.** A page could state `honeypot`, `turnstile`, `onBotDetected`, `onValidationError`
+  or `maxBytes` without a `schema`: with no schema there is no pipeline, so the options were accepted
+  and silently ignored — a declared bot guard that never ran. The type is now `PageBase &
+({ schema: S } & PagePipeline | { schema?: never } & { [K in keyof PagePipeline]?: never })`, the
+  forbidding arm a mapped type over the same projection, and `definePage` also throws at registration
+  naming the stated keys, because the union's own diagnostic is not actionable. The key list lives
+  once, as `PIPELINE_ONLY_KEYS` in `pipeline.ts`. Separately, the configured `cache` is now applied
+  only to a response carrying no `cache-control` of its own — a redirect or a `no-store` refusal kept
+  its own header before being overwritten with the page's, which made a one-off response publicly
+  cacheable. `headers` is still applied last and still wins, and the header is computed once at
+  definition time rather than per request.
+
+- **`formatValidationIssues` is removed, because it leaked the rejected value into every log.** It
+  reproduced `issue.message`, which valibot interpolates the rejected value into — a schema like
+  `v.regex(/^sk_live_/)` produced `Expected /^sk_live_/ but received "sk_test_SECRET"`. That string
+  was the env validator's throw, so it reached `reqLog.error`, the app logger, the KV log channel
+  (whose `toPersistable` strips only `stack`) and the `isDebug` 500 body: a malformed secret written
+  verbatim on every request, against `BOUNDARIES` §4a. A published export whose own README said
+  "never put its output in a response" was a trap on the public surface. Env validation now renders
+  `field: reason` from `issue.type` — `Invalid environment: DATABASE_URL: missing`,
+  `Invalid environment: API_KEY: regex` — a closed valibot vocabulary carrying neither the value nor
+  the schema's text, and `issue.expected` stays out because it can be a `v.regex` source. Fixing it
+  at the renderer fixes all four sinks; `describeValidationIssue` is unchanged.
+
+- **`cors()` marks `Vary: Origin` on refused and no-`Origin` responses too.** Only the allowed branch
+  carried it, so a shared cache could store a refusal — no `Access-Control-Allow-Origin`, no `Vary` —
+  and replay it to an allowed origin, which is the CORS-defeating direction. The rule is whether the
+  middleware's output depends on `Origin`, and it does on both branches. **The cost, stated plainly:**
+  a non-wildcard `cors()` now rebuilds every response, where the refused path previously returned the
+  downstream response untouched. Conversely, `origins: ["*"]` **without** credentials now emits no
+  `Vary` and leaves a downstream one alone: the ACAO header is the constant `"*"`, so marking `Vary`
+  only shredded the cache key. The allowlist, the preflight header object and the `join`s are all
+  computed once at `cors()` time — `matchOrigin` is now one call into the same compiled matcher — and
+  `createSecurityHeaders` renders its CSP from a template computed once, substituting only the nonce.
+
+- **`verifySignedObjectUrl` returns forge's one `Result`.** `SignedUrlOk`/`SignedUrlError` are
+  replaced by `SignedUrlFailure` (the three reason codes) and `SignedUrlVerdict =
+Result<string, SignedUrlFailure>`, with the object key as `data` directly — a one-field success
+  object beside a `data` channel was two wrappers for one value. Read `verdict.data` where you read
+  `verdict.key`, and `verdict.error` where you read `verdict.reason`; the storage README example also
+  stops echoing the reason code to the client, which `ERROR_HANDLING` §1c already forbids.
+  `planRotation` (`@y-core/forge/cli/cf`) likewise returns `Result<string[], RotationRefusal>`, its
+  two failure fields collected under `error`, and `parseChangelog`/`promoteUnreleased`
+  (`@y-core/forge/cli/pkg`) return `ValidationResult<ChangelogDocument>` and
+  `ValidationResult<string>` — the parse's `unreleased`/`versions`/`linkRefs` now sit under `data`
+  as the new `ChangelogDocument`, and its `errors` arm is the standard `error`.
+
+- **`bindingSchema(name, methods, label)` is exported from `@y-core/forge/context`.** The KV, D1 and
+  R2 binding validators each carried a copy of the same `v.object`/`v.check` shape; each is now one
+  line, with the rejection messages byte-identical. `label` carries the article ("an R2 bucket
+  binding") rather than being derived from the first letter, which is a bug the day a `Hyperdrive`
+  binding is added.
+
+- **`serveObject` owns a range contract, and `ObjectStorageBackend.get` now has a throw contract.**
+  A `Range` whose first-byte-pos exceeds `Number.MAX_SAFE_INTEGER` is answered `416` with **no**
+  backend call, and an oversized last-byte-pos or suffix clamps to the whole object (RFC 9110): what
+  reached `R2GetOptions` before was `Infinity`, which R2 answers with a `TypeError` — a 500 for a
+  client's malformed header. A backend that cannot satisfy a range throws the new `@public`
+  `UnsatisfiableRangeError` (`@y-core/forge/storage/r2`), which `r2Backend.get` translates the
+  platform error into and which `serveObject` catches — **only** that type — spending a `head` on
+  that path alone, so a satisfiable ranged read stays one round trip. `serveObject` also now emits
+  `Content-Encoding` and `Content-Language` (stored by `r2Backend` and silently dropped before),
+  falls back to the object's stored `Content-Disposition` when no option overrides — dropping one
+  that carries a non-ASCII byte rather than throwing from `Headers.set` — and sets
+  `X-Content-Type-Options: nosniff` unconditionally. Both pre-existing 416 branches now cancel the
+  body they abandon.
+
+- **`ObjectStore` listing, prefixes, bodies and prototype keys.** Four defects, one namespace:
+  `r2Backend.list` now passes `include: ["httpMetadata", "customMetadata"]`, without which a list is
+  silently lossier than a `head` of the same key under the default `r2_list_honor_include` flag
+  (`R2ListOptions` gains `include`; `StoreListOptions` deliberately does **not**, since a caller who
+  could switch it off would get this bug back). `store.list` strips the store prefix from
+  `delimitedPrefixes` too — a page mixed stripped keys with unstripped folders, and a returned prefix
+  fed back into `list({ prefix })` double-prefixed. `store.get` re-keys the object by re-declaring
+  its getters instead of spreading it: the spread **read** `body` and `bodyUsed`, freezing
+  `bodyUsed: false` forever and, on a real `R2ObjectBody`, locking the stream. And `inferContentType`
+  guards with `Object.hasOwn`, so `"upload.constructor"` no longer returns the `Object` function —
+  which, being non-nullish, skipped the `?? CONTENT_TYPE_DEFAULT` fallback and sent a non-string
+  `contentType` to `bucket.put`.
+
+- **The storage fakes now refuse what the platform refuses.** A fake that is green where the real
+  binding throws certifies code that fails on deploy. `fakeKV.put` throws below KV's 60-second
+  `expirationTtl` floor and accepts an `ArrayBufferView` or a `ReadableStream` (which also widens
+  `KVNamespaceLike.put`); `fakeR2.get` throws `UnsatisfiableRangeError` for a range lying wholly
+  outside the object, while still clamping an overrun — which is what R2 does; `fakeR2.list` honours
+  `delimiter` and `include`; and `fakeD1.first(column)` rejects a column the row does not carry
+  instead of returning `undefined` against a declared `T | null`. TTL _expiry_ is still not modelled:
+  that would need a clock, and `TESTING` §7b's no-wall-clock rule stands.
+
+- **KV log keys changed format, and the viewer opens on the newest page.** It opened on the
+  **oldest**: KV lists lexicographically with no reverse option, and the key led with an ISO
+  timestamp. Keys are now `{prefix}||v2||{999999999999999 - ms, padded to 15}||{rand}`, so
+  lexicographic order is newest-first. `purge` slices the **tail** accordingly —
+  `keys.slice(maxLogs)`, where the old code would have deleted exactly what is worth keeping. The
+  list prefix carries `v2` because an old key's third segment starts with `2` and a new one with `9`,
+  so under one prefix every legacy record would sort above every new one; **existing entries stop
+  listing and expire by their TTL** (7 days by default), which is why there is no migration shim.
+  Filtering remains per page — a paging loop would issue unbounded billed `kv.list` subrequests in
+  one invocation — but the empty state now says so when a further page exists, instead of claiming
+  no matches.
+
+- **KV log metadata is capped in bytes, not UTF-16 units — and `LogRow.level` is `LogLevel`.**
+  `JSON.stringify` expands a C0 control character to six bytes, so a 256-character message serialized
+  to roughly 1620 bytes, KV rejected the `put`, and the record was **lost**; the test stub did not
+  enforce the limit, which is why three 256-character tests could not catch it. The channel now
+  measures the serialized metadata and shrinks in a fixed order — message, then prefix (previously
+  uncapped), then `requestId` — flooring at `{ level, timestamp }`, and truncates by **code point**
+  rather than `String.slice`, which would split a surrogate pair into a lone surrogate costing six
+  escaped bytes. The code-point count is binary-searched, so the hostile input this exists for costs
+  about nine `stringify` calls rather than 256. Nothing is lost: the full record still goes into the
+  KV **value** (25 MiB), so the detail view is unchanged — only the row preview truncates.
+  `KvLogMetadata.prefix` and `.message` are now optional (absent only at that floor), and
+  `LogRow.level` is `LogLevel`, narrowed once at the trust boundary with the already-present
+  `parseLogLevel`; `LEVEL_TONE` is a total `Record<LogLevel, Tone>` and its `?? "info"` is gone.
+
+- **The gate runner can no longer report a skipped step as passed.** `StepSkip` and `Step.skip` are
+  removed; a step declares one `StepRequirement` under `requires`, and what its absence means is the
+  mode's answer: a fast run prints `○ <label> — skipped (<tool> not found; run \`<hint>\`)`and a`--full`run fails the step with the same hint. That closes two holes at once — the summary counted
+a skipped step in`N steps passed`, and `--full`, which `prepublishOnly`runs, honoured`skip`and
+so published without the drift checks ever running.`SummaryInput`now carries`passed`, `skipped`and`failedAt: { label, at }`in place of`ran` and a bare label; the failure line states a position
+(`step 3 of 7`) rather than a run count, and a run whose every selected step was skipped is red:
+`✗ verify — every step skipped (0 of 3 ran, …) — refusing to report a green gate that ran nothing`.
+`formatSkipped`is merged into`formatMissingRequirement(label, tool, hint, mode, style?)`,
+`listLabel(step, mode)`reads`requires.tool`directly, and`formatFixSummary`takes`{ gate, fixed, unfixable, skipped }`— "skipped" now means _dependency absent_ gate-wide, and a step
+with no fixer is counted as having none. The`--full`requirement line is byte-identical to before.`selectSteps`loses its prerequisite refusal, whose invariant is now true by construction, and its`only`parameter narrows to`readonly string[]`.
+
+- **`ContrastCheckConfig.palettePath` is now `() => string`.** Resolved eagerly, it threw while the
+  step-table module was being imported on a machine without `tailwindcss` — before any step ran and
+  before the skip could be reported. A thunk defers it past that point and keeps
+  `import.meta.resolve` in the consumer's `config/steps.ts`, where it finds the consumer's copy.
+
+- **`StepOptions` gains `requires?: StepRequirement | null`**, replacing a step's default dependency
+  or, with `null`, dropping it — for a project that vendors the dependency. The four design-system
+  steps (`classGroupsStep`, `designScaleStep`, `classTokensStep`, `cssTokensStep`) and `contrastStep`
+  now default to a `tailwindcss` requirement rather than a `skip`; `contrastStep` attaches it only
+  when it was given a `palettePath`. The `{ hint?: string }` option those builders briefly carried is
+  gone with the change — `browserStep` keeps its own.
+
+- **Correction to released entries.** The 0.1.1 notes state that `classGroupsStep`, `cssTokensStep`,
+  `designScaleStep` and `classTokensStep` are "`--full` only". They are not, and were not at release:
+  each runs in every mode where `tailwindcss` resolves, and is skipped in a fast run without it.
+  Released headings are frozen by `validate-changelog`, so the correction is recorded here rather
+  than edited into them.
+
+- **`SpeedDial` is removed from `@y-core/forge/ui/core`,** along with `SpeedDialPlacement`. A floating
+  action button earns its place only on a screen that has neither a toolbar nor a primary `Button` in
+  its header — a shape the primitive set does not target — and its `asChild` action could never close
+  the panel, because an invoker `command` is honoured on a `<button>` and silently ignored on an `<a>`.
+  A consumer that wants the pattern composes it from `Popover` and `Button` rows, which is the same
+  markup `SpeedDial` emitted. The `forge-ui-interaction-fab-one-primary` design rule is withdrawn with it.
+
+- **`HONEYPOT_FIELD_DEFAULT` is now `"__hp_c7"` (was `"__surname"`).** A decoy named `__surname`
+  matches the browser's own autofill heuristics, which ignore `autocomplete="off"` for name and
+  address fields — the browser filled the decoy for any user with a saved profile and the submission
+  was refused as a bot, invisibly and with no way to recover. The new default matches no heuristic.
+  An app that hardcoded the old string on either side, rather than importing the constant, updates
+  both halves together; an app already passing its own name — as `src/form/README.md` recommends —
+  is unaffected.
+
+### Fixed
+
+- **The shape-token count is eight, not seven, everywhere it is stated.** `theme-base.css` declares
+  `--radius`, `--radius-field`, `--radius-box`, `--radius-selector`, `--control-h-sm/md/lg` and
+  `--border-width`; four places counted the three `--control-h-*` tokens as one and said "seven" —
+  `shape-compact.css`'s own header, `src/ui/README.md`, and
+  [`THEME_GENERATION.md`](.decisions/implementation/THEME_GENERATION.md) §1d in three places. The
+  showcase already said eight, so a reader comparing the two surfaces got a contradiction about the
+  one set a consumer re-declares in full.
+
+- **A prerelease tag no longer disables the release guard.** `git tag --sort=-v:refname` puts
+  `v1.0.0-rc.1` _above_ `v1.0.0` without `-c versionsort.suffix=-`, and `getLatestTag` returned
+  whatever was first. `parseSemVer` rejects it, so the auto path threw an opaque parse error and —
+  worse — the explicit path's not-greater guard, written `prev !== null && …`, went **vacuous**: a
+  downgrade to `0.9.0` against a tagged `1.0.0` was waved through. `getLatestTag` now returns the
+  first listed tag the release scheme accepts, and `resolveVersion` parses the tag once, up front,
+  and **fails** on one it cannot read rather than skipping the comparison.
+
+- **The oxlint plugin now judges a class list bound to a module-scope `const` and passed by name.**
+  It read only inline literals and bare `cn`/`cva`/`asClass` arguments, so forge's own recipes —
+  written once as a constant and passed by identifier — were invisible to every class rule. An
+  initializer that is already a class position of its own is still judged only where it is written,
+  and a `const` declared inside a function is not resolved. `color-token-only` gained the `--tone*`
+  properties as declared, since `tone.ts` sets them with `[--tone:…]` utilities that never reach the
+  compiled stylesheet's `@theme` and so cannot appear in the generated scale. **Class lists passed
+  by name are now judged**, which can newly fail a file that has always been green.
+
+- **`forge/color-token-only` no longer reports the shadow family as an undeclared colour.** Tailwind
+  compiles a bare `shadow-(--shadow-lg)` to `--tw-shadow: var(--shadow-lg)` — the shadow value, not
+  a colour — so `shadow`, `inset-shadow`, `drop-shadow` and `text-shadow` are colour positions only
+  in their explicit `(color:--x)` spelling, which the rule's pattern does not match. `ring-`,
+  `outline-` and `border-` are genuine colour positions and still judged.
+
+- **`forge/spacing-scale-only` suggested the wrong sign for a negative arbitrary length.** It took
+  the magnitude of the value and re-used only the utility's own `-` prefix, so `mt-[-16px]` was told
+  to become `mt-4` and `-mt-[-16px]` `-mt-4` — both the opposite of what Tailwind compiles. The
+  suggestion's sign is the exclusive-or of the two now.
+
+- **`forge/platform-logical-spacing` reported utilities that do not exist.** Its value class stopped
+  at `(`, `%` and `)`, so `mr-[calc(100%-1rem)]` was reported as `mr-[calc` → `me-[calc` and
+  `border-r-(--w)` as `border-r-` → `border-e-`. The whole arbitrary value is carried through now.
+
+- **`validate-docs` no longer blanks a wrapped citation as if it were code.** Any line indented four
+  spaces was treated as an indented code block, with no blank-line-before and no list-context test —
+  so a citation wrapped onto a continuation line and a nested `    - …` bullet escaped _every_
+  downstream check: section parsing, the rot scan, link-target existence, inter-document citations
+  and path resolution. Indentation is read as code where CommonMark says so now: after a blank line,
+  outside a list, running on until a line starts back at the margin. `NAMESPACE_DESIGN.md`'s wrapped
+  `§5c` citation is checked against its target's sections for the first time.
+
+- **A trailing `// note` in `.oxlintrc.json` no longer fails `validate-design` with "could not be
+  read".** Its JSONC strip dropped whole comment lines only, so a comment after a value left
+  `JSON.parse` to throw and the step reported the config as unreadable rather than reading it. It
+  uses `stripJsonc`, which is what the `cf` config writer already parses JSONC with.
+
+- **`validate-design` now catches a hand-written `data-busy`.** Its state-attribute alternation was
+  hand-listed and had never gained `busy`, which `ui/contracts` has declared since the attribute
+  shipped. The alternation is derived from `stateAttrs` itself now — a presence flag is what it
+  emits with an empty value — over a `Required<StateAttrsProps>` literal, so a state key added to
+  the contract without a decision here fails to typecheck rather than going silently unchecked.
+
+- **`focus-visible:ring-0` and `focus-visible:ring-offset-2` no longer count as a replacement focus
+  ring.** The rule's first alternative was an unbounded prefix, so any `focus-visible…:ring…`
+  satisfied it — including a zero-width ring and an offset that carries no width of its own.
+
+- **`validate-contrast` no longer rounds a ratio before comparing it to the floor.** A pair
+  measuring 4.4951:1 passed a 4.5:1 floor in the gate while the theme customiser, which compares the
+  raw value, showed it red — the disagreement `THEME_GENERATION.md` §3c exists to forbid. The
+  comparison is unrounded; `toFixed(2)` is still what the message prints. **A pair within 0.005 of a
+  floor now fails.**
+
+- **Only the first `:root` block of a stylesheet was read.** A second one's declarations were
+  invisible to the audit even though the cascade paints them; every top-level `:root` is read now,
+  in source order, with a later declaration overwriting an earlier. The block-matching regex also
+  escaped only the first `.` of a selector.
+
+- **`.dark-overlay` is no longer read as a `.dark` mode block.** The declaration-site rule keyed on
+  `\.dark\b`, which a hyphenated class name satisfies.
+
+- **A `/*` inside a string literal no longer blanks the code up to the next real comment.** Every
+  gate parser reached its source through one bare `source.replace(/\/\*[\s\S]*?\*\//g, …)`, which
+  cannot tell a comment opener from the same two characters inside a string. `theme-contract.ts`
+  opens a string with `"/* Generated by the forge theme customiser.` and closes it seven lines
+  later, so `validate-modern-css` had been reading that span as a comment and finding nothing in it.
+  `blankComments` and `blankSourceComments` are now one pass that tracks strings and comments
+  together, so neither can start inside the other, and `css-parse` and all four of `barrel-parse`'s
+  `//` passes route through it — a block-commented `export` no longer counts as live, and a line
+  carrying `https://` no longer loses its tail. **Previously-passing files may newly fail**: the
+  parsers now see code a string-borne `/*` used to hide.
+
+- **`findThemeTokens` reported the wrong line after a multi-line comment.** Its stripper replaced
+  each block comment with a single space, so every line number computed from the stripped text
+  shifted by the comment's height. The blanking is space-for-space and line-preserving now, which is
+  what makes the reported line the line the token is written on.
+
+- **A JSX-text apostrophe no longer hides every element after it from `findSlotClobbers`.** Its
+  `skipQuoted` had neither a newline bail-out nor a fallback, so `<p>Don't close this</p>` scanned
+  forward to the next `'` anywhere in the file — and an unterminated string returned the file
+  length, silently ending the scan. A `'` or `"` that reaches the line end is now read as data, and
+  one is treated as a string opener only inside a tag or an expression container.
+
+- **`cf sync --commit` can write an id into a single-line entry that already ends in a comma.**
+  `applyJsoncEdits` appended `, ` unconditionally in that branch, over an offset already past the
+  existing comma, so `{ "binding": "CACHE", }` became `,,` — text `writeWranglerConfig`'s round-trip
+  check refuses, reporting a bug in the writer. Because the resource is created on Cloudflare before
+  the write, every re-run matched it by name and scheduled the same doomed edit; the id never landed
+  without hand-editing. The same function's CRLF probe indexed the outer source with an offset into
+  the object's interior, so an empty multi-line object in a CRLF file gained an LF — a change no
+  round-trip check catches, since the text parses identically.
+
+- **`cf sync` no longer writes `queue_id` into the wrangler config.** wrangler 4.124.0 validates
+  `queues.producers` against `binding`, `queue`, `delivery_delay` and `remote`, so every run after a
+  queue sync warned `Unexpected fields found in queues.producers[0] field: "queue_id"`. The field is
+  still **read** — a config that already carries one resolves by id and a stale id is still named on
+  its row — and the remote id still appears in the report; nothing forge writes will carry it again.
+
+- **A `sync zone` phase that was never written no longer reports `updated`.** The commit loop skips
+  an in-step phase without ever PUTting it, but a run-scoped `committed` flag was passed to every
+  row, so a different drifted phase writing successfully relabelled the untouched one. The write is
+  now recorded on the phase it belongs to. The `--json` output was never affected.
+
+- **A rejected secret write no longer reports the secret as absent.** `remote` conflated "the write
+  succeeded" with "the name is present remotely", so a failed PUT or PATCH against a secret the
+  listing had just returned rendered `Remote: no` while the old value sat untouched on the remote.
+  The Pages branch was the worse case: one rejected PATCH marked every batched write at once.
+
+- **`cf gen env` no longer corrupts a comma before a bracket inside a string.** It stripped comments
+  with a gen-local copy of `stripJsonc` and then bolted on the string-unaware
+  `/,(\s*[}\]])/g` trailing-comma regex the shared parser was rewritten to eliminate, so a
+  `CSP_TEMPLATE` containing `, ]` was silently rewritten while `loadWranglerConfig` read it intact.
+  `readWranglerConfig` is now the shared `stripJsonc` and the gen-local copy is deleted; it was never
+  exported from `mod.ts`.
+
+- **`cf gen env` recognises every `.dev.vars` key the rest of the tool does.** `collectVars` matched
+  only `/^[A-Z_][A-Z0-9_]*=/`, so `STRIPE_KEY = x` and `lower_key=1` — both accepted by dotenv, by
+  wrangler and by this repo's own `parseDevVars` — were absent from the generated `EnvSchema` and the
+  app booted with a var no schema knew about. It now calls `parseDevVars`, and `emit` quotes a name
+  that is not a valid identifier so the generated module still parses.
+
+- **`sanitizeSVG` strips an event handler written with whitespace around its `=`.** The `on*` rule
+  required `=` to follow the attribute name immediately, so `<circle onclick = "evil()"/>` came back
+  unchanged — while the `href` rule one line above already allowed the spacing. The two patterns now
+  agree. The gap survived because the tests asserted `not.toContain("onclick")`, which passes against
+  markup that still carries `onclick = "evil()"`; every markup assertion in `sprites.test.ts`,
+  `cursors.test.ts` and `site.test.ts` is now an exact match on the whole emitted string.
+
+- **Every `currentColor` in an icon source is resolved before rasterising, not just the first.**
+  `buildIcons` used a string-pattern `replace` for the bytes it hands `sharp`, so an icon setting both
+  `fill="currentColor"` and `stroke="currentColor"` reached sharp with the second unresolved and
+  rendered it black. `favicon.svg` was never affected — it goes through the `<style>` injection.
+
+- **`parseColor` accepts 3- and 4-digit hex.** `#fff` parsed as `null`, which mattered because
+  Tailwind v4 emits short forms (`--color-white: #fff`) and `buildCursors` mapped the null to black.
+  Each nibble is now doubled before the existing parse, so `#abc` reads as `#aabbcc` and `#abcf` as
+  `#aabbccff`.
+
+- **The `_headers` cache rule follows `paths.publicPrefix`.** `emitHeaders` wrote a rule for the
+  literal `/assets/*` and was never handed the configured prefix, so a build with
+  `publicPrefix: "/static"` shipped an immutable-cache rule matching none of the hashed URLs the
+  manifest resolves. The rule path is now the prefix, normalised the same way `createManifest`
+  normalises it (one trailing slash stripped, so `"/"` degrades to `/*`), which is what keeps the
+  build-time rule and the runtime URL from disagreeing. Builds on the default prefix are unaffected.
+
+- **A second CSS entry no longer deletes the first one's emitted file.** `buildCSS` purged _every_
+  `.css` in the output directory before each build, and both `buildAll` and the `assets css` CLI
+  command loop every `css[]` entry into the same public directory — so `css: [{ output: "styles.css" },
+{ output: "print.css" }]` left the manifest naming two hashed files and only `print.<hash>.css` on
+  disk, making `assets.path("styles.css")` a production 404. The purge is now restricted to the
+  entry's own output stem, the same shape `buildSpriteGroup` already used, and it skips dotfiles.
+  **Known limit:** a `.css` left behind by a config entry that has since been _removed_ is no longer
+  swept — that is a `clean` command's job, not a per-entry builder's.
+
+- **`Slider` no longer lets the class sorter resolve `cursor-pointer` against `state-busy`.** Both sat
+  in one bare string literal, and `state-busy` paints `cursor: progress` conditionally — the exact
+  shape [`UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md) §3h forbids, and
+  which `Toggle` already handled correctly. `cursor-pointer` now travels in its own `cn` argument,
+  where cross-argument precedence is what §3e guarantees a sorter cannot reach.
+
+- **`Link` renders a focus indicator again.** Its base class was the typo `focus-ring-outset-outset`,
+  which matches no `@utility`, so every `Link` in the library had `outline-none` and nothing put back.
+  The `validate-design` focus-ring check did not catch it because that check only looks at class
+  strings also carrying `cursor-pointer`; its `FOCUS_VISIBLE_RING` pattern additionally rejected the
+  legitimate `focus-ring-outset`, and now accepts it while still rejecting an unknown suffix.
+
+- **`<Button asChild loading loadingIcon={…}>` no longer drops every prop.** With a spinner to render,
+  Button wrapped its children in a Fragment and merged onto that — and a Fragment carries no
+  attributes, so the class, `data-slot`, `aria-busy` and every caller prop vanished silently. The
+  spinner is now injected into the cloned child. `cloneAsChild` rejects a Fragment outright, which
+  closes the same hole for every `asChild` component and makes its documented error message truthful.
+
+- **`busy` paints on `Switch` and `Toggle`.** Both put `aria-busy` on the inner input and
+  `state-busy` on the wrapping label, but the utility only matched the element carrying the attribute
+  — so the prop did nothing at all. It now also matches through `:has()`, the shape `state-disabled`
+  and `state-invalid` already used.
+
+- **`CheckboxGroup` and `RadioGroup` no longer put `aria-invalid`/`aria-busy` on their `<fieldset>`.**
+  Neither attribute is valid on the implicit `group` role; the `data-*` state hooks the CSS reads stay,
+  and an `Item` carries the aria on the input, where the role allows it. The state spread also moved
+  ahead of the caller's props, so a caller-supplied aria attribute now wins — matching how
+  `aria-describedby` already behaved. `RadioGroup`'s fieldset gained the `role="radiogroup"` it was
+  missing.
+
+- **A `Filter` chip keeps a visible focus indicator in forced-colors mode.** The chip's `focus-ring` is
+  a `box-shadow`, and shadows do not paint under `forced-colors: active`, so a focused chip had no
+  indicator at all. §9 of `forge-ui.css` now restores an outline for `filter-item` alongside its
+  chosen-state colours. `CheckboxGroup` and `RadioGroup` — the two components §9 was written about —
+  gained the forced-colors browser coverage they never had.
+
+- **`isHoneypotFilled` no longer treats a whitespace-only value as a bot signal.** A single space
+  left by an extension or an autofill pass tripped the guard and refused a legitimate submission.
+  The string case now trims before the length check; a `File` value is still judged on its size, so
+  a zero-byte file remains "not filled".
+
+- **`Honeypot` renders `autocomplete="new-password"` instead of `autocomplete="off"`.** `off` is the
+  token browsers feel free to ignore on fields their heuristics recognise; `new-password` is the one
+  they honour as _never autofill this_. Defence in depth behind the field-name change above.
 
 ---
 

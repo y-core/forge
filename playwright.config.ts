@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { resolveChromiumPath } from "./src/cli/pkg/mod";
+import { resolveChromiumPath } from "./src/tooling/gate/mod";
 
 /**
  * The browser set — real Chromium, one verb of its own (`bun run test:browser`).
@@ -21,7 +21,7 @@ import { resolveChromiumPath } from "./src/cli/pkg/mod";
  * `executablePath` is not a preference: playwright reads no environment variable for the browser
  * path, so a container that bakes Chromium in is invisible to it without this line and every spec
  * fails inside `browserType.launch()` rather than in the code under test.
- * `src/cli/pkg/gate/checks/browser.ts` owns that resolution, because the gate's prerequisite probe must answer
+ * `src/tooling/gate/checks/browser.ts` owns that resolution, because the gate's prerequisite probe must answer
  * from the same rule.
  */
 export default defineConfig({

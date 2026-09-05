@@ -3,13 +3,11 @@
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
-
-type ScrollOrientation = Extract<Orientation, "horizontal" | "vertical">;
+import { cn } from "./utils/cn";
 
 interface ScrollAreaRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  orientation?: ScrollOrientation;
-  children?: JSXNode;
+  orientation?: Orientation | undefined;
+  children?: JSXNode | undefined;
 }
 
 interface ScrollAreaViewportProps extends Omit<JSX.IntrinsicElements["section"], "children"> {
@@ -18,11 +16,11 @@ interface ScrollAreaViewportProps extends Omit<JSX.IntrinsicElements["section"],
   // what gives the `<section>` its `region` role — an unnamed one is a generic box.
   /** Accessible name for the scrollable region. */
   label: string;
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
 const ScrollAreaRoot: FC<ScrollAreaRootProps> = ({ orientation = "vertical", class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("scroll-area", inherited)} {...stateAttrs({ orientation })} class={cn("relative", asClass(cls))} {...rest}>
+  <div data-slot={slotToken("scroll-area", inherited)} {...stateAttrs({ orientation })} class={cn("relative", cls)} {...rest}>
     {children}
   </div>
 );
@@ -39,9 +37,9 @@ const ScrollAreaViewport: FC<ScrollAreaViewportProps> = ({ label, class: cls, ch
       // root's max-height box instead of scrolling. Inheriting the computed max-height binds the
       // scrolling element itself. A root bounded by a definite `h-*` computes `max-height: none`,
       // so this is inert there and `h-full` keeps governing.
-      "h-full max-h-[inherit] w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      "h-full max-h-[inherit] w-full overflow-auto overscroll-contain rounded-[inherit] focus-ring",
       "[scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent]",
-      asClass(cls),
+      cls,
     )}
     {...rest}>
     {children}

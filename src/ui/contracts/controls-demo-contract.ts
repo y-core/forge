@@ -24,6 +24,9 @@ export interface ControlsDemoState {
   bold: boolean;
   plan: string;
   toppings: string[];
+  avatar: string;
+  code: string;
+  pin: string;
 }
 
 /** The band's server-rendered state, and the single source every control paints from. @internal */
@@ -45,6 +48,9 @@ export const CONTROLS_DEMO_STATE: ControlsDemoState = {
   bold: true,
   plan: "standard",
   toppings: ["olives", "basil"],
+  avatar: "",
+  code: "",
+  pin: "1234",
 };
 
 /** Formats a bound signal value for its readout, on the server and in the browser alike. @internal */

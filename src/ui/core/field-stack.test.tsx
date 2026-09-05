@@ -12,31 +12,31 @@ describe("Field (layout)", () => {
         </Field>,
       ),
     ).toBe(
-      '<div data-slot="field" data-orientation="vertical" class="flex flex-col gap-1"><span data-slot="field-label" class="text-xs font-medium text-muted-foreground">Field of view</span><input data-ref="control"></div>',
+      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">Field of view</span><input data-ref="control"></div>',
     );
   });
 
   it("defaults to vertical orientation", async () => {
     expect(await render(<Field label='X' />)).toBe(
-      '<div data-slot="field" data-orientation="vertical" class="flex flex-col gap-1"><span data-slot="field-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
+      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
     );
   });
 
   it("supports horizontal orientation", async () => {
     expect(await render(<Field label='X' orientation='horizontal' />)).toBe(
-      '<div data-slot="field" data-orientation="horizontal" class="flex items-center gap-2"><span data-slot="field-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
+      '<div data-slot="field-stack" data-orientation="horizontal" class="flex items-center gap-2"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
     );
   });
 
   it("merges a custom class onto the wrapper", async () => {
     expect(await render(<Field label='X' class='extra-class' />)).toBe(
-      '<div data-slot="field" data-orientation="vertical" class="flex flex-col gap-1 extra-class"><span data-slot="field-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
+      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1 extra-class"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
     );
   });
 
   it("spreads arbitrary attributes onto the wrapper", async () => {
     expect(await render(<Field label='X' data-ref='fov-field' />)).toBe(
-      '<div data-slot="field" data-orientation="vertical" class="flex flex-col gap-1" data-ref="fov-field"><span data-slot="field-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
+      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1" data-ref="fov-field"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
     );
   });
 });

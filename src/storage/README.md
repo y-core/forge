@@ -28,6 +28,8 @@ All three share two cross-cutting conventions:
 
 ## `@y-core/forge/storage/db` — D1 database client
 
+> Import path: `@y-core/forge/storage/db` → `src/storage/db/mod.ts`
+
 ### Features
 
 - **Injection-safe by construction.** The client accepts only `SqlFragment` values built by the `sql`
@@ -214,9 +216,35 @@ const db = resolveD1Client(c, { binding: (c) => c.env.DB });
   statement text. The brand is non-enumerable in practice: ``JSON.stringify(sql`…`)`` round-trips
   to a value `isSqlFragment` rejects.
 
+### Exports
+
+| Export                                                  | Kind     | Description                                                                                     |
+| ------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `createD1Client(db, options?)`                          | function | Wraps a `D1Database` binding with a typed, `Result`-returning `D1Client`.                       |
+| `resolveD1Client(c, opts)`                              | function | Builds a `D1Client` from the request context; `null` instead of a throw when `required: false`. |
+| `validateD1Binding(name)`                               | function | `Middleware` asserting `c.env[name]` is an object whose `prepare` is a function.                |
+| `sql`                                                   | function | Tagged template producing a `SqlFragment` — the only value `D1Client` accepts.                  |
+| `isSqlFragment(value)`                                  | function | Provenance guard: only a fragment `sql` minted passes.                                          |
+| `SQL_PLACEHOLDER`                                       | const    | The placeholder (`"?"`) emitted for each bind parameter.                                        |
+| `uuidv7()`, `uuidv7Bytes()`                             | function | A canonical UUIDv7 string, and the same value as its raw 16 octets, from one shared generator.  |
+| `uuidFromBytes(value)`, `uuidToBytes(id)`               | function | Renders 16 octets as the canonical string, and parses a canonical UUID back to its octets.      |
+| `createUuidv7(options?)`, `createUuidv7Bytes(options?)` | function | Independent string and byte generators; pass `options.now` to inject a clock in tests.          |
+| `Uuidv7Options`, `UuidByteInput`                        | types    | The generator options, and the accepted byte encodings for `uuidFromBytes`.                     |
+| `D1Client`, `D1ClientOptions`                           | types    | The four-method client `createD1Client` returns, and its `{ logger? }` options.                 |
+| `D1Database`, `D1DatabaseLike`                          | types    | Forge's neutral D1 binding, and the structural supertype resolvers constrain to.                |
+| `D1PreparedStatement`                                   | type     | The prepared-statement surface `D1Database.prepare` returns.                                    |
+| `D1Result`                                              | type     | One statement's result — what `batch` resolves to, one entry per statement.                     |
+| `SqlFragment`                                           | type     | Branded `{ text, params }`.                                                                     |
+| `D1BindingOptions`                                      | type     | `{ binding, required?, client? }` for `resolveD1Client`.                                        |
+
+The six UUID functions and their two types are re-exported from the sealed-internal `crypto` namespace, which has no
+subpath of its own — `storage/db` is where they are published.
+
 ---
 
 ## `@y-core/forge/storage/kv` — Workers KV store
+
+> Import path: `@y-core/forge/storage/kv` → `src/storage/kv/mod.ts`
 
 ### Features
 
@@ -333,9 +361,28 @@ const sessions = resolveKVStore<typeof c.env, Session>(c, { binding: (c) => c.en
 - Treat decoded values as untrusted input — a malformed entry surfaces as `{ ok: false, error }` from
   `get`; branch on it rather than assuming `data` is well-formed.
 
+### Exports
+
+| Export                                         | Kind     | Description                                                                            |
+| ---------------------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `createKVStore(kv, options?)`                  | function | Wraps a `KVNamespace` with a typed, codec-aware `KVStore<T>`.                          |
+| `resolveKVStore(c, opts)`                      | function | Builds a `KVStore<T>` from the request context and `opts.store`.                       |
+| `validateKVBinding(name)`                      | function | `Middleware` asserting `c.env[name]` is an object whose `get` and `put` are functions. |
+| `jsonCodec()`, `textCodec()`, `bytesCodec()`   | function | The built-in codecs: JSON records, raw strings, and binary via `ArrayBuffer`.          |
+| `KVStore`, `KVStoreOptions`                    | types    | The typed store, and `{ codec?, prefix?, defaultTtl?, logger? }`.                      |
+| `KVSetOptions`                                 | type     | `{ ttl?, expiration?, metadata? }` for `set` / `getOrSet`.                             |
+| `KVPutOptions`                                 | type     | The raw put options passed through to the binding.                                     |
+| `KVEntry`                                      | type     | `{ value, metadata }` — what `getWithMeta` resolves to.                                |
+| `KVListOptions`, `KVListResult`, `KVListEntry` | types    | `{ prefix?, limit?, cursor? }`, the page it returns, and one key in that page.         |
+| `KvCodec`, `KvValueType`                       | types    | `{ type, encode, decode }`, and the `"text" \| "arrayBuffer"` wire selector.           |
+| `KVNamespace`, `KVNamespaceLike`               | types    | Forge's neutral KV binding, and the structural supertype.                              |
+| `KVBindingOptions`                             | type     | `{ binding, required?, store? }` for `resolveKVStore`.                                 |
+
 ---
 
 ## `@y-core/forge/storage/r2` — R2 object store
+
+> Import path: `@y-core/forge/storage/r2` → `src/storage/r2/mod.ts`
 
 ### Features
 
@@ -364,7 +411,8 @@ if (!put.ok) {
 }
 
 // Stream it straight back to the client with range + ETag support:
-return assets.serveObject(c.request, "avatars/42.png", { cacheControl: "public, max-age=3600" });
+const served = await assets.serveObject(c.request, "avatars/42.png", { cacheControl: "public, max-age=3600" });
+return served.ok ? served.data : new Response(served.error.message, { status: 500 });
 ```
 
 ### Core components and APIs
@@ -376,7 +424,9 @@ Wraps an `ObjectStorageBackend` with a typed `ObjectStore`.
 | Option   | Type     | Purpose                                          |
 | -------- | -------- | ------------------------------------------------ |
 | `prefix` | `string` | Key namespace applied on write, stripped on read |
-| `logger` | `Logger` | Scoped logger                                    |
+
+**There is no `logger` option.** A store reports a fault through the `Result` it returns; the caller
+logs it with whatever logger it already holds.
 
 The returned `ObjectStore`:
 
@@ -387,7 +437,7 @@ The returned `ObjectStore`:
 | `put`         | `put(key, value, options?)`           | `StoredObject` — content type inferred from the key when omitted |
 | `delete`      | `delete(key)`                         | `void` — `key` may be a single string or an array                |
 | `list`        | `list(options?)`                      | `ListObjectsResult`                                              |
-| `serveObject` | `serveObject(request, key, options?)` | `Promise<Response>` (not `Result`-wrapped — always a `Response`) |
+| `serveObject` | `serveObject(request, key, options?)` | `Response` — a rendered `200`/`206`/`304`/`404`/`416`            |
 
 `StorePutOptions` carries `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`,
 `cacheControl`, and a `metadata` record. `StoreGetOptions` accepts a byte `range`. `StoreListOptions`
@@ -405,7 +455,9 @@ Retrieves an object and returns a ready-to-return `Response`. It always resolves
 | `404`  | Object absent                                    |
 | `416`  | Unsatisfiable / malformed `Range`                |
 
-It sets `Content-Type`, `ETag`, `Accept-Ranges`, `Content-Length`, and `Cache-Control`.
+It sets `Content-Type`, `Content-Encoding`, `Content-Language`, `ETag`, `Accept-Ranges`, `Content-Length`, `Cache-Control` and `X-Content-Type-Options: nosniff`. With no `contentDisposition` option it falls back to the object's stored `Content-Disposition`, dropping one that carries a non-ASCII byte rather than throwing from `Headers.set`.
+
+A satisfiable ranged read is **one round trip** — no `head` is spent sizing the range in advance. A backend that cannot satisfy a range throws `UnsatisfiableRangeError`, which `serveObject` catches (and only that type) to answer `416` with the size from a `head`. A first-byte-pos beyond `Number.MAX_SAFE_INTEGER` is a `416` with no backend call at all; an oversized last-byte-pos or suffix clamps to the whole object.
 
 ```ts
 import { serveObject, r2Backend } from "@y-core/forge/storage/r2";
@@ -433,6 +485,13 @@ import { r2Backend, createObjectStore } from "@y-core/forge/storage/r2";
 
 const store = createObjectStore(r2Backend(c.env.ASSETS_BUCKET), { prefix: "uploads" });
 ```
+
+> **Security — uploads whose key a caller chooses.** `put` infers the content type from the key's
+> extension, so a caller who names their upload `x.html` has it stored as `text/html` and served
+> back from your own origin — a stored XSS against every page that shares it. `serveObject` sets
+> `X-Content-Type-Options: nosniff`, which bounds this but does not remove it. Serve untrusted
+> uploads from a **separate origin**, or force `contentDisposition: "attachment"`, or pass an
+> explicit `contentType` on `put` rather than letting the key decide.
 
 #### Content-type helpers
 
@@ -477,17 +536,18 @@ const url = await createSignedObjectUrl(signingKey, c.request.url, "avatars/42.p
 // On the receiving route:
 const verdict = await verifySignedObjectUrl(signingKey, c.request.url);
 if (!verdict.ok) {
-  // verdict.reason: "expired" | "invalid-signature" | "invalid-format"
-  return new Response(verdict.reason, { status: 403 });
+  // verdict.error is "expired" | "invalid-signature" | "invalid-format" — for your logs, not the
+  // client: echoing which check failed tells an attacker what to change next (ERROR_HANDLING §1c).
+  return new Response("Forbidden", { status: 403 });
 }
-return serveObject(r2Backend(c.env.ASSETS_BUCKET), c.request, verdict.key);
+return serveObject(r2Backend(c.env.ASSETS_BUCKET), c.request, verdict.data);
 ```
 
-| Function                                                   | Signature                                             | Notes                                                                    |
-| ---------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ |
-| `importSigningKey(hexSecret)`                              | `Promise<CryptoKey>`                                  | Imports a hex secret as a Web Crypto HMAC-SHA256 key                     |
-| `createSignedObjectUrl(key, baseUrl, objectKey, options?)` | `Promise<string>`                                     | Appends `?key=`, `?exp=`, `?sig=`; `expiresInSeconds` defaults to `3600` |
-| `verifySignedObjectUrl(key, url)`                          | `Promise<{ ok: true; key } \| { ok: false; reason }>` | Checks expiry first, then constant-time HMAC compare                     |
+| Function                                                   | Signature                   | Notes                                                                     |
+| ---------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------- |
+| `importSigningKey(hexSecret)`                              | `Promise<CryptoKey>`        | Imports a hex secret as a Web Crypto HMAC-SHA256 key                      |
+| `createSignedObjectUrl(key, baseUrl, objectKey, options?)` | `Promise<string>`           | Appends `?key=`, `?exp=`, `?sig=`; `expiresInSeconds` defaults to `3600`  |
+| `verifySignedObjectUrl(key, url)`                          | `Promise<SignedUrlVerdict>` | `Result<string, SignedUrlFailure>`: the object key, or why it was refused |
 
 The HMAC is computed over a length-prefixed payload (`${key.length}:${key}|${exp}`) so the `key`/`exp`
 boundary stays unambiguous even when the object key contains the `|` delimiter.
@@ -504,6 +564,37 @@ boundary stays unambiguous even when the object key contains the `|` delimiter.
   exact name plus an ASCII `filename="…"` fallback, so a crafted object key cannot break out of the
   quoted string. The fallback's exact folding rules are
   [`STORAGE_BINDINGS.md`](../../.decisions/implementation/STORAGE_BINDINGS.md) §3b's.
+
+### Exports
+
+| Export                                                         | Kind     | Description                                                                                                                     |
+| -------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `createObjectStore(backend, options?)`                         | function | Wraps an `ObjectStorageBackend` with a typed, `Result`-returning `ObjectStore`.                                                 |
+| `resolveObjectStore(c, opts)`                                  | function | Reads the bucket off the context, wraps it with `r2Backend`, and builds an `ObjectStore`.                                       |
+| `validateR2Binding(name)`                                      | function | `Middleware` asserting `c.env[name]` is an object whose `get` and `put` are functions.                                          |
+| `r2Backend(bucket)`                                            | function | Adapts a Cloudflare `R2Bucket` into the `ObjectStorageBackend` every R2 helper consumes.                                        |
+| `serveObject(backend, request, key, options?)`                 | function | Retrieves an object as a ready-to-return `Response` — `ETag`, `If-None-Match`, `Range`, and `Content-Disposition` handled.      |
+| `inferContentType(key)`                                        | function | Maps the key's file extension to a MIME type from a fixed table, falling back to `CONTENT_TYPE_DEFAULT`.                        |
+| `CONTENT_TYPE_DEFAULT`                                         | const    | The MIME type used when no extension matches: `"application/octet-stream"`.                                                     |
+| `UnsatisfiableRangeError`                                      | class    | Thrown by a backend for a `Range` wholly outside the object; carries `key`, optional `size`, and the platform error as `cause`. |
+| `importSigningKey(hexSecret)`                                  | function | Imports a hex secret as a Web Crypto HMAC-SHA256 key.                                                                           |
+| `createSignedObjectUrl(key, baseUrl, objectKey, options?)`     | function | Issues a time-limited signed GET URL; `expiresInSeconds` defaults to `3600`.                                                    |
+| `verifySignedObjectUrl(key, url)`                              | function | Constant-time verification returning the object key, or why it was refused.                                                     |
+| `ObjectStore`, `ObjectStoreOptions`                            | types    | The typed store, and `{ prefix? }` for `createObjectStore` — there is no `logger` option.                                       |
+| `ObjectStorageBackend`                                         | type     | The adapter surface every R2 helper consumes; `r2Backend` produces one.                                                         |
+| `StoredObject`, `ObjectBody`                                   | types    | Metadata only, and metadata plus a streamable body.                                                                             |
+| `StorePutOptions`                                              | type     | `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`, `cacheControl`, `metadata`.                          |
+| `StoreGetOptions`                                              | type     | `{ range? }`.                                                                                                                   |
+| `StoreListOptions`, `ListObjectsResult`                        | types    | `{ prefix?, limit?, cursor?, delimiter? }`, and the page it returns.                                                            |
+| `ServeOptions`                                                 | type     | `{ cacheControl?, contentDisposition? }` for `serveObject`.                                                                     |
+| `SignedUrlOptions`                                             | type     | `{ expiresInSeconds? }` for `createSignedObjectUrl`.                                                                            |
+| `SignedUrlVerdict`, `SignedUrlFailure`                         | types    | `Result<string, SignedUrlFailure>`, and the three refusal reasons.                                                              |
+| `R2Bucket`, `R2BucketLike`                                     | types    | Forge's neutral bucket, and the structural supertype.                                                                           |
+| `R2Object`, `R2ObjectBody`, `R2ObjectLike`, `R2ObjectBodyLike` | types    | Object metadata and body, neutral and structural forms.                                                                         |
+| `R2GetOptions`, `R2PutOptions`, `R2PutLike`                    | types    | Pass-through get and put options, and the put shape the adapter constructs.                                                     |
+| `R2ListOptions`, `R2ListResult`, `R2ListLike`                  | types    | List options, its result, and the structural list surface.                                                                      |
+| `R2HttpMetadata`                                               | type     | The HTTP header fields stored alongside an object.                                                                              |
+| `R2BindingOptions`                                             | type     | `{ binding, required?, store? }` for `resolveObjectStore`.                                                                      |
 
 ---
 
@@ -561,64 +652,10 @@ security-critical binding keeps `required` at its default.
 
 ---
 
-## Types
-
-Every type each sub-path's barrel exports, and what it is for.
-
-### `storage/db`
-
-| Type                             | Shape / purpose                                                                  |
-| -------------------------------- | -------------------------------------------------------------------------------- |
-| `D1Client`                       | The four-method client `createD1Client` returns.                                 |
-| `D1ClientOptions`                | `{ logger? }` for `createD1Client`.                                              |
-| `D1Database`, `D1DatabaseLike`   | Forge's neutral D1 binding, and the structural supertype resolvers constrain to. |
-| `D1PreparedStatement`            | The prepared-statement surface `D1Database.prepare` returns.                     |
-| `D1Result`                       | One statement's result — what `batch` resolves to, one entry per statement.      |
-| `SqlFragment`                    | Branded `{ text, params }` — the only value `D1Client` accepts.                  |
-| `D1BindingOptions`               | `{ binding, required?, client? }` for `resolveD1Client`.                         |
-| `Uuidv7Options`, `UuidByteInput` | The generator options, and the accepted byte encodings for `uuidFromBytes`.      |
-
-### `storage/kv`
-
-| Type                                           | Shape / purpose                                                                |
-| ---------------------------------------------- | ------------------------------------------------------------------------------ |
-| `KVStore`                                      | The typed store `createKVStore` returns.                                       |
-| `KVStoreOptions`                               | `{ codec?, prefix?, defaultTtl?, logger? }` for `createKVStore`.               |
-| `KVSetOptions`                                 | `{ ttl?, expiration?, metadata? }` for `set` / `getOrSet`.                     |
-| `KVPutOptions`                                 | The raw put options passed through to the binding.                             |
-| `KVEntry`                                      | `{ value, metadata }` — what `getWithMeta` resolves to.                        |
-| `KVListOptions`, `KVListResult`, `KVListEntry` | `{ prefix?, limit?, cursor? }`, the page it returns, and one key in that page. |
-| `KvCodec`, `KvValueType`                       | `{ type, encode, decode }`, and the `"text" \| "arrayBuffer"` wire selector.   |
-| `KVNamespace`, `KVNamespaceLike`               | Forge's neutral KV binding, and the structural supertype.                      |
-| `KVBindingOptions`                             | `{ binding, required?, store? }` for `resolveKVStore`.                         |
-
-### `storage/r2`
-
-| Type                                                           | Shape / purpose                                                                                        |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `ObjectStore`                                                  | The typed store `createObjectStore` returns.                                                           |
-| `ObjectStoreOptions`                                           | `{ prefix?, logger? }` for `createObjectStore`.                                                        |
-| `ObjectStorageBackend`                                         | The adapter surface every R2 helper consumes; `r2Backend` produces one.                                |
-| `StoredObject`, `ObjectBody`                                   | Metadata only, and metadata plus a streamable body.                                                    |
-| `StorePutOptions`                                              | `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`, `cacheControl`, `metadata`. |
-| `StoreGetOptions`                                              | `{ range? }`.                                                                                          |
-| `StoreListOptions`, `ListObjectsResult`                        | `{ prefix?, limit?, cursor?, delimiter? }`, and the page it returns.                                   |
-| `ServeOptions`                                                 | `{ cacheControl?, contentDisposition? }` for `serveObject`.                                            |
-| `SignedUrlOptions`                                             | `{ expiresInSeconds? }` for `createSignedObjectUrl`.                                                   |
-| `SignedUrlOk`, `SignedUrlError`                                | The two arms of `verifySignedObjectUrl`'s verdict.                                                     |
-| `R2Bucket`, `R2BucketLike`                                     | Forge's neutral bucket, and the structural supertype.                                                  |
-| `R2Object`, `R2ObjectBody`, `R2ObjectLike`, `R2ObjectBodyLike` | Object metadata and body, neutral and structural forms.                                                |
-| `R2GetOptions`, `R2PutOptions`, `R2PutLike`                    | Pass-through get and put options, and the put shape the adapter constructs.                            |
-| `R2ListOptions`, `R2ListResult`, `R2ListLike`                  | List options, its result, and the structural list surface.                                             |
-| `R2HttpMetadata`                                               | The HTTP header fields stored alongside an object.                                                     |
-| `R2BindingOptions`                                             | `{ binding, required?, store? }` for `resolveObjectStore`.                                             |
-
----
-
 ## See also
 
 - [`STORAGE_BINDINGS.md`](../../.decisions/implementation/STORAGE_BINDINGS.md) — the three clients,
   the resolve/validate lifecycle (§4), the structural contracts (§4c), and the degradation policy
   (§5).
 - [`ERROR_HANDLING.md`](../../.decisions/implementation/ERROR_HANDLING.md) — the `Result` primitive
-  every operation here returns, and the `serveObject` exception to it.
+  every operation here returns, and the free `serveObject`'s exception to it.

@@ -1,33 +1,31 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
+import { ISLAND_STATE_ATTR } from "../contracts/island-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
+import { TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
+import { presentationAttrs } from "../contracts/vocabulary";
+import type { Tone } from "../contracts/vocabulary";
+import type { PanelAppearance } from "./alert";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { toneVariants } from "./utils/tone";
 
-export type ToastVariant = "default" | "success" | "info" | "warning" | "destructive";
 export type ToastPosition = "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
 
 type ToastContainerProps = JSX.IntrinsicElements["section"] & {
-  position?: ToastPosition;
+  position?: ToastPosition | undefined;
   /** Accessible name for the notification region. @default "Notifications" */
-  label?: string;
+  label?: string | undefined;
 };
 
 type ToastProps = JSX.IntrinsicElements["div"] & {
-  variant?: ToastVariant;
-  dismissible?: boolean;
-  duration?: number;
+  tone?: Tone | undefined;
+  appearance?: PanelAppearance | undefined;
+  dismissible?: boolean | undefined;
+  duration?: number | undefined;
   /** Accessible name for the dismiss button. @default "Dismiss notification" */
-  dismissLabel?: string;
-};
-
-const toastVariantClasses: Record<ToastVariant, string> = {
-  default: cn("border-border bg-background text-foreground"),
-  success: cn("border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground"),
-  info: cn("border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground"),
-  warning: cn("border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground"),
-  destructive: cn("border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground"),
+  dismissLabel?: string | undefined;
 };
 
 const positionClasses: Record<ToastPosition, string> = {
@@ -65,7 +63,8 @@ const ToastContainer: FC<ToastContainerProps> = ({
 );
 
 const ToastRoot: FC<ToastProps> = ({
-  variant = "default",
+  tone = "neutral",
+  appearance = "soft",
   dismissible = false,
   duration,
   dismissLabel = "Dismiss notification",
@@ -78,11 +77,11 @@ const ToastRoot: FC<ToastProps> = ({
   return (
     <div
       data-slot={slotToken("toast", inherited)}
-      data-variant={variant}
-      {...(interactive ? { "data-scope": "toast", "data-state": JSON.stringify({ duration }) } : {})}
+      {...presentationAttrs({ tone, appearance })}
+      {...(interactive ? { "data-scope": TOAST_SCOPE, [ISLAND_STATE_ATTR]: JSON.stringify({ [TOAST_DURATION_KEY]: duration }) } : {})}
       class={cn(
-        "relative flex w-full items-start gap-3 rounded-xl border py-4 ps-4 pe-4 shadow-lg",
-        toastVariantClasses[variant],
+        "relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg",
+        toneVariants({ tone, appearance }),
         dismissible && "pe-10",
         cls,
       )}
@@ -96,7 +95,7 @@ const ToastRoot: FC<ToastProps> = ({
           data-slot='toast-close'
           aria-label={dismissLabel}
           {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-safe:transition-opacity'>
+          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity'>
           <span aria-hidden='true' class='text-sm leading-none'>
             ×
           </span>

@@ -25,6 +25,8 @@ import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 const icon = createIcon("/sprite.svg", {
   "icon-spinner": "0 0 24 24",
   "icon-chevron-down": "0 0 24 24",
+  "icon-chevron-left": "0 0 24 24",
+  "icon-chevron-right": "0 0 24 24",
   "icon-sun": "0 0 24 24",
   "icon-moon": "0 0 24 24",
   "icon-monitor": "0 0 24 24",

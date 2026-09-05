@@ -4,7 +4,7 @@ import { render } from "../../testing/render";
 import { ScrollArea } from "./scroll-area";
 
 const VIEWPORT_BASE =
-  "h-full max-h-[inherit] w-full overflow-auto overscroll-contain rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+  "h-full max-h-[inherit] w-full overflow-auto overscroll-contain rounded-[inherit] focus-ring " +
   "[scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent]";
 
 describe("ScrollArea", () => {
@@ -85,8 +85,8 @@ describe("ScrollArea.Viewport", () => {
         </ScrollArea.Viewport>,
       ),
     ).toBe(
-      '<section data-slot="scroll-area-viewport" aria-label="Log" tabindex="0" class="h-full max-h-[inherit] w-full overscroll-contain rounded-[inherit] outline-none ' +
-        "focus-visible:ring-2 focus-visible:ring-ring [scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent] " +
+      '<section data-slot="scroll-area-viewport" aria-label="Log" tabindex="0" class="h-full max-h-[inherit] w-full overscroll-contain rounded-[inherit] focus-ring ' +
+        "[scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent] " +
         'overflow-hidden">Log line</section>',
     );
   });

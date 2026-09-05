@@ -11,10 +11,15 @@ declare global {
   interface Window {
     forgeResume: typeof import("./resume");
     forgeSignal: typeof import("./signal");
+    forgeHtmx: typeof import("./htmx");
   }
 }
 
 const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeSignal: "./ui/client/signal" } };
+
+// htmx boots off `DOMContentLoaded` and the harness injects its bundle after that, so a case using
+// it calls `htmx.process` itself.
+const HTMX_EXPOSE = { expose: { ...EXPOSE.expose, forgeHtmx: "./ui/client/htmx" } };
 
 /** One scope root with a single `data-on-click` button, rendered through the real SSR components. */
 function scopeMarkup(name: string, action: string, state?: Record<string, unknown>): Promise<string> {
@@ -714,7 +719,7 @@ test.describe("resume — a throwing setup is contained", () => {
   // Malformed `data-state` is server-authored markup, so it throws — and the throw is contained to
   // its own scope by the per-scope catch above.
   test("a scope with malformed data-state throws without taking the page down", async ({ page }) => {
-    const html = `<div data-scope="broken" data-state="{nope"></div><div data-scope="sibling"></div>`;
+    const html = `<div data-scope="broken" data-island-state="{nope"></div><div data-scope="sibling"></div>`;
     await mount(page, html, EXPOSE);
 
     const log = await page.evaluate(() => {
@@ -857,5 +862,70 @@ test.describe("resume — installing listeners and resuming a tree are two jobs"
       afterFirst: { out: "1", calls: ["act", "act"] },
       afterSecond: "1",
     });
+  });
+});
+
+test.describe("resume — disposal on a remove-only htmx swap", () => {
+  // `sweepDetached` runs only from `ensureResumed`, so a swap that removes scoped markup and
+  // introduces none never reached it. `active` is a strong Map and its closures hold live
+  // document-level listeners, so the scope's teardown was simply never run.
+  test("htmx removing a scope runs its disposer, and the document listener stops firing", async ({ page }) => {
+    await mount(page, `<div id="host"><div data-scope="demo"><span id="inner">x</span></div></div>`, HTMX_EXPOSE);
+
+    const result = await page.evaluate(async () => {
+      const log: string[] = [];
+      window.forgeResume.registerScope("demo", {
+        eager: true,
+        setup: () => {
+          const onPing = () => log.push("ping");
+          document.addEventListener("ping", onPing);
+          return () => {
+            log.push("disposed");
+            document.removeEventListener("ping", onPing);
+          };
+        },
+      });
+      window.forgeResume.resume();
+      document.dispatchEvent(new Event("ping"));
+
+      const host = document.querySelector<HTMLElement>("#host");
+      if (!host) return null;
+      host.setAttribute("hx-get", "/empty");
+      host.setAttribute("hx-swap", "innerHTML");
+      window.forgeHtmx.htmx.process(document.body);
+
+      const settled = new Promise<void>((resolve) => document.body.addEventListener("htmx:afterSettle", () => resolve(), { once: true }));
+      // `void`, not `await`: the settle listener is what this waits on, and awaiting the request
+      // promise as well would race the two.
+      void window.forgeHtmx.htmx.ajax("get", "/empty", { target: "#host", swap: "innerHTML" });
+      await settled;
+
+      document.dispatchEvent(new Event("ping"));
+      return { log, remaining: document.querySelectorAll("[data-scope]").length };
+    });
+
+    expect(result, "the removed scope's disposer never ran, so its document listener is still live").toEqual({
+      log: ["ping", "disposed"],
+      remaining: 0,
+    });
+  });
+
+  test("disposeScopesIn takes the scope out of the active set, so a re-resume sets it up afresh", async ({ page }) => {
+    await mount(page, `<div id="host"><div data-scope="demo"></div></div>`, EXPOSE);
+
+    const setups = await page.evaluate(() => {
+      let count = 0;
+      window.forgeResume.registerScope("demo", { eager: true, setup: () => void (count += 1) });
+      window.forgeResume.resume();
+      const root = document.querySelector<HTMLElement>("[data-scope='demo']");
+      if (!root) return null;
+      window.forgeResume.resume();
+      const beforeDispose = count;
+      window.forgeResume.disposeScopesIn(document.querySelector<HTMLElement>("#host") as HTMLElement);
+      window.forgeResume.resume();
+      return { beforeDispose, afterDispose: count };
+    });
+
+    expect(setups).toEqual({ beforeDispose: 1, afterDispose: 2 });
   });
 });

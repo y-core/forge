@@ -107,7 +107,7 @@ describe("registerShowcase", () => {
 
   it("names the honeypot when the decoy is filled, before any token is looked at", async () => {
     const body = new FormData();
-    body.append("__surname", "bot");
+    body.append("__hp_c7", "bot");
     const res = await makeApp().request("/showcase/ui/api/turnstile-verify", { method: "POST", body });
     expect(res.status).toBe(422);
     expect(await res.text()).toContain("Refused by the honeypot guard");

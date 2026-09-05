@@ -1,53 +1,55 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { type ButtonProps, buttonVariants } from "./button";
 import { cloneAsChild, slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
-
-type ToolbarOrientation = Extract<Orientation, "horizontal" | "vertical">;
+import { cn } from "./utils/cn";
+import { RULE } from "./utils/recipes";
 
 interface ToolbarItemStyling {
-  variant?: ButtonProps["variant"];
-  size?: ButtonProps["size"];
-  pressed?: boolean;
-  asChild?: boolean;
+  tone?: ButtonProps["tone"] | undefined;
+  appearance?: ButtonProps["appearance"] | undefined;
+  size?: ButtonProps["size"] | undefined;
+  shape?: ButtonProps["shape"] | undefined;
+  pressed?: boolean | undefined;
+  asChild?: boolean | undefined;
 }
 
 interface ToolbarRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  orientation?: ToolbarOrientation;
-  children?: JSXNode;
+  orientation?: Orientation | undefined;
+  children?: JSXNode | undefined;
 }
 
 interface ToolbarButtonProps extends Omit<JSX.IntrinsicElements["button"], "children">, ToolbarItemStyling {
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
 interface ToolbarLinkProps extends Omit<JSX.IntrinsicElements["a"], "children">, ToolbarItemStyling {
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
 type ToolbarInputProps = Omit<JSX.IntrinsicElements["input"], "children">;
 
 interface ToolbarGroupProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
 interface ToolbarSeparatorProps extends Omit<JSX.IntrinsicElements["hr"], "children"> {
-  orientation?: ToolbarOrientation;
+  orientation?: Orientation | undefined;
 }
 
-const ROOT_BASE = cn("flex items-center gap-1");
+const ROOT_BASE = "flex items-center gap-1";
 
+// The roving-tab-stop marker is deliberately *not* derived from `pressed`. It marks the one item holding
+// the roving tab stop, and a toolbar may have several pressed items at once — `composite.ts` takes the
+// first match and silently ignores the rest, so Bold and Italic both pressed handed the tab stop to
+// Bold and left the app no way to override it. No default is stamped either: `initialIndex` already
+// falls back to the first enabled item when nothing is marked, so the app's own marker is the only
+// writer (`design/reference/09-interaction.md` tells apps to set it explicitly).
 function itemAttrs(pressed: boolean | undefined): Record<string, string> {
-  return {
-    [TOOLBAR_ITEM_ATTR]: "",
-    ...(pressed === undefined ? {} : { "aria-pressed": String(pressed), ...stateAttrs({ pressed }) }),
-    ...(pressed ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {}),
-  };
+  return { [TOOLBAR_ITEM_ATTR]: "", ...(pressed === undefined ? {} : { "aria-pressed": String(pressed), ...stateAttrs({ pressed }) }) };
 }
 
 /** Toolbar container, stamping the resumable scope that mounts roving focus. */
@@ -58,21 +60,29 @@ const ToolbarRoot: FC<ToolbarRootProps> = ({ orientation = "horizontal", class: 
     data-scope={TOOLBAR_SCOPE}
     {...stateAttrs({ orientation })}
     aria-orientation={orientation}
-    class={cn(ROOT_BASE, orientation === "vertical" && "flex-col", asClass(cls))}
+    class={cn(ROOT_BASE, orientation === "vertical" && "flex-col", cls)}
     {...rest}>
     {children}
   </div>
 );
 
-function itemClass(styling: ToolbarItemStyling, cls: unknown, extra?: string): string {
-  const own = cn(extra, asClass(cls));
-  return buttonVariants({ variant: styling.variant ?? "ghost", size: styling.size ?? "sm", ...(own ? { class: own } : {}) });
+function itemClass(styling: ToolbarItemStyling, cls: string | undefined, extra?: string): string {
+  const merged = cn(extra, cls);
+  return buttonVariants({
+    tone: styling.tone ?? "neutral",
+    appearance: styling.appearance ?? "ghost",
+    size: styling.size ?? "sm",
+    shape: styling.shape,
+    ...(merged ? { class: merged } : {}),
+  });
 }
 
 /** A button inside a toolbar, carrying the roving-focus marker. */
 const ToolbarButton: FC<ToolbarButtonProps> = ({
-  variant,
+  tone,
+  appearance,
   size,
+  shape,
   pressed,
   asChild = false,
   class: cls,
@@ -80,7 +90,7 @@ const ToolbarButton: FC<ToolbarButtonProps> = ({
   "data-slot": inherited,
   ...rest
 }) => {
-  const className = itemClass({ variant, size }, cls);
+  const className = itemClass({ tone, appearance, size, shape }, cls);
   const attrs = { ...itemAttrs(pressed), ...rest };
   const slot = slotToken("toolbar-button", inherited);
 
@@ -104,8 +114,19 @@ const ToolbarButton: FC<ToolbarButtonProps> = ({
 };
 
 /** A link inside a toolbar — a focus stop like any other item. */
-const ToolbarLink: FC<ToolbarLinkProps> = ({ variant, size, pressed, asChild = false, class: cls, children, "data-slot": inherited, ...rest }) => {
-  const className = itemClass({ variant, size }, cls, "underline-offset-4 hover:underline");
+const ToolbarLink: FC<ToolbarLinkProps> = ({
+  tone,
+  appearance,
+  size,
+  shape,
+  pressed,
+  asChild = false,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => {
+  const className = itemClass({ tone, appearance, size, shape }, cls, "underline-offset-4 hover:underline");
   const attrs = { ...itemAttrs(pressed), ...rest };
   const slot = slotToken("toolbar-link", inherited);
 
@@ -132,9 +153,9 @@ const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, "data-slot": inherite
     data-slot={slotToken("toolbar-input", inherited)}
     {...itemAttrs(undefined)}
     class={cn(
-      "rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground",
-      "placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-      asClass(cls),
+      "rounded-field border border-input bg-background px-2 py-1 text-sm text-foreground",
+      "focus-ring placeholder:text-muted-foreground",
+      cls,
     )}
     {...rest}
   />
@@ -142,7 +163,7 @@ const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, "data-slot": inherite
 
 /** Groups related items inside a toolbar. */
 const ToolbarGroup: FC<ToolbarGroupProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <fieldset data-slot={slotToken("toolbar-group", inherited)} class={cn("m-0 inline-flex items-center gap-1 border-0 p-0", asClass(cls))} {...rest}>
+  <fieldset data-slot={slotToken("toolbar-group", inherited)} class={cn("m-0 inline-flex items-center gap-1 border-0 p-0", cls)} {...rest}>
     {children}
   </fieldset>
 );
@@ -152,7 +173,7 @@ const ToolbarSeparator: FC<ToolbarSeparatorProps> = ({ orientation = "vertical",
   <hr
     data-slot={slotToken("toolbar-separator", inherited)}
     aria-orientation={orientation}
-    class={cn(orientation === "vertical" ? "h-5 w-px" : "h-px w-full", "border-0 bg-border", asClass(cls))}
+    class={cn(orientation === "vertical" ? "h-5 w-px" : "h-px w-full", RULE, cls)}
     {...rest}
   />
 );

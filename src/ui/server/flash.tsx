@@ -3,7 +3,8 @@
 
 import { oobSwap } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
-import type { ToastPosition, ToastVariant } from "../core/toast";
+import type { Tone } from "../contracts/vocabulary";
+import type { ToastPosition } from "../core/toast";
 import { Toast } from "../core/toast";
 
 /** The severity of a flash message. @public */
@@ -18,13 +19,12 @@ export interface FlashMessage {
 
 const FLASH_DURATION_MS = 5000;
 
-function variantFor(t: FlashType): ToastVariant {
-  if (t === "error") return "destructive";
-  return t;
+function toneFor(t: FlashType): Tone {
+  return t === "error" ? "destructive" : t;
 }
 
 const FlashToast: FC<{ message: FlashMessage }> = ({ message }) => (
-  <Toast variant={variantFor(message.type)} dismissible duration={FLASH_DURATION_MS}>
+  <Toast tone={toneFor(message.type)} dismissible duration={FLASH_DURATION_MS}>
     {message.title ? <Toast.Title>{message.title}</Toast.Title> : null}
     <Toast.Description>{message.text}</Toast.Description>
   </Toast>

@@ -1,13 +1,16 @@
 ---
 title: Asset and Build Tooling
-description: "The asset pipeline and its generated module, the content-hash manifest, the CLI framework, and the pkg release and verification-gate command factories."
+description: "The asset pipeline and its generated module, the content-hash manifest, the CLI framework, and the release and verification-gate command factories."
 ---
 
 # Asset and Build Tooling
 
-> Owns forge's build-time surface: the asset pipeline (`assets/build`), the manifest system
-> (`assets/manifest`), the CLI framework (`cli`), and release tooling (`pkg`). These run on a
-> developer's machine, never in a Worker, so they are exempt from the Web-APIs-only rule.
+> Owns forge's developer-facing surface: the asset pipeline and its config (`tooling/assets`), the
+> CLI framework (`tooling/cli`), the verification gate (`tooling/gate`) and the release workflow
+> (`tooling/release`) — plus the one runtime namespace the pipeline writes for, the manifest system
+> (`assets`). Everything under `src/tooling/` runs on a developer's machine, never in a Worker;
+> membership in that container _is_ the exemption from the Web-APIs-only rule
+> ([`NAMESPACES.md`](./NAMESPACES.md) §4a).
 >
 > Defers to: [`LIBRARY_ARCHITECTURE.md`](../governance/LIBRARY_ARCHITECTURE.md) §1d for that exemption, and
 > [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §3c for the optional build peer
@@ -17,22 +20,23 @@ description: "The asset pipeline and its generated module, the content-hash mani
 
 ## 0. Quick Reference
 
-- §1 Assets Namespace: declaring and discovering the pipeline config
+- §1 Assets Config: declaring and discovering the pipeline config
 - §1a defineAssetsConfig — Schema and Validation: the canonical entry point
 - §1b AssetsConfig Type Shape: who owns the field list, and the one field readers mis-guess
 - §1c loadConfig — Config Resolution: resolving `assets.config.ts` against cwd, and why you should pass it
-- §2 assets/build Pipeline: the build functions and change detection
+- §2 tooling/assets Pipeline: the build functions and change detection
 - §2a Build Functions — Orchestration: `buildAll`, the per-stage functions, and the absence of globs
 - §2b Hash and Change Detection: opt-in content hashing, and why the state helpers go unused
-- §3 assets/manifest: resolving logical names to hashed paths
+- §2c The Namespace Orchestrates Builders and Is Not One: the drives-one/is-one routing rule, and where the compute half went
+- §3 assets — the Runtime Namespace: resolving logical names to hashed paths
 - §3a createManifest — Content-Hashed Paths: a record and a prefix, not a directory scan
 - §3b createSpriteRegistry — Sprite Sheet URL Lookup: group name to sheet URL, and what it is not
-- §4 cli Namespace: the dependency-free command framework
+- §4 tooling/cli Namespace: the dependency-free command framework
 - §4a Commands Are Values: a tree built from data, not registered by side effect
 - §4b Flags Are a Typed Record: two types, inference instead of casts
 - §4c Errors Carry a Kind, Not an Exit Code: why failure is always exit 1
 - §4d CommandBase and Command Are Not Mergeable: the variance that forces two interfaces
-- §5 pkg Namespace — Project Tooling: the blessed release path and the published gate
+- §5 tooling/gate and tooling/release — Project Tooling: the blessed release path and the published gate
 - §5a createReleaseCommand — Automated Release Workflow: the ordered steps and the refusals
 - §5b The Export Surface a Release Compares: the symbol set behind the shrink guard, and what it ignores
 - §5c Git and Manifest Internals: the unpublished helpers the two factories are built from
@@ -49,12 +53,12 @@ description: "The asset pipeline and its generated module, the content-hash mani
 
 ---
 
-## 1. Assets Namespace
+## 1. Assets Config
 
 ### 1a. defineAssetsConfig — Schema and Validation
 
 `defineAssetsConfig` is the canonical entry point: call it in an `assets.config.ts` at the
-project root and export the result as default. `src/assets/README.md` carries the example.
+project root and export the result as default. `src/tooling/assets/README.md` carries the example.
 
 **It types, it does not validate.** It is the identity function over `AssetsConfig`; the schema
 runs in `loadConfig`, which `v.parse`s the imported module into a `ResolvedConfig` with every
@@ -67,8 +71,8 @@ bundles, whose subdirectory is per-bundle (`js.bundles[].outdir`) rather than gl
 
 ### 1b. AssetsConfig Type Shape
 
-**The config shape is owned by `src/assets/types.ts`** — the valibot schemas there _are_ the
-type, via `InferInput`, and `src/assets/README.md` carries the field-by-field reference. This
+**The config shape is owned by `src/tooling/assets/types.ts`** — the valibot schemas there _are_ the
+type, via `InferInput`, and `src/tooling/assets/README.md` carries the field-by-field reference. This
 document enumerates none of it: a second copy of a field list is indistinguishable from an
 amendment the moment the two disagree.
 
@@ -87,20 +91,20 @@ command was typed. §5h states the rule this is an instance of.
 
 ---
 
-## 2. assets/build Pipeline
+## 2. tooling/assets Pipeline
 
 ### 2a. Build Functions — Orchestration
 
 | Function                                   | Runs                                                                                    |
 | ------------------------------------------ | --------------------------------------------------------------------------------------- |
 | `buildAll`                                 | Every configured stage, in the order §6 fixes, then the generated module and `_headers` |
-| `buildCSS`                                 | One Tailwind CLI build per `css[]` entry                                                |
+| `buildCSS`                                 | One Tailwind CLI build per `css[]` entry, purging only that entry's own prior outputs   |
 | `buildJS`                                  | One esbuild bundle per `js.bundles[]` entry, into that bundle's own `outdir`            |
 | `buildSprites`                             | One sheet per named sprite group, from its explicit `sources[].files` list              |
 | `copyAssets`                               | Each `copy[]` rule, `from` → `to`                                                       |
 | `buildFonts`, `buildIcons`, `buildCursors` | The font downloads, the rasterised icon outputs, the baked cursor values                |
 
-Signatures live in `src/assets/README.md`; none of these takes the whole config — each takes its
+Signatures live in `src/tooling/assets/README.md`; none of these takes the whole config — each takes its
 own slice plus an output directory.
 
 **There is no glob.** A sprite group names every file it contains: a `sources[].path` (a
@@ -121,15 +125,52 @@ key to itself. Hashes are taken from the _emitted_ file, not its sources, so an 
 compiles to identical bytes keeps its URL — and the `_headers` file `buildAll` writes claims
 `immutable` only when hashing was on.
 
-**The incremental-state helpers in `src/assets/build/state.ts` are published but unused by the
+**The `_headers` rule path is `paths.publicPrefix`, not a literal.** `emitHeaders` normalises the
+prefix exactly as `createManifest` does — one trailing slash stripped, so `"/"` degrades to `/*` —
+because the build-time cache rule and the runtime manifest URL are the same path and a
+disagreement between them is invisible: the build stays green and the only symptom is a
+cache-miss rate in production.
+
+**The incremental-state helpers in `src/tooling/assets/state.ts` are published but unused by the
 pipeline.** No forge build path calls them, and `buildAll` re-runs every configured stage
 unconditionally. Their contract is a state file the _consumer_ names — forge bakes in no path
 and writes no build state of its own. What makes a repeat build cheap for the one artifact that
 matters is the skip-if-identical write in §6, not stored hashes.
 
+### 2c. The Namespace Orchestrates Builders and Is Not One
+
+**`src/assets` drives external builders; a module that computes the artifact itself does not
+belong to it.** The stages §2a lists are shells around the Tailwind CLI, esbuild, a font download
+and a file copy — each one resolves config, shells out, and reports. That is the whole warrant for the
+build-time exemption [`LIBRARY_ARCHITECTURE.md`](../governance/LIBRARY_ARCHITECTURE.md) §1d grants,
+and [`LIBRARY_ARCHITECTURE.md`](../governance/LIBRARY_ARCHITECTURE.md) §1e states that exemption as
+**reachability**, not as a path glob: no Worker-executed entry point reaches these modules.
+
+Reachability cuts both ways. It is what admits a Node-API shell into `src/assets`, and it is also
+what declines to admit an algorithm merely because it happens to run at build time. A module that
+computes rather than orchestrates has no external tool behind it, so nothing about `src/assets`
+explains why it lives there — only that it was written during a build stage.
+
+**The compute half now lives under `src/ui/assets/build/`**, where the artifact each module produces
+is already the subject of the surrounding namespace — `color.ts` most plainly, since
+`ui/contracts/theme/color.ts` already owns the same arithmetic (§2b of
+[`THEME_GENERATION.md`](./THEME_GENERATION.md)). It carries its own `./ui/assets/build` subpath rather
+than sitting behind `./ui/assets`, so a Node-API import cannot reach a consumer who took the parent
+barrel for runtime-safe.
+
+`sprites.ts` split rather than moved whole: `svgToSymbol` and its sanitizer compute and went with the
+rest, while `buildSprites` — which fetches, hashes, writes and renames — is orchestration and stayed.
+Moving it would have made `ui/assets/build` and `assets/build` name each other at value.
+
+**The routing question for anything new: does this drive an external builder, or is it one?**
+Drives one → `src/tooling/assets`. Is one → the namespace that owns the artifact.
+
+A shrink-only exempt list was considered and deferred: it would make `config/steps.ts` a fourth
+writer for a rule the sentence above already enforces.
+
 ---
 
-## 3. assets/manifest
+## 3. assets — the Runtime Namespace
 
 ### 3a. createManifest — Content-Hashed Paths
 
@@ -157,9 +198,9 @@ const at build time (§6), and a glyph's inner markup at runtime is
 
 ---
 
-## 4. cli Namespace
+## 4. tooling/cli Namespace
 
-Signatures, worked examples, and the full flag-parsing table live in `src/cli/core/README.md`. This
+Signatures, worked examples, and the full flag-parsing table live in `src/tooling/cli/README.md`. This
 section carries only the decisions behind them.
 
 ### 4a. Commands Are Values
@@ -176,7 +217,7 @@ spawning themselves.
 **A gate or build verb is therefore a factory, not a script.** `createReleaseCommand` (§5a) and
 `createGateCommand` (§5f) both return a command from a config whose first field is `cwd`; the
 `bin.ts` a package script points at resolves `cwd` and calls `execute`. Both ship from
-`@y-core/forge/cli/pkg` — a factory reachable only from a repository's own binding is a script
+`@y-core/forge/tooling/gate` — a factory reachable only from a repository's own binding is a script
 wearing a factory's clothes.
 
 ### 4b. Flags Are a Typed Record
@@ -215,14 +256,13 @@ differently-flagged commands has no common `Command<…>` to be typed as. Tree l
 
 ---
 
-## 5. pkg Namespace — Project Tooling
+## 5. tooling/gate and tooling/release — Project Tooling
 
-**`pkg` owns both project verbs — release _and_ verification.** The namespace is what a project's
-tooling commands are built from, not release automation alone. Its layout follows the split:
-`release/` and `gate/` hold the two factories, `internal/` holds what only serves them, and
-`mod.ts` is the one barrel over all three — the subdirectories are plain directories of concrete
-files, since [`NAMESPACE_DESIGN.md`](../governance/NAMESPACE_DESIGN.md) §1a forbids a barrel
-importing a barrel.
+**The two project verbs are two namespaces, and `tooling/release` sits on top of `tooling/gate`.**
+The gate is the lower layer: besides its own command factory, steps and checks, it owns the
+changelog parser, the semver arithmetic and the barrel parser, because the release workflow and the
+gate's own changelog and export-surface checks both read them. Declaring the dependency the other
+way made the two namespaces name each other at value, which `validateNoMutualValuePairs` rejects.
 
 **What the barrel publishes is decided by one question: would a consuming app plausibly call this
 itself?** A symbol that exists only to serve the two command factories stays out of `mod.ts` —
@@ -319,7 +359,7 @@ than a new way for a differently-shaped repository to fail its release.
 
 ### 5c. Git and Manifest Internals
 
-**The git and `package.json` helpers in `src/cli/pkg/internal/` are unpublished.** They exist to
+**The git and `package.json` helpers in `src/tooling/release/` are unpublished.** They exist to
 serve the two command factories and nothing else. A consumer that needs `git tag` has `git`; what
 forge publishes is the _policy_ over it — the ordered, refusing release command — not a thin
 `execFileSync` wrapper it would have to reimplement the policy around. `checkExports` enforces
@@ -378,12 +418,12 @@ remote must still be able to release. A first release omits it too: a compare li
 worse than none. Reading the URL from `git remote get-url` was rejected — it breaks in a clone
 with a renamed remote, and it puts a subprocess on a path that is otherwise pure metadata.
 
-**`src/cli/pkg/release/changelog.ts` returns its failures instead of throwing, diverging from the
+**`src/tooling/gate/changelog.ts` returns its failures instead of throwing, diverging from the
 `ReleaseError` style of the rest of the namespace.** The divergence is the gate's doing: §5e must
 report every malformed heading in one run, and an exception stops at the first. The module is
 also import-free — no clock, no filesystem, no git — so `release.ts` converts a returned failure
 into a `ReleaseError` at its own boundary and the file I/O lives with the other readers in
-`src/cli/pkg/internal/pkg-json.ts`.
+`src/tooling/release/pkg-json.ts`.
 
 ### 5e. Changelog Gate Invariants
 
@@ -392,7 +432,7 @@ into a `ReleaseError` at its own boundary and the file I/O lives with the other 
 would fail every work-in-progress commit; `verify --full` runs exactly where the invariant bites,
 before `prepublishOnly` and before a tag exists.
 
-**It imports the parser from `src/cli/pkg/mod.ts` rather than adding a second changelog parser.**
+**It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.**
 Release needs the same grammar to promote with, and two parsers for one document is precisely
 the drift the gate exists to catch. One parser, two callers.
 
@@ -439,10 +479,17 @@ mode by definition, and modelling it as two verbs costs a duplicated binding fil
 `gate` config field, and a superset invariant that must be _tested_ rather than being true by
 construction.
 
+**A dependency's absence is answered by the mode, not the table.** A step carries one `requires` —
+tool, probe, install hint — and the runner asks the probe once: a fast run reports the step skipped,
+`--full` fails it with the hint. That is what lets the four design-system steps run on every machine
+that has `tailwindcss`, an optional peer, instead of only under `--full`, while `--full` never skips,
+because it is the release gate `prepublishOnly` blocks on — a verdict hardcoded in the table could
+state only one of the two. `--list` words a step's dependency per mode: conditional, or required.
+
 **`GateMode` is a closed `"fast" | "full"` union, and `Step.fullOnly` is a boolean.** Together they
-carry the prerequisite invariant [`TESTING.md`](../governance/TESTING.md) §6c exists to settle: a third mode
-would have no defined answer to "may this step require a browser?", and a _list_ of modes would let
-a table express a step that a fast run has and a full run does not. Neither is a restriction the
+carry the invariant [`TESTING.md`](../governance/TESTING.md) §6c exists to settle: a third mode
+would have no defined answer to "what does an absent browser mean here?", and a _list_ of modes would
+let a table express a step that a fast run has and a full run does not. Neither is a restriction the
 runner enforces at runtime — both are shapes that make the wrong thing unsayable.
 
 **`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps
@@ -450,7 +497,7 @@ that invoke tools as `bun x oxlint` need a different prefix, and one config fiel
 five forks of the runner. The temp-directory prefix behind the full-log file stays hardcoded —
 configuring it would be surface for nothing.
 
-**The formatters in `src/cli/pkg/gate/report.ts` stay unpublished.** Publishing them would freeze the
+**The formatters in `src/tooling/gate/report.ts` stay unpublished.** Publishing them would freeze the
 exact glyphs and wording of every gate line across five repositories, and would hand the next
 repository the parts to build an alternate runner from — the fork this consolidation removed.
 
@@ -458,9 +505,10 @@ repository the parts to build an alternate runner from — the fork this consoli
 at zero step cost, the same argument that makes forge's `steps.test.ts` worth having.
 
 **Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent.**
-The published surface is exactly `--only`, `--list`, `--fix`, fail-fast, the `requires` probe and
-the full-log file. Narrowing a run means enumerating labels; a streamed run is `--list` and then
-the step's own command.
+The published surface is exactly `--only`, `--list`, `--fix`, fail-fast, the `requires` probe with
+its mode-decided verdict — skip in a fast run, failure under `--full`, and a red summary when every
+selected step was skipped — and the full-log file. Narrowing a run means enumerating labels; a
+streamed run is `--list` and then the step's own command.
 
 ### 5g. cloudflareWorkerSteps — the Fleet Preset
 
@@ -496,7 +544,7 @@ asset pipeline gets a four-step table, not a step that succeeds vacuously.
 
 ### 5h. Roots Are Stated or Derived, Never Discovered
 
-**No function in `pkg` walks the disk to find out where the project is.** Not upward, not by
+**No function in `tooling/gate` or `tooling/release` walks the disk to find out where the project is.** Not upward, not by
 probing for a marker file, not at all. A root arrives one of exactly two ways:
 
 - **Stated.** The caller passes it; forge's own bindings do this from `import.meta.url` (`ROOT` in
@@ -527,7 +575,7 @@ varied from a test — folded into `installedAppRoot` it would be unassertable.
 
 **A linked install is the case the derivation cannot answer, and `--root` is how the caller
 states it.** A `file:` dependency installs as symlinks into the forge checkout and every runtime
-resolves `import.meta.url` to the realpath, so this module reports itself under `src/cli/` with no
+resolves `import.meta.url` to the realpath, so this module reports itself under `src/tooling/` with no
 `node_modules` segment left to split on. The derivation returns `undefined`, correctly: the path
 has stopped naming the consumer. Every `forge assets` command therefore carries `--root`, falling
 back to `FORGE_APP_ROOT`, with an empty value treated as absent so an exported-but-unset variable
@@ -553,13 +601,24 @@ A check is built in layers, and the **prefix states which one a function is**:
 | `format*`          | pure   | findings → strings.                                     |
 
 `check*` is the only entry point a consumer needs; the rest are the seams that make one assertable
-without a filesystem or a subprocess. `src/cli/pkg/mod.ts` is authoritative over which checks are
+without a filesystem or a subprocess. `src/tooling/gate/mod.ts` is authoritative over which checks are
 published, and this document enumerates none of them.
 
 **`ok` is derived from the findings, never passed.** `checkResult(findings, summary)` computes it,
-so "a check that reports a failure and forgets to flip a flag" is not expressible. **`summary`
-always carries a count** — `0 .tsx files carry every pragma` is a _visible_ nothing-happened, and a
-silent green is indistinguishable from a check that walked nothing.
+so "a check that reports a failure and forgets to flip a flag" is not expressible.
+
+**`summary` always carries a count, and that is necessary but not sufficient.** A visible
+`0 .tsx files carry every pragma` beats a silent green, but it is still a green and nobody reads a
+passing summary. **A check whose scan set is empty therefore fails**, through `scannedNothing`.
+
+**The guard reads the raw walk, and returns before any finding accumulates.** A post-exclusion count
+lets an all-exempt tree report zero green beside a wall of stale-exemption failures; guarding after
+the work makes the refusal discard what the check already found, so where the count is only knowable
+at the end the refusal also requires no findings — a check already red has no green to refuse.
+
+**Not every check has a scan set, and a few reach zero legitimately** — a single-artifact diff, a
+Worker with no static assets, an opt-in anchor, a project before its first release. Each records that
+at the branch, which is where a reader tempted to add a guard is standing.
 
 **Two levels, not a scale.** `fail` fails the check; `warn` is reported and does not. A third level
 invites "does `major` fail the gate?", which is the question a level should answer.
@@ -580,21 +639,21 @@ and the config it runs with.
 
 ## 6. Generated Assets Module
 
-**The build's real product is a TypeScript file.** `buildAll` and `forge assets types` both end by
+**The build's real product is a TypeScript file.** `buildAll` and `forge assets gen types` both end by
 writing one module — carrying the manifest mapping, one `viewBox` const per sprite group, one
 bound icon component per group, and the glyph-name union those components are typed on.
 Everything the runtime knows about the build, it knows by importing that module; nothing reads the
-output directory. `src/assets/README.md` owns how to author against it.
+output directory. `src/tooling/assets/README.md` owns how to author against it.
 
 **The path is `.forge/assets.ts` unless `--out` overrides it, and the directory is git-ignored.**
 Every content hash in it churns on each production build, so committing it would put a file no
 human edits into every diff and would let a stale copy typecheck green against assets absent from
 the current build. A consuming app aliases it as `@assets` and regenerates it with
-`forge assets types`.
+`forge assets gen types`.
 
 ### 6a. The Ordered Stages and the Two Codegen Passes
 
-**`src/assets/build/pipeline.ts` owns the stage sequence** and is authoritative over it. Two
+**`src/tooling/assets/pipeline.ts` owns the stage sequence** and is authoritative over it. Two
 properties of the order are decisions rather than incidents:
 
 - **Codegen runs twice, before and after `buildJS`.** esbuild resolves the `@assets` alias while
@@ -604,7 +663,7 @@ properties of the order are decisions rather than incidents:
 - **Cursors run after CSS.** Baking a cursor value means reading the emitted stylesheet for the
   custom properties it resolved, so the CSS stage must have produced a file the manifest can name.
 
-The first pass is why a _clean_ checkout still typechecks: `forge assets types` (§6b) writes the
+The first pass is why a _clean_ checkout still typechecks: `forge assets gen types` (§6b) writes the
 same module from the config alone, so `tsc` never depends on a toolchain having run.
 
 ### 6b. Build and Types Artifacts Are Shape-Identical
@@ -640,6 +699,6 @@ config, a second copy of the glyph list that drifts the first time a glyph is ad
 declares no default for its parameter, so the widening a missing union invites does not compile
 ([`CODE_REVIEW.md`](./CODE_REVIEW.md) §3b).
 
-Forge's own glyph list is a separate fact with its own owner: `src/ui/assets/sprites.ts`
+Forge's own glyph list is a separate fact with its own owner: `src/ui/assets/glyphs.ts`
 enumerates it as `ForgeUiIconName`, because forge's components must name the glyphs they require
 without depending on any consumer's generated module.

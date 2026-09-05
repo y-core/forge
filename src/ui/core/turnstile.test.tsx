@@ -6,7 +6,7 @@ import { renderToString } from "../../jsx/render-to-string";
 import { Turnstile } from "./turnstile";
 
 const FALLBACKS =
-  '<p data-ref="turnstile-fallback" role="alert" hidden class="text-sm text-destructive">The security challenge couldn&#39;t load. Please disable any ad or script blockers for this site and reload the page.</p><p data-ref="turnstile-unsupported" role="alert" hidden class="text-sm text-destructive">This browser cannot run the security challenge. Please try again in a current version of Chrome, Edge, Firefox or Safari.</p>';
+  '<p data-ref="turnstile-fallback" role="alert" hidden class="text-sm text-destructive-text">The security challenge couldn&#39;t load. Please disable any ad or script blockers for this site and reload the page.</p><p data-ref="turnstile-unsupported" role="alert" hidden class="text-sm text-destructive-text">This browser cannot run the security challenge. Please try again in a current version of Chrome, Edge, Firefox or Safari.</p>';
 
 describe("Turnstile", () => {
   it("renders the widget container + both hidden messages the controller wires, with the sitekey, the eager default and no auto-render class", async () => {
@@ -25,7 +25,7 @@ describe("Turnstile", () => {
       ),
     );
     expect(html).toBe(
-      '<div data-slot="turnstile" data-scope="turnstile" data-ref="turnstile" data-sitekey="site-123" data-size="compact" data-load="eager" class="h-35 w-37.5 mt-4"><p data-ref="turnstile-fallback" role="alert" hidden class="text-sm text-destructive">Please retry.</p><p data-ref="turnstile-unsupported" role="alert" hidden class="text-sm text-destructive">Try another browser.</p></div>',
+      '<div data-slot="turnstile" data-scope="turnstile" data-ref="turnstile" data-sitekey="site-123" data-size="compact" data-load="eager" class="h-35 w-37.5 mt-4"><p data-ref="turnstile-fallback" role="alert" hidden class="text-sm text-destructive-text">Please retry.</p><p data-ref="turnstile-unsupported" role="alert" hidden class="text-sm text-destructive-text">Try another browser.</p></div>',
     );
   });
 

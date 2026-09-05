@@ -6,10 +6,11 @@ import "../chrome/client";
 import "../core/client";
 import { bindControls } from "../client/bind";
 import { bindAttr, bindText } from "../client/bind-display";
-import { elementById, ownerDocument } from "../client/dom";
+import { mountCarouselDots } from "../client/carousel";
+import { elementById, ownerDocument, ownerWindow } from "../client/dom";
 import { lazy } from "../client/lazy";
 import { openPopoverAt } from "../client/popover-anchor";
-import { registerScope } from "../client/resume";
+import { registerScope, resumeScope } from "../client/resume";
 import { mountScrollSpy } from "../client/scroll-spy";
 import { computed, effect } from "../client/signal";
 import type { SignalRecord } from "../client/signal-record";
@@ -40,15 +41,18 @@ import {
   SCHEME_PRESETS,
   scaleVars,
   schemeCss,
+  shapeVars,
 } from "../contracts/theme/theme-contract";
 import { LAZY_DEMO_REF, LAZY_DEMO_SCOPE, LAZY_RETRY_FAILURES, LAZY_RETRY_REF, LAZY_RETRY_STATUS_REF, lazyRetryAttempt } from "./lazy-contract";
+import { SHOW_SCOPES } from "./scope-contract";
+import { TOAST_CYCLE_GAP, TOAST_CYCLE_SCOPE } from "./toast-contract";
 
 /** A `<select>` reduced to the one member this page reads and writes. */
 type ValueControl = Element & { value?: string };
 
 // Eager: `contextmenu` is not a delegated `SCOPE_EVENT`, so there is no `data-on-*` in the markup
 // for a lazy scope to resume on.
-registerScope("show-context-menu", {
+registerScope(SHOW_SCOPES.contextMenu, {
   eager: true,
   setup: ({ root, state }) => {
     const popup = elementById(root, String(state.target?.value ?? ""));
@@ -65,7 +69,58 @@ registerScope("show-context-menu", {
   },
 });
 
-registerScope("show-toc", { eager: true, setup: ({ root }) => mountScrollSpy({ root }) });
+registerScope(SHOW_SCOPES.toc, { eager: true, setup: ({ root }) => mountScrollSpy({ root }) });
+
+// Eager, and a demo device rather than a `Toast` behaviour — `show/toast-contract.ts` says why. The
+// `toast` scope owns the duration and the removal; this one notices the empty container and refills.
+registerScope(TOAST_CYCLE_SCOPE, {
+  eager: true,
+  setup: ({ root }) => {
+    const container = root.querySelector<HTMLElement>("[data-slot~='toast-container']");
+    const toast = container?.querySelector<HTMLElement>("[data-slot~='toast']");
+    if (!container || !toast) return;
+
+    const win = ownerWindow(root);
+    const observerCtor = (win as Window & { MutationObserver?: typeof MutationObserver }).MutationObserver;
+    if (typeof observerCtor !== "function") return;
+
+    // Cloned before the first cycle removes it: the node itself is what the toast scope deletes, and
+    // a template read afterwards would have nothing to read.
+    const template = toast.cloneNode(true) as HTMLElement;
+    let pending = 0;
+
+    const refill = () => {
+      pending = 0;
+      const fresh = template.cloneNode(true) as HTMLElement;
+      container.appendChild(fresh);
+      // The clone carries `data-scope="toast"` but was never in the page when `resume()` ran, so its
+      // own duration timer only starts if this says so.
+      resumeScope(fresh);
+    };
+
+    const observer = new observerCtor(() => {
+      if (pending !== 0 || container.querySelector("[data-slot~='toast']")) return;
+      pending = win.setTimeout(refill, TOAST_CYCLE_GAP);
+    });
+    observer.observe(container, { childList: true });
+
+    return () => {
+      observer.disconnect();
+      win.clearTimeout(pending);
+    };
+  },
+});
+
+// Eager: the dots must already follow the strip when the reader presses the first one — there is no
+// earlier interaction for a lazy scope to resume on.
+registerScope(SHOW_SCOPES.carousel, {
+  eager: true,
+  setup: ({ root }) => {
+    const dots = root.querySelector("[data-slot~='carousel-dots']");
+    if (!dots) return;
+    return mountCarouselDots({ root: dots });
+  },
+});
 
 // Every property is written through CSSOM rather than a `style` attribute: forge ships
 // `style-src 'self'` with no style nonce, and `render-to-string.ts` drops `style` attributes.
@@ -91,6 +146,8 @@ registerScope(CUSTOMISE_SCOPE, {
     const ratioCells = new Map([...doc.querySelectorAll<HTMLElement>("[data-ratio]")].map((el) => [el.dataset.ratio ?? "", el]));
     const readouts = new Map(DIALS.map((dial) => [dial.field, root.querySelector(`[data-readout="${dial.field}"]`)]));
     const picker = root.querySelector("select[data-preset-picker]") as ValueControl | null;
+    const output = doc.querySelector("[data-scheme-output] code");
+    const share = doc.querySelector("[data-share-url]");
 
     // Both directions, for every dial at once. The thumb now follows a signal moved by anything —
     // a preset pick, a shared link — with no per-control write-back on this page at all.
@@ -102,9 +159,25 @@ registerScope(CUSTOMISE_SCOPE, {
       if (el === html) written.add(property);
     };
 
+    const view = ownerWindow(root);
+    let frame = 0;
+    let pending: { generated: ReturnType<typeof buildTheme>; dials: DialValues } | null = null;
+
+    const paintText = () => {
+      frame = 0;
+      if (pending === null) return;
+      if (output !== null) output.textContent = schemeCss(pending.generated, pending.dials);
+      if (share !== null) share.textContent = `${doc.location.pathname}?${dialQuery(pending.dials)}`;
+    };
+
     const theme = computed(() => {
       const dials: DialValues = {};
-      for (const dial of DIALS) dials[dial.field] = Number(state[dial.field]?.value ?? dial.fallback);
+      // `??` cannot catch a NaN, and `Number("")` is 0 while `Number("x")` is NaN — an unguarded read
+      // gives `NaN\u00b0` readouts, a `?ah=NaN` share URL and an `oklch(NaN% ...)` the browser drops.
+      for (const dial of DIALS) {
+        const parsed = Number(state[dial.field]?.value ?? dial.fallback);
+        dials[dial.field] = Number.isFinite(parsed) ? parsed : dial.fallback;
+      }
       return { dials, generated: buildTheme(dials) };
     });
 
@@ -116,6 +189,7 @@ registerScope(CUSTOMISE_SCOPE, {
       for (const [name, value] of scaleVars("gray", generated.gray)) set(html, name, value);
       for (const [name, value] of scaleVars("accent", generated.accent)) set(html, name, value);
       set(html, RADIUS_PROPERTY, `${dials.radius ?? 10}px`);
+      for (const [name, value] of shapeVars(dials)) set(html, name, value);
 
       // Each row is painted on its own element: the semantic tokens compute on `:root` and inherit
       // as literals, so a nested `.dark` class could never give one row the other mode's scale.
@@ -156,15 +230,15 @@ registerScope(CUSTOMISE_SCOPE, {
       const picked = matchPreset(dials)?.id ?? PRESET_CUSTOM;
       if (picker !== null && picker.value !== picked) picker.value = picked;
 
-      const output = doc.querySelector("[data-scheme-output] code");
-      if (output !== null) output.textContent = schemeCss(generated, dials);
-
-      const share = doc.querySelector("[data-share-url]");
-      if (share !== null) share.textContent = `${doc.location.pathname}?${dialQuery(dials)}`;
+      // `schemeCss` rebuilds the whole stylesheet text, and the effect runs once per dial input —
+      // so a drag paid for a dozen rebuilds nobody could read. Only the last one before paint is.
+      pending = { generated, dials };
+      if (frame === 0) frame = view.requestAnimationFrame(paintText);
     });
 
     return () => {
       unbind();
+      if (frame !== 0) view.cancelAnimationFrame(frame);
       for (const property of written) html.style.removeProperty(property);
     };
   },
@@ -255,7 +329,7 @@ registerScope(CONTROLS_DEMO_SCOPE, {
 
 const toolbarPanel = (root: HTMLElement) => root.querySelector<HTMLElement>("[data-ref='toolbar-panel']");
 
-registerScope("show-toolbar", {
+registerScope(SHOW_SCOPES.toolbar, {
   on: {
     fit: ({ root }) => {
       toolbarPanel(root)?.classList.toggle("max-w-xs");
@@ -276,7 +350,7 @@ registerScope("show-toolbar", {
   },
 });
 
-registerScope("show-navbar", {
+registerScope(SHOW_SCOPES.navbar, {
   on: {
     setFilters: ({ el }) => {
       const tokens = (el.dataset.filters ?? "").split(/\s+/).filter(Boolean);
@@ -285,7 +359,7 @@ registerScope("show-navbar", {
   },
 });
 
-registerScope("show-filter", {
+registerScope(SHOW_SCOPES.filter, {
   setup: ({ root, state }) => {
     const items = Array.from(root.querySelectorAll<HTMLElement>("[data-filter-item]")).map((el) => ({
       el,

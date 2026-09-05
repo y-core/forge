@@ -187,6 +187,8 @@ test.describe("Tooltip — anchored placement", () => {
         ],
       }),
     );
+    // Reduced motion keeps this a geometry assertion: a settled rect, whatever transition the tip gains later.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await mount(page, `${PLACEMENT_STYLE}${html}`, PLACEMENT_CSS);
     await start(page);
     await page.hover("#save");

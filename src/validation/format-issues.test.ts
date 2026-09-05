@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { describeValidationField, describeValidationIssue, formatValidationIssues } from "./format-issues";
+import { describeValidationField, describeValidationIssue } from "./format-issues";
 import { strictObject } from "./strict-object";
 import { v } from "./validation";
 
@@ -16,55 +16,14 @@ function firstIssue(schema: v.GenericSchema, input: unknown): v.BaseIssue<unknow
   return issue;
 }
 
-describe("formatValidationIssues", () => {
-  const cases: { name: string; schema: v.GenericSchema; input: unknown; expected: string }[] = [
-    {
-      name: "single issue with a path",
-      schema: v.object({ name: v.string("name must be a string") }),
-      input: { name: 42 },
-      expected: "name: name must be a string",
-    },
-    {
-      name: "multiple issues joined with semicolons",
-      schema: v.object({ a: v.string("bad a"), b: v.string("bad b") }),
-      input: { a: 1, b: 2 },
-      expected: "a: bad a; b: bad b",
-    },
-    { name: "root label for a pathless issue", schema: v.string("must be a string"), input: 42, expected: "root: must be a string" },
-    {
-      name: "nested path joined with dots",
-      schema: v.object({ outer: v.object({ inner: v.string("bad inner") }) }),
-      input: { outer: { inner: 1 } },
-      expected: "outer.inner: bad inner",
-    },
-  ];
-
-  for (const c of cases) {
-    it(c.name, () => {
-      expect(formatValidationIssues(issuesFor(c.schema, c.input))).toBe(c.expected);
-    });
-  }
-
-  it("returns an empty string for an empty issue list", () => {
-    expect(formatValidationIssues([])).toBe("");
-  });
-
-  it("still reproduces the rejected value verbatim, which is why it is the internal diagnostic", () => {
-    expect(formatValidationIssues(issuesFor(v.object({ port: v.string() }), { port: 8080 }))).toBe(
-      "port: Invalid type: Expected string but received 8080",
-    );
-  });
-
-  it("reproduces an undeclared key and its message in full, unlike the caller-facing describer", () => {
-    const issues = issuesFor(strictObject({ name: v.string() }), { name: "Jane", nobody_asked: "1" });
-    expect(formatValidationIssues(issues)).toBe('nobody_asked: Invalid key: Expected never but received "nobody_asked"');
-    expect(issues.map(describeValidationIssue)).toEqual(["nobody_asked"]);
-  });
-});
-
 describe("describeValidationIssue", () => {
   it("names a single failing field", () => {
     expect(describeValidationIssue(firstIssue(v.object({ email: v.string() }), { email: 42 }))).toBe("email");
+  });
+
+  it("names an undeclared key a strict schema refused, and nothing else", () => {
+    const issues = issuesFor(strictObject({ name: v.string() }), { name: "Jane", nobody_asked: "1" });
+    expect(issues.map(describeValidationIssue)).toEqual(["nobody_asked"]);
   });
 
   it("joins a nested path with dots", () => {

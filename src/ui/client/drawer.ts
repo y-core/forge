@@ -67,6 +67,11 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
 
   const focusables = (): HTMLElement[] => (panel === null ? [] : [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => !n.hidden));
 
+  // The summary is a sibling of the panel, not inside it, and it draws the visible close glyph above
+  // the open drawer. Trapping the panel alone leaves that control outside the cycle, which is a
+  // keyboard trap for a reader who does not know Escape (WCAG 2.1.2).
+  const trapped = (): HTMLElement[] => (summary === null ? focusables() : [summary, ...focusables()]);
+
   let lockedOverflow: string | null = null;
 
   const lock = () => {
@@ -104,12 +109,12 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
       return;
     }
     if (key !== "Tab") return;
-    const items = focusables();
+    const items = trapped();
     const first = items[0];
     const last = items.at(-1);
     if (first === undefined || last === undefined) return;
     const active = activeElement(el);
-    if (!contains(panel, active)) return;
+    if (!contains(panel, active) && active !== summary) return;
     if ((event as KeyboardEvent).shiftKey) {
       if (active !== first) return;
       event.preventDefault();

@@ -112,6 +112,15 @@ as an image or a table that should bleed to the border. <!-- rule:forge-ui-layou
 Default: spacing between siblings is expressed with `gap-*` on the flex or grid parent rather than
 margins on the children, unless one child needs a distance the others do not. <!-- rule:forge-ui-layout-gap-over-margin -->
 
+## Stacking
+
+A `Stack` layers its children in one cell: the first child is the readable one and the next two peek
+out behind it, fanned towards `placement`. It is for a pile the reader will open — a deck of cards,
+a bundle of thumbnails — where the offset says "there is more" and the top item says what.
+
+Default: a `Stack` shows at most three layers and only the top one is read; a pile deeper than that
+is a count (`Badge` in an `Indicator`) or a list, never a taller fan. <!-- rule:forge-ui-layout-stack-depth -->
+
 ## Width and the measure
 
 A container that spans the viewport is not a layout decision; it is the absence of one. Every text
@@ -126,6 +135,18 @@ region needs a ceiling, and `forge-ui-measure-cap` is the Floor that sets it.
 
 Default: a content column carries a `max-w-*` ceiling and centres with `mx-auto`, unless the
 region is a table, a canvas, or a media element whose value comes from filling the space. <!-- rule:forge-ui-layout-measure-container -->
+
+## Tables and lists
+
+A table earns its markup when a reader compares rows on the same attributes — three columns of like
+values, scanned down rather than across. One value per record is a list, and a `<table>` around it
+hands assistive technology a grid to navigate for no gain, while costing the responsive collapse a
+list gets free.
+
+Default: tabular data with two or more comparable columns per record uses `Table`, and a
+single-value-per-record sequence uses a list, unless the columns exist only to align a label
+against its value — a definition list or a `Field` layout carries that
+better. <!-- rule:forge-ui-table-not-list -->
 
 ## Grouping without borders
 

@@ -2,68 +2,67 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
+import { presentationAttrs } from "../contracts/vocabulary";
+import type { Size } from "../contracts/vocabulary";
+import { fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
+import { FIELD_SIZE } from "./utils/recipes";
 
 interface NumberFieldRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
-type NumberFieldInputProps = Omit<JSX.IntrinsicElements["input"], "children" | "type">;
+type NumberFieldInputProps = Omit<JSX.IntrinsicElements["input"], "children" | "size" | "type"> & {
+  size?: Size | undefined;
+  invalid?: boolean | undefined;
+  busy?: boolean | undefined;
+};
 
 interface NumberFieldButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   /** Accessible name for the stepper. Defaults to `"Decrement"` / `"Increment"`. */
-  label?: string;
-  children?: JSXNode;
+  label?: string | undefined;
+  children?: JSXNode | undefined;
 }
 
 const BUTTON_BASE = cn(
-  "inline-flex size-8 items-center justify-center rounded-md border border-input bg-background " +
-    "cursor-pointer text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring " +
-    "disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex size-8 items-center justify-center rounded-field border border-input bg-background " +
+    "cursor-pointer text-foreground focus-ring hover:bg-accent " +
+    "state-disabled",
 );
 
 const NumberFieldRoot: FC<NumberFieldRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div
-    data-slot={slotToken("number-field", inherited)}
-    data-scope={NUMBER_FIELD_SCOPE}
-    class={cn("inline-flex items-center gap-1", asClass(cls))}
-    {...rest}>
+  <div data-slot={slotToken("number-field", inherited)} data-scope={NUMBER_FIELD_SCOPE} class={cn("inline-flex items-center gap-1", cls)} {...rest}>
     {children}
   </div>
 );
 
-const NumberFieldInput: FC<NumberFieldInputProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
+const NumberFieldInput: FC<NumberFieldInputProps> = ({
+  class: cls,
+  size = "md",
+  invalid = false,
+  busy = false,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <input
     type='number'
     data-slot={slotToken("number-field-input", inherited)}
-    class={cn(
-      "w-20 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground tabular-nums",
-      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
-      asClass(cls),
-    )}
+    {...presentationAttrs({ size })}
+    class={cn("state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring", "state-invalid", FIELD_SIZE[size], cls)}
     {...rest}
+    {...fieldStateProps(invalid, busy)}
   />
 );
 
 const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({ label = "Decrement", class: cls, children, "data-slot": inherited, ...rest }) => (
-  <button
-    type='button'
-    data-slot={slotToken("number-field-decrement", inherited)}
-    aria-label={label}
-    class={cn(BUTTON_BASE, asClass(cls))}
-    {...rest}>
+  <button type='button' data-slot={slotToken("number-field-decrement", inherited)} aria-label={label} class={cn(BUTTON_BASE, cls)} {...rest}>
     {children ?? "−"}
   </button>
 );
 
 const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({ label = "Increment", class: cls, children, "data-slot": inherited, ...rest }) => (
-  <button
-    type='button'
-    data-slot={slotToken("number-field-increment", inherited)}
-    aria-label={label}
-    class={cn(BUTTON_BASE, asClass(cls))}
-    {...rest}>
+  <button type='button' data-slot={slotToken("number-field-increment", inherited)} aria-label={label} class={cn(BUTTON_BASE, cls)} {...rest}>
     {children ?? "+"}
   </button>
 );

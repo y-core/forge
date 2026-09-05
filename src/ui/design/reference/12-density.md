@@ -49,12 +49,12 @@ the two as one continuous surface. <!-- rule:forge-ui-density-conflicting-signal
 Density is not a scale factor applied to everything. It moves five specific things, all of which
 terminate in a forge primitive.
 
-**Control size.** `buttonVariants` sizes run `sm` / `md` / `lg` / `icon` / `icon-sm` / `square`.
-`md` is the default row. At density 7 and above, `sm` is the row and `icon-sm` is its icon
-companion.
+**Control size.** Sizes run `sm` / `md` / `lg`, and `shape` decides the footprint at each — `md`
+is the default row. At density 7 and above, `sm` is the row, and an icon-only control is
+`shape='icon'` at that same `sm`.
 
 Default: at density 7 or above, `Button` takes `size='sm'` and icon-only controls take
-`size='icon-sm'`, unless the control is the surface's single primary action, which stays at `md`
+`shape='icon' size='sm'`, unless the control is the surface's single primary action, which stays at `md`
 so the pyramid in `01-hierarchy.md` survives the compression. <!-- rule:forge-ui-density-button-size -->
 
 **Gap steps.** Density moves you down the spacing scale, never off it — `forge-ui-spacing-scale-only`
@@ -102,9 +102,7 @@ import { Badge, Button, Card } from "@y-core/forge/ui/core";
         <Card.Description>{job.finishedAt}</Card.Description>
       </Card.Header>
       <Card.Footer>
-        <Button variant='primary' size='lg'>
-          Retry
-        </Button>
+        <Button size='lg'>Retry</Button>
       </Card.Footer>
     </Card>
   ))}
@@ -112,7 +110,7 @@ import { Badge, Button, Card } from "@y-core/forge/ui/core";
 ```
 
 Costs the surface its density and its hierarchy at once: a nested `Card` per row is two elevations
-that encode nothing (`forge-ui-no-nested-card`), a `primary` button per row means the page has no
+that encode nothing (`forge-ui-no-nested-card`), a primary button per row means the page has no
 primary action (`forge-ui-hierarchy-one-primary`), and thirty rows at `gap-6` is one screen of six.
 
 ```tsx
@@ -128,8 +126,8 @@ import { Badge, Button, Card, ScrollArea, Separator } from "@y-core/forge/ui/cor
             <div class='flex items-center gap-3 px-3 py-2'>
               <span class='flex-1 truncate text-sm text-foreground'>{job.name}</span>
               <span class='tabular-nums text-sm text-muted-foreground'>{job.durationMs}</span>
-              <Badge variant='outline'>{job.state}</Badge>
-              <Button variant='ghost' size='sm'>
+              <Badge appearance='outline'>{job.state}</Badge>
+              <Button tone='neutral' appearance='ghost' size='sm'>
                 Retry
               </Button>
             </div>
@@ -172,7 +170,7 @@ tight.
 
 Variance is how much two comparable surfaces are allowed to differ. At forge's default of 4, the
 second surface of a kind copies the first: the same `Card` compound in the same order, the same
-`Button` sizes, the same `Badge` variant vocabulary. Raising it is what a marketing brief buys.
+`Button` sizes, the same `Badge` tone and appearance. Raising it is what a marketing brief buys.
 
 Default: two surfaces of the same kind — two settings panels, two list views — use the same
 component composition and the same size vocabulary, unless a brief raises variance above forge's

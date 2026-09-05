@@ -15,6 +15,7 @@ Three primitives look interchangeable and are not.
 | A control that is validated, can be wrong, and has a server-side `name` | `FormField`                    | A `<fieldset>` that wires `id` / `for` / `aria-describedby` / `aria-invalid` from one `name`                |
 | A settings row — a labelled control with no validation and no error     | `Field`                        | A layout row with a decorative `<span>` label; no form semantics at all                                     |
 | Several checkboxes or radios answering one question                     | `CheckboxGroup` / `RadioGroup` | Real `<input type="checkbox">` / `<input type="radio">`; radio grouping and roving focus are the platform's |
+| A one-time code the reader types or pastes                              | `OtpInput` inside `FormField`  | One `<input autocomplete="one-time-code">` painted as cells; the value is the platform's, not assembled     |
 
 **Default: reach for `FormField` whenever the value is submitted and can be rejected.**
 <!-- rule:forge-ui-form-formfield-default -->
@@ -30,28 +31,42 @@ Both accept `name`, `scope`, `description`, `invalid`, `disabled` and `orientati
 `.Label`, `.Item`, `.Description` and `.Error`. Override only for a group whose items are not a
 single question — a matrix of independent toggles, which is a stack of `Field` rows.
 
-**Default: `FormField.Legend` takes `variant="legend"` when it heads a section of fields, and
-`variant="label"` when it names one cluster.** <!-- rule:forge-ui-form-legend-variant -->
+**Default: `FormField.Legend` takes `appearance="legend"` when it heads a section of fields, and
+`appearance="label"` when it names one cluster.** <!-- rule:forge-ui-form-legend-variant -->
 `legend` renders at `text-base`, `label` at `text-sm` — a section heading versus a field label.
 Choosing by size instead of by role is what produces a legend that outranks the form's own heading.
 Override only under a brief that restates the form's type scale.
 
+**Default: a one-time code is one `<input autocomplete="one-time-code">`, never N inputs with a
+focus-advance script.** <!-- rule:forge-ui-form-otp-one-field -->
+`OtpInput` paints the cells; paste, autofill and the mobile keyboard work because there is one
+field, and the server validates it with `v.pipe(formDigits(), v.length(6))`. Override never — a
+per-cell array assembles its value client-side, which is exactly the value a no-script render loses.
+
 ## `Toggle`, `Switch` and `ToggleGroup`
 
-Three two-state controls, and only one of them submits.
+Three two-state controls. All three submit — what separates them is what the value means.
 
-| Given                                            | Choose        | What it renders                                                       |
-| ------------------------------------------------ | ------------- | --------------------------------------------------------------------- |
-| A setting whose value is submitted with the form | `Switch`      | `<input type="checkbox" role="switch">` — it has a `name` and a value |
-| An in-page mode that no server ever reads        | `Toggle`      | `<button type="button" aria-pressed>` — submits nothing               |
-| One choice out of a small visible set            | `ToggleGroup` | A `<fieldset>` of pressed buttons; `type` picks single or multiple    |
+| Given                                 | Choose        | What it renders                                                       |
+| ------------------------------------- | ------------- | --------------------------------------------------------------------- |
+| An on/off setting                     | `Switch`      | `<input type="checkbox" role="switch">` — it has a `name` and a value |
+| A mode the reader presses on and off  | `Toggle`      | A `<label>` around a native checkbox, styled through `:has(:checked)` |
+| One choice out of a small visible set | `ToggleGroup` | A `<fieldset>` of pressed buttons; `type` picks single or multiple    |
 
-**Default: pick by whether the value is submitted, not by which one looks right.**
+**Default: pick by what the value means, not by which one looks right.**
 <!-- rule:forge-ui-form-toggle-by-submission -->
 
-Reaching for `Switch` when a `Toggle` was meant puts a checkbox into the submitted body under a name
-the action never declared. Reaching for `Toggle` when a `Switch` was meant loses the value silently
-at submit. Override never — the distinction is what the elements are.
+A `Switch` is a setting that is on or off, and it is announced as a switch. A `Toggle` is a mode the
+reader presses, and it is announced as a checkbox. Reaching for the wrong one
+does not lose the value — both carry a `name` and both submit — it tells the reader the wrong thing
+about what they are changing. Override never — the distinction is what the elements announce.
+
+`Filter` is the fourth shape: a row of chips where choosing one hides the others and shows a reset,
+so the narrowed facet stays visible and clearable.
+
+Default: `Filter` is for one-of-N facet narrowing where the chosen facet must stay visible and
+clearable; a set the reader may combine is `ToggleGroup type="multiple"`, and a choice that changes
+the form's meaning is `RadioGroup` with its label and error slots. <!-- rule:forge-ui-form-filter-when -->
 
 ---
 
@@ -73,7 +88,7 @@ clicking the label stops focusing the control.
 **Default: derive every field id through the helpers, never as a string literal.**
 <!-- rule:forge-ui-form-id-helpers -->
 
-Override only for an id that forge does not own — a `Dialog`'s `id`, a `Tabs.Panel`'s `id` — where
+Override only for an id that forge does not own — a `Dialog`'s `id`, a `Tabs.Content`'s `id` — where
 there is no helper to disagree with.
 
 **Default: wire a control by passing it a `field` descriptor rather than by spreading attributes.**
@@ -255,9 +270,7 @@ import { Button, Form, Honeypot, Turnstile } from "@y-core/forge/ui/core";
   <Honeypot />
   {/* fields */}
   <Turnstile siteKey={turnstileSiteKey} />
-  <Button type='submit' variant='primary'>
-    Send message
-  </Button>
+  <Button type='submit'>Send message</Button>
 </Form>;
 ```
 

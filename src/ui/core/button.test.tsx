@@ -2,152 +2,215 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Button } from "./button";
+import { createIcon } from "./icon";
 
-const BASE =
-  "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors";
+const BOX =
+  "state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors";
+const PRIMARY =
+  "[--tone:var(--color-primary)] [--tone-fg:var(--color-primary-foreground)] [--tone-text:var(--color-primary-text)] [--tone-soft:var(--color-primary-soft)] [--tone-soft-fg:var(--color-primary-soft-foreground)] [--tone-soft-border:var(--color-primary-soft-border)]";
+const NEUTRAL =
+  "[--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)]";
+const DESTRUCTIVE =
+  "[--tone:var(--color-destructive)] [--tone-fg:var(--color-destructive-foreground)] [--tone-text:var(--color-destructive-text)] [--tone-soft:var(--color-status-danger-subtle)] [--tone-soft-fg:var(--color-status-danger-subtle-foreground)] [--tone-soft-border:var(--color-status-danger-border)]";
+const SOLID =
+  "border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]";
+const LINK = "border-transparent bg-transparent text-(--tone-text) [--focus-ring:var(--color-ring)] underline-offset-4 hover:underline";
+
+const MD = `${BOX} h-control-md px-4 text-sm ${PRIMARY} ${SOLID}`;
+
+const icon = createIcon("/sprite.svg", { "icon-spinner": "0 0 16 16" });
 
 describe("Button", () => {
-  it("renders with primary variant classes by default", async () => {
-    expect(await render(<Button>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Click</button>`,
+  it("renders primary solid at the md size by default", async () => {
+    expect(await render(<Button>Click</Button>)).toBe(`<button type="button" data-slot="button" class="${MD}">Click</button>`);
+  });
+
+  it("renders neutral outline as the resting secondary chrome, border-input replacing the tone border", async () => {
+    expect(
+      await render(
+        <Button tone='neutral' appearance='outline'>
+          Click
+        </Button>,
+      ),
+    ).toBe(
+      `<button type="button" data-slot="button" class="${BOX} h-control-md px-4 text-sm ${NEUTRAL} bg-transparent [--focus-ring:var(--color-ring)] border-input text-foreground hover:bg-accent hover:text-accent-foreground">Click</button>`,
     );
   });
 
-  it("renders secondary variant classes", async () => {
-    expect(await render(<Button variant='secondary'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} border border-input text-foreground hover:bg-accent h-10 px-4 text-sm">Click</button>`,
+  it("renders neutral ghost with the accent hover and no border", async () => {
+    expect(
+      await render(
+        <Button tone='neutral' appearance='ghost'>
+          Click
+        </Button>,
+      ),
+    ).toBe(
+      `<button type="button" data-slot="button" class="${BOX} h-control-md px-4 text-sm ${NEUTRAL} border-transparent bg-transparent [--focus-ring:var(--color-ring)] text-foreground hover:bg-accent hover:text-accent-foreground">Click</button>`,
     );
   });
 
-  it("renders ghost variant classes without primary background", async () => {
-    expect(await render(<Button variant='ghost'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} text-foreground hover:bg-accent h-10 px-4 text-sm">Click</button>`,
+  it("renders a destructive tone through the same solid recipe", async () => {
+    expect(await render(<Button tone='destructive'>Delete</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${BOX} h-control-md px-4 text-sm ${DESTRUCTIVE} ${SOLID}">Delete</button>`,
     );
   });
 
-  it("renders destructive variant classes with its paired foreground", async () => {
-    expect(await render(<Button variant='destructive'>Delete</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-destructive text-destructive-foreground hover:bg-destructive/90 h-10 px-4 text-sm">Delete</button>`,
+  it("renders the link appearance as underlined tone text", async () => {
+    expect(await render(<Button appearance='link'>Docs</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${BOX} h-control-md px-4 text-sm ${PRIMARY} ${LINK}">Docs</button>`,
     );
   });
 
-  it("renders sm size classes", async () => {
+  it("sizes sm and lg from the control-height tokens", async () => {
     expect(await render(<Button size='sm'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-sm">Click</button>`,
+      `<button type="button" data-slot="button" class="${BOX} h-control-sm px-3 text-sm ${PRIMARY} ${SOLID}">Click</button>`,
     );
-  });
-
-  it("renders md size classes by default", async () => {
-    expect(await render(<Button>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Click</button>`,
-    );
-  });
-
-  it("renders lg size classes", async () => {
     expect(await render(<Button size='lg'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-12 px-6 text-base">Click</button>`,
+      `<button type="button" data-slot="button" class="${BOX} h-control-lg px-6 text-base ${PRIMARY} ${SOLID}">Click</button>`,
     );
   });
 
-  it("renders icon size classes", async () => {
-    expect(await render(<Button size='icon'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 size-9 p-0">Click</button>`,
+  it("makes an icon shape a square of its size, at every size", async () => {
+    expect(await render(<Button shape='icon'>x</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${BOX} h-control-md text-sm w-control-md px-0 ${PRIMARY} ${SOLID}">x</button>`,
     );
-  });
-
-  it("renders icon-sm size classes", async () => {
-    expect(await render(<Button size='icon-sm'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 size-8 p-0">Click</button>`,
-    );
-  });
-
-  it("defaults to type=button", async () => {
-    expect(await render(<Button>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Click</button>`,
-    );
-  });
-
-  it("sets type=submit when specified", async () => {
-    expect(await render(<Button type='submit'>Click</Button>)).toBe(
-      `<button type="submit" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Click</button>`,
-    );
-  });
-
-  it("passes the disabled attribute through", async () => {
-    expect(await render(<Button disabled>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm" disabled>Click</button>`,
-    );
-  });
-
-  it("omits the disabled attribute when not set", async () => {
-    expect(await render(<Button>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Click</button>`,
-    );
-  });
-
-  it("passes through the data-ref attribute", async () => {
-    expect(await render(<Button data-ref='my-btn'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm" data-ref="my-btn">Click</button>`,
-    );
-  });
-
-  it("merges a custom class with the variant classes", async () => {
-    expect(await render(<Button class='extra-class'>Click</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm extra-class">Click</button>`,
-    );
-  });
-
-  it("supports asChild for a single element child", async () => {
     expect(
       await render(
+        <Button shape='icon' size='sm'>
+          x
+        </Button>,
+      ),
+    ).toBe(`<button type="button" data-slot="button" class="${BOX} h-control-sm text-sm px-0 w-control-sm ${PRIMARY} ${SOLID}">x</button>`);
+    expect(
+      await render(
+        <Button shape='icon' size='lg'>
+          x
+        </Button>,
+      ),
+    ).toBe(`<button type="button" data-slot="button" class="${BOX} h-control-lg text-base px-0 w-control-lg ${PRIMARY} ${SOLID}">x</button>`);
+  });
+
+  it("renders the square and circle shapes", async () => {
+    expect(await render(<Button shape='square'>x</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${BOX} h-control-md text-sm aspect-square w-full p-0 ${PRIMARY} ${SOLID}">x</button>`,
+    );
+    expect(await render(<Button shape='circle'>x</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${BOX.replace(" rounded-field", "")} h-control-md text-sm w-control-md rounded-selector px-0 ${PRIMARY} ${SOLID}">x</button>`,
+    );
+  });
+
+  it("defaults to type=button and passes type=submit and disabled through", async () => {
+    expect(await render(<Button type='submit'>Click</Button>)).toBe(`<button type="submit" data-slot="button" class="${MD}">Click</button>`);
+    expect(await render(<Button disabled>Click</Button>)).toBe(`<button type="button" data-slot="button" class="${MD}" disabled>Click</button>`);
+  });
+
+  it("stamps aria-busy and data-busy while loading, with no spinner unless an icon is given", async () => {
+    expect(await render(<Button loading>Save</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${MD}" aria-busy="true" data-busy="">Save</button>`,
+    );
+  });
+
+  it("renders a Spinner at its own size before the children when loading with an icon", async () => {
+    expect(
+      await render(
+        <Button loading loadingIcon={icon} size='sm'>
+          Save
+        </Button>,
+      ),
+    ).toBe(
+      `<button type="button" data-slot="button" class="${BOX} h-control-sm px-3 text-sm ${PRIMARY} ${SOLID}" aria-busy="true" data-busy=""><span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 16 16" class="motion-safe:animate-spin size-4" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only motion-reduce:not-sr-only">Loading…</span></span>Save</button>`,
+    );
+  });
+
+  it("merges a caller class after the recipe so it wins a conflict", async () => {
+    expect(await render(<Button class='px-8'>Click</Button>)).toBe(
+      `<button type="button" data-slot="button" class="${BOX} h-control-md text-sm ${PRIMARY} ${SOLID} px-8">Click</button>`,
+    );
+  });
+
+  it("forwards data-* and aria-* attributes with escaped values", async () => {
+    expect(
+      await render(
+        <Button data-testid='b' aria-label='R&D'>
+          Click
+        </Button>,
+      ),
+    ).toBe(`<button type="button" data-slot="button" class="${MD}" data-testid="b" aria-label="R&amp;D">Click</button>`);
+  });
+
+  it("with asChild merges the recipe, busy hooks and slot onto the single element child", async () => {
+    expect(
+      await render(
+        <Button asChild loading tone='neutral' appearance='ghost'>
+          <a href='/docs'>Docs</a>
+        </Button>,
+      ),
+    ).toBe(
+      `<a href="/docs" aria-busy="true" data-busy="" class="${BOX} h-control-md px-4 text-sm ${NEUTRAL} border-transparent bg-transparent [--focus-ring:var(--color-ring)] text-foreground hover:bg-accent hover:text-accent-foreground" data-slot="button">Docs</a>`,
+    );
+  });
+
+  it("with asChild and a loading spinner keeps every prop on the child and puts the spinner inside it", async () => {
+    expect(
+      await render(
+        <Button asChild loading loadingIcon={icon} id='x'>
+          <a href='/docs'>Docs</a>
+        </Button>,
+      ),
+    ).toBe(
+      `<a href="/docs" aria-busy="true" data-busy="" id="x" class="${BOX} h-control-md px-4 text-sm ${PRIMARY} ${SOLID}" data-slot="button"><span data-slot="spinner" role="status" class="inline-flex items-center justify-center"><svg data-slot="icon" viewBox="0 0 16 16" class="motion-safe:animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg><span class="sr-only motion-reduce:not-sr-only">Loading…</span></span>Docs</a>`,
+    );
+  });
+
+  it("with asChild throws on anything but a single element child", async () => {
+    await expect(render(<Button asChild>text</Button>)).rejects.toThrow("Button with asChild requires exactly one JSX element child");
+    await expect(
+      render(
         <Button asChild>
-          <a href='/contact'>Contact</a>
+          <>
+            <a href='/a'>a</a>
+          </>
         </Button>,
       ),
-    ).toBe(
-      `<a href="/contact" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm" data-slot="button">Contact</a>`,
-    );
+    ).rejects.toThrow("Button with asChild requires exactly one JSX element child");
   });
 
-  it("throws when asChild is given a non-element child", async () => {
-    await expect(render(<Button asChild>just text</Button>)).rejects.toThrow("Button with asChild requires exactly one JSX element child");
-  });
-
-  it("keeps its own data-slot token ahead of one handed down through props", async () => {
-    expect(await render(<Button data-slot='toolbar-title-action'>Go</Button>)).toBe(
-      '<button type="button" data-slot="button toolbar-title-action" ' +
-        `class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Go</button>`,
-    );
-  });
-
-  it("treats an empty inherited data-slot as none rather than emitting a trailing space", async () => {
-    expect(await render(<Button data-slot=''>Go</Button>)).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Go</button>`,
-    );
-  });
-
-  it("carries an inherited data-slot onto the caller's element with asChild", async () => {
+  // `type` used to default to `"button"` in the destructuring, so `options.type` was never
+  // `undefined` and `cloneAsChild`'s not-set branch was unreachable: a child's `type="submit"` was
+  // overwritten and the form it sat in stopped submitting.
+  it("lets an asChild button child keep its own type when the caller states none", async () => {
     expect(
       await render(
-        <Button asChild data-slot='toolbar-title-action'>
-          <a href='/contact'>Contact</a>
+        <Button asChild aria-label='Save'>
+          <button type='submit'>Save</button>
         </Button>,
       ),
     ).toBe(
-      `<a href="/contact" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm" ` +
-        'data-slot="button toolbar-title-action">Contact</a>',
+      '<button type="submit" aria-label="Save" class="state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors h-control-md px-4 text-sm [--tone:var(--color-primary)] [--tone-fg:var(--color-primary-foreground)] [--tone-text:var(--color-primary-text)] [--tone-soft:var(--color-primary-soft)] [--tone-soft-fg:var(--color-primary-soft-foreground)] [--tone-soft-border:var(--color-primary-soft-border)] border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]" data-slot="button">Save</button>',
     );
   });
 
-  it("forwards arbitrary data-* attributes with HTML-escaped values", async () => {
+  it("still stamps type=button on an asChild child that states none", async () => {
     expect(
       await render(
-        <Button data-test-hook='cta' data-note='a&b'>
-          Go
+        <Button asChild aria-label='Go'>
+          <button>Go</button>
         </Button>,
       ),
     ).toBe(
-      `<button type="button" data-slot="button" class="${BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm" data-test-hook="cta" data-note="a&amp;b">Go</button>`,
+      '<button aria-label="Go" type="button" class="state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors h-control-md px-4 text-sm [--tone:var(--color-primary)] [--tone-fg:var(--color-primary-foreground)] [--tone-text:var(--color-primary-text)] [--tone-soft:var(--color-primary-soft)] [--tone-soft-fg:var(--color-primary-soft-foreground)] [--tone-soft-border:var(--color-primary-soft-border)] border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]" data-slot="button">Go</button>',
+    );
+  });
+
+  it("lets the caller's own type win over the child's", async () => {
+    expect(
+      await render(
+        <Button asChild type='reset'>
+          <button type='submit'>Clear</button>
+        </Button>,
+      ),
+    ).toBe(
+      '<button type="reset" class="state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors h-control-md px-4 text-sm [--tone:var(--color-primary)] [--tone-fg:var(--color-primary-foreground)] [--tone-text:var(--color-primary-text)] [--tone-soft:var(--color-primary-soft)] [--tone-soft-fg:var(--color-primary-soft-foreground)] [--tone-soft-border:var(--color-primary-soft-border)] border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]" data-slot="button">Clear</button>',
     );
   });
 });

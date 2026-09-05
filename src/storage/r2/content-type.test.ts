@@ -27,3 +27,15 @@ describe("inferContentType", () => {
     expect(inferContentType("data.backup.json")).toBe("application/json; charset=utf-8");
   });
 });
+
+describe("inferContentType — prototype keys", () => {
+  for (const key of ["upload.constructor", "upload.toString", "upload.__proto__", "upload.hasOwnProperty"]) {
+    it(`returns the default for "${key}"`, () => {
+      expect(inferContentType(key)).toBe(CONTENT_TYPE_DEFAULT);
+    });
+  }
+
+  it("returns the default for an extension-less key", () => {
+    expect(inferContentType("README")).toBe(CONTENT_TYPE_DEFAULT);
+  });
+});

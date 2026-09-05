@@ -14,6 +14,11 @@ import { v } from "../validation/mod";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
 
+const UNEXPECTED = "An unexpected error occurred.";
+
+/** The baseline 500 document `Forge` renders for an error that never reached the middleware chain. */
+const boundary = (detail: string): string => `<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1><p>${detail}</p></body></html>`;
+
 describe("createApp", () => {
   it("error boundary returns 500 HTML for unhandled errors", async () => {
     const app = createApp();
@@ -24,9 +29,7 @@ describe("createApp", () => {
     const res = await app.request("/boom");
     expect(res.status).toBe(500);
     const text = await res.text();
-    expect(text).toContain("500");
-    expect(text).toContain("An unexpected error occurred.");
-    expect(text).not.toContain("test explosion");
+    expect(text).toBe(boundary(UNEXPECTED));
   });
 
   it("does not leak error details to the response", async () => {
@@ -37,8 +40,7 @@ describe("createApp", () => {
 
     const res = await app.request("/boom");
     const text = await res.text();
-    expect(text).not.toContain("secret db connection string leaked");
-    expect(text).toContain("An unexpected error occurred.");
+    expect(text).toBe(boundary(UNEXPECTED));
   });
 
   describe("error logging", () => {
@@ -91,8 +93,7 @@ describe("createApp", () => {
     const res = await app.request("/boom");
     expect(res.status).toBe(500);
     const text = await res.text();
-    expect(text).toContain("database timeout");
-    expect(text).not.toContain("An unexpected error occurred.");
+    expect(text).toBe(boundary("database timeout"));
   });
 
   it("escapes HTML in debug error messages", async () => {
@@ -103,8 +104,7 @@ describe("createApp", () => {
 
     const res = await app.request("/boom");
     const text = await res.text();
-    expect(text).toContain("&lt;script&gt;");
-    expect(text).not.toContain("<script>");
+    expect(text).toBe(boundary("&lt;script&gt;alert(1)&lt;/script&gt;"));
   });
 
   it("hides error details when isDebug returns false", async () => {
@@ -115,8 +115,7 @@ describe("createApp", () => {
 
     const res = await app.request("/boom");
     const text = await res.text();
-    expect(text).toContain("An unexpected error occurred.");
-    expect(text).not.toContain("secret info");
+    expect(text).toBe(boundary(UNEXPECTED));
   });
 
   it("exposes env bindings inside route handlers", async () => {
@@ -230,7 +229,7 @@ describe("invalid env is handled by the app, not thrown out of fetch", () => {
 
     const res = await app.request("/", {}, {});
     expect(res.status).toBe(500);
-    expect(await res.text()).toContain("An unexpected error occurred.");
+    expect(await res.text()).toBe(boundary(UNEXPECTED));
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
     expect(res.headers.get("referrer-policy")).toBe("no-referrer");
@@ -242,7 +241,7 @@ describe("invalid env is handled by the app, not thrown out of fetch", () => {
 
     const res = await app.request("/", {}, {});
     expect(res.status).toBe(503);
-    expect(await res.text()).toBe("Invalid environment: dbUrl: Invalid type: Expected string but received undefined");
+    expect(await res.text()).toBe("Invalid environment: dbUrl: missing");
   });
 
   it("leaves a valid env completely unaffected", async () => {
@@ -266,7 +265,7 @@ describe("a throwing app.use guard stays inside the chain", () => {
 
     const res = await app.request("/");
     expect(res.status).toBe(500);
-    expect(await res.text()).toContain("An unexpected error occurred.");
+    expect(await res.text()).toBe(boundary(UNEXPECTED));
     expect(res.headers.get("x-request-id")).not.toBeNull();
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
@@ -326,9 +325,7 @@ describe("onError override fallback", () => {
     const res = await app.request("/boom");
     expect(res.status).toBe(500);
     const text = await res.text();
-    expect(text).toContain("An unexpected error occurred.");
-    expect(text).not.toContain("override boom");
-    expect(text).not.toContain("original");
+    expect(text).toBe(boundary(UNEXPECTED));
   });
 });
 
@@ -365,6 +362,54 @@ describe("HEAD requests", () => {
     expect(headRes.headers.get("x-content-type-options")).toBe("nosniff");
     expect(headRes.headers.get("content-security-policy")).toBe("default-src 'none'");
   });
+
+  it("propagates the caller's abort signal into the derived GET", async () => {
+    const app = createApp();
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    mapHandler(app, "GET", "/signal", (c) => {
+      seen = c.request.signal;
+      return new Response("ok");
+    });
+
+    const res = await app.request("/signal", { method: "HEAD", signal: controller.signal });
+    expect(res.status).toBe(200);
+    expect(seen?.aborted).toBe(false);
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it("cancels the GET body it discards", async () => {
+    const app = createApp();
+    let cancelled = false;
+    mapHandler(
+      app,
+      "GET",
+      "/stream",
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel() {
+              cancelled = true;
+            },
+          }),
+        ),
+    );
+
+    const res = await app.request("/stream", { method: "HEAD" });
+    expect(res.status).toBe(200);
+    expect(cancelled).toBe(true);
+  });
+
+  it("carries the GET's content-length", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/sized", () => new Response("hello world", { headers: { "content-length": "11" } }));
+
+    const getRes = await app.request("/sized");
+    const headRes = await app.request("/sized", { method: "HEAD" });
+    expect(headRes.headers.get("content-length")).toBe("11");
+    expect(headRes.headers.get("content-length")).toBe(getRes.headers.get("content-length"));
+  });
 });
 
 describe("/admin/* middleware matching (F3)", () => {
@@ -384,6 +429,24 @@ describe("/admin/* middleware matching (F3)", () => {
     await app.request("/administrator");
 
     expect(hits).toEqual(["/admin", "/admin/x"]);
+  });
+
+  it("registers one guard for an array of paths, matching any of them", async () => {
+    const hits: string[] = [];
+    const app = new Forge();
+    app.use(["/admin/*", "/api/users"], (c, next) => {
+      hits.push(c.url.pathname);
+      return next();
+    });
+    mapHandler(app, "GET", "/admin/users", () => new Response("a"));
+    mapHandler(app, "GET", "/api/users", () => new Response("b"));
+    mapHandler(app, "GET", "/administrator", () => new Response("c"));
+
+    await app.request("/admin/users");
+    await app.request("/api/users");
+    await app.request("/administrator");
+
+    expect(hits).toEqual(["/admin/users", "/api/users"]);
   });
 });
 

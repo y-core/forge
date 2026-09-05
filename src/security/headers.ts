@@ -120,10 +120,17 @@ function buildCsp(nonce: string, options?: SecurityHeadersOptions): string {
   return parts.join("; ");
 }
 
-function securityHeaderEntries(nonce: string, options?: SecurityHeadersOptions): [string, string][] {
+// Unreachable to a caller: `CSP_SOURCE_TOKEN` is `/^[\x21-\x7e]+$/`, which excludes NUL.
+const NONCE_PLACEHOLDER = "\0";
+
+interface PrecomputedSecurityHeaders {
+  cspTemplate: string;
+  staticEntries: readonly (readonly [string, string])[];
+}
+
+function precomputeSecurityHeaders(options?: SecurityHeadersOptions): PrecomputedSecurityHeaders {
   const hstsMaxAge = options?.hstsMaxAge ?? 63072000;
   const entries: [string, string][] = [
-    ["content-security-policy", buildCsp(nonce, options)],
     ["strict-transport-security", `max-age=${hstsMaxAge}; includeSubDomains; preload`],
     ["referrer-policy", "strict-origin-when-cross-origin"],
     ["x-content-type-options", "nosniff"],
@@ -136,7 +143,12 @@ function securityHeaderEntries(nonce: string, options?: SecurityHeadersOptions):
   if (options?.crossOriginEmbedderPolicy) {
     entries.push(["cross-origin-embedder-policy", options.crossOriginEmbedderPolicy]);
   }
-  return entries;
+  return { cspTemplate: buildCsp(NONCE_PLACEHOLDER, options), staticEntries: Object.freeze(entries) };
+}
+
+/** Renders precomputed headers for one request — only the nonce differs between two of them. */
+function renderSecurityHeaders(precomputed: PrecomputedSecurityHeaders, nonce: string): (readonly [string, string])[] {
+  return [["content-security-policy", precomputed.cspTemplate.replaceAll(NONCE_PLACEHOLDER, nonce)], ...precomputed.staticEntries];
 }
 
 /** Applies forge's security headers to `response`, minting a nonce when `options.nonce` is omitted. @public */
@@ -144,7 +156,7 @@ export function applySecurityHeaders(response: Response, options?: ApplySecurity
   const { nonce = generateNonce(), ...headerOptions } = options ?? {};
   assertValidCspOptions(headerOptions);
   const headers = new Headers(response.headers);
-  for (const [name, value] of securityHeaderEntries(nonce, headerOptions)) {
+  for (const [name, value] of renderSecurityHeaders(precomputeSecurityHeaders(headerOptions), nonce)) {
     headers.set(name, value);
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
@@ -153,13 +165,14 @@ export function applySecurityHeaders(response: Response, options?: ApplySecurity
 /** Middleware applying CSP with a per-request nonce, HSTS, and the rest of forge's security headers. @public */
 export function createSecurityHeaders(options?: SecurityHeadersOptions): Middleware {
   assertValidCspOptions(options);
+  const precomputed = precomputeSecurityHeaders(options);
 
   return async (context, next) => {
     const nonce = generateNonce();
     secureHeadersNonce.set(context, nonce);
 
     // Queued before `next()` so the headers still reach the error page when anything deeper throws.
-    for (const [name, value] of securityHeaderEntries(nonce, options)) {
+    for (const [name, value] of renderSecurityHeaders(precomputed, nonce)) {
       setPendingHeader(context, name, value);
     }
 

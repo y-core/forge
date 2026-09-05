@@ -1,12 +1,28 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { buttonVariants } from "../core/button";
 import { ToggleGroup } from "./toggle-group";
 
 const GROUP_CLASS = "flex justify-center min-w-0 border-0 m-0 p-0";
 
-const ITEM_CLASS =
-  "inline-flex items-center justify-center font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors text-foreground hover:bg-accent h-8 px-3 text-sm bg-transparent border border-input border-s-0 cursor-pointer rounded-none first:border-s first:rounded-s-md last:rounded-e-md hover:text-accent-foreground [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:border-s [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:border-t-0 [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:rounded-none [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:first:border-t [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-md [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-md has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50";
+const ITEM_SEGMENT =
+  "bg-transparent border-input border-s-0 cursor-pointer " +
+  "rounded-none first:rounded-s-field first:border-s last:rounded-e-field " +
+  "hover:text-accent-foreground " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:border-s " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:border-t-0 " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:rounded-none " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:first:border-t " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:first:rounded-t-field " +
+  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:last:rounded-b-field";
+
+const ITEM_STATE = "has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary";
+
+const ITEM_CLASS = buttonVariants({ tone: "neutral", appearance: "ghost", size: "sm", class: `${ITEM_SEGMENT} ${ITEM_STATE}` }).replaceAll(
+  "&",
+  "&amp;",
+);
 
 const GROUP_OPEN = `<fieldset data-slot="toggle-group" data-scope="toggle-group" data-orientation="horizontal" class="${GROUP_CLASS}"`;
 
@@ -28,37 +44,48 @@ describe("controls/ToggleGroup.Item", () => {
   });
 
   it("defaults the input's name to the bound field, so the two cannot drift apart", async () => {
-    const out = await render(<ToggleGroup.Item bind='align' value='left' />);
-
-    expect(out).toContain('name="align"');
-    expect(out).toContain('data-field="align"');
+    expect(await render(<ToggleGroup.Item bind='align' value='left' />)).toBe(
+      `<label data-slot="toggle-group-item" class="${ITEM_CLASS}">` +
+        '<input data-slot="toggle-group-input" type="radio" name="align" value="left" class="sr-only" ' +
+        'data-field="align" data-value="left"></label>',
+    );
   });
 
   it("lets a caller name the group explicitly when it differs from the field", async () => {
-    expect(await render(<ToggleGroup.Item bind='align' name='alignment' value='left' />)).toContain('name="alignment"');
+    expect(await render(<ToggleGroup.Item bind='align' name='alignment' value='left' />)).toBe(
+      `<label data-slot="toggle-group-item" class="${ITEM_CLASS}">` +
+        '<input data-slot="toggle-group-input" type="radio" name="alignment" value="left" class="sr-only" ' +
+        'data-field="align" data-value="left"></label>',
+    );
   });
 
-  it("does not forward bind as an attribute of its own", async () => {
-    const out = await render(<ToggleGroup.Item bind='projection' value='perspective' />);
-
-    expect(out).not.toContain('bind="');
+  it("spends bind on data-field and name, forwarding no attribute of its own", async () => {
+    expect(await render(<ToggleGroup.Item bind='projection' value='perspective' />)).toBe(
+      `<label data-slot="toggle-group-item" class="${ITEM_CLASS}">` +
+        '<input data-slot="toggle-group-input" type="radio" name="projection" value="perspective" class="sr-only" ' +
+        'data-field="projection" data-value="perspective"></label>',
+    );
   });
 
   it("passes pressed, title and data-ref through to the input", async () => {
-    const out = await render(
-      <ToggleGroup.Item bind='p' value='v' pressed title='Perspective' data-ref='cam-perspective'>
-        P
-      </ToggleGroup.Item>,
+    expect(
+      await render(
+        <ToggleGroup.Item bind='p' value='v' pressed title='Perspective' data-ref='cam-perspective'>
+          P
+        </ToggleGroup.Item>,
+      ),
+    ).toBe(
+      `<label data-slot="toggle-group-item" class="${ITEM_CLASS}">` +
+        '<input data-slot="toggle-group-input" type="radio" name="p" value="v" class="sr-only" checked ' +
+        'title="Perspective" data-ref="cam-perspective" data-field="p" data-value="v">P</label>',
     );
-
-    expect(out).toContain('title="Perspective"');
-    expect(out).toContain('data-ref="cam-perspective"');
-    expect(out).toContain(" checked ");
   });
 
   it("forwards an arbitrary data-* attribute, HTML-escaped", async () => {
-    expect(await render(<ToggleGroup.Item bind='b' value='v' data-test-hook={`R&D's "v"`} />)).toContain(
-      'data-test-hook="R&amp;D&#39;s &quot;v&quot;"',
+    expect(await render(<ToggleGroup.Item bind='b' value='v' data-test-hook={`R&D's "v"`} />)).toBe(
+      `<label data-slot="toggle-group-item" class="${ITEM_CLASS}">` +
+        '<input data-slot="toggle-group-input" type="radio" name="b" value="v" class="sr-only" ' +
+        'data-test-hook="R&amp;D&#39;s &quot;v&quot;" data-field="b" data-value="v"></label>',
     );
   });
 

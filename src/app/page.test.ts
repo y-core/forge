@@ -81,6 +81,58 @@ describe("definePage", () => {
     expect(res.headers.get("cache-control")).toBe("private, max-age=60");
   });
 
+  it("leaves a response that states its own cache-control alone", async () => {
+    const app = makeApp(
+      definePage({
+        cache: { maxAge: 300 },
+        loader: () => new Response("refused", { status: 403, headers: { "cache-control": "no-store" } }),
+        view: () => new Response("ok"),
+      }),
+    );
+
+    const res = await app.request("/test");
+    expect(res.status).toBe(403);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("applies the page cache to a response that states none", async () => {
+    const app = makeApp(
+      definePage({ cache: { maxAge: 300 }, loader: () => new Response("moved", { status: 302 }), view: () => new Response("ok") }),
+    );
+
+    const res = await app.request("/test");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("cache-control")).toBe("public, max-age=300");
+  });
+
+  it("lets `headers` override a response's own cache-control", async () => {
+    const app = makeApp(
+      definePage({
+        cache: { maxAge: 300 },
+        headers: { "cache-control": "private, max-age=10" },
+        loader: () => new Response("refused", { status: 403, headers: { "cache-control": "no-store" } }),
+        view: () => new Response("ok"),
+      }),
+    );
+
+    const res = await app.request("/test");
+    expect(res.headers.get("cache-control")).toBe("private, max-age=10");
+  });
+
+  it("refuses a pipeline option stated without a schema", () => {
+    expect(() => definePage({ honeypot: "__hp", view: () => new Response("ok") } as never)).toThrow(
+      "definePage: `honeypot` requires `schema` — a submission-pipeline option without a schema is ignored.",
+    );
+    expect(() => definePage({ honeypot: "__hp", maxBytes: 1024, view: () => new Response("ok") } as never)).toThrow(
+      "definePage: `honeypot`, `maxBytes` require `schema` — submission-pipeline options without a schema are ignored.",
+    );
+  });
+
+  it("refuses a pipeline option stated without a schema at the type level", () => {
+    // @ts-expect-error -- `honeypot` is only assignable on the arm that also states `schema`
+    expect(() => definePage({ honeypot: "__hp", view: () => new Response("ok") })).toThrow();
+  });
+
   it("sets custom headers", async () => {
     const app = makeApp(definePage({ headers: { "x-custom": "value" }, view: () => new Response("ok") }));
 

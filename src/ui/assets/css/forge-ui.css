@@ -43,6 +43,7 @@
      Utilities
        htmx indicators .......... consumer-facing      — src/ui/design/reference/11-htmx.md
        Theme toggle icons ....... ThemeToggle          — src/ui/chrome/theme-toggle.tsx, theme.ts
+       Join shared edges ........ Join                 — src/ui/core/join.tsx
 
      Components
        1. Anchored placement .... Popover, Menu, Toolbar — src/ui/core/popover.tsx, menu.tsx,
@@ -51,11 +52,15 @@
        3. Coordinate placement .. Menu (context menus) — src/ui/client/popover-anchor.ts
        4. Open-trigger state .... Popover, Toolbar, Menu
        5. Disclosure motion ..... Collapsible, Accordion — src/ui/core/collapsible.tsx, accordion.tsx
-       6. Dialog ................ Dialog               — src/ui/core/dialog.tsx
+       6. Dialog ................ Dialog, Drawer       — src/ui/core/dialog.tsx, drawer.tsx
        7. Slider ................ Slider               — src/ui/core/slider.tsx
+       7b. Progress ............. Progress             — src/ui/core/progress.tsx
+       7c. Meter ................ Meter                — src/ui/core/meter.tsx
        8. Navbar ................ Navbar               — src/ui/chrome/navbar.tsx
-       9. Forced colors ......... CheckboxGroup, RadioGroup — src/ui/core/checkbox-group.tsx,
-                                                              src/ui/core/radio-group.tsx
+       9. Forced colors ......... CheckboxGroup, RadioGroup, Switch, Toggle, ToggleGroup, Filter,
+                                  Slider, Table.Row
+                                  — src/ui/core/checkbox-group.tsx, radio-group.tsx, switch.tsx,
+                                    toggle.tsx, toggle-group.tsx, filter.tsx, slider.tsx, table.tsx
 
    **Do not put general-purpose utilities here.** Tailwind supplies those. Every block is tied to one
    named consumer, and a block whose consumer is gone should be deleted with it.
@@ -63,7 +68,126 @@
    The token files stay outside any layer, deliberately: a custom-property declaration is not a
    cascade participant in this sense, and `@theme` is a Tailwind at-rule that has to be seen at the
    top level.
+
+   **The `@utility` recipes sit at the top level too**, because Tailwind refuses an `@utility` inside
+   a `@layer`. Each is one name for a state or chrome recipe every component used to spell by hand:
+
+     focus-ring       the focus indicator, drawn inside the element or through `:has()` on a wrapped control
+     focus-ring-outset  the same indicator drawn around it, for a control whose box is its content
+     state-disabled   the disabled paint, from the element, a wrapped control, or an enclosing fieldset
+     state-invalid    the invalid boundary, from `aria-invalid`, `data-invalid`, or a wrapped control
+     state-busy       the in-flight paint, from `aria-busy` or `data-busy`, or from a wrapped control
+     field-chrome     the text-field box — height, radius, border, background, padding, type
+     border-field     the control border width, read from `--border-width`
+     otp-cells        the `OtpInput` frame — its width, and the rule between each pair of cells
+     otp-editor       the field inside that frame — the cell-wide glyph advance, and the caret's room
+
+   They are utilities in `cn`'s sense — the derivation reads their compiled signature — so a caller's
+   `rounded-lg` after `field-chrome` still wins.
   ────────────────────────────────────────────────────────────────────────────── */
+
+@utility border-field {
+  border-width: var(--border-width);
+}
+
+/* The ring is drawn *inside* the element, not around it. An outer ring is wrong on any control that
+   shares an edge with a neighbour — inside a `Join` it cuts the group's silhouette in two — and it is
+   the shape a caller cannot correct from the call site. Inset, the group stays one shape and the
+   focused member is the box within it.
+
+   The colour is the appearance's, because the ring is now read against the element's own surface:
+   `--focus-ring` is `--tone-fg` on a solid fill and `--ring` everywhere else (`tone.ts`), and the
+   fallback covers every element that carries no tone at all. */
+@utility focus-ring {
+  @apply outline-none;
+  &:focus-visible,
+  &:has(:focus-visible) {
+    @apply inset-ring-2 inset-ring-[var(--focus-ring,var(--color-ring))];
+  }
+}
+
+/* The exception, and the only one: a control whose box *is* its content has no interior to spend two
+   pixels of. An inline `Link`'s ring would cross its own glyphs, and a 16px checkbox or radio would
+   lose the indicator to it — and neither shares an edge with a neighbour, which is what the inset
+   default exists for. `Switch` is the same exception, spelled `peer-focus-visible:` because its track
+   is the input's sibling. */
+@utility focus-ring-outset {
+  @apply outline-none;
+  &:focus-visible,
+  &:has(:focus-visible) {
+    @apply ring-2 ring-ring;
+  }
+}
+
+@utility state-disabled {
+  &:disabled,
+  &[aria-disabled="true"],
+  &:has(:disabled),
+  fieldset:disabled & {
+    @apply pointer-events-none opacity-50;
+  }
+}
+
+@utility state-invalid {
+  &[aria-invalid="true"],
+  &[data-invalid],
+  &:has([aria-invalid="true"]) {
+    @apply border-destructive-text ring-destructive-text/20;
+  }
+}
+
+@utility state-busy {
+  &[aria-busy="true"],
+  &[data-busy],
+  &:has([aria-busy="true"]),
+  &:has([data-busy]) {
+    @apply pointer-events-none cursor-progress;
+  }
+}
+
+@utility field-chrome {
+  @apply h-control-md w-full rounded-field border-field border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground;
+}
+
+/* The frame of an `OtpInput`: `--otp-length` cells of exactly `--otp-cell`, filling it edge to edge.
+   Its width is the grid plus the two borders, so the interior *is* the grid and every cell measures
+   the same — including the first and the last, which is what the editor's overhang below buys.
+
+   The cells are divided by a rule per boundary, in the field's own border colour, rather than filled:
+   the frame's border already draws the two outer edges, so a filled cell would double them. The tile
+   is `length − 1` cells wide and starts one cell in, which is what puts a rule at every *interior*
+   boundary and none at the edges. */
+@utility otp-cells {
+  --otp-cell: var(--spacing-control-md);
+  width: calc(var(--otp-length, 6) * var(--otp-cell) + 2 * var(--border-width));
+  background-image: repeating-linear-gradient(to right, var(--color-input) 0 var(--border-width), transparent var(--border-width) var(--otp-cell));
+  background-size: calc((var(--otp-length, 6) - 1) * var(--otp-cell)) 100%;
+  background-position: var(--otp-cell) 0;
+  background-repeat: no-repeat;
+  &[data-size="sm"] {
+    --otp-cell: var(--spacing-control-sm);
+  }
+  &[data-size="lg"] {
+    --otp-cell: var(--spacing-control-lg);
+  }
+}
+
+/* The editor inside that frame — one native field, painted onto the grid it inherits. A monospace
+   glyph is `1ch`, so `letter-spacing: cell − 1ch` puts glyph i at `pad + i·cell`, and
+   `pad = (cell − 1ch) / 2` centres it in cell i.
+
+   The box is `content-box`, so the field measures `pad + length · cell` and overhangs the frame's
+   interior by exactly `pad`. That overhang is the room the caret needs after the last glyph's own
+   letter-spacing — without it the field scrolls the moment a full code is typed — and the frame
+   clips it, which is what keeps the cells equal instead of paying for the caret with a wider last
+   one. */
+@utility otp-editor {
+  --otp-pad: calc((var(--otp-cell) - 1ch) / 2);
+  box-sizing: content-box;
+  width: calc(var(--otp-length, 6) * var(--otp-cell));
+  padding-inline: var(--otp-pad) 0;
+  letter-spacing: calc(var(--otp-cell) - 1ch);
+}
 
 @layer utilities {
   /* ── htmx request indicators ─────────────────────────────────────────────
@@ -117,6 +241,40 @@
   }
   html:not([data-theme-preference]) .theme-system-icon {
     display: contents;
+  }
+
+  /* ── Join shared edges ───────────────────────────────────────────────────
+     A child cannot know it has a neighbour, so the group tells it: the inner corners are squared and
+     the doubled border is collapsed by a negative margin of `--border-width`, the same token
+     `border-field` reads, so the two always agree.
+
+     The layer matters here for the same reason as above — these rules *unset* a shape the child asked
+     for itself, and a joined `Input`'s own `rounded-field` would beat them from `components`. Within
+     `utilities` they win on specificity instead, which is what leaves a caller's explicit
+     `rounded-none` on the group's end cap free to override them in turn.
+
+     The two axes are mutually exclusive selectors rather than an override pair: a vertical rule that
+     squared only its own two corners would leave the horizontal pair squared on the same child.
+
+     Nothing here has to lift a focused member above its neighbour: `focus-ring` draws inside the
+     element, so the collapsed edge has no outer ring to paint over. */
+  [data-slot~="join"]:not([data-orientation="vertical"]) > :not(:first-child) {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    margin-inline-start: calc(var(--border-width) * -1);
+  }
+  [data-slot~="join"]:not([data-orientation="vertical"]) > :not(:last-child) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+  [data-slot~="join"][data-orientation="vertical"] > :not(:first-child) {
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+    margin-block-start: calc(var(--border-width) * -1);
+  }
+  [data-slot~="join"][data-orientation="vertical"] > :not(:last-child) {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
   }
 }
 
@@ -280,47 +438,78 @@
     left: anchor(left);
   }
 
-  [data-slot~="popover-content"][data-side="bottom"] {
+  /* Popover and tooltip place identically: same `anchor()` values, same 0.375rem gaps. Merged so a
+   change cannot land on one and not the other. Both arms weigh 0-1-0, so `:is()` leaves
+   specificity and cascade order exactly where they were. */
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="bottom"] {
     top: anchor(bottom);
     margin-top: 0.375rem;
   }
-  [data-slot~="popover-content"][data-side="top"] {
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="top"] {
     bottom: anchor(top);
     margin-bottom: 0.375rem;
   }
-  [data-slot~="popover-content"][data-align="start"] {
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="left"] {
+    right: anchor(left);
+    /* modern-css-allow: forge-ui-platform-logical-spacing — the caller asked for a physical side, so its gap must not mirror */
+    margin-right: 0.375rem;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="right"] {
+    left: anchor(right);
+    /* modern-css-allow: forge-ui-platform-logical-spacing — the caller asked for a physical side, so its gap must not mirror */
+    margin-left: 0.375rem;
+  }
+
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="top"][data-align="start"],
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="bottom"][data-align="start"] {
     left: anchor(left);
   }
-  [data-slot~="popover-content"][data-align="end"] {
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="top"][data-align="end"],
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="bottom"][data-align="end"] {
     right: anchor(right);
   }
-  [data-slot~="popover-content"][data-align="center"] {
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="top"][data-align="center"],
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="bottom"][data-align="center"] {
     left: anchor(center);
     translate: -50% 0;
   }
 
-  /* `data-placement` names the **rail's** edge, not the flyout's, so the inversion below is correct
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="left"][data-align="start"],
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="right"][data-align="start"] {
+    top: anchor(top);
+  }
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="left"][data-align="end"],
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="right"][data-align="end"] {
+    bottom: anchor(bottom);
+  }
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="left"][data-align="center"],
+  :is([data-slot~="popover-content"], [data-slot~="tooltip-content"])[data-side="right"][data-align="center"] {
+    top: anchor(center);
+    translate: 0 -50%;
+  }
+
+  /* `data-side` names the **rail's** edge, not the flyout's, so the inversion below is correct
    rather than a transcription slip: a rail on the `left` opens its flyout to the right of itself
    (`left: anchor(right)`). `toolbar.tsx` is where the value is set, from the same `placement` prop
    that puts the rail on that edge. */
-  [data-slot~="toolbar-flyout"][data-placement="left"] {
+  [data-slot~="toolbar-flyout"][data-side="left"] {
     left: anchor(right);
     top: anchor(top);
-    /* modern-css-allow: forge-ui-platform-logical-spacing — `data-placement` names a physical rail edge, so the gap stays on that edge */
+    /* modern-css-allow: forge-ui-platform-logical-spacing — `data-side` names a physical rail edge, so the gap stays on that edge */
     margin-left: 0.5rem;
   }
-  [data-slot~="toolbar-flyout"][data-placement="right"] {
+  [data-slot~="toolbar-flyout"][data-side="right"] {
     right: anchor(left);
     top: anchor(top);
-    /* modern-css-allow: forge-ui-platform-logical-spacing — `data-placement` names a physical rail edge, so the gap stays on that edge */
+    /* modern-css-allow: forge-ui-platform-logical-spacing — `data-side` names a physical rail edge, so the gap stays on that edge */
     margin-right: 0.5rem;
   }
-  [data-slot~="toolbar-flyout"][data-placement="top"] {
+  [data-slot~="toolbar-flyout"][data-side="top"] {
     top: anchor(bottom);
     left: anchor(left);
     margin-top: 0.5rem;
   }
-  [data-slot~="toolbar-flyout"][data-placement="bottom"] {
+  [data-slot~="toolbar-flyout"][data-side="bottom"] {
     bottom: anchor(top);
     left: anchor(left);
     margin-bottom: 0.5rem;
@@ -372,53 +561,6 @@
   [data-slot~="tooltip"]:not([data-tooltip-mounted]):hover [data-slot~="tooltip-content"],
   [data-slot~="tooltip"]:not([data-tooltip-mounted]):focus-within [data-slot~="tooltip-content"] {
     display: block;
-  }
-
-  [data-slot~="tooltip-content"][data-side="top"] {
-    bottom: anchor(top);
-    margin-bottom: 0.375rem;
-  }
-  [data-slot~="tooltip-content"][data-side="bottom"] {
-    top: anchor(bottom);
-    margin-top: 0.375rem;
-  }
-  [data-slot~="tooltip-content"][data-side="left"] {
-    right: anchor(left);
-    /* modern-css-allow: forge-ui-platform-logical-spacing — the caller asked for a physical side, so its gap must not mirror */
-    margin-right: 0.375rem;
-  }
-  [data-slot~="tooltip-content"][data-side="right"] {
-    left: anchor(right);
-    /* modern-css-allow: forge-ui-platform-logical-spacing — the caller asked for a physical side, so its gap must not mirror */
-    margin-left: 0.375rem;
-  }
-
-  [data-slot~="tooltip-content"][data-side="top"][data-align="center"],
-  [data-slot~="tooltip-content"][data-side="bottom"][data-align="center"] {
-    left: anchor(center);
-    translate: -50% 0;
-  }
-  [data-slot~="tooltip-content"][data-side="top"][data-align="start"],
-  [data-slot~="tooltip-content"][data-side="bottom"][data-align="start"] {
-    left: anchor(left);
-  }
-  [data-slot~="tooltip-content"][data-side="top"][data-align="end"],
-  [data-slot~="tooltip-content"][data-side="bottom"][data-align="end"] {
-    right: anchor(right);
-  }
-
-  [data-slot~="tooltip-content"][data-side="left"][data-align="center"],
-  [data-slot~="tooltip-content"][data-side="right"][data-align="center"] {
-    top: anchor(center);
-    translate: 0 -50%;
-  }
-  [data-slot~="tooltip-content"][data-side="left"][data-align="start"],
-  [data-slot~="tooltip-content"][data-side="right"][data-align="start"] {
-    top: anchor(top);
-  }
-  [data-slot~="tooltip-content"][data-side="left"][data-align="end"],
-  [data-slot~="tooltip-content"][data-side="right"][data-align="end"] {
-    bottom: anchor(bottom);
   }
 
   /* ══ 3. Coordinate placement — Menu, for context menus ════════════════════
@@ -519,11 +661,11 @@
 
    Both are retired by `data-tabs-mounted`, which `mountTabs` stamps — from there the controller owns
    `hidden` and the fragment is never followed. */
-  [data-slot~="tabs"]:not([data-tabs-mounted]) [data-slot~="tabs-panel"]:target {
+  [data-slot~="tabs"]:not([data-tabs-mounted]) [data-slot~="tabs-content"]:target {
     display: block;
   }
 
-  [data-slot~="tabs"]:not([data-tabs-mounted]):has([data-slot~="tabs-panel"]:target) [data-slot~="tabs-panel"]:not(:target) {
+  [data-slot~="tabs"]:not([data-tabs-mounted]):has([data-slot~="tabs-content"]:target) [data-slot~="tabs-content"]:not(:target) {
     display: none;
   }
 
@@ -555,6 +697,116 @@
   }
   [data-slot~="dialog"]::backdrop {
     background-color: var(--overlay);
+  }
+
+  /* `Drawer` is the same `<dialog>` pinned to one viewport edge instead of centred in it, so it takes
+   the same `::backdrop` and the opposite `inset`. Only placement is here: the panel's own width and
+   height are utilities in `drawer.tsx`, where a caller's `w-96` still wins on layer order — from
+   `components` they would be unoverridable.
+
+   **Each side is matched in two states, not one.** `:modal` is false the instant `close()` is
+   called, but the panel is still on screen for the whole exit transition below — keyed on `:modal`
+   alone the placement vanished on frame one and the panel snapped to its static position before
+   sliding, which put a right drawer on the left edge and reversed the top and bottom ones. `:modal`
+   is still what excludes `<Drawer open>`, the non-modal panel in the page: it is `[open]` and
+   matches neither selector. A drawer that is genuinely closed is `display: none`, so giving it the
+   edge costs nothing. */
+  [data-slot~="drawer"]:modal[data-side="left"],
+  [data-slot~="drawer"]:not([open])[data-side="left"] {
+    inset: 0 auto 0 0;
+    margin: 0;
+  }
+  [data-slot~="drawer"]:modal[data-side="right"],
+  [data-slot~="drawer"]:not([open])[data-side="right"] {
+    inset: 0 0 0 auto;
+    margin: 0;
+  }
+  [data-slot~="drawer"]:modal[data-side="top"],
+  [data-slot~="drawer"]:not([open])[data-side="top"] {
+    inset: 0 0 auto 0;
+    margin: 0;
+  }
+  [data-slot~="drawer"]:modal[data-side="bottom"],
+  [data-slot~="drawer"]:not([open])[data-side="bottom"] {
+    inset: auto 0 0 0;
+    margin: 0;
+  }
+  [data-slot~="drawer"]::backdrop {
+    background-color: var(--overlay);
+  }
+
+  /* The panel slides in from its own edge rather than appearing on the frame the dialog opens.
+   `:not([open])` is the closed *and* the closing state — `:modal` stops matching the moment `close()`
+   is called, so an exit keyed on it would never run — while `<Drawer open>`, the non-modal panel in
+   the page, matches neither selector and is left alone. `display` and `overlay` ride the same
+   duration with `allow-discrete` so the panel stays painted and in the top layer for the whole exit.
+
+   200ms in and 150ms out is the top of `forge-ui-interaction-duration`'s band: the drawer is the
+   largest surface forge moves, and it read as an instant appearance below it. */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-slot~="drawer"]:not([open]),
+    [data-slot~="drawer"]:modal {
+      transition:
+        translate 200ms ease-out,
+        display 200ms allow-discrete,
+        overlay 200ms allow-discrete;
+    }
+    [data-slot~="drawer"]:not([open]) {
+      transition-duration: 150ms;
+    }
+    [data-slot~="drawer"]:modal {
+      translate: 0 0;
+    }
+    /* modern-css-allow: forge-ui-platform-logical-spacing — `data-side` names a physical viewport edge, so the offset must not mirror */
+    [data-slot~="drawer"]:not([open])[data-side="left"] {
+      translate: -100% 0;
+    }
+    /* modern-css-allow: forge-ui-platform-logical-spacing — `data-side` names a physical viewport edge, so the offset must not mirror */
+    [data-slot~="drawer"]:not([open])[data-side="right"] {
+      translate: 100% 0;
+    }
+    [data-slot~="drawer"]:not([open])[data-side="top"] {
+      translate: 0 -100%;
+    }
+    [data-slot~="drawer"]:not([open])[data-side="bottom"] {
+      translate: 0 100%;
+    }
+    @starting-style {
+      /* modern-css-allow: forge-ui-platform-logical-spacing — `data-side` names a physical viewport edge, so the offset must not mirror */
+      [data-slot~="drawer"]:modal[data-side="left"] {
+        translate: -100% 0;
+      }
+      /* modern-css-allow: forge-ui-platform-logical-spacing — `data-side` names a physical viewport edge, so the offset must not mirror */
+      [data-slot~="drawer"]:modal[data-side="right"] {
+        translate: 100% 0;
+      }
+      [data-slot~="drawer"]:modal[data-side="top"] {
+        translate: 0 -100%;
+      }
+      [data-slot~="drawer"]:modal[data-side="bottom"] {
+        translate: 0 100%;
+      }
+    }
+
+    [data-slot~="drawer"]:not([open])::backdrop,
+    [data-slot~="drawer"]:modal::backdrop {
+      transition:
+        opacity 200ms ease-out,
+        display 200ms allow-discrete,
+        overlay 200ms allow-discrete;
+    }
+    [data-slot~="drawer"]:modal::backdrop {
+      opacity: 1;
+    }
+    [data-slot~="drawer"]:not([open])::backdrop {
+      opacity: 0;
+      transition-duration: 150ms;
+    }
+    @starting-style {
+      [data-slot~="drawer"]:modal::backdrop {
+        opacity: 0;
+      }
+    }
   }
 
   /* ══ 7. Slider — track and thumb ══════════════════════════════════════════
@@ -608,6 +860,88 @@
     box-shadow: 0 0 0 2px var(--background);
   }
 
+  /* ══ 7b. Progress — track and value ═══════════════════════════════════════
+   `appearance: none` deletes the UA bar, and the replacement can only be authored here: the fill is
+   a UA pseudo-element in every engine. WebKit draws both halves (`::-webkit-progress-bar` is the
+   track, `::-webkit-progress-value` the fill); Gecko paints the track on the element itself, which
+   is why `bg-border` is a utility in `progress.tsx` and only the fill appears twice below.
+
+   The track is `--border`, not `--track`: a progress bar has no thumb, so nothing here has to be
+   read against the rail, and `--track` is placed for exactly that — a step dark enough for the
+   Slider's `--background` halo to show on. At that weight a progress bar reads as two coloured bars
+   rather than a fill and its remainder, and on a tinted gray ramp the remainder reads as coloured.
+   `--border` is the quiet neutral the page already draws its rules in, which is the weight a native
+   `<meter>` gives its own track.
+
+   The fill is rounded on its own, not clipped by the track: a bar at 15% has two ends of its own,
+   and clipping would square the one the reader is actually looking at.
+
+   The vertical orientation needs nothing here. `[writing-mode:vertical-lr] [direction:rtl]` in
+   `progress.tsx` turns the element's *inline* axis — the axis a progress fills along — vertical and
+   reverses it, so the bar grows upwards from the bottom; it is the same pair `Slider` uses. */
+  [data-slot~="progress"]::-webkit-progress-bar {
+    background-color: var(--border);
+    border-radius: var(--radius-selector);
+  }
+  [data-slot~="progress"]::-webkit-progress-value {
+    background-color: var(--primary);
+    border-radius: var(--radius-selector);
+  }
+  [data-slot~="progress"]::-moz-progress-bar {
+    background-color: var(--primary);
+    border-radius: var(--radius-selector);
+  }
+
+  /* ══ 7c. Meter — track and the three bands ═══════════════════════════════
+   The same debt as §7b on the other measured bar, paid differently: Chromium ignores every
+   `::-webkit-meter-*` rule an author writes, so there is no pseudo-element to paint. What it does
+   honour is `::-webkit-meter-inner-element`, which hides the UA bar, and a typed `attr()`, which
+   reads the element's own `value` / `min` / `max` — so the fill is drawn as a gradient stop on the
+   element instead. The `@supports` test is the guard: an engine without typed `attr()` never has its
+   bar hidden, and keeps the rendering the UA gives it.
+
+   Gecko needs none of that. It paints the track on the element — which is why `bg-border` is a
+   utility in `meter.tsx`, as on `Progress` — and the fill on `::-moz-meter-bar`, so that one rule
+   is the whole of its path. The `transparent` inside the `@supports` block is for the engine that
+   ends up with both: the gradient is already drawn underneath.
+
+   The fill keeps three colours because a meter's value has three *bands* — `low`, `high` and
+   `optimum` are what a `<meter>` has that a `<progress>` does not, and painting them one colour
+   would delete the reading the element exists to give. `meter.tsx` computes which band the value is
+   in and stamps it, because no engine exposes that to CSS in a form both of them agree on. */
+  [data-slot~="meter-track"] {
+    --meter-fill: var(--success);
+  }
+  [data-slot~="meter-track"][data-state="suboptimum"] {
+    --meter-fill: var(--warning);
+  }
+  [data-slot~="meter-track"][data-state="poor"] {
+    --meter-fill: var(--destructive);
+  }
+  [data-slot~="meter-track"]::-moz-meter-bar {
+    background-color: var(--meter-fill);
+  }
+
+  @supports (background: linear-gradient(to right, red calc(attr(value type(<number>)) * 100%), blue 0)) {
+    [data-slot~="meter-track"] {
+      --meter-value: attr(value type(<number>), 0);
+      --meter-min: attr(min type(<number>), 0);
+      --meter-max: attr(max type(<number>), 1);
+      --meter-fraction: clamp(0, calc((var(--meter-value) - var(--meter-min)) / (var(--meter-max) - var(--meter-min))), 1);
+      background-image: linear-gradient(
+        to right,
+        var(--meter-fill) 0 calc(var(--meter-fraction) * 100%),
+        transparent calc(var(--meter-fraction) * 100%) 100%
+      );
+    }
+    [data-slot~="meter-track"]::-webkit-meter-inner-element {
+      display: none;
+    }
+    [data-slot~="meter-track"]::-moz-meter-bar {
+      background-color: transparent;
+    }
+  }
+
   /* ══ 8. Navbar — the closed-<details> content gate ════════════════════════
    Chromium ≥131 wraps closed-`<details>` content in `::details-content` with
    `content-visibility: hidden` — an ancestor-level gate that suppresses the content div regardless
@@ -622,7 +956,7 @@
     content-visibility: visible;
   }
 
-  /* ══ 9. Forced colors — CheckboxGroup, RadioGroup ═════════════════════════
+  /* ══ 9. Forced colors — CheckboxGroup, RadioGroup, Switch, Toggle, ToggleGroup, Filter, Slider, Table.Row ══
    `CheckboxGroup.Item` and `RadioGroup.Item` set `appearance-none` and paint their own box, which
    **forfeits WCAG 1.4.11's carve-out** for a component "determined by the user agent and not
    modified by the author". This block is what forge owes in exchange, and it is not a formality: in
@@ -662,6 +996,111 @@
     [data-slot~="radio-group-input"]:focus-visible {
       outline: 2px solid CanvasText;
       outline-offset: 2px;
+    }
+
+    /* The same debt, paid by the other author-painted controls. A switch track is a `bg-track` span
+     and its thumb a `bg-background` span, so both collapse to `Canvas` and the thumb vanishes; a
+     pressed toggle or chosen filter chip is a `bg-primary` label that reads exactly like an
+     unpressed one; a slider's track and thumb are the §7 pseudo-elements. Each gets the palette's
+     own vocabulary back: `ButtonText` bordered, `Highlight` when on, `GrayText` when disabled. */
+    [data-slot~="switch-track"] {
+      forced-color-adjust: none;
+      background-color: Canvas;
+      border: 1px solid ButtonText;
+    }
+    [data-slot~="switch-thumb"] {
+      forced-color-adjust: none;
+      background-color: ButtonText;
+    }
+    [data-slot~="switch-input"]:checked ~ [data-slot~="switch-track"] {
+      background-color: Highlight;
+      border-color: Highlight;
+    }
+    [data-slot~="switch-input"]:checked ~ [data-slot~="switch-track"] [data-slot~="switch-thumb"] {
+      background-color: HighlightText;
+    }
+    [data-slot~="switch-input"]:disabled ~ [data-slot~="switch-track"] {
+      border-color: GrayText;
+    }
+    [data-slot~="switch-input"]:disabled ~ [data-slot~="switch-track"] [data-slot~="switch-thumb"] {
+      background-color: GrayText;
+    }
+    [data-slot~="switch-input"]:focus-visible ~ [data-slot~="switch-track"] {
+      outline: 2px solid CanvasText;
+      outline-offset: 2px;
+    }
+
+    [data-slot~="toggle"],
+    [data-slot~="toggle-group-item"],
+    [data-slot~="filter-item"] {
+      forced-color-adjust: none;
+      background-color: Canvas;
+      color: ButtonText;
+      border-color: ButtonText;
+    }
+    [data-slot~="toggle"]:has(:checked),
+    [data-slot~="toggle-group-item"]:has(:checked),
+    [data-slot~="filter-item"]:has(:checked) {
+      background-color: Highlight;
+      color: HighlightText;
+      border-color: Highlight;
+    }
+    [data-slot~="toggle"]:has(:disabled),
+    [data-slot~="toggle-group-item"]:has(:disabled),
+    [data-slot~="filter-item"]:has(:disabled) {
+      color: GrayText;
+      border-color: GrayText;
+    }
+    [data-slot~="toggle"]:has(:focus-visible),
+    [data-slot~="toggle-group-item"]:has(:focus-visible),
+    [data-slot~="filter-item"]:has(:focus-visible) {
+      outline: 2px solid CanvasText;
+      outline-offset: 2px;
+    }
+
+    [data-slot~="slider"] {
+      forced-color-adjust: none;
+    }
+    /* Restated on each pseudo-element: the input's own opt-out does not reach a range control's
+     track and thumb in Chromium, which keeps forcing them to `Canvas`. */
+    [data-slot~="slider"]::-webkit-slider-runnable-track {
+      forced-color-adjust: none;
+      background-color: Canvas;
+      border: 1px solid ButtonText;
+    }
+    [data-slot~="slider"]::-moz-range-track {
+      forced-color-adjust: none;
+      background-color: Canvas;
+      border: 1px solid ButtonText;
+    }
+    [data-slot~="slider"]::-webkit-slider-thumb {
+      forced-color-adjust: none;
+      background-color: Highlight;
+      box-shadow: 0 0 0 2px Canvas;
+    }
+    [data-slot~="slider"]::-moz-range-thumb {
+      forced-color-adjust: none;
+      background-color: Highlight;
+      box-shadow: 0 0 0 2px Canvas;
+    }
+    [data-slot~="slider"]:disabled::-webkit-slider-thumb {
+      background-color: GrayText;
+    }
+    [data-slot~="slider"]:disabled::-moz-range-thumb {
+      background-color: GrayText;
+    }
+    [data-slot~="slider"]:focus-visible {
+      outline: 2px solid CanvasText;
+      outline-offset: 2px;
+    }
+
+    /* A selected row's only visual signal is a `bg-primary-soft` tint, which forced colors overrides
+     to `Canvas` — leaving a selected row identical to its neighbours, a `forge-ui-not-color-alone`
+     failure. The palette's own "selected" colour is what the tint meant. */
+    [data-slot~="table-row"][data-selected] {
+      forced-color-adjust: none;
+      background-color: Highlight;
+      color: HighlightText;
     }
   }
 }

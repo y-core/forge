@@ -3,23 +3,21 @@
 import type { FC, JSX } from "../../jsx/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
 
 type CardProps = JSX.IntrinsicElements["div"];
 
 const CardRoot: FC<CardProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     data-slot={slotToken("card", inherited)}
-    class={cn("flex flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-sm", cls)}
+    class={cn("flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm", cls)}
     {...rest}>
     {children}
   </div>
 );
 
 const CardHeader: FC<CardProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div
-    data-slot={slotToken("card-header", inherited)}
-    class={cn("grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5", cls)}
-    {...rest}>
+  <div data-slot={slotToken("card-header", inherited)} class={cn(PANEL_HEADER, cls)} {...rest}>
     {children}
   </div>
 );
@@ -49,7 +47,7 @@ const CardContent: FC<CardProps> = ({ class: cls, children, "data-slot": inherit
 );
 
 const CardFooter: FC<CardProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("card-footer", inherited)} class={cn("flex items-center gap-2 border-t border-border px-6 py-4", cls)} {...rest}>
+  <div data-slot={slotToken("card-footer", inherited)} class={cn(PANEL_FOOTER, cls)} {...rest}>
     {children}
   </div>
 );

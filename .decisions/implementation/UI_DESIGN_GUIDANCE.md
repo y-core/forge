@@ -195,8 +195,8 @@ because it is followed.
 
 The contract is one sentence: **the corpus may not describe an API forge does not have.**
 
-Enforcement is a gate step. `src/cli/pkg/gate/checks/design.ts` owns the policy — what is asserted, what
-fails, in what order, with what message — and `src/cli/pkg/gate/checks/design-parse.ts` owns the matchers it
+Enforcement is a gate step. `src/tooling/gate/checks/design.ts` owns the policy — what is asserted, what
+fails, in what order, with what message — and `src/tooling/gate/checks/design-parse.ts` owns the matchers it
 decides on: how a claim is extracted from prose, and how it is resolved against forge's real
 exports. The split is the one described for the barrel and namespace-graph checks in
 [`AGENT_GUIDE.md`](../governance/AGENT_GUIDE.md) §8.
@@ -214,8 +214,9 @@ Registration of those two files in the source-of-truth register is a separate co
 Two properties of that gate step are not derivable from the contract sentence above, and a reader
 who assumes either one wrongly draws a conclusion about rule strength that is not there.
 
-**The gate runs in both directions.** The corpus is checked against forge's API, and forge's own
-source is checked against the corpus — **all of it that renders markup, not `src/ui/` alone**. The
+**Enforcement runs in both directions.** The corpus is checked against forge's API by
+`validate-design`, and forge's own source is checked against the corpus by the `lint` step — **all
+of it that renders markup, not `src/ui/` alone**. The
 second direction is why a rule the corpus publishes for consumers can fail forge's own build: forge
 is held to the guidance it ships, and its worked examples most tightly of all, because an example
 that contradicts the rule beside it teaches the contradiction rather than the rule.
@@ -223,61 +224,74 @@ that contradicts the rule beside it teaches the contradiction rather than the ru
 The scope is the whole source tree because the corpus states rules about _markup_, and forge renders
 markup outside `ui/` — `logging/show/` is an entire surface. Narrowed to `ui/`, the second direction
 was a claim wider than the check behind it, and the gap was not hypothetical. Where a rule is
-genuinely local to one directory, the finder scopes itself, because that scoping is part of what the
-rule means rather than a property of where the walk happens to start.
+genuinely local to one directory, an `overrides` entry in `.oxlintrc.json` scopes it, because that
+scoping is part of what the rule means rather than a property of where a walk happens to start.
 
-**A gated rule is not thereby a Floor rule.** Which rules are checked statically is decided by
+**An enforced rule is not thereby a Floor rule.** Which rules are checked statically is decided by
 mechanical checkability (§1a) alone, so the enforced set spans both tiers, and a Tier-2 Default that
-happens to be greppable is checked exactly as a Floor rule is. That does not promote it. A gated
-Default remains rebuttable in the sense §2b defines: `src/cli/pkg/gate/checks/design-parse.ts` gives every rule a
-per-site suppression carrying a **mandatory written reason**, which is the form §2c's written brief
-takes inside forge's own source — stated, attached to the line it excuses, and reviewable, rather
-than inferred or silent.
+the AST reveals is checked exactly as a Floor rule is. That does not promote it. An enforced
+Default remains rebuttable in the sense §2b defines: every rule takes a per-site
+`oxlint-disable-next-line forge/<key> -- <why>` carrying a **mandatory written reason**, which is the
+form §2c's written brief takes inside forge's own source — stated, attached to the line it excuses,
+and reviewable, rather than inferred or silent. `forge/suppression-needs-reason` is what makes the
+reason mandatory rather than customary.
 
 The suppression mechanism itself is uniform across rule ids; the tiers are not encoded in it, and
 could not usefully be. What §2a and §2c decide is who may write one and on what grounds — a stated
 reason for a Default, and nothing at all for a Floor rule, where a suppression is a defect to remove
 rather than an override to accept.
 
-Which rules are in the enforced set, what each one matches, and the marker's exact syntax are the
-script's, per §4's non-restatement rule.
+Which rules are in the enforced set and what each one matches are the plugin's, per §4's
+non-restatement rule.
 
 ### 4b. Two Enforcement Mechanisms
 
-A corpus rule is enforced by one of two mechanisms, and which one is a property of what the rule
-reads rather than of its tier.
+A corpus rule is enforced by one of two mechanisms, and which one is a property of **what the rule
+has to read** rather than of its tier — or, as this was cut when the plugin's only reader was a
+class-literal visitor, of whether its subject is markup or a class string.
 
-**The check step** — `validate-design` — reads source as text. It owns every rule whose subject is
-markup structure: a tag's attributes, an element's ancestors, the body between two tags.
+**forge's oxlint plugin** — `@y-core/forge/tooling/lint`, run by the `lint` step — owns every rule a
+**parsed file settles**. That is both families: a class string, and markup structure. A tag name, an
+attribute, an ancestor chain and the body between two tags are all things `JSXOpeningElement` and a
+parent walk give directly, so the earlier split bought a hand-written scanner nothing the parser was
+not already offering. The parser is also what makes a rule precise: a CSS property name in a
+generated table, a sentence containing the word `prose`, and a class name quoted in an assertion are
+not class strings, because the parser says they are not. A plugin rule's per-site suppression is
+`oxlint-disable-next-line forge/<key> -- <why>`, and because the rule is a lint rule it is also
+eligible for a fixer — a `CheckStep` can never carry one.
 
-**forge's oxlint plugin** — `@y-core/forge/cli/pkg/lint`, run by the `lint` step — owns every rule
-whose subject is a **class string**. The linter has already parsed the file, so the plugin reads a
-class literal off the AST instead of guessing at one with a regular expression; a CSS property name
-in a generated table, a sentence containing the word `prose`, and a class name quoted in an
-assertion are not class strings, because the parser says they are not. A plugin rule's
-per-site suppression is `oxlint-disable-next-line forge/<key> -- <why>`, whose reason is mandatory
-by the same argument §4a makes for `design-allow`, and enforced by `forge/suppression-needs-reason`.
+**`validate-contrast`** owns the one rule no source text states: `forge-ui-contrast-floor` is
+measured off resolved colours, so it reads no `.tsx` at all.
+
+**What a plugin rule cannot own** is a rule needing more than one file — an import graph, an export
+map, a compiled stylesheet, a README held against a barrel. oxlint judges one file at a time, which
+is why those checks stay gate steps and why `validate-design` still runs: it holds the corpus
+against forge's API, and the two registers against the plugin, neither of which is a per-file
+question.
 
 The plugin's rule key is the corpus id minus its `forge-ui-` prefix, derived in both directions and
 never hand-kept. **Two registers name the mechanism, one per rule family**, and an author adding a
 rule declares its enforcer in the register that already holds the rule:
 
-- `src/cli/pkg/gate/checks/design-rules.ts` routes every corpus rule, through `RULE_ENFORCER`. It
+- `src/tooling/lint/design-rules.ts` routes every corpus rule, through `RULE_ENFORCER`. It
   imports nothing, deliberately: the plugin reaches it through `lint/report.ts` and ships as raw
   TypeScript, so a module it loads may not drag `tailwindcss` or `oxlint` in behind it
   ([`NAMESPACES.md`](./NAMESPACES.md) §3c).
-- `src/cli/pkg/gate/checks/modern-css-rules.ts` routes every modern-platform rule, through the
+- `src/tooling/lint/modern-css-rules.ts` routes every modern-platform rule, through the
   optional `enforcer` field on the rule's own row — absent meaning the modern-CSS check's own
   detector. `design-rules.ts` names no platform rule at all.
 
 `validate-design` holds each register's rows against the mechanism they name — so deleting a plugin
 rule fails the gate by name exactly as deleting a detector did — and holds the plugin in the other
 direction against both registers together: a rule the plugin registers that neither register routes
-fails too, because its findings would print an id no register states. The suppression meta-rule
-above is the one exemption, having no corpus id to route.
+fails too, because its findings would print an id no register states. The exemptions are the plugin
+rules that state no corpus rule at all — `suppression-needs-reason` and `data-slot-before-spread`,
+each named in `design.ts` with its reason, neither having a corpus id to route.
 
-That guarantee is bounded by what the check can read: it holds a plugin rule against the config's
-top-level `rules` block only, so a rule turned off in an `overrides` entry still reads as enabled.
+That guarantee is bounded by what "enabled" means: the check takes the union of the top-level `rules`
+block and every `overrides` entry, so a rule enabled only in an override counts — and a rule turned
+off in one still reads as enabled, because the question asked is whether it is on anywhere, not
+everywhere.
 
 **Which rules sit on which side is not restated here**, for the reason §4 gives: each register is
 one file, and a second copy in prose is indistinguishable from an amendment the first time the two
@@ -285,13 +299,27 @@ disagree.
 
 Two of the plugin's rules resolve a class against the design system itself — which utility roots take
 a spacing value, which take a colour, and what steps the scale offers. Those facts are generated from
-the compiled stylesheet into `src/cli/pkg/lint/data/design-scale.ts` and held there by
+the compiled stylesheet into `src/tooling/lint/data/design-scale.ts` and held there by
 `validate-design-scale`, on the same drift contract `validate-class-groups` holds `cn`'s table to.
 
 **The two derivations are parallel and are deliberately not folded into one.** Both read the same
 compiled design system, which is the source of truth they actually share; but the other one's
 output is `cn`'s conflict model ([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §3f), and
 coupling the linter's data to it would make each a hostage of the other's changes.
+
+**`spacing-scale-only` reports an arbitrary value only where a scale step states that exact
+length.** `p-[8px]` is reported because `p-2` is the same eight pixels; `p-[7px]` is not, because no
+step is seven. That is the rule as it has always been enforced, and it is the promise worth making:
+a suggestion the author can act on. A rule that also flagged the off-scale value would be a
+different rule, arguing that off-scale lengths are wrong in themselves — a case the corpus does not
+make and this one does not pretend to.
+
+**A class list bound to a module-scope `const` and passed by name is judged where the name is
+used.** Forge writes most of its recipes that way, so a plugin that read only inline literals was
+blind to the majority of the class strings it exists to check. An initializer that is already a
+class position of its own — `const R = cva(…)` — is judged where it is written and not a second
+time through the name. A `const` declared inside a function is not resolved: a class list written
+there is not the shared recipe this reaches for.
 
 ---
 
@@ -330,7 +358,7 @@ consumer-facing corpus, however design-shaped it sounds.
 
 ## 6. Format Exemption and This Document's Scope
 
-`src/cli/pkg/gate/checks/docs.ts`, configured by `config/steps.ts`, scopes to `.decisions/`, `CLAUDE.md`, the root `README.md`, every
+`src/tooling/gate/checks/docs.ts`, configured by `config/steps.ts`, scopes to `.decisions/`, `CLAUDE.md`, the root `README.md`, every
 `src/**/README.md`, and `.claude/agents/`. The corpus at `src/ui/design/` matches none of those.
 
 Therefore:

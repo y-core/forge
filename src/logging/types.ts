@@ -42,7 +42,7 @@ export interface LogRecord {
 /** A single log row as returned by the channel reader. @public */
 export interface LogRow {
   key: string;
-  level: string;
+  level: LogLevel;
   prefix: string;
   requestId?: string;
   message: string;
@@ -120,8 +120,10 @@ export interface KvLogChannelOptions {
 /** Metadata stored alongside each KV log entry for zero-cost viewer listing. @public */
 export interface KvLogMetadata {
   level: string;
-  prefix: string;
+  /** Absent only at the byte floor, where the row preview shrinks to level and timestamp. */
+  prefix?: string;
   requestId?: string;
-  message: string;
+  /** Absent only at the byte floor, where the row preview shrinks to level and timestamp. */
+  message?: string;
   timestamp: string;
 }

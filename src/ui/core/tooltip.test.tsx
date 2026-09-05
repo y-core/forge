@@ -3,18 +3,19 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
 import { Menu } from "./menu";
 import { Tooltip } from "./tooltip";
 
 const ROOT_CLASS = "relative inline-block";
-const TRIGGER_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const CONTENT_CLASS = "z-50 w-max max-w-xs rounded-md bg-foreground px-2 py-1 text-xs text-background shadow-md";
+const TRIGGER_CLASS = "cursor-default focus-ring";
+const CONTENT_CLASS = "z-50 w-max max-w-xs rounded-field bg-foreground px-2 py-1 text-xs text-background shadow-md";
 /** Byte-identical to `TRIGGER_CLASS` rather than duplicated by mistake: every class `Menu.Trigger` adds either repeats or loses to it. */
-const MENU_TRIGGER_WITH_TOOLTIP_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const MENU_TRIGGER_WITH_TOOLTIP_CLASS = "cursor-default focus-ring";
 
 describe("Tooltip — data-slot", () => {
   it("emits its own token alone when none was inherited", async () => {
-    expect(await render(<Tooltip>x</Tooltip>)).toBe(`<div data-slot="tooltip" data-scope="tooltip" class="${ROOT_CLASS}">x</div>`);
+    expect(await render(<Tooltip>x</Tooltip>)).toBe(`<div data-slot="tooltip" data-scope="${TOOLTIP_SCOPE}" class="${ROOT_CLASS}">x</div>`);
   });
 
   it("keeps its own token ahead of one handed down through props", async () => {
@@ -69,7 +70,7 @@ describe("Tooltip.Trigger asChild — the three-way token composition", () => {
     expect(
       await render(
         <Tooltip.Trigger for='tip' asChild data-slot='my-thing'>
-          <Menu.Trigger id='file-menu'>File</Menu.Trigger>
+          <Menu.Trigger for='file-menu'>File</Menu.Trigger>
         </Tooltip.Trigger>,
       ),
     ).toBe(

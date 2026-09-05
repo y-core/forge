@@ -1,24 +1,4 @@
-export type { LoadConfigOptions } from "./config";
-export { defineAssetsConfig, env, flag, loadConfig } from "./config";
-export type {
-  AssetsConfig,
-  CopyEntry,
-  CssBuild,
-  CursorSource,
-  CursorsConfig,
-  DefineValue,
-  FontDownload,
-  IconOutput,
-  IconsConfig,
-  JsBundle,
-  PathsConfig,
-  RasterEntry,
-  ResolvedConfig,
-  ResolvedJsBundle,
-  ResolvedPaths,
-  SiteBuildConfig,
-  SpriteGroup,
-  SpriteSource,
-  Sprites,
-} from "./types";
-export { AssetsConfigSchema, SITE_OUTPUTS } from "./types";
+export type { Manifest } from "./manifest";
+export { createManifest } from "./manifest";
+export type { SpriteRegistry } from "./registry";
+export { createSpriteRegistry } from "./registry";

@@ -127,3 +127,20 @@ describe("applyFormat — the wire value a digit schema reads", () => {
     });
   }
 });
+
+describe("applyFormat — characters outside the basic plane", () => {
+  // `stripFormat` builds its result by code point (`for...of`) while `applyFormat` used to measure
+  // and index it by UTF-16 code unit, so three astral characters against six slots passed the
+  // `> slots` bail and were then emitted one code unit at a time, splitting every surrogate pair.
+  it("counts an astral character once, and never splits its surrogate pair", () => {
+    expect(applyFormat("###-###", "\u{1F600}\u{1F601}\u{1F602}")).toBe("\u{1F600}\u{1F601}\u{1F602}");
+  });
+
+  it("bails to the bare significant characters once they outnumber the slots, still unsplit", () => {
+    expect(applyFormat("##", "\u{1F600}\u{1F601}\u{1F602}")).toBe("\u{1F600}\u{1F601}\u{1F602}");
+  });
+
+  it("earns a literal between astral characters exactly as it does between digits", () => {
+    expect(applyFormat("##-##", "\u{1F600}\u{1F601}\u{1F602}")).toBe("\u{1F600}\u{1F601}-\u{1F602}");
+  });
+});

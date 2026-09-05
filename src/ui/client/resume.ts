@@ -1,5 +1,6 @@
 /** Resumability-lite client runtime: one delegated listener resumes a `[data-scope]` on the first interaction with any descendant. @public */
 
+import { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "../contracts/island-contract";
 import { SCOPE_EVENTS } from "../contracts/scope-events";
 import { closestAcross, eventTarget, ownerDocument } from "./dom";
 import { createSignal, type Signal, withOwner } from "./signal";
@@ -10,7 +11,7 @@ export interface ResumeContext {
   root: HTMLElement;
   /** The element that fired the event (carries the `data-on-<event>` action). */
   el: HTMLElement;
-  /** State rebuilt from `data-state` into reactive signals. */
+  /** State rebuilt from `data-island-state` into reactive signals. */
   state: Record<string, Signal<unknown>>;
 }
 
@@ -145,8 +146,10 @@ export function findScopes(root: ParentNode): HTMLElement[] {
     // to be checked separately.
     const self = tree as Partial<HTMLElement>;
     if (self.dataset?.scope !== undefined) found.push(tree as HTMLElement);
+    // One native query rather than an `el.dataset.scope` per element, which materialises a
+    // `DOMStringMap` for every node in the tree. The `*` walk survives only for shadow discovery.
+    for (const el of tree.querySelectorAll<HTMLElement>("[data-scope]")) found.push(el);
     for (const el of tree.querySelectorAll<HTMLElement>("*")) {
-      if (el.dataset.scope !== undefined) found.push(el);
       if (el.shadowRoot) trees.push(el.shadowRoot);
     }
   }
@@ -177,12 +180,27 @@ function sweepDetached(): void {
   }
 }
 
+// `sweepDetached` runs only as something else resumes, so a swap that *removes* scoped markup and
+// introduces none never reaches it — and `active` is a strong `Map`, whose retained closures hold
+// live document-level listeners (`drawer.ts`'s `keydown`, `bind.ts`'s `reset`, the navbar filter
+// channel). That is a leak, not untidiness. htmx calls `cleanUpElement` on every element it removes,
+// so the swap has a per-element hook; taking it here costs no scan of `active` and needs no
+// `isConnected` check, which would still read true at cleanup time.
+/** Disposes the scope at `el` and every scope below it, before the DOM removes them. @public */
+export function disposeScopesIn(el: HTMLElement): void {
+  // The same cast `scanRoot` makes: under the Workers consumer's lib set `HTMLElement.append` is
+  // Cloudflare's, whose signature does not structurally satisfy `ParentNode`.
+  for (const root of findScopes(el as unknown as ParentNode)) {
+    if (active.has(root)) disposeScope(root);
+  }
+}
+
 /** Hydrates a scope's state into signals and runs its `setup` exactly once. */
 function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, Signal<unknown>> {
   sweepDetached();
   let state = resumed.get(root);
   if (!state) {
-    const signals = hydrateState(root.dataset.state);
+    const signals = hydrateState(root.dataset[ISLAND_STATE_KEY]);
     state = signals;
     resumed.set(root, signals);
     try {
@@ -247,9 +265,13 @@ function dispatchCommand(event: Event): void {
   runAction(command.slice(2), source, event);
 }
 
-/** Rebuilds `data-state` into signals.
+/** Rebuilds `data-island-state` into signals.
  *
- * Throws rather than degrading to `{}`: `data-state` is server-authored markup, deterministic per
+ * The payload has its own attribute name and never shares `data-state`, which is a presentational
+ * enum: one name carrying two grammars meant a component spreading `...rest` onto an element that
+ * also carried the enum made `resume()` throw from markup that type-checked.
+ *
+ * Throws rather than degrading to `{}`: the payload is server-authored markup, deterministic per
  * render, so malformed JSON is a bug in the renderer and never a surprise in production. A silent
  * `{}` produced a scope whose every signal was missing, failing far from the cause. The throw is
  * contained to its own scope by `resume`'s per-scope catch. @internal */
@@ -260,12 +282,12 @@ export function hydrateState(raw: string | undefined): Record<string, Signal<unk
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw new Error(`[resume] data-state is not valid JSON: ${raw}`, { cause: error });
+    throw new Error(`[resume] ${ISLAND_STATE_ATTR} is not valid JSON: ${raw}`, { cause: error });
   }
-  // `data-state="5"` and `data-state="null"` both parse cleanly and yield nothing, which is the same
+  // `"5"` and `"null"` both parse cleanly and yield nothing, which is the same
   // silent-empty failure by another route.
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`[resume] data-state must be a JSON object, got: ${raw}`);
+    throw new Error(`[resume] ${ISLAND_STATE_ATTR} must be a JSON object, got: ${raw}`);
   }
   for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
     out[k] = createSignal(v);

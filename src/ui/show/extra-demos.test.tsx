@@ -41,8 +41,14 @@ describe("FlashSection", () => {
 
   it("shows every severity Flash can emit, rather than describing them in prose", async () => {
     const body = await bodyOf("htmx", "flash");
-    const variants = [...body.matchAll(/data-slot="toast" data-variant="([^"]*)"/g)].map((match) => match[1]);
-    expect(variants).toEqual(["success", "info", "warning", "destructive", "info"]);
+    const tones = [...body.matchAll(/data-slot="toast" data-tone="([^"]*)" data-appearance="([^"]*)"/g)].map((match) => [match[1], match[2]]);
+    expect(tones).toEqual([
+      ["success", "soft"],
+      ["info", "soft"],
+      ["warning", "soft"],
+      ["destructive", "soft"],
+      ["info", "soft"],
+    ]);
   });
 
   it("adds no second live region and no second container, which is the invariant that matters", async () => {

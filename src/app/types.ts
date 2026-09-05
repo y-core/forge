@@ -1,5 +1,5 @@
 import type { Middleware } from "@remix-run/fetch-router";
-import type { Matcher } from "@remix-run/route-pattern/match";
+import type { Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
 
 import type { AppContext } from "../context/types";
 import type { TurnstileFailure, TurnstileVerifyOptions } from "../form/types";
@@ -58,17 +58,21 @@ export type RouteAction<Bindings = Record<string, unknown>, ConfigData = unknown
   data: Data,
 ) => ActionData | Response | Promise<ActionData | Response>;
 
-/** Declarative definition of a page route for `definePage`. @public */
-export interface PageDefinition<
+/** The submission-pipeline options a page may state, all of which require a `schema`. @internal */
+export type PagePipeline<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown> = Omit<
+  SubmissionPipelineDefinition<S, Bindings, ConfigData>,
+  "schema"
+>;
+
+/** The part of a page definition that stands independent of its optional schema. @internal */
+export interface PageBase<
   Bindings = Record<string, unknown>,
   ConfigData = unknown,
   LoaderData = unknown,
   ActionData = unknown,
   S extends v.GenericSchema = v.GenericSchema,
-> extends Omit<SubmissionPipelineDefinition<S, Bindings, ConfigData>, "schema"> {
+> {
   loader?: RouteLoader<Bindings, ConfigData, LoaderData>;
-  /** The body schema for this page's own mutations, which puts `action` behind the shared submission sequence. */
-  schema?: S;
   action?: RouteAction<Bindings, ConfigData, ActionData, v.InferOutput<S>>;
   view: RouteView<Bindings, ConfigData, LoaderData, ActionData>;
   headers?: Record<string, string>;
@@ -76,6 +80,16 @@ export interface PageDefinition<
   /** Called when `view` throws; receives the error and context. */
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
 }
+
+/** Declarative definition of a page route for `definePage`; pipeline options are gated on `schema`. @public */
+export type PageDefinition<
+  Bindings = Record<string, unknown>,
+  ConfigData = unknown,
+  LoaderData = unknown,
+  ActionData = unknown,
+  S extends v.GenericSchema = v.GenericSchema,
+> = PageBase<Bindings, ConfigData, LoaderData, ActionData, S> &
+  (({ schema: S } & PagePipeline<S, Bindings, ConfigData>) | ({ schema?: never } & { [K in keyof PagePipeline<S, Bindings, ConfigData>]?: never }));
 
 /** Turnstile verification for one `defineAction` route. @public */
 export interface ActionTurnstileOptions<Bindings = Record<string, unknown>, ConfigData = unknown> {
@@ -130,7 +144,7 @@ export interface HealthCheckResult {
 /** One registered global middleware and the paths it runs for. @internal */
 export interface GlobalMiddlewareEntry {
   /** Precompiled path matcher, or `null` to match every request. */
-  matcher: Matcher<string> | null;
+  matcher: Matcher<string> | MultiMatcher<null> | null;
   handler: Middleware;
 }
 

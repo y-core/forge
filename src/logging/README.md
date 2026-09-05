@@ -235,8 +235,12 @@ try {
 ### `kvLogChannel(kv, options?)`
 
 Returns a read/write channel that persists records to a Cloudflare KV namespace and reads
-them back for the log viewer. Keys are `{prefix}||{isoTimestamp}||{rand}`, so a lexicographic
-list is oldest-first; a crypto-random suffix avoids same-millisecond collisions. Per-entry
+them back for the log viewer. Keys are `{prefix}||v2||{invertedTimestamp}||{rand}`, where the
+timestamp is inverted (`999999999999999 - ms`, zero-padded to 15 digits), so a lexicographic list
+is **newest-first** — KV offers no reverse order, so the ordering has to live in the key. A
+crypto-random suffix avoids same-millisecond collisions, and `purge` drops the **tail**, which is
+the oldest. Records written under the previous, un-inverted key format stop listing and expire by
+their TTL. Per-entry
 metadata (level, prefix, message, timestamp, requestId) lets the viewer list rows without
 per-row reads.
 
@@ -427,6 +431,20 @@ bare `<html>`/`<head>`/`<body>` would put dark mode out of reach whatever classe
 carried. Handing the shell to the consumer — the same move `registerShowcase` makes — is what lets
 the viewer render inside your chrome, with your nav and your theme toggle.
 
+#### Making the table fill the viewport
+
+The viewer's `<main>` is `flex-1 min-h-0` and carries `data-fill-viewport`, so it fills the height
+the layout leaves it and scrolls the table inside that box rather than growing the document. To get
+that, make `children` a direct child of a flex column that goes _definite_ for a filling page:
+
+```html
+<body class="flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden"></body>
+```
+
+`min-h-dvh` alone is not enough: an indefinite column takes its height from its items' content, so a
+long table grows the page. Any other layout still renders correctly — the table then falls back to a
+`max-h-dvh` box instead of filling the space between header and footer.
+
 ### Mounting the viewer
 
 The single call is the entire mount. Because a loader that returns a `Response` short-circuits
@@ -528,8 +546,9 @@ write started, and only a failure of the record write may reject.
 continuing from `query.cursor`. It applies `query.level` and `query.q` (case-insensitive
 substring over message, prefix, and requestId) as in-memory filters over the listed page, and
 returns `complete` plus an optional `cursor` for the next page. Because filtering is per-page,
-a narrow `level`/`q` filter may return fewer than `limit` rows even when more matching entries
-exist on later pages — follow the cursor to continue.
+a narrow `level`/`q` filter may return fewer than `limit` rows — or none at all — even when more
+matching entries exist on later pages; follow the cursor to continue. The viewer's empty state says
+exactly this when a further page exists, rather than claiming there were no matches.
 
 ## See also
 

@@ -28,16 +28,16 @@ describe("hydrateState", () => {
       caught = error;
     }
     expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toBe("[resume] data-state is not valid JSON: {nope");
+    expect((caught as Error).message).toBe("[resume] data-island-state is not valid JSON: {nope");
     expect((caught as Error).cause).toBeInstanceOf(SyntaxError);
   });
 
   it("throws on JSON that parses cleanly but is not an object", () => {
     // `null` is checked before `typeof`, because `typeof null === "object"` would let it through.
-    expect(() => hydrateState("null")).toThrow("[resume] data-state must be a JSON object, got: null");
-    expect(() => hydrateState("5")).toThrow("[resume] data-state must be a JSON object, got: 5");
-    expect(() => hydrateState('"go"')).toThrow('[resume] data-state must be a JSON object, got: "go"');
-    expect(() => hydrateState("[1,2]")).toThrow("[resume] data-state must be a JSON object, got: [1,2]");
+    expect(() => hydrateState("null")).toThrow("[resume] data-island-state must be a JSON object, got: null");
+    expect(() => hydrateState("5")).toThrow("[resume] data-island-state must be a JSON object, got: 5");
+    expect(() => hydrateState('"go"')).toThrow('[resume] data-island-state must be a JSON object, got: "go"');
+    expect(() => hydrateState("[1,2]")).toThrow("[resume] data-island-state must be a JSON object, got: [1,2]");
   });
 });
 

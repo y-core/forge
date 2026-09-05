@@ -36,7 +36,7 @@ async function menuMarkup(rows: Row[]): Promise<string> {
       }),
     ),
   });
-  const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+  const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
   return `<button id="before">before</button>${html}`;
 }
 
@@ -315,7 +315,7 @@ test.describe("Menu — link items", () => {
       id: "file-menu",
       children: [Menu.Item({ id: "save", for: "file-menu", children: "Save" }), Menu.LinkItem({ id: "docs", href: "#docs", children: "Docs" })],
     });
-    const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+    const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
     await mount(page, html, EXPOSE);
     await start(page);
 
@@ -338,12 +338,12 @@ test.describe("Menu — submenus", () => {
       children: [
         Menu.Item({ id: "new", for: "file-menu", children: "New" }),
         Menu.Item({ id: "open", for: "file-menu", children: "Open" }),
-        Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent" }),
+        Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }),
         submenu,
         Menu.Item({ id: "quit", for: "file-menu", children: "Quit" }),
       ],
     });
-    return render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+    return render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
   }
 
   async function openParent(page: Page): Promise<void> {
@@ -494,12 +494,12 @@ async function submenuMarkup(dir: "ltr" | "rtl", dirOn: "wrapper" | "popup"): Pr
     ...(dirOn === "popup" ? { dir } : {}),
     children: [
       Menu.Item({ id: "new", for: "file-menu", children: "New" }),
-      Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent" }),
+      Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }),
       Menu.Popup({ id: "recent-menu", children: submenuRows() }),
       Menu.Item({ id: "quit", for: "file-menu", children: "Quit" }),
     ],
   });
-  const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+  const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
   return `<div dir="${dirOn === "popup" ? "ltr" : dir}">${html}</div>`;
 }
 
@@ -609,12 +609,12 @@ async function shadowMenuMarkup(): Promise<string> {
     id: "file-menu",
     children: [
       Menu.Item({ id: "new", for: "file-menu", children: "New" }),
-      Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent" }),
+      Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }),
       Menu.Popup({ id: "recent-menu", children: submenuRows() }),
       Menu.Item({ id: "quit", for: "file-menu", children: "Quit" }),
     ],
   });
-  const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+  const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
   return `<div id="host"></div><template id="source">${html}</template>`;
 }
 
@@ -623,8 +623,8 @@ async function lightParentShadowSubmenuMarkup(): Promise<string> {
     id: "file-menu",
     children: [Menu.Item({ id: "new", for: "file-menu", children: "New" }), Menu.Item({ id: "quit", for: "file-menu", children: "Quit" })],
   });
-  const outer = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
-  const inner = await render(Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent" }));
+  const outer = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
+  const inner = await render(Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }));
   const panel = await render(Menu.Popup({ id: "recent-menu", children: submenuRows() }));
   return `${outer}<template id="source">${inner}${panel}</template>`;
 }

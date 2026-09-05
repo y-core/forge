@@ -27,9 +27,12 @@ export function applyFormat(template: string, value: string): string {
   const slots = [...template].filter((char) => char === SLOT).length;
   if (slots === 0) return value;
 
-  const significant = stripFormat(template, value);
+  // Code points throughout: `stripFormat` builds its result by code point, so measuring or indexing
+  // the same string by UTF-16 code unit counts an astral character twice and hands back half a
+  // surrogate pair. Three emoji against six slots passed the bail below and came out split.
+  const significant = [...stripFormat(template, value)];
   if (significant.length === 0) return "";
-  if (significant.length > slots) return significant;
+  if (significant.length > slots) return significant.join("");
 
   let formatted = "";
   let filled = 0;

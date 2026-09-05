@@ -101,9 +101,11 @@ function near(actual: number, expected: number, tolerance = 1): boolean {
 }
 
 async function openDialog(page: Page, style: string, body: string, copies = 1): Promise<void> {
-  const children = Array.from({ length: copies }, () => Dialog.Body({ children: body }));
+  const children = Array.from({ length: copies }, () => Dialog.Content({ children: body }));
   const html = await render(Dialog({ id: "confirm", children }));
   await page.setViewportSize(VIEWPORT);
+  // Reduced motion keeps this a geometry assertion: a settled rect, whatever transition the sheet gains later.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await mount(page, `${PREFLIGHT}${style}${html}`, CSS);
   await page.evaluate(() => (document.querySelector("#confirm") as HTMLDialogElement).showModal());
 }

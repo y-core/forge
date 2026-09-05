@@ -2,10 +2,10 @@
 
 Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge cf gen env`) under the `/cli` sub-path.
 
-| Import path                | Surface                                                                                                                                                         |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `formDigits`, `describeValidationIssue`, `formatValidationIssues`, `ValidationResult` |
-| `@y-core/forge/cli/cf`     | `forge cf gen env` env-schema generator API (also a `bin`)                                                                                                      |
+| Import path                | Surface                                                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `formDigits`, `describeValidationIssue`, `ValidationResult` |
+| `@y-core/forge/tooling/cf` | `forge cf gen env` env-schema generator API (also a `bin`)                                                                            |
 
 **Everything except `v` is a sibling of it, not a member.** `strictObject` and `v.strictObject` are two different functions, and the one without the prefix is the recommendation for untrusted input.
 
@@ -16,7 +16,7 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 - **Single valibot entry point** — `v` is the complete valibot namespace re-exported as one import, so every app uses the same pinned valibot version and never deep-imports the upstream package.
 - **`strictObject`** — the strict object schema to use for anything parsing untrusted input. Only a field the schema actually declares counts as declared, so an undeclared key is refused rather than silently dropped, for **every** key a caller can send.
 - **Form-value primitives** — `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`, and `formDigits()` for a control whose separators are cosmetic. A form body reaches a schema exactly as submitted, so trimming, CRLF folding, and separator removal are the schema's job. Each earns its place by making one downstream check mean one thing — a required-field check, a line-counted length, a digit-counted length — and that criterion, not a count, closes the set.
-- **Bounded issue descriptions** — `describeValidationIssue` names the field one issue is about and nothing else, so a refusal a caller reads cannot carry the submitted value, the schema's own rule, or a length the caller chose. `formatValidationIssues` is the internal diagnostic counterpart.
+- **Bounded issue descriptions** — `describeValidationIssue` names the field one issue is about and nothing else, so a refusal a caller reads cannot carry the submitted value, the schema's own rule, or a length the caller chose. **No forge renderer reproduces `issue.message` on any channel** — not a response, and not a log.
 - **`ValidationResult<T>`** — a domain alias of forge's one `Result` primitive, `Result<T, readonly string[]>` (`{ ok: true; data: T } | { ok: false; error: readonly string[] }`), the canonical return type for any service that validates its own input.
 - **`forge cf gen env` env-schema generator** — reads `wrangler.jsonc` bindings and `.dev.vars` keys and emits a committed, schema-first valibot `EnvSchema` (plus an inferred `type Env`), replacing the env half of `wrangler types`.
 
@@ -145,29 +145,22 @@ const PaymentSchema = strictObject({
 
 **`formDigits()` is destructive in a way its siblings are not.** `formText()` and `formMultilineText()` only normalize whitespace, but this one discards significant characters: a leading `+` on an international number, an `x` before an extension, a letter in an alphanumeric code. A field that must preserve any of those stays on `formText()`.
 
-#### `describeValidationIssue(issue)` / `formatValidationIssues(issues)`
+#### `describeValidationIssue(issue)`
 
 ```typescript
 function describeValidationIssue(issue: v.BaseIssue<unknown>): string;
-function formatValidationIssues(issues: readonly v.BaseIssue<unknown>[]): string;
 ```
 
-Two formatters with different audiences, and they are **not** interchangeable.
+Names the failing field, bounded in depth and per-segment length, and nothing else.
 
-|                           | `describeValidationIssue`                                         | `formatValidationIssues`                      |
-| ------------------------- | ----------------------------------------------------------------- | --------------------------------------------- |
-| Audience                  | the caller — a response body                                      | the operator — a log line or a thrown message |
-| Output                    | the failing field's name, bounded in depth and per-segment length | `path: message` per issue, joined by `; `     |
-| Reproduces the submission | no                                                                | **yes**, via `issue.message`                  |
-
-Use `describeValidationIssue` for anything a caller reads. It names the field and nothing else, because each of the alternatives is a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and `issue.input` is the submission itself. Only the path survives, bounded, because a `v.record` key or a refused undeclared key is caller-chosen text of caller-chosen length. The result therefore varies only with _which_ field failed — a 50,000-character value and a 5-character one produce the same string, and extra fields cannot multiply the response.
+Each of the alternatives is a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and `issue.input` is the submission itself. Only the path survives, bounded, because a `v.record` key or a refused undeclared key is caller-chosen text of caller-chosen length. The result therefore varies only with _which_ field failed — a 50,000-character value and a 5-character one produce the same string, and extra fields cannot multiply the response.
 
 ```typescript
 const messages = result.issues.map(describeValidationIssue); // ["email"]
 return fragmentResponse(renderValidationErrors(messages), 422);
 ```
 
-`formatValidationIssues` exists so the `Invalid environment: …` message shape stays uniform across the env and config validators. **Never put its output in a response.**
+**There is no operator-facing counterpart that reproduces `issue.message`.** `formatValidationIssues` used to be one, and it leaked: valibot interpolates the rejected value into its own message, so a malformed secret was reproduced verbatim in the `Invalid environment: …` throw, and from there into the app logger, the KV log channel and the debug 500 body. Env validation now renders `field: reason` from `issue.type` — `missing` for an absent binding — which is a closed valibot vocabulary carrying neither the value nor the schema's text.
 
 #### `ValidationResult<T>`
 
@@ -187,7 +180,7 @@ This type is defined in and re-exported from `@y-core/forge/result` (the single 
 
 ---
 
-## `@y-core/forge/cli/cf`
+## `@y-core/forge/tooling/cf`
 
 The `forge cf gen env` env-schema generator. It reads a Cloudflare `wrangler.jsonc` config plus a `.dev.vars` secrets file and emits a single committed module containing a runtime valibot `EnvSchema` and a compile-time `type Env = v.InferOutput<typeof EnvSchema>` — a schema-first replacement for the env half of `wrangler types`. The package exposes both the `forge cf gen env` binary and the underlying functions.
 
@@ -235,7 +228,7 @@ Override generation policy with a `--config` module that exports a `Partial<GenO
 
 ```typescript
 // src/app/env.config.ts
-import type { GenOptions } from "@y-core/forge/cli/cf";
+import type { GenOptions } from "@y-core/forge/tooling/cf";
 
 export const options: Partial<GenOptions> = { optional: new Set(["ANALYTICS"]), refinements: { API_BASE_URL: { minLength: 8 } } };
 ```
@@ -243,8 +236,8 @@ export const options: Partial<GenOptions> = { optional: new Set(["ANALYTICS"]), 
 To call the generator programmatically (e.g. wiring it into a custom CLI via `execute`):
 
 ```typescript
-import { execute } from "@y-core/forge/cli";
-import { createGenEnvCommand } from "@y-core/forge/cli/cf";
+import { execute } from "@y-core/forge/tooling/cli";
+import { createGenEnvCommand } from "@y-core/forge/tooling/cf";
 
 await execute(createGenEnvCommand());
 ```

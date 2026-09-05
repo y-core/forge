@@ -17,10 +17,13 @@ import type { ActionDefinition } from "./types";
 
 const logger = createLogger("pipeline");
 
+/** The pipeline's own option names — the one list both the type and `definePage`'s guard read. @internal */
+export const PIPELINE_ONLY_KEYS = ["honeypot", "turnstile", "onBotDetected", "onValidationError", "maxBytes"] as const;
+
 /** The half of a mutation route's definition the shared submission pipeline consumes. @internal */
 export type SubmissionPipelineDefinition<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown> = Pick<
   ActionDefinition<S, Bindings, ConfigData>,
-  "schema" | "honeypot" | "turnstile" | "onBotDetected" | "onValidationError" | "maxBytes"
+  "schema" | (typeof PIPELINE_ONLY_KEYS)[number]
 >;
 
 /** One request through read → drop → guard → validate, resolving to the validated body or the refusal that replaces it. @internal */

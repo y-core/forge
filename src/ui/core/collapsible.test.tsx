@@ -7,7 +7,7 @@ import { createIcon } from "./icon";
 const icon = createIcon("/sprite.svg");
 
 const TRIGGER_BASE =
-  "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none select-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring";
+  "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium select-none focus-ring hover:bg-muted/40";
 
 const CHEVRON =
   '<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground group-open/collapsible-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg>';
@@ -48,13 +48,13 @@ describe("Collapsible", () => {
       await render(
         <Collapsible open>
           <Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>
-          <Collapsible.Panel>Nothing here yet.</Collapsible.Panel>
+          <Collapsible.Content>Nothing here yet.</Collapsible.Content>
         </Collapsible>,
       ),
     ).toBe(
       '<details data-slot="collapsible" open class="group/collapsible-item">' +
         `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>` +
-        '<div data-slot="collapsible-panel" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div></details>',
+        '<div data-slot="collapsible-content" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div></details>',
     );
   });
 });
@@ -94,22 +94,22 @@ describe("Collapsible.Trigger", () => {
   });
 });
 
-describe("Collapsible.Panel", () => {
+describe("Collapsible.Content", () => {
   it("renders the panel div with its base classes", async () => {
-    expect(await render(<Collapsible.Panel>Nothing here yet.</Collapsible.Panel>)).toBe(
-      '<div data-slot="collapsible-panel" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div>',
+    expect(await render(<Collapsible.Content>Nothing here yet.</Collapsible.Content>)).toBe(
+      '<div data-slot="collapsible-content" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div>',
     );
   });
 
   it("merges a caller class, appends an inherited slot token, and escapes children", async () => {
     expect(
       await render(
-        <Collapsible.Panel class='pt-1' data-slot='filters-panel'>
+        <Collapsible.Content class='pt-1' data-slot='filters-panel'>
           {`R&D's <options>`}
-        </Collapsible.Panel>,
+        </Collapsible.Content>,
       ),
     ).toBe(
-      '<div data-slot="collapsible-panel filters-panel" class="px-1 pb-2 text-sm text-muted-foreground pt-1">R&amp;D&#39;s &lt;options&gt;</div>',
+      '<div data-slot="collapsible-content filters-panel" class="px-1 pb-2 text-sm text-muted-foreground pt-1">R&amp;D&#39;s &lt;options&gt;</div>',
     );
   });
 });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { fakeR2 } from "../../testing/fakes";
+import { r2Backend } from "./r2-backend";
 import { createObjectStore } from "./store";
 import type {
   ListObjectsResult,
@@ -10,6 +12,13 @@ import type {
   StoreListOptions,
   StorePutOptions,
 } from "./types";
+
+// A real `fakeR2` whose `get` rejects — the fault path exercised through the shipped adapter
+// rather than through a hand-built double.
+function brokenR2(message: string): ReturnType<typeof fakeR2> {
+  const bucket = fakeR2({ "doc.txt": "hello" });
+  return { ...bucket, get: () => Promise.reject(new Error(message)) } as ReturnType<typeof fakeR2>;
+}
 
 function makeMemoryBackend(name = "memory"): ObjectStorageBackend & { _store: Map<string, StoredObject & { _body?: string }> } {
   const _store = new Map<string, StoredObject & { _body?: string }>();
@@ -198,7 +207,7 @@ describe("createObjectStore — key normalization (traversal prevention)", () =>
 });
 
 describe("createObjectStore — serveObject", () => {
-  it("returns 400 for a key with a leading slash (before touching the backend)", async () => {
+  it("refuses a key with a leading slash the same way `get` does, before touching the backend", async () => {
     let backendCalled = false;
     const backend = {
       ...makeMemoryBackend(),
@@ -209,34 +218,29 @@ describe("createObjectStore — serveObject", () => {
     } as unknown as ReturnType<typeof makeMemoryBackend>;
     const store = createObjectStore(backend);
     const res = await store.serveObject(new Request("https://example.com/file"), "/etc/passwd");
-    expect(res.status).toBe(400);
+    expect(res).toEqual({ ok: false, error: new Error("Object key must not start with '/': /etc/passwd") });
     expect(backendCalled).toBe(false);
   });
 
-  it("returns 400 for a key with a '..' path segment", async () => {
+  it("refuses a key with a '..' path segment", async () => {
     const store = createObjectStore(makeMemoryBackend());
     const res = await store.serveObject(new Request("https://example.com/file"), "../secret");
-    expect(res.status).toBe(400);
+    expect(res).toEqual({ ok: false, error: new Error("Object key must not contain '.' or '..' segments: ../secret") });
   });
 
-  it("resolves to a 500 Response when the backend rejects (no unhandled rejection)", async () => {
-    const backend = {
-      ...makeMemoryBackend(),
-      get: async (): Promise<ObjectBody | null> => {
-        throw new Error("backend exploded");
-      },
-    } as unknown as ReturnType<typeof makeMemoryBackend>;
-    const store = createObjectStore(backend);
+  it("names the backend fault instead of answering a bare 500", async () => {
+    const store = createObjectStore(r2Backend(brokenR2("backend exploded")));
     const res = await store.serveObject(new Request("https://example.com/file"), "doc.txt");
-    expect(res.status).toBe(500);
+    expect(res).toEqual({ ok: false, error: new Error("backend exploded") });
   });
 
-  it("serves a stored object with status 200 on the happy path", async () => {
+  it("serves a stored object on the happy path", async () => {
     const backend = makeMemoryBackend();
     const store = createObjectStore(backend);
     await store.put("doc.txt", "hello");
     const res = await store.serveObject(new Request("https://example.com/file"), "doc.txt");
-    expect(res.status).toBe(200);
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.data.status).toBe(200);
   });
 });
 
@@ -255,5 +259,106 @@ describe("createObjectStore — content-type inference on put", () => {
     await store.put("data", "...", { contentType: "application/octet-stream" });
     const obj = backend._store.get("data");
     expect(obj?.contentType).toBe("application/octet-stream");
+  });
+});
+
+describe("createObjectStore — listing and body identity", () => {
+  function listingBackend(res: ListObjectsResult): ObjectStorageBackend & { seen: { options?: StoreListOptions | undefined } } {
+    const seen: { options?: StoreListOptions | undefined } = {};
+    const backend = makeMemoryBackend();
+    return Object.assign(
+      {
+        ...backend,
+        async list(options?: StoreListOptions): Promise<ListObjectsResult> {
+          seen.options = options;
+          return res;
+        },
+      },
+      { seen },
+    );
+  }
+
+  it("strips the store prefix from delimitedPrefixes as well as from keys", async () => {
+    const backend = listingBackend({
+      objects: [{ key: "tenant-a/report.txt", size: 1, etag: "e", httpEtag: '"e"', uploaded: new Date("2026-01-01") }],
+      truncated: false,
+      delimitedPrefixes: ["tenant-a/invoices/", "tenant-a/logs/"],
+    });
+    const store = createObjectStore(backend, { prefix: "tenant-a" });
+    const res = await store.list({ delimiter: "/" });
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.data.objects.map((o) => o.key)).toEqual(["report.txt"]);
+    expect(res.data.delimitedPrefixes).toEqual(["invoices/", "logs/"]);
+  });
+
+  it("forwards the caller's list options", async () => {
+    const backend = listingBackend({ objects: [], truncated: false });
+    const store = createObjectStore(backend);
+    await store.list({ delimiter: "/", limit: 10 });
+    expect(backend.seen.options?.delimiter).toBe("/");
+    expect(backend.seen.options?.limit).toBe(10);
+  });
+});
+
+describe("createObjectStore — get re-keying does not consume the body", () => {
+  function bodyBackend(key: string): { backend: ObjectStorageBackend; reads: { body: number } } {
+    const reads = { body: 0 };
+    let used = false;
+    const stream = new ReadableStream();
+    const obj: ObjectBody = {
+      key,
+      size: 5,
+      etag: "e",
+      httpEtag: '"e"',
+      uploaded: new Date("2026-01-01"),
+      get body() {
+        reads.body += 1;
+        return stream;
+      },
+      get bodyUsed() {
+        return used;
+      },
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      text: () => {
+        used = true;
+        return Promise.resolve("hello");
+      },
+      blob: () => Promise.resolve(new Blob([])),
+    };
+    const backend: ObjectStorageBackend = {
+      ...makeMemoryBackend(),
+      async get() {
+        return obj;
+      },
+    };
+    return { backend, reads };
+  }
+
+  it("reports bodyUsed after a read, with a store prefix set", async () => {
+    const { backend } = bodyBackend("tenant-a/file.txt");
+    const store = createObjectStore(backend, { prefix: "tenant-a" });
+    const res = await store.get("file.txt");
+    if (!res.ok || res.data === null) throw new Error("expected an object");
+    expect(res.data.key).toBe("file.txt");
+    expect(res.data.bodyUsed).toBe(false);
+    expect(await res.data.text()).toBe("hello");
+    expect(res.data.bodyUsed).toBe(true);
+  });
+
+  it("reports bodyUsed after a read with no prefix", async () => {
+    const { backend } = bodyBackend("file.txt");
+    const store = createObjectStore(backend);
+    const res = await store.get("file.txt");
+    if (!res.ok || res.data === null) throw new Error("expected an object");
+    expect(await res.data.text()).toBe("hello");
+    expect(res.data.bodyUsed).toBe(true);
+  });
+
+  it("reads the body getter zero times while re-keying", async () => {
+    const { backend, reads } = bodyBackend("tenant-a/file.txt");
+    const store = createObjectStore(backend, { prefix: "tenant-a" });
+    const res = await store.get("file.txt");
+    if (!res.ok) throw new Error("expected ok");
+    expect(reads.body).toBe(0);
   });
 });

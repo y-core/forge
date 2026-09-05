@@ -71,19 +71,21 @@ pre-1.0 version number exists to avoid.
 **A rule with a gate step is not a review item.** Do not hand-review these; run the gate and
 read its output.
 
-| Rule                                                                                                                                                                                                                                    | detect                                           |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Barrel discipline, `export *` ban, export-map drift, `@public` symbols reaching their barrel                                                                                                                                            | `bun run verify --only validate-exports`         |
-| Leaf/integration classification, undeclared cross-namespace imports, stale declared edges                                                                                                                                               | `bun run verify --only validate-namespace-graph` |
-| JSX pragma present and correct in every `.tsx`                                                                                                                                                                                          | `bun run verify --only validate-jsx`             |
-| Browser-only `ui/client` import reaching a Worker-executed `src/ui` file                                                                                                                                                                | `bun run verify --only validate-ssr-boundary`    |
-| No-sibling-barrel rule (oxlint `no-restricted-imports`)                                                                                                                                                                                 | `bun run verify --only lint`                     |
-| Governing-doc import paths, numbering, references                                                                                                                                                                                       | `bun run verify --only validate-docs`            |
-| Tailwind `@source` coverage of every `src/ui/` directory                                                                                                                                                                                | `bun run verify --only validate-css-sources`     |
-| `forge-ui-a11y-label-association`, `-live-politeness`, `-one-live-region`, `-aria-beside-data`, `-no-aria-readonly-on-button`, plus `forge-ui-focus-ring`                                                                               | `bun run verify --only validate-design`          |
-| Every class-string rule — `forge-ui-spacing-scale-only`, `-color-token-only`, `-a11y-heading-size-by-class`, `-reduced-motion`, and the four `forge-ui-platform-*` rules the plugin owns — text wrapping, logical spacing, entry motion | `bun run verify --only lint`                     |
-| ARIA vocabulary validity — attribute names, role names, value shapes                                                                                                                                                                    | `bun run verify --only lint`                     |
-| Behaviour of the changed unit                                                                                                                                                                                                           | `bun test <path>`                                |
+| Rule                                                                                                                                                                                                                                                                                                                                         | detect                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Barrel discipline, `export *` ban, export-map drift, `@public` symbols reaching their barrel                                                                                                                                                                                                                                                 | `bun run verify --only validate-exports`         |
+| Leaf/integration classification, undeclared cross-namespace imports, stale declared edges                                                                                                                                                                                                                                                    | `bun run verify --only validate-namespace-graph` |
+| JSX pragma present and correct in every `.tsx`                                                                                                                                                                                                                                                                                               | `bun run verify --only validate-jsx`             |
+| A literal `data-slot` written before a bare-identifier spread                                                                                                                                                                                                                                                                                | `bun run verify --only lint`                     |
+| Browser-only `ui/client` import reaching a Worker-executed `src/ui` file                                                                                                                                                                                                                                                                     | `bun run verify --only validate-ssr-boundary`    |
+| No-sibling-barrel rule (oxlint `no-restricted-imports`)                                                                                                                                                                                                                                                                                      | `bun run verify --only lint`                     |
+| Governing-doc import paths, numbering, references                                                                                                                                                                                                                                                                                            | `bun run verify --only validate-docs`            |
+| `src/ui/README.md` export tables against the barrels they document, both directions                                                                                                                                                                                                                                                          | `bun run verify --only validate-readme-exports`  |
+| Tailwind `@source` coverage of every `src/ui/` directory                                                                                                                                                                                                                                                                                     | `bun run verify --only validate-css-sources`     |
+| Every corpus rule the plugin owns — the markup family (`forge-ui-a11y-*`, `-no-inline-style`, `-no-nested-card`, `-catalog-wrong-raw-input`) and the class-string family (`-spacing-scale-only`, `-color-token-only`, `-color-theme-no-raw-utility`, `-reduced-motion`, `-focus-ring`, `-interaction-focus-visible`, the four `-platform-*`) | `bun run verify --only lint`                     |
+| The corpus against forge's API, and both rule registers against the plugin                                                                                                                                                                                                                                                                   | `bun run verify --only validate-design`          |
+| ARIA vocabulary validity — attribute names, role names, value shapes                                                                                                                                                                                                                                                                         | `bun run verify --only lint`                     |
+| Behaviour of the changed unit                                                                                                                                                                                                                                                                                                                | `bun test <path>`                                |
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix
 the check, not the review.**
@@ -92,6 +94,20 @@ the check, not the review.**
 
 **Every command here has a known false-positive class, stated with it.** A command without its
 triage note is worse than no command.
+
+**Hand-spelled focus ring or disabled paint in `src/ui`**
+
+```bash
+rg -n 'focus-visible:ring-2|has-\[:focus-visible\]:ring|peer-focus-visible:ring|disabled:opacity-50|has-\[:disabled\]:opacity' src/ui --glob '!*.test.*' --glob '!forge-ui.css'
+```
+
+_Triage:_ any hit is a component re-spelling a recipe `forge-ui.css` publishes as an `@utility`
+(`focus-ring`, `state-disabled`, `state-invalid`, `state-busy`, `field-chrome`) — see
+[`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §3h. The one legitimate spelling that is not a
+hit is `Switch`'s `peer-focus-visible:ring-2` on the track, which reaches across a sibling that
+`&:has()` cannot; it is excluded by the `!forge-ui.css` glob only because the utility itself lives
+there. The design corpus under `src/ui/design` is excluded by the same reasoning as every other
+Tier 2 command.
 
 **Valibot facade breach**
 
@@ -116,14 +132,20 @@ _Triage:_ the negative lookahead already excludes the two sanctioned exemptions
 
 ```bash
 rg -n '\bBun\.|from "node:' src/ \
-  --glob '!src/cli/pkg/**' --glob '!src/cli/**' --glob '!src/assets/**' \
-  --glob '!src/ui/assets/**' --glob '!src/**/cli/**'
+  --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' \
+  --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md'
 ```
 
-_Triage:_ the excluded paths are build-time tooling that runs on a developer's machine, never in
-a Worker, and are exempt by design ([`LIBRARY_ARCHITECTURE.md`](../governance/LIBRARY_ARCHITECTURE.md) §1d).
-**Without those globs the command returns dozens of legitimate hits and will be ignored.** A hit
-in any other namespace is a genuine runtime-portability break.
+_Triage:_ `src/tooling/` is the build-time container — membership _is_ the exemption
+([`NAMESPACES.md`](./NAMESPACES.md) §4a) — and `ui/assets/build` is the one runtime-owned namespace
+that carries the same exemption behind its own subpath. Tests and `.browser.ts` specs run under Bun
+or Playwright, never in a Worker. **Without those globs the command returns dozens of legitimate
+hits and will be ignored.** A hit anywhere else is a genuine runtime-portability break.
+
+_The direction that matters most is already a gate step._ `validate-build-time-boundary` fails any
+runtime module that imports a build-time one, so a review does not have to find that by hand; run
+this command for the case the step cannot see — a Node API used **inside** a runtime namespace
+without an import crossing any boundary.
 
 **Timer handle not cleared by its disposer**
 
@@ -173,14 +195,19 @@ budget; [`CODE_RULES.md`](../governance/CODE_RULES.md) §5b is what is deleted o
 
 ```bash
 rg -n '^\s*\*\s*@example' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
-rg -UPn '/\*\*(?:[^*]|\*(?!/)){400,}\*/' --glob 'src/**/*.ts*'
-rg -n '^\s*//\s*[-=*_]{3,}' --glob 'src/**/*.ts*'
-rg -n '\b(TODO|FIXME|XXX)\b' --glob 'src/**/*.ts*'
-rg -n '^\s*//\s*(const|let|function|return|import|export|if|await)\b' --glob 'src/**/*.ts*'
+rg -UPn '/\*\*(?:[^*]|\*(?!/)){400,}\*/' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
+rg -n '^\s*//\s*[-=*_]{3,}' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
+rg -n '\b(TODO|FIXME|XXX)\b' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
+rg -n '^\s*//\s*(const|let|function|return|import|export|if|await)\b' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
+rg -Un --multiline '(?:^[ \t]*//[^\n]*\n){3,}' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
 ```
 
+**Every command carries `--glob 'config/**/*.ts'`.** Only the first did until the September 2026
+sweep, and `config/steps.ts` — the file with the most `//` runs in the repository — was therefore
+scanned by nothing.
+
 _Triage:_ the third, fourth, and fifth have **no false-positive class** — every hit is a defect, in
-a test file as readily as in production source. The other two do, and both were confirmed on a real
+a test file as readily as in production source. The other three do, and all were confirmed on a real
 sweep:
 
 - The first is anchored to `^\s*\*\s*@example` — a TSDoc continuation line — precisely because a
@@ -194,6 +221,14 @@ sweep:
   comment syntax as their payload: `cf-env-registry.ts`'s `HEADER` is the banner the `gen:env`
   command emits into generated files, so shortening it would change generator output. A hit inside
   a backtick string is code, not a comment.
+- The sixth is the run-length detector: three or more consecutive `//` lines.
+  [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a form 3 caps an inline _why_ at
+  **one or two lines**, so a longer run is over budget by construction and no other
+  command sees it. Its one false-positive class is the **upstream attribution header** — the
+  MIT/ISC notice at the top of `cli/term/{capability,codes,color,width}.ts` and
+  `cli/core/tokenize.ts`. A licence notice is a legal requirement, not prose written for the
+  reader, and it is never shortened. Three _separate_ one-line comments on adjacent lines also
+  match; read the hit before cutting.
 
 Restating-the-code and narration are not reachable by any command; they belong to §3c.
 
@@ -268,27 +303,30 @@ must survive before it is reported.
 
 These look wrong and are correct. Each has been mistaken for a defect before.
 
-| Pattern                                                                       | Why it is correct                                                                                                                                                                                                                                        |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `new Forge<Env>()` in a test                                                  | `Forge` is exported from `src/app/mod.ts` with a public constructor. The no-bare-constructor rule targets _config holders_ — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1d                                                                          |
-| `@y-core/forge/context` imported by a consumer                                | `context` **is** a public subpath. Any claim that it is internal is stale                                                                                                                                                                                |
-| A reference to `@y-core/forge/crypto` being absent                            | That subpath **never existed**. `crypto` is sealed-internal — [`NAMESPACES.md`](./NAMESPACES.md) §3b                                                                                                                                                     |
-| `import { v } from "../validation/mod"` in forge source                       | One of the two sanctioned barrel exemptions — [`NAMESPACE_DESIGN.md`](../governance/NAMESPACE_DESIGN.md) §2c                                                                                                                                             |
-| `import … from "../crypto/mod"` in forge source                               | The other sanctioned exemption                                                                                                                                                                                                                           |
-| `*.test.ts` beside its source rather than in `tests/`                         | Co-location is the rule, not a lapse — [`TESTING.md`](../governance/TESTING.md) §2a                                                                                                                                                                      |
-| `node:fs` / `node:path` in `pkg`, `cli`, `assets`, `ui/assets`                | Build-time tooling, exempt from Web-APIs-only — §3b                                                                                                                                                                                                      |
-| `export const X = "…"` at module scope                                        | A constant is not mutable state — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1c                                                                                                                                                                     |
-| A mutable module-scope `WeakMap` / `Map` cache in `ui/client`                 | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
-| `contextVar` used inside forge source                                         | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §4a                                                                                                                            |
-| `sideEffects` entries in `package.json`                                       | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §4                                                                                                                                                                          |
-| A non-null assertion in a test file                                           | Permitted by the `**/*.test.ts` oxlint override, which sets `typescript/no-non-null-assertion: off`; the rule is `error` in production source                                                                                                            |
-| `ok` / `err` not following `create*`                                          | The one documented naming exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1a                                                                                                                                                                     |
-| `serveObject` returning a `Response`, not a `Result`                          | A ratified boundary exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5e                                                                                                                                                                           |
-| `Input` exported from both `ui/core` and `ui/controls`                        | Deliberate shadowing — [`NAMESPACES.md`](./NAMESPACES.md) §5b                                                                                                                                                                                            |
-| `@public` / `@internal` on a TSDoc line                                       | Machine-readable visibility markers, explicitly budgeted — [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a                                                                                                                                            |
-| A one-line inline comment carrying an external _why_                          | The third budgeted form, subject to the four conditions in [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a                                                                                                                                            |
-| A one-line note on an adversarial test fixture                                | The one test-side addition to the budget — [`CODE_RULES.md`](../governance/CODE_RULES.md) §5d                                                                                                                                                            |
-| A `page.evaluate` callback whose destructured parameter repeats an outer name | The callback runs in the browser realm and _cannot_ close over the Node-side binding; the repeated name is what documents the marshalled argument — §7b                                                                                                  |
+| Pattern                                                                                          | Why it is correct                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `new Forge<Env>()` in a test                                                                     | `Forge` is exported from `src/app/mod.ts` with a public constructor. The no-bare-constructor rule targets _config holders_ — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1d                                                                          |
+| `@y-core/forge/context` imported by a consumer                                                   | `context` **is** a public subpath. Any claim that it is internal is stale                                                                                                                                                                                |
+| A reference to `@y-core/forge/crypto` being absent                                               | That subpath **never existed**. `crypto` is sealed-internal — [`NAMESPACES.md`](./NAMESPACES.md) §3b                                                                                                                                                     |
+| `import { v } from "../validation/mod"` in forge source                                          | One of the two sanctioned barrel exemptions — [`NAMESPACE_DESIGN.md`](../governance/NAMESPACE_DESIGN.md) §2c                                                                                                                                             |
+| `import … from "../crypto/mod"` in forge source                                                  | The other sanctioned exemption                                                                                                                                                                                                                           |
+| `*.test.ts` beside its source rather than in `tests/`                                            | Co-location is the rule, not a lapse — [`TESTING.md`](../governance/TESTING.md) §2a                                                                                                                                                                      |
+| `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build`                             | Build-time tooling, exempt from Web-APIs-only — §3b                                                                                                                                                                                                      |
+| `export const X = "…"` at module scope                                                           | A constant is not mutable state — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1c                                                                                                                                                                     |
+| A mutable module-scope `WeakMap` / `Map` cache in `ui/client`                                    | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`](../governance/CODE_RULES.md) §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
+| `contextVar` used inside forge source                                                            | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §4a                                                                                                                            |
+| `sideEffects` entries in `package.json`                                                          | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §4                                                                                                                                                                          |
+| A non-null assertion in a test file                                                              | Permitted by the `**/*.test.ts` oxlint override, which sets `typescript/no-non-null-assertion: off`; the rule is `error` in production source                                                                                                            |
+| `ok` / `err` not following `create*`                                                             | The one documented naming exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1a                                                                                                                                                                     |
+| `serveObject` returning a `Response`, not a `Result`                                             | A ratified boundary exception — [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5e                                                                                                                                                                           |
+| `Input` exported from both `ui/core` and `ui/controls`                                           | Deliberate shadowing — [`NAMESPACES.md`](./NAMESPACES.md) §5b                                                                                                                                                                                            |
+| `@public` / `@internal` on a TSDoc line                                                          | Machine-readable visibility markers, explicitly budgeted — [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a                                                                                                                                            |
+| A one-line inline comment carrying an external _why_                                             | The third budgeted form, subject to the four conditions in [`CODE_RULES.md`](../governance/CODE_RULES.md) §5a                                                                                                                                            |
+| A one-line note on an adversarial test fixture                                                   | The one test-side addition to the budget — [`CODE_RULES.md`](../governance/CODE_RULES.md) §5d                                                                                                                                                            |
+| A `page.evaluate` callback whose destructured parameter repeats an outer name                    | The callback runs in the browser realm and _cannot_ close over the Node-side binding; the repeated name is what documents the marshalled argument — §7b                                                                                                  |
+| `[--tone:var(--color-…)]` arbitrary-property classes, and `bg-(--tone)` reading them             | The tone mechanism, not a stray arbitrary value: `toneVariants` sets the properties and one recipe per appearance reads them — [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §3h                                                                      |
+| `state-invalid` or `cursor-pointer` passed as a separate `cn` argument, outside the base literal | Not an untidy call: the narrower recipe's group is a subset of an earlier one's, so folding it into the literal deletes it — [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §3h                                                                        |
+| `data-size` on `Avatar`, `Turnstile`, or a field control                                         | A presentational attribute carrying a chosen value, not a state hook — it is declared beside the state table rather than in it — [`STATE_ATTRIBUTES.md`](./STATE_ATTRIBUTES.md) §2                                                                       |
 
 ---
 
@@ -300,7 +338,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 That is a deliberate default-deny, for two reasons.
 
 **A category is a standing subscription to oxc's editorial judgement.** `lintStep` is published
-through `src/cli/pkg/mod.ts`, so a rule oxc moves into `suspicious` would fail the gate of every
+through `src/tooling/gate/mod.ts`, so a rule oxc moves into `suspicious` would fail the gate of every
 consumer app that builds its table from forge's preset, on the next install and with no changelog
 entry of forge's own. Naming rules individually makes an oxlint upgrade inert until someone reads
 its changelog and chooses.

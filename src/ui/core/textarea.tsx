@@ -1,28 +1,46 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+import { presentationAttrs } from "../contracts/vocabulary";
+import type { Size } from "../contracts/vocabulary";
 import type { FieldDescriptor } from "./field";
-import { fieldControlProps } from "./field";
+import { fieldControlProps, fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
 
-type TextareaProps = JSX.IntrinsicElements["textarea"] & { field?: FieldDescriptor };
+type TextareaProps = JSX.IntrinsicElements["textarea"] & {
+  field?: FieldDescriptor | undefined;
+  size?: Size | undefined;
+  invalid?: boolean | undefined;
+  busy?: boolean | undefined;
+};
 
-// `field-sizing-content` makes `rows` stop determining the height, so the floor and the cap are not
-// optional: without `min-h-16` every consumer passing `rows` gets a collapsed one-line box, and
-// without `max-h-64` the control grows without bound.
-const TEXTAREA_BASE = cn(
-  "field-sizing-content max-h-64 min-h-16 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground",
-);
-const TEXTAREA_FOCUS = cn("focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none");
-const TEXTAREA_DISABLED = cn("resize-y disabled:cursor-not-allowed disabled:opacity-50");
+// `h-auto` and the two bounds are what content sizing needs, not taste: `UI_SSR_COMPONENTS.md` §1i.
+const TEXTAREA_BASE = "state-busy state-disabled state-invalid field-sizing-content field-chrome h-auto max-h-64 min-h-16 resize-y py-2 focus-ring";
+
+/** The type scale only: a textarea's height is its content's, never its `Size`. */
+const TEXTAREA_TEXT = { sm: "text-sm", md: "text-sm", lg: "text-base" } as const;
 
 /** A styled multi-line `<textarea>`, wired to a `FieldDescriptor` when one is passed. @public */
-export const Textarea: FC<PropsWithChildren<TextareaProps>> = ({ class: cls, field, children, "data-slot": inherited, ...props }) => {
+export const Textarea: FC<PropsWithChildren<TextareaProps>> = ({
+  class: cls,
+  field,
+  children,
+  size = "md",
+  invalid = false,
+  busy = false,
+  "data-slot": inherited,
+  ...props
+}) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 
   return (
-    <textarea data-slot={slotToken("textarea", inherited)} class={cn(TEXTAREA_BASE, TEXTAREA_FOCUS, TEXTAREA_DISABLED, asClass(cls))} {...resolved}>
+    <textarea
+      data-slot={slotToken("textarea", inherited)}
+      {...presentationAttrs({ size })}
+      class={cn(TEXTAREA_BASE, TEXTAREA_TEXT[size], cls)}
+      {...resolved}
+      {...fieldStateProps(invalid, busy)}>
       {children}
     </textarea>
   );

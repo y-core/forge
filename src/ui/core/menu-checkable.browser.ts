@@ -17,7 +17,7 @@ const MARKUP = () =>
   render(
     Menu({
       children: [
-        Menu.Trigger({ id: "m", children: "View" }),
+        Menu.Trigger({ for: "m", children: "View" }),
         Menu.Popup({
           id: "m",
           children: [

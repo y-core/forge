@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
-import { checkMenuItem } from "./menu";
-import { type FakeElement, fakeTree } from "./test-dom";
+import { MENU_ITEM_SELECTOR } from "../contracts/menu-contract";
+import { checkMenuItem, mountMenu } from "./menu";
+import { type FakeElement, FakeEvent, fakeTree } from "./test-dom";
+
+const MENU_ITEM_ROLES = [...MENU_ITEM_SELECTOR.matchAll(/\[role='([^']+)'\]/g)].map((match) => match[1] as string);
 
 /** A popup with a checkbox row, two radio groups, and one ungrouped radio row. */
 function menu() {
@@ -88,5 +91,47 @@ describe("checkMenuItem", () => {
     checkMenuItem(row as never, popup as never);
 
     expect(state(stranger)).toEqual({ aria: "true", data: true });
+  });
+});
+
+describe("mountMenu", () => {
+  /** One row per role `MENU_ITEM_SELECTOR` names, plus a separator the ring must not pick up. */
+  function navigableMenu() {
+    const { doc, el } = fakeTree();
+    const popup = el("DIV", { "data-slot": "menu-popup", role: "menu" });
+    const rows = MENU_ITEM_ROLES.map((role, i) => el("BUTTON", { role, id: `row-${i}` }));
+    const separator = el("DIV", { role: "separator", id: "separator" });
+    popup.append(...rows, separator);
+    doc.root.append(popup);
+    return { doc, popup, rows, separator };
+  }
+
+  it("navigates exactly the roles MENU_ITEM_SELECTOR names, and nothing else in the popup", () => {
+    const { doc, popup, rows, separator } = navigableMenu();
+    const dispose = mountMenu(popup as never);
+
+    rows[0]?.focus();
+    const visited = [doc.activeElement?.getAttribute("role") ?? null];
+    for (let step = 1; step < rows.length; step += 1) {
+      popup.dispatchEvent(new FakeEvent("keydown", { key: "ArrowDown" }));
+      visited.push(doc.activeElement?.getAttribute("role") ?? null);
+    }
+    dispose();
+
+    expect({ visited: [...visited].sort(), separatorFocused: separator.focused }).toEqual({
+      visited: [...MENU_ITEM_ROLES].sort(),
+      separatorFocused: false,
+    });
+  });
+
+  it("focuses the first row MENU_ITEM_SELECTOR matches when the popup opens", () => {
+    const { doc, popup } = navigableMenu();
+    const dispose = mountMenu(popup as never);
+
+    popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+    const opened = doc.activeElement;
+    dispose();
+
+    expect({ id: opened?.id ?? null, role: opened?.getAttribute("role") ?? null }).toEqual({ id: "row-0", role: MENU_ITEM_ROLES[0] });
   });
 });

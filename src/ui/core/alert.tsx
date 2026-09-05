@@ -1,29 +1,28 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
+import { ALERT_SCOPE } from "../contracts/alert-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
+import { presentationAttrs } from "../contracts/vocabulary";
+import type { Appearance, Tone } from "../contracts/vocabulary";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { toneVariants } from "./utils/tone";
 
-const variantClasses = {
-  default: cn("border-border bg-muted text-foreground"),
-  destructive: cn("border-status-danger-border bg-status-danger-subtle text-status-danger-subtle-foreground"),
-  info: cn("border-status-info-border bg-status-info-subtle text-status-info-subtle-foreground"),
-  success: cn("border-status-success-border bg-status-success-subtle text-status-success-subtle-foreground"),
-  warning: cn("border-status-warning-border bg-status-warning-subtle text-status-warning-subtle-foreground"),
-};
-
-export type AlertVariant = keyof typeof variantClasses;
+/** The appearances a callout takes — a panel is filled or tinted, never outlined or bare. @public */
+export type PanelAppearance = Extract<Appearance, "solid" | "soft">;
 
 type AlertProps = JSX.IntrinsicElements["div"] & {
-  variant?: AlertVariant;
-  dismissible?: boolean;
+  tone?: Tone | undefined;
+  appearance?: PanelAppearance | undefined;
+  dismissible?: boolean | undefined;
   /** Accessible name for the dismiss button. @default "Dismiss" */
-  dismissLabel?: string;
+  dismissLabel?: string | undefined;
 };
 
 const AlertRoot: FC<AlertProps> = ({
-  variant = "default",
+  tone = "neutral",
+  appearance = "soft",
   dismissible = false,
   dismissLabel = "Dismiss",
   class: cls,
@@ -33,9 +32,14 @@ const AlertRoot: FC<AlertProps> = ({
 }) => (
   <div
     data-slot={slotToken("alert", inherited)}
-    data-variant={variant}
-    {...(dismissible ? { "data-scope": "alert" } : {})}
-    class={cn("relative grid gap-1.5 rounded-2xl border py-3 ps-4 pe-4 text-sm", variantClasses[variant], dismissible && "pe-8", cls)}
+    {...presentationAttrs({ tone, appearance })}
+    {...(dismissible ? { "data-scope": ALERT_SCOPE } : {})}
+    class={cn(
+      "relative grid gap-1.5 rounded-box border-field py-3 ps-4 pe-4 text-sm",
+      toneVariants({ tone, appearance }),
+      dismissible && "pe-8",
+      cls,
+    )}
     {...rest}>
     {children}
     {dismissible ? (
@@ -44,7 +48,7 @@ const AlertRoot: FC<AlertProps> = ({
         data-slot='alert-dismiss'
         aria-label={dismissLabel}
         {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-        class='absolute end-2 top-2 rounded opacity-50 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-safe:transition-opacity'>
+        class='absolute end-2 top-2 rounded opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity'>
         <span aria-hidden='true' class='text-base leading-none'>
           ×
         </span>

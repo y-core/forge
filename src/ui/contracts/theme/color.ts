@@ -1,4 +1,4 @@
-/** The two blocks a scheme file declares. Matches `Mode` in `src/cli/pkg/gate/checks/contrast-parse.ts`. @public */
+/** The two blocks a scheme file declares. Matches `Mode` in `src/tooling/gate/checks/contrast-parse.ts`. @public */
 export type Mode = "light" | "dark";
 
 /** A twelve-position scale, as a tuple rather than an array. @public */
@@ -60,7 +60,8 @@ export const CHROMA_MAX: Readonly<Record<ScaleFamily, number>> = { gray: 0.1, ac
 
 const GAMUT_EPSILON = 1e-4;
 
-function srgbGamma(c: number): number {
+/** The sRGB transfer function, linear-light to encoded. @public */
+export function srgbGamma(c: number): number {
   return c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
 }
 
@@ -74,7 +75,8 @@ function clip01(c: number): number {
   return c;
 }
 
-function oklabToLinearSrgb(l: number, a: number, b: number): [number, number, number] {
+/** OKLab to linear-light sRGB, before any gamut handling. @public */
+export function oklabToLinearSrgb(l: number, a: number, b: number): [number, number, number] {
   const lc = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
   const mc = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
   const sc = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;

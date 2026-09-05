@@ -27,7 +27,7 @@ import { route, createController, get, post } from "@y-core/forge/router";
 - **Type-safe URLs.** `routes.name.href(params)` and `createHref(pattern, params)` derive URL strings
   from the pattern type. Required params that you forget are compile errors; bad params throw at
   runtime.
-- **Verb shorthands.** `get`, `post`, `put`, `patch`, `del`, `head`, `options` build typed `Route`
+- **Verb shorthands.** `get`, `post`, `put`, `patch`, `del`, `options` build typed `Route`
   objects without spelling out `{ method, pattern }`.
 - **Route-table introspection.** `routePaths(routes, filter?)` flattens a route map into its path
   strings — useful for navigation menus, sitemaps, or wiring per-path middleware.
@@ -159,14 +159,14 @@ does a route map with no routes at all.
 
 ### Route authoring
 
-| Symbol                                            | Signature                           | Description                                                                                                                    |
-| ------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `route`                                           | `route(defs)` / `route(base, defs)` | Build a typed `RouteMap` from a `RouteDefs` object. With a `base` pattern, joins it onto every child. Alias of `createRoutes`. |
-| `get` `post` `put` `patch` `del` `head` `options` | `(pattern) => Route`                | Verb shorthands. Each returns a `Route` typed to that method and pattern (`del` ⇒ `DELETE`).                                   |
-| `Route`                                           | `new Route(method, pattern)`        | A single route definition: `.method`, `.pattern` (parsed AST), and `.href(...args)`.                                           |
-| `resource`                                        | `resource(name, options?)`          | Build the route map for a **singular** RESTful resource. See upstream docs.                                                    |
-| `resources`                                       | `resources(name, options?)`         | Build the route map for a **collection** RESTful resource. See upstream docs.                                                  |
-| `form`                                            | `form(pattern, options?)`           | Build a GET + POST pair for a form endpoint. See upstream docs.                                                                |
+| Symbol                                     | Signature                           | Description                                                                                                                                                                                       |
+| ------------------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `route`                                    | `route(defs)` / `route(base, defs)` | Build a typed `RouteMap` from a `RouteDefs` object. With a `base` pattern, joins it onto every child. Alias of `createRoutes`.                                                                    |
+| `get` `post` `put` `patch` `del` `options` | `(pattern) => Route`                | Verb shorthands. Each returns a `Route` typed to that method and pattern (`del` ⇒ `DELETE`). No `head`: `Forge.fetch` serves `HEAD` through the `GET` route, so a `HEAD` route could never match. |
+| `Route`                                    | `new Route(method, pattern)`        | A single route definition: `.method`, `.pattern` (parsed AST), and `.href(...args)`.                                                                                                              |
+| `resource`                                 | `resource(name, options?)`          | Build the route map for a **singular** RESTful resource. See upstream docs.                                                                                                                       |
+| `resources`                                | `resources(name, options?)`         | Build the route map for a **collection** RESTful resource. See upstream docs.                                                                                                                     |
+| `form`                                     | `form(pattern, options?)`           | Build a GET + POST pair for a form endpoint. See upstream docs.                                                                                                                                   |
 
 `route()` definitions (`RouteDef`) accept three shapes: a bare pattern string, a `RoutePattern`, or
 `{ method?, pattern }` (method defaults to `ANY` when omitted).

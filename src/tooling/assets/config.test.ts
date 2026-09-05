@@ -1,0 +1,97 @@
+import { describe, expect, it } from "bun:test";
+
+import { v } from "../../validation/mod";
+import { defineAssetsConfig } from "./config";
+import type { AssetsConfig } from "./types";
+import { AssetsConfigSchema } from "./types";
+
+describe("defineAssetsConfig()", () => {
+  it("returns config as-is (identity function)", () => {
+    const config: AssetsConfig = { css: [{ tool: "tailwindcss", input: "src/styles/main.css", output: "css/main.css" }] };
+    expect(defineAssetsConfig(config)).toBe(config);
+  });
+
+  it("accepts minimal empty config", () => {
+    const config: AssetsConfig = {};
+    expect(defineAssetsConfig(config)).toBe(config);
+  });
+
+  it("accepts full config shape", () => {
+    const config: AssetsConfig = {
+      paths: { publicDir: "public/assets", publicPrefix: "/assets" },
+      css: [{ tool: "tailwindcss", input: "src/styles/main.css", output: "css/main.css" }],
+      js: { bundles: [{ entry: "src/client/main.ts", outdir: "js", format: "esm" }] },
+      copy: [{ from: "vendor/lib.css", to: "css/lib.css" }],
+    };
+    expect(defineAssetsConfig(config)).toBe(config);
+  });
+});
+
+describe("AssetsConfigSchema", () => {
+  it("preserves bundle define containing a flag ref through v.parse (regression: valibot strip)", () => {
+    const raw = { js: { bundles: [{ entry: "src/main.ts", outdir: "js", define: { __E2E__: { __flag: "E2E" } } }] } };
+    const parsed = v.parse(AssetsConfigSchema, raw);
+    expect(parsed.js?.bundles?.[0]?.define?.__E2E__).toEqual({ __flag: "E2E" });
+  });
+
+  it("preserves bundle define containing an env ref through v.parse", () => {
+    const raw = { js: { bundles: [{ entry: "src/main.ts", outdir: "js", define: { APP_VERSION: { __env: "VERSION" } } }] } };
+    const parsed = v.parse(AssetsConfigSchema, raw);
+    expect(parsed.js?.bundles?.[0]?.define?.APP_VERSION).toEqual({ __env: "VERSION" });
+  });
+
+  it("preserves bundle define containing literal primitives through v.parse", () => {
+    const raw = { js: { bundles: [{ entry: "src/main.ts", outdir: "js", define: { DEBUG: false, RETRIES: 3, NAME: "app" } }] } };
+    const parsed = v.parse(AssetsConfigSchema, raw);
+    expect(parsed.js?.bundles?.[0]?.define?.DEBUG).toBe(false);
+    expect(parsed.js?.bundles?.[0]?.define?.RETRIES).toBe(3);
+    expect(parsed.js?.bundles?.[0]?.define?.NAME).toBe("app");
+  });
+
+  it("preserves per-source cursor templates through v.parse", () => {
+    const raw = {
+      cursors: {
+        target: "css/cursors.css",
+        themes: { light: ":root", dark: ".dark" },
+        sources: [
+          { path: "src/svg/cursors", files: ["select.svg"], template: { path: "src/svg", file: "template.svg" } },
+          { path: "src/svg/snaps", files: ["snap.svg"], template: { path: "src/svg", file: "snap-template.svg" } },
+        ],
+      },
+    };
+    const parsed = v.parse(AssetsConfigSchema, raw);
+    const sources = parsed.cursors?.sources;
+    expect(sources?.[0]?.template).toEqual({ path: "src/svg", file: "template.svg" });
+    expect(sources?.[1]?.template).toEqual({ path: "src/svg", file: "snap-template.svg" });
+  });
+
+  it("rejects a cursor source without a template", () => {
+    const raw = {
+      cursors: { target: "css/cursors.css", themes: { light: ":root" }, sources: [{ path: "src/svg/cursors", files: ["select.svg"] }] },
+    };
+    expect(() => v.parse(AssetsConfigSchema, raw)).toThrow();
+  });
+
+  it("rejects a raster entry with neither width nor height", () => {
+    expect(() => v.parse(AssetsConfigSchema, { rasters: [{ from: "a.svg", to: "a.png" }] })).toThrow();
+  });
+
+  it("accepts a width-only raster entry", () => {
+    const parsed = v.parse(AssetsConfigSchema, { rasters: [{ from: "a.svg", to: "a.png", width: 360 }] });
+    expect(parsed.rasters?.[0]).toEqual({ from: "a.svg", to: "a.png", width: 360 });
+  });
+
+  it("preserves cursors vars (flat and per-theme) through v.parse", () => {
+    const raw = {
+      cursors: {
+        target: "css/cursors.css",
+        themes: { light: ":root", dark: ".dark" },
+        sources: [{ path: "src/svg/cursors", files: ["select.svg"], template: { path: "src/svg", file: "template.svg" } }],
+        vars: { "--cursor-shadow": "#000000", "--cursor-accent": { light: "#0000ff", dark: "#00ff00" } },
+      },
+    };
+    const parsed = v.parse(AssetsConfigSchema, raw);
+    expect(parsed.cursors?.vars?.["--cursor-shadow"]).toBe("#000000");
+    expect(parsed.cursors?.vars?.["--cursor-accent"]).toEqual({ light: "#0000ff", dark: "#00ff00" });
+  });
+});

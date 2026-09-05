@@ -1,93 +1,94 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { SLIDER_SCOPE } from "../contracts/slider-contract";
 import { Slider, sanitizeRangeValue } from "./slider";
-
-const SLIDER_CLASS =
-  "h-8 w-full cursor-pointer appearance-none rounded-full bg-transparent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-const SLIDER_VERTICAL_CLASS =
-  "cursor-pointer appearance-none rounded-full bg-transparent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [writing-mode:vertical-lr] [direction:rtl] h-22 w-8";
 
 describe("Slider", () => {
   it("renders a bare range input by default", async () => {
     expect(await render(<Slider min={0} max={10} step={1} value={4} />)).toBe(
-      `<input data-slot="slider" type="range" class="${SLIDER_CLASS}" min="0" max="10" step="1" value="4">`,
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" min="0" max="10" step="1" value="4">',
     );
   });
 
   it("wraps the input with a seeded output when output is set", async () => {
     expect(await render(<Slider min={0} max={10} value={4} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="10" value="4"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">4</output></div>`,
+      `<div data-slot="slider-wrapper" data-scope="${SLIDER_SCOPE}" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="sync" min="0" max="10" value="4"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">4</output></div>`,
     );
   });
 
   it("spreads delegation attributes onto the input", async () => {
     expect(await render(<Slider data-on-input='setOpacity' data-setting='opacity' data-ref='opacity-slider' />)).toBe(
-      `<input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="setOpacity" data-setting="opacity" data-ref="opacity-slider">`,
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="setOpacity" data-setting="opacity" data-ref="opacity-slider">',
     );
   });
 
   it("passes the disabled attribute through", async () => {
-    expect(await render(<Slider disabled />)).toBe(`<input data-slot="slider" type="range" class="${SLIDER_CLASS}" disabled>`);
-    expect(await render(<Slider />)).toBe(`<input data-slot="slider" type="range" class="${SLIDER_CLASS}">`);
+    expect(await render(<Slider disabled />)).toBe(
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" disabled>',
+    );
+    expect(await render(<Slider />)).toBe(
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm">',
+    );
   });
 
   it("merges a custom class with the base classes", async () => {
-    expect(await render(<Slider class='extra-class' />)).toBe(`<input data-slot="slider" type="range" class="${SLIDER_CLASS} extra-class">`);
+    expect(await render(<Slider class='extra-class' />)).toBe(
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm extra-class">',
+    );
   });
 
   it("wires field id and name from the descriptor", async () => {
     expect(await render(<Slider field={{ name: "opacity" }} />)).toBe(
-      `<input data-slot="slider" type="range" class="${SLIDER_CLASS}" id="field-opacity" name="opacity">`,
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" id="field-opacity" name="opacity">',
     );
   });
 
   it("adds aria-invalid and aria-describedby when the field is invalid", async () => {
     expect(await render(<Slider field={{ name: "opacity", invalid: true }} />)).toBe(
-      `<input data-slot="slider" type="range" class="${SLIDER_CLASS}" id="field-opacity" name="opacity" aria-describedby="field-opacity-error" aria-invalid="true">`,
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" id="field-opacity" name="opacity" aria-describedby="field-opacity-error" aria-invalid="true">',
     );
   });
 
   it("horizontal orientation (default) uses the standard horizontal base classes", async () => {
     expect(await render(<Slider min={0} max={10} value={5} />)).toBe(
-      `<input data-slot="slider" type="range" class="${SLIDER_CLASS}" min="0" max="10" value="5">`,
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" min="0" max="10" value="5">',
     );
   });
 
   it("vertical orientation adds writing-mode and direction classes to the slider", async () => {
     expect(await render(<Slider min={0} max={10} value={5} orientation='vertical' />)).toBe(
-      `<input data-slot="slider" type="range" class="${SLIDER_VERTICAL_CLASS}" min="0" max="10" value="5">`,
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid appearance-none rounded-full bg-transparent focus-ring cursor-pointer text-sm [writing-mode:vertical-lr] [direction:rtl] h-22 w-8" min="0" max="10" value="5">',
     );
   });
 
   it("vertical orientation with output wraps in a flex-col container", async () => {
     expect(await render(<Slider min={0} max={10} value={5} orientation='vertical' output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 flex-col items-center"><input data-slot="slider" type="range" class="${SLIDER_VERTICAL_CLASS}" data-on-input="sync" min="0" max="10" value="5"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">5</output></div>`,
+      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 flex-col items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid appearance-none rounded-full bg-transparent focus-ring cursor-pointer text-sm [writing-mode:vertical-lr] [direction:rtl] h-22 w-8" data-on-input="sync" min="0" max="10" value="5"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">5</output></div>',
     );
   });
 
   it("clamps the output readout to max while leaving the value attribute intact", async () => {
     expect(await render(<Slider min={0} max={100} value={150} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="100" value="150"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">100</output></div>`,
+      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="sync" min="0" max="100" value="150"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">100</output></div>',
     );
   });
 
   it("renders the range default in the readout for an array value the browser cannot parse", async () => {
     expect(await render(<Slider value={["a", "b"]} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" value="a,b"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">50</output></div>`,
+      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="sync" value="a,b"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">50</output></div>',
     );
   });
 
   it("leaves an out-of-range value untouched when no output is requested", async () => {
     expect(await render(<Slider min={0} max={100} value={150} />)).toBe(
-      `<input data-slot="slider" type="range" class="${SLIDER_CLASS}" min="0" max="100" value="150">`,
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" min="0" max="100" value="150">',
     );
   });
 
   it("composes field wiring with a sanitized readout", async () => {
     expect(await render(<Slider field={{ name: "opacity" }} min={0} max={100} value={150} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" class="${SLIDER_CLASS}" data-on-input="sync" min="0" max="100" value="150" id="field-opacity" name="opacity"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">100</output></div>`,
+      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="sync" min="0" max="100" value="150" id="field-opacity" name="opacity"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">100</output></div>',
     );
   });
 });
@@ -222,5 +223,37 @@ describe("sanitizeRangeValue", () => {
         why: "an exponent-spelled step parses to 0.1 and the tie rounds up",
       },
     ]);
+  });
+});
+
+describe("Slider — size, invalid and busy", () => {
+  it("stamps data-size=md and the md field size by default", async () => {
+    expect(await render(<Slider />)).toBe(
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm">',
+    );
+  });
+
+  it("size='sm' stamps data-size=sm and the sm field size", async () => {
+    expect(await render(<Slider size='sm' />)).toBe(
+      '<input data-slot="slider" type="range" data-size="sm" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-sm text-sm">',
+    );
+  });
+
+  it("size='lg' stamps data-size=lg and the lg field size", async () => {
+    expect(await render(<Slider size='lg' />)).toBe(
+      '<input data-slot="slider" type="range" data-size="lg" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-lg text-base">',
+    );
+  });
+
+  it("invalid stamps data-invalid beside aria-invalid", async () => {
+    expect(await render(<Slider invalid />)).toBe(
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-invalid="" aria-invalid="true">',
+    );
+  });
+
+  it("busy stamps data-busy beside aria-busy", async () => {
+    expect(await render(<Slider busy />)).toBe(
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-busy="" aria-busy="true">',
+    );
   });
 });

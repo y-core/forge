@@ -26,6 +26,7 @@ description: "What the ui/show showcase is for, how an app registers it, and the
 - §1b Routes Are Derived From One Base Path: the path table, the six pages cut by consumer prerequisite, and the theme page's separate owner
 - §1c The Catalog Declaration: what the section list owns, the page it names, and why it is not barrelled
 - §1d The Turnstile Page Demonstrates Forge's Own Surface: why it has its own page, the preset-only sitekey, and the one rule it deliberately breaks
+- §1e Every Band Is Built From One Grammar: the six band primitives, why a note owns its row, and why a page is all cards or none
 - §2 Coverage Contract: the anti-drift rule that keeps the catalog honest
 - §2a The Demo Manifest: one entry per published component, and the axes a demo owes
 - §2b Coverage Is Read From Rendered Markup: why the check renders the catalog rather than reading source
@@ -123,6 +124,33 @@ the response ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md)); naming it is the 
 demonstrator, and the page says so where it does it. The siteverify secret is an optional
 registration argument — without it the panel says it was not configured rather than claiming a
 verification that never happened.
+
+### 1e. Every Band Is Built From One Grammar
+
+**A demo composes the band primitives in `components.tsx`; it does not spell a band's layout in
+utilities of its own.** The showcase is forge's most-read worked example, so a page whose bands each
+invent their own heading weight, note size and column widths is a demonstration of the opposite of
+what the design corpus asks for. Six pieces, and a demo needs no seventh:
+
+| Piece            | The band it makes                                                            |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `CatalogSection` | the default — a heading over a wrapping row of specimens                     |
+| `CatalogStack`   | the same heading over a column, when the demo is one thing rather than a set |
+| `CatalogPanel`   | a card, carrying a description — the shape a whole page adopts or none does  |
+| `CatalogRow`     | the wrapping row itself, for a panel whose specimens sit side by side        |
+| `CatalogNote`    | a band's own line of prose                                                   |
+| `CatalogGroup`   | a titled column inside a band, for a demo read as two things side by side    |
+
+Two rules the primitives exist to hold:
+
+- **A note takes the band's width, and no line-length cap.** A band is a flex row, and a flex item is
+  measured at its own clamp — so a note written `w-full max-w-prose` is measured at the prose cap,
+  and the next specimen lands beside the sentence rather than under it. The cap is wrong on its own
+  terms too: a demo's note is a caption on the specimens beneath it, sized to the band it heads, not
+  a column of body text. `CatalogNote` is `w-full` and nothing else.
+- **A page is all cards or no cards.** `CatalogPanel` is a page-level choice, not a per-band one: the
+  HTMX and Turnstile pages are panels throughout, every other page is plain bands. A single card
+  among plain bands reads as an accident, because it is.
 
 ---
 

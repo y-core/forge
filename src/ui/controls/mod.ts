@@ -1,8 +1,9 @@
-export type { ButtonSize } from "../core/button";
 export { CheckboxGroup } from "./checkbox-group";
-export { createBoundControl } from "./create-bound-control";
+export { createBoundCompound, createBoundControl } from "./create-bound-control";
+export { FileInput } from "./file-input";
 export { Input } from "./input";
 export { NumberField } from "./number-field";
+export { OtpInput } from "./otp-input";
 export { RadioGroup } from "./radio-group";
 export { Select } from "./select";
 export { Slider } from "./slider";

@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { DARK_CLASS, THEME_STORAGE_KEY } from "../chrome/theme";
-import { mount, paintedHex } from "../client/browser-test-helper";
+import { mount, paintedToken, THEME_TOKEN_CSS } from "../client/browser-test-helper";
 import { CONTROLS_DEMO_SCOPE, CONTROLS_DEMO_STATE, controlsReadout } from "../contracts/controls-demo-contract";
 import { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY } from "../contracts/overlay-contract";
 import { TURNSTILE, TURNSTILE_SCRIPT_SRC } from "../contracts/turnstile-contract";
@@ -66,6 +66,8 @@ async function observeHtmxSettles(page: Page): Promise<void> {
 const icon = createIcon("/sprite.svg", {
   "icon-spinner": "0 0 24 24",
   "icon-chevron-down": "0 0 24 24",
+  "icon-chevron-left": "0 0 24 24",
+  "icon-chevron-right": "0 0 24 24",
   "icon-sun": "0 0 24 24",
   "icon-moon": "0 0 24 24",
   "icon-monitor": "0 0 24 24",
@@ -73,6 +75,7 @@ const icon = createIcon("/sprite.svg", {
   "icon-close": "0 0 24 24",
   "icon-panel-open": "0 0 24 24",
   "icon-panel-close": "0 0 24 24",
+  "icon-upload": "0 0 24 24",
 });
 
 // Read as painted colours, not as declaration text: a scheme declares each step once with
@@ -80,11 +83,6 @@ const icon = createIcon("/sprite.svg", {
 // same unresolved function in both modes and would measure nothing.
 /** The two tokens the theme cases read back, as the mode-resolved colour a reader actually sees. */
 const TOKENS = { light: { background: "#f9f9f9", ring: "#646464" }, dark: { background: "#111111", ring: "#b4b4b4" } } as const;
-
-/** A colour token as the `#rrggbb` the browser paints it. */
-function paintedToken(page: Page, property: string): Promise<string> {
-  return paintedHex(page, `var(${property})`);
-}
 
 // The harness runs no Tailwind build, so the utilities the markup names style nothing unless a case
 // supplies them; a measurement without these rules measures the browser's defaults.
@@ -110,7 +108,6 @@ const GEOMETRY_STYLE = `<style>
 </style>`;
 
 /** The token layer: the scale, then the mapping that points a semantic name at a step. */
-const TOKEN_CSS = ["./ui/assets/css/theme-neutral.css", "./ui/assets/css/theme-base.css"];
 
 /** forge's own rules — the ones no `class=` can express, and the only place dialog positioning lives. */
 const COMPONENT_CSS = "./ui/assets/css/forge-ui.css";
@@ -130,7 +127,7 @@ async function mountShowcase(page: Page, which: ShowcasePage, options: MountShow
   );
   const themed = options.themed === true;
   const prelude = options.geometry === true ? GEOMETRY_STYLE : "";
-  const css = [...(themed ? TOKEN_CSS : []), ...(options.components === true ? [COMPONENT_CSS] : [])];
+  const css = [...(themed ? THEME_TOKEN_CSS : []), ...(options.components === true ? [COMPONENT_CSS] : [])];
   await mount(page, prelude + html, css.length === 0 ? EXPOSE : { ...EXPOSE, css });
   await page.evaluate(() => window.forgeResume.resume());
   await processHtmx(page);
@@ -193,7 +190,7 @@ test.describe("primitives coexisting on one page", () => {
       if (!widget) return null;
       return {
         selected: [...widget.querySelectorAll("[data-slot~='tab']")].filter((el) => el.getAttribute("aria-selected") === "true").length,
-        visible: [...widget.querySelectorAll<HTMLElement>("[data-slot~='tabs-panel']")].filter((el) => !el.hidden).length,
+        visible: [...widget.querySelectorAll<HTMLElement>("[data-slot~='tabs-content']")].filter((el) => !el.hidden).length,
       };
     });
 
@@ -372,8 +369,10 @@ test.describe("the showcase's inline-validation demo", () => {
 const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
 // The demo forms carry no scope of the showcase's own: `<Turnstile>` stamps `data-scope="turnstile"`
 // on itself, so the widget is what resumes and the enclosing form is found from there.
-const TURNSTILE_SCOPE = "form:has([data-scope='turnstile'])";
-const TURNSTILE_FIELD = `${TURNSTILE_SCOPE} input[name='turnstile-email']`;
+// A CSS selector, not the scope name — `TURNSTILE_SCOPE` is the contract export, and reusing that
+// spelling here shadowed what it means.
+const TURNSTILE_FORM = "form:has([data-scope='turnstile'])";
+const TURNSTILE_FIELD = `${TURNSTILE_FORM} input[name='turnstile-email']`;
 /** The bands' focus-loaded fields, in the order the page renders them. */
 const TURNSTILE_FOCUS_FIELDS = ["turnstile-email", "turnstile-email-compact", "turnstile-email-flexible", "turnstile-email-resilient"];
 
@@ -479,7 +478,7 @@ test.describe("the showcase's Turnstile page", () => {
           .map((el) => (el.getAttribute("data-ref") === widgetRef ? "widget" : el.tagName === "BUTTON" ? "submit" : el.getAttribute("type")))
           .filter((name) => name === "widget" || name === "submit" || name === "email");
       },
-      { scope: TURNSTILE_SCOPE, widgetRef: TURNSTILE.widget },
+      { scope: TURNSTILE_FORM, widgetRef: TURNSTILE.widget },
     );
 
     expect(order).toEqual(["email", "widget", "submit"]);
@@ -598,15 +597,10 @@ test.describe("the component catalog's table of contents", () => {
       const link = document.activeElement;
       if (!(link instanceof HTMLElement)) return null;
       const classes = link.className.split(/\s+/);
-      return {
-        isTocLink: link.matches(selector),
-        focusVisible: link.matches(":focus-visible"),
-        suppressesOutline: classes.includes("outline-none"),
-        drawsRing: classes.includes("focus-visible:ring-2") && classes.includes("focus-visible:ring-ring"),
-      };
+      return { isTocLink: link.matches(selector), focusVisible: link.matches(":focus-visible"), drawsRing: classes.includes("focus-ring") };
     }, PAGES_LINK);
 
-    expect(focused).toEqual({ isTocLink: true, focusVisible: true, suppressesOutline: true, drawsRing: true });
+    expect(focused).toEqual({ isTocLink: true, focusVisible: true, drawsRing: true });
     expect(await paintedToken(page, "--ring")).toBe(TOKENS.light.ring);
   });
 

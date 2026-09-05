@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { createD1Client } from "../storage/db/client";
 import { sql } from "../storage/db/sql";
 import { createKVStore } from "../storage/kv/store";
+import { UnsatisfiableRangeError } from "../storage/r2/errors";
 import { nullLogger } from "./context";
 import { fakeAssetsFetcher, fakeD1, fakeKV, fakeR2 } from "./fakes";
 
@@ -191,11 +192,58 @@ describe("fakeR2", () => {
     expect(await obj?.text()).toBe("ghij");
   });
 
-  it("clamps a range that overruns the object and never throws", async () => {
+  it("clamps a range that overruns the object, as R2 does", async () => {
     const bucket = fakeR2({ file: "abcdefghij" });
     expect(await (await bucket.get("file", { range: { offset: 8, length: 100 } }))?.text()).toBe("ij");
     expect(await (await bucket.get("file", { range: { suffix: 100 } }))?.text()).toBe("abcdefghij");
-    expect(await (await bucket.get("file", { range: { offset: 50 } }))?.text()).toBe("");
+  });
+
+  it("refuses a range that lies wholly outside the object, as R2 does", async () => {
+    const bucket = fakeR2({ file: "abcdefghij" });
+    await expect(bucket.get("file", { range: { offset: 50 } })).rejects.toBeInstanceOf(UnsatisfiableRangeError);
+  });
+
+  it("honours a delimiter, collapsing keys into de-duplicated prefixes", async () => {
+    const bucket = fakeR2({ "a/1.txt": "1", "a/2.txt": "2", "b/1.txt": "3", "top.txt": "4" });
+    const res = await bucket.list({ delimiter: "/" });
+    expect(res.objects.map((o) => o.key)).toEqual(["top.txt"]);
+    expect(res.delimitedPrefixes).toEqual(["a/", "b/"]);
+  });
+
+  it("honours a delimiter under a prefix", async () => {
+    const bucket = fakeR2({ "a/x/1.txt": "1", "a/y/1.txt": "2", "a/top.txt": "3" });
+    const res = await bucket.list({ prefix: "a/", delimiter: "/" });
+    expect(res.objects.map((o) => o.key)).toEqual(["a/top.txt"]);
+    expect(res.delimitedPrefixes).toEqual(["a/x/", "a/y/"]);
+  });
+
+  it("drops metadata when include is empty", async () => {
+    const bucket = fakeR2();
+    await bucket.put("a.txt", "x", { httpMetadata: { contentType: "text/plain" }, customMetadata: { owner: "jane" } });
+    const withMeta = await bucket.list({});
+    expect(withMeta.objects[0]?.httpMetadata?.contentType).toBe("text/plain");
+    const without = await bucket.list({ include: [] });
+    expect(without.objects[0]?.httpMetadata).toBeUndefined();
+    expect(without.objects[0]?.customMetadata).toBeUndefined();
+  });
+
+  it("round-trips an ArrayBufferView and a ReadableStream byte-exactly", async () => {
+    const bucket = fakeR2();
+    const view = new Uint8Array([0, 159, 146, 150]);
+    await bucket.put("view.bin", view);
+    expect(new Uint8Array(await (await bucket.get("view.bin"))!.arrayBuffer())).toEqual(view);
+
+    await bucket.put(
+      "stream.bin",
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2]));
+          controller.enqueue(new Uint8Array([3]));
+          controller.close();
+        },
+      }),
+    );
+    expect(new Uint8Array(await (await bucket.get("stream.bin"))!.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
   });
 
   it("reports the full object size on a ranged read", async () => {
@@ -326,5 +374,49 @@ describe("fakeAssetsFetcher", () => {
     const res = await assets.fetch(new Request("http://test/missing.js"));
     expect(res.status).toBe(404);
     expect(await res.text()).toBe("Not Found");
+  });
+});
+
+describe("fakeKV — platform refusals", () => {
+  it("refuses an expirationTtl below the 60-second floor", async () => {
+    const kv = fakeKV();
+    await expect(kv.put("k", "v", { expirationTtl: 59 })).rejects.toThrow("KV put: expirationTtl must be at least 60 seconds, received 59");
+  });
+
+  it("accepts an expirationTtl of exactly 60", async () => {
+    const kv = fakeKV();
+    await kv.put("k", "v", { expirationTtl: 60 });
+    expect(await kv.get("k", { type: "text" })).toBe("v");
+  });
+
+  it("round-trips an ArrayBufferView and a ReadableStream byte-exactly", async () => {
+    const kv = fakeKV();
+    const view = new Uint8Array([0, 159, 146, 150]);
+    await kv.put("view", view);
+    expect(new Uint8Array((await kv.get("view", { type: "arrayBuffer" })) as ArrayBuffer)).toEqual(view);
+
+    await kv.put(
+      "stream",
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2]));
+          controller.enqueue(new Uint8Array([3]));
+          controller.close();
+        },
+      }),
+    );
+    expect(new Uint8Array((await kv.get("stream", { type: "arrayBuffer" })) as ArrayBuffer)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+});
+
+describe("fakeD1 — platform refusals", () => {
+  it("rejects an unknown column on first()", async () => {
+    const db = fakeD1(() => [{ id: 1 }]);
+    await expect(db.prepare("select id from t").first("nope")).rejects.toThrow("D1_ERROR: no such column: nope");
+  });
+
+  it("returns the value for a column the row carries", async () => {
+    const db = fakeD1(() => [{ id: 1 }]);
+    expect(await db.prepare("select id from t").first("id")).toBe(1);
   });
 });

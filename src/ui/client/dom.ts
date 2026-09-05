@@ -77,8 +77,11 @@ export function queryAcross<E extends Element>(root: Element | Document | Docume
   for (let i = 0; i < trees.length; i += 1) {
     const tree = trees[i];
     if (!tree) continue;
+    // Matching is left to one native query rather than an `el.matches()` per element: the `*` walk
+    // survives only because no selector can ask for "has a shadow root", and its body is now a
+    // single property read. `paintControl` runs this per field paint, i.e. per pointermove frame.
+    for (const el of tree.querySelectorAll<E>(selector)) found.push(el);
     for (const el of tree.querySelectorAll<HTMLElement>("*")) {
-      if (el.matches(selector)) found.push(el as unknown as E);
       if (el.shadowRoot) trees.push(el.shadowRoot);
     }
   }

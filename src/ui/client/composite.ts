@@ -158,17 +158,23 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
     // controllers move focus and the inner one's move is overwritten by the outer one's.
     if (keyEvent.defaultPrevented) return;
     const { key } = keyEvent;
-    const items = listItems();
-    if (items.length === 0) return;
+    const modified = keyEvent.ctrlKey || keyEvent.metaKey || keyEvent.altKey;
 
-    if (typeahead && key.length === 1 && key !== " " && !keyEvent.ctrlKey && !keyEvent.metaKey && !keyEvent.altKey) {
+    // `listItems()` is a `querySelectorAll` plus a `checkVisibility()` per hit, each forcing style
+    // resolution — so it is deferred past every gate that can reject a key without seeing the ring.
+    if (typeahead && key.length === 1 && key !== " " && !modified) {
       if (isNativeInput(eventTarget(keyEvent))) return;
-      if (runTypeahead(items, key)) keyEvent.preventDefault();
+      const typeaheadItems = listItems();
+      if (typeaheadItems.length === 0) return;
+      if (runTypeahead(typeaheadItems, key)) keyEvent.preventDefault();
       return;
     }
 
     if (!COMPOSITE_KEYS.has(key)) return;
-    if (keyEvent.ctrlKey || keyEvent.metaKey || keyEvent.altKey) return;
+    if (modified) return;
+
+    const items = listItems();
+    if (items.length === 0) return;
 
     // The `&&` chain keeps `getComputedStyle`'s forced style recalculation off every key whose
     // meaning direction cannot change.

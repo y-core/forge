@@ -158,9 +158,9 @@ describe("formToObject", () => {
       fakeFormData([
         ["_csrf", "tok"],
         ["name", "Jane"],
-        ["__surname", ""],
+        ["__hp_c7", ""],
       ]),
-      { drop: new Set(["_csrf", "__surname"]) },
+      { drop: new Set(["_csrf", "__hp_c7"]) },
     );
     expect(Object.keys(body)).toEqual(["name"]);
   });

@@ -64,3 +64,37 @@ describe("cva conflict merging", () => {
     expect(styles({ class: "text-sm" })).toBe("rounded-sm p-8 text-sm");
   });
 });
+
+describe("cva — compoundVariants", () => {
+  const styles = cva({
+    base: "base",
+    variants: { tone: { neutral: "t-neutral", primary: "t-primary" }, appearance: { solid: "a-solid", outline: "a-outline" } },
+    defaultVariants: { tone: "neutral", appearance: "solid" },
+    compoundVariants: [
+      { tone: "neutral", appearance: "solid", class: "c-neutral-solid" },
+      { tone: ["neutral", "primary"], appearance: "outline", class: "c-any-outline" },
+      { tone: "primary", class: "c-primary" },
+    ],
+  });
+
+  it("applies a compound only when every named axis matches, defaults included", () => {
+    expect(styles()).toBe("base t-neutral a-solid c-neutral-solid");
+    expect(styles({ tone: "primary" })).toBe("base t-primary a-solid c-primary");
+  });
+
+  it("matches a listed axis value against any member of the list", () => {
+    expect(styles({ appearance: "outline" })).toBe("base t-neutral a-outline c-any-outline");
+    expect(styles({ tone: "primary", appearance: "outline" })).toBe("base t-primary a-outline c-any-outline c-primary");
+  });
+
+  it("orders base, single variants, compounds in array order, then the caller class — so each later part can override", () => {
+    const merged = cva({
+      base: "px-2",
+      variants: { size: { sm: "px-3" } },
+      defaultVariants: { size: "sm" },
+      compoundVariants: [{ size: "sm", class: "px-4" }],
+    });
+    expect(merged()).toBe("px-4");
+    expect(merged({ class: "px-5" })).toBe("px-5");
+  });
+});

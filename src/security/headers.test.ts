@@ -429,3 +429,39 @@ describe("createSecurityHeaders — pending-header precedence", () => {
     expect(res.headers.get("strict-transport-security")).toBe("max-age=63072000; includeSubDomains; preload");
   });
 });
+
+describe("createSecurityHeaders — precomputed headers", () => {
+  it("differs between two requests only in the nonce", async () => {
+    const middleware = createSecurityHeaders();
+    const first = await headersFor(middleware);
+    const second = await headersFor(middleware);
+
+    const firstCsp = first.get("content-security-policy") ?? "";
+    const secondCsp = second.get("content-security-policy") ?? "";
+    const nonceOf = (csp: string) => /'nonce-([^']+)'/.exec(csp)?.[1] ?? "";
+    expect(nonceOf(firstCsp)).not.toBe("");
+    expect(nonceOf(firstCsp)).not.toBe(nonceOf(secondCsp));
+    expect(firstCsp.replaceAll(nonceOf(firstCsp), "N")).toBe(secondCsp.replaceAll(nonceOf(secondCsp), "N"));
+
+    for (const name of [
+      "strict-transport-security",
+      "referrer-policy",
+      "x-content-type-options",
+      "permissions-policy",
+      "x-frame-options",
+      "cross-origin-opener-policy",
+      "cross-origin-resource-policy",
+    ]) {
+      expect(first.get(name)).toBe(second.get(name));
+    }
+  });
+
+  it("refuses a source containing NUL, so the nonce placeholder is unreachable", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'self'", "https://cdn.example\u0000"] })).toThrow(tokenMessage("scriptSrc"));
+  });
+
+  it("renders a CSP containing no NUL", async () => {
+    const headers = await headersFor(createSecurityHeaders());
+    expect(headers.get("content-security-policy")?.includes("\u0000")).toBe(false);
+  });
+});

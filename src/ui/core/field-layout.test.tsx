@@ -32,19 +32,19 @@ describe("Field.Set", () => {
 describe("Field.Legend", () => {
   it("renders a legend element with data-slot='field-legend' and default variant", async () => {
     expect(String(await renderToString(<FormField.Legend>Legend text</FormField.Legend>))).toBe(
-      '<legend data-slot="field-legend" data-variant="legend" class="mb-3 font-medium text-base text-foreground">Legend text</legend>',
+      '<legend data-slot="field-legend" data-as="legend" class="mb-3 font-medium text-base text-foreground">Legend text</legend>',
     );
   });
 
-  it("variant='label' sets data-variant='label' and uses text-sm", async () => {
-    expect(String(await renderToString(<FormField.Legend variant='label'>Label text</FormField.Legend>))).toBe(
-      '<legend data-slot="field-legend" data-variant="label" class="mb-3 font-medium text-sm text-foreground">Label text</legend>',
+  it("as='label' sets data-as='label' and uses text-sm", async () => {
+    expect(String(await renderToString(<FormField.Legend as='label'>Label text</FormField.Legend>))).toBe(
+      '<legend data-slot="field-legend" data-as="label" class="mb-3 font-medium text-sm text-foreground">Label text</legend>',
     );
   });
 
   it("renders children inside the legend", async () => {
     expect(String(await renderToString(<FormField.Legend>My legend</FormField.Legend>))).toBe(
-      '<legend data-slot="field-legend" data-variant="legend" class="mb-3 font-medium text-base text-foreground">My legend</legend>',
+      '<legend data-slot="field-legend" data-as="legend" class="mb-3 font-medium text-base text-foreground">My legend</legend>',
     );
   });
 });
@@ -119,6 +119,20 @@ describe("Field.Separator", () => {
   it("includes the separator content span with child text", async () => {
     expect(String(await renderToString(<FormField.Separator>and</FormField.Separator>))).toBe(
       '<div data-content="true" data-slot="field-separator" class="relative h-5 text-sm"><hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border absolute inset-0 top-1/2"><span data-slot="field-separator-content" class="relative mx-auto block w-fit bg-background px-2 text-muted-foreground">and</span></div>',
+    );
+  });
+});
+
+describe("Field.Legend — appearance", () => {
+  it("stamps data-appearance=legend by default", async () => {
+    expect(String(await renderToString(<FormField.Legend>Legend text</FormField.Legend>))).toBe(
+      '<legend data-slot="field-legend" data-as="legend" class="mb-3 font-medium text-base text-foreground">Legend text</legend>',
+    );
+  });
+
+  it("as='label' stamps data-appearance=label and the label type size", async () => {
+    expect(String(await renderToString(<FormField.Legend as='label'>Label text</FormField.Legend>))).toBe(
+      '<legend data-slot="field-legend" data-as="label" class="mb-3 font-medium text-sm text-foreground">Label text</legend>',
     );
   });
 });

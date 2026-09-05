@@ -33,8 +33,10 @@ const BOUND_FIELD: Record<string, keyof ControlsDemoState> = {
   "controls-toggle-group": "align",
   "controls-toggle": "bold",
   "controls-number-field": "count",
+  "controls-otp-input": "code",
   "controls-radio-group": "plan",
   "controls-checkbox-group": "toppings",
+  "controls-file-input": "avatar",
 };
 
 // Two per control, in render order: the default instance, then the second one in another state.
@@ -54,8 +56,11 @@ const READOUT_ORDER: (keyof ControlsDemoState)[] = [
   "weight",
   "bold",
   "count",
+  "code",
+  "pin",
   "plan",
   "toppings",
+  "avatar",
 ];
 
 const READOUT_CLASS = "text-sm text-muted-foreground tabular-nums";
@@ -65,7 +70,7 @@ describe("ControlsDemos", () => {
   it("stamps exactly one resumable scope carrying the whole band state", () => {
     const state = JSON.stringify(CONTROLS_DEMO_STATE).replaceAll('"', "&quot;");
     expect(tags(html, new RegExp(`<div data-scope="${CONTROLS_DEMO_SCOPE}"[^>]*>`, "g"))).toEqual([
-      `<div data-scope="show-controls" data-state="${state}" class="space-y-10">`,
+      `<div data-scope="show-controls" data-island-state="${state}" class="space-y-10">`,
     ]);
   });
 
@@ -79,7 +84,7 @@ describe("ControlsDemos", () => {
     );
 
     expect(unbound).toEqual([]);
-    expect(Object.keys(BOUND_FIELD)).toHaveLength(10);
+    expect(Object.keys(BOUND_FIELD)).toHaveLength(12);
   });
 
   it("paints the text and slider controls from the shared state", () => {
@@ -130,7 +135,7 @@ describe("ControlsDemos", () => {
 
   it("points every standalone label at the control it names", () => {
     expect(tags(html, /<label data-slot="label"[^>]*>/g)).toEqual(
-      ["native-name", "mirror", "text", "email", "unit", "precision", "level", "zoom", "notes", "summary", "count"].map(
+      ["native-name", "mirror", "text", "email", "unit", "precision", "level", "zoom", "notes", "summary", "count", "code", "pin", "avatar"].map(
         (field) => `<label data-slot="label" for="${fieldId(field)}" class="${LABEL_CLASS}">`,
       ),
     );
@@ -139,8 +144,8 @@ describe("ControlsDemos", () => {
   it("names the switch from the label wrapping it, with no separate one", () => {
     const switchBody = body("controls-switch");
     expect(tags(switchBody, /<label[^>]*>/g)).toEqual([
-      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" class="inline-flex items-center gap-2">',
-      '<label data-slot="switch" data-orientation="horizontal" data-label-position="before" class="inline-flex items-center gap-2 flex-row-reverse">',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" data-size="md" class="state-busy inline-flex items-center gap-2 state-invalid">',
+      '<label data-slot="switch" data-orientation="horizontal" data-label-position="before" data-size="md" class="state-busy inline-flex items-center gap-2 state-invalid flex-row-reverse">',
     ]);
     expect(switchBody.indexOf('data-field="enabled"')).toBeGreaterThan(switchBody.indexOf("<label"));
     expect(switchBody.indexOf('data-field="enabled"')).toBeLessThan(switchBody.indexOf("</label>"));
@@ -177,8 +182,10 @@ describe("ControlsDemos", () => {
       "controls-toggle-group",
       "controls-toggle",
       "controls-number-field",
+      "controls-otp-input",
       "controls-radio-group",
       "controls-checkbox-group",
+      "controls-file-input",
     ]);
     expect(bound.filter((section) => !bodies.has(section.id)).map((section) => section.id)).toEqual([]);
   });

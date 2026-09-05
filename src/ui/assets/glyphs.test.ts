@@ -1,6 +1,38 @@
 import { describe, expect, it, spyOn } from "bun:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-import { loadSpriteGlyphs, parseSpriteGlyphs } from "./glyphs";
+import { FORGE_UI_ICON_NAMES, FORGE_UI_SPRITE_FILES, loadSpriteGlyphs, parseSpriteGlyphs } from "./glyphs";
+
+describe("FORGE_UI_ICON_NAMES", () => {
+  it("is every name in every group, in declaration order", () => {
+    expect(FORGE_UI_ICON_NAMES).toEqual([
+      "spinner",
+      "chevron-down",
+      "chevron-left",
+      "chevron-right",
+      "hamburger",
+      "close",
+      "panel-open",
+      "panel-close",
+      "upload",
+      "sun",
+      "moon",
+      "monitor",
+    ]);
+  });
+
+  it("names exactly the groups the sprite files are filed under", () => {
+    expect(Object.keys(FORGE_UI_SPRITE_FILES)).toEqual(["core", "theme"]);
+  });
+
+  // The whole point of declaring them here: `sprites.ts` reaches `node:path` at module scope, and
+  // `esbuild --platform=neutral` resolves before it tree-shakes, so a consumer bundling only the
+  // names could not build. A node import creeping back into this module reintroduces that.
+  it("is reachable from a module that imports nothing from node", () => {
+    expect(/from "node:/.test(readFileSync(fileURLToPath(new URL("./glyphs.ts", import.meta.url)), "utf-8"))).toBe(false);
+  });
+});
 
 describe("parseSpriteGlyphs()", () => {
   it("extracts key, viewBox, and markup with default icon- prefix", () => {

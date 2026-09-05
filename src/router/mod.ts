@@ -22,7 +22,7 @@ export type {
   RouteDefs,
   RouteMap,
 } from "@remix-run/fetch-router/routes";
-export { del, form, get, head, options, patch, post, put, Route, resource, resources, route } from "@remix-run/fetch-router/routes";
+export { del, form, get, options, patch, post, put, Route, resource, resources, route } from "@remix-run/fetch-router/routes";
 export type { RoutePatternCapture, RoutePatternJSON } from "@remix-run/route-pattern";
 export { getRoutePatternCaptures } from "@remix-run/route-pattern";
 export type { CreateHrefArgs } from "@remix-run/route-pattern/href";

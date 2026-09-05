@@ -49,6 +49,11 @@ function stripValueSlash(utility: string): string {
   return cut === -1 ? utility : utility.slice(0, cut);
 }
 
+/** The utility part of a class token: variants, `!` and any `/value` removed. @internal */
+export function utilityOf(token: string): string {
+  return stripValueSlash(splitModifiers(token).utility);
+}
+
 interface TokenGroup {
   readonly scope: string;
   readonly group: string;
@@ -66,9 +71,11 @@ function resolveToken(token: string): TokenGroup | undefined {
   return { scope: `${bang}${[...prefix].sort().join(":")}:`, group };
 }
 
-/** Joins class-name fragments into one string, dropping falsy entries and resolving Tailwind conflicts in favour of the later argument. @public */
-export function cn(...classes: (string | false | null | undefined)[]): string {
-  const tokens = classes.filter(Boolean).join(" ").split(/\s+/).filter(Boolean);
+const CACHE_LIMIT = 512;
+const cache = new Map<string, string>();
+
+function resolve(joined: string): string {
+  const tokens = joined.split(/\s+/).filter(Boolean);
 
   // oxlint-disable-next-line unicorn/no-new-array -- a pre-sized dense buffer; Array.from would allocate a second time on this hot path
   const keep: boolean[] = new Array(tokens.length).fill(true);
@@ -96,7 +103,15 @@ export function cn(...classes: (string | false | null | undefined)[]): string {
   return tokens.filter((_, i) => keep[i]).join(" ");
 }
 
-/** Narrows a JSX `class` prop (which may be a non-string) to `string | undefined`. @public */
-export function asClass(cls: unknown): string | undefined {
-  return typeof cls === "string" ? cls : undefined;
+/** Joins class-name fragments into one string, dropping falsy entries and resolving Tailwind conflicts in favour of the later argument. @public */
+export function cn(...classes: (string | false | null | undefined)[]): string {
+  const joined = classes.filter(Boolean).join(" ");
+  const hit = cache.get(joined);
+  if (hit !== undefined) return hit;
+
+  const resolved = resolve(joined);
+  // Clear-on-full rather than LRU: eviction stays O(1) amortised with no ordering structure to keep.
+  if (cache.size >= CACHE_LIMIT) cache.clear();
+  cache.set(joined, resolved);
+  return resolved;
 }

@@ -7,549 +7,548 @@ export type JSXNode = JSXElement | SafeHtml | string | number | boolean | null |
 // oxlint-disable-next-line typescript/no-explicit-any -- JSX runtime must accept any component signature at the type-erasure level
 export type ComponentFn = (...args: any[]) => unknown | Promise<unknown>;
 
-/** An element produced by the forge JSX runtime. Discriminated by `$jsx: true`. @public */
+// Declared here and given a value in element.ts: a symbol brand cannot be forged by JSON.parse.
+declare const kJsxElement: unique symbol;
+
+/** An element produced by the forge JSX runtime. Branded with a module-private symbol. @public */
 export interface JSXElement {
   type: string | ComponentFn;
   props: Record<string, unknown>;
-  key?: unknown;
-  $jsx: true;
+  key?: unknown | undefined;
+  readonly [kJsxElement]: true;
 }
 
 /** Function component: receives props, returns a JSX element (or null for no output). @public */
-export type FC<P = Record<string, unknown>> = (props: P & { children?: JSXNode }) => JSXElement | null;
+export type FC<P = Record<string, unknown>> = (props: P & { children?: JSXNode | undefined }) => JSXElement | null;
 
 /** @public */
-export type PropsWithChildren<P = Record<string, unknown>> = P & { children?: JSXNode };
+export type PropsWithChildren<P = Record<string, unknown>> = P & { children?: JSXNode | undefined };
 
 interface AriaAttributes {
-  role?: string;
-  "aria-label"?: string;
-  "aria-labelledby"?: string;
-  "aria-describedby"?: string;
-  "aria-expanded"?: boolean | "true" | "false";
-  "aria-controls"?: string;
-  "aria-haspopup"?: boolean | "true" | "false" | "menu" | "listbox" | "tree" | "grid" | "dialog";
-  "aria-hidden"?: boolean | "true" | "false";
-  "aria-live"?: "off" | "assertive" | "polite";
-  "aria-atomic"?: boolean | "true" | "false";
-  "aria-required"?: boolean | "true" | "false";
-  "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling";
-  "aria-selected"?: boolean | "true" | "false";
-  "aria-checked"?: boolean | "true" | "false" | "mixed";
-  "aria-disabled"?: boolean | "true" | "false";
-  "aria-current"?: boolean | "page" | "step" | "location" | "date" | "time";
-  "aria-busy"?: boolean | "true" | "false";
-  "aria-orientation"?: "horizontal" | "vertical";
-  "aria-placeholder"?: string;
-  "aria-autocomplete"?: "none" | "list" | "inline" | "both";
-  "aria-multiline"?: boolean | "true" | "false";
-  "aria-valuemin"?: number;
-  "aria-valuemax"?: number;
-  "aria-valuenow"?: number;
-  "aria-valuetext"?: string;
-  "aria-level"?: number;
-  "aria-posinset"?: number;
-  "aria-setsize"?: number;
-  "aria-rowcount"?: number;
-  "aria-rowindex"?: number;
-  "aria-rowspan"?: number;
-  "aria-colcount"?: number;
-  "aria-colindex"?: number;
-  "aria-colspan"?: number;
+  role?: string | undefined;
+  "aria-label"?: string | undefined;
+  "aria-labelledby"?: string | undefined;
+  "aria-describedby"?: string | undefined;
+  "aria-expanded"?: boolean | "true" | "false" | undefined;
+  "aria-controls"?: string | undefined;
+  "aria-haspopup"?: boolean | "true" | "false" | "menu" | "listbox" | "tree" | "grid" | "dialog" | undefined;
+  "aria-hidden"?: boolean | "true" | "false" | undefined;
+  "aria-live"?: "off" | "assertive" | "polite" | undefined;
+  "aria-atomic"?: boolean | "true" | "false" | undefined;
+  "aria-required"?: boolean | "true" | "false" | undefined;
+  "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling" | undefined;
+  "aria-selected"?: boolean | "true" | "false" | undefined;
+  "aria-checked"?: boolean | "true" | "false" | "mixed" | undefined;
+  "aria-disabled"?: boolean | "true" | "false" | undefined;
+  "aria-current"?: boolean | "page" | "step" | "location" | "date" | "time" | undefined;
+  "aria-busy"?: boolean | "true" | "false" | undefined;
+  "aria-orientation"?: "horizontal" | "vertical" | undefined;
+  "aria-placeholder"?: string | undefined;
+  "aria-autocomplete"?: "none" | "list" | "inline" | "both" | undefined;
+  "aria-multiline"?: boolean | "true" | "false" | undefined;
+  "aria-valuemin"?: number | undefined;
+  "aria-valuemax"?: number | undefined;
+  "aria-valuenow"?: number | undefined;
+  "aria-valuetext"?: string | undefined;
+  "aria-level"?: number | undefined;
+  "aria-posinset"?: number | undefined;
+  "aria-setsize"?: number | undefined;
+  "aria-rowcount"?: number | undefined;
+  "aria-rowindex"?: number | undefined;
+  "aria-rowspan"?: number | undefined;
+  "aria-colcount"?: number | undefined;
+  "aria-colindex"?: number | undefined;
+  "aria-colspan"?: number | undefined;
 }
 
 interface HtmxAttributes {
-  "hx-get"?: string;
-  "hx-post"?: string;
-  "hx-put"?: string;
-  "hx-delete"?: string;
-  "hx-patch"?: string;
-  "hx-trigger"?: string;
-  "hx-target"?: string;
-  "hx-swap"?: string;
-  "hx-push-url"?: string;
-  "hx-select"?: string;
-  "hx-select-oob"?: string;
-  "hx-include"?: string;
-  "hx-encoding"?: string;
-  "hx-params"?: string;
-  "hx-ext"?: string;
-  "hx-confirm"?: string;
-  "hx-boost"?: string;
-  "hx-headers"?: string;
-  "hx-vals"?: string;
-  "hx-indicator"?: string;
-  "hx-disabled-elt"?: string;
-  "hx-swap-oob"?: string;
-  "hx-replace-url"?: string;
-  "hx-preserve"?: string;
-  "hx-request"?: string;
+  "hx-get"?: string | undefined;
+  "hx-post"?: string | undefined;
+  "hx-put"?: string | undefined;
+  "hx-delete"?: string | undefined;
+  "hx-patch"?: string | undefined;
+  "hx-trigger"?: string | undefined;
+  "hx-target"?: string | undefined;
+  "hx-swap"?: string | undefined;
+  "hx-push-url"?: string | undefined;
+  "hx-select"?: string | undefined;
+  "hx-select-oob"?: string | undefined;
+  "hx-include"?: string | undefined;
+  "hx-encoding"?: string | undefined;
+  "hx-params"?: string | undefined;
+  "hx-ext"?: string | undefined;
+  "hx-confirm"?: string | undefined;
+  "hx-boost"?: string | undefined;
+  "hx-headers"?: string | undefined;
+  "hx-vals"?: string | undefined;
+  "hx-indicator"?: string | undefined;
+  "hx-disabled-elt"?: string | undefined;
+  "hx-swap-oob"?: string | undefined;
+  "hx-replace-url"?: string | undefined;
+  "hx-preserve"?: string | undefined;
+  "hx-request"?: string | undefined;
 }
 
 /** Attributes shared by all HTML elements. @public */
 export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
-  id?: string;
-  class?: string;
-  title?: string;
-  lang?: string;
-  dir?: "ltr" | "rtl" | "auto";
-  hidden?: boolean;
-  tabindex?: number;
-  nonce?: string;
-  slot?: string;
-  translate?: "yes" | "no";
-  spellcheck?: boolean;
-  contenteditable?: boolean | "true" | "false" | "plaintext-only";
-  draggable?: boolean | "true" | "false";
-  popover?: "" | "auto" | "manual" | "hint";
-  accesskey?: string;
-  autocapitalize?: "none" | "off" | "on" | "sentences" | "words" | "characters";
-  inputmode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
-  enterkeyhint?: "enter" | "done" | "go" | "next" | "previous" | "search" | "send";
-  children?: JSXNode;
-  key?: unknown;
+  id?: string | undefined;
+  class?: string | undefined;
+  title?: string | undefined;
+  lang?: string | undefined;
+  dir?: "ltr" | "rtl" | "auto" | undefined;
+  hidden?: boolean | undefined;
+  tabindex?: number | undefined;
+  nonce?: string | undefined;
+  slot?: string | undefined;
+  translate?: "yes" | "no" | undefined;
+  spellcheck?: boolean | undefined;
+  contenteditable?: boolean | "true" | "false" | "plaintext-only" | undefined;
+  draggable?: boolean | "true" | "false" | undefined;
+  popover?: "" | "auto" | "manual" | "hint" | undefined;
+  accesskey?: string | undefined;
+  autocapitalize?: "none" | "off" | "on" | "sentences" | "words" | "characters" | undefined;
+  inputmode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url" | undefined;
+  enterkeyhint?: "enter" | "done" | "go" | "next" | "previous" | "search" | "send" | undefined;
+  children?: JSXNode | undefined;
+  key?: unknown | undefined;
   [key: `data-${string}`]: unknown;
 }
 
 interface AnchorAttributes extends HTMLAttributes {
-  href?: string;
-  target?: "_blank" | "_self" | "_parent" | "_top" | (string & {});
-  rel?: string;
-  download?: string | boolean;
-  hreflang?: string;
-  ping?: string;
-  referrerpolicy?: ReferrerPolicy;
-  type?: string;
+  href?: string | undefined;
+  target?: "_blank" | "_self" | "_parent" | "_top" | (string & {}) | undefined;
+  rel?: string | undefined;
+  download?: string | boolean | undefined;
+  hreflang?: string | undefined;
+  ping?: string | undefined;
+  referrerpolicy?: ReferrerPolicy | undefined;
+  type?: string | undefined;
 }
 
 interface ButtonAttributes extends HTMLAttributes {
-  type?: "button" | "submit" | "reset";
-  disabled?: boolean;
-  name?: string;
-  value?: string | number;
-  form?: string;
-  formaction?: string;
-  formmethod?: "get" | "post";
-  formnovalidate?: boolean;
-  formtarget?: string;
-  autofocus?: boolean;
-  popovertarget?: string;
-  popovertargetaction?: "hide" | "show" | "toggle";
+  type?: "button" | "submit" | "reset" | undefined;
+  disabled?: boolean | undefined;
+  name?: string | undefined;
+  value?: string | number | undefined;
+  form?: string | undefined;
+  formaction?: string | undefined;
+  formmethod?: "get" | "post" | undefined;
+  formnovalidate?: boolean | undefined;
+  formtarget?: string | undefined;
+  autofocus?: boolean | undefined;
+  popovertarget?: string | undefined;
+  popovertargetaction?: "hide" | "show" | "toggle" | undefined;
   /** Invoker command activated on the `commandfor` target when the button is pressed. */
-  command?: string;
+  command?: string | undefined;
   /** The id of the element this button's `command` acts on. */
-  commandfor?: string;
+  commandfor?: string | undefined;
 }
 
 interface InputAttributes extends HTMLAttributes {
-  type?: string;
-  name?: string;
-  value?: string | number | readonly string[];
-  checked?: boolean;
-  disabled?: boolean;
-  required?: boolean;
-  readonly?: boolean;
-  placeholder?: string;
-  min?: string | number;
-  max?: string | number;
-  step?: string | number;
-  minlength?: number;
-  maxlength?: number;
-  pattern?: string;
-  multiple?: boolean;
-  accept?: string;
-  autocomplete?: string;
-  autofocus?: boolean;
-  form?: string;
-  list?: string;
-  size?: number;
-  width?: number | string;
-  height?: number | string;
-  src?: string;
-  alt?: string;
-  capture?: "user" | "environment";
+  type?: string | undefined;
+  name?: string | undefined;
+  value?: string | number | readonly string[] | undefined;
+  checked?: boolean | undefined;
+  disabled?: boolean | undefined;
+  required?: boolean | undefined;
+  readonly?: boolean | undefined;
+  placeholder?: string | undefined;
+  min?: string | number | undefined;
+  max?: string | number | undefined;
+  step?: string | number | undefined;
+  minlength?: number | undefined;
+  maxlength?: number | undefined;
+  pattern?: string | undefined;
+  multiple?: boolean | undefined;
+  accept?: string | undefined;
+  autocomplete?: string | undefined;
+  autofocus?: boolean | undefined;
+  form?: string | undefined;
+  list?: string | undefined;
+  size?: number | undefined;
+  width?: number | string | undefined;
+  height?: number | string | undefined;
+  src?: string | undefined;
+  alt?: string | undefined;
+  capture?: "user" | "environment" | undefined;
 }
 
 interface TextareaAttributes extends HTMLAttributes {
-  name?: string;
-  value?: string;
-  disabled?: boolean;
-  required?: boolean;
-  readonly?: boolean;
-  placeholder?: string;
-  rows?: number;
-  cols?: number;
-  minlength?: number;
-  maxlength?: number;
-  autocomplete?: string;
-  autofocus?: boolean;
-  form?: string;
-  wrap?: "hard" | "soft" | "off";
+  name?: string | undefined;
+  value?: string | undefined;
+  disabled?: boolean | undefined;
+  required?: boolean | undefined;
+  readonly?: boolean | undefined;
+  placeholder?: string | undefined;
+  rows?: number | undefined;
+  cols?: number | undefined;
+  minlength?: number | undefined;
+  maxlength?: number | undefined;
+  autocomplete?: string | undefined;
+  autofocus?: boolean | undefined;
+  form?: string | undefined;
+  wrap?: "hard" | "soft" | "off" | undefined;
 }
 
 interface SelectAttributes extends HTMLAttributes {
-  name?: string;
-  value?: string | string[];
-  disabled?: boolean;
-  required?: boolean;
-  multiple?: boolean;
-  size?: number;
-  autocomplete?: string;
-  autofocus?: boolean;
-  form?: string;
+  name?: string | undefined;
+  value?: string | string[] | undefined;
+  disabled?: boolean | undefined;
+  required?: boolean | undefined;
+  multiple?: boolean | undefined;
+  size?: number | undefined;
+  autocomplete?: string | undefined;
+  autofocus?: boolean | undefined;
+  form?: string | undefined;
 }
 
 interface OptionAttributes extends HTMLAttributes {
-  value?: string;
-  disabled?: boolean;
-  selected?: boolean;
-  label?: string;
+  value?: string | undefined;
+  disabled?: boolean | undefined;
+  selected?: boolean | undefined;
+  label?: string | undefined;
 }
 
 interface OptgroupAttributes extends HTMLAttributes {
-  label?: string;
-  disabled?: boolean;
+  label?: string | undefined;
+  disabled?: boolean | undefined;
 }
 
 interface FormAttributes extends HTMLAttributes {
-  action?: string;
-  method?: "get" | "post";
-  enctype?: "application/x-www-form-urlencoded" | "multipart/form-data" | "text/plain";
-  novalidate?: boolean;
-  target?: string;
-  autocomplete?: "on" | "off";
-  name?: string;
-  rel?: string;
+  action?: string | undefined;
+  method?: "get" | "post" | undefined;
+  enctype?: "application/x-www-form-urlencoded" | "multipart/form-data" | "text/plain" | undefined;
+  novalidate?: boolean | undefined;
+  target?: string | undefined;
+  autocomplete?: "on" | "off" | undefined;
+  name?: string | undefined;
+  rel?: string | undefined;
 }
 
 interface LabelAttributes extends HTMLAttributes {
-  // `| undefined` keeps `for={maybeId}` statically visible to a11y lint under
-  // `exactOptionalPropertyTypes`.
   for?: string | undefined;
-  form?: string;
+  form?: string | undefined;
 }
 
 interface ImgAttributes extends HTMLAttributes {
-  src?: string;
-  alt?: string;
-  width?: number | string;
-  height?: number | string;
-  srcset?: string;
-  sizes?: string;
-  crossorigin?: "anonymous" | "use-credentials";
-  decoding?: "sync" | "async" | "auto";
-  loading?: "eager" | "lazy";
-  referrerpolicy?: ReferrerPolicy;
-  fetchpriority?: "high" | "low" | "auto";
+  src?: string | undefined;
+  alt?: string | undefined;
+  width?: number | string | undefined;
+  height?: number | string | undefined;
+  srcset?: string | undefined;
+  sizes?: string | undefined;
+  crossorigin?: "anonymous" | "use-credentials" | undefined;
+  decoding?: "sync" | "async" | "auto" | undefined;
+  loading?: "eager" | "lazy" | undefined;
+  referrerpolicy?: ReferrerPolicy | undefined;
+  fetchpriority?: "high" | "low" | "auto" | undefined;
 }
 
 interface LinkAttributes extends HTMLAttributes {
-  href?: string;
-  rel?: string;
-  type?: string;
-  media?: string;
-  crossorigin?: "anonymous" | "use-credentials";
-  hreflang?: string;
-  as?: string;
-  sizes?: string;
-  integrity?: string;
-  fetchpriority?: "high" | "low" | "auto";
-  referrerpolicy?: ReferrerPolicy;
+  href?: string | undefined;
+  rel?: string | undefined;
+  type?: string | undefined;
+  media?: string | undefined;
+  crossorigin?: "anonymous" | "use-credentials" | undefined;
+  hreflang?: string | undefined;
+  as?: string | undefined;
+  sizes?: string | undefined;
+  integrity?: string | undefined;
+  fetchpriority?: "high" | "low" | "auto" | undefined;
+  referrerpolicy?: ReferrerPolicy | undefined;
 }
 
 interface MetaAttributes extends HTMLAttributes {
-  name?: string;
-  content?: string;
-  charset?: string;
-  "http-equiv"?: string;
-  property?: string;
+  name?: string | undefined;
+  content?: string | undefined;
+  charset?: string | undefined;
+  "http-equiv"?: string | undefined;
+  property?: string | undefined;
 }
 
 interface ScriptAttributes extends HTMLAttributes {
-  src?: string;
-  type?: string;
-  async?: boolean;
-  defer?: boolean;
-  crossorigin?: "anonymous" | "use-credentials";
-  integrity?: string;
-  nonce?: string;
-  nomodule?: boolean;
-  referrerpolicy?: ReferrerPolicy;
-  fetchpriority?: "high" | "low" | "auto";
+  src?: string | undefined;
+  type?: string | undefined;
+  async?: boolean | undefined;
+  defer?: boolean | undefined;
+  crossorigin?: "anonymous" | "use-credentials" | undefined;
+  integrity?: string | undefined;
+  nonce?: string | undefined;
+  nomodule?: boolean | undefined;
+  referrerpolicy?: ReferrerPolicy | undefined;
+  fetchpriority?: "high" | "low" | "auto" | undefined;
 }
 
 interface StyleAttributes extends HTMLAttributes {
-  media?: string;
-  nonce?: string;
+  media?: string | undefined;
+  nonce?: string | undefined;
 }
 
 interface TableAttributes extends HTMLAttributes {
-  cellpadding?: number | string;
-  cellspacing?: number | string;
-  summary?: string;
+  cellpadding?: number | string | undefined;
+  cellspacing?: number | string | undefined;
+  summary?: string | undefined;
 }
 
 interface TdAttributes extends HTMLAttributes {
-  colspan?: number;
-  rowspan?: number;
-  headers?: string;
-  abbr?: string;
-  scope?: "col" | "row" | "colgroup" | "rowgroup";
+  colspan?: number | undefined;
+  rowspan?: number | undefined;
+  headers?: string | undefined;
+  abbr?: string | undefined;
+  scope?: "col" | "row" | "colgroup" | "rowgroup" | undefined;
 }
 
 interface ThAttributes extends TdAttributes {
-  scope?: "col" | "row" | "colgroup" | "rowgroup";
+  scope?: "col" | "row" | "colgroup" | "rowgroup" | undefined;
 }
 
 interface ColAttributes extends HTMLAttributes {
-  span?: number;
+  span?: number | undefined;
 }
 
 interface FieldsetAttributes extends HTMLAttributes {
-  disabled?: boolean;
-  name?: string;
-  form?: string;
+  disabled?: boolean | undefined;
+  name?: string | undefined;
+  form?: string | undefined;
 }
 
 interface LegendAttributes extends HTMLAttributes {}
 
 interface DetailsAttributes extends HTMLAttributes {
-  open?: boolean;
-  name?: string;
+  open?: boolean | undefined;
+  name?: string | undefined;
 }
 
 interface DialogAttributes extends HTMLAttributes {
-  open?: boolean;
+  open?: boolean | undefined;
   /** Which dismissal requests close the dialog; `"any"` is declarative light-dismiss. */
-  closedby?: "none" | "closerequest" | "any";
+  closedby?: "none" | "closerequest" | "any" | undefined;
 }
 
 interface IframeAttributes extends HTMLAttributes {
-  src?: string;
-  srcdoc?: string;
-  name?: string;
-  sandbox?: string;
-  allow?: string;
-  allowfullscreen?: boolean;
-  width?: number | string;
-  height?: number | string;
-  loading?: "eager" | "lazy";
-  referrerpolicy?: ReferrerPolicy;
+  src?: string | undefined;
+  srcdoc?: string | undefined;
+  name?: string | undefined;
+  sandbox?: string | undefined;
+  allow?: string | undefined;
+  allowfullscreen?: boolean | undefined;
+  width?: number | string | undefined;
+  height?: number | string | undefined;
+  loading?: "eager" | "lazy" | undefined;
+  referrerpolicy?: ReferrerPolicy | undefined;
 }
 
 interface HtmlRootAttributes extends HTMLAttributes {
-  xmlns?: string;
+  xmlns?: string | undefined;
 }
 
 interface HrAttributes extends HTMLAttributes {}
 
 interface OlAttributes extends HTMLAttributes {
-  reversed?: boolean;
-  start?: number;
-  type?: "1" | "a" | "A" | "i" | "I";
+  reversed?: boolean | undefined;
+  start?: number | undefined;
+  type?: "1" | "a" | "A" | "i" | "I" | undefined;
 }
 
 interface LiAttributes extends HTMLAttributes {
-  value?: number;
+  value?: number | undefined;
 }
 
 interface ProgressAttributes extends HTMLAttributes {
-  value?: number;
-  max?: number;
+  value?: number | undefined;
+  max?: number | undefined;
 }
 
 interface MeterAttributes extends HTMLAttributes {
-  value?: number;
-  min?: number;
-  max?: number;
-  low?: number;
-  high?: number;
-  optimum?: number;
+  value?: number | undefined;
+  min?: number | undefined;
+  max?: number | undefined;
+  low?: number | undefined;
+  high?: number | undefined;
+  optimum?: number | undefined;
 }
 
 interface TimeAttributes extends HTMLAttributes {
-  datetime?: string;
+  datetime?: string | undefined;
 }
 
 interface TrackAttributes extends HTMLAttributes {
-  kind?: "subtitles" | "captions" | "descriptions" | "chapters" | "metadata";
-  src?: string;
-  srclang?: string;
-  label?: string;
-  default?: boolean;
+  kind?: "subtitles" | "captions" | "descriptions" | "chapters" | "metadata" | undefined;
+  src?: string | undefined;
+  srclang?: string | undefined;
+  label?: string | undefined;
+  default?: boolean | undefined;
 }
 
 interface VideoAttributes extends HTMLAttributes {
-  src?: string;
-  poster?: string;
-  autoplay?: boolean;
-  controls?: boolean;
-  loop?: boolean;
-  muted?: boolean;
-  preload?: "none" | "metadata" | "auto";
-  width?: number | string;
-  height?: number | string;
-  crossorigin?: "anonymous" | "use-credentials";
-  playsinline?: boolean;
+  src?: string | undefined;
+  poster?: string | undefined;
+  autoplay?: boolean | undefined;
+  controls?: boolean | undefined;
+  loop?: boolean | undefined;
+  muted?: boolean | undefined;
+  preload?: "none" | "metadata" | "auto" | undefined;
+  width?: number | string | undefined;
+  height?: number | string | undefined;
+  crossorigin?: "anonymous" | "use-credentials" | undefined;
+  playsinline?: boolean | undefined;
 }
 
 interface AudioAttributes extends HTMLAttributes {
-  src?: string;
-  autoplay?: boolean;
-  controls?: boolean;
-  loop?: boolean;
-  muted?: boolean;
-  preload?: "none" | "metadata" | "auto";
-  crossorigin?: "anonymous" | "use-credentials";
+  src?: string | undefined;
+  autoplay?: boolean | undefined;
+  controls?: boolean | undefined;
+  loop?: boolean | undefined;
+  muted?: boolean | undefined;
+  preload?: "none" | "metadata" | "auto" | undefined;
+  crossorigin?: "anonymous" | "use-credentials" | undefined;
 }
 
 interface SourceAttributes extends HTMLAttributes {
-  src?: string;
-  srcset?: string;
-  type?: string;
-  sizes?: string;
-  media?: string;
+  src?: string | undefined;
+  srcset?: string | undefined;
+  type?: string | undefined;
+  sizes?: string | undefined;
+  media?: string | undefined;
 }
 
 interface MapAttributes extends HTMLAttributes {
-  name?: string;
+  name?: string | undefined;
 }
 
 interface AreaAttributes extends HTMLAttributes {
-  shape?: "rect" | "circle" | "poly" | "default";
-  coords?: string;
-  href?: string;
-  alt?: string;
-  target?: string;
-  rel?: string;
-  download?: string;
+  shape?: "rect" | "circle" | "poly" | "default" | undefined;
+  coords?: string | undefined;
+  href?: string | undefined;
+  alt?: string | undefined;
+  target?: string | undefined;
+  rel?: string | undefined;
+  download?: string | undefined;
 }
 
 interface BaseAttributes extends HTMLAttributes {
-  href?: string;
-  target?: string;
+  href?: string | undefined;
+  target?: string | undefined;
 }
 
 interface SVGAttributes extends HtmxAttributes {
-  id?: string;
-  class?: string;
-  children?: JSXNode;
-  key?: unknown;
-  // `| undefined` keeps inline `width={maybe}` / `aria-label={maybe}` statically visible to a11y
-  // lint under `exactOptionalPropertyTypes`.
+  id?: string | undefined;
+  class?: string | undefined;
+  children?: JSXNode | undefined;
+  key?: unknown | undefined;
   width?: number | string | undefined;
   height?: number | string | undefined;
   viewBox?: string | undefined;
-  fill?: string;
+  fill?: string | undefined;
   stroke?: string | undefined;
   "stroke-width"?: number | string | undefined;
   "stroke-linecap"?: string | undefined;
   "stroke-linejoin"?: string | undefined;
-  xmlns?: string;
-  "xmlns:xlink"?: string;
+  xmlns?: string | undefined;
+  "xmlns:xlink"?: string | undefined;
   "aria-hidden"?: string | boolean | undefined;
   "aria-label"?: string | undefined;
-  role?: string;
-  focusable?: boolean | "false" | "true";
+  role?: string | undefined;
+  focusable?: boolean | "false" | "true" | undefined;
   [key: `data-${string}`]: unknown;
 }
 
 interface SVGPathAttributes extends SVGAttributes {
-  d?: string;
-  "fill-rule"?: "nonzero" | "evenodd" | "inherit";
-  "clip-rule"?: "nonzero" | "evenodd" | "inherit";
-  "stroke-dasharray"?: string;
-  "stroke-dashoffset"?: string | number;
-  opacity?: number | string;
+  d?: string | undefined;
+  "fill-rule"?: "nonzero" | "evenodd" | "inherit" | undefined;
+  "clip-rule"?: "nonzero" | "evenodd" | "inherit" | undefined;
+  "stroke-dasharray"?: string | undefined;
+  "stroke-dashoffset"?: string | number | undefined;
+  opacity?: number | string | undefined;
 }
 
 interface SVGCircleAttributes extends SVGAttributes {
-  cx?: number | string;
-  cy?: number | string;
-  r?: number | string;
+  cx?: number | string | undefined;
+  cy?: number | string | undefined;
+  r?: number | string | undefined;
 }
 
 interface SVGRectAttributes extends SVGAttributes {
-  x?: number | string;
-  y?: number | string;
-  rx?: number | string;
-  ry?: number | string;
+  x?: number | string | undefined;
+  y?: number | string | undefined;
+  rx?: number | string | undefined;
+  ry?: number | string | undefined;
 }
 
 interface SVGLineAttributes extends SVGAttributes {
-  x1?: number | string;
-  y1?: number | string;
-  x2?: number | string;
-  y2?: number | string;
+  x1?: number | string | undefined;
+  y1?: number | string | undefined;
+  x2?: number | string | undefined;
+  y2?: number | string | undefined;
 }
 
 interface SVGUseAttributes extends SVGAttributes {
-  href?: string;
-  "xlink:href"?: string;
-  x?: number | string;
-  y?: number | string;
+  href?: string | undefined;
+  "xlink:href"?: string | undefined;
+  x?: number | string | undefined;
+  y?: number | string | undefined;
 }
 
 interface SVGSymbolAttributes extends SVGAttributes {
-  preserveAspectRatio?: string;
+  preserveAspectRatio?: string | undefined;
 }
 
 interface SVGLinearGradientAttributes extends SVGAttributes {
-  x1?: number | string;
-  y1?: number | string;
-  x2?: number | string;
-  y2?: number | string;
-  gradientUnits?: "userSpaceOnUse" | "objectBoundingBox";
-  gradientTransform?: string;
+  x1?: number | string | undefined;
+  y1?: number | string | undefined;
+  x2?: number | string | undefined;
+  y2?: number | string | undefined;
+  gradientUnits?: "userSpaceOnUse" | "objectBoundingBox" | undefined;
+  gradientTransform?: string | undefined;
 }
 
 interface SVGRadialGradientAttributes extends SVGAttributes {
-  cx?: number | string;
-  cy?: number | string;
-  r?: number | string;
-  fx?: number | string;
-  fy?: number | string;
-  gradientUnits?: "userSpaceOnUse" | "objectBoundingBox";
+  cx?: number | string | undefined;
+  cy?: number | string | undefined;
+  r?: number | string | undefined;
+  fx?: number | string | undefined;
+  fy?: number | string | undefined;
+  gradientUnits?: "userSpaceOnUse" | "objectBoundingBox" | undefined;
 }
 
 interface SVGStopAttributes extends SVGAttributes {
-  offset?: number | string;
-  "stop-color"?: string;
-  "stop-opacity"?: number | string;
+  offset?: number | string | undefined;
+  "stop-color"?: string | undefined;
+  "stop-opacity"?: number | string | undefined;
 }
 
 interface SVGTextAttributes extends SVGAttributes {
-  x?: number | string;
-  y?: number | string;
-  "text-anchor"?: "start" | "middle" | "end" | "inherit";
-  "font-size"?: number | string;
-  "font-family"?: string;
-  "font-weight"?: "normal" | "bold" | "bolder" | "lighter" | (string & {});
+  x?: number | string | undefined;
+  y?: number | string | undefined;
+  "text-anchor"?: "start" | "middle" | "end" | "inherit" | undefined;
+  "font-size"?: number | string | undefined;
+  "font-family"?: string | undefined;
+  "font-weight"?: "normal" | "bold" | "bolder" | "lighter" | (string & {}) | undefined;
 }
 
 interface SVGClipPathAttributes extends SVGAttributes {
-  clipPathUnits?: "userSpaceOnUse" | "objectBoundingBox";
+  clipPathUnits?: "userSpaceOnUse" | "objectBoundingBox" | undefined;
 }
 
 interface SVGMaskAttributes extends SVGAttributes {
-  maskUnits?: "userSpaceOnUse" | "objectBoundingBox";
-  maskContentUnits?: "userSpaceOnUse" | "objectBoundingBox";
-  x?: number | string;
-  y?: number | string;
+  maskUnits?: "userSpaceOnUse" | "objectBoundingBox" | undefined;
+  maskContentUnits?: "userSpaceOnUse" | "objectBoundingBox" | undefined;
+  x?: number | string | undefined;
+  y?: number | string | undefined;
 }
 
 interface SVGPatternAttributes extends SVGAttributes {
-  patternUnits?: "userSpaceOnUse" | "objectBoundingBox";
-  patternTransform?: string;
-  x?: number | string;
-  y?: number | string;
+  patternUnits?: "userSpaceOnUse" | "objectBoundingBox" | undefined;
+  patternTransform?: string | undefined;
+  x?: number | string | undefined;
+  y?: number | string | undefined;
 }
 
 interface SVGFilterAttributes extends SVGAttributes {
-  filterUnits?: "userSpaceOnUse" | "objectBoundingBox";
-  x?: number | string;
-  y?: number | string;
-  primitiveUnits?: "userSpaceOnUse" | "objectBoundingBox";
+  filterUnits?: "userSpaceOnUse" | "objectBoundingBox" | undefined;
+  x?: number | string | undefined;
+  y?: number | string | undefined;
+  primitiveUnits?: "userSpaceOnUse" | "objectBoundingBox" | undefined;
 }
 
 // Must be named exactly `JSX`: the TypeScript transform resolves this namespace by name.
@@ -568,7 +567,7 @@ export declare namespace JSX {
 
   /** Allows `key` on any JSX element without it being an excess property. */
   interface IntrinsicAttributes {
-    key?: unknown;
+    key?: unknown | undefined;
   }
 
   interface IntrinsicElements {

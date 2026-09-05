@@ -20,7 +20,7 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
         </CheckboxGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="checkbox-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" id="field-toppings-cheese" name="toppings" value="cheese" class="size-4 shrink-0 appearance-none rounded border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Cheese</label></fieldset>',
+      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" id="field-toppings-cheese" name="toppings" value="cheese" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Cheese</label></fieldset>',
     );
   });
 
@@ -32,7 +32,7 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
         </CheckboxGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-description" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-toppings-description">Pick as many as you like.</p></fieldset>',
+      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-description" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-toppings-description">Pick as many as you like.</p></fieldset>',
     );
   });
 
@@ -44,7 +44,7 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
         </CheckboxGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-error" data-invalid="" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-destructive" id="field-toppings-error" role="alert">Pick at least one.</p></fieldset>',
+      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-toppings-error" role="alert">Pick at least one.</p></fieldset>',
     );
   });
 
@@ -56,7 +56,9 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
       </CheckboxGroup>,
     );
 
-    expect(html).toContain('aria-describedby="field-toppings-description field-toppings-error"');
+    expect(html).toBe(
+      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-description field-toppings-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-toppings-description">Pick as many as you like.</p><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-toppings-error" role="alert">Pick at least one.</p></fieldset>',
+    );
     const ids = idsAndRefs(html);
     expect(ids).toEqual(["field-toppings-description", "field-toppings-error", "field-toppings-description", "field-toppings-error"]);
   });
@@ -73,7 +75,7 @@ describe("CheckboxGroup — a name must be a single id token", () => {
         </CheckboxGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="checkbox-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="pets" value="a b" class="size-4 shrink-0 appearance-none rounded border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">A B</label></fieldset>',
+      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="pets" value="a b" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">A B</label></fieldset>',
     );
   });
 
@@ -87,7 +89,7 @@ describe("CheckboxGroup — a name must be a single id token", () => {
     );
 
     expect(html).toBe(
-      '<fieldset data-slot="checkbox-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="fav pet" value="cat" class="size-4 shrink-0 appearance-none rounded border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Cat</label></fieldset>',
+      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="fav pet" value="cat" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Cat</label></fieldset>',
     );
     expect(idsAndRefs(html)).toEqual([]);
   });
@@ -102,7 +104,7 @@ describe("CheckboxGroup — a name must be a single id token", () => {
     );
 
     expect(html).toBe(
-      '<fieldset data-slot="checkbox-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="toppings" value="cheese" class="size-4 shrink-0 appearance-none rounded border border-input bg-background checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">Cheese</label></fieldset>',
+      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="toppings" value="cheese" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Cheese</label></fieldset>',
     );
     expect(idsAndRefs(html)).toEqual([]);
   });
@@ -130,7 +132,7 @@ describe("CheckboxGroup — a name must be a single id token", () => {
         </CheckboxGroup>,
       ),
     ).toBe(
-      '<fieldset data-slot="checkbox-group" data-orientation="vertical" class="m-0 flex gap-2 border-0 p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick one.</p></fieldset>',
+      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick one.</p></fieldset>',
     );
   });
 });
@@ -182,5 +184,55 @@ describe("CheckboxGroup — two same-named groups on one page", () => {
       "field-dinner-toppings-cheese",
     ]);
     expect(new Set(ids).size).toBe(4);
+  });
+});
+
+describe("CheckboxGroup — size, invalid and busy", () => {
+  it("stamps data-size=md on the root by default", async () => {
+    expect(await render(<CheckboxGroup name='c' />)).toBe(
+      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
+    );
+  });
+
+  it("size='sm' stamps data-size=sm on the root", async () => {
+    expect(await render(<CheckboxGroup name='c' size='sm' />)).toBe(
+      '<fieldset data-slot="checkbox-group" data-size="sm" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
+    );
+  });
+
+  it("size='lg' stamps data-size=lg on the root", async () => {
+    expect(await render(<CheckboxGroup name='c' size='lg' />)).toBe(
+      '<fieldset data-slot="checkbox-group" data-size="lg" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
+    );
+  });
+
+  it("invalid stamps data-invalid on the root, and no aria-invalid, which the group role forbids", async () => {
+    expect(await render(<CheckboxGroup name='c' invalid />)).toBe(
+      '<fieldset data-slot="checkbox-group" aria-describedby="field-c-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
+    );
+  });
+
+  it("busy stamps data-busy on the root, and no aria-busy, which the group role forbids", async () => {
+    expect(await render(<CheckboxGroup name='c' busy />)).toBe(
+      '<fieldset data-slot="checkbox-group" data-size="md" data-busy="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
+    );
+  });
+
+  it("a caller's own aria attribute survives the state spread", async () => {
+    expect(await render(<CheckboxGroup name='c' invalid aria-label='Plan' />)).toBe(
+      '<fieldset data-slot="checkbox-group" aria-describedby="field-c-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col" aria-label="Plan"></fieldset>',
+    );
+  });
+
+  it("an Item sizes its own box", async () => {
+    expect(await render(<CheckboxGroup.Item name='c' value='a' size='lg' />)).toBe(
+      '<label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" id="field-c-a" name="c" value="a" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-5"></label>',
+    );
+  });
+
+  it("an Item carries its own invalid and busy state", async () => {
+    expect(await render(<CheckboxGroup.Item name='c' value='a' invalid busy />)).toBe(
+      '<label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" id="field-c-a" name="c" value="a" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4" data-invalid="" data-busy="" aria-invalid="true" aria-busy="true"></label>',
+    );
   });
 });

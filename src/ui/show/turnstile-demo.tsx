@@ -14,7 +14,7 @@ import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Select } from "../core/select";
 import { Turnstile } from "../core/turnstile";
-import { CatalogPanel, CatalogSection } from "./components";
+import { CatalogPanel, CatalogRow } from "./components";
 import type { ShowcasePaths } from "./route";
 
 /** Where the verdict fragment lands, so the form and the action never drift. @public */
@@ -211,10 +211,10 @@ const OptionsForm: FC<{ data: TurnstileDemoOptions; path: string; icon: DemoIcon
       <Input type='number' name='tabindex' value={data.tabindex === null ? "" : String(data.tabindex)} field={{ name: "tabindex" }} />
     </FormField>
     <div class='flex gap-2 sm:col-span-2'>
-      <Button type='submit' variant='primary'>
+      <Button type='submit' tone='primary'>
         Render widget
       </Button>
-      <Button variant='secondary' asChild>
+      <Button tone='neutral' appearance='outline' asChild>
         <a href={path}>Reset</a>
       </Button>
     </div>
@@ -273,37 +273,42 @@ const PlaygroundSection: FC<{ data: TurnstileDemoOptions; paths: ShowcasePaths; 
 // three challenges to anyone who scrolls past. The field is not decoration either — under
 // `load='focus'` the script waits on a `focusin` within the enclosing form.
 const VariantsSection: FC = () => (
-  <CatalogSection id='turnstile-variants' title='Sizes and modes'>
-    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='turnstile-email' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='normal' load='focus' />
-      <Button type='submit'>Submit</Button>
-    </Form>
-    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='turnstile-email-compact' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='compact' load='focus' />
-      <Button type='submit'>Submit</Button>
-    </Form>
-    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='turnstile-email-flexible' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='flexible' load='focus' />
-      <Button type='submit'>Submit</Button>
-    </Form>
-    {/* `hx-post`, because the deferred challenge is run from htmx's `htmx:confirm` seam and a native
+  <CatalogPanel
+    id='turnstile-variants'
+    title='Sizes and modes'
+    description='The three widget sizes, each deferred to first focus, and the challenge held back to submit.'>
+    <CatalogRow>
+      <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
+        <Honeypot />
+        <Input type='email' name='turnstile-email' placeholder='you@example.com' />
+        <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='normal' load='focus' />
+        <Button type='submit'>Submit</Button>
+      </Form>
+      <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
+        <Honeypot />
+        <Input type='email' name='turnstile-email-compact' placeholder='you@example.com' />
+        <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='compact' load='focus' />
+        <Button type='submit'>Submit</Button>
+      </Form>
+      <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
+        <Honeypot />
+        <Input type='email' name='turnstile-email-flexible' placeholder='you@example.com' />
+        <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='flexible' load='focus' />
+        <Button type='submit'>Submit</Button>
+      </Form>
+      {/* `hx-post`, because the deferred challenge is run from htmx's `htmx:confirm` seam and a native
         form has no request to hold; `interaction-only` is the pairing Cloudflare documents for it.
         The eager `load` default is deliberate here, unlike the three demos above: the point of
         `challenge='submit'` is a widget up from page load, holding its own space, with only the
         challenge waiting for the press. */}
-    <Form action='#' method='post' hx-post='#' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='turnstile-email-submit' placeholder='you@example.com' />
-      <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} challenge='submit' appearance='interaction-only' />
-      <Button type='submit'>Submit</Button>
-    </Form>
-  </CatalogSection>
+      <Form action='#' method='post' hx-post='#' class='w-full max-w-xs space-y-3'>
+        <Honeypot />
+        <Input type='email' name='turnstile-email-submit' placeholder='you@example.com' />
+        <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} challenge='submit' appearance='interaction-only' />
+        <Button type='submit'>Submit</Button>
+      </Form>
+    </CatalogRow>
+  </CatalogPanel>
 );
 
 const KeysSection: FC = () => (
@@ -346,7 +351,7 @@ const ResilienceSection: FC = () => (
         </Turnstile>
         <Button type='submit'>Submit</Button>
       </Form>
-      <Alert variant='info'>
+      <Alert tone='info'>
         <Alert.Title>What the controller does</Alert.Title>
         <Alert.Description>
           A script that has not loaded within ten seconds reveals the fallback. An unsupported browser reveals the second message instead. A render
@@ -378,7 +383,7 @@ const VERDICT_COPY: Partial<Record<TurnstileFailure, string>> = {
 export const TurnstileVerdictFragment: FC<{ verdict: TurnstileVerdict }> = ({ verdict }) => {
   if (verdict.kind === "unconfigured") {
     return (
-      <Alert variant='warning'>
+      <Alert tone='warning'>
         <Alert.Title>No secret key is configured</Alert.Title>
         <Alert.Description>
           The form reached the action and its honeypot ran, but `registerShowcase` was given no `turnstileSecret`, so nothing was sent to
@@ -389,7 +394,7 @@ export const TurnstileVerdictFragment: FC<{ verdict: TurnstileVerdict }> = ({ ve
   }
   if (verdict.kind === "verified") {
     return (
-      <Alert variant='success'>
+      <Alert tone='success'>
         <Alert.Title>Verified</Alert.Title>
         <Alert.Description>
           The token in `{TURNSTILE_FIELD_DEFAULT}` passed siteverify and was dropped before validation, so the handler never sees it.
@@ -398,7 +403,7 @@ export const TurnstileVerdictFragment: FC<{ verdict: TurnstileVerdict }> = ({ ve
     );
   }
   return (
-    <Alert variant='destructive'>
+    <Alert tone='destructive'>
       <Alert.Title>Refused by the {verdict.guard} guard</Alert.Title>
       <Alert.Description>
         {verdict.reason === undefined ? "The decoy field was filled." : (VERDICT_COPY[verdict.reason] ?? "Verification failed.")}

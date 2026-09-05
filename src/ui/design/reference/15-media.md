@@ -86,6 +86,23 @@ The pair is `--foreground` on `--background` again — a ratio the gate computes
 in dark mode — the box is one height whatever the upload was, and the corner comes from the
 container.
 
+## A carousel is the last resort
+
+`Carousel` shows one slide and hides the rest, and asks the reader to operate it to see any other.
+Everything it hides is content the reader has not read, and most readers never operate it at all.
+That is a fair trade for a set of same-kind media — product photographs, screenshots of one screen —
+where the reader is choosing between slides rather than reading through them, and no trade at all
+for content that must be read.
+
+Default: `Carousel` holds only a set of same-kind media the reader chooses between, never content
+that must be read — features, testimonials, announcements — which is a list or a grid, unless the
+brief fixes a single-slide viewport and every slide is reachable by its own `Carousel.Dots`
+anchor. <!-- rule:forge-ui-media-carousel-last-resort -->
+
+The dots are what keep the platform honest: each is an anchor to a slide's `id`, so a slide is
+addressable, bookmarkable, and reachable by keyboard with no script — the same argument
+`forge-ui-pagination-vs-scroll` makes for a paged list.
+
 ## Glyphs at the size they were drawn
 
 An icon in the sprite was drawn at a small size, with a stroke weight chosen for it. Scaled to four
@@ -104,12 +121,12 @@ drawn at. <!-- rule:forge-ui-media-icon-intended-size -->
 
 Default: where a glyph has to anchor a large slot, the _enclosure_ grows and the glyph does not — a
 `size-10` or `size-12` `rounded-full bg-muted` shape with a `size-4` or `size-5` `Icon` centred in
-it — which is the composition `Avatar` already ships and the trade `Button size='icon'` makes at 36
+it — which is the composition `Avatar` already ships and the trade `Button shape='icon'` makes at 40
 pixels around a 16-pixel glyph, unless the slot is a decorative illustration carrying no control and
 no state. <!-- rule:forge-ui-media-icon-enclosure -->
 
 Sizing an icon _button_ is a different rule and it is `forge-ui-hierarchy-icon-button-size`: that
-one fixes which `size` prop an icon-only `Button` takes. This one is about the glyph inside
+one fixes which `shape` and `size` an icon-only `Button` takes. This one is about the glyph inside
 whatever box was chosen.
 
 ### Before / after — an empty-state mark

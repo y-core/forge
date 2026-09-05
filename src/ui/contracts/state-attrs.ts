@@ -10,6 +10,8 @@ export const STATE_ATTRS = {
   disabled: "data-disabled",
   /** Present while the component holds a validation error. */
   invalid: "data-invalid",
+  /** Present while the component is waiting on work it started — a submitting button, a loading field. */
+  busy: "data-busy",
   /** Layout axis — `horizontal` or `vertical`. Valued, not a presence flag. */
   orientation: "data-orientation",
   /** Which side a popup sits on relative to its anchor. Valued. */
@@ -21,25 +23,29 @@ export const STATE_ATTRS = {
 /** One of the declared state-attribute names. @public */
 export type StateAttrName = (typeof STATE_ATTRS)[keyof typeof STATE_ATTRS];
 
-/** Layout axis; `responsive` means "vertical until the container is wide enough". @public */
-export type Orientation = "horizontal" | "vertical" | "responsive";
+/** Layout axis. @public */
+export type Orientation = "horizontal" | "vertical";
+
+/** A physical side — what a popup, drawer, or rail is anchored to when the reader's direction must not mirror it. @public */
+export type PhysicalSide = "top" | "right" | "bottom" | "left";
 
 /** Side a popup is positioned on, in either physical or logical spelling. @public */
-export type Side = "top" | "right" | "bottom" | "left" | "block-start" | "block-end" | "inline-start" | "inline-end";
+export type Side = PhysicalSide | "block-start" | "block-end" | "inline-start" | "inline-end";
 
 /** Alignment of a popup along its side. @public */
 export type Align = "start" | "center" | "end";
 
 /** The states a forge component can declare; an omitted key differs from `false`. @public */
 export interface StateAttrsProps {
-  pressed?: boolean;
-  checked?: boolean;
-  selected?: boolean;
-  disabled?: boolean;
-  invalid?: boolean;
-  orientation?: Orientation;
-  side?: Side;
-  align?: Align;
+  pressed?: boolean | undefined;
+  checked?: boolean | undefined;
+  selected?: boolean | undefined;
+  disabled?: boolean | undefined;
+  invalid?: boolean | undefined;
+  busy?: boolean | undefined;
+  orientation?: Orientation | undefined;
+  side?: Side | undefined;
+  align?: Align | undefined;
 }
 
 // Literal keys, never `STATE_ATTRS.pressed`: a runtime reference would retain the whole table in
@@ -49,18 +55,7 @@ const CHECKED_HOOK = { "data-checked": "" };
 const SELECTED_HOOK = { "data-selected": "" };
 const DISABLED_HOOK = { "data-disabled": "" };
 const INVALID_HOOK = { "data-invalid": "" };
-
-/** Which attributes each state key owns. */
-const GOVERNS: Record<keyof StateAttrsProps, readonly StateAttrName[]> = {
-  pressed: ["data-pressed"],
-  checked: ["data-checked"],
-  selected: ["data-selected"],
-  disabled: ["data-disabled"],
-  invalid: ["data-invalid"],
-  orientation: ["data-orientation"],
-  side: ["data-side"],
-  align: ["data-align"],
-};
+const BUSY_HOOK = { "data-busy": "" };
 
 /** Builds the state attributes for an SSR element, to be spread onto it. @public */
 export function stateAttrs(state: StateAttrsProps): Record<string, string> {
@@ -70,21 +65,30 @@ export function stateAttrs(state: StateAttrsProps): Record<string, string> {
     ...(state.selected ? SELECTED_HOOK : {}),
     ...(state.disabled ? DISABLED_HOOK : {}),
     ...(state.invalid ? INVALID_HOOK : {}),
+    ...(state.busy ? BUSY_HOOK : {}),
     ...(state.orientation ? { "data-orientation": state.orientation } : {}),
     ...(state.side ? { "data-side": state.side } : {}),
     ...(state.align ? { "data-align": state.align } : {}),
   };
 }
 
+// `forge-ui-a11y-aria-beside-data` requires the two to move together, and four components had
+// written the pair by hand — an invariant that held by vigilance rather than by construction.
+/** The current-page pair: `aria-current="page"` beside `data-selected`. @public */
+export function currentAttrs(current: boolean): Record<string, string> {
+  return { ...(current ? { "aria-current": "page" } : {}), ...stateAttrs({ selected: current }) };
+}
+
 /** Reconciles the attributes owned by each present state key on a live element. @public */
 export function applyStateAttrs(el: Element, state: StateAttrsProps): void {
   const next = stateAttrs(state);
+  // Read straight off the table each key is declared in. A second map of key→attribute had no
+  // compile-time link to it, so a key omitted there threw here rather than failing the build.
   for (const key of Object.keys(state) as Array<keyof StateAttrsProps>) {
     if (state[key] === undefined) continue;
-    for (const name of GOVERNS[key]) {
-      const value = next[name];
-      if (value === undefined) el.removeAttribute(name);
-      else el.setAttribute(name, value);
-    }
+    const name = STATE_ATTRS[key];
+    const value = next[name];
+    if (value === undefined) el.removeAttribute(name);
+    else el.setAttribute(name, value);
   }
 }

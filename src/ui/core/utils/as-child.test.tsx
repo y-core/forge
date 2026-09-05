@@ -4,32 +4,31 @@ import { describe, expect, it } from "bun:test";
 
 import { createElement } from "../../../jsx/element";
 import { render } from "../../../testing/render";
-import { Button } from "../button";
+import { MENU_ITEM_CLASS } from "../../contracts/menu-contract";
+import { Button, buttonVariants } from "../button";
 import { Menu } from "../menu";
 import { Popover } from "../popover";
 import { Toolbar } from "../toolbar";
 import { Tooltip } from "../tooltip";
 import { cloneAsChild, slotToken } from "./as-child";
+import { cn } from "./cn";
 
 const MESSAGE = "test compound with asChild requires exactly one JSX element child";
 
 const base = { slot: "probe", class: "probe-class", props: {}, message: MESSAGE };
 
-const BUTTON_BASE =
-  "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors";
-const TOOLBAR_ITEM_CLASS = `${BUTTON_BASE} text-foreground hover:bg-accent h-8 px-3 text-sm`;
+const ghostItem = (overrides: Parameters<typeof buttonVariants>[0] = {}): string =>
+  buttonVariants({ tone: "neutral", appearance: "ghost", size: "sm", ...overrides });
 
-const MENU_WITH_TOOLTIP_CLASS = "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const POPOVER_WITH_TOOLTIP_CLASS = "list-none cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const TOOLBAR_ITEM_WITH_TOOLTIP_CLASS =
-  "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors text-foreground hover:bg-accent h-8 px-3 text-sm cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const MENU_ITEM_WITH_TOOLTIP_CLASS =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 " +
-  "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
-  "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 " +
-  "cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS =
-  "inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors text-foreground hover:bg-accent h-8 px-3 text-sm cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const TOOLBAR_ITEM_CLASS = ghostItem();
+const BUTTON_ICON_CLASS = ghostItem({ shape: "icon" });
+const BUTTON_DEFAULT_CLASS = buttonVariants();
+
+const MENU_WITH_TOOLTIP_CLASS = "cursor-default focus-ring";
+const POPOVER_WITH_TOOLTIP_CLASS = "list-none cursor-default focus-ring";
+const TOOLBAR_ITEM_WITH_TOOLTIP_CLASS = cn(TOOLBAR_ITEM_CLASS, MENU_WITH_TOOLTIP_CLASS);
+const MENU_ITEM_WITH_TOOLTIP_CLASS = cn(MENU_ITEM_CLASS, MENU_WITH_TOOLTIP_CLASS);
+const MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS = TOOLBAR_ITEM_WITH_TOOLTIP_CLASS;
 
 describe("cloneAsChild — button options the compound never set", () => {
   it("leaves a child button's own type alone when no type option is given", async () => {
@@ -41,7 +40,7 @@ describe("cloneAsChild — button options the compound never set", () => {
   it("leaves a child button's own disabled alone when no disabled option is given", async () => {
     const child = <button disabled>Go</button>;
 
-    expect(await render(cloneAsChild(child, base))).toBe('<button disabled class="probe-class" data-slot="probe">Go</button>');
+    expect(await render(cloneAsChild(child, base))).toBe('<button disabled type="button" class="probe-class" data-slot="probe">Go</button>');
   });
 
   it("keeps type and disabled together on a child that declares both", async () => {
@@ -69,14 +68,16 @@ describe("cloneAsChild — button options the compound did set", () => {
     const child = <button>Go</button>;
 
     expect(await render(cloneAsChild(child, { ...base, disabled: true }))).toBe(
-      '<button disabled class="probe-class" data-slot="probe">Go</button>',
+      '<button disabled type="button" class="probe-class" data-slot="probe">Go</button>',
     );
   });
 
   it("disabled=false is a decision, not an omission, and clears the child's own", async () => {
     const child = <button disabled>Go</button>;
 
-    expect(await render(cloneAsChild(child, { ...base, disabled: false }))).toBe('<button class="probe-class" data-slot="probe">Go</button>');
+    expect(await render(cloneAsChild(child, { ...base, disabled: false }))).toBe(
+      '<button type="button" class="probe-class" data-slot="probe">Go</button>',
+    );
   });
 });
 
@@ -127,7 +128,7 @@ describe("Toolbar.Link asChild — the compound that sets neither option", () =>
         </Toolbar.Link>,
       ),
     ).toBe(
-      '<button type="button" data-toolbar-item="" class="inline-flex items-center justify-center rounded-lg font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors text-foreground hover:bg-accent h-8 px-3 text-sm underline-offset-4 hover:underline" data-slot="toolbar-link">Docs</button>',
+      '<button type="button" data-toolbar-item="" class="state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors h-control-sm px-3 text-sm [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-transparent bg-transparent [--focus-ring:var(--color-ring)] text-foreground hover:bg-accent hover:text-accent-foreground underline-offset-4 hover:underline" data-slot="toolbar-link">Docs</button>',
     );
   });
 });
@@ -165,7 +166,7 @@ describe("data-slot composition through an unrendered component child", () => {
     expect(
       await render(
         <Tooltip.Trigger for='tip' asChild>
-          <Menu.Trigger id='file-menu'>File</Menu.Trigger>
+          <Menu.Trigger for='file-menu'>File</Menu.Trigger>
         </Tooltip.Trigger>,
       ),
     ).toBe(
@@ -178,7 +179,7 @@ describe("data-slot composition through an unrendered component child", () => {
     expect(
       await render(
         <Tooltip.Trigger for='tip' asChild>
-          <Popover.Trigger id='panel'>Panel</Popover.Trigger>
+          <Popover.Trigger for='panel'>Panel</Popover.Trigger>
         </Tooltip.Trigger>,
       ),
     ).toBe(
@@ -221,7 +222,7 @@ describe("data-slot composition through an unrendered component child", () => {
     expect(
       await render(
         <Tooltip.Trigger for='tip' asChild>
-          <Menu.SubmenuTrigger id='more'>More</Menu.SubmenuTrigger>
+          <Menu.SubmenuTrigger for='more'>More</Menu.SubmenuTrigger>
         </Tooltip.Trigger>,
       ),
     ).toBe(
@@ -235,7 +236,7 @@ describe("data-slot composition through an unrendered component child", () => {
       await render(
         <Tooltip.Trigger for='tip' asChild>
           <Toolbar.Button asChild>
-            <Menu.Trigger id='file-menu'>File</Menu.Trigger>
+            <Menu.Trigger for='file-menu'>File</Menu.Trigger>
           </Toolbar.Button>
         </Tooltip.Trigger>,
       ),
@@ -250,7 +251,7 @@ describe("data-slot composition through an unrendered component child", () => {
     expect(
       await render(
         <Tooltip.Trigger for='tip' asChild>
-          {createElement(Menu.Trigger, { id: "file-menu", children: "File" })}
+          {createElement(Menu.Trigger, { for: "file-menu", children: "File" })}
         </Tooltip.Trigger>,
       ),
     ).toBe(
@@ -274,11 +275,11 @@ describe("a caller's own data-slot on an asChild compound", () => {
   it("survives on Button — the shape chrome/Toolbar's flyout title action renders", async () => {
     expect(
       await render(
-        <Button asChild data-slot='toolbar-title-action' variant='ghost' size='icon-sm'>
+        <Button asChild data-slot='toolbar-title-action' tone='neutral' appearance='ghost' shape='icon' size='sm'>
           <a href='/x'>Go</a>
         </Button>,
       ),
-    ).toBe(`<a href="/x" class="${BUTTON_BASE} text-foreground hover:bg-accent size-8 p-0" data-slot="button toolbar-title-action">Go</a>`);
+    ).toBe(`<a href="/x" class="${BUTTON_ICON_CLASS}" data-slot="button toolbar-title-action">Go</a>`);
   });
 
   it("stacks behind the child's own token when the child declares one too", async () => {
@@ -290,9 +291,6 @@ describe("a caller's own data-slot on an asChild compound", () => {
           </button>
         </Button>,
       ),
-    ).toBe(
-      '<button type="button" data-slot="inner button caller" ' +
-        `class="${BUTTON_BASE} bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm">Go</button>`,
-    );
+    ).toBe('<button type="button" data-slot="inner button caller" ' + `class="${BUTTON_DEFAULT_CLASS}">Go</button>`);
   });
 });

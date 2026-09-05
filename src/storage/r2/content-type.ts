@@ -37,5 +37,7 @@ const MIME_MAP: Record<string, string> = {
 /** Infers MIME type from the file extension in `key`; falls back to CONTENT_TYPE_DEFAULT. @public */
 export function inferContentType(key: string): string {
   const ext = key.split(".").pop()?.toLowerCase();
-  return (ext && MIME_MAP[ext]) ?? CONTENT_TYPE_DEFAULT;
+  // `hasOwn` rather than a truthiness test: `"upload.constructor"` otherwise reads `Object` off the
+  // prototype, which is not nullish, so the fallback never fires and a non-string reaches `put`.
+  return ext !== undefined && Object.hasOwn(MIME_MAP, ext) ? (MIME_MAP[ext] as string) : CONTENT_TYPE_DEFAULT;
 }

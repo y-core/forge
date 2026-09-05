@@ -24,7 +24,7 @@ test.describe("Collapsible", () => {
     render(
       Collapsible({
         id: "adv",
-        children: [Collapsible.Trigger({ icon, id: "adv-trigger", children: "Advanced" }), Collapsible.Panel({ children: "Body" })],
+        children: [Collapsible.Trigger({ icon, id: "adv-trigger", children: "Advanced" }), Collapsible.Content({ children: "Body" })],
       }),
     );
 

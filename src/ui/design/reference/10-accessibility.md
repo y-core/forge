@@ -37,7 +37,7 @@ failure looks like when contrast and `forge-ui-not-color-alone` are both deferre
 // colour-blind reader never sees as a failure.
 
 // Right — a pairing designed to be read, with the state carried by shape and words too.
-<Alert variant="destructive">
+<Alert tone="destructive">
   <AppIcon name="close" aria-hidden="true" />
   <Alert.Title>Sync failed</Alert.Title>
   <Alert.Description class="max-w-prose">Last attempt was rejected by the upstream API.</Alert.Description>
@@ -110,7 +110,7 @@ error rather than ignoring.
 </FormField>
 ```
 
-Default: when a control genuinely has no visible text — an icon-only `Button size="icon"` — pair a
+Default: when a control genuinely has no visible text — an icon-only `Button shape="icon"` — pair a
 decorative `Icon` with visually-hidden text rather than an `aria-label`, wherever the layout allows
 it — unless the sr-only span would be read twice because the control already has a
 name. <!-- rule:forge-ui-a11y-icon-plus-text -->
@@ -119,6 +119,13 @@ real text that a reviewer can see in the source next to what it names, and that 
 translation the way an attribute value tends not to. `Spinner` is the shipped example of the
 pattern: `role="status"` on the wrapper, `aria-hidden` on the glyph, and an `sr-only` label.
 `forge-ui-accessible-name` is the Floor here; this is only the preferred way of meeting it.
+
+Default: an icon-only `Button` — `shape="icon"` or `shape="circle"` — carries an `aria-label` naming
+the action it performs, unless the visually-hidden span above is used instead, which is the preferred
+form wherever the layout allows it. <!-- rule:forge-ui-icon-button-label -->
+`forge-ui-accessible-name` in `floor.md` is the invariant; what this Default adds is the shape that
+triggers it. Those two shapes size the control to its glyph, so there is no text left in it to carry
+a name, and `Icon` is `aria-hidden` by default — the button ships nameless unless one is given.
 
 Default: keep the required marker decorative and carry requiredness on the control — unless the form
 has no visual required convention at all. <!-- rule:forge-ui-a11y-required-marker -->
@@ -159,11 +166,22 @@ the one-moment budget are [`09-interaction.md`](./09-interaction.md)'s.
 Default: route transient announcements into the existing flash region and add no live region of your
 own — unless the surface has a genuinely separate stream of updates that must not interleave with
 notifications. <!-- rule:forge-ui-a11y-one-live-region -->
-`Toast.Container` already renders `aria-live="polite"` with `aria-label="Notifications"`, and
-`FlashContainer` is that container at the well-known id `#flash-container`. Each `Toast` inside it is
-`role="status"` with `aria-atomic="true"`, so the message is announced whole. A second live region on
-the page means two announcers competing over one utterance queue, and the reader hears fragments of
-both.
+`Toast.Container` already renders `aria-live="polite"` with `aria-label="Notifications"` and
+`aria-atomic="false"`, and `FlashContainer` is that container at the well-known id
+`#flash-container`. A second live region on the page means two announcers competing over one
+utterance queue, and the reader hears fragments of both.
+
+**The container is the live region and a `Toast` is not**, deliberately. A live region nested in a
+live region has undefined announcement behaviour, and of the two only the container can announce an
+_insertion_ — `FlashOob` swaps a toast in after load, and an element that did not exist when the
+region was read is announced by nothing. **A `Toast` rendered outside a `Toast.Container` is
+therefore silent**, and giving one `role="status"` would not fix that: `role="status"` implies
+`aria-live="polite"`, so N toasts would be N+1 live regions — exactly what this rule forbids.
+
+**`Alert` carries no role either.** It states a condition that persists on the page rather than an
+arriving one, so it is read where the reader meets it; urgency goes through the flash region. A
+caller who genuinely needs an announcement passes `role` themselves, and the politeness rule below
+governs which.
 
 Default: leave a live region polite — unless the message is a failure that stops the reader's current
 task, which is the only case that earns an interruption. <!-- rule:forge-ui-a11y-live-politeness -->
@@ -193,3 +211,27 @@ the utterance — so give it a real one rather than the `Loading…` default.
   </div>
 </div>
 ```
+
+---
+
+## An optional prop a reader's tooling can still see
+
+Default: declare every optional prop a consumer passes a value into as `?: T | undefined` — unless
+the type is one an application never constructs. <!-- rule:forge-ui-optional-prop-undefined -->
+
+The reason is an accessibility one, which is why the rule lives here rather than with the type
+conventions. Under `exactOptionalPropertyTypes`, a bare `?:` refuses `aria-label={maybeUndefined}`,
+so the caller writes the value into a spread instead — and a spread is opaque to `jsx-a11y`, which
+reads attributes. The prop still reaches the element; what is lost is every lint rule that would
+have judged it.
+
+```tsx
+// Wrong — the label is correct at runtime and invisible to every a11y rule that would check it.
+<button {...(label !== undefined ? { "aria-label": label } : {})} />
+
+// Right — the declaration admits `undefined`, so the attribute stays an attribute.
+<button aria-label={label} />
+```
+
+The omit-when-false spread — `{...(open ? { open: true } : {})}` — is a different construct and
+stays: it encodes an HTML boolean-attribute semantic rather than working around a declaration.

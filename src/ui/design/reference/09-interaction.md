@@ -27,6 +27,26 @@ about not inventing a second treatment beside it. That measurement is also why
 `forge-ui-platform-color-mix` in [`16-platform.md`](./16-platform.md) excludes ring, border and
 outline tokens from the derived form it otherwise asks for.
 
+**Forge's own controls draw that ring _inside_ the element**, through the `focus-ring` utility. An
+outer ring is wrong on any control that shares an edge with a neighbour — inside a `Join` it cuts the
+group's silhouette in two — and it is not something a caller can correct from the call site. Drawn
+inset, the group stays one shape and the focused member is the box within it.
+
+Inset, the ring is read against the element's **own** surface rather than the page, and `--ring` is a
+gray step: it measures 1.03 against `--primary` and 1.09 against `--destructive` in light. So a solid
+fill rings in the same foreground it paints its own label with — already audited at 4.5:1 against that
+fill — and every other appearance rings in `--ring`, which clears 5.19 or better on every soft and
+page surface. The choice is one custom property, set per appearance in `src/ui/core/utils/tone.ts`.
+
+There is one exception, `focus-ring-outset`: a control whose box **is** its content has no interior
+to spend two pixels of. An inline `Link`'s ring would cross its own glyphs and a 16px checkbox or
+radio would lose the indicator to it — and neither shares an edge with a neighbour, which is what the
+inset default exists for. `Switch` is the same exception, spelled `peer-focus-visible:` because its
+track is the input's sibling.
+
+Your own elements carry no tone tokens, so `focus-visible:ring-2 focus-visible:ring-ring` above stays
+the right reach for them; use `focus-ring` when you are composing forge's controls.
+
 Default: use the `focus-visible` variant, never bare `focus` — unless the control is reachable
 _only_ by pointer, which in practice never happens. <!-- rule:forge-ui-interaction-focus-visible -->
 `focus` fires on a mouse click too, so a ring flashes on every button press and trains the reader to
@@ -49,7 +69,7 @@ or three pixels each — visible as a ragged edge, and untraceable to any one li
 // Costs: a ragged control row, a focus ring that flashes on mouse clicks, and a target under the floor.
 
 // Right.
-<Button variant="secondary" size="sm">Retry</Button>
+<Button tone="neutral" appearance="outline" size="sm">Retry</Button>
 ```
 
 ---
@@ -77,7 +97,10 @@ focus stop agreeing.
 Default: mark the item that should hold the tab stop at mount with `ACTIVE_COMPOSITE_ITEM` from
 `@y-core/forge/ui/contracts` — unless nothing in the composite is selected on first render, in which
 case the first item takes it. <!-- rule:forge-ui-interaction-active-item -->
-The pressed tool, the selected tab, the checked radio. Without it a composite that shows a selection
+The pressed tool, the selected tab, the checked radio. **`Toolbar` does not derive it**, deliberately:
+a toolbar may have several items pressed at once, and the marker is singular — the controller takes
+the first one marked and ignores the rest. Which of them the tab stop belongs on is the app's answer,
+not one `pressed` can give. Without the marker a composite that shows a selection
 puts the tab stop somewhere else, and the first Tab press moves focus to a row that is not the one
 highlighted.
 

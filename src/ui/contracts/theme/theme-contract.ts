@@ -91,7 +91,7 @@ export interface Dial {
   readonly unit: string;
 }
 
-/** The five levers, in the order they are rendered; chroma is carried in thousandths. @public */
+/** The eight levers, in the order they are rendered; chroma is carried in thousandths. @public */
 export const DIALS: readonly Dial[] = [
   { field: "accentHue", param: "ah", label: "Accent hue", group: "Accent", short: "hue", min: 0, max: 360, step: 1, fallback: 267, unit: "°" },
   {
@@ -109,6 +109,9 @@ export const DIALS: readonly Dial[] = [
   { field: "grayHue", param: "gh", label: "Gray hue", group: "Gray", short: "hue", min: 0, max: 360, step: 1, fallback: 0, unit: "°" },
   { field: "grayChroma", param: "gc", label: "Gray tint", group: "Gray", short: "tint", min: 0, max: 100, step: 1, fallback: 0, unit: "" },
   { field: "radius", param: "r", label: "Corner radius", group: null, short: "Corner radius", min: 0, max: 24, step: 1, fallback: 10, unit: "px" },
+  { field: "radiusField", param: "rf", label: "Field radius", group: "Shape", short: "field", min: 0, max: 24, step: 1, fallback: 10, unit: "px" },
+  { field: "radiusBox", param: "rb", label: "Box radius", group: "Shape", short: "box", min: 0, max: 32, step: 1, fallback: 16, unit: "px" },
+  { field: "controlH", param: "ch", label: "Control height", group: "Shape", short: "height", min: 28, max: 56, step: 2, fallback: 40, unit: "px" },
 ];
 
 /** Groups `DIALS` into rows: consecutive dials sharing a `group` ride one row. @public */
@@ -127,7 +130,11 @@ export type DialValues = Record<string, number>;
 
 /** The dials as a query string. @public */
 export function dialQuery(dials: DialValues): string {
-  return DIALS.map((dial) => `${dial.param}=${dials[dial.field] ?? dial.fallback}`).join("&");
+  // `??` passes a NaN straight through, and `?ah=NaN` is a URL that reproduces nothing.
+  return DIALS.map((dial) => {
+    const value = dials[dial.field];
+    return `${dial.param}=${value !== undefined && Number.isFinite(value) ? value : dial.fallback}`;
+  }).join("&");
 }
 
 /** The input-only query parameter a preset travels under; an explicit `gh`/`gc` beside it wins. @public */
@@ -170,6 +177,24 @@ export const PRESET_FIELDS = ["grayHue", "grayChroma"] as const;
 
 /** The `--radius` token, which the customiser drives directly rather than through a scale. @public */
 export const RADIUS_PROPERTY = "--radius";
+
+/** The other shape tokens the customiser writes, in the order both writers emit them. @public */
+export const SHAPE_PROPERTIES = ["--radius-field", "--radius-box", "--control-h-sm", "--control-h-md", "--control-h-lg"] as const;
+
+// One spelling of the ±8px step, so the painter and the emitted file cannot disagree about what
+// `sm` and `lg` are either side of the dialled `md`.
+/** Each of {@link SHAPE_PROPERTIES} as a `[property, value]` pair at these dials. @public */
+export function shapeVars(dials: DialValues): readonly (readonly [string, string])[] {
+  const control = dials.controlH ?? 40;
+  const [field, box, small, medium, large] = SHAPE_PROPERTIES;
+  return [
+    [field, `${dials.radiusField ?? 10}px`],
+    [box, `${dials.radiusBox ?? 16}px`],
+    [small, `${control - 8}px`],
+    [medium, `${control}px`],
+    [large, `${control + 8}px`],
+  ];
+}
 
 /** The custom property a 0-indexed step is declared under — `--gray-11`. @public */
 export function stepProperty(family: ScaleFamily, step: number): string {
@@ -245,6 +270,11 @@ export function schemeCss(theme: GeneratedTheme, dials: DialValues): string {
     ...scaleVars("accent", theme.accent).map(declare),
     "",
     `  --accent-contrast: ${lightDark(contrastVar("light"), contrastVar("dark"))};`,
+    "}",
+    "",
+    "/* Shape — save as shape-custom.css beside the scheme, or fold into it */",
+    ":root {",
+    ...shapeVars(dials).map(declare),
     "}",
     "",
   ].join("\n");

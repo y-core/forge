@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { classesOf, escapeClass, mount } from "../client/browser-test-helper";
+import { classesOf, compiledCss, escapeClass, mount } from "../client/browser-test-helper";
 import { Switch } from "./switch";
 
 const TRACK = "[data-slot~='switch-track']";
@@ -69,5 +69,46 @@ test.describe("Switch — the checked paint reaches both halves of the control",
     const colours = await acrossToggle(page, css, TRACK, "background-color");
     expect(colours.before).not.toBe("rgb(0, 0, 255)");
     expect(colours.after).toBe("rgb(0, 0, 255)");
+  });
+});
+
+// The thumb rests at the inline *start* and travels to the inline *end*. Written physically —
+// `left-0.5` plus `translate-x-*` — that geometry mirrors under `dir="rtl"`: the thumb sat at the
+// end and travelled back to the start, which reads as a switch that is on when it is off.
+test.describe("Switch — the thumb follows the reader's direction", () => {
+  async function thumbTravel(page: Page, dir: "ltr" | "rtl"): Promise<{ restsAtStart: boolean; travelsTowardEnd: boolean }> {
+    const html = await markup();
+    // Reduced motion makes this a geometry assertion: `motion-safe:transition-transform` would
+    // otherwise leave the rect mid-interpolation on the frame after the click.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await mount(page, `<div dir="${dir}" style="width:200px">${html}</div>`);
+    await page.addStyleTag({ content: await compiledCss([...classesOf(html, "switch-thumb"), ...classesOf(html, "switch-track")]) });
+
+    return page.evaluate(
+      ([track, thumb, input, direction]) => {
+        const box = () => {
+          const trackEl = document.querySelector(track);
+          const thumbEl = document.querySelector(thumb);
+          if (trackEl === null || thumbEl === null) throw new Error("the switch fixture is not on the page");
+          const t = trackEl.getBoundingClientRect();
+          const h = thumbEl.getBoundingClientRect();
+          return direction === "rtl" ? { gap: t.right - h.right, offset: -h.left } : { gap: h.left - t.left, offset: h.left };
+        };
+
+        const before = box();
+        document.querySelector<HTMLInputElement>(input)?.click();
+        const after = box();
+        return { restsAtStart: Math.abs(before.gap) <= 3, travelsTowardEnd: after.offset - before.offset > 4 };
+      },
+      [TRACK, THUMB, INPUT, dir] as const,
+    );
+  }
+
+  test("rests at the inline start and travels to the inline end in ltr", async ({ page }) => {
+    expect(await thumbTravel(page, "ltr")).toEqual({ restsAtStart: true, travelsTowardEnd: true });
+  });
+
+  test("rests at the inline start and travels to the inline end in rtl too", async ({ page }) => {
+    expect(await thumbTravel(page, "rtl")).toEqual({ restsAtStart: true, travelsTowardEnd: true });
   });
 });

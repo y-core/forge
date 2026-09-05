@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { oklchToSrgb, toHex } from "../../../assets/build/color";
+import { oklchToSrgb, toHex } from "../../assets/build/color";
 import {
   ACCENT_RAMP,
   buildScale,
@@ -87,7 +87,7 @@ function sample(): { l: number; c: number; h: number }[] {
   return points;
 }
 
-describe("agreement with src/assets/build/color.ts", () => {
+describe("agreement with src/ui/assets/build/color.ts", () => {
   it("produces the identical hex for every point of an oklch grid", () => {
     const disagreements = sample()
       .map((p) => ({ p, mine: oklchToHex(p.l, p.c, p.h), theirs: toHex(oklchToSrgb(p.l, p.c, p.h)) }))
@@ -316,7 +316,7 @@ describe("the gray dials' safety claim", () => {
     expect(tightest.margin).toBeGreaterThan(0.1);
   });
 
-  it("covers the seven pairs a generated scheme can actually be measured on", () => {
+  it("covers the nine pairs a generated scheme can actually be measured on", () => {
     expect(scalePairs().map((pair) => pair.token)).toEqual([
       "--foreground",
       "--muted-foreground",
@@ -325,14 +325,16 @@ describe("the gray dials' safety claim", () => {
       "--track",
       "--ring",
       "--primary-foreground",
+      "--primary-text",
+      "--primary-soft-foreground",
     ]);
   });
 
   it("leaves every other pair beyond the dials' reach", () => {
     const unreachable = CONTRAST_PAIRS.filter((pair) => pair.foreground.kind === "fixed" || pair.background.kind === "fixed");
     expect(scalePairs().length + unreachable.length).toBe(CONTRAST_PAIRS.length);
-    expect(unreachable).toHaveLength(16);
-    expect(CONTRAST_PAIRS).toHaveLength(23);
+    expect(unreachable).toHaveLength(20);
+    expect(CONTRAST_PAIRS).toHaveLength(29);
   });
 });
 

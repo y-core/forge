@@ -27,7 +27,7 @@ const MOTION = `<style>
 
 function markup(): Promise<string> {
   return render(
-    Popover({ children: [Popover.Trigger({ id: "tips", children: "Tips" }), Popover.Content({ id: "tips", side: "bottom", children: "Body" })] }),
+    Popover({ children: [Popover.Trigger({ for: "tips", children: "Tips" }), Popover.Content({ id: "tips", side: "bottom", children: "Body" })] }),
   );
 }
 
@@ -120,7 +120,7 @@ test.describe("overlay motion is the platform's", () => {
 });
 
 const DISCLOSURE = `<style>
-  [data-slot~="collapsible-panel"] { display: block; block-size: 60px; }
+  [data-slot~="collapsible-content"] { display: block; block-size: 60px; }
 </style>`;
 
 test.describe("the disclosure height animation", () => {
@@ -129,7 +129,10 @@ test.describe("the disclosure height animation", () => {
   test("::details-content interpolates to auto rather than snapping open", async ({ page }) => {
     const html = await render(
       Collapsible({
-        children: [Collapsible.Trigger({ icon: ICON, children: "More" }), Collapsible.Panel({ children: "Body copy that occupies real height." })],
+        children: [
+          Collapsible.Trigger({ icon: ICON, children: "More" }),
+          Collapsible.Content({ children: "Body copy that occupies real height." }),
+        ],
       }),
     );
     await mount(page, `${DISCLOSURE}${html}`, CSS);

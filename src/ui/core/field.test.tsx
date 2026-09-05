@@ -55,7 +55,7 @@ describe("Field primitives", () => {
         </FormField>,
       ),
     ).toBe(
-      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email address</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-email" name="email"></div></fieldset>',
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email address</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email"></div></fieldset>',
     );
   });
 
@@ -71,7 +71,7 @@ describe("Field primitives", () => {
         </FormField>,
       ),
     ).toBe(
-      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-email" name="email" aria-describedby="field-email-error" aria-invalid="true"><p data-slot="field-error" class="text-sm font-normal text-destructive" id="field-email-error" role="alert">Email is required.</p></div></fieldset>',
+      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email" aria-describedby="field-email-error" aria-invalid="true"><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-email-error" role="alert">Email is required.</p></div></fieldset>',
     );
   });
 
@@ -88,7 +88,7 @@ describe("Field primitives", () => {
         </FormField>,
       ),
     ).toBe(
-      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-message">Message</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-message" name="message" aria-describedby="field-message-description field-message-error" aria-invalid="true"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-message-description">Minimum 15 characters</p><p data-slot="field-error" class="text-sm font-normal text-destructive" id="field-message-error" role="alert">Required</p></div></fieldset>',
+      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-message">Message</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-message" name="message" aria-describedby="field-message-description field-message-error" aria-invalid="true"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-message-description">Minimum 15 characters</p><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-message-error" role="alert">Required</p></div></fieldset>',
     );
   });
 
@@ -103,7 +103,7 @@ describe("Field primitives", () => {
         </FormField>,
       ),
     ).toBe(
-      '<fieldset disabled data-slot="field" data-disabled="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-name" name="name" disabled></div></fieldset>',
+      '<fieldset disabled data-slot="field" data-disabled="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-name" name="name" disabled></div></fieldset>',
     );
   });
 
@@ -118,7 +118,7 @@ describe("Field primitives", () => {
         </FormField>,
       ),
     ).toBe(
-      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="custom-id" aria-describedby="custom-help field-name-error" aria-invalid="false" name="name"></div></fieldset>',
+      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="custom-id" aria-describedby="custom-help field-name-error" aria-invalid="false" name="name"></div></fieldset>',
     );
   });
 
@@ -135,7 +135,7 @@ describe("Field primitives", () => {
         </FormField.Group>,
       ),
     ).toBe(
-      '<div data-slot="field-group" class="@container/field-group flex w-full flex-col gap-6"><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-name" name="name"></div></fieldset></div>',
+      '<div data-slot="field-group" class="@container/field-group flex w-full flex-col gap-6"><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-name" name="name"></div></fieldset></div>',
     );
   });
 
@@ -147,7 +147,7 @@ describe("Field primitives", () => {
         </FormField.Set>,
       ),
     ).toBe(
-      '<fieldset data-slot="field-set" class="flex flex-col gap-6"><legend data-slot="field-legend" data-variant="legend" class="mb-3 font-medium text-base text-foreground">Contact details</legend></fieldset>',
+      '<fieldset data-slot="field-set" class="flex flex-col gap-6"><legend data-slot="field-legend" data-as="legend" class="mb-3 font-medium text-base text-foreground">Contact details</legend></fieldset>',
     );
   });
 
@@ -165,7 +165,7 @@ describe("Field primitives", () => {
         </FormField.Group>,
       ),
     ).toBe(
-      '<div data-slot="field-group" class="@container/field-group flex w-full flex-col gap-6"><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full"><div data-slot="field-title" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50">Name</div><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-name" name="name"></div></fieldset><div data-content="true" data-slot="field-separator" class="relative h-5 text-sm"><hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border absolute inset-0 top-1/2"><span data-slot="field-separator-content" class="relative mx-auto block w-fit bg-background px-2 text-muted-foreground">or</span></div></div>',
+      '<div data-slot="field-group" class="@container/field-group flex w-full flex-col gap-6"><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><div data-slot="field-title" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50">Name</div><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-name" name="name"></div></fieldset><div data-content="true" data-slot="field-separator" class="relative h-5 text-sm"><hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border absolute inset-0 top-1/2"><span data-slot="field-separator-content" class="relative mx-auto block w-fit bg-background px-2 text-muted-foreground">or</span></div></div>',
     );
   });
 });
@@ -177,7 +177,7 @@ function idsAndRefs(html: string): string[] {
 describe("Field ids — aria-describedby names only what renders", () => {
   it("a control with no description emits no aria-describedby at all", async () => {
     expect(await render(<Input field={{ name: "email" }} />)).toBe(
-      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-email" name="email">',
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email">',
     );
   });
 
@@ -192,19 +192,19 @@ describe("Field ids — aria-describedby names only what renders", () => {
         </FormField>,
       ),
     ).toBe(
-      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive flex-col [&amp;&gt;*]:w-full"><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-email" name="email" aria-describedby="field-email-description"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-email-description">We never share it.</p></div></fieldset>',
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email" aria-describedby="field-email-description"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-email-description">We never share it.</p></div></fieldset>',
     );
   });
 
   it("an invalid field with no description names the error alone", async () => {
     expect(await render(<Input field={{ name: "email", invalid: true }} />)).toBe(
-      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-email" name="email" aria-describedby="field-email-error" aria-invalid="true">',
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email" aria-describedby="field-email-error" aria-invalid="true">',
     );
   });
 
   it("a caller's own aria-describedby survives when the field adds nothing", async () => {
     expect(await render(<Input aria-describedby='custom-help' field={{ name: "email" }} />)).toBe(
-      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" aria-describedby="custom-help" id="field-email" name="email">',
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" aria-describedby="custom-help" id="field-email" name="email">',
     );
   });
 });
@@ -318,13 +318,11 @@ describe("Field ids — the empty string is not a missing value", () => {
     const refs = referencedIds(html);
     expect(refs).toEqual(["field-email", "field-email-description", "field-email-error"]);
     const declared = declaredIds(html);
+    // oxlint-disable-next-line forge/exact-markup-assertion -- set membership over two id lists, not a substring of markup; both lists are asserted exactly on the lines around it
     expect(refs.filter((id) => id === "" || !declared.includes(id))).toEqual([]);
     expect(declared).toEqual(["field-email", "field-email-description", "field-email-error"]);
   });
 });
-
-const INPUT_CLASSES =
-  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50";
 
 const fullField = (name: string) =>
   render(
@@ -379,12 +377,14 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("a control with a blank name renders no id, and its name attribute passes through as given", async () => {
-    expect(await render(<Input field={{ name: "" }} />)).toBe(`<input data-slot="input" class="${INPUT_CLASSES}" name="">`);
+    expect(await render(<Input field={{ name: "" }} />)).toBe(
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" name="">',
+    );
   });
 
   it("aria-invalid still rides on a blank-named control, because invalidity is not an IDREF", async () => {
     expect(await render(<Input field={{ name: "", description: true, invalid: true }} />)).toBe(
-      `<input data-slot="input" class="${INPUT_CLASSES}" name="" aria-invalid="true">`,
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" name="" aria-invalid="true">',
     );
   });
 
@@ -397,7 +397,7 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   it("FieldLabel renders no for, and FieldError no id, for a blank name", async () => {
     expect([await render(<FieldLabel name=''>hi</FieldLabel>), await render(<FieldError name=''>bad</FieldError>)]).toEqual([
       `<label data-slot="field-label" class="${FIELD_LABEL_CLASSES}">hi</label>`,
-      '<p data-slot="field-error" class="text-sm font-normal text-destructive" role="alert">bad</p>',
+      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" role="alert">bad</p>',
     ]);
   });
 
@@ -424,7 +424,7 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
 
   it("an empty caller aria-describedby leaves no leading space on the rendered attribute", async () => {
     expect(await render(<Input aria-describedby='' field={{ name: "email", description: true }} />)).toBe(
-      `<input data-slot="input" class="${INPUT_CLASSES}" aria-describedby="field-email-description" id="field-email" name="email">`,
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" aria-describedby="field-email-description" id="field-email" name="email">',
     );
   });
 });
@@ -481,7 +481,7 @@ describe("Field ids — a name or scope must be a single id token", () => {
     const describedBy = fieldDescribedBy(`a${NBSP}b`, { description: true });
 
     expect(await render(<FieldDescription name={`a${NBSP}b`}>Work address</FieldDescription>)).toBe(
-      `<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="${describedBy}">Work address</p>`,
+      '<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-a\u00a0b-description">Work address</p>',
     );
     expect(describedBy).toBe(`field-a${NBSP}b-description`);
   });
@@ -504,7 +504,9 @@ describe("Field ids — a name or scope must be a single id token", () => {
   });
 
   it("a control named with a space renders no id, and its name attribute passes through as given", async () => {
-    expect(await render(<Input field={{ name: "first name" }} />)).toBe(`<input data-slot="input" class="${INPUT_CLASSES}" name="first name">`);
+    expect(await render(<Input field={{ name: "first name" }} />)).toBe(
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" name="first name">',
+    );
   });
 
   it("FieldLabel renders no for, and FieldDescription and FieldError no id, for a name with a space", async () => {
@@ -515,7 +517,7 @@ describe("Field ids — a name or scope must be a single id token", () => {
     ]).toEqual([
       `<label data-slot="field-label" class="${FIELD_LABEL_CLASSES}">Name</label>`,
       '<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Work address</p>',
-      '<p data-slot="field-error" class="text-sm font-normal text-destructive" role="alert">Required</p>',
+      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" role="alert">Required</p>',
     ]);
   });
 });
@@ -529,7 +531,27 @@ describe("Field — arbitrary attribute pass-through", () => {
         </Field>,
       ),
     ).toBe(
-      '<div data-slot="field" data-orientation="vertical" class="flex flex-col gap-1" data-test-hook="email-field" data-note="a&amp;b"><span data-slot="field-label" class="text-xs font-medium text-muted-foreground">Email</span><input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" id="field-email" name="email"></div>',
+      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1" data-test-hook="email-field" data-note="a&amp;b"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">Email</span><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email"></div>',
+    );
+  });
+});
+
+describe("FormField — orientation and responsive", () => {
+  it("lays out vertically by default and stamps no data-responsive", async () => {
+    expect(await render(<FormField name='email' />)).toBe(
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"></fieldset>',
+    );
+  });
+
+  it("orientation='horizontal' stamps the horizontal axis and its row layout", async () => {
+    expect(await render(<FormField name='email' orientation='horizontal' />)).toBe(
+      '<fieldset data-slot="field" data-orientation="horizontal" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-row items-start [&amp;&gt;[data-slot~=field-content]]:flex-1 [&amp;&gt;[data-slot~=field-label]]:flex-auto"></fieldset>',
+    );
+  });
+
+  it("responsive stamps data-responsive and layers the container-query row on the vertical layout", async () => {
+    expect(await render(<FormField name='email' responsive />)).toBe(
+      '<fieldset data-slot="field" data-responsive="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full @md/field-group:flex-row @md/field-group:items-start @md/field-group:[&amp;&gt;*]:w-auto @md/field-group:[&amp;&gt;[data-slot~=field-content]]:flex-1 @md/field-group:[&amp;&gt;[data-slot~=field-label]]:flex-auto"></fieldset>',
     );
   });
 });

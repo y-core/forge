@@ -28,6 +28,7 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §2g mountTooltip — Hint Popover: why `popover="hint"` is what makes it compose
 - §2h mountNumberField — Stepper Buttons: why its scope is eager
 - §2i openPopoverAt — Coordinate Placement: the popup with no invoker to anchor to
+- §2j mountCarouselDots — Strip-Driven Dot Marker: why it lifts the selected spelling off the row instead of restating it
 - §2k mountScrollSpy — Fragment Nav Current Marker: what orders the entries, and what it refuses to emit
 - §2l mountViewportCollapse — Width-Driven Disclosure: which state the server renders, and how the user takes over
 - §3 Signals and Lazy Loading: client state without a framework
@@ -58,7 +59,7 @@ Every mount controller is **idempotent per element and returns a disposer**, so 
 safe and a controller can be torn down. §2d states that contract as a rule.
 
 **What a controller addresses decides whether it is exported.** A controller pointed at markup the
-consumer wrote is public and carries its own per-root guard: `mountScrollSpy`,
+consumer wrote is public and carries its own per-root guard: `mountScrollSpy`, `mountCarouselDots`,
 `mountViewportCollapse`, `openPopoverAt`, `mountRovingFocus`. A controller that is a registered
 scope's `setup` body is not: `mountMenu`, `mountTabs`, `mountTooltip`, `mountNumberField`,
 `mountInputFormat`, `mountTurnstile`, `mountExpandedState`. Those scopes are `eager`, so `resume()` is their only correct
@@ -389,6 +390,31 @@ element cancels the first rather than arming a second listener — otherwise the
 the panel at stale coordinates on the next release. The deferred show also bails when the element has
 left the document, since an htmx swap between the arm and the release would otherwise call
 `showPopover()` on a detached node.
+
+### 2j. `mountCarouselDots` — Strip-Driven Dot Marker
+
+**`Carousel` is a scroll-snap strip with no script, so the server's `current` dot is a guess that
+stops being true the moment the reader scrolls.** A dot is a fragment link: pressing it moves the
+strip, but nothing in the platform moves the highlight with it. This controller closes that gap and
+nothing else — the scrolling stays the platform's.
+
+**It observes the slides against the _strip_ as the observer root, not the viewport**, and marks the
+dot of the slide with the highest intersection ratio. A carousel is a horizontal scroller inside the
+page; against the viewport every slide of a visible strip intersects at once.
+
+**It lifts both class spellings off the server-rendered row rather than restating them.** Unlike
+`mountScrollSpy`'s nav, a dot's selected look is baked into utility classes by `Pagination.Item`'s
+variants, so there is no attribute for a stylesheet to select on. Reading the `on` and `off` spelling
+from the rendered dots keeps the theme, the size and any caller class in one place — the component —
+instead of making the controller a second home for them.
+
+**It keeps the last marking while nothing is visible**, where §2k blanks the row. Mid-flick every
+slide can fall below the first threshold, and a highlight that blinks off on every scroll is worse
+than one that is briefly stale; a strip, unlike a page, always has a current slide.
+
+**There is no autoplay, and adding one would need a ruling first.** An unrequested timed advance
+moves content out from under a reader, which
+[`09-interaction.md`](../../src/ui/design/reference/09-interaction.md) does not budget for.
 
 ### 2k. `mountScrollSpy` — Fragment Nav Current Marker
 

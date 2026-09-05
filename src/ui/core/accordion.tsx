@@ -3,29 +3,29 @@
 import type { FC, JSX, JSXElement, JSXNode } from "../../jsx/types";
 import type { ForgeIcon } from "./icon";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
 
 interface AccordionRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
 interface AccordionItemProps extends Omit<JSX.IntrinsicElements["details"], "children"> {
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
 interface AccordionTriggerProps<N extends string = string> extends Omit<JSX.IntrinsicElements["summary"], "children"> {
   icon: ForgeIcon<N | "chevron-down">;
-  iconName?: N;
-  children?: JSXNode;
+  iconName?: N | undefined;
+  children?: JSXNode | undefined;
 }
 
 interface AccordionContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  hint?: string;
-  children?: JSXNode;
+  hint?: string | undefined;
+  children?: JSXNode | undefined;
 }
 
 const AccordionRoot: FC<AccordionRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("accordion", inherited)} class={cn("flex flex-col", asClass(cls))} {...rest}>
+  <div data-slot={slotToken("accordion", inherited)} class={cn("flex flex-col", cls)} {...rest}>
     {children}
   </div>
 );
@@ -34,7 +34,7 @@ const AccordionItem: FC<AccordionItemProps> = ({ open, class: cls, children, "da
   <details
     data-slot={slotToken("accordion-item", inherited)}
     {...(open ? { open } : {})}
-    class={cn("group/accordion-item border-b border-border last:border-b-0", asClass(cls))}
+    class={cn("group/accordion-item border-b border-border last:border-b-0", cls)}
     {...props}>
     {children}
   </details>
@@ -51,8 +51,8 @@ const AccordionTrigger = <N extends string = string>({
   <summary
     data-slot={slotToken("accordion-trigger", inherited)}
     class={cn(
-      "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none select-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
-      asClass(cls),
+      "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium focus-ring select-none hover:bg-muted/40",
+      cls,
     )}
     {...rest}>
     {iconName ? <Icon name={iconName} viewBox='0 0 24 24' class='size-4 shrink-0 text-muted-foreground' /> : null}
@@ -66,7 +66,7 @@ const AccordionTrigger = <N extends string = string>({
 );
 
 const AccordionContent: FC<AccordionContentProps> = ({ hint, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("accordion-content", inherited)} class={cn("px-1 pt-1 pb-3", asClass(cls))} {...rest}>
+  <div data-slot={slotToken("accordion-content", inherited)} class={cn("px-1 pt-1 pb-3", cls)} {...rest}>
     {hint ? <p class='mb-2 text-xs text-muted-foreground'>{hint}</p> : null}
     {children}
   </div>

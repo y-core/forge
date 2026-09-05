@@ -196,9 +196,7 @@ describe("optionalGroup — validates each entry against its own schema", () => 
   it("surfaces an invalid group entry as a normalized env error at the config boundary", () => {
     const schema = v.object({ email: optionalGroup({ apiKey: v.string() }, { required: ["apiKey"] }) });
     const cfg = createConfig({ email: { apiKey: env("EMAIL_API_KEY") } }, schema);
-    expect(() => cfg.get({ EMAIL_API_KEY: 42 })).toThrow(
-      new Error("Invalid environment: email.apiKey: Invalid type: Expected string but received 42"),
-    );
+    expect(() => cfg.get({ EMAIL_API_KEY: 42 })).toThrow(new Error("Invalid environment: email.apiKey: string"));
   });
 });
 
@@ -262,7 +260,7 @@ describe("Config", () => {
 
   it("get() throws the exact normalized message on invalid env", () => {
     const cfg = createConfig(testDescriptor.map, testDescriptor.schema);
-    expect(() => cfg.get({})).toThrow(new Error("Invalid environment: dbUrl: Invalid type: Expected string but received undefined"));
+    expect(() => cfg.get({})).toThrow(new Error("Invalid environment: dbUrl: missing"));
   });
 
   it("seed() overrides resolution without calling get()", () => {

@@ -72,7 +72,7 @@ row. Those live in governance, where they belong.
 | Verification gate steps, and every check's configuration                                                                                   | `config/steps.ts`                                 |
 | `lib` and `types` configuration                                                                                                            | `tsconfig.json`                                   |
 | Per-namespace export lists                                                                                                                 | `src/{ns}/mod.ts`                                 |
-| The generated assets module's exports — the manifest, the per-group `viewBox` consts, the bound icon components, and the glyph-name unions | `src/assets/build/pipeline.ts`                    |
+| The generated assets module's exports — the manifest, the per-group `viewBox` consts, the bound icon components, and the glyph-name unions | `src/tooling/assets/pipeline.ts`                  |
 | Declared cross-namespace dependency graph                                                                                                  | `config/namespaces.ts`                            |
 | CSRF and honeypot field names                                                                                                              | `src/form/constants.ts`                           |
 | Form parsing limits and defaults, including `FORM_MAX_BYTES_DEFAULT`                                                                       | `src/form/config.ts`                              |
@@ -83,7 +83,8 @@ row. Those live in governance, where they belong.
 Each of these checks **owns the rule set it enforces**. Read the check, not a prose summary of it.
 
 A check whose rule set is _derived_ rather than declared has no row here, and that is decided
-rather than missing: `validate-css-tokens`, `validate-class-order`, `validate-class-groups` and
+rather than missing: `validate-css-tokens`, `validate-class-order`, `validate-class-tokens`,
+`validate-class-groups` and
 `validate-design-scale` each enforce one invariant against a table computed from the compiled
 stylesheet, so there is no enumeration a prose copy could disagree with (§1b). Where such a check
 commits its derived table, the committed module is the row — `class-groups.ts` and
@@ -91,49 +92,52 @@ commits its derived table, the committed module is the row — `class-groups.ts`
 
 | Owns                                                                                                               | File                                                                                              |
 | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| Barrel rules as _enforced_                                                                                         | `src/cli/pkg/gate/checks/exports.ts` + `src/cli/pkg/gate/checks/barrel-parse.ts`                  |
-| The namespace graph as _enforced_                                                                                  | `src/cli/pkg/gate/checks/namespace-graph.ts` + `src/cli/pkg/gate/checks/namespace-graph-parse.ts` |
-| Governing-doc format as _enforced_                                                                                 | `src/cli/pkg/gate/checks/docs.ts`                                                                 |
-| `@source` coverage as _enforced_                                                                                   | `src/cli/pkg/gate/checks/css-sources.ts`                                                          |
-| The modern-CSS rule catalog as _enforced_ — every id, tier, severity, replacement, and which mechanism enforces it | `src/cli/pkg/gate/checks/modern-css-rules.ts`                                                     |
-| Token contrast mappings and their measured ratios, as _enforced_                                                   | `src/cli/pkg/gate/checks/contrast.ts` + `src/cli/pkg/gate/checks/contrast-parse.ts`               |
-| Every corpus rule id, the corpus file that states it, and which mechanism enforces it                              | `src/cli/pkg/gate/checks/design-rules.ts`                                                         |
-| The design corpus's citations and its markup rules as _enforced_                                                   | `src/cli/pkg/gate/checks/design.ts` + `src/cli/pkg/gate/checks/design-parse.ts`                   |
-| Every corpus rule about a class string, as _enforced_                                                              | `src/cli/pkg/lint.ts` and the rules under `src/cli/pkg/lint/`                                     |
-| JSX pragma lines and the slot-clobber rule as _enforced_                                                           | `src/cli/pkg/gate/checks/jsx.ts` + `src/cli/pkg/gate/checks/jsx-parse.ts`                         |
-| Test co-location, and the modules exempt from it, as _enforced_                                                    | `src/cli/pkg/gate/checks/co-location.ts`                                                          |
-| The SSR/browser import boundary as _enforced_                                                                      | `src/cli/pkg/gate/checks/ssr-boundary.ts`                                                         |
-| Changelog and package-version agreement as _enforced_                                                              | `src/cli/pkg/gate/checks/changelog.ts`                                                            |
-| Which modern-CSS findings fail, warn, or are deferred, as _enforced_                                               | `src/cli/pkg/gate/checks/modern-css.ts` + `src/cli/pkg/gate/checks/modern-css-deferred.ts`        |
+| Barrel rules as _enforced_                                                                                         | `src/tooling/gate/checks/exports.ts` + `src/tooling/gate/checks/barrel-parse.ts`                  |
+| The build-time boundary as _enforced_                                                                              | `src/tooling/gate/checks/build-time-boundary.ts`                                                  |
+| The namespace graph as _enforced_                                                                                  | `src/tooling/gate/checks/namespace-graph.ts` + `src/tooling/gate/checks/namespace-graph-parse.ts` |
+| Governing-doc format as _enforced_                                                                                 | `src/tooling/gate/checks/docs.ts`                                                                 |
+| `@source` coverage as _enforced_                                                                                   | `src/tooling/gate/checks/css-sources.ts`                                                          |
+| The modern-CSS rule catalog as _enforced_ — every id, tier, severity, replacement, and which mechanism enforces it | `src/tooling/lint/modern-css-rules.ts`                                                            |
+| Token contrast mappings and their measured ratios, as _enforced_                                                   | `src/tooling/gate/checks/contrast.ts` + `src/tooling/gate/checks/contrast-parse.ts`               |
+| Every corpus rule id, the corpus file that states it, and which mechanism enforces it                              | `src/tooling/lint/design-rules.ts`                                                                |
+| The design corpus's citations and its register round trip as _enforced_                                            | `src/tooling/gate/checks/design.ts` + `src/tooling/gate/checks/design-parse.ts`                   |
+| Every corpus rule about source, markup or class string, as _enforced_                                              | `src/tooling/lint/plugin.ts` and the rules under `src/tooling/lint/rules/`                        |
+| JSX pragma lines as _enforced_                                                                                     | `src/tooling/gate/checks/jsx.ts`                                                                  |
+| The slot-clobber ordering rule as _enforced_                                                                       | `src/tooling/lint/rules/data-slot-before-spread.ts`                                               |
+| Test co-location, and the modules exempt from it, as _enforced_                                                    | `src/tooling/gate/checks/co-location.ts`                                                          |
+| Which substring assertions on markup fail, and what suppresses one, as _enforced_                                  | `src/tooling/lint/rules/exact-markup-assertion.ts`                                                |
+| The SSR/browser import boundary as _enforced_                                                                      | `src/tooling/gate/checks/ssr-boundary.ts`                                                         |
+| Changelog and package-version agreement as _enforced_                                                              | `src/tooling/gate/checks/changelog.ts`                                                            |
+| Which modern-CSS findings fail, warn, or are deferred, as _enforced_                                               | `src/tooling/gate/checks/modern-css.ts` + `src/tooling/gate/checks/modern-css-deferred.ts`        |
 
 ### 2c. Cloudflare Reconciliation
 
 The `sync` half of the CLI decides what exists, what is created, and what is written back. Each
 row names the file that decides it; no prose here restates a naming rule or a handler's plan.
 
-| Owns                                                                                                 | File                                                                               |
-| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| The Cloudflare resource types `forge cf sync` reconciles                                             | `RESOURCE_TYPES` in `src/cli/cf/types.ts`                                          |
-| Which handler serves a given resource type                                                           | `buildHandlers` and `defaultHandlers` in `src/cli/cf/account/handlers/registry.ts` |
-| Whether a config is a Pages project or a Worker script                                               | `detectTarget` in `src/cli/cf/target.ts`                                           |
-| The naming strategy for a created remote resource                                                    | the per-type handler in `src/cli/cf/account/handlers/`                             |
-| What a reconciliation run decides to create, write, or leave                                         | `syncBindings` in `src/cli/cf/account/engine.ts`                                   |
-| The JSONC round-trip contract — what survives a write                                                | `src/cli/cf/config/parse.ts` + `src/cli/cf/config/edit.ts`                         |
-| The `.dev.vars` marker comments and what each licenses                                               | `GENERATE_MARKER` and `PUSH_MARKER` in `src/cli/cf/account/handlers/devvars.ts`    |
-| The `forge cf sync` command surface and its flags                                                    | `createSyncAccountCommand` in `src/cli/cf/account/commands.ts`                     |
-| The `forge` command tree — which first-party commands attach, and where an app's own are loaded from | `src/cli/root/root.ts`                                                             |
+| Owns                                                                                                 | File                                                                                   |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| The Cloudflare resource types `forge cf sync` reconciles                                             | `RESOURCE_TYPES` in `src/tooling/cf/types.ts`                                          |
+| Which handler serves a given resource type                                                           | `buildHandlers` and `defaultHandlers` in `src/tooling/cf/account/handlers/registry.ts` |
+| Whether a config is a Pages project or a Worker script                                               | `detectTarget` in `src/tooling/cf/target.ts`                                           |
+| The naming strategy for a created remote resource                                                    | the per-type handler in `src/tooling/cf/account/handlers/`                             |
+| What a reconciliation run decides to create, write, or leave                                         | `syncBindings` in `src/tooling/cf/account/engine.ts`                                   |
+| The JSONC round-trip contract — what survives a write                                                | `src/tooling/cf/config/parse.ts` + `src/tooling/cli/jsonc-edit.ts`                     |
+| The `.dev.vars` marker comments and what each licenses                                               | `GENERATE_MARKER` and `PUSH_MARKER` in `src/tooling/cf/account/handlers/devvars.ts`    |
+| The `forge cf sync` command surface and its flags                                                    | `createSyncAccountCommand` in `src/tooling/cf/account/commands.ts`                     |
+| The `forge` command tree — which first-party commands attach, and where an app's own are loaded from | `src/tooling/root/root.ts`                                                             |
 
 ### 2d. UI Contracts and Data Tables
 
-| Owns                                                                | File                                                          |
-| ------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Tailwind conflict-group table                                       | `src/ui/core/utils/class-groups.ts`                           |
-| The spacing scale, spacing and colour roots, and colour tokens      | `src/cli/pkg/lint/data/design-scale.ts`                       |
-| Forge's own UI glyph names, and the sprite sources that supply them | `src/ui/assets/sprites.ts`                                    |
-| Audited contrast pairs and the criterion binding each               | `src/ui/contracts/theme/contrast-pairs.ts`                    |
-| Accepted contrast exemptions, their pinned values and reasons       | `src/ui/contracts/theme/contrast-accepted.ts`                 |
-| Theme dial fields, parameters, ranges, units and fallbacks          | `src/ui/contracts/theme/theme-contract.ts`                    |
-| The showcase's demo coverage manifest, and the gaps it excuses      | `src/ui/show/coverage.ts` + `src/ui/show/coverage-missing.ts` |
+| Owns                                                                | File                                                               |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Tailwind conflict-group table                                       | `src/ui/core/utils/class-groups.ts`                                |
+| The spacing scale, spacing and colour roots, and colour tokens      | `src/tooling/lint/data/design-scale.ts`                            |
+| Forge's own UI glyph names, and the sprite sources that supply them | `src/ui/assets/glyphs.ts` + `src/ui/assets/build/glyph-sources.ts` |
+| Audited contrast pairs and the criterion binding each               | `src/ui/contracts/theme/contrast-pairs.ts`                         |
+| Accepted contrast exemptions, their pinned values and reasons       | `src/ui/contracts/theme/contrast-accepted.ts`                      |
+| Theme dial fields, parameters, ranges, units and fallbacks          | `src/ui/contracts/theme/theme-contract.ts`                         |
+| The showcase's demo coverage manifest, and the gaps it excuses      | `src/ui/show/coverage.ts` + `src/ui/show/coverage-missing.ts`      |
 
 ### 2e. The One Prose Row
 

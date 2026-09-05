@@ -206,11 +206,66 @@ describe("appendVary (via cors middleware)", () => {
     expect(res.headers.get("Vary")).toBe("*");
   });
 
-  it("does not modify Vary when the origin is not in the allowed list", async () => {
+  it("marks Vary: Origin on a refused origin, so a cache cannot replay the refusal to an allowed one", async () => {
     const app = new Forge();
     app.use("*", cors({ origins: ["https://example.com"] }));
     mapHandler(app, "GET", "/disallowed", () => new Response("ok", { headers: { Vary: "Accept-Encoding" } }));
     const res = await app.request("/disallowed", { method: "GET", headers: { Origin: "https://evil.com" } });
+    expect(res.headers.get("Vary")).toBe("Accept-Encoding, Origin");
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("marks Vary: Origin on a request that sends no Origin at all", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/no-origin", () => new Response("ok"));
+    const res = await app.request("/no-origin", { method: "GET" });
+    expect(res.headers.get("Vary")).toBe("Origin");
+  });
+
+  it("marks Vary: Origin on a refused preflight", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/preflight", () => new Response("ok"));
+    const res = await app.request("/preflight", {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.com", "Access-Control-Request-Method": "GET" },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Vary")).toBe("Origin");
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("dedupes a lowercase downstream `origin` token on the refused path", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/lower", () => new Response("ok", { headers: { Vary: "origin" } }));
+    const res = await app.request("/lower", { method: "GET", headers: { Origin: "https://evil.com" } });
+    expect(res.headers.get("Vary")).toBe("origin");
+  });
+
+  it("leaves Vary: * untouched on the refused path too", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["https://example.com"] }));
+    mapHandler(app, "GET", "/refused-star", () => new Response("ok", { headers: { Vary: "*" } }));
+    const res = await app.request("/refused-star", { method: "GET", headers: { Origin: "https://evil.com" } });
+    expect(res.headers.get("Vary")).toBe("*");
+  });
+
+  it("omits Vary entirely when the allowlist is `*` without credentials", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["*"] }));
+    mapHandler(app, "GET", "/star", () => new Response("ok"));
+    const res = await app.request("/star", { method: "GET", headers: { Origin: "https://anywhere.example" } });
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(res.headers.get("Vary")).toBeNull();
+  });
+
+  it("leaves a downstream Vary untouched when the allowlist is `*` without credentials", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: ["*"] }));
+    mapHandler(app, "GET", "/star-vary", () => new Response("ok", { headers: { Vary: "Accept-Encoding" } }));
+    const res = await app.request("/star-vary", { method: "GET", headers: { Origin: "https://anywhere.example" } });
     expect(res.headers.get("Vary")).toBe("Accept-Encoding");
   });
 });

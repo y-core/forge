@@ -9,14 +9,14 @@ describe("controls/Input", () => {
   it("emits data-field on the input", async () => {
     const out = await render(<Input bind='name' value='ada' />);
     expect(out).toBe(
-      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" value="ada" data-field="name">',
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" value="ada" data-field="name">',
     );
   });
 
   it("passes value and data-ref through to the underlying input", async () => {
     const out = await render(<Input bind='name' value='ada' data-ref='name-input' />);
     expect(out).toBe(
-      '<input data-slot="input" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" value="ada" data-ref="name-input" data-field="name">',
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" value="ada" data-ref="name-input" data-field="name">',
     );
   });
 });

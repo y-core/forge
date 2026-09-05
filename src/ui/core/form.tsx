@@ -6,27 +6,23 @@ import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
 type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx-headers"> & {
-  method?: "get" | "post";
-  "hx-headers"?: Record<string, string> | string;
-  children?: JSXNode;
-  csrfToken?: string;
-  csrfField?: string;
+  method?: "get" | "post" | undefined;
+  "hx-headers"?: Record<string, unknown> | string | undefined;
+  children?: JSXNode | undefined;
+  csrfToken?: string | undefined;
+  csrfField?: string | undefined;
 };
 
-function parseHxHeaders(value: string): Record<string, string> | null {
+// Every entry is kept, whatever its JSON type: htmx serialises a number or a boolean into the header
+// just as it does a string, so dropping them silently loses a header the same form keeps when it
+// carries no `csrfToken`.
+function parseHxHeaders(value: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(value) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return null;
     }
-
-    const headers: Record<string, string> = {};
-    for (const [key, headerValue] of Object.entries(parsed)) {
-      if (typeof headerValue === "string") {
-        headers[key] = headerValue;
-      }
-    }
-    return headers;
+    return parsed as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -42,8 +38,15 @@ function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfToken?: string
 
   if (typeof hxHeaders === "string") {
     const parsed = parseHxHeaders(hxHeaders);
+    // Returning the caller's string here would ship a form with no CSRF token at all — a 403 with
+    // nothing in the markup or the console pointing at the cause, which is the failing-far-from-the-
+    // cause shape ERROR_HANDLING.md §5a exists to forbid. `js:` is the realistic trigger and it
+    // cannot be merged into at render time, so the caller has to add the header itself.
     if (!parsed) {
-      return hxHeaders;
+      throw new Error(
+        `<Form> cannot merge its csrfToken into an hx-headers value that is not a JSON object (${hxHeaders}). ` +
+          `Add "X-CSRF-Token" to that value yourself, or drop csrfToken and render the hidden field by hand.`,
+      );
     }
     return JSON.stringify({ ...parsed, "X-CSRF-Token": csrfToken });
   }
@@ -72,12 +75,7 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
   const classAttribute = merged ? { class: merged } : {};
 
   return (
-    <form
-      data-slot={slotToken("form", inherited)}
-      method={method}
-      {...(resolvedHxHeaders !== undefined ? { "hx-headers": resolvedHxHeaders } : {})}
-      {...classAttribute}
-      {...formProps}>
+    <form data-slot={slotToken("form", inherited)} method={method} hx-headers={resolvedHxHeaders} {...classAttribute} {...formProps}>
       {csrfToken && <input data-slot='form-csrf' type='hidden' name={csrfField} value={csrfToken} />}
       {children}
     </form>

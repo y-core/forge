@@ -239,7 +239,11 @@ describe("GROUP_OVERRIDES", () => {
 // Held as consts: the formatter's class sorter rewrites a literal written inside a `cn(…)` call.
 const NOWRAP_THEN_NORMAL = "whitespace-nowrap whitespace-normal";
 const BUTTON_WRAPPING_NORMALLY =
-  "inline-flex items-center justify-center rounded-lg font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-safe:transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 text-sm whitespace-normal";
+  "state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium focus-ring motion-safe:transition-colors " +
+  "h-control-md px-4 text-sm " +
+  "[--tone:var(--color-primary)] [--tone-fg:var(--color-primary-foreground)] [--tone-text:var(--color-primary-text)] " +
+  "[--tone-soft:var(--color-primary-soft)] [--tone-soft-fg:var(--color-primary-soft-foreground)] [--tone-soft-border:var(--color-primary-soft-border)] " +
+  "border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)] whitespace-normal";
 
 describe("cn whitespace group", () => {
   it("resolves two whitespace utilities in one string to the later one", () => {

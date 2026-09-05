@@ -369,12 +369,12 @@ function isHoneypotFilled(formData: ReadonlyFormData, field?: string): boolean;
 ```
 
 Returns `true` when the honeypot field has content — a signal the submitter is a bot, since the field
-is hidden from human users. Returns `false` when the field is absent or empty.
+is hidden from human users. Returns `false` when the field is absent, empty, or whitespace-only — a lone space from an extension or an autofill pass is not evidence of a bot.
 
-| Parameter  | Type               | Default                                  | Description                      |
-| ---------- | ------------------ | ---------------------------------------- | -------------------------------- |
-| `formData` | `ReadonlyFormData` | —                                        | Parsed form data.                |
-| `field`    | `string`           | `HONEYPOT_FIELD_DEFAULT` (`"__surname"`) | The decoy field name to inspect. |
+| Parameter  | Type               | Default                                | Description                      |
+| ---------- | ------------------ | -------------------------------------- | -------------------------------- |
+| `formData` | `ReadonlyFormData` | —                                      | Parsed form data.                |
+| `field`    | `string`           | `HONEYPOT_FIELD_DEFAULT` (`"__hp_c7"`) | The decoy field name to inspect. |
 
 **A `defineAction` route does not call this.** It names `honeypot: CONTACT_DECOY`, and the pipeline
 runs the check before the schema and drops the field because it checked it — so the schema never has
@@ -395,7 +395,7 @@ if (isHoneypotFilled(formData, CONTACT_DECOY)) return new Response("Bad request"
 #### Rendering the decoy — compose `<Honeypot />` explicitly
 
 **`Form` renders no honeypot.** An unconditional one reaches `method="get"` too, where the browser
-serialises the decoy into the query string of every resulting URL — `?__surname=` in the address bar,
+serialises the decoy into the query string of every resulting URL — `?__hp_c7=` in the address bar,
 in bookmarks, in shared links, in history and in the outbound `Referer` — while protecting nothing,
 since `isHoneypotFilled` is only consulted by mutation handlers.
 
@@ -415,6 +415,12 @@ constant instead — the default is public, so it is the one name every bot alre
 same constant to whatever checks it: `defineAction`'s `honeypot`, or `isHoneypotFilled`'s second
 argument. The rendered markup carries no attribute naming the wrapper as a honeypot, for the same
 reason the field name should not be forge's: an attribute nothing reads still identifies the decoy.
+
+Whatever name you choose, keep it meaningless. A decoy called `surname`, `company` or `website`
+matches the browser's own autofill heuristics, which ignore `autocomplete="off"` for name and address
+fields — the browser fills the decoy for a user with a saved profile and the submission is refused
+with nothing on screen to explain it. The input carries `autocomplete="new-password"` for the same
+reason: it is the one token every browser honours as _never autofill this_.
 
 Nothing fails at build or at runtime when the child is missing — the form simply stops being
 protected — so treat `<Honeypot />` as part of the shape of a mutation form rather than an addition
@@ -469,7 +475,7 @@ if (!result.ok) {
 | Export                    | Value                     | Description                                                                 |
 | ------------------------- | ------------------------- | --------------------------------------------------------------------------- |
 | `CSRF_FIELD_DEFAULT`      | `"_csrf"`                 | Default CSRF hidden-input field name.                                       |
-| `HONEYPOT_FIELD_DEFAULT`  | `"__surname"`             | Default honeypot field name. Prefer an app-owned name — this one is public. |
+| `HONEYPOT_FIELD_DEFAULT`  | `"__hp_c7"`               | Default honeypot field name. Prefer an app-owned name — this one is public. |
 | `TURNSTILE_FIELD_DEFAULT` | `"cf-turnstile-response"` | The field Cloudflare's Turnstile widget writes its token into.              |
 | `FORM_MAX_BYTES_DEFAULT`  | `102400`                  | Default max form body size (100 KB).                                        |
 | `CsrfConfigSchema`        | valibot schema            | Validates `{ secret }` as ≥32 hex characters.                               |

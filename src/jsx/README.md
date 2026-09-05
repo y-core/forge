@@ -224,8 +224,9 @@ which makes conditional rendering with `&&` safe:
 
 #### `JSXElement`
 
-The element object produced by the runtime, discriminated by `$jsx: true`. You rarely construct these
-by hand; the JSX transform produces them.
+The element object produced by the runtime, branded with a module-private symbol so that only
+`createElement` can produce a value `isValidElement` accepts — a `JSON.parse`'d object cannot. You
+rarely construct these by hand; the JSX transform produces them.
 
 ---
 
@@ -235,7 +236,8 @@ by hand; the JSX transform produces them.
 
 1. The TypeScript compiler (driven by `jsxImportSource`) rewrites JSX syntax into calls to `jsx` /
    `jsxs` from `@y-core/forge/jsx/jsx-runtime` (or `jsxDEV` from the dev runtime). Each call delegates
-   to `createElement`, producing a plain `JSXElement` object: `{ type, props, key, $jsx: true }`.
+   to `createElement`, producing a `JSXElement` object: `{ type, props, key }` plus the runtime's
+   private symbol brand.
 2. `renderToString` (or `renderPage`) walks that tree. Function components are invoked with their
    props; `Fragment` is detected by reference and its children are rendered without a wrapper;
    intrinsic elements emit `<tag …>children</tag>`.

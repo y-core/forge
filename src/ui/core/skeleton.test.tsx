@@ -6,31 +6,31 @@ import { Skeleton } from "./skeleton";
 describe("Skeleton", () => {
   it("renders a <div> with data-slot=skeleton", async () => {
     expect(await render(<Skeleton />)).toBe(
-      '<div data-slot="skeleton" aria-hidden="true" class="rounded-md bg-muted motion-safe:animate-pulse"></div>',
+      '<div data-slot="skeleton" aria-hidden="true" class="rounded-field bg-muted motion-safe:animate-pulse"></div>',
     );
   });
 
   it("is aria-hidden to hide from screen readers", async () => {
     expect(await render(<Skeleton />)).toBe(
-      '<div data-slot="skeleton" aria-hidden="true" class="rounded-md bg-muted motion-safe:animate-pulse"></div>',
+      '<div data-slot="skeleton" aria-hidden="true" class="rounded-field bg-muted motion-safe:animate-pulse"></div>',
     );
   });
 
   it("has motion-safe:animate-pulse class", async () => {
     expect(await render(<Skeleton />)).toBe(
-      '<div data-slot="skeleton" aria-hidden="true" class="rounded-md bg-muted motion-safe:animate-pulse"></div>',
+      '<div data-slot="skeleton" aria-hidden="true" class="rounded-field bg-muted motion-safe:animate-pulse"></div>',
     );
   });
 
   it("has bg-muted and rounded-md classes", async () => {
     expect(await render(<Skeleton />)).toBe(
-      '<div data-slot="skeleton" aria-hidden="true" class="rounded-md bg-muted motion-safe:animate-pulse"></div>',
+      '<div data-slot="skeleton" aria-hidden="true" class="rounded-field bg-muted motion-safe:animate-pulse"></div>',
     );
   });
 
   it("merges a custom size class", async () => {
     expect(await render(<Skeleton class='h-4 w-full' />)).toBe(
-      '<div data-slot="skeleton" aria-hidden="true" class="rounded-md bg-muted motion-safe:animate-pulse h-4 w-full"></div>',
+      '<div data-slot="skeleton" aria-hidden="true" class="rounded-field bg-muted motion-safe:animate-pulse h-4 w-full"></div>',
     );
   });
 
@@ -42,7 +42,7 @@ describe("Skeleton", () => {
 
   it("forwards id and data-* attributes and keeps aria-hidden", async () => {
     expect(await render(<Skeleton id='sk1' data-testid='skeleton' data-note='a&b' />)).toBe(
-      '<div data-slot="skeleton" aria-hidden="true" class="rounded-md bg-muted motion-safe:animate-pulse" id="sk1" data-testid="skeleton" data-note="a&amp;b"></div>',
+      '<div data-slot="skeleton" aria-hidden="true" class="rounded-field bg-muted motion-safe:animate-pulse" id="sk1" data-testid="skeleton" data-note="a&amp;b"></div>',
     );
   });
 });

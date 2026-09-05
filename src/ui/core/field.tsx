@@ -1,35 +1,35 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
-import { stateAttrs } from "../contracts/state-attrs";
+import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
 /** Plain object describing a form field — pass explicitly to controls instead of relying on context. @public */
 export interface FieldDescriptor {
   name: string;
   /** Distinguishes fields that share a `name` on one page. */
-  scope?: string;
+  scope?: string | undefined;
   /** A description element renders for this field. */
-  description?: boolean;
-  invalid?: boolean;
-  disabled?: boolean;
+  description?: boolean | undefined;
+  invalid?: boolean | undefined;
+  disabled?: boolean | undefined;
 }
-
-type FieldOrientation = "horizontal" | "responsive" | "vertical";
 
 interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
   name: string;
-  invalid?: boolean;
-  disabled?: boolean;
-  orientation?: FieldOrientation;
-  children?: JSXNode;
+  invalid?: boolean | undefined;
+  disabled?: boolean | undefined;
+  orientation?: Orientation | undefined;
+  /** Lays the field out vertically until its `field-group` container is wide enough for the horizontal arrangement. */
+  responsive?: boolean | undefined;
+  children?: JSXNode | undefined;
 }
 
 interface FieldNaming {
-  name?: string;
-  scope?: string;
+  name?: string | undefined;
+  scope?: string | undefined;
 }
 
 type LabelProps = JSX.IntrinsicElements["label"];
@@ -37,25 +37,28 @@ type DescriptionProps = JSX.IntrinsicElements["p"];
 type ErrorProps = JSX.IntrinsicElements["p"];
 
 interface FieldControlProps {
-  id?: string;
-  name?: string;
-  disabled?: boolean;
-  "aria-describedby"?: string;
-  "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling";
+  id?: string | undefined;
+  name?: string | undefined;
+  disabled?: boolean | undefined;
+  "aria-describedby"?: string | undefined;
+  "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling" | undefined;
 }
 
 const fieldVariants = cva({
-  base: "group/field flex w-full gap-3 data-[invalid]:text-destructive",
+  base: "group/field flex w-full gap-3 data-[invalid]:text-destructive-text",
   variants: {
     orientation: {
       horizontal: "flex-row items-start [&>[data-slot~=field-content]]:flex-1 [&>[data-slot~=field-label]]:flex-auto",
-      responsive:
-        "flex-col @md/field-group:flex-row @md/field-group:items-start [&>*]:w-full @md/field-group:[&>*]:w-auto @md/field-group:[&>[data-slot~=field-content]]:flex-1 @md/field-group:[&>[data-slot~=field-label]]:flex-auto",
       vertical: "flex-col [&>*]:w-full",
     },
   },
   defaultVariants: { orientation: "vertical" },
 });
+
+/** The horizontal arrangement, re-applied once the `field-group` container is wide enough. */
+const FIELD_RESPONSIVE = cn(
+  "@md/field-group:flex-row @md/field-group:items-start @md/field-group:[&>*]:w-auto @md/field-group:[&>[data-slot~=field-content]]:flex-1 @md/field-group:[&>[data-slot~=field-label]]:flex-auto",
+);
 
 /** Shared Tailwind class string for FieldLabel and FieldTitle. */
 export const FIELD_LABEL_CLASSES = cn(
@@ -92,14 +95,22 @@ export function fieldErrorId(name: string, scope?: string): string {
   return `${fieldId(name, scope)}-error`;
 }
 
+/** The id of one item in a checkable group, `undefined` when either half cannot be derived. @internal */
+export function fieldItemId(name: string, value: string, scope?: string): string | undefined {
+  return derivable(name, scope) && derivable(value) ? `${fieldId(name, scope)}-${value}` : undefined;
+}
+
+/** The box a checkable group's item draws, per size — the same square in both groups. @internal */
+export const FIELD_ITEM_SIZE = { sm: "size-3.5", md: "size-4", lg: "size-5" } as const;
+
 /** What {@link fieldDescribedBy} needs beyond the field's name. */
 export interface FieldDescribedByOptions {
-  scope?: string;
+  scope?: string | undefined;
   /** A description element renders for this field. */
-  description?: boolean;
-  invalid?: boolean;
+  description?: boolean | undefined;
+  invalid?: boolean | undefined;
   /** An `aria-describedby` the caller already has, kept ahead of the derived ids. */
-  existing?: string;
+  existing?: string | undefined;
 }
 
 /** The `aria-describedby` value for a field, or `undefined` when nothing to point at renders. @public */
@@ -144,23 +155,29 @@ export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
   invalid = false,
   disabled = false,
   orientation = "vertical",
+  responsive = false,
   class: cls,
   children,
   "data-slot": inherited,
   ...props
 }) => {
-  const clsValue = asClass(cls);
   return (
     <fieldset
       disabled={disabled}
       data-slot={slotToken("field", inherited)}
+      {...(responsive ? { "data-responsive": "" } : {})}
       {...stateAttrs({ disabled, invalid, orientation })}
-      class={fieldVariants({ orientation, ...(clsValue !== undefined ? { class: clsValue } : {}) })}
+      class={fieldVariants({ orientation, class: cn(responsive && FIELD_RESPONSIVE, cls) })}
       {...props}>
       {children}
     </fieldset>
   );
 };
+
+/** The state hooks a control emits for its own `invalid` and `busy` props: the `data-` styling hook and the ARIA state beside it. @internal */
+export function fieldStateProps(invalid = false, busy = false): Record<string, string> {
+  return { ...stateAttrs({ invalid, busy }), ...(invalid ? { "aria-invalid": "true" } : {}), ...(busy ? { "aria-busy": "true" } : {}) };
+}
 
 /** A `<label>` whose `for` is derived from the field's name and scope unless given explicitly. @internal */
 export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({
@@ -174,7 +191,7 @@ export const FieldLabel: FC<PropsWithChildren<LabelProps & FieldNaming>> = ({
 }) => (
   <label
     data-slot={slotToken("field-label", inherited)}
-    class={cn(FIELD_LABEL_CLASSES, asClass(cls))}
+    class={cn(FIELD_LABEL_CLASSES, cls)}
     for={htmlFor ?? (derivable(name, scope) ? fieldId(name, scope) : undefined)}
     {...props}>
     {children}
@@ -195,8 +212,8 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNami
   return (
     <p
       data-slot={slotToken("field-description", inherited)}
-      class={cn("text-sm leading-normal text-muted-foreground", asClass(cls))}
-      {...(resolvedId !== undefined ? { id: resolvedId } : {})}
+      class={cn("text-sm leading-normal text-muted-foreground", cls)}
+      id={resolvedId}
       {...props}>
       {children}
     </p>
@@ -222,8 +239,8 @@ export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
   return (
     <p
       data-slot={slotToken("field-error", inherited)}
-      class={cn("text-sm font-normal text-destructive", asClass(cls))}
-      {...(resolvedId !== undefined ? { id: resolvedId } : {})}
+      class={cn("text-sm font-normal text-destructive-text", cls)}
+      id={resolvedId}
       role={role ?? "alert"}
       {...props}>
       {children}

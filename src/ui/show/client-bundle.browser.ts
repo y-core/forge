@@ -33,7 +33,7 @@ test.describe("the show bundle alone registers every scope the showcase stamps",
 
     const html = [
       await render(ThemeToggle({ icon })),
-      await render(Menu({ children: [Menu.Trigger({ id: "m", children: "File" }), Menu.Popup({ id: "m", children: "Item" })] })),
+      await render(Menu({ children: [Menu.Trigger({ for: "m", children: "File" }), Menu.Popup({ id: "m", children: "Item" })] })),
       await render(Toast.Container({ children: Toast({ id: "t", dismissible: true, children: "Saved" }) })),
     ].join("");
 
@@ -53,7 +53,7 @@ test.describe("the show bundle alone registers every scope the showcase stamps",
   });
 
   test("a core menu opens and its trigger reports expanded", async ({ page }) => {
-    const html = await render(Menu({ children: [Menu.Trigger({ id: "m", children: "File" }), Menu.Popup({ id: "m", children: "Item" })] }));
+    const html = await render(Menu({ children: [Menu.Trigger({ for: "m", children: "File" }), Menu.Popup({ id: "m", children: "Item" })] }));
     await mount(page, html, SHOW_ONLY);
     await start(page);
 

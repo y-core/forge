@@ -15,9 +15,7 @@ describe("validateEnv", () => {
   });
 
   it("throws the exact normalized message when a required field is missing", () => {
-    expect(() => validateEnv({}, schema)).toThrow(
-      new Error('Invalid environment: DATABASE_URL: Invalid key: Expected "DATABASE_URL" but received undefined'),
-    );
+    expect(() => validateEnv({}, schema)).toThrow(new Error("Invalid environment: DATABASE_URL: missing"));
   });
 
   it("succeeds when an optional field is absent", () => {

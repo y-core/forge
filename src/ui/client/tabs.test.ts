@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
+import { TAB_SELECTOR, TABS_MOUNTED_ATTR } from "../contracts/tabs-contract";
 import { mountTabs } from "./tabs";
 import { type FakeElement, FakeEvent, fakeTree } from "./test-dom";
+
+const TAB_ROLE = /\[role='([^']+)'\]/.exec(TAB_SELECTOR)?.[1] ?? TAB_SELECTOR;
 
 /** A tab set whose tabs are anchors, exactly as `Tabs.Tab` renders them. */
 function tabs(options: { activation?: string; selected?: number } = {}) {
@@ -10,7 +13,7 @@ function tabs(options: { activation?: string; selected?: number } = {}) {
   const root = el("DIV", { "data-slot": "tabs", "data-activation": activation });
   const list = el("DIV", { role: "tablist" });
   const made = ["a", "b", "c"].map((id, i) => {
-    const tab = el("A", { role: "tab", "aria-controls": `p-${id}`, "aria-selected": String(i === selected), href: `#p-${id}` });
+    const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === selected), href: `#p-${id}` });
     const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
     panel.hidden = i !== selected;
     if (i === selected) tab.setAttribute("data-selected", "");
@@ -47,6 +50,28 @@ describe("mountTabs", () => {
     mountTabs(root as never)();
 
     expect(root.hasAttribute("data-tabs-mounted")).toBe(false);
+  });
+
+  it("writes TABS_MOUNTED_ATTR on mount and takes it off again on dispose", () => {
+    const { root } = tabs();
+
+    const dispose = mountTabs(root as never);
+    const mounted = root.getAttribute(TABS_MOUNTED_ATTR);
+    dispose();
+
+    expect({ mounted, disposed: root.getAttribute(TABS_MOUNTED_ATTR) }).toEqual({ mounted: "", disposed: null });
+  });
+
+  it("drives the tabs TAB_SELECTOR names, which every fixture tab matches", () => {
+    const { root, tabs: list } = tabs();
+    mountTabs(root as never);
+
+    fire(list[2] as FakeElement, "focusin");
+
+    expect({ matched: list.map((tab) => tab.matches(TAB_SELECTOR)), selection: selection(list) }).toEqual({
+      matched: [true, true, true],
+      selection: ["false", "false", "true"],
+    });
   });
 
   it("selects on focus under automatic activation, moving both halves of the state", () => {

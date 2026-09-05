@@ -21,12 +21,14 @@ description: "forge's two test runners and its browser set, the entity encoding 
 - §1b Custom bun:test Stub — No bun-types: the hard package ban
 - §1c The Browser Set: real Chromium behind its own verb
 - §1d Waiting on an htmx Swap: settled, not merely swapped
+- §1e Media Options Playwright Does Not Implement: why a spec takes `test` from the harness
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
 - §3b Exact Match — Never Substring Matching: why `toContain` is banned
 - §3c Render Once, Assert Once: the single enforced shape
 - §3d Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees: the deletion check
+- §3e forge/exact-markup-assertion — The Enforced Form: what the rule catches, what it cannot, and the suppression
 - §4 Fakes Over Mocks: implement the interface, add no libraries
 - §5 Security Test Requirements: both directions, always
 - §5a Both Pass and Fail Cases Required: the requirement matrix
@@ -84,9 +86,20 @@ never restate it here.
 
 **The set sits outside `bun run verify`, and the reason is a prerequisite, not cost.** It needs a
 browser binary that `bun run test:install` fetches, and a prerequisite is the only legitimate
-ground for a set to stand outside `check`. Cost never is. It **is** a step of `bun run verify`,
+ground for a set to stand outside `check`. Cost never is. It **is** a step of `bun run verify:full`,
 the release gate, which is permitted to carry a prerequisite
 ([`TESTING.md`](../governance/TESTING.md) §6c).
+
+**So the browser set is verified manually and at publish, not in the default gate — a ruling, not
+an oversight.** forge runs no CI, so `bun run test:browser` before a commit that touches
+`src/ui/client/` or a controller is the check, and `prepublishOnly` is the backstop: `--full`
+fails hard when a prerequisite probe returns false (`src/tooling/gate/command.ts`) and
+refuses a green when nothing ran, so a chromium-absent machine cannot publish.
+
+**A consequence accepted with it:** `validate-co-location`
+(`src/tooling/gate/checks/co-location.ts`) counts a `.browser.ts` as satisfying co-location
+for a module the default gate never executes, so `bun run verify` can certify as tested a module
+whose only test it did not run. Demanding a second unit file would buy a fake one, which is worse.
 
 **`bun test` is untouched by it.** The two never share a process, so no global is ever redefined and
 forge's Cloudflare `Request` / `Response` / `fetch` semantics stay exactly as the runtime ships them
@@ -120,6 +133,16 @@ markup — rendered by the real SSR components wherever possible — dispatches 
 browser's own input path, and reads what resulted. A test that counts calls is testing the test's
 own fixture.
 
+**The browser set cannot prove an `@utility`, and a spec that seems to is passing for another
+reason.** `mount`'s `css` option serves the stylesheets **raw, with no Tailwind build**, so a
+`state-busy` or a `focus-ring` in the mounted markup resolves to nothing at all — a computed-style
+assertion against one reads the browser's initial value and says nothing about the recipe. What the
+option _does_ reach is the plain CSS in `forge-ui.css`'s `@layer` blocks, which is why
+`forced-colors.browser.ts` works: its forced-colors block is `[data-slot~="…"]` rules, not utilities. A claim about a
+recipe's own selector belongs in a `bun test` that compiles the design system —
+`src/tooling/gate/checks/state-recipes.test.ts` is the pattern, and the compiled selector is the
+artefact it reads.
+
 **A UA pseudo-element is asserted from rendered pixels, never from `getComputedStyle`.** Chromium
 answers `getComputedStyle(el, "::-webkit-slider-runnable-track")` with the _host_ element's style
 rather than the pseudo-element's, so a computed-style spec for the slider track would pass whatever
@@ -139,6 +162,21 @@ which is what makes the resulting failure load-dependent rather than reproducibl
 counts `htmx:afterSettle` on `document.body` and gates on the count. Raising `defaultSettleDelay`
 is how such a race is made deterministic while it is being diagnosed; production settle timing is
 never changed to suit a spec.
+
+### 1e. Media Options Playwright Does Not Implement
+
+**Take `test` from `src/ui/client/browser-test-helper.ts`, not from `@playwright/test`, in any spec
+that emulates reduced motion, forced colours or contrast.** playwright 1.62 declares
+`reducedMotion`, `forcedColors` and `contrast` in `types/test.d.ts` but builds none of them into
+`_combinedContextOptions` (`playwright/lib/index.js`), so `test.use({ reducedMotion: "reduce" })`
+type-checks and emulates nothing at all. A spec written against the reduced-motion branch of
+`forge-ui.css` would silently exercise the `no-preference` branch and pass for the wrong reason.
+
+The harness `test` reinstates the three as real options and applies them through an overridden
+`page` fixture, which is the one form that does reach the browser; the runtime
+`page.emulateMedia({ … })` call is equally sound and is what the five existing motion-sensitive
+specs use. **Nothing enforces the import** — `browser-test-helper.browser.ts` is the regression
+that would catch the option silently reverting to a no-op, not a check on call sites.
 
 ---
 
@@ -235,6 +273,41 @@ accessor over a third-party global — is installed **after** the harness's `mou
 before it, and wrapping the clock's timers rather than the platform's is what keeps a fast-forward in
 charge of the wrapped timer. Instrumenting earlier reads as correct and does nothing.
 
+### 3e. forge/exact-markup-assertion — The Enforced Form
+
+**A `toContain`, a `toMatch`, or a `.includes(` whose receiver is rendered markup fails the `lint`
+step.** The rule is `forge/exact-markup-assertion`, and
+`src/tooling/lint/rules/exact-markup-assertion.ts` owns it as enforced
+([`SOURCE_OF_TRUTH.md`](./SOURCE_OF_TRUTH.md) §2b); `.oxlintrc.json` owns which files it judges,
+scoped by an `overrides` entry to `src/ui`'s `*.test.ts` / `*.test.tsx` and `*.browser.ts` /
+`*.browser.tsx`. Its finding cites [`TESTING.md`](../governance/TESTING.md) §3b — the shape it is
+pushing a test back towards is §3c.
+
+**Markup is traced through local helpers.** A wrapper — `const page = (which) => render(<X page={which} />)`
+— and one hop of derivation off a rendered value — `const band = out.slice(...)` — both still count
+as markup, resolved by a fixpoint over the file's bindings. Naming the render call something else
+is not an escape.
+
+**A derivation that produced a list is deliberately not flagged**: `.split(`, `.map(`, `.filter(`,
+`.flatMap(`, `.concat(`, `.matchAll(`, `Array.from(`, an array literal — and either branch of a
+`?? []` or a ternary, since the fallback is written because the other side is a list. `toContain` on
+an array is exact membership rather than a substring, and `classOf(out).split(" ")` is the shape a
+test reaches for precisely so `justify-end` stops matching inside `group-open:justify-end`.
+
+**`.includes(` is checked on its receiver, not only behind a matcher.**
+`expect(html.includes(…)).toBe(false)` is the same defect in a form no `.not.toContain` scan would
+ever see.
+
+**What it cannot do: it reads one file.** A substring assertion on a value the rule cannot trace
+back to a render — markup arriving as a function parameter, or imported from another file — is not
+reported. §3b is what binds; the rule catches the common shapes of breaking it, not every one.
+
+**A site is suppressed with `// oxlint-disable-next-line forge/exact-markup-assertion -- <reason>`,
+and `forge/suppression-needs-reason` fails a directive carrying no reason.** Reserve it for a
+genuine closed-world coverage sweep — the `expect(list.filter((x) => !html.includes(…))).toEqual([])`
+shape, where the substring is how the sweep looks each item up rather than a claim about which
+element an attribute landed on. Four exist in the tree today, each with its reason inline.
+
 ---
 
 ## 4. Fakes Over Mocks
@@ -316,10 +389,22 @@ these bindings.**
 but not enforced — a test must never depend on wall-clock expiry**, because a fake that expired on
 a real clock would make a suite fail by being slow.
 
+**The fakes refuse what the platform refuses.** A fake that is green where the real binding throws
+is worse than no fake: it certifies code that fails on deploy. So `fakeKV.put` throws below the
+60-second `expirationTtl` floor ([`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §2c), `fakeR2.get`
+throws `UnsatisfiableRangeError` for a range lying **wholly** outside the object while still
+clamping an overrun — which is exactly what R2 does, and the distinction is the point — and
+`fakeD1.first(column)` rejects a column the row does not carry rather than returning `undefined`
+against a declared `T | null`. **Do not "fix" a fake back to permissiveness** when a test fails
+against one of these; the test is telling you what production would do.
+
+Not enforcing TTL _expiry_ is a different thing from enforcing the TTL _floor_: the first would need
+a clock, the second is a constant.
+
 `fakeD1` both controls results and records the queries issued: a caller-supplied responder drives
 the returned rows, and every prepared-and-bound statement is recorded, so one fake serves the
-arrange and the assert. `fakeR2` mirrors `fakeKV` over `R2BucketLike`, with a deterministic
-content-hash etag — deterministic because a random etag would make a conditional-request assertion
+arrange and the assert. `fakeR2` mirrors `fakeKV` over `R2BucketLike`, honouring `delimiter` and `include` on `list`, with a
+deterministic content-hash etag — deterministic because a random etag would make a conditional-request assertion
 unwritable.
 
 ### 7c. render() — SSR Render-to-String

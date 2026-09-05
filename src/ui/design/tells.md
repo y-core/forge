@@ -234,7 +234,7 @@ the same glyph is a different drawing on every OS, and it carries a name in the 
 that nobody chose.
 Default: a glyph comes from the sprite through `Icon`, or through a `createIcon` binding typed
 `ForgeIcon<Name>`, both from `@y-core/forge/ui/core`; forge's own glyph set is enumerated by
-`FORGE_UI_ICON_NAMES` in `@y-core/forge/ui/assets`, and an app sprite extends it through the same
+`FORGE_UI_ICON_NAMES` in `@y-core/forge/ui/assets/glyphs`, and an app sprite extends it through the same
 factory. <!-- rule:forge-ui-tell-emoji-icon -->
 Override never; see the Floor rule.
 

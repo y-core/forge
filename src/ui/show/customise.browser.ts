@@ -2,14 +2,16 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { DARK_CLASS } from "../chrome/theme";
-import { mount, paintedHex } from "../client/browser-test-helper";
+import { mount, paintedHex, paintedToken, THEME_TOKEN_CSS } from "../client/browser-test-helper";
 import {
   buildTheme,
   COPY_CONFIRM_MS,
   COPY_STATUS_ATTR,
   COPY_TARGET_ATTR,
+  dialQuery,
   liveRatios,
   PRESET_FIELDS,
+  schemeCss,
   SCHEME_PRESETS,
 } from "../contracts/theme/theme-contract";
 import { createIcon } from "../core/icon";
@@ -31,7 +33,6 @@ const EXPOSE = {
 };
 
 /** The token layer: the scale, then the mapping onto it. Both hops, or nothing resolves. */
-const TOKEN_CSS = ["./ui/assets/css/theme-neutral.css", "./ui/assets/css/theme-base.css"];
 
 // The harness runs no Tailwind build, so a case reading a computed colour must supply the rule it
 // reads. The tokens are not restated: resolving them through the shipped sheets is the hop under test.
@@ -62,8 +63,14 @@ async function mountCustomise(page: Page, search = ""): Promise<void> {
   // oxlint-disable-next-line typescript/no-explicit-any -- only `url` is read by the loader
   const ctx = { url: new URL(`http://forge.test/showcase/ui/theme${search}`) } as any;
   const html = await render(CustomiseContent({ data: loadCustomise(ctx), icon }));
-  await mount(page, UTILITY_STYLE + html, { ...EXPOSE, css: TOKEN_CSS });
+  await mount(page, UTILITY_STYLE + html, { ...EXPOSE, css: THEME_TOKEN_CSS });
   await page.evaluate(() => window.forgeResume.resume());
+  await settle(page);
+}
+
+/** Lets the customiser's rAF-coalesced scheme text and share URL land before the next read. */
+function settle(page: Page): Promise<void> {
+  return page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
 /** Move one lever the way a drag does — set the value, then fire the delegated `input` event. */
@@ -79,6 +86,7 @@ async function drag(page: Page, dials: readonly (readonly [field: string, value:
     },
     dials as [string, string][],
   );
+  await settle(page);
 }
 
 /** A custom property as the browser resolves it on `<html>`, trimmed of the whitespace CSSOM keeps. */
@@ -86,16 +94,8 @@ function rootProperty(page: Page, property: string): Promise<string> {
   return page.evaluate((name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim(), property);
 }
 
-// A custom property's computed value is the `light-dark()` text itself — the function resolves at
-// used-value time, and only for a property that takes a `<color>`. Painting it is the only way to
-// read the colour the mode actually selects.
-/** A colour token as the `#rrggbb` the browser paints it. */
-function paintedToken(page: Page, property: string): Promise<string> {
-  return paintedHex(page, `var(${property})`);
-}
-
 /** The dials the customiser loads with, so a case can name only the ones it moves. */
-const DEFAULT_DIALS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10 };
+const DEFAULT_DIALS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10, radiusField: 10, radiusBox: 16, controlH: 40 };
 
 /** Pick a scheme the way a reader does — set the value, then fire the delegated `change`. */
 async function choosePreset(page: Page, id: string): Promise<void> {
@@ -395,6 +395,78 @@ test.describe("the customiser's levers", () => {
   });
 });
 
+// `schemeCss` rebuilds the whole stylesheet text, so the two writes below are deferred to one frame
+// rather than run per input. `drag()` settles by design, so the pre-frame state is observable only
+// from inside the task that dispatched the event — hence the inlined dispatch.
+test.describe("the customiser's text output", () => {
+  // The share URL is built from `location.pathname`, and the harness mounts the markup on the
+  // origin root rather than on the route the loader was handed.
+  const SHARE_PATH = "/?";
+
+  test("hold the scheme block and the share URL until the next frame", async ({ page }) => {
+    await mountCustomise(page);
+
+    const observed = await page.evaluate(() => {
+      interface Printed {
+        scheme: string;
+        share: string;
+      }
+      const read = (): Printed => ({
+        scheme: document.querySelector("[data-scheme-output] code")?.textContent ?? "",
+        share: document.querySelector("[data-share-url]")?.textContent ?? "",
+      });
+      const before = read();
+      const slider = document.querySelector<HTMLInputElement>('[data-field="grayHue"]');
+      if (slider === null) throw new Error("no grayHue slider");
+      slider.value = "120";
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      const sameTask = read();
+      return new Promise<{ before: Printed; sameTask: Printed; afterFrame: Printed }>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve({ before, sameTask, afterFrame: read() })));
+      });
+    });
+
+    const moved = { ...DEFAULT_DIALS, grayHue: 120 };
+    expect(observed.sameTask).toEqual(observed.before);
+    expect(observed.afterFrame).toEqual({ scheme: schemeCss(buildTheme(moved), moved), share: SHARE_PATH + dialQuery(moved) });
+  });
+
+  test("coalesce a multi-lever drag into exactly one frame callback, and print the last value", async ({ page }) => {
+    await mountCustomise(page);
+    const moves = [
+      ["grayHue", "120"],
+      ["grayChroma", "45"],
+      ["accentHue", "30"],
+    ] as const;
+
+    const scheduled = await page.evaluate(
+      (dials) => {
+        const real = window.requestAnimationFrame.bind(window);
+        let count = 0;
+        window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+          count += 1;
+          return real(callback);
+        }) as typeof window.requestAnimationFrame;
+        for (const [field, value] of dials) {
+          const slider = document.querySelector<HTMLInputElement>(`[data-field="${field}"]`);
+          if (slider === null) throw new Error(`no ${field} slider`);
+          slider.value = value;
+          slider.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        window.requestAnimationFrame = real;
+        return count;
+      },
+      moves as unknown as [string, string][],
+    );
+    await settle(page);
+
+    const moved = { ...DEFAULT_DIALS, grayHue: 120, grayChroma: 45, accentHue: 30 };
+    expect(scheduled).toBe(1);
+    expect(await page.evaluate(() => document.querySelector("[data-share-url]")?.textContent)).toBe(SHARE_PATH + dialQuery(moved));
+    expect(await page.evaluate(() => document.querySelector("[data-scheme-output] code")?.textContent)).toBe(schemeCss(buildTheme(moved), moved));
+  });
+});
+
 // The whole point of the accent rows: one accent dial has to move an accent swatch, an accent hex
 // and an accent ratio, and leave the gray family alone. A shared painter would fail the last clause.
 test.describe("the customiser's accent family", () => {
@@ -553,7 +625,7 @@ test.describe("the customiser's compositions band", () => {
         title: card.querySelector("[data-slot~='card-title']")?.textContent?.trim() ?? "",
         rows: card.querySelectorAll("tbody tr").length,
         skeletons: card.querySelectorAll("[data-slot~='skeleton']").length,
-        errors: card.querySelectorAll("[data-slot~='alert'][data-variant='destructive']").length,
+        errors: card.querySelectorAll("[data-slot~='alert'][data-tone='destructive']").length,
       })),
     );
 

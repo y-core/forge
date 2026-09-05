@@ -14,7 +14,7 @@ import type { Forge } from "./forge-app";
 /** One per-path guard group in `MiddlewareChainOptions.guards`. @public */
 export interface MiddlewareGuardGroup<Bindings = Record<string, unknown>> {
   /** Path patterns, as accepted by `app.use`, the group applies to. */
-  paths: string[];
+  paths: readonly string[];
   /** Origin/Referer verification for state-changing routes. */
   origin?: OriginProtectionOptions<Bindings>;
   /** Cloudflare rate-limit binding enforcement. */
@@ -54,10 +54,8 @@ export function applyMiddlewareChain<Bindings extends object = Record<string, un
   if (options.session) app.use("*", options.session);
 
   for (const group of options.guards ?? []) {
-    for (const path of group.paths) {
-      if (group.origin) app.use(path, originProtection<Bindings>(group.origin));
-      if (group.rateLimit) app.use(path, rateLimit<Bindings>({ trustCfHeaders, ...group.rateLimit }));
-      if (group.middleware) app.use(path, ...group.middleware);
-    }
+    if (group.origin) app.use(group.paths, originProtection<Bindings>(group.origin));
+    if (group.rateLimit) app.use(group.paths, rateLimit<Bindings>({ trustCfHeaders, ...group.rateLimit }));
+    if (group.middleware) app.use(group.paths, ...group.middleware);
   }
 }

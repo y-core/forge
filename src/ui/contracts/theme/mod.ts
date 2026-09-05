@@ -7,12 +7,14 @@ export {
   GRAY_RAMP,
   hexToOklch,
   type Mode,
+  oklabToLinearSrgb,
   type Oklch,
   oklchCss,
   oklchToHex,
   type Ramp,
   relativeLuminance,
   type Scale,
+  srgbGamma,
   toSrgbGamut,
 } from "./color";
 export { ACCEPTED_CONTRAST, type AcceptedContrastRow } from "./contrast-accepted";
@@ -60,10 +62,12 @@ export {
   SCALE_ROW_ATTR,
   SCALE_ROWS,
   SCHEME_PRESETS,
+  SHAPE_PROPERTIES,
   type ScaleFamily,
   type SchemePreset,
   STEP_SEGMENTS,
   scaleVars,
   schemeCss,
+  shapeVars,
   stepProperty,
 } from "./theme-contract";

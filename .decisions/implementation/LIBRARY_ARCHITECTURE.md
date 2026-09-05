@@ -66,7 +66,7 @@ that rule and the reason.
 
 ### 3c. Peer Dependencies for Build Tools
 
-`esbuild`, `sharp` and `tailwindcss` are **optional peer dependencies** for the `assets/build`
+`esbuild`, `sharp` and `tailwindcss` are **optional peer dependencies** for the `tooling/assets`
 pipeline. None is in the main dependency tree — only apps that build assets need them, and none is
 ever imported by runtime source, so none reaches a Worker bundle.
 
@@ -80,7 +80,7 @@ have warned.
 Declaring it also makes forge's own palette **readable**. Tailwind v4 ships its default theme as
 CSS (`tailwindcss/theme.css`, `--color-red-700: oklch(…)`), which is what lets the contrast audit
 resolve the status hues rather than pinning a human's measurement of them
-(`src/cli/pkg/gate/checks/contrast.ts`, pointed at that stylesheet by `config/steps.ts`). That capability is a
+(`src/tooling/gate/checks/contrast.ts`, pointed at that stylesheet by `config/steps.ts`). That capability is a
 consequence of the declaration, not its justification — the declaration was owed either way.
 
 ### 3d. CSS Source Scanning Stops at `ui/`
@@ -105,7 +105,7 @@ drift.** A directory under `src/ui/` whose files declare a utility class must be
 explicitly registered as class-free — a new component directory added without either fails the gate
 rather than shipping classes no consumer build generates. The other direction refuses an `@source`
 path resolving outside `src/ui/`, and a namespace outside `ui/` that declares a class string must
-instead document the `@source` requirement in its own README. `src/cli/pkg/gate/checks/css-sources.ts`
+instead document the `@source` requirement in its own README. `src/tooling/gate/checks/css-sources.ts`
 owns all three, derived from disk, so none is a list to keep in step.
 
 ---

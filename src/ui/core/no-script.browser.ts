@@ -31,8 +31,8 @@ test.describe("the four components that used to be inert without script", () => 
       Tabs({
         children: [
           Tabs.List({ children: [Tabs.Tab({ for: "p-a", selected: true, children: "A" }), Tabs.Tab({ for: "p-b", children: "B" })] }),
-          Tabs.Panel({ id: "p-a", selected: true, children: "First panel" }),
-          Tabs.Panel({ id: "p-b", children: "Second panel" }),
+          Tabs.Content({ id: "p-a", selected: true, children: "First panel" }),
+          Tabs.Content({ id: "p-b", children: "Second panel" }),
         ],
       }),
     );

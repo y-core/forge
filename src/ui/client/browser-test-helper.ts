@@ -1,9 +1,35 @@
-import type { Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
+import { test as playwrightTest, type Page } from "@playwright/test";
 import { build } from "esbuild";
 
 /** Specifiers resolve from `src/`, not from this file or the calling spec — a spec in `ui/core/` and
  * one in `ui/client/` then name the same module the same way. */
 const SRC_ROOT = new URL("../../", import.meta.url).pathname;
+
+// playwright 1.62 declares `reducedMotion`, `forcedColors` and `contrast` in `types/test.d.ts` but
+// builds none of them into `_combinedContextOptions` (`playwright/lib/index.js`), so
+// `test.use({ reducedMotion: "reduce" })` type-checks and emulates nothing — a spec written against
+// the reduced-motion branch of `forge-ui.css` would silently exercise the no-preference one. These
+// re-declare the three as real options and apply them per page, the one form that does reach the
+// browser. A spec that needs any of them must take `test` from here, not from `@playwright/test`.
+/** `@playwright/test`'s `test`, with the media options playwright leaves unimplemented reinstated. */
+export const test = playwrightTest.extend<{
+  reducedMotion: "reduce" | "no-preference" | null;
+  forcedColors: "active" | "none" | null;
+  contrast: "more" | "no-preference" | null;
+}>({
+  reducedMotion: [null, { option: true }],
+  forcedColors: [null, { option: true }],
+  contrast: [null, { option: true }],
+  page: async ({ page, reducedMotion, forcedColors, contrast }, use) => {
+    if (reducedMotion !== null || forcedColors !== null || contrast !== null) {
+      await page.emulateMedia({ reducedMotion, forcedColors, contrast });
+    }
+    await use(page);
+  },
+});
 
 const bundles = new Map<string, Promise<string>>();
 
@@ -66,6 +92,14 @@ export function classesOf(html: string, slot: string): string[] {
   return match[1].replaceAll("&amp;", "&").split(" ");
 }
 
+/** The token sheets a themed spec mounts, so the two showcase specs cannot name a different pair. */
+export const THEME_TOKEN_CSS = ["./ui/assets/css/theme-neutral.css", "./ui/assets/css/theme-base.css"];
+
+/** A colour token as the `#rrggbb` the browser paints it. */
+export function paintedToken(page: Page, property: string): Promise<string> {
+  return paintedHex(page, `var(${property})`);
+}
+
 // Two conversions a spec must not do for itself. A token's *computed* value is the substituted text
 // — `light-dark()` resolves at used-value time — so it has to be painted before it is a colour at
 // all; and a non-legacy colour serializes in its own space, so a computed `oklch()` is not
@@ -106,4 +140,21 @@ async function givePageAnOrigin(page: Page): Promise<void> {
   if (page.url().startsWith(ORIGIN)) return;
   await page.route(`${ORIGIN}**`, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><html><body></body></html>" }));
   await page.goto(ORIGIN);
+}
+
+const TAILWIND_ENTRY = resolve(SRC_ROOT, "ui/assets/css/tailwind.css");
+
+/** The stylesheet compiled against exactly `candidates` — the browser suite ships no Tailwind build of its own. */
+export async function compiledCss(candidates: readonly string[]): Promise<string> {
+  const { compile } = (await import("tailwindcss")) as {
+    compile: (css: string, options: unknown) => Promise<{ build: (candidates: string[]) => string }>;
+  };
+  const loadStylesheet = async (id: string, base: string): Promise<{ path: string; base: string; content: string }> => {
+    const path = id.startsWith("tailwindcss")
+      ? new URL(import.meta.resolve(id === "tailwindcss" ? "tailwindcss/index.css" : id)).pathname
+      : resolve(base, id);
+    return { path, base: dirname(path), content: readFileSync(path, "utf-8") };
+  };
+  const sheet = await compile(readFileSync(TAILWIND_ENTRY, "utf-8"), { base: dirname(TAILWIND_ENTRY), loadStylesheet });
+  return sheet.build([...candidates]);
 }

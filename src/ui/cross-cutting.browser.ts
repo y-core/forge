@@ -57,7 +57,7 @@ function isPopoverOpen(page: Page, id: string): Promise<boolean> {
 
 /** Builds a `Menu.Trigger` whose `id` names the popup it toggles, addressing the button itself by `data-ref`. */
 function menuTrigger(popupId: string, ref: string, label: string) {
-  return Menu.Trigger({ id: popupId, "data-ref": ref, children: label });
+  return Menu.Trigger({ for: popupId, "data-ref": ref, children: label });
 }
 
 const triggerRef = (ref: string) => `[data-ref='${ref}']`;
@@ -427,8 +427,8 @@ test.describe("RTL — every composite consumer inherits it and each can break i
               Tabs.Tab({ id: "tab-2", for: "panel-2", children: "Two" }),
             ],
           }),
-          Tabs.Panel({ id: "panel-1", selected: true, children: "First" }),
-          Tabs.Panel({ id: "panel-2", children: "Second" }),
+          Tabs.Content({ id: "panel-1", selected: true, children: "First" }),
+          Tabs.Content({ id: "panel-2", children: "Second" }),
         ],
       }),
     );

@@ -88,6 +88,15 @@ out.** <!-- rule:forge-ui-state-submit-spinner -->
 A button whose text changes to "Loading…" loses its width and its meaning at once. Override when the
 control is icon-only, where the spinner replaces the glyph in the same box.
 
+Default: `busy` — and `Button`'s `loading`, which sets it — marks a submission the server already
+knows about and stamped into the response it sent; a wait driven by the request lifecycle is
+`htmx-indicator`'s instead, per [`11-htmx.md`](./11-htmx.md), and no one control carries both —
+unless the wait is neither, where a `Spinner` beside the control is the whole
+answer. <!-- rule:forge-ui-busy-vs-indicator -->
+`busy` renders `aria-busy` and `data-busy`, so it is true for exactly as long as the markup carrying
+it. `htmx-indicator` is revealed and hidden by htmx around the request. A control wearing both
+announces one wait twice and stops announcing it at two different moments.
+
 ---
 
 ## Empty
@@ -130,7 +139,7 @@ import { Alert, Button, Card } from "@y-core/forge/ui/core";
         <Alert.Title>No projects yet</Alert.Title>
         <Alert.Description class='max-w-prose'>A project holds your deployments and their settings.</Alert.Description>
       </Alert>
-      <Button variant='primary'>Create a project</Button>
+      <Button>Create a project</Button>
     </Card.Content>
   );
 }
@@ -140,12 +149,12 @@ import { Alert, Button, Card } from "@y-core/forge/ui/core";
 
 ## Error
 
-**Default: a failure that belongs to a visible surface renders an `Alert` `destructive` in place, and
+**Default: a failure that belongs to a visible surface renders an `Alert` `tone='destructive'` in place, and
 the surface keeps its content.** <!-- rule:forge-ui-state-error-inline -->
 Replacing a table with an error message destroys the data the user was reading. Override when the
 content is known stale and showing it would mislead.
 
-**Default: a failure of work the user is no longer watching renders a `Toast` `destructive`.**
+**Default: a failure of work the user is no longer watching renders a `Toast` `tone='destructive'`.**
 <!-- rule:forge-ui-state-error-toast -->
 
 Background saves, long uploads, anything the user navigated away from. Override when the failure
@@ -154,19 +163,22 @@ blocks the next step, which is a `Dialog` or an in-place `Alert`.
 **Default: every error state carries the retry, next to the message.**
 <!-- rule:forge-ui-state-error-retry -->
 
-A `secondary` `Button` in the same `Alert`. Override when retrying cannot help — a validation
+A `tone='neutral' appearance='outline'` `Button` in the same `Alert`. Override when retrying cannot help — a validation
 failure, a permission denial — where the correct control is the one that fixes the cause.
 
-Note on tokens: `Alert` and `Toast` deliberately style their non-`default` variants with Tailwind
-palette utilities (`border-red-200 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950
-dark:text-red-200` for `destructive`, and the blue, emerald and yellow equivalents for `info`,
-`success` and `warning`) rather than with semantic tokens. That is the shipped behaviour, and it is
-why `forge-ui-foreground-pairing` has nothing to pair here: both pairs are checked inside the
-variant. The hue is fixed; the lightness is not — each variant carries an explicit `dark:` half, so
-a status panel is a tinted region on a dark page rather than a near-white island. Do not "fix" it by passing `class="bg-destructive"`:
+Note on tokens: `Alert` and `Toast` take their non-`neutral` colours from the `--status-*` family
+rather than from `--destructive` / `--success` / `--warning`, through the soft appearance each tone
+resolves to. That is the shipped behaviour, and it is why
+`forge-ui-foreground-pairing` has nothing to pair here: the surface, its foreground and its border
+are one audited triple, chosen inside the tone. The hue is fixed and the mode is not — each status
+step resolves through a scale step that carries both — so a status panel is a tinted region on a
+dark page rather than a near-white island. Do not "fix" it by passing `class="bg-destructive"`:
 `--destructive` does pair with `--destructive-foreground`, so the pairing is not the objection. The
 objection is that `--destructive` is the _application's_ destructive colour and an app may
-legitimately re-point it, whereas a status panel has to stay red to mean "failed".
+legitimately re-point it, whereas a status panel has to stay red to mean "failed". `--destructive` is also
+a _fill_, held across modes so a near-white foreground clears it; error **text** is
+`text-destructive-text`, which is the step that flips
+([`THEME_GENERATION.md`](../../../.decisions/implementation/THEME_GENERATION.md) §4).
 
 ---
 
@@ -220,9 +232,10 @@ a spinner drawn as a lie about measurability.
 
 **Default: a measured value uses the `Meter` compound in full — `Meter.Label`, `Meter.Value`,
 `Meter.Track`.** <!-- rule:forge-ui-state-meter-composed -->
-`Meter.Label` requires `for`, because an unassociated label is decoration; `<meter>` draws its own
-bar from `low` / `high` / `optimum` and needs no indicator element. Override when the value has no
-range to sit in, which makes it a number, not a meter.
+`Meter.Label` requires `for`, because an unassociated label is decoration; the bar is drawn from
+`low` / `high` / `optimum` and needs no indicator element — forge paints it in the theme's own
+`--success` / `--warning` / `--destructive`, on the quiet track `Progress` uses. Override when the
+value has no range to sit in, which makes it a number, not a meter.
 
 ```tsx
 import { Meter } from "@y-core/forge/ui/core";

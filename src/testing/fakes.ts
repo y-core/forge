@@ -1,7 +1,11 @@
 import type { AssetsFetcher } from "../app/types";
 import type { D1DatabaseLike, D1PreparedStatement, D1Result } from "../storage/db/types";
 import type { KVListOptions, KVListResult, KVNamespace, KVPutOptions } from "../storage/kv/types";
+import { UnsatisfiableRangeError } from "../storage/r2/errors";
 import type { R2BucketLike, R2ListLike, R2ObjectBodyLike, R2ObjectLike, R2PutLike } from "../storage/r2/types";
+
+/** The floor a real KV binding enforces on `expirationTtl` (STORAGE_BINDINGS §2c). */
+const KV_EXPIRATION_TTL_MIN = 60;
 
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
@@ -38,10 +42,13 @@ export function fakeKV(seed?: Record<string, string>): KVNamespace {
       value: read(key, options.type),
       metadata: data.get(key)?.metadata ?? null,
     }),
-    put: async (key: string, value: string | ArrayBuffer, options?: KVPutOptions): Promise<void> => {
+    put: async (key: string, value: string | ArrayBuffer | ArrayBufferView | ReadableStream, options?: KVPutOptions): Promise<void> => {
+      if (options?.expirationTtl !== undefined && options.expirationTtl < KV_EXPIRATION_TTL_MIN) {
+        throw new Error(`KV put: expirationTtl must be at least ${KV_EXPIRATION_TTL_MIN} seconds, received ${options.expirationTtl}`);
+      }
       // Decoding to a string here would replace every invalid UTF-8 sequence with U+FFFD
       // and silently corrupt binary values.
-      const bytes = typeof value === "string" ? TEXT_ENCODER.encode(value) : new Uint8Array(value).slice();
+      const bytes = await toBytes(value);
       const expiration = resolveExpiration(options);
       data.set(key, {
         bytes,
@@ -140,10 +147,13 @@ interface R2GetLike {
 }
 
 /** Resolves an R2 range option to a `[start, end)` byte window clamped to the object size. */
-function resolveRange(size: number, range?: R2GetLike["range"]): { start: number; end: number } {
+function resolveRange(key: string, size: number, range?: R2GetLike["range"]): { start: number; end: number } {
   if (!range) return { start: 0, end: size };
   if (range.suffix !== undefined) return { start: Math.max(0, size - range.suffix), end: size };
-  const start = Math.min(Math.max(range.offset ?? 0, 0), size);
+  const offset = Math.max(range.offset ?? 0, 0);
+  // A range wholly outside the object is what R2 refuses; an overrun is what it clamps.
+  if (offset >= size && !(offset === 0 && size === 0)) throw new UnsatisfiableRangeError(key, { size });
+  const start = Math.min(offset, size);
   const end = range.length !== undefined ? Math.min(start + range.length, size) : size;
   return { start, end: Math.max(start, end) };
 }
@@ -177,7 +187,7 @@ export function fakeR2(seed?: Record<string, string>): R2BucketLike {
     get: async (key: string, options?: R2GetLike): Promise<R2ObjectBodyLike | null> => {
       const entry = data.get(key);
       if (!entry) return null;
-      const { start, end } = resolveRange(entry.bytes.byteLength, options?.range);
+      const { start, end } = resolveRange(key, entry.bytes.byteLength, options?.range);
       const bytes = entry.bytes.subarray(start, end);
       let used = false;
       return {
@@ -217,16 +227,56 @@ export function fakeR2(seed?: Record<string, string>): R2BucketLike {
     delete: async (keys: string | string[]): Promise<void> => {
       for (const k of Array.isArray(keys) ? keys : [keys]) data.delete(k);
     },
-    list: async (options?: { prefix?: string; limit?: number; cursor?: string }): Promise<R2ListLike> => {
-      let names = [...data.keys()].sort();
-      if (options?.prefix) names = names.filter((n) => n.startsWith(options.prefix as string));
+    list: async (options?: {
+      prefix?: string;
+      limit?: number;
+      cursor?: string;
+      delimiter?: string;
+      include?: readonly ("httpMetadata" | "customMetadata")[];
+    }): Promise<R2ListLike> => {
+      const prefix = options?.prefix ?? "";
+      let names = [...data.keys()].sort().filter((n) => n.startsWith(prefix));
+
+      const prefixes: string[] = [];
+      if (options?.delimiter !== undefined && options.delimiter !== "") {
+        const delimiter = options.delimiter;
+        const collapsed = new Set<string>();
+        names = names.filter((name) => {
+          const at = name.indexOf(delimiter, prefix.length);
+          if (at === -1) return true;
+          collapsed.add(name.slice(0, at + delimiter.length));
+          return false;
+        });
+        prefixes.push(...[...collapsed].sort());
+      }
+
+      // A page spans keys and collapsed prefixes together, which is how R2 pages a delimited list.
+      const entries: { name: string; isPrefix: boolean }[] = [
+        ...names.map((name) => ({ name, isPrefix: false })),
+        ...prefixes.map((name) => ({ name, isPrefix: true })),
+      ];
       const start = options?.cursor !== undefined ? Number.parseInt(options.cursor, 10) : 0;
-      const limit = options?.limit ?? names.length;
-      const page = names.slice(start, start + limit);
+      const limit = options?.limit ?? entries.length;
+      const page = entries.slice(start, start + limit);
       const next = start + page.length;
-      const truncated = next < names.length;
-      const objects = page.map((name) => toR2Object(name, data.get(name) as StoredR2Entry));
-      return truncated ? { objects, truncated: true, cursor: String(next) } : { objects, truncated: false };
+      const truncated = next < entries.length;
+
+      const include = options?.include ?? ["httpMetadata", "customMetadata"];
+      const objects = page
+        .filter((entry) => !entry.isPrefix)
+        .map((entry) => {
+          const obj = toR2Object(entry.name, data.get(entry.name) as StoredR2Entry);
+          if (!include.includes("httpMetadata")) delete obj.httpMetadata;
+          if (!include.includes("customMetadata")) delete obj.customMetadata;
+          return obj;
+        });
+      const delimitedPrefixes = page.filter((entry) => entry.isPrefix).map((entry) => entry.name);
+
+      return {
+        objects,
+        ...(truncated ? { truncated: true as const, cursor: String(next) } : { truncated: false as const }),
+        ...(delimitedPrefixes.length > 0 ? { delimitedPrefixes } : {}),
+      };
     },
   };
   return impl as unknown as R2BucketLike;
@@ -272,7 +322,13 @@ export function fakeD1(
         failIfInjected(sql, params);
         const row = query(sql, params)[0];
         if (row === undefined || row === null) return null;
-        return (column !== undefined ? (row as Record<string, unknown>)[column] : row) as T;
+        if (column === undefined) return row as T;
+        // A real D1 rejects an unknown column; returning `undefined` would be doubly wrong, since
+        // the declared return is `T | null`.
+        if (typeof row !== "object" || !Object.hasOwn(row as object, column)) {
+          throw new Error(`D1_ERROR: no such column: ${column}`);
+        }
+        return (row as Record<string, unknown>)[column] as T;
       },
       run: async (): Promise<D1Result<unknown>> => {
         failIfInjected(sql, params);

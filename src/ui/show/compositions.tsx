@@ -17,6 +17,7 @@ import { Slider } from "../core/slider";
 import { Spinner } from "../core/spinner";
 import { Switch } from "../core/switch";
 import { Toast } from "../core/toast";
+import { CatalogStack } from "./components";
 
 /** The two glyphs this band draws: `Spinner` spins one and `Select` points with the other. */
 type CompositionIcon = ForgeIcon<"spinner" | "chevron-down">;
@@ -43,7 +44,7 @@ const RowTable: FC = () => (
         <tr key={row.name} class='border-b border-border'>
           <td class='py-2 pe-4 font-medium text-foreground'>{row.name}</td>
           <td class='py-2'>
-            <Badge variant='outline'>{row.subpath}</Badge>
+            <Badge appearance='outline'>{row.subpath}</Badge>
           </td>
         </tr>
       ))}
@@ -53,10 +54,7 @@ const RowTable: FC = () => (
 
 /** One collection in its four states — populated, empty, loading and failed — shown as siblings. @public */
 export const CollectionSurface: FC = () => (
-  <section id='composition-collection' class='scroll-mt-24 space-y-4'>
-    <div>
-      <h3 class='text-base font-semibold text-foreground'>A collection, in all four of its states</h3>
-    </div>
+  <CatalogStack id='composition-collection' title='A collection, in all four of its states'>
     <div class='grid gap-4 md:grid-cols-2'>
       <Card>
         <Card.Header>
@@ -74,10 +72,8 @@ export const CollectionSurface: FC = () => (
           <Card.Description>A state, not an absence.</Card.Description>
         </Card.Header>
         <Card.Content class='space-y-3'>
-          <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
-            No components are pinned yet. Pin one from the catalog to start the list.
-          </p>
-          <Button variant='secondary' size='sm'>
+          <p class='text-sm text-pretty text-muted-foreground'>No components are pinned yet. Pin one from the catalog to start the list.</p>
+          <Button tone='neutral' appearance='outline' size='sm'>
             Pin a component
           </Button>
         </Card.Content>
@@ -106,25 +102,22 @@ export const CollectionSurface: FC = () => (
           <Card.Description>Names the failure, and offers the way out.</Card.Description>
         </Card.Header>
         <Card.Content class='space-y-3'>
-          <Alert variant='destructive'>
+          <Alert tone='destructive'>
             <Alert.Title>Could not load the component list</Alert.Title>
             <Alert.Description>The request did not complete. Nothing was changed, so retrying is safe.</Alert.Description>
           </Alert>
-          <Button variant='secondary' size='sm'>
+          <Button tone='neutral' appearance='outline' size='sm'>
             Retry
           </Button>
         </Card.Content>
       </Card>
     </div>
-  </section>
+  </CatalogStack>
 );
 
 /** A settings form: `FormField` where a value is validated, `Field` where a row is only laid out. @public */
 export const SettingsSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
-  <section id='composition-form' class='scroll-mt-24 space-y-4'>
-    <div>
-      <h3 class='text-base font-semibold text-foreground'>A form that settles the collection above</h3>
-    </div>
+  <CatalogStack id='composition-form' title='A form that settles the collection above'>
     <Card>
       <Card.Header>
         <Card.Title>Collection settings</Card.Title>
@@ -156,23 +149,22 @@ export const SettingsSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
             </Switch>
           </Field>
           <div class='flex justify-end gap-2'>
-            <Button variant='secondary'>Reset</Button>
-            <Button type='submit' variant='primary'>
+            <Button tone='neutral' appearance='outline'>
+              Reset
+            </Button>
+            <Button type='submit' tone='primary'>
               Save settings
             </Button>
           </div>
         </Form>
       </Card.Content>
     </Card>
-  </section>
+  </CatalogStack>
 );
 
 /** Two near-neighbour choices made side by side: `Alert` against `Toast`, `Spinner` against `Skeleton`. @public */
 export const FeedbackSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
-  <section id='composition-feedback' class='scroll-mt-24 space-y-4'>
-    <div>
-      <h3 class='text-base font-semibold text-foreground'>Two out loud near neighbours</h3>
-    </div>
+  <CatalogStack id='composition-feedback' title='Two out loud near neighbours'>
     <Card>
       <Card.Header>
         <Card.Title>Alert or Toast</Card.Title>
@@ -183,11 +175,11 @@ export const FeedbackSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
       </Card.Header>
       <Card.Content class='space-y-3'>
         <div class='grid gap-4 md:grid-cols-2'>
-          <Alert variant='warning'>
+          <Alert tone='warning'>
             <Alert.Title>Turnstile runs on a test key</Alert.Title>
             <Alert.Description>The widget in the catalog always passes, so no submission here is actually challenged.</Alert.Description>
           </Alert>
-          <Toast variant='success'>
+          <Toast tone='success'>
             <Toast.Title>Settings saved</Toast.Title>
             <Toast.Description>The collection settings were written.</Toast.Description>
           </Toast>
@@ -201,7 +193,7 @@ export const FeedbackSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
       </Card.Header>
       <Card.Content class='space-y-3'>
         <div class='grid items-center gap-4 md:grid-cols-2'>
-          <Button variant='secondary' disabled class='w-fit gap-2'>
+          <Button tone='neutral' appearance='outline' disabled class='w-fit gap-2'>
             <Spinner icon={icon} size='sm' />
             Saving…
           </Button>
@@ -212,7 +204,7 @@ export const FeedbackSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
         </div>
       </Card.Content>
     </Card>
-  </section>
+  </CatalogStack>
 );
 
 /** The composition band: the catalog's primitives assembled into the surfaces an application ships. @public */

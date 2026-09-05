@@ -1,3 +1,5 @@
+import { stateAttrs } from "./state-attrs";
+
 /** Resumable-scope name the Menu popup stamps and the client scope registers. @public */
 export const MENU_SCOPE = "menu";
 
@@ -15,17 +17,17 @@ export type MenuAction = "check" | "select";
 
 /** The class string every menu row shape wears, including client-built rows. @public */
 export const MENU_ITEM_CLASS =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm text-popover-foreground " +
+  "flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground " +
   "bg-transparent border-0 cursor-pointer outline-none " +
   "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
-  "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50";
+  "state-disabled";
 
 /** What {@link menuItemAttrs} needs to know about the row it is describing. */
 export interface MenuItemAttrsOptions {
   // Omit for a disabled row or a submenu header: the platform runs an invoker command regardless
   // of `aria-disabled`, so such a row would dismiss a menu that must stay open.
   /** id of the enclosing menu popup, which emits the `hide-popover` invoker command. */
-  readonly closes?: string | false;
+  readonly closes?: string | false | undefined;
   /** `menuitemcheckbox` / `menuitemradio` instead of a plain `menuitem`. @default "menuitem" */
   readonly role?: "menuitem" | "menuitemcheckbox" | "menuitemradio";
   /** Marks the row `aria-disabled`, keeping it focusable and in the navigation ring. */
@@ -35,9 +37,12 @@ export interface MenuItemAttrsOptions {
 }
 
 /** The `aria-checked` and delegated-action attributes a checkable row carries; empty for a plain row. */
+// `data-checked` beside `aria-checked` and never without it: `STATE_ATTRIBUTES.md` §1b names this
+// function as the reason one exists, and a client-built row that emitted only the ARIA half styled
+// nothing the CSS hooks paint from.
 function checkableAttrs(role: MenuItemAttrsOptions["role"], checked: boolean): Record<string, string> {
   if (role !== "menuitemcheckbox" && role !== "menuitemradio") return {};
-  return { "aria-checked": String(checked), "data-on-click": role === "menuitemcheckbox" ? "check" : "select" };
+  return { "aria-checked": String(checked), ...stateAttrs({ checked }), "data-on-click": role === "menuitemcheckbox" ? "check" : "select" };
 }
 
 /** Every attribute a client-built menu row needs; the element must be a `<button>`. @public */

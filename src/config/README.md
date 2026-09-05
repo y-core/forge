@@ -36,14 +36,14 @@ import { createConfig, env, optionalGroup, resolveConfig, registerConfig, retrie
 
 Production apps use a **two-layer** model, and the layers have different sources of truth:
 
-1. **The binding/env surface** (`KVNamespace`s, `R2Bucket`s, secrets, vars) is owned by `wrangler.jsonc` — so its schema should be **generated**, not hand-written. `forge cf gen env` (`@y-core/forge/cli/cf`) emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, and `validateBindings(EnvSchema)` enforces it on the first request. A missing or malformed binding then fails loudly at the edge, never silently downstream.
+1. **The binding/env surface** (`KVNamespace`s, `R2Bucket`s, secrets, vars) is owned by `wrangler.jsonc` — so its schema should be **generated**, not hand-written. `forge cf gen env` (`@y-core/forge/tooling/cf`) emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, and `validateBindings(EnvSchema)` enforces it on the first request. A missing or malformed binding then fails loudly at the edge, never silently downstream.
 2. **App config** (site settings, feature flags, service groups) is shaped by hand-written `Config` stores (this namespace) over those already-validated vars.
 
 The three files of layer 1, end to end:
 
 ```typescript
 // src/app/env.config.ts — hand-written policy (optional; defaults used when absent)
-import type { GenOptions } from "@y-core/forge/cli/cf";
+import type { GenOptions } from "@y-core/forge/tooling/cf";
 export const options: Partial<GenOptions> = {
   optional: new Set(["RATE_LIMITER"]), // absent under wrangler dev
   refinements: { SESSION_SECRET: { minLength: 32 } },
@@ -57,7 +57,7 @@ export type Env = v.InferOutput<typeof EnvSchema>;
 app.use("*", validateBindings(EnvSchema));
 ```
 
-Wire the generator as a script — `"gen:env": "forge cf gen env"` — and re-run it whenever `wrangler.jsonc` bindings change. Full generator reference: [src/validation/README.md](../validation/README.md) (`@y-core/forge/cli/cf`); `validateBindings`/`validateEnv` reference: [src/app/README.md](../app/README.md).
+Wire the generator as a script — `"gen:env": "forge cf gen env"` — and re-run it whenever `wrangler.jsonc` bindings change. Full generator reference: [src/validation/README.md](../validation/README.md) (`@y-core/forge/tooling/cf`); `validateBindings`/`validateEnv` reference: [src/app/README.md](../app/README.md).
 
 Layer 2 — the `Config` stores documented below — then consumes the validated vars (`BASE_URL`, `LOG_LEVEL`, …) with mapping, shaping, and per-isolate caching.
 

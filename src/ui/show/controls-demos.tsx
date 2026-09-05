@@ -5,8 +5,10 @@ import type { FC } from "../../jsx/types";
 import { bindAttrAttr, bindTextAttr } from "../contracts/bind-contract";
 import { CONTROLS_DEMO_SCOPE, CONTROLS_DEMO_STATE, controlsReadout } from "../contracts/controls-demo-contract";
 import { CheckboxGroup } from "../controls/checkbox-group";
+import { FileInput } from "../controls/file-input";
 import { Input } from "../controls/input";
 import { NumberField } from "../controls/number-field";
+import { OtpInput } from "../controls/otp-input";
 import { RadioGroup } from "../controls/radio-group";
 import { Select } from "../controls/select";
 import { Slider } from "../controls/slider";
@@ -20,7 +22,7 @@ import { Form } from "../core/form";
 import { Input as InputPrimitive } from "../core/input";
 import { Label } from "../core/label";
 import { Resumable } from "../server/resumable";
-import { CatalogSection, type ShowIcon } from "./components";
+import { CatalogGroup, CatalogNote, CatalogSection, type ShowIcon } from "./components";
 
 const Readout: FC<{ field: string; value: unknown }> = ({ field, value }) => (
   <output {...bindTextAttr(field)} class='text-sm text-muted-foreground tabular-nums'>
@@ -30,15 +32,17 @@ const Readout: FC<{ field: string; value: unknown }> = ({ field, value }) => (
 
 interface BoundRowProps {
   field: string;
-  label?: string;
+  label?: string | undefined;
   value: unknown;
   children: unknown;
 }
 
 const BoundRow: FC<BoundRowProps> = ({ field, label, value, children }) => (
   <div class='w-full max-w-xs space-y-2'>
+    {/* The placeholder keeps the readout in the same column on every row: a control that carries its
+        own label — a Switch, a ToggleGroup — has none here, and without it the value slides left. */}
     <div class='flex items-baseline justify-between gap-3'>
-      {label === undefined ? null : <Label for={fieldId(field)}>{label}</Label>}
+      {label === undefined ? <span /> : <Label for={fieldId(field)}>{label}</Label>}
       <Readout field={field} value={value} />
     </div>
     {children}
@@ -47,25 +51,23 @@ const BoundRow: FC<BoundRowProps> = ({ field, label, value, children }) => (
 
 const NativeAndBoundSection: FC = () => (
   <CatalogSection id='native-and-reactive' title='Native vs Bound'>
-    <p class='w-full max-w-prose text-sm text-pretty text-muted-foreground'>
+    <CatalogNote>
       The same control twice: the native one is read by the server on submit, the bound one is read by a signal as it is typed.
-    </p>
-    <div class='min-w-56 flex-1 space-y-2'>
-      <h3 class='text-sm font-semibold text-foreground'>Native SSR</h3>
-      <Form action='#' method='post' class='space-y-2'>
+    </CatalogNote>
+    <CatalogGroup title='Native SSR'>
+      <Form action='#' method='post' class='max-w-xs space-y-2'>
         <Label for={fieldId("native-name")}>Display name</Label>
         <InputPrimitive type='text' name='native-name' field={{ name: "native-name" }} />
         <Button type='submit' size='sm'>
           Save
         </Button>
       </Form>
-    </div>
-    <div class='min-w-56 flex-1 space-y-2'>
-      <h3 class='text-sm font-semibold text-foreground'>Bound</h3>
+    </CatalogGroup>
+    <CatalogGroup title='Bound'>
       <BoundRow field='mirror' label='Display name' value={CONTROLS_DEMO_STATE.mirror}>
         <Input bind='mirror' type='text' field={{ name: "mirror" }} value={CONTROLS_DEMO_STATE.mirror} />
       </BoundRow>
-    </div>
+    </CatalogGroup>
   </CatalogSection>
 );
 
@@ -76,6 +78,17 @@ const ControlsInputSection: FC = () => (
     </BoundRow>
     <BoundRow field='email' label='Email (starts empty)' value={CONTROLS_DEMO_STATE.email}>
       <Input bind='email' type='email' field={{ name: "email" }} value={CONTROLS_DEMO_STATE.email} placeholder='you@example.com' />
+    </BoundRow>
+  </CatalogSection>
+);
+
+const ControlsOtpInputSection: FC = () => (
+  <CatalogSection id='controls-otp-input' title='Bound OtpInput'>
+    <BoundRow field='code' label='Verification code (starts empty)' value={CONTROLS_DEMO_STATE.code}>
+      <OtpInput bind='code' field={{ name: "code" }} value={CONTROLS_DEMO_STATE.code} />
+    </BoundRow>
+    <BoundRow field='pin' label='PIN' value={CONTROLS_DEMO_STATE.pin}>
+      <OtpInput bind='pin' field={{ name: "pin" }} length={4} value={CONTROLS_DEMO_STATE.pin} />
     </BoundRow>
   </CatalogSection>
 );
@@ -127,7 +140,7 @@ const ControlsSwitchSection: FC = () => (
       </Switch>
     </BoundRow>
     <BoundRow field='notifications' value={CONTROLS_DEMO_STATE.notifications}>
-      <Switch bind='notifications' field={{ name: "notifications" }} checked={CONTROLS_DEMO_STATE.notifications} orientation='label-before'>
+      <Switch bind='notifications' field={{ name: "notifications" }} checked={CONTROLS_DEMO_STATE.notifications} labelPlacement='before'>
         Email notifications
       </Switch>
     </BoundRow>
@@ -182,6 +195,14 @@ const ControlsNumberFieldSection: FC = () => (
         <NumberField.Input bind='count' id={fieldId("count")} name='count' value={CONTROLS_DEMO_STATE.count} min={0} max={9} />
         <NumberField.Increment />
       </NumberField>
+    </BoundRow>
+  </CatalogSection>
+);
+
+const ControlsFileInputSection: FC = () => (
+  <CatalogSection id='controls-file-input' title='Bound FileInput'>
+    <BoundRow field='avatar' label='Avatar' value={CONTROLS_DEMO_STATE.avatar}>
+      <FileInput bind='avatar' field={{ name: "avatar" }} />
     </BoundRow>
   </CatalogSection>
 );
@@ -241,7 +262,9 @@ export const ControlsDemos: FC<{ icon: ShowIcon }> = ({ icon }) => (
     <ControlsToggleGroupSection />
     <ControlsToggleSection />
     <ControlsNumberFieldSection />
+    <ControlsOtpInputSection />
     <ControlsRadioGroupSection />
     <ControlsCheckboxGroupSection />
+    <ControlsFileInputSection />
   </Resumable>
 );

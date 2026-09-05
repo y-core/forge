@@ -1,29 +1,52 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+import { presentationAttrs } from "../contracts/vocabulary";
+import type { Size } from "../contracts/vocabulary";
 import type { FieldDescriptor } from "./field";
-import { fieldControlProps } from "./field";
+import { fieldControlProps, fieldStateProps } from "./field";
 import type { ForgeIcon } from "./icon";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
+import { FIELD_SIZE } from "./utils/recipes";
 
-type SelectProps = JSX.IntrinsicElements["select"] & { field?: FieldDescriptor; icon: ForgeIcon<"chevron-down"> };
+type SelectProps = Omit<JSX.IntrinsicElements["select"], "size"> & {
+  field?: FieldDescriptor | undefined;
+  icon: ForgeIcon<"chevron-down">;
+  size?: Size | undefined;
+  invalid?: boolean | undefined;
+  busy?: boolean | undefined;
+};
 type SelectOptionProps = JSX.IntrinsicElements["option"];
 type SelectOptGroupProps = JSX.IntrinsicElements["optgroup"];
 
-const SELECT_WRAPPER = cn("group/select relative w-full has-[select:disabled]:opacity-50");
-const SELECT_BASE = cn("w-full appearance-none rounded-lg border border-input bg-background py-2 ps-3 pe-10 text-sm text-foreground");
-const SELECT_FOCUS = cn("focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:outline-none");
-const SELECT_DISABLED = cn("disabled:pointer-events-none disabled:cursor-not-allowed");
+// The caller's class dresses the wrapper, not the `<select>`, because the chevron is positioned
+// against the wrapper's end edge: a width the two boxes did not share would strand it outside the
+// control.
+const SELECT_WRAPPER = "group/select relative w-full has-[select:disabled]:opacity-50";
+const SELECT_BASE = "state-busy state-disabled state-invalid field-chrome appearance-none pe-10 focus-ring";
 
-const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({ class: cls, field, icon: Icon, children, "data-slot": inherited, ...props }) => {
+const SelectRoot: FC<PropsWithChildren<SelectProps>> = ({
+  class: cls,
+  field,
+  icon: Icon,
+  children,
+  size = "md",
+  invalid = false,
+  busy = false,
+  "data-slot": inherited,
+  ...props
+}) => {
   const resolved = field ? fieldControlProps(props, field) : props;
 
-  // The caller's class sizes the wrapper, not the `<select>`: the arrow is absolutely positioned
-  // against the wrapper and the `<select>` fills it, so a width moved onto the control strands both.
   return (
-    <div data-slot='select-wrapper' class={cn(SELECT_WRAPPER, asClass(cls))}>
-      <select data-slot={slotToken("select", inherited)} class={`${SELECT_BASE} ${SELECT_FOCUS} ${SELECT_DISABLED}`} {...resolved}>
+    <div data-slot='select-wrapper' class={cn(SELECT_WRAPPER, cls)}>
+      <select
+        data-slot={slotToken("select", inherited)}
+        {...presentationAttrs({ size })}
+        class={cn(SELECT_BASE, FIELD_SIZE[size])}
+        {...resolved}
+        {...fieldStateProps(invalid, busy)}>
         {children}
       </select>
       <span aria-hidden='true' data-slot='select-icon' class='pointer-events-none absolute inset-y-0 end-3 flex items-center text-muted-foreground'>
@@ -40,9 +63,8 @@ const SelectOption: FC<PropsWithChildren<SelectOptionProps>> = ({ children, "dat
 );
 
 const SelectOptGroup: FC<PropsWithChildren<SelectOptGroupProps>> = ({ class: cls, children, "data-slot": inherited, ...props }) => {
-  const clsValue = asClass(cls);
   return (
-    <optgroup data-slot={slotToken("select-optgroup", inherited)} {...(clsValue !== undefined ? { class: clsValue } : {})} {...props}>
+    <optgroup data-slot={slotToken("select-optgroup", inherited)} class={cls} {...props}>
       {children}
     </optgroup>
   );

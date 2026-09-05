@@ -81,7 +81,16 @@ A dropdown is the wrong affordance for destinations the user is meant to survey:
 see anything, and it hides the very list that tells them what this surface contains. `NavGroup` keeps
 the same heading and spends vertical space instead. Override when the bar is horizontal and short on
 room — which is where a `NavMenu` earns its click — or when the group is long enough that showing it
-would push the rest of the bar off screen.
+would push the rest of the bar off screen. A horizontal bar with several groups under one label
+folds them into a `NavMegaMenu`, whose panel keeps every group scannable at once.
+
+**Default: grouped children earn a megamenu only when a section has three or more groups the reader
+scans side by side; one group is a `NavMenu`, and a bar holds at most one megamenu.**
+<!-- rule:forge-ui-nav-megamenu-when -->
+
+A megamenu is the widest thing a bar can open, and its value is the side-by-side survey. Two
+megamenus on one bar are two surveys competing for the same panel space; one group under a trigger
+is a dropdown wearing a panel. Override never — the counts are the affordance.
 
 **Default: identity, theme and search go in a `NavSlot`, never a `NavLink`.**
 <!-- rule:forge-ui-nav-slot-not-link -->
@@ -292,6 +301,16 @@ paired cue is already there and the app adds nothing to get it.
 
 ---
 
+## `Dock`
+
+A `Dock` is the phone-width primary navigation: a fixed bottom bar of three to five top-level
+destinations of equal weight, each a glyph over a one-word label. It hides at `md:` and the `Navbar`
+takes over, so the two are never visible at once.
+
+Default: reach for `Dock` only when every destination is a top-level one and there are at most five;
+a sixth belongs behind the `Navbar`'s menu, and a bar that must also hold a user slot or a search box
+is a bottom-placed `Navbar`. <!-- rule:forge-ui-nav-dock-when -->
+
 ## `Toolbar`
 
 The chrome `Toolbar` renders a rail from a `ToolbarDefinition`: `groups`, each a `ToolbarGroup` of
@@ -317,9 +336,23 @@ every item is a peer tool — a drawing palette.
 
 ---
 
+## `Pagination`, and when scrolling is not it
+
+A paged list has an addressable position: the reader can bookmark page 4, come back to it, and reach
+the footer. Infinite scroll gives up all three, and it gives them up on exactly the lists — search
+results, audit logs, order history — where returning to a known row is the task.
+
+Default: page a long list with `Pagination`, never with infinite scroll, unless the list is a feed
+with no stable ordering, where there is no position to return
+to. <!-- rule:forge-ui-pagination-vs-scroll -->
+
+`Carousel.Dots` is `Pagination` by anchor — each dot is an `href="#slide-id"` — so the same
+addressability argument applies: a slide the reader can link to, and return to, is a slide worth
+paging; a strip with no stable slides is a feed and wants no dots.
+
 ## `Tabs`, and when it is a router in disguise
 
-`Tabs` renders a tablist plus panels; an unselected `Tabs.Panel` is `hidden`, so the first render is
+`Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden`, so the first render is
 correct with no JavaScript.
 
 | Given                                                | Choose                                      |

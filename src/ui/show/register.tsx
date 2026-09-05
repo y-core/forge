@@ -37,7 +37,18 @@ import {
 
 /** Icon constraint covering all showcase sections — pass your app's icon component. @public */
 export type ShowcaseIcon = ForgeIcon<
-  "spinner" | "chevron-down" | "sun" | "moon" | "monitor" | "hamburger" | "close" | "panel-open" | "panel-close"
+  | "spinner"
+  | "chevron-down"
+  | "chevron-left"
+  | "chevron-right"
+  | "sun"
+  | "moon"
+  | "monitor"
+  | "hamburger"
+  | "close"
+  | "panel-open"
+  | "panel-close"
+  | "upload"
 >;
 
 /** The playground form's only declared field; the pipeline drops the decoy and the token itself. */

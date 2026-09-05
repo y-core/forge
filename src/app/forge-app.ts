@@ -19,13 +19,20 @@ import type { GlobalMiddlewareEntry, RequestState } from "./types";
 // oxlint-disable-next-line typescript/no-explicit-any -- mock context for testing only
 const MOCK_CTX: ExecutionContext = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
 
-/** Compiles a `use()` path convention into a route-pattern matcher, or `null` for the catch-all. */
-function compileGuardMatcher(path: string): Matcher<string> | null {
-  if (path === "*") return null;
-  let source = path;
-  if (path.endsWith("/*")) source = `${path.slice(0, -2)}(/*)`;
-  else if (path.endsWith("*")) source = `${path.slice(0, -1)}(/*)`;
-  return createMatcher(source);
+/** Rewrites a `use()` path convention into a route-pattern source. */
+function toPatternSource(path: string): string {
+  if (path.endsWith("/*")) return `${path.slice(0, -2)}(/*)`;
+  if (path.endsWith("*")) return `${path.slice(0, -1)}(/*)`;
+  return path;
+}
+
+/** Compiles `use()` paths into one matcher, or `null` when any of them is the catch-all. */
+function compileGuardMatcher(paths: readonly string[]): Matcher<string> | MultiMatcher<null> | null {
+  if (paths.includes("*")) return null;
+  if (paths.length === 1) return createMatcher(toPatternSource(paths[0] as string));
+  const multi = createMultiMatcher<null>();
+  for (const path of paths) multi.add(toPatternSource(path), null);
+  return multi;
 }
 
 function makeErrorContext<Bindings>(request: Request, env: Bindings, executionCtx: ExecutionContext): AppContext<Bindings> {
@@ -62,9 +69,11 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     this._isDebug = fn;
   }
 
-  /** Register path-scoped middleware. `"*"` matches all paths; `"/api/*"` matches the prefix. */
-  use(path: string, ...handlers: Middleware[]): void {
-    const matcher = compileGuardMatcher(path);
+  /** Register path-scoped middleware. `"*"` matches all paths; `"/api/*"` matches the prefix; an array matches any of them. */
+  use(path: string | readonly string[], ...handlers: Middleware[]): void {
+    const paths = typeof path === "string" ? [path] : path;
+    if (paths.length === 0) return;
+    const matcher = compileGuardMatcher(paths);
     for (const h of handlers) {
       this._globals.push({ matcher, handler: h });
     }
@@ -109,16 +118,17 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       }
     };
 
-    // `errorBoundary` appears twice deliberately: the inner one keeps an error response flowing back
-    // out through guards that queue `set-cookie` after `next()`; the outer one catches a guard's own
-    // throw, which would otherwise skip the `applyHeaders` flush entirely.
+    // Twice deliberately: the inner boundary keeps an error response flowing back out through guards
+    // that queue `set-cookie` after `next()`; the outer one catches a guard's own throw.
     return createRouter({ matcher: this._matcher, middleware: [provideRequestState, applyHeaders, errorBoundary, ...guarded, errorBoundary] });
   }
 
   /** Handles a Workers `fetch` event. */
   async fetch(request: Request, env: Bindings, executionCtx: ExecutionContext = MOCK_CTX): Promise<Response> {
     const isHead = request.method.toUpperCase() === "HEAD";
-    const req = isHead ? new Request(request.url, { method: "GET", headers: request.headers }) : request;
+    // Copy-construct rather than rebuild from url + headers, so `signal`, `cf`, `redirect` and
+    // `credentials` carry into the handler. Safe only because HEAD carries no body.
+    const req = isHead ? new Request(request, { method: "GET" }) : request;
 
     try {
       // Inside the try so a deployment defect produces the app's own error page rather than
@@ -128,17 +138,17 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       this._router ??= this._buildRouter();
 
       const res = await this._router.fetch(req);
-      if (isHead) {
-        return new Response(null, { status: res.status, headers: res.headers });
-      }
-      return res;
+      return isHead ? await this._toHeadResponse(res) : res;
     } catch (err) {
       const res = await this._handleError(toError(err), makeErrorContext(request, env, executionCtx));
-      if (isHead) {
-        return new Response(null, { status: res.status, headers: res.headers });
-      }
-      return res;
+      return isHead ? await this._toHeadResponse(res) : res;
     }
+  }
+
+  /** Strips the body from a derived GET response, cancelling the stream it abandons. */
+  private async _toHeadResponse(res: Response): Promise<Response> {
+    await res.body?.cancel();
+    return new Response(null, { status: res.status, headers: res.headers });
   }
 
   private async _handleError(err: Error, context: AppContext<Bindings>): Promise<Response> {
@@ -152,9 +162,8 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     const reqLog = requestLog.getOptional(context);
     if (reqLog) {
       reqLog.error("unhandled error", { error: serializeError(err) });
-      // Flushed at the point of write, not left to `requestLogger`: on the guard-throw path its
-      // `finally` has already run, so a record appended afterwards would sit in a buffer nobody
-      // awaits and may never reach an async channel before isolate teardown.
+      // Flushed here, not left to `requestLogger`: on the guard-throw path its `finally` has already
+      // run, so a record appended afterwards would sit in a buffer nobody awaits.
       const flush = reqLog.flush();
       try {
         context.executionCtx.waitUntil(flush);

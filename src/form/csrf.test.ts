@@ -243,7 +243,7 @@ describe("csrfProtection middleware", () => {
     expect(captured).toBe("Alice");
   });
 
-  it("HEAD mints csrfToken on context", async () => {
+  it("a HEAD request mints csrfToken on context through the GET Forge rewrites it to", async () => {
     let capturedToken: string | undefined;
     const app = new Forge();
     app.use("*", csrfProtection({ secret: () => key, subject: false }));

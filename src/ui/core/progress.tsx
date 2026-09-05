@@ -1,11 +1,11 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
-import { stateAttrs } from "../contracts/state-attrs";
+import { type Orientation, stateAttrs } from "../contracts/state-attrs";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
 
-type ProgressProps = Omit<JSX.IntrinsicElements["progress"], "children"> & { label?: string; orientation?: "horizontal" | "vertical" };
+type ProgressProps = Omit<JSX.IntrinsicElements["progress"], "children"> & { label?: string | undefined; orientation?: Orientation | undefined };
 
 /** A native `<progress>` bar for a task with a known total, horizontal or vertical. @public */
 export const Progress: FC<ProgressProps> = ({
@@ -21,8 +21,12 @@ export const Progress: FC<ProgressProps> = ({
     <progress
       data-slot={slotToken("progress", inherited)}
       {...stateAttrs({ orientation })}
-      {...(resolvedAriaLabel !== undefined ? { "aria-label": resolvedAriaLabel } : {})}
-      class={cn(orientation === "vertical" ? "h-full w-2" : "h-2 w-full", "rounded-full", asClass(cls))}
+      aria-label={resolvedAriaLabel}
+      class={cn(
+        orientation === "vertical" ? "h-full w-2 [direction:rtl] [writing-mode:vertical-lr]" : "h-2 w-full",
+        "appearance-none rounded-selector bg-border",
+        cls,
+      )}
       {...props}
     />
   );

@@ -9,7 +9,8 @@ const SLIDER = "[data-slot~='slider']";
 const CSS = { css: ["./ui/assets/css/theme-neutral.css", "./ui/assets/css/theme-base.css", "./ui/assets/css/forge-ui.css"] };
 
 const UTILITY_CSS: Record<string, string> = {
-  "h-8": "height: 2rem",
+  "h-control-md": "height: var(--control-h-md)",
+  "text-sm": "font-size: 0.875rem",
   "h-22": "height: 5.5rem",
   "w-8": "width: 2rem",
   "w-full": "width: 100%",
@@ -19,10 +20,10 @@ const UTILITY_CSS: Record<string, string> = {
   "bg-transparent": "background-color: transparent",
   "[writing-mode:vertical-lr]": "writing-mode: vertical-lr",
   "[direction:rtl]": "direction: rtl",
-  "disabled:opacity-50": "",
-  "focus-visible:outline-none": "",
-  "focus-visible:ring-2": "",
-  "focus-visible:ring-ring": "",
+  "state-busy": "",
+  "state-disabled": "",
+  "state-invalid": "",
+  "focus-ring": "",
 };
 
 function compileRenderedClasses(html: string): string {

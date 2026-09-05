@@ -3,8 +3,9 @@
 import { hxAttrs } from "../../html/htmx/htmx-attrs";
 import { oobSwap, SWAP } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
+import type { Tone } from "../../ui/contracts/vocabulary";
 import { Alert } from "../../ui/core/alert";
-import { Badge, type BadgeVariant } from "../../ui/core/badge";
+import { Badge } from "../../ui/core/badge";
 import { Button } from "../../ui/core/button";
 import { Card } from "../../ui/core/card";
 import { FormField } from "../../ui/core/field-layout";
@@ -13,7 +14,7 @@ import { Input } from "../../ui/core/input";
 import { ScrollArea } from "../../ui/core/scroll-area";
 import { Select } from "../../ui/core/select";
 import { Skeleton } from "../../ui/core/skeleton";
-import type { LogRecord, LogRow } from "../types";
+import type { LogLevel, LogRecord, LogRow } from "../types";
 
 /** Stable id of the log table tbody; shared so HTMX outerHTML swaps target the node the partial returns. @internal */
 export const LOG_TBODY_ID = "log-tbody";
@@ -31,18 +32,22 @@ function detailRowId(key: string): string {
 /** Data returned by the log viewer loader. @internal */
 export interface LogViewerLoaderData {
   rows: LogRow[];
-  cursor?: string;
+  cursor?: string | undefined;
   complete: boolean;
-  level?: string;
-  q?: string;
+  level?: string | undefined;
+  q?: string | undefined;
   basePath: string;
-  failed?: boolean;
+  failed?: boolean | undefined;
 }
 
-const LEVEL_VARIANT: Readonly<Record<string, BadgeVariant>> = { debug: "outline", info: "info", warn: "warning", error: "destructive" };
+const LEVEL_TONE: Readonly<Record<LogLevel, Tone>> = { debug: "neutral", info: "info", warn: "warning", error: "destructive" };
 
-/** Badge for a log level; an unknown level falls back to `info`. @internal */
-export const LogLevelBadge: FC<{ level: string }> = ({ level }) => <Badge variant={LEVEL_VARIANT[level] ?? "info"}>{level}</Badge>;
+/** Badge for a log level. @internal */
+export const LogLevelBadge: FC<{ level: LogLevel }> = ({ level }) => (
+  <Badge tone={LEVEL_TONE[level]} appearance={level === "debug" ? "outline" : "soft"}>
+    {level}
+  </Badge>
+);
 
 function filteredHref(basePath: string, level?: string, q?: string): string {
   const params = new URLSearchParams();
@@ -60,8 +65,8 @@ function nextPageHref(basePath: string, cursor: string, level?: string, q?: stri
 }
 
 interface LogFilterBarProps {
-  level?: string;
-  q?: string;
+  level?: string | undefined;
+  q?: string | undefined;
   targetId: string;
   formAction: string;
   icon: ForgeIcon<"chevron-down">;
@@ -103,7 +108,7 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
         </Select.Option>
       </Select>
     </FormField>
-    <Button type='submit' variant='primary' size='sm'>
+    <Button type='submit' tone='primary' size='sm'>
       Filter
     </Button>
   </form>
@@ -111,13 +116,13 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
 
 interface LogTableProps {
   rows: LogRow[];
-  cursor?: string;
+  cursor?: string | undefined;
   complete: boolean;
   loadMoreAction: string;
-  tbodyId?: string;
-  level?: string;
-  q?: string;
-  failed?: boolean;
+  tbodyId?: string | undefined;
+  level?: string | undefined;
+  q?: string | undefined;
+  failed?: boolean | undefined;
 }
 
 /** The log table — header, body, and the load-more row in a `<tfoot>`. @internal */
@@ -133,48 +138,46 @@ export const LogTable: FC<LogTableProps> = ({ rows, cursor, complete, loadMoreAc
       </tr>
     </thead>
     <LogTableBody
-      {...(tbodyId !== undefined ? { id: tbodyId } : {})}
+      id={tbodyId}
       rows={rows}
       loadMoreAction={loadMoreAction}
-      {...(level !== undefined ? { level } : {})}
-      {...(q !== undefined ? { q } : {})}
-      {...(failed !== undefined ? { failed } : {})}
+      level={level}
+      q={q}
+      failed={failed}
+      more={!complete && cursor !== undefined}
     />
     <tfoot>
-      <LogLoadMoreRow
-        {...(cursor !== undefined ? { cursor } : {})}
-        complete={complete}
-        loadMoreAction={loadMoreAction}
-        {...(level !== undefined ? { level } : {})}
-        {...(q !== undefined ? { q } : {})}
-      />
+      <LogLoadMoreRow cursor={cursor} complete={complete} loadMoreAction={loadMoreAction} level={level} q={q} />
     </tfoot>
   </table>
 );
 
 interface LogLoadMoreRowProps {
-  cursor?: string;
+  cursor?: string | undefined;
   complete: boolean;
   loadMoreAction: string;
-  level?: string;
-  q?: string;
-  failed?: boolean;
-  "hx-swap-oob"?: string;
+  level?: string | undefined;
+  q?: string | undefined;
+  failed?: boolean | undefined;
+  "hx-swap-oob"?: string | undefined;
 }
 
 /** The load-more control as a `<tfoot>` `<tr>`; a non-`<tr>` sibling of the appended rows is hoisted away by the HTML fragment parse. @internal */
 export const LogLoadMoreRow: FC<LogLoadMoreRowProps> = ({ cursor, complete, loadMoreAction, level, q, failed, "hx-swap-oob": oob }) => (
-  <tr id={LOG_LOAD_MORE_ID} {...(oob !== undefined ? { "hx-swap-oob": oob } : {})}>
+  <tr id={LOG_LOAD_MORE_ID} hx-swap-oob={oob}>
     <td colspan={LOG_COLUMNS} class='px-4 py-2 text-center'>
+      {/* `role` is the caller's here: htmx swaps this in after a failed request, so nothing else
+          tells a reader it failed — the carve-out `forge-ui-a11y-one-live-region` leaves open. */}
       {failed ? (
-        <Alert variant='destructive' class='mb-2 text-start'>
+        <Alert tone='destructive' role='alert' class='mb-2 text-start'>
           <Alert.Title>Could not load the next page</Alert.Title>
           <Alert.Description>The channel did not answer. The entries already loaded are unaffected.</Alert.Description>
         </Alert>
       ) : null}
       {!complete && cursor ? (
         <Button
-          variant='ghost'
+          tone='neutral'
+          appearance='ghost'
           size='sm'
           {...hxAttrs({
             get: nextPageHref(loadMoreAction, cursor, level, q),
@@ -216,7 +219,8 @@ const LogRowPair: FC<{ row: LogRow; loadMoreAction: string }> = ({ row, loadMore
         <td class='py-2 pe-4 font-mono text-xs text-muted-foreground'>{row.prefix}</td>
         <td class='max-w-xs truncate py-2 pe-4 text-foreground'>
           <Button
-            variant='ghost'
+            tone='neutral'
+            appearance='ghost'
             size='sm'
             aria-expanded='false'
             aria-controls={detailId}
@@ -245,35 +249,47 @@ const LogRowPair: FC<{ row: LogRow; loadMoreAction: string }> = ({ row, loadMore
 interface LogTableBodyProps {
   rows: LogRow[];
   loadMoreAction: string;
-  id?: string;
-  level?: string;
-  q?: string;
-  failed?: boolean;
+  id?: string | undefined;
+  level?: string | undefined;
+  q?: string | undefined;
+  failed?: boolean | undefined;
+  /** Whether a further page exists — the empty state says so rather than claiming no matches. */
+  more?: boolean | undefined;
 }
 
 /** `<tbody>` fragment carrying the empty and error states — returned standalone for HTMX partial swaps. @internal */
-export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, loadMoreAction, level, q, failed }) => (
-  <tbody {...(id !== undefined ? { id } : {})}>
-    {failed ? <LogErrorRow {...(level !== undefined ? { level } : {})} {...(q !== undefined ? { q } : {})} retryAction={loadMoreAction} /> : null}
-    {!failed && rows.length === 0 ? (
-      <LogEmptyRow {...(level !== undefined ? { level } : {})} {...(q !== undefined ? { q } : {})} clearAction={loadMoreAction} />
-    ) : null}
+export const LogTableBody: FC<LogTableBodyProps> = ({ id, rows, loadMoreAction, level, q, failed, more }) => (
+  <tbody id={id}>
+    {failed ? <LogErrorRow level={level} q={q} retryAction={loadMoreAction} /> : null}
+    {!failed && rows.length === 0 ? <LogEmptyRow level={level} q={q} clearAction={loadMoreAction} more={more} /> : null}
     <LogRows rows={rows} loadMoreAction={loadMoreAction} />
   </tbody>
 );
 
-const LogEmptyRow: FC<{ level?: string; q?: string; clearAction: string }> = ({ level, q, clearAction }) => {
+function emptyMessage(filtered: boolean, more: boolean): string {
+  if (!filtered) return "No log entries have been recorded yet.";
+  // Filtering is per page, so an empty filtered page with more to come is not an empty result.
+  return more
+    ? "No log entries match these filters on this page. Load more to keep searching."
+    : "No log entries match these filters — the stream itself may not be empty.";
+}
+
+const LogEmptyRow: FC<{ level?: string | undefined; q?: string | undefined; clearAction: string; more?: boolean | undefined }> = ({
+  level,
+  q,
+  clearAction,
+  more,
+}) => {
   const filtered = Boolean(level) || Boolean(q);
   return (
     <tr>
       <td colspan={LOG_COLUMNS} class='px-4 py-4 text-center'>
         <div class='flex flex-col items-center gap-2'>
-          <span class='text-sm text-muted-foreground'>
-            {filtered ? "No log entries match these filters — the stream itself may not be empty." : "No log entries have been recorded yet."}
-          </span>
+          <span class='text-sm text-muted-foreground'>{emptyMessage(filtered, more === true)}</span>
           {filtered ? (
             <Button
-              variant='secondary'
+              tone='neutral'
+              appearance='outline'
               size='sm'
               {...hxAttrs({
                 get: clearAction,
@@ -292,14 +308,16 @@ const LogEmptyRow: FC<{ level?: string; q?: string; clearAction: string }> = ({ 
   );
 };
 
-const LogErrorRow: FC<{ level?: string; q?: string; retryAction: string }> = ({ level, q, retryAction }) => (
+const LogErrorRow: FC<{ level?: string | undefined; q?: string | undefined; retryAction: string }> = ({ level, q, retryAction }) => (
   <tr>
     <td colspan={LOG_COLUMNS} class='px-4 py-4'>
-      <Alert variant='destructive' class='flex flex-col items-start gap-2'>
+      {/* Same carve-out: an htmx-swapped failure panel, announced because the swap itself is silent. */}
+      <Alert tone='destructive' role='alert' class='flex flex-col items-start gap-2'>
         <Alert.Title>Could not read the log stream</Alert.Title>
         <Alert.Description>The channel did not answer. Entries already loaded are still shown below.</Alert.Description>
         <Button
-          variant='secondary'
+          tone='neutral'
+          appearance='outline'
           size='sm'
           {...hxAttrs({
             get: filteredHref(retryAction, level, q),
@@ -320,12 +338,12 @@ export const LogAppendFragment: FC<{ data: LogViewerLoaderData }> = ({ data }) =
   <>
     <LogRows rows={data.rows} loadMoreAction={data.basePath} />
     <LogLoadMoreRow
-      {...(data.cursor !== undefined ? { cursor: data.cursor } : {})}
+      cursor={data.cursor}
       complete={data.complete}
       loadMoreAction={data.basePath}
-      {...(data.level !== undefined ? { level: data.level } : {})}
-      {...(data.q !== undefined ? { q: data.q } : {})}
-      {...(data.failed !== undefined ? { failed: data.failed } : {})}
+      level={data.level}
+      q={data.q}
+      failed={data.failed}
       {...oobSwap({ selector: `#${LOG_LOAD_MORE_ID}` })}
     />
   </>
@@ -352,26 +370,20 @@ export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"
   // `data-fill-viewport` is the handle it switches on (`LogViewerOptions.layout`).
   <main id='main-content' data-fill-viewport class='mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-10 lg:px-10'>
     <h1 class='text-2xl font-semibold tracking-tight text-balance text-foreground'>Request Log</h1>
-    <LogFilterBar
-      {...(data.level !== undefined ? { level: data.level } : {})}
-      {...(data.q !== undefined ? { q: data.q } : {})}
-      targetId={LOG_TBODY_ID}
-      formAction={data.basePath}
-      icon={icon}
-    />
+    <LogFilterBar level={data.level} q={data.q} targetId={LOG_TBODY_ID} formAction={data.basePath} icon={icon} />
     <Card class='min-h-0 flex-1'>
       <Card.Content class='flex min-h-0 flex-1 flex-col p-0'>
         <ScrollArea class='flex max-h-dvh min-h-0 flex-1 flex-col'>
           <ScrollArea.Viewport label='Log entries' class='min-h-0 flex-1'>
             <LogTable
               rows={data.rows}
-              {...(data.cursor !== undefined ? { cursor: data.cursor } : {})}
+              cursor={data.cursor}
               complete={data.complete}
               loadMoreAction={data.basePath}
               tbodyId={LOG_TBODY_ID}
-              {...(data.level !== undefined ? { level: data.level } : {})}
-              {...(data.q !== undefined ? { q: data.q } : {})}
-              {...(data.failed !== undefined ? { failed: data.failed } : {})}
+              level={data.level}
+              q={data.q}
+              failed={data.failed}
             />
           </ScrollArea.Viewport>
         </ScrollArea>

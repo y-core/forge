@@ -1,25 +1,23 @@
-/** The single source of truth for what forge's verification gate runs, and each check's config.
- *
- *  Loaded by `forge verify` through its default export. Every step is a pre-built builder from the
- *  `pkg` namespace; a step with no `fullOnly` runs in every mode.
- */
+/** The single source of truth for what forge's verification gate runs, and each check's config. */
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import pkg from "../package.json" with { type: "json" };
-import { resolveAppRoot } from "../src/cli/core/mod";
+import { resolveAppRoot } from "../src/tooling/cli/mod";
 import {
   browserStep,
   changelogStep,
   classGroupsStep,
   classOrderStep,
+  classTokensStep,
   coLocationStep,
   contrastStep,
   cssSourcesStep,
   cssTokensStep,
   designScaleStep,
   designStep,
+  FORGE_STATE_RECIPES,
   docsStep,
   type ExportsMap,
   exportsStep,
@@ -28,19 +26,20 @@ import {
   lintStep,
   modernCssStep,
   namespaceGraphStep,
+  readmeExportsStep,
   type Step,
+  buildTimeBoundaryStep,
   ssrBoundaryStep,
   testStep,
   typeAwareLintStep,
   typecheckStep,
-} from "../src/cli/pkg/mod";
+} from "../src/tooling/gate/mod";
 import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
 import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 
-// Derived from this file's location, never `process.cwd()`, so the table resolves the same paths
-// whichever directory `forge verify` was invoked from. forge cannot use `resolveAppRoot`'s derived
-// branch: it has no `node_modules/@y-core/forge` above its own source.
+// Derived from this file's location, never `process.cwd()`: the table must resolve the same paths
+// whichever directory `forge verify` ran from, and forge has no `node_modules/@y-core/forge` above it.
 /** Repository root. */
 export const ROOT = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 
@@ -79,36 +78,63 @@ export const STEPS: readonly Step[] = [
   // could vanish in a refactor with no signal at all.
   coLocationStep({
     root: ROOT,
-    sources: ["src/ui"],
-    // Every exemption is a module that declares data and no behaviour: a test could only restate
-    // the constant it names. Anything with a function in it is not on this list.
+    sources: ["src"],
+    // A path here that names no walked module fails the check, so the list can only shrink.
     exempt: [
       // `bind-contract`'s one function is covered where it is used, by `client/bind-display.test.ts`.
       "src/ui/contracts/bind-contract.ts",
+      "src/ui/contracts/alert-contract.ts",
       "src/ui/contracts/composite-contract.ts",
       "src/ui/contracts/dialog-contract.ts",
+      "src/ui/contracts/island-contract.ts",
       "src/ui/contracts/navbar-contract.ts",
       "src/ui/contracts/number-field-contract.ts",
       "src/ui/contracts/overlay-contract.ts",
       "src/ui/contracts/scope-events.ts",
       "src/ui/contracts/slider-contract.ts",
       "src/ui/contracts/tabs-contract.ts",
+      "src/ui/contracts/theme-toggle-contract.ts",
       "src/ui/contracts/theme/contrast-accepted.ts",
       "src/ui/contracts/theme/contrast-pairs.ts",
+      "src/ui/contracts/toast-contract.ts",
       "src/ui/contracts/toggle-contract.ts",
       "src/ui/contracts/toolbar-contract.ts",
       "src/ui/contracts/turnstile-contract.ts",
       "src/ui/show/coverage-missing.ts",
+      "src/ui/design/catalog-missing.ts",
       "src/ui/show/lazy-contract.ts",
+      "src/ui/show/scope-contract.ts",
+      "src/ui/show/toast-contract.ts",
       // Test infrastructure and a vendor side-effect import: neither has behaviour of its own.
       "src/ui/client/browser-test-helper.ts",
       "src/ui/client/test-dom.ts",
       "src/ui/client/htmx.ts",
+      "src/tooling/lint/test-support.ts",
+      "src/test-setup.ts",
+      // Type declarations only. Each was read for a smuggled helper before being listed; one that
+      // grows a function stops being exempt.
+      "src/app/types.ts",
+      "src/tooling/cf/account/handlers/types.ts",
+      "src/tooling/cli/types.ts",
+      "src/tooling/lint/types.ts",
+      "src/form/types.ts",
+      "src/jsx/types.ts",
+      "src/security/types.ts",
+      "src/storage/db/types.ts",
+      "src/storage/kv/types.ts",
+      "src/storage/r2/types.ts",
+      // Declared data: constant tables and, for `design-scale`, a generated file.
+      "src/tooling/cf/types.ts",
+      "src/tooling/lint/data/design-scale.ts",
+      "src/form/constants.ts",
+      // Executable entry points — argv in, `process.exit` out. What they wire is tested where it lives.
+      "src/tooling/assets/bin.ts",
+      "src/tooling/release/bin.ts",
+      "src/tooling/root/bin.ts",
     ],
   }),
-  // Runs in every mode, and deliberately: `namespaces.ts` declares `ui/core → ui/client` once for
-  // the whole namespace — an edge `core/client.ts` genuinely needs — and that one declaration would
-  // otherwise license every component in it to import browser code that throws inside a Worker.
+  // Runs in every mode: `namespaces.ts` declares `ui/core → ui/client` once for the whole namespace,
+  // which alone would license every component in it to import browser code that throws in a Worker.
   ssrBoundaryStep({
     root: ROOT,
     clientDir: "src/ui/client",
@@ -116,10 +142,18 @@ export const STEPS: readonly Step[] = [
     // The registration entry points, and nothing else: each exists to pull the client runtime in.
     entryPoints: ["client.ts"],
   }),
+  // Membership in `src/tooling/` *is* the build-time exemption ([`NAMESPACES.md`] §4a), so the rule
+  // that makes it true is checked rather than asserted: no published runtime subpath may reach one
+  // of these directories, and no runtime source may name one even before a barrel exports it.
+  buildTimeBoundaryStep({
+    root: ROOT,
+    packageName: pkg.name,
+    exports: EXPORTS,
+    buildTimeDirs: ["src/tooling", "src/ui/assets/build"],
+    sources: ["src"],
+  }),
   // `.decisions/governance/` is overwrite-on-sync, so an edit made in place is reverted by the next
-  // sync and the reversion looks like nobody's change. Nothing detected that until this step: it
-  // compares the tree against the pinned corpus in `node_modules` and reconciles the Guide Index
-  // with the directory in both directions. Its fixer is the sync itself.
+  // sync and the reversion looks like nobody's change. Its fixer is the sync itself.
   { label: "governance", tail: 20, cmd: ["gov", "sync", "--check"], fix: ["gov", "sync"] },
   docsStep({
     root: ROOT,
@@ -131,9 +165,15 @@ export const STEPS: readonly Step[] = [
     // for any of them would advertise an import the reader must not write.
     tableExemptSubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"],
   }),
-  // `fullOnly` is stated here rather than inherited from the builder's default: this file calls
-  // itself the single source of truth for which steps run in which mode, so a reader must be able
-  // to answer that from this table alone.
+  // `validate-docs` holds the governing documents against the subpath catalog; this holds one
+  // README's per-subpath tables against the barrels, and a section opts in via `> Import path:`.
+  readmeExportsStep({
+    root: ROOT,
+    readmes: ["src/ui/README.md", "src/storage/README.md", "src/testing/README.md"],
+    // Four are side-effect imports whose section documents registered scopes rather than symbols,
+    // and `./ui/client/htmx` re-exports the vendored library itself, which has no forge surface.
+    exempt: ["./ui/core/client", "./ui/client/htmx", "./ui/chrome/client", "./ui/show/client"],
+  }),
   changelogStep({ root: ROOT, packageVersion: pkg.version }, { fullOnly: true }),
   designStep({
     root: ROOT,
@@ -143,9 +183,8 @@ export const STEPS: readonly Step[] = [
     cssDir: "src/ui/assets/css",
     oxlintConfig: ".oxlintrc.json",
   }),
-  // `src/ui/design` is excluded for the reason it is not `@source`-scanned either: half the corpus's
-  // samples are counter-examples quoting the exact patterns this check forbids, so scanning it would
-  // flag its own documentation.
+  // `src/ui/design` is excluded for the reason it is not `@source`-scanned either: its samples are
+  // counter-examples quoting the exact patterns this check forbids.
   modernCssStep({ root: ROOT, sources: ["src/ui", "!src/ui/design"] }),
   // The excluded specs pin `cn`'s own resolution or this check's own detection, so their fixtures
   // are deliberately self-conflicting literals — the very input the rule forbids everywhere else.
@@ -153,20 +192,28 @@ export const STEPS: readonly Step[] = [
     root: ROOT,
     sources: [
       "src",
-      "!src/cli/pkg/gate/checks/class-order.test.ts",
-      "!src/cli/pkg/gate/checks/design-parse.test.ts",
-      "!src/cli/pkg/gate/checks/jsx-parse.test.ts",
-      "!src/cli/pkg/gate/checks/source-scan.test.ts",
+      "!src/tooling/gate/checks/class-order.test.ts",
+      "!src/tooling/gate/checks/design-parse.test.ts",
+      "!src/tooling/gate/checks/source-scan.test.ts",
       "!src/ui/core/form.test.tsx",
     ],
   }),
-  // `--full` only, and it must be: `tailwindcss` is an optional peer, so a fast run on a consumer
-  // that has not installed it would otherwise fail for a reason that is not about their code.
-  // `prepublishOnly` runs `verify:full`, which makes table drift a release gate.
-  classGroupsStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/ui/core/utils/class-groups.ts" }),
+  // `src/ui/design` is excluded for the same reason `modernCssStep` excludes it: its samples quote
+  // the very tokens it teaches against. The check reads every literal, not only class positions.
+  classTokensStep({ root: ROOT, sources: ["src/ui", "!src/ui/design"], stylesheet: "src/ui/assets/css/tailwind.css" }),
+  // `tailwindcss` is an optional peer: a fast run on a machine without it reports the step skipped,
+  // one with it gets the drift check on every `bun run verify`, and `--full` fails either way.
+  classGroupsStep({
+    root: ROOT,
+    stylesheet: "src/ui/assets/css/tailwind.css",
+    table: "src/ui/core/utils/class-groups.ts",
+    // The recipes that paint nothing in the base state; the other four are paint and belong in the
+    // Tailwind slots they compile to, which is what lets a caller's `rounded-lg` beat `field-chrome`.
+    stateRecipes: FORGE_STATE_RECIPES,
+  }),
   // A second step rather than a second assertion inside the first: the two generated files drift for
   // different reasons, and a reader has to be told which one to regenerate.
-  designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/cli/pkg/lint/data/design-scale.ts" }),
+  designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" }),
   contrastStep({
     root: ROOT,
     cssDir: "src/ui/assets/css",
@@ -174,7 +221,9 @@ export const STEPS: readonly Step[] = [
     mappingFile: "src/ui/assets/css/theme-base.css",
     pairs: CONTRAST_PAIRS,
     criteria: CRITERION,
-    palettePath: fileURLToPath(import.meta.resolve("tailwindcss/theme.css")),
+    // Deferred: resolving here would throw while this module is imported, before the runner exists to
+    // report the step skipped. `import.meta.resolve` is called from this file so it finds this project's copy.
+    palettePath: () => fileURLToPath(import.meta.resolve("tailwindcss/theme.css")),
     accepted: ACCEPTED_CONTRAST,
   }),
   cssSourcesStep({

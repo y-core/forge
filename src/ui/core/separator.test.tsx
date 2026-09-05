@@ -14,7 +14,7 @@ describe("Separator", () => {
 
   it("renders vertical classes when orientation=vertical", async () => {
     expect(await render(<Separator orientation='vertical' />)).toBe(
-      '<hr data-slot="separator" aria-orientation="vertical" class="w-px self-stretch border-0 bg-border">',
+      '<hr data-slot="separator" aria-orientation="vertical" class="h-auto w-px self-stretch border-0 bg-border">',
     );
   });
 
@@ -24,7 +24,7 @@ describe("Separator", () => {
 
   it("sets aria-orientation=vertical when specified", async () => {
     expect(await render(<Separator orientation='vertical' />)).toBe(
-      '<hr data-slot="separator" aria-orientation="vertical" class="w-px self-stretch border-0 bg-border">',
+      '<hr data-slot="separator" aria-orientation="vertical" class="h-auto w-px self-stretch border-0 bg-border">',
     );
   });
 

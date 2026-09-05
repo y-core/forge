@@ -1,4 +1,14 @@
-import type { ObjectBody, ObjectStorageBackend, R2BucketLike, R2ObjectBodyLike, R2ObjectLike, StoredObject, StorePutOptions } from "./types";
+import { isUnsatisfiableRange, UnsatisfiableRangeError } from "./errors";
+import type {
+  ListObjectsResult,
+  ObjectBody,
+  ObjectStorageBackend,
+  R2BucketLike,
+  R2ObjectBodyLike,
+  R2ObjectLike,
+  StoredObject,
+  StorePutOptions,
+} from "./types";
 
 function toStoredObject(obj: R2ObjectLike): StoredObject {
   return {
@@ -51,7 +61,13 @@ export function r2Backend(bucket: R2BucketLike): ObjectStorageBackend {
     },
 
     async get(key, options?): Promise<ObjectBody | null> {
-      const obj = await bucket.get(key, options);
+      let obj: R2ObjectBodyLike | null;
+      try {
+        obj = await bucket.get(key, options);
+      } catch (thrown) {
+        if (isUnsatisfiableRange(thrown)) throw new UnsatisfiableRangeError(key, { cause: thrown });
+        throw thrown;
+      }
       return obj ? toObjectBody(obj) : null;
     },
 
@@ -64,8 +80,10 @@ export function r2Backend(bucket: R2BucketLike): ObjectStorageBackend {
       await bucket.delete(key);
     },
 
-    async list(options?): Promise<{ objects: StoredObject[]; truncated: boolean; cursor?: string; delimitedPrefixes?: string[] }> {
-      const res = await bucket.list(options);
+    async list(options?): Promise<ListObjectsResult> {
+      // Without `include`, R2 returns a list lossier than a `head` of the same key under the
+      // default `r2_list_honor_include` flag — the metadata is simply absent.
+      const res = await bucket.list({ ...options, include: ["httpMetadata", "customMetadata"] });
       return {
         objects: res.objects.map(toStoredObject),
         truncated: res.truncated,

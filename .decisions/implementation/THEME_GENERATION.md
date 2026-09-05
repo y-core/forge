@@ -26,14 +26,21 @@ description: "The dial model a generated colour scheme is produced from, the emi
 - §1a The Dial Declaration and Its Units: what `DIALS` owns, and the one unit convention a reader must know
 - §1b The Query String Is the Whole State: no storage, and therefore no second pre-paint script
 - §1c Presets Are Fitted Aliases, Not a Second Source: input-only parameter, explicit dial wins, and a command rather than a binding
+- §1d Shape Tokens Are Not a Scheme: the eight non-colour tokens, where they are declared, and why a scheme file never carries one
 - §2 Generation Pipeline: five numbers to a complete scheme
 - §2a From Dials to Both Families in Both Modes: what `buildTheme` produces and why two representations are kept
-- §2b Emission Contract: one declaration site per step, and standalone-completeness
-- §2c No Generated Colour Reaches Markup: the CSP constraint that forces CSSOM painting
+- §2b The OKLab Conversion Has One Home, Two Gamut Policies: who owns the arithmetic, and why the gate clips where the generator reduces chroma
+- §2c Emission Contract: one declaration site per step, and standalone-completeness
+- §2d No Generated Colour Reaches Markup: the CSP constraint that forces CSSOM painting
 - §3 Contrast Audit Contract: the pair list forge measures itself against
 - §3a Audited Pairs and Criteria: the declaration the gate consumes, and what a pair records
 - §3b Accepted Exemptions: a mandatory reason, a pinned value, and no third state
 - §3c The Live Readout Reuses the Audit: why the customiser measures the same pairs, and what it cannot measure
+- §3d A Focus Ring Is Read Against the Surface It Is Drawn On: the audited row, the fill the gray step fails, and why the choice is per-appearance
+- §4 A Status Hue Holds Its Fill: the accent ramp's shape applied to the four intents
+- §4a One Value Cannot Be Both a Fill and Text: the defect the hold fixes, and what flips instead
+- §4b Three Tokens Per Intent: the naming that follows, and the rows the audit gains
+- §4c Success Unifies on Emerald: one hue per intent, and the two steps that retire
 
 ---
 
@@ -44,7 +51,7 @@ browser scope that repaints it, and the verification gate that runs in neither. 
 across those three drifts silently — the page keeps rendering, the browser keeps painting, and only
 the number a reader is shown becomes wrong.
 
-That is the argument [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §4 makes for state
+That is the argument [`STATE_ATTRIBUTES.md`](./STATE_ATTRIBUTES.md) §1 makes for state
 attributes, applied to a third reader. The data therefore lives in `ui/contracts`, which is a leaf
 namespace ([`NAMESPACES.md`](./NAMESPACES.md) §4a), and the gate reaches it
 by importing it into `config/steps.ts` rather than by re-declaring it.
@@ -96,6 +103,39 @@ Three properties keep the alias from becoming a second source of truth:
 **The preset values are fitted to the shipped scheme files, not transcribed from them**, and the
 fit is re-derived against those files by `src/ui/contracts/theme/color.test.ts` rather than asserted here.
 
+### 1d. Shape Tokens Are Not a Scheme
+
+**Shape lives in `theme-base.css`, and a scheme file never declares it.** The eight tokens —
+`--radius`, `--radius-field`, `--radius-box`, `--radius-selector`, `--control-h-sm`,
+`--control-h-md`, `--control-h-lg` and `--border-width` — are declared once beside the semantic
+colour mapping, and every component reads them through the bridged utilities (`rounded-field`,
+`rounded-box`, `rounded-selector`, `h-control-*`, `border-field`) rather than through a raw
+Tailwind size.
+
+**Why not a scheme file.** A scheme is the file a consumer replaces, and the contrast audit walks
+every `theme-*.css` on the assumption that it holds colour steps and nothing else
+(§3a). Putting a radius in one would either make each of the four schemes restate a value that has
+nothing to do with its tint, or hand the audit a token it cannot measure. Keeping shape in the
+mapping file means any scheme composes with any shape, and the audit's assumption stays true.
+
+**The alternate ships as proof, not as a catalogue.** `shape-compact.css` re-declares exactly the
+eight tokens and is imported after `forge.css`, the same cascade a scheme uses. Its name deliberately
+does not start with `theme-`, which is the prefix the audit takes as "a scheme". An application's own
+shape file follows the same shape: one `:root` block, those tokens, nothing else.
+
+**`border-field` is an `@utility`, not a theme token.** A `--border-width-*` token would compile to a
+`border-*` utility, the namespace [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §5f names as
+overloaded between colour and width, so the width recipe is declared as a static utility in
+`forge-ui.css` where `cn` reads its compiled signature unambiguously.
+
+**The customiser's shape dials drive these tokens directly**, as `--radius` always was (§2b): a dial
+whose whole output is one custom property, with no scale behind it. Four dials cover five of the
+tokens — `radiusField` writes `--radius-field`, `radiusBox` writes `--radius-box`, and `controlH`
+writes `--control-h-md` with `--control-h-sm` and `--control-h-lg` 8px either side of it, which is
+the list `SHAPE_PROPERTIES` names and `shapeVars` values. `--radius-selector` and `--border-width`
+are not dialled: a pill is a pill at every radius, and a hairline that moves with a slider is a
+different decision from a corner that does.
+
 ---
 
 ## 2. Generation Pipeline
@@ -117,7 +157,27 @@ measurement time would measure a colour no display paints.
 [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §5a gives: an audited ratio must describe the
 colour that renders.
 
-### 2b. Emission Contract
+### 2b. The OKLab Conversion Has One Home, Two Gamut Policies
+
+**`src/ui/contracts/theme/color.ts` owns the arithmetic** — the twelve-coefficient
+`oklabToLinearSrgb` and the `srgbGamma` transfer function, both `@public`. `src/ui/assets/build/color.ts`
+and the gate's `cli/pkg/gate/checks/color.ts` import them; a third copy is where the three would
+drift apart while every test kept passing.
+
+**The direction is forced, not chosen.** `ui/contracts/theme` is a LEAF namespace, and LEAF
+constrains _outgoing_ edges only — so it may be imported and may not import out, which leaves it as
+the only one of the three that can hold the shared function.
+
+**Two gamut policies exist, and only one of them is a policy of its own.** Reducing chroma at
+constant lightness and hue, as CSS Color 4 specifies, is what any emitted coordinate needs, so it
+lives once in `toSrgbGamut` beside the arithmetic; `ui/assets/build`'s `oklchToSrgb` composes over
+it and converts the mapped coordinate rather than restating the bisection. The gate's
+`oklchToPaintedHex` **clips per channel**, because a browser clips and a conformance measurement must
+match what is painted — that is the one genuinely separate policy. `color.test.ts` pins both: the two
+agree to twelve decimals on the conversion, and `oklchToPaintedHex(0.505, 0.213, 27.518)` is asserted
+to be `#c10007` and explicitly _not_ the chroma-reduced `#bf000f`.
+
+### 2c. Emission Contract
 
 **The generator is held to the declaration contract rather than exempted from it.**
 [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §5 owns both halves — one declaration site per
@@ -129,7 +189,13 @@ out, so the two steps the file declares are provably the two the live measuremen
 **The corner radius is driven directly rather than through a scale**, because it is not a colour
 and has no twelve steps; it is a dial whose whole output is one custom property.
 
-### 2c. No Generated Colour Reaches Markup
+**Shape is emitted as a second block, under its own comment, rather than folded into the scheme.**
+The scheme block stays exactly what §1d says a scheme is — colour steps and nothing else — so the
+five shape declarations (`--radius-field`, `--radius-box`, `--control-h-sm`, `--control-h-md`,
+`--control-h-lg`) follow it as a file a reader saves separately, the way `shape-compact.css` ships.
+`--radius` is painted rather than emitted, and stays where it was.
+
+### 2d. No Generated Colour Reaches Markup
 
 **The customiser paints through CSSOM, never through a rendered `style` attribute** — the same
 pair `openPopoverAt` runs into ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2i), owned by
@@ -179,7 +245,9 @@ Three properties make the list a contract rather than a suppression list:
 
 **The customiser measures the same pairs the gate does**, from the same declaration, so a scheme a
 reader generates is judged by the criteria forge enforces on its own — not by a second, friendlier
-list that happens to agree today.
+list that happens to agree today. **Both compare the ratio unrounded**, and only the displayed
+number is rounded: a pair that fails by less than the two decimals a reader is shown must fail on
+both sides, or the agreement above holds everywhere except at the boundary that matters.
 
 **A side names the family it is a step of, and may name a step per mode.** Both families are
 generated, so a side resolves as `theme[family][mode].solid[sideStep(side, mode)]` and nothing else
@@ -199,3 +267,70 @@ them.
 against two different backgrounds and a token-only key silently collapses those rows onto each
 other. The Worker and the browser print the same text from the same computation, so the value on
 first paint and the value after a drag can never disagree in format.
+
+### 3d. A Focus Ring Is Read Against the Surface It Is Drawn On
+
+**The audit measures `--ring` against `--muted`**, which is the surface an untoned control's focus
+ring is read against. `focus-ring` draws the ring _inside_ the element
+([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §3h), so on a solid fill the ring is read against
+that fill instead — and the gray step does not clear it: **`--ring` measures 1.03 against
+`--primary` in light.**
+
+**The remedy is per-appearance rather than a second audited row.** Every appearance recipe in
+`src/ui/core/utils/tone.ts` names its own `--focus-ring` — `--tone-fg` on the solid fill, `--ring`
+on the four that paint no fill — so none inherits a solid ancestor's choice. No row is added
+because a ring-on-fill pair resolves through the semantic layer rather than a generated scale, which
+is the boundary §3c draws, and the choice is a per-appearance token rather than a step the audit can
+name.
+
+---
+
+## 4. A Status Hue Holds Its Fill
+
+**A status hue's solid fill is held across modes; only its text step flips.** `--red-9`,
+`--blue-9`, `--emerald-9` and `--yellow-9` resolve to one palette step in both modes, and the
+near-white that clears them is written `light-dark(var(--gray-1), var(--gray-12))` — the same shape
+`--accent-contrast` already has.
+
+**The accent ramp is the precedent, not a new idea.** `--accent-9` is effectively held —
+`ACCENT_RAMP.dark.lightness[8]` is 0.5075 against light's 0.52, a contrast nudge rather than an
+inversion (§3c) — while `--accent-11` flips, and `--accent-contrast` is near-white in both modes
+because the gray ramp's first step in light and last in dark are both near-white.
+
+A per-mode nudge on a held fill is allowed; an inversion is not. A held value is chosen by running
+the contrast step and taking the step that clears its floor in **both** modes, exactly as
+`ACCENT_RAMP.dark.lightness[8]` was chosen — never by reading a number out of this document, which
+enumerates none.
+
+### 4a. One Value Cannot Be Both a Fill and Text
+
+One token cannot answer for both roles across both modes: a step light enough to read as text on a
+dark page is, as a fill, a pale slab that the near-white on it does not clear. So `--tone` and
+`--tone-text` resolve to different tokens for every intent, `warning` included — its text role is
+step 11, which is the shape the other three take too.
+
+### 4b. Three Tokens Per Intent
+
+Each intent owns three tokens, mirroring primary:
+
+| token            | role                               |
+| ---------------- | ---------------------------------- |
+| `--X`            | the solid fill                     |
+| `--X-foreground` | text on that fill                  |
+| `--X-text`       | the tone as text on a page surface |
+
+`UI_SSR_COMPONENTS.md` §5c already rules that `--destructive` / `--success` / `--warning` **are**
+fills, so the naming follows from a decision already taken. Every call site that painted error or
+status text off the fill moves to the `-text` token.
+
+The audit follows the tokens. The three "as text on a page surface" rows that measured a step 9
+against `--gray-3` now measure `--destructive-text` / `--info-text` / `--success-text` on step 11,
+and `--warning-text` gains the row it never had. No status pair is live-measured — `scalePairs()`
+keeps only pairs with both sides on a generated scale, and every status side is fixed — so the
+contrast step is the sole detector of a regression here.
+
+### 4c. Success Unifies on Emerald
+
+Success is one hue. The emerald ramp already carried the subtle, strong and border steps; the fill
+and its contrast step join it, and `--green-9` and `--green-contrast` retire. The audit rows that
+already named `--emerald-contrast` and `--emerald-9` become true rather than needing a rewrite.

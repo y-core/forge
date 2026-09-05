@@ -2,8 +2,8 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "jsx-a11y"],
   // forge's own rules, loaded as raw TypeScript. A consuming app names the published subpath
-  // "@y-core/forge/cli/pkg/lint" here instead of this relative path.
-  "jsPlugins": ["./src/cli/pkg/lint.ts"],
+  // "@y-core/forge/tooling/lint" here instead of this relative path.
+  "jsPlugins": ["./src/tooling/lint/mod.ts"],
   // `suspicious` stays off — see .decisions/implementation/CODE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {
@@ -11,11 +11,24 @@
     // passes --report-unused-disable-directives-severity error, so a stale suppression is a failure
     // there; this states the other half — a live suppression says why it is one.
     "forge/suppression-needs-reason": "error",
+    // The JSX contract's ordering half, moved off `validate-jsx`'s tag-frame scanner and onto the
+    // AST; `.decisions/implementation/STATE_ATTRIBUTES.md` states the rule.
+    "forge/data-slot-before-spread": "error",
     // The design corpus's class-string rules, read off the AST rather than line by line. Their ids
     // are `forge-ui-` + the key here; `.decisions/implementation/UI_DESIGN_GUIDANCE.md` states them
     // and `validate-design` fails when this list and `design-rules.ts`'s register disagree.
     "forge/a11y-heading-size-by-class": "error",
+    "forge/a11y-aria-beside-data": "error",
+    "forge/a11y-label-association": "error",
+    "forge/a11y-live-politeness": "error",
+    "forge/a11y-no-aria-readonly-on-button": "error",
+    "forge/a11y-one-live-region": "error",
+    "forge/color-theme-no-raw-utility": "error",
     "forge/color-token-only": "error",
+    "forge/focus-ring": "error",
+    "forge/interaction-focus-visible": "error",
+    "forge/no-inline-style": "error",
+    "forge/no-nested-card": "error",
     "forge/platform-entry-motion": "error",
     "forge/platform-logical-spacing": "error",
     "forge/platform-text-balance": "error",
@@ -68,17 +81,69 @@
       // exact patterns the rules forbid — the same reason `classOrderStep` excludes four specs.
       // `src/ui/design` is markdown the linter never reads; it is excluded where it is scanned.
       "files": [
-        "src/cli/pkg/gate/checks/design-parse.test.ts",
-        "src/cli/pkg/gate/checks/modern-css-parse.test.ts",
-        "src/cli/pkg/gate/checks/modern-css-source-parse.test.ts"
+        "src/tooling/gate/checks/design-parse.test.ts",
+        "src/tooling/gate/checks/modern-css-parse.test.ts",
+        "src/tooling/gate/checks/modern-css-source-parse.test.ts"
       ],
       "rules": { "forge/a11y-heading-size-by-class": "off", "forge/platform-entry-motion": "off", "forge/platform-logical-spacing": "off" }
+    },
+    {
+      // `cn`'s spec pins which of two conflicting utilities survives, so its fixtures are pairs the
+      // design rules forbid on purpose. They are reachable now that a class list bound to a
+      // module-scope const and passed by name is judged.
+      "files": ["src/ui/core/utils/cn.test.ts"],
+      "rules": { "forge/platform-logical-spacing": "off", "forge/platform-text-balance": "off" }
+    },
+    {
+      // The corpus rule is about the showcase, whose job is to demonstrate the component rather
+      // than the control it wraps; elsewhere a raw control is how a component is built.
+      "files": ["src/ui/show/**"],
+      "rules": { "forge/catalog-wrong-raw-input": "error" }
+    },
+    {
+      // `toast.tsx` is where the page's one live region lives, so it cannot be a second one.
+      "files": ["src/ui/core/toast.tsx"],
+      "rules": { "forge/a11y-one-live-region": "off" }
+    },
+    {
+      // `validate-design`'s source walk never read a spec or a browser file, and these carry the
+      // adversarial markup a test exists to feed. Keeping the corpus rules off them is parity.
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.browser.ts", "**/*.browser.tsx"],
+      "rules": {
+        "forge/a11y-aria-beside-data": "off",
+        "forge/a11y-label-association": "off",
+        "forge/a11y-live-politeness": "off",
+        "forge/a11y-no-aria-readonly-on-button": "off",
+        "forge/a11y-one-live-region": "off",
+        "forge/catalog-wrong-raw-input": "off",
+        "forge/color-theme-no-raw-utility": "off",
+        "forge/focus-ring": "off",
+        "forge/interaction-focus-visible": "off",
+        "forge/no-inline-style": "off",
+        "forge/no-nested-card": "off"
+      }
+    },
+    {
+      // The rule's subject is a rendered-markup assertion, which only a test file makes; scoped to
+      // the tree `validate-exact-assertions` walked, so the migration widens no corpus.
+      "files": ["src/ui/**/*.test.ts", "src/ui/**/*.test.tsx", "src/ui/**/*.browser.ts", "src/ui/**/*.browser.tsx"],
+      "rules": { "forge/exact-markup-assertion": "error" }
+    },
+    {
+      // The convention is about types a consumer constructs a value of (UI_SSR_COMPONENTS.md §1n);
+      // internal option objects keep the bare `?:`, so the rule is on for the component tiers only.
+      "files": ["src/ui/core/*.tsx", "src/ui/controls/*.tsx", "src/ui/chrome/*.tsx"],
+      "rules": { "forge/optional-prop-undefined": "error" }
     },
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],
       // a test's job is to feed adversarial markup — see .decisions/governance/TESTING.md
       "rules": {
         "typescript/no-non-null-assertion": "off",
+        "forge/optional-prop-undefined": "off",
+        // A probe that hands a component a caller `data-slot` and then a per-case override is
+        // asserting the spread wins; `validate-jsx` never read a test file either.
+        "forge/data-slot-before-spread": "off",
         "jsx-a11y/control-has-associated-label": "off",
         "jsx-a11y/tabindex-no-positive": "off",
         "jsx-a11y/aria-proptypes": "off"

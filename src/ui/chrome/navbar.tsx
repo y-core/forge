@@ -1,75 +1,19 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { NAVBAR_DRAWER_ATTR } from "../contracts/navbar-contract";
+import { NAVBAR_DRAWER_ATTR, NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import type { ForgeIcon } from "../core/icon";
-import { Menu } from "../core/menu";
 import { slotToken } from "../core/utils/as-child";
-import { asClass, cn } from "../core/utils/cn";
+import { cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { Resumable } from "../server/resumable";
-
-/** A leaf link. `href` is a route-map key resolved through {@link NavbarProps.resolveHref} — never used raw. @public */
-export interface NavLink {
-  label: string;
-  /** Route-map key (NOT a URL) — passed to `resolveHref` to produce the final `href`. */
-  href: string;
-  /** Auth tokens; the item shows only when one is in the active set. */
-  filters?: string[];
-}
-
-/** A branch: a menu over child items (recurses for nested submenus). @public */
-export interface NavMenu {
-  label: string;
-  items: NavItem[];
-  /** Auth tokens; the menu shows only when one is in the active set. */
-  filters?: string[];
-}
-
-/** A slot: an inline JSX node, OR a string key resolved from {@link NavbarProps.slots}. @public */
-export interface NavSlot {
-  slot: JSXNode | string;
-  label?: string;
-  /** Auth tokens; the slot shows only when one is in the active set. */
-  filters?: string[];
-}
-
-/** One navbar entry — a link, a nested menu, or a slot. Discriminated by property presence. @public */
-export type NavItem = NavLink | NavMenu | NavSlot;
-
-/** A heading over a list of visible child items; legal at section level only. @public */
-export interface NavGroup {
-  heading: string;
-  /** The group's items. Renders as visible bar links; nests no further. */
-  group: NavItem[];
-  /** Auth tokens; the group shows only when one is in the active set. */
-  filters?: string[];
-}
-
-/** What a section may hold: any nav item, plus a group — which nests no further. @public */
-export type NavSectionItem = NavItem | NavGroup;
-
-/** A group of items; sibling sections spread across the bar via `justify-between`. @public */
-export interface NavSection {
-  items: NavSectionItem[];
-}
-
-/** The full navbar configuration the app feeds to {@link Navbar}. @public */
-export interface NavDefinition {
-  sections: NavSection[];
-}
+import { type NavCollapsible, type NavDefinition, type NavGlyph, type NavRenderCtx, renderSection } from "./navbar-items";
 
 /** Desktop edge the bar pins to; drives the responsive sticky class. @public */
 export type NavPlacement = "top" | "bottom" | "left" | "right";
 
-/** Which breakpoints the bar collapses behind its toggle at. @public */
-export type NavCollapsible = "mobile" | "always";
-
 /** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. @public */
 export type NavCollapsedAs = "inline" | "drawer";
-
-/** The glyphs every bar draws: the menu chevron and the inline toggle's own pair. @public */
-export type NavGlyph = "chevron-down" | "hamburger" | "close";
 
 /** The two a drawer's toggle draws instead. One pair, drawn and mirrored under `rtl:` */
 export type NavDrawerGlyph = "panel-open" | "panel-close";
@@ -80,32 +24,32 @@ interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children
   /** Resolves a route-map key to a URL — REQUIRED, since `href` is always a key. */
   resolveHref: (key: string) => string;
   /** Fills string-keyed slots. */
-  slots?: Record<string, JSXNode>;
+  slots?: Record<string, JSXNode> | undefined;
   /** Initial auth tokens for correct first paint. */
-  activeFilters?: string[];
+  activeFilters?: string[] | undefined;
   /** Desktop edge to pin the bar to; defaults to `"top"`, or `"left"` when `collapsible="always"`. */
-  placement?: NavPlacement;
+  placement?: NavPlacement | undefined;
   /** Which breakpoints the bar collapses behind its toggle at. */
-  collapsible?: NavCollapsible;
+  collapsible?: NavCollapsible | undefined;
   /** Renders the underlying `<details>` open on first paint. Attribute-only; there is no controller. */
-  defaultOpen?: boolean;
+  defaultOpen?: boolean | undefined;
   /** DOM id for the bar; also namespaces the generated menu ids, which two same-placement bars on
    * one page would otherwise collide on. */
-  id?: string;
-  class?: string;
+  id?: string | undefined;
+  class?: string | undefined;
 }
 
 /** The in-the-flow bar: the toggle is a hamburger, so the sprite owes nothing new. */
 interface NavbarInlineProps extends NavbarSharedProps {
   /** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. */
-  collapsedAs?: "inline";
+  collapsedAs?: "inline" | undefined;
   icon: ForgeIcon<NavGlyph>;
 }
 
 /** A top bar that opens off-canvas: still a hamburger, which is the affordance a bar's menu has. */
 interface NavbarBarDrawerProps extends NavbarSharedProps {
   collapsedAs: "drawer";
-  collapsible?: "mobile";
+  collapsible?: "mobile" | undefined;
   icon: ForgeIcon<NavGlyph>;
 }
 
@@ -118,18 +62,6 @@ interface NavbarRailDrawerProps extends NavbarSharedProps {
 
 /** Props for {@link Navbar}. `collapsedAs` and `collapsible` decide the glyphs owed: opens off-canvas. @public */
 export type NavbarProps = NavbarInlineProps | NavbarBarDrawerProps | NavbarRailDrawerProps;
-
-/** Threaded through the recursive renderers. */
-interface NavRenderCtx {
-  resolveHref: (key: string) => string;
-  slots?: Record<string, JSXNode> | undefined;
-  activeFilters: string[];
-  icon: ForgeIcon<NavGlyph>;
-  /** Namespace prefix for generated menu ids — the bar's `id` when given, else its placement. */
-  idBase: string;
-  seq: { n: number };
-  collapsible: NavCollapsible;
-}
 
 /** One responsive sticky class string per placement: a vertical mobile edge re-pinned horizontally at `md:`. */
 const placementVariants = cva({
@@ -163,7 +95,7 @@ const railPlacementVariants = cva({
 const RAIL_HEIGHT_CHAIN = "h-full";
 
 /** What the bar itself paints below `md` it would position against the bar, not the viewport. */
-const DRAWER_BAR_CLASS = cn("max-md:bg-transparent max-md:backdrop-blur-none");
+const DRAWER_BAR_CLASS = "max-md:bg-transparent max-md:backdrop-blur-none";
 
 /** The rail's own scrolling box has to be released too, or the out-of-flow panel is clipped by it. */
 const DRAWER_RAIL_CLASS = cn(`${DRAWER_BAR_CLASS} max-md:max-h-none max-md:overflow-visible`);
@@ -178,8 +110,8 @@ const DRAWER_PANEL_BASE = cn(
 type DrawerEdge = "leading" | "trailing";
 
 const DRAWER_EDGE_CLASS: Record<DrawerEdge, string> = {
-  leading: cn("max-md:start-0 max-md:-translate-x-full max-md:border-e max-md:rtl:translate-x-full"),
-  trailing: cn("max-md:end-0 max-md:translate-x-full max-md:border-s max-md:rtl:-translate-x-full"),
+  leading: "max-md:start-0 max-md:-translate-x-full max-md:border-e max-md:rtl:translate-x-full",
+  trailing: "max-md:end-0 max-md:translate-x-full max-md:border-s max-md:rtl:-translate-x-full",
 };
 
 /** The glyph pair is drawn once, for a leading edge in a left-to-right page, and mirrored into the other three cases */
@@ -191,161 +123,26 @@ const DRAWER_BACKDROP_CLASS = cn(
 );
 
 /** Keeps the toggle above both the scrim and the panel it opened — starts at the same edge and would otherwise cover the one control that shuts it*/
-const DRAWER_SUMMARY_CLASS = cn("max-md:relative max-md:z-50");
+const DRAWER_SUMMARY_CLASS = "max-md:relative max-md:z-50";
 
 /** Summary (toggle) classes per collapse mode; `"always"` keeps the toggle at every breakpoint. */
 const SUMMARY_CLASS: Record<NavCollapsible, string> = {
-  mobile: cn("flex cursor-pointer list-none items-center justify-end p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"),
-  always: cn(
-    "sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 outline-none group-open:justify-end focus-visible:ring-2 focus-visible:ring-ring",
-  ),
+  mobile: "flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden",
+  always: "sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 focus-ring group-open:justify-end",
 };
 
 /** Panel classes per collapse mode; `"always"` stays a disclosed vertical stack at every breakpoint. */
 const PANEL_CLASS: Record<NavCollapsible, string> = {
-  mobile: cn("hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"),
-  always: cn("hidden flex-col gap-4 p-2 group-open:flex"),
+  mobile: "hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center",
+  always: "hidden flex-col gap-4 p-2 group-open:flex",
 };
 
 /** Panel classes per collapse mode in drawer mode: the `≥md` half of the inline table, restated so
  * that nothing unprefixed decides `display` — below `md` the overlay's own `max-md:flex` does. */
 const DRAWER_PANEL_CLASS: Record<NavCollapsible, string> = {
-  mobile: cn("flex-col justify-between gap-4 p-2 md:flex md:flex-row md:items-center"),
-  always: cn("flex-col gap-4 p-2 md:hidden md:group-open:flex"),
+  mobile: "flex-col justify-between gap-4 p-2 md:flex md:flex-row md:items-center",
+  always: "flex-col gap-4 p-2 md:hidden md:group-open:flex",
 };
-
-/** Section classes per collapse mode; `"always"` never turns the row horizontal. */
-const SECTION_CLASS: Record<NavCollapsible, string> = {
-  mobile: cn("flex flex-col gap-1 md:flex-row md:items-center"),
-  always: cn("flex flex-col gap-1"),
-};
-
-/** Bar-level styling; a bar link adds the focus ring and current-page cue `Menu.Trigger` already carries. */
-const BAR_ITEM = cn("inline-flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground");
-const BAR_LINK = cn(
-  `${BAR_ITEM} cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground`,
-);
-
-/** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). */
-function filterAttrs(item: NavSectionItem, activeFilters: string[]): Record<string, unknown> {
-  if (!item.filters?.length) return {};
-  const visible = item.filters.some((f) => activeFilters.includes(f));
-  const base: Record<string, unknown> = { "data-filter": item.filters.join(" ") };
-  if (!visible) base.hidden = true;
-  return base;
-}
-
-/** The chevron every menu trigger carries. */
-function chevron(ctx: NavRenderCtx): JSXNode {
-  return (
-    <span aria-hidden='true' class='text-xs opacity-70'>
-      <ctx.icon
-        name='chevron-down'
-        width={16}
-        height={16}
-        stroke='currentColor'
-        stroke-width={1.5}
-        stroke-linecap='round'
-        stroke-linejoin='round'
-      />
-    </span>
-  );
-}
-
-/** Resolves a slot's content: a string key looks up `slots`, otherwise the node is used directly. */
-function renderSlot(item: NavSlot, depth: number, ctx: NavRenderCtx): JSXNode {
-  const node = typeof item.slot === "string" ? ctx.slots?.[item.slot] : item.slot;
-  const fattrs = filterAttrs(item, ctx.activeFilters);
-  if (!item.label && !("data-filter" in fattrs)) return node ?? null;
-  return (
-    <span
-      data-slot={slotToken("navbar-slot", fattrs["data-slot"])}
-      {...(depth === 0 ? {} : { role: "none" })}
-      class='inline-flex items-center gap-2'
-      {...fattrs}>
-      {item.label ? <span>{item.label}</span> : null}
-      {node ?? null}
-    </span>
-  );
-}
-
-/** Renders a single item, recursing into nested menus; `depth` decides bar vocabulary from menu vocabulary. */
-function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
-  const fattrs = filterAttrs(item, ctx.activeFilters);
-
-  if ("slot" in item) return renderSlot(item, depth, ctx);
-
-  if ("items" in item) {
-    const id = `navbar-menu-${ctx.idBase}-${ctx.seq.n++}`;
-    const children = item.items.map((child) => renderItem(child, depth + 1, ctx));
-
-    // Emitted as bare siblings: a wrapping element inside a `role="menu"` breaks its content model.
-    if (depth > 0) {
-      return [
-        <Menu.SubmenuTrigger id={id} {...fattrs}>
-          <span>{item.label}</span>
-          {chevron(ctx)}
-        </Menu.SubmenuTrigger>,
-        <Menu.Popup id={id} side='inline-end'>
-          {children}
-        </Menu.Popup>,
-      ];
-    }
-
-    return (
-      <Menu {...fattrs}>
-        <Menu.Trigger id={id} class={BAR_ITEM}>
-          <span>{item.label}</span>
-          {chevron(ctx)}
-        </Menu.Trigger>
-        <Menu.Popup id={id}>{children}</Menu.Popup>
-      </Menu>
-    );
-  }
-
-  const href = ctx.resolveHref(item.href);
-  if (depth > 0) {
-    return (
-      <Menu.LinkItem href={href} {...fattrs}>
-        {item.label}
-      </Menu.LinkItem>
-    );
-  }
-
-  return (
-    <a href={href} data-slot={slotToken("navbar-link", fattrs["data-slot"])} class={BAR_LINK} {...fattrs}>
-      {item.label}
-    </a>
-  );
-}
-
-/** A labelled block of visible destinations, rendered as bar links rather than menu rows. */
-function renderGroup(item: NavGroup, ctx: NavRenderCtx): JSXNode {
-  const headingId = `navbar-group-${ctx.idBase}-${ctx.seq.n++}`;
-  const fattrs = filterAttrs(item, ctx.activeFilters);
-  return (
-    <div
-      data-slot={slotToken("navbar-group", fattrs["data-slot"])}
-      role='group'
-      aria-labelledby={headingId}
-      class='flex flex-col gap-1'
-      {...fattrs}>
-      <p id={headingId} data-slot='navbar-group-heading' class='px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
-        {item.heading}
-      </p>
-      {item.group.map((child) => renderItem(child, 0, ctx))}
-    </div>
-  );
-}
-
-/** A section is a flex group of items; siblings are spread by the container's `justify-between`. */
-function renderSection(section: NavSection, ctx: NavRenderCtx): JSXNode {
-  return (
-    <div data-slot='navbar-section' class={SECTION_CLASS[ctx.collapsible]}>
-      {section.items.map((item) => ("group" in item ? renderGroup(item, ctx) : renderItem(item, 0, ctx)))}
-    </div>
-  );
-}
 
 /** The toggle's two states, taken from the props union rather than from a widened `icon`: only the
  * rail-drawer member's `icon` is typed for the panel pair, so the discriminants are what reach them.
@@ -396,20 +193,17 @@ export const Navbar: FC<NavbarProps> = (props) => {
   const resolvedPlacement = placement ?? (collapsible === "always" ? "left" : "top");
   const ctx: NavRenderCtx = { resolveHref, slots, activeFilters, icon: Icon, idBase: id ?? resolvedPlacement, seq: { n: 0 }, collapsible };
   const variants = collapsible === "always" ? railPlacementVariants : placementVariants;
-  const heightLink: { class?: string } = collapsible === "always" ? { class: RAIL_HEIGHT_CHAIN } : {};
+  const heightLink: { class?: string | undefined } = collapsible === "always" ? { class: RAIL_HEIGHT_CHAIN } : {};
   const drawer = collapsedAs === "drawer";
   const edge = resolvedPlacement === "right" || resolvedPlacement === "bottom" ? "trailing" : "leading";
   const drawerBar = collapsible === "always" ? DRAWER_RAIL_CLASS : DRAWER_BAR_CLASS;
   return (
-    <Resumable name='navbar' state={{ filters: activeFilters }} {...heightLink}>
-      <nav
-        {...(ariaLabel === undefined ? {} : { "aria-label": ariaLabel })}
-        {...(ariaLabelledby === undefined ? {} : { "aria-labelledby": ariaLabelledby })}
-        {...heightLink}>
+    <Resumable name={NAVBAR_SCOPE} state={{ filters: activeFilters }} {...heightLink}>
+      <nav aria-label={ariaLabel} aria-labelledby={ariaLabelledby} {...heightLink}>
         <details
           data-slot={slotToken("navbar", inherited)}
-          class={cn(variants({ placement: resolvedPlacement }), drawer ? drawerBar : undefined, asClass(cls))}
-          {...(id === undefined ? {} : { id })}
+          class={cn(variants({ placement: resolvedPlacement }), drawer ? drawerBar : undefined, cls)}
+          id={id}
           {...(defaultOpen ? { open: true } : {})}
           {...(drawer ? { [NAVBAR_DRAWER_ATTR]: true } : {})}
           {...rest}>

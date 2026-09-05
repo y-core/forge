@@ -1,41 +1,38 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
+import { type Align, type PhysicalSide, stateAttrs } from "../contracts/state-attrs";
 import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
 import { cloneAsChild, slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
 
 interface TooltipRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
 interface TooltipTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   /** id of the `Tooltip.Content` describing this trigger. */
   for: string;
   /** Render onto the caller's own element instead of forge's, which must be exactly one JSX element child. */
-  asChild?: boolean;
-  children?: JSXNode;
+  asChild?: boolean | undefined;
+  children?: JSXNode | undefined;
 }
-
-/** The stylesheet's placement matrix is physical-only, so a logical side would match no rule and silently centre the popup. */
-type TooltipSide = Exclude<Side, "block-start" | "block-end" | "inline-start" | "inline-end">;
 
 interface TooltipContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   id: string;
-  side?: TooltipSide;
-  align?: Align;
-  children?: JSXNode;
+  side?: PhysicalSide | undefined;
+  align?: Align | undefined;
+  children?: JSXNode | undefined;
 }
 
 const TooltipRoot: FC<TooltipRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("tooltip", inherited)} data-scope={TOOLTIP_SCOPE} class={cn("relative inline-block", asClass(cls))} {...rest}>
+  <div data-slot={slotToken("tooltip", inherited)} data-scope={TOOLTIP_SCOPE} class={cn("relative inline-block", cls)} {...rest}>
     {children}
   </div>
 );
 
 const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = false, class: cls, children, "data-slot": inherited, ...rest }) => {
-  const className = cn("cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls));
+  const className = cn("cursor-default focus-ring", cls);
   // `mountTooltip` resolves the content by `aria-describedby`, so dropping it disables the tooltip entirely.
   const attrs = { "aria-describedby": contentId, ...rest };
   const slot = slotToken("tooltip-trigger", inherited);
@@ -66,7 +63,7 @@ const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "ce
     data-slot={slotToken("tooltip-content", inherited)}
     popover='hint'
     {...stateAttrs({ side, align })}
-    class={cn("z-50 w-max max-w-xs rounded-md bg-foreground px-2 py-1 text-xs text-background shadow-md", asClass(cls))}
+    class={cn("z-50 w-max max-w-xs rounded-field bg-foreground px-2 py-1 text-xs text-background shadow-md", cls)}
     {...rest}>
     {children}
   </div>

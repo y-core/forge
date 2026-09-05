@@ -1,5 +1,6 @@
 import { base64urlDecode, base64urlEncode, hmacSign, importHmacKeyFromHex, timingSafeEqualBytes } from "../../crypto/mod";
-import type { SignedUrlError, SignedUrlOk, SignedUrlOptions } from "./types";
+import { err, ok } from "../../result/result";
+import type { SignedUrlOptions, SignedUrlVerdict } from "./types";
 
 /** Imports a hex-encoded secret as a Web Crypto HMAC-SHA256 key for signing operations. @public */
 export function importSigningKey(hexSecret: string): Promise<CryptoKey> {
@@ -30,24 +31,24 @@ export async function createSignedObjectUrl(
 }
 
 /** Verifies a signed object URL, checking expiry then comparing the HMAC in constant time. @public */
-export async function verifySignedObjectUrl(signingKey: CryptoKey, url: string): Promise<SignedUrlOk | SignedUrlError> {
+export async function verifySignedObjectUrl(signingKey: CryptoKey, url: string): Promise<SignedUrlVerdict> {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return { ok: false, reason: "invalid-format" };
+    return err("invalid-format");
   }
 
   const objectKey = parsed.searchParams.get("key");
   const expStr = parsed.searchParams.get("exp");
   const sig = parsed.searchParams.get("sig");
 
-  if (!objectKey || !expStr || !sig) return { ok: false, reason: "invalid-format" };
+  if (!objectKey || !expStr || !sig) return err("invalid-format");
 
   const exp = parseInt(expStr, 10);
-  if (!Number.isInteger(exp)) return { ok: false, reason: "invalid-format" };
+  if (!Number.isInteger(exp)) return err("invalid-format");
 
-  if (Math.floor(Date.now() / 1000) > exp) return { ok: false, reason: "expired" };
+  if (Math.floor(Date.now() / 1000) > exp) return err("expired");
 
   const payload = signingPayload(objectKey, exp);
   const expected = await hmacSign(signingKey, payload);
@@ -56,11 +57,11 @@ export async function verifySignedObjectUrl(signingKey: CryptoKey, url: string):
   try {
     actual = base64urlDecode(sig);
   } catch {
-    return { ok: false, reason: "invalid-signature" };
+    return err("invalid-signature");
   }
 
   const match = timingSafeEqualBytes(expected, actual);
-  if (!match) return { ok: false, reason: "invalid-signature" };
+  if (!match) return err("invalid-signature");
 
-  return { ok: true, key: objectKey };
+  return ok(objectKey);
 }

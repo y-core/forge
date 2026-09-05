@@ -37,6 +37,16 @@ const attrOf = (tag: string, name: string) => tag.match(new RegExp(`\\s${name}="
 
 const widgetsIn = (html: string) => [...html.matchAll(/<div[^>]*data-ref="turnstile"[^>]*>/g)].map((match) => match[0]);
 
+/** Every code block the band prints, which is where the reproducing snippet lands. */
+const snippetsIn = (html: string) => [...html.matchAll(/<code[^>]*>([\s\S]*?)<\/code>/g)].map((match) => match[1]);
+
+/** A verdict alert's tone, title and description — each string pinned to the slot carrying it. */
+const alertParts = (html: string) => [
+  attrOf(html.match(/<div[^>]*data-slot="alert"[^>]*>/)?.[0] ?? "", "data-tone"),
+  html.match(/<div[^>]*data-slot="alert-title"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? null,
+  html.match(/<div[^>]*data-slot="alert-description"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? null,
+];
+
 const params = (query: string) => new URLSearchParams(query);
 
 describe("loadTurnstileOptions", () => {
@@ -181,9 +191,9 @@ describe("the Turnstile playground", () => {
     expect(attrOf(widget, "data-response-field-name")).toBe("signup-token");
     expect(attrOf(widget, "data-language")).toBe("de");
     expect(attrOf(widget, "data-tabindex")).toBe("2");
-    expect(body).toContain(
+    expect(snippetsIn(body)).toEqual([
       "&lt;Turnstile siteKey=&#39;3x00000000000000000000FF&#39; size=&#39;flexible&#39; load=&#39;focus&#39; challenge=&#39;submit&#39; appearance=&#39;interaction-only&#39; action=&#39;sign_up&#39; cData=&#39;order-4821&#39; responseFieldName=&#39;signup-token&#39; language=&#39;de&#39; tabindex={2} /&gt;",
-    );
+    ]);
   });
 
   it("omits the attribute for every option left at its default, rather than stamping the default", async () => {
@@ -220,13 +230,18 @@ describe("the Turnstile playground", () => {
 
   it("posts the widget's form to the verify endpoint, swapping the verdict into its own target", async () => {
     const body = await bodyOf("turnstile-widget");
-    const submitForm = [...body.matchAll(/<form[^>]*>/g)].map((match) => match[0])[1] ?? "";
+    const submit = [...body.matchAll(/<form([^>]*)>([\s\S]*?)<\/form>/g)][1];
+    const submitForm = `<form${submit?.[1] ?? ""}>`;
     expect(attrOf(submitForm, "action")).toBe("/showcase/turnstile-verify");
     expect(attrOf(submitForm, "hx-post")).toBe("/showcase/turnstile-verify");
     expect(attrOf(submitForm, "hx-target")).toBe(`#${SHOW_TURNSTILE_VERDICT_ID}`);
     expect(attrOf(submitForm, "hx-swap")).toBe("innerHTML");
-    expect(body).toContain(`<div id="${SHOW_TURNSTILE_VERDICT_ID}"`);
-    expect(body).toContain(`name="${HONEYPOT_FIELD_DEFAULT}"`);
+    expect(body.match(new RegExp(`<div[^>]*\\sid="${SHOW_TURNSTILE_VERDICT_ID}"[^>]*>`))?.[0]).toBe(
+      `<div id="${SHOW_TURNSTILE_VERDICT_ID}" class="mt-6">`,
+    );
+    expect((submit?.[2] ?? "").match(/<input[^>]*>/)?.[0]).toBe(
+      `<input type="text" name="${HONEYPOT_FIELD_DEFAULT}" tabindex="-1" autocomplete="new-password">`,
+    );
   });
 
   it("offers no sitekey the page did not publish as a test key", async () => {
@@ -239,7 +254,12 @@ describe("the Turnstile playground", () => {
 describe("the Turnstile variants band", () => {
   it("guards each size with its own form, self-scoping widget and distinct email field", async () => {
     const body = await bodyOf("turnstile-variants");
-    expect([...body.matchAll(/data-size="([^"]*)"/g)].map((match) => match[1])).toEqual(["normal", "compact", "flexible", "normal"]);
+    expect([...body.matchAll(/data-slot="turnstile"[^>]*?data-size="([^"]*)"/g)].map((match) => match[1])).toEqual([
+      "normal",
+      "compact",
+      "flexible",
+      "normal",
+    ]);
 
     const forms = [...body.matchAll(/<form([^>]*)>([\s\S]*?)<\/form>/g)];
     // The showcase adds no scope of its own — each widget carries `data-scope="turnstile"`, which is
@@ -276,25 +296,33 @@ describe("the Turnstile resilience band", () => {
 describe("TurnstileVerdictFragment", () => {
   it("names the guard and the reason a turnstile refusal carries", async () => {
     const html = await render(<TurnstileVerdictFragment verdict={{ kind: "rejected", guard: "turnstile", reason: "verification-failed" }} />);
-    expect(html).toContain("Refused by the turnstile guard");
-    expect(html).toContain("Cloudflare refused the token. On the always-blocks key this is the expected answer.");
+    expect(alertParts(html)).toEqual([
+      "destructive",
+      "Refused by the turnstile guard",
+      "Cloudflare refused the token. On the always-blocks key this is the expected answer.",
+    ]);
   });
 
   it("names the decoy for a honeypot refusal, which carries no reason", async () => {
     const html = await render(<TurnstileVerdictFragment verdict={{ kind: "rejected", guard: "honeypot" }} />);
-    expect(html).toContain("Refused by the honeypot guard");
-    expect(html).toContain("The decoy field was filled.");
+    expect(alertParts(html)).toEqual(["destructive", "Refused by the honeypot guard", "The decoy field was filled."]);
   });
 
   it("says so when the showcase was given no secret, rather than claiming a verification", async () => {
     const html = await render(<TurnstileVerdictFragment verdict={{ kind: "unconfigured" }} />);
-    expect(html).toContain("No secret key is configured");
-    expect(html).not.toContain("Verified<");
+    expect(alertParts(html)).toEqual([
+      "warning",
+      "No secret key is configured",
+      "The form reached the action and its honeypot ran, but `registerShowcase` was given no `turnstileSecret`, so nothing was sent to siteverify.",
+    ]);
   });
 
   it("reports a pass against the field the pipeline drops", async () => {
     const html = await render(<TurnstileVerdictFragment verdict={{ kind: "verified" }} />);
-    expect(html).toContain("Verified");
-    expect(html).toContain("cf-turnstile-response");
+    expect(alertParts(html)).toEqual([
+      "success",
+      "Verified",
+      "The token in `cf-turnstile-response` passed siteverify and was dropped before validation, so the handler never sees it.",
+    ]);
   });
 });

@@ -58,13 +58,15 @@ export function loadShowcase<Bindings = Record<string, unknown>>(
 
 /** @public */
 export interface PreviewData {
-  variant: string;
+  tone: string;
+  appearance: string;
   size: string;
 }
 
-/** Reads the preview fragment's variant and size from the query string. @public */
+/** Reads the preview fragment's tone, appearance and size from the query string. @public */
 export function loadPreview<Bindings = Record<string, unknown>>(c: AppContext<Bindings>): PreviewData {
-  return { variant: c.url.searchParams.get("variant") ?? "primary", size: c.url.searchParams.get("size") ?? "md" };
+  const q = c.url.searchParams;
+  return { tone: q.get("tone") ?? "primary", appearance: q.get("appearance") ?? "solid", size: q.get("size") ?? "md" };
 }
 
 /** @public */
@@ -118,7 +120,10 @@ export interface PaginateData {
 /** Reads the requested page number from the query string, clamped to at least 1. @public */
 export function loadPaginate<Bindings = Record<string, unknown>>(c: AppContext<Bindings>, paths: ShowcasePaths): PaginateData {
   const raw = c.url.searchParams.get("page");
-  const page = raw ? Math.max(1, Number.parseInt(raw, 10)) : 1;
+  // `Math.max` propagates NaN, so `?page=abc` used to render an empty tbody, hide *both* pager
+  // buttons and print "Page NaN of 4". The parse has to be tested, not merely clamped.
+  const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
+  const page = Number.isFinite(parsed) ? Math.max(1, parsed) : 1;
   return { page, paths };
 }
 

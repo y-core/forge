@@ -364,6 +364,85 @@ test.describe("bindControls — realm and shadow safety", () => {
   });
 });
 
+test.describe("bindControls — controls whose value setter is not a plain string", () => {
+  // The `value` setter on a file input throws `InvalidStateError` for anything but `""`. `effect`
+  // rethrows on its first run, so the throw would abort the `.map()` that builds the disposers and
+  // every *sibling* control in the scope would silently never be bound at all.
+  test("binds the siblings of a file input rather than aborting the whole scope", async ({ page }) => {
+    await mount(
+      page,
+      `<div data-scope="demo"><input id="pick" type="file" data-field="upload"><input id="note" data-field="choice"></div>`,
+      EXPOSE,
+    );
+
+    const bound = await page.evaluate(() => {
+      const signals = window.forgeSignals.signalRecord({ choice: "alpha", upload: "" });
+      const root = document.querySelector("[data-scope]") as HTMLElement;
+      try {
+        window.forgeBind.bindControls(root, signals);
+      } catch (error) {
+        return { threw: String(error), note: null };
+      }
+      const note = document.querySelector<HTMLInputElement>("#note");
+      if (!note) return { threw: null, note: null };
+      note.value = "beta";
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+      return { threw: null, note: signals.choice.value };
+    });
+
+    expect(bound).toEqual({ threw: null, note: "beta" });
+    expect(await page.evaluate(() => document.querySelector<HTMLInputElement>("#pick")?.value)).toBe("");
+  });
+
+  test("paints a multi-select per option, keeping the selection the array names", async ({ page }) => {
+    const options = ["a", "b", "c"].map((value) => `<option value="${value}">${value}</option>`).join("");
+    await mount(page, `<div data-scope="demo"><select id="pick" multiple data-field="choice">${options}</select></div>`, EXPOSE);
+
+    const selected = await page.evaluate(() => {
+      const signals = window.forgeSignals.signalRecord({ choice: ["a"] as string[] });
+      window.forgeBind.bindControls(document.querySelector("[data-scope]") as HTMLElement, signals);
+      signals.choice.value = ["b", "c"];
+      const pick = document.querySelector<HTMLSelectElement>("#pick");
+      return pick ? [...pick.selectedOptions].map((option) => option.value) : null;
+    });
+
+    expect(selected, "the array was assigned as one comma-joined value, matching no option").toEqual(["b", "c"]);
+  });
+
+  test("reads a multi-select's change back into the signal", async ({ page }) => {
+    const options = ["a", "b", "c"].map((value) => `<option value="${value}">${value}</option>`).join("");
+    await mount(page, `<div data-scope="demo"><select id="pick" multiple data-field="choice">${options}</select></div>`, EXPOSE);
+
+    const read = await page.evaluate(() => {
+      const signals = window.forgeSignals.signalRecord({ choice: ["a"] as string[] });
+      window.forgeBind.bindControls(document.querySelector("[data-scope]") as HTMLElement, signals);
+      const pick = document.querySelector<HTMLSelectElement>("#pick");
+      if (!pick) return null;
+      for (const option of pick.options) option.selected = option.value !== "a";
+      pick.dispatchEvent(new Event("change", { bubbles: true }));
+      return signals.choice.value;
+    });
+
+    expect(read).toEqual(["b", "c"]);
+  });
+
+  test("does not refill a numeric field the reader has cleared", async ({ page }) => {
+    await mount(page, `<div data-scope="demo"><input id="qty" type="number" value="3" data-field="choice"></div>`, EXPOSE);
+
+    const after = await page.evaluate(() => {
+      const signals = window.forgeSignals.signalRecord({ choice: 3 });
+      window.forgeBind.bindControls(document.querySelector("[data-scope]") as HTMLElement, signals);
+      const qty = document.querySelector<HTMLInputElement>("#qty");
+      if (!qty) return null;
+      qty.value = "";
+      qty.dispatchEvent(new Event("input", { bubbles: true }));
+      return { field: qty.value, signal: signals.choice.value };
+    });
+
+    expect(after, "clearing the field wrote 0 into the signal, which painted a 0 straight back").toEqual({ field: "", signal: Number.NaN });
+  });
+});
+
 test.describe("bindControls — the signal is the state and the DOM is a paint of it", () => {
   // Impossible under the old design: pressed state lived in the DOM, so a repaint that wiped the
   // markup destroyed the only copy of it. The signal now outlives the elements.

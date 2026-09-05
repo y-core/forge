@@ -6,11 +6,13 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 # UI SSR Components
 
 > Owns the server-rendered UI tier: the `ui/core` component contract, the `ui/controls` bound
-> variants, the server-side half of the signal-binding seam, the `cn` / `asClass` / `cva`
+> variants, the server-side half of the signal-binding seam, the `cn` / `cva`
 > class utilities, and the contract a colour scheme file is declared against.
 >
 > Defers to: [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) for everything that runs in the
-> browser and for the hard SSR/client boundary; `src/ui/README.md` for the component gallery,
+> browser and for the hard SSR/client boundary; [`STATE_ATTRIBUTES.md`](./STATE_ATTRIBUTES.md) for
+> the `data-*` vocabulary a component emits and the sweep that holds it to one declaration;
+> `src/ui/README.md` for the component gallery,
 > props, and worked usage; [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §2d for automatic
 > URL sanitization; [`NAMESPACES.md`](./NAMESPACES.md) §5b for the one-import rule
 > that governs the `ui/core` / `ui/controls` name collision.
@@ -30,23 +32,23 @@ description: "The ui/core server-rendered component surface, its attribute pass-
 - §1f Turnstile — Server-Rendered Mount Point: deliberate omission of auto-render
 - §1g Composite Widgets: the markers that make many focusable items one tab stop
 - §1h Overlays and Disclosures: native popover and `<details>`; how a popup's side resolves against the reader's direction
-- §1i Native-Input Primitive Decisions: an axis that is not an orientation, and a scroll area that hijacks nothing
+- §1i Native-Input Primitive Decisions: an axis that is not an orientation, a scroll area that hijacks nothing, the bounds content-sizing needs, and a frame clipped rather than scrolled
 - §1j Derived Ids Must Be Id Tokens: why a whitespace-bearing `name` or `scope` derives no wiring, and why suppressing won
 - §1k One Consumption Path, Not Two: JSX as the terminal surface, the `data-scope` route, the rejected Custom Element mirror
 - §1l Chrome Navigation Announces Only What It Implements: the not-a-menubar and not-a-rail-stop rulings
+- §1m The Prop Vocabulary: the seven ratified props, the ban on `variant`, and the one `size` exemption
+- §1n Optional Input Props Carry an Explicit `| undefined`: why the union is universal on input types, and what the guard-form spread was hiding from a11y lint
 - §2 The Signal-Binding Seam: how SSR markup names a client-side binding
 - §2a The Binding Ownership Boundary: what forge owns in both directions, and what the app supplies
 - §2c ui/controls — Bound Variants: the static barrel, the bespoke case, and the deliberate name collision
 - §2d Scoped Components Require the Client Scope Import: the `resume()` precondition
 - §3 Class Utilities: ratified public composition helpers
-- §3d Conflict Resolution and the Fail-Open Boundary: what the resolver decides, where it stops, and the ratified inversion
+- §3d Conflict Resolution, the Fail-Open Boundary, and the Memo: what the resolver decides, where it stops, the ratified inversion, and the cache that replaced the no-cache ruling
 - §3e Class Order Is Not Load-Bearing Within a Literal: the fixed-point invariant the gate enforces, and what a sorter cannot reach
 - §3f The Table Is Derived From the Compiled Design System: the generator, the drift gate, the scale probe and its agreement condition, the equal-reach throw
 - §3g A Narrower Later Utility Layers Rather Than Displaces: why `text-size-hero` and `text-size-[20px]` both survive
-- §4 State Attribute Contract: one declaration two tiers must agree on
-- §4a Presence, Not Value: why `data-selected` and never `data-selected="true"`
-- §4b ARIA States Are Not Styling Hooks: why both are emitted
-- §4c The Caller Is Authoritative: class precedence and state precedence as one rule
+- §3h The `@utility` Recipe Layer: one name per state or chrome recipe, why it is a utility and not a class, the subset-group argument rule, the admission test that rules out a paint recipe, and the `--tone` mechanism
+- §3i Which Utility Composes a Class, and In What Order: the four-point rule over `const`, `cva` and `cn`, and why the caller's class is last
 - §5 Colour Scheme Declaration Contract: one declaration site per step, and what selects between the modes
 - §5a OKLCh Solids: why a scheme's steps are written in the space the ramps are authored in
 - §5b The Rejected Wide-Gamut Branch: why a second set of values would outrun the contrast audit
@@ -75,6 +77,13 @@ a `javascript:`-style value collapses to `"#"`. **This is automatic; components 
 empty child is a programming error and **`Button` throws rather than degrading** — a ratified
 invariant, consistent with [`ERROR_HANDLING.md`](../governance/ERROR_HANDLING.md) §5a.
 
+**The fragment case is checked in `cloneAsChild`, not at the call site.** `isValidElement` accepts a
+`Fragment` — it is an element of this runtime — but a fragment carries no attributes, so cloning onto
+one merges the class, the `data-slot` and every caller prop into a value the renderer never reads.
+The failure is silent and total, and it is one every `asChild` compound could reach, so the guard
+belongs in the one place they all pass through. `Button` reached it by wrapping its children to make
+room for a loading spinner; the spinner is now injected into the cloned child instead.
+
 **`data-slot` is a token list, and every compound merges into it rather than replacing it** — under
 `asChild` and on plain render alike. Composing two compounds produces one element that genuinely is
 both: `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` renders a single button carrying
@@ -96,11 +105,11 @@ place** as `data-slot={slotToken("own-token", inherited)}`, own token first (`sl
 that passes `data-slot`, because the rest-props spread that follows it wins. Rewriting in place —
 rather than merging through a spread-last helper — keeps the attribute's serialized position.
 
-**The order is gate-enforced, not conventional.** `validate-jsx` fails any JSX element carrying a
-literal `data-slot` before a spread of a **bare identifier** (`{...rest}`, `{...props}`,
-`{...attrs}`). A computed spread such as `{...stateAttrs({ selected })}` is deliberately outside the
-rule: it is built at the call site out of values the component itself controls, so no caller token
-can hide inside it. There is no per-site suppression.
+**The order is lint-enforced, not conventional.** `forge/data-slot-before-spread` fails any JSX
+element carrying a literal `data-slot` before a spread of a **bare identifier** (`{...rest}`,
+`{...props}`, `{...attrs}`). A computed spread such as `{...stateAttrs({ selected })}` is outside the
+rule: it is built at the call site out of values the component controls, so no caller token can hide
+inside it. It is off for `*.test.tsx` alone, where a probe overrides its own caller token on purpose.
 
 ### 1e. Switch and Slider — CSS-Only Controls
 
@@ -159,7 +168,7 @@ a toolbar and offer the wrong interaction model. Its `type` prop is published as
 present exactly when several items may be pressed at once, and that is what the client reads to
 decide whether a click replaces the pressed item or adds to it (§2a).
 
-An unselected `Tabs.Panel` is `hidden`, which is the platform's own mechanism: the initial render is
+An unselected `Tabs.Content` is `hidden`, which is the platform's own mechanism: the initial render is
 correct with no JavaScript, and the controller flips the same attribute.
 
 ### 1h. Overlays and Disclosures
@@ -203,17 +212,31 @@ cascade settles, so `:dir()` selection happens first. Only the inline axis mirro
 resolving on it are `:dir()`-keyed.
 
 **A component projects the subset its stylesheet can render**, so an unrenderable value is
-unrepresentable rather than silently unstyled — narrowed with `Exclude<Side, …>` so the projection
-tracks future growth of `Side`, rather than with an independent literal union.
+unrepresentable rather than silently unstyled: `Popover.Content` and `Tooltip.Content` take
+`PhysicalSide`, the named member of `Side` rather than a literal union of their own, so the
+projection tracks the value space it is cut from.
 
 ### 1i. Native-Input Primitive Decisions
 
-**`Switch` publishes `data-label-position`** (`before` / `after`) for the label's placement relative
-to the track. It is not `data-orientation`: orientation is the widget's own axis, and a switch is
-always horizontal — the two would fight the moment a stylesheet matched on either.
+**`Switch` takes `labelPlacement` and publishes `data-label-position`** (`before` / `after`) for the
+label's side of the track. It is not an orientation: orientation is the widget's own axis, and a
+switch is always horizontal — the two would fight the moment a stylesheet matched on either (§1m).
 
 **`ScrollArea` adds no behaviour to the platform's scrolling** — no hijacking, no synthetic thumb,
 no wheel listener.
+
+**`Textarea` sizes to its content, and the two bounds that come with it are not optional.**
+`field-sizing-content` takes the height away from `rows`, so `h-auto` is needed to clear the fixed
+height `field-chrome` sets (§3h) and a floor and a cap are needed on either side of it: with no
+floor, every consumer that passes `rows` gets a collapsed one-line box, and with no cap the control
+grows without bound. `src/ui/core/textarea.tsx` is authoritative over which utilities express them.
+
+**`OtpInput`'s frame clips its editor rather than scrolling it, and `overflow: clip` is what makes
+that true.** The editor deliberately overhangs the frame's interior to leave the caret room after
+the last glyph (`forge-ui.css`, `otp-editor`). Under `overflow: hidden` that frame is also a scroll
+container, so revealing the caret at the clipped edge scrolls the whole grid a pad's width off its
+cells — permanently, on the first full code typed. `clip` forbids scrolling and clips the same
+overhang.
 
 ### 1j. Derived Ids Must Be Id Tokens
 
@@ -277,6 +300,60 @@ stays a plain link for the same reason. **A flyout's title action is likewise no
 roving focus queries the whole rail subtree, so marking that button would splice flyout content
 into the rail's arrow-key ring (§1g).
 
+**`Navbar` keeps `<details>` for its collapsed nav, and does not consume `Drawer`.** The two are
+different overlay kinds: a `Drawer` is a `<dialog>` — top layer, backdrop, inertness, a focus
+trap — and the collapsed nav is a disclosure with none of those, whose open state the platform
+owns with no script. Rewiring one onto the other would turn a no-JS disclosure into a modal that
+needs `showModal()`, which is a behaviour change, not an extraction.
+
+### 1m. The Prop Vocabulary
+
+**Every presentational prop is drawn from one vocabulary**, declared in
+`src/ui/contracts/vocabulary.ts` and `src/ui/contracts/state-attrs.ts`, which are authoritative over
+the values themselves; `src/ui/README.md` states which component takes which.
+
+| Prop          | What it decides                               | Declared as                 |
+| ------------- | --------------------------------------------- | --------------------------- |
+| `tone`        | the colour intent a surface carries           | `Tone`, `TONES`             |
+| `appearance`  | how that tone is painted — the emphasis level | `Appearance`, `APPEARANCES` |
+| `size`        | the control height, read from `--control-h-*` | `Size`                      |
+| `shape`       | a button's footprint beyond its size          | `Shape`                     |
+| `orientation` | the widget's own layout axis                  | `Orientation`               |
+| `invalid`     | the control holds a validation error          | `StateAttrsProps`           |
+| `busy`        | the component is waiting on work              | `StateAttrsProps`           |
+
+**No component declares a prop named `variant`.** One name answering two questions — which colour,
+and how much emphasis — is what let `secondary` mean an outlined button and a filled chip at once.
+Asked separately, a pair reads identically on every component that takes it, and `toneVariants`
+(§3h) is the one place either is painted.
+
+**`orientation` carries the two layout axes and nothing else**, because a stylesheet matches
+`data-orientation` on exactly that: `Switch`'s label side is `labelPlacement` (§1i), and
+`FormField`'s width-driven collapse is a separate `responsive` boolean.
+
+**One `size` is exempt: `Turnstile` forwards Cloudflare's widget sizes verbatim**, renaming a third
+party's values at a mount point being how a component forge does not ship gets documented (§1f).
+
+**`conformance.test.tsx` enforces all three by scanning the sources** under `ui/core`, `ui/chrome`
+and `ui/controls`, and carries the exemption with its reason — so adding one is a visible change
+rather than a quiet edit.
+
+### 1n. Optional Input Props Carry an Explicit `| undefined`
+
+**Every optional property of a type a consumer passes values into is declared `name?: T | undefined`** — the whole of
+`src/jsx/types.ts` and every `*Props` in `src/ui`. **Internal data structures and options objects keep the bare `?:`**,
+the distinction `exactOptionalPropertyTypes` is actually for. **The test is "does a consumer construct a value of this
+type", not "is it named `*Props`"**: a definition object handed to a component — `NavSlot`, `NavMegaMenu`,
+`ToolbarPopover` — is a consumer input as much as an attribute bag is, and the suffix reading let those three drift.
+
+**Two reasons, and the second is a correctness one.** `renderToString` skips a null or undefined attribute value
+(`src/jsx/render-to-string.ts`), so absent and `undefined` are the same state at runtime and the flag would guard a
+distinction the renderer does not have. And without the union a caller under the flag writes `{...(x !== undefined ?
+{ "aria-label": x } : {})}` rather than `aria-label={x}` — a spread, which `jsx-a11y` cannot see as an attribute; forge
+carried forty-seven, every one unlinted, and `@types/react` writes `className?: string | undefined` for the same reason.
+**A guard-form spread is therefore never the fix for such an error at a forge call site; widening the declaration is**
+— what stays is the **truthiness** spread, `{...(open ? { open: true } : {})}`, an omit-when-false HTML semantic.
+
 ---
 
 ## 2. The Signal-Binding Seam
@@ -336,10 +413,10 @@ scope-name typo — never as an expected runtime condition.**
 
 ## 3. Class Utilities
 
-`cn`, `asClass`, and `cva` are **ratified `@public` utilities** — apps compose classes with them
-exactly as forge's own components do.
+`cn` and `cva` are **ratified `@public` utilities** — apps compose classes with them exactly as
+forge's own components do.
 
-### 3d. Conflict Resolution and the Fail-Open Boundary
+### 3d. Conflict Resolution, the Fail-Open Boundary, and the Memo
 
 **Conflict resolution is a table lookup, and the table is `src/ui/core/utils/class-groups.ts`** —
 a utility mapped to the CSS concern it sets, with `cn` keeping the last utility to claim a concern.
@@ -379,10 +456,39 @@ A Workers library pays a runtime dependency's cost into every consumer bundle an
 on the SSR path, against a general-purpose Tailwind parser almost none of which forge needs. The
 in-house table is tractable precisely because forge is a fixed set of primitives.
 
-**No cache, also deliberately.** A memo keyed on the argument list is unbounded mutable module state
-needing its own eviction policy ([`CODE_RULES.md`](../governance/CODE_RULES.md) §1), and Cloudflare
-evicts isolates aggressively enough that a cold refill is paid often rather than amortised. It stays
-retrofittable behind the unchanged signature.
+**`cn` memoises, and the cache is cleared whole rather than evicted by age.** The resolver body is
+the private `resolve(joined)`; `cn` joins its arguments, looks the joined string up in a module
+`Map`, and calls `resolve` only on a miss. `CACHE_LIMIT` is 512, and a full map is **cleared
+entirely**. Measured on one machine, pre- and post-change in a single process, so the pair is
+internally comparable:
+
+| call                                      | prior    | memo     |
+| ----------------------------------------- | -------- | -------- |
+| `cn(base)` repeated, 18-token base        | 8.04 µs  | 0.058 µs |
+| `cn(base, "px-8")` repeated               | 10.24 µs | 0.118 µs |
+| `cn(base)`, distinct keys — always a miss | 10.13 µs | 10.48 µs |
+| `cn(base, "px-8")`, distinct keys         | 10.42 µs | 10.05 µs |
+
+A hit is 87–138× cheaper and the miss path is unchanged within noise. Against 188 non-test call
+sites, a page of ~200 elements spent on the order of 1.5 ms of Worker CPU in `cn` alone, recomputed
+identically every request. **This overturns the prior no-cache ruling**, which reasoned that
+Cloudflare evicts isolates often enough that a cold refill is paid rather than amortised: an isolate
+serves many requests before eviction, and a miss costs exactly what an unmemoised call costs.
+
+**Clear-on-full rather than LRU, because an LRU's per-hit bookkeeping is a material fraction of a
+0.06–0.12 µs hit.** A whole-map reset is O(1) amortised and needs no ordering structure, and 512
+comfortably exceeds the distinct class strings one page produces, so a full map is the rare case.
+**The key is the joined string, not the argument list**, so `cn("p-4 p-8")` and `cn("p-4", "p-8")`
+share one entry — sound, because `resolve` reads only the joined string.
+
+**Reconciled with [`CODE_RULES.md`](../governance/CODE_RULES.md) §1, not exempted from it.** §1
+forbids state that carries across requests _observably_, and nothing but `cn` reads this map: no
+enumeration path, no export, no API reporting whether a string was cached. Stated rather than left to
+be discovered, because the shape invites the question — **entries are class strings that may derive
+from consumer props, and they do outlive the request that produced them**. What makes that acceptable
+is that no read path leads out of the map, and a memo of a pure function returns what recomputation
+would. Logs stay governed by [`BOUNDARIES.md`](../governance/BOUNDARIES.md)'s no-PII rule; the cache
+adds no log surface.
 
 ### 3e. Class Order Is Not Load-Bearing Within a Literal
 
@@ -394,13 +500,14 @@ rule costs nothing and buys everything below.
 **The gate enforces it; this paragraph does not.** `validate-class-order` judges class positions
 with the real `cn`, imported rather than reimplemented, for the reason §3d gives about a second copy
 of the table. It ships to consuming apps, so an app gets the same guarantee against the same
-resolver.
+resolver. It judges _position_ only; whether a token names anything the design system compiles is
+`validate-class-tokens`, which owns its own rules (`class-tokens.ts`) as a derived check does.
 
 **The positions it reaches are the ones the formatter sorts**, which is what makes the two agree: a
 quoted `class`/`className` attribute; an expression container, whose string literals — both branches
 of a ternary among them — are each judged, and whose template literals are judged one chunk at a
 time, split at every `${…}`, because that chunk is the unit a sorter reorders; and the argument span
-of a `cn`, `asClass` or `cva` call, wrapped across lines or nested inside a container. A `//`- or
+of a `cn` or `cva` call, wrapped across lines or nested inside a container. A `//`- or
 block-commented literal is dead code and is not judged. **One carve-out:** a span whose brackets do
 not balance is skipped rather than guessed at — a fabricated literal would fail the gate on source
 that does not exist.
@@ -411,8 +518,14 @@ under the invariant sorting is provably output-preserving. It must be pointed at
 an app compiles, `src/ui/assets/css/tailwind.css`; given only upstream Tailwind it treats every forge
 token utility as unknown and hoists it to the head of its literal.
 
+**The agreement rests on three lists naming the same callees**, and they do: `sortTailwindcss.functions`
+in `.oxfmtrc.json`, `CLASS_CALLEES` in `src/tooling/lint/ast.ts`, and the call spans
+`design-parse.ts` reads are each exactly `cn` and `cva`. They were not always equal — the formatter
+sorted two callees while the gate judged three, so an `asClass` span was gate-checked in an order no
+sorter maintained.
+
 **What sorting cannot touch, and this is the consumer-facing guarantee:** cross-argument precedence,
-so in `cn(BASE, asClass(cls))` the caller still wins; and `cva`'s `base → variants → class` layering,
+so in `cn(BASE, cls)` the caller still wins; and `cva`'s `base → variants → matching compounds → class` layering,
 which is composition order rather than token order inside any one string. An app formatting its own
 tree with forge's `.oxfmtrc.json` keeps both.
 
@@ -427,7 +540,7 @@ is exactly why they are also unbreakable by one.
 **The table is generated, not authored.** `gen:class-groups` compiles
 `src/ui/assets/css/tailwind.css` to a Tailwind design system, asks it what each utility actually
 writes, and renders `class-groups.ts` from the answers — so the table states what Tailwind states
-rather than a hand-written approximation of it. `src/cli/pkg/gate/checks/class-groups-parse.ts` is
+rather than a hand-written approximation of it. `src/tooling/gate/checks/class-groups-parse.ts` is
 the derivation, and is authoritative over what it authors rather than derives — the signature rule
 and the shorthand closure immediately below.
 
@@ -452,8 +565,8 @@ documentation at the point of use, and gzip already collapses the repetition an 
 
 **`validate-class-groups` regenerates the table and fails the gate on any difference**, so a
 `tailwindcss` release that moves the ground truth is reported rather than silently absorbed, and a
-hand edit to the generated file fails the same way. The step compiles CSS, and `tailwindcss` is an
-optional peer, so it runs under `--full` only ([`TESTING.md`](./TESTING.md) §6).
+hand edit to the generated file fails the same way. It runs wherever the optional `tailwindcss` peer
+resolves — skipped in a fast run without it, failed by `--full` ([`TESTING.md`](./TESTING.md) §6).
 
 **The class list is not authoritative for a root's named values.** `getClassList()` enumerates a
 value scale for `left`, `right` and `inset-s` but nothing for `start` and `end` beyond three
@@ -485,63 +598,90 @@ reverse order does collapse, the wider group covering the narrower.
 This is the resolver working, not a gap in it. Reading it as a defect leads to an edge that would
 make `cn("p-4", "px-2")` drop the padding a caller asked for.
 
----
+### 3h. The `@utility` Recipe Layer
 
-## 4. State Attribute Contract
+**A state or chrome recipe every component needs is declared once, as an `@utility` in `forge-ui.css`, and
+spelled nowhere else.** The focus ring was written four ways across twenty-seven call sites and the disabled
+paint five ways before this layer existed, and the spellings had drifted: one component ringed at 20% alpha,
+another at full, a third never cleared the outline. The recipes are `focus-ring`, `focus-ring-outset`,
+`state-disabled`, `state-invalid`, `state-busy`, `field-chrome`, `border-field`, `otp-cells` and
+`otp-editor`; `forge-ui.css`'s header is authoritative over what each one paints.
 
-**State attributes are the styling hooks CSS matches on to react to a component's state, and they
-are declared once, in `src/ui/contracts/state-attrs.ts`, which both tiers import.** Neither the
-server-rendered component nor the browser controller owns the contract: a state attribute is written
-in **two places that cannot see each other**, and drift is _silent_ — the selector stops matching, so
-the component looks unstyled rather than broken. The same argument produced the delegated-event
-vocabulary ([`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §3c). The declaration is authoritative
-over any prose naming forge's state attributes, and nothing here enumerates it, for the reason §3d
-gives about `class-groups.ts`.
+**Why an `@utility` rather than a component class.** A Tailwind utility is something `cn` can reason
+about: the derivation (§3f) reads each recipe's compiled signature, so `field-chrome` gets override
+edges to `h-*`, `rounded-*`, `border-*` and `px-*`, and a caller's `rounded-lg` after it still wins —
+the relationship §1c promises for every component default. A class in the `components` layer would be
+invisible to the resolver, making the caller's utility fight the cascade instead.
 
-**Adding a styling hook means adding it to that declaration first.** A component that emits a state
-attribute outside the table fails a conformance test — smuggling a hook past it is the exact failure
-the single declaration exists to prevent.
+**`focus-ring` reaches a wrapped control through `:has()`.** `Toggle`, `Switch` and `ToggleGroup.Item`
+put the focus on a visually hidden input inside a label, and `&:has(:focus-visible)` paints the label,
+so the recipe covers the focused element and its wrapper alike. The one spelling it cannot reach is a
+_sibling_ — `Switch`'s track is not an ancestor of its input — which keeps `peer-focus-visible:ring-2`
+on that track alone, with a one-line reason at the site.
 
-**And a declared name with no producer is removed.** A hook that is never emitted is the _inverse_
-of the drift above and just as misleading: a consumer styles against it and gets a rule that can
-never match — so a hook is added with its producer, never ahead of it. The question such a hook has
-to answer is whether it describes a state a selector cannot already reach. Where the answer is yes
-it gets a controller rather than a deletion; where a selector already reaches the state — `:has()`
-reading a popup's own `:popover-open` from the trigger's rule — it goes.
+**`state-disabled`, `state-invalid` and `state-busy` reach it the same way, and all three must** — a state
+prop landing on a hidden inner control while the recipe sits on the wrapping label is the ordinary shape
+here, not the exception. `state-busy` shipped without the branch once, and `<Switch busy>` and
+`<Toggle busy>` were silently inert for as long as it did. A new state recipe carries it from the start.
 
-**`data-selected` is not `data-checked`.** ARIA models tab selection as `aria-selected`, not
-`aria-checked`, so reusing `data-checked` would announce a tab as a radio; and calling it structural
-rather than a state would be false, because it is precisely a state a stylesheet reacts to.
+**A state recipe is keyed into a slot of its own, which no Tailwind utility can reach.** The five that
+paint nothing in the base state — `focus-ring`, `focus-ring-outset`, `state-busy`, `state-disabled`,
+`state-invalid` — take the group `forge:<name>` rather than their compiled signature. `config/steps.ts`
+names them through `FORGE_STATE_RECIPES`; `reach()` finds no CSS property in such a key, so no override
+edge is derived into or out of one either.
 
-### 4a. Presence, Not Value
+**The signature this replaces was wrong in both directions.** `signature()` prefers a utility's `--tw-*`
+variables over the CSS properties it also sets, so `state-invalid` — `border-color` _and_ `--tw-ring-color` —
+collapsed to the group every `ring-*` takes, and since a caller's `class` is always last under last-wins `cn`,
+`<Input class="ring-primary">` shipped a control announcing `aria-invalid` while looking valid; the reverse held
+too, `state-busy`'s group subsuming a caller's `cursor-wait`. Neither is a real conflict — a recipe painting only
+under `&[aria-invalid]` cannot contend with one that paints unconditionally. **A state recipe therefore travels
+as one token of the base literal, never as a second `cn` argument**: slot-keyed, it contends with nothing, so its
+own argument buys no separation. What earns one is a base-scope token that does contend — `slider.tsx` and
+`toggle.tsx` pass `cursor-pointer` alone because `state-busy` paints `cursor: progress`.
 
-**Boolean states are emitted by presence, with an empty value — `data-selected=""`, never
-`data-selected="true"`.** `[data-selected]` is a cheaper and a more honest selector, and a false state
-emits nothing at all. The valued attributes — `data-orientation`, `data-side`, `data-align` — are the
-exception, because they carry a choice rather than a flag.
+**The four paint recipes keep their compiled signature, deliberately.** `border-field`, `field-chrome`,
+`otp-cells` and `otp-editor` declare their whole payload at base scope, so a consumer's later
+`rounded-lg`, `h-auto` or `w-20` should win — the override §1c promises. A **paint** recipe would still
+be wrong as an `@utility`: a pressed toggle's `background-color` is exactly what its resting state sets,
+so a `state-pressed` would delete the `bg-transparent` beside it. **What works there is a shared class
+const** passed as its own `cn` argument (`PRESSED_PAINT`), since each token then keeps its own scope.
+Every signature and scope is pinned in `src/tooling/gate/checks/state-recipes.test.ts`.
 
-**A state the platform already exposes is not in the table** (§1h); republishing it as a `data-` flag
-would be a second copy of a fact forge does not own.
+**`--tone` is a companion mechanism, not an `@utility`.** `toneVariants` in `src/ui/core/utils/tone.ts`
+sets six custom properties per tone (`--tone`, `--tone-fg`, `--tone-text`, `--tone-soft`,
+`--tone-soft-fg`, `--tone-soft-border`) and one recipe per appearance reads them, so five recipes cover
+thirty-five cells. Each property is its own `cn` conflict group (`arb:--tone`), which is what lets a caller
+re-tone a component by passing `[--tone:…]` after it. Every cell is measured against the 1.4.3 floor in
+`tone.browser.ts`, and the `warning` tone's text property deliberately reads its step-11 rather than its
+fill because the fill does not clear it — [`THEME_GENERATION.md`](./THEME_GENERATION.md) §3a owns the
+audited pairs behind each property.
 
-### 4b. ARIA States Are Not Styling Hooks
+### 3i. Which Utility Composes a Class, and In What Order
 
-**A component emits both** — `aria-pressed="true"` beside `data-pressed` — and that duplication is
-deliberate. `aria-*` keeps its `"true"` / `"false"` string form because WAI-ARIA requires it, and the
-whole point of the `data-` hook beside it is that **CSS should not have to read ARIA**: a stylesheet
-matching `[aria-pressed="true"]` couples presentation to an accessibility contract, so the day the
-correct ARIA for a widget changes, the styling breaks with it. The two are reconciled together by one
-function, so a controller can never write one without the other.
+**Four ratified points deciding which of `const`, `cva` and `cn` a class expression uses**;
+`src/ui/README.md` owns the worked call-site examples.
 
-**`aria-orientation` is emitted on both axes, including the role's default**, where the design
-reference omits the default value. An attribute present exactly when a caller passed a non-default
-is one a test has to assert two ways and a reader has to know a role table to interpret.
+**A class string that never varies is a module-scope `const`, not a `cn` call at render** — resolved
+once at load rather than once per element, and named for every call site that shares it.
+`src/ui/core/utils/recipes.ts` (`PANEL_HEADER`, `FIELD_SIZE`, …) is the pattern.
 
-### 4c. The Caller Is Authoritative
+**Variant axes belong in `cva`, and the caller's class goes in the resolver's own `class` slot** —
+`buttonVariants({ tone, size, class: cls })`, never `cn(buttonVariants({ tone, size }), cls)`. A
+`cva` resolver already ends in `cn` (`src/ui/core/utils/cva.ts`), so the outer call is a second
+resolution pass over a settled string, buying the precedence the resolver already gives `class`.
 
-**The caller is authoritative over both the class list and the state attributes** — the same
-principle as class precedence (§3d) on a different mechanism. A component spreads its state
-attributes **before** the forwarded caller props, so a duplicate key resolves to the caller's, and
-the `ui/core` conformance sweep asserts it for every participating component.
+**`cn` is for combining two or more independent sources** — a base plus a caller's class, a base plus
+a conditional fragment, a resolver plus a non-variant class — **or for resolving conflicts inside one
+string.** A single-argument `cn` is not a no-op: `cn("p-4 p-8")` returns `"p-8"`, so wrapping one
+string is meaningful wherever it may carry a conflict, which is why `icon.tsx` and `form.tsx` keep
+theirs (§3e gives the other reason a lone `cn` earns its place — it puts a bare const in a class
+position a sorter can reach).
+
+**The caller's class is always the last argument**, which is the whole of the caller-wins guarantee
+§1c promises: `cn` keeps the last utility to claim a conflict group (§3d), and `cva` appends `class`
+after base, variants and compounds. Placed earlier it loses to the component's own defaults, silently
+and only for the utilities that happen to collide.
 
 ---
 

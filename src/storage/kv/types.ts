@@ -19,7 +19,7 @@ export interface KVNamespaceLike {
   get(key: string, options: { type: "arrayBuffer" }): Promise<ArrayBuffer | null>;
   getWithMetadata<M = unknown>(key: string, options: { type: "text" }): Promise<{ value: string | null; metadata: M | null }>;
   getWithMetadata<M = unknown>(key: string, options: { type: "arrayBuffer" }): Promise<{ value: ArrayBuffer | null; metadata: M | null }>;
-  put(key: string, value: string | ArrayBuffer, options?: KVPutOptions): Promise<void>;
+  put(key: string, value: string | ArrayBuffer | ArrayBufferView | ReadableStream, options?: KVPutOptions): Promise<void>;
   list<M = unknown>(options?: KVListOptions): Promise<KVListResult<M>>;
 }
 

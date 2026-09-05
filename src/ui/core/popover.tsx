@@ -2,43 +2,44 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { invokerAttrs, POPOVER_SCOPE } from "../contracts/overlay-contract";
-import { stateAttrs } from "../contracts/state-attrs";
+import { type PhysicalSide, stateAttrs } from "../contracts/state-attrs";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
 
 interface PopoverProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  children?: JSXNode;
+  children?: JSXNode | undefined;
 }
 
 type PopoverAlign = "start" | "center" | "end";
-type PopoverSide = "bottom" | "top";
 
 interface PopoverTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
-  id: string;
-  children?: JSXNode;
+  /** id of the `Popover.Content` this trigger toggles — its `commandfor` target. */
+  for: string;
+  children?: JSXNode | undefined;
 }
 
 interface PopoverContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+  /** Element id — the `commandfor` target named by the matching `Popover.Trigger`. */
   id: string;
-  align?: PopoverAlign;
-  side?: PopoverSide;
-  children?: JSXNode;
+  align?: PopoverAlign | undefined;
+  side?: PhysicalSide | undefined;
+  children?: JSXNode | undefined;
 }
 
 const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, "data-slot": inherited, ...props }) => (
-  <div data-slot={slotToken("popover", inherited)} class={cn("relative inline-block", asClass(cls))} {...props}>
+  <div data-slot={slotToken("popover", inherited)} class={cn("relative inline-block", cls)} {...props}>
     {children}
   </div>
 );
 
-const PopoverTrigger: FC<PopoverTriggerProps> = ({ id, class: cls, children, "data-slot": inherited, ...props }) => (
+const PopoverTrigger: FC<PopoverTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...props }) => (
   <button
     type='button'
     data-slot={slotToken("popover-trigger", inherited)}
     command='toggle-popover'
-    commandfor={id}
-    {...invokerAttrs(id)}
-    class={cn("cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring", asClass(cls))}
+    commandfor={target}
+    {...invokerAttrs(target)}
+    class={cn("cursor-pointer list-none focus-ring", cls)}
     {...props}>
     {children}
   </button>
@@ -59,11 +60,11 @@ const PopoverContent: FC<PopoverContentProps> = ({
     data-scope={POPOVER_SCOPE}
     popover='auto'
     {...stateAttrs({ side, align })}
-    class={cn("z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}
+    class={cn("z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}
     {...rest}>
     {children}
   </div>
 );
 
-/** Compound popover built on the native Popover + Invoker Commands APIs, linked by a shared `id`. @public */
+/** Compound popover built on the native Popover + Invoker Commands APIs, linked by the trigger's `for` and the content's `id`. @public */
 export const Popover = Object.assign(PopoverRoot, { Trigger: PopoverTrigger, Content: PopoverContent });

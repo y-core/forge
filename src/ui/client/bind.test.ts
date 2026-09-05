@@ -18,6 +18,21 @@ function surrogate(value?: string) {
   };
 }
 
+/** A `<select multiple>` carrying `values`, with `selected` chosen. */
+function multiSelect(values: string[], selected: string[]): Control {
+  const options = values.map((value) => ({ value, selected: selected.includes(value) }));
+  return {
+    tagName: "SELECT",
+    dataset: {},
+    multiple: true,
+    options,
+    get selectedOptions() {
+      return options.filter((option) => option.selected);
+    },
+    value: selected[0] ?? "",
+  } as unknown as Control;
+}
+
 const checkbox = (value: string, checked: boolean) => {
   const { el } = fakeTree();
   const input = el("INPUT", { "data-value": value });
@@ -79,6 +94,29 @@ describe("readControl", () => {
     text.value = "hello";
     expect(readControl(text as unknown as Control, "")).toBe("hello");
   });
+
+  it("reports NaN rather than 0 for a numeric field the reader has emptied", () => {
+    const { el } = fakeTree();
+    const numeric = el("INPUT");
+    numeric.value = "";
+    expect(readControl(numeric as unknown as Control, 7)).toBeNaN();
+    numeric.value = "   ";
+    expect(readControl(numeric as unknown as Control, 7)).toBeNaN();
+  });
+
+  it("reports NaN for an unparseable number, leaving the signal a number", () => {
+    const { el } = fakeTree();
+    const numeric = el("INPUT");
+    for (const partial of ["-", "e", "1.2.3"]) {
+      numeric.value = partial;
+      expect(readControl(numeric as unknown as Control, 7)).toBeNaN();
+    }
+  });
+
+  it("reads a multi-select from its selected options, which carry no data-value", () => {
+    expect(readControl(multiSelect(["a", "b", "c"], ["b", "c"]), ["a"])).toEqual(["b", "c"]);
+    expect(readControl(multiSelect(["a", "b"], []), ["a"])).toEqual([]);
+  });
 });
 
 describe("isChosen", () => {
@@ -138,5 +176,68 @@ describe("paintControl", () => {
     expect(input.checked).toBe(true);
     paintControl(input as unknown as Control, false);
     expect(input.checked).toBe(false);
+  });
+
+  it("writes nothing to a file input, whose value setter throws for anything but the empty string", () => {
+    let writes = 0;
+    const file = { tagName: "INPUT", type: "file", dataset: {} } as unknown as Control;
+    Object.defineProperty(file, "value", {
+      get: () => "",
+      set: () => {
+        writes += 1;
+        throw new Error("InvalidStateError");
+      },
+    });
+    expect(() => paintControl(file, "C:\\fakepath\\a.txt")).not.toThrow();
+    expect(writes).toBe(0);
+  });
+
+  it("leaves a numeric field alone while its value is NaN, so a cleared field is not refilled", () => {
+    let writes = 0;
+    const numeric = { dataset: {} } as unknown as Control;
+    Object.defineProperty(numeric, "value", {
+      get: () => "",
+      set: () => {
+        writes += 1;
+      },
+    });
+    paintControl(numeric, Number.NaN);
+    paintControl(numeric, Number.POSITIVE_INFINITY);
+    expect(writes).toBe(0);
+    paintControl(numeric, 3);
+    expect(writes).toBe(1);
+  });
+
+  it("leaves a half-typed number in place, comparing numerically rather than as a string", () => {
+    let writes = 0;
+    const numeric = { dataset: {} } as unknown as Control;
+    Object.defineProperty(numeric, "value", {
+      get: () => "1.",
+      set: () => {
+        writes += 1;
+      },
+    });
+    paintControl(numeric, 1);
+    expect(writes).toBe(0);
+    paintControl(numeric, 2);
+    expect(writes).toBe(1);
+  });
+
+  it("paints an array onto a multi-select per option, never as one comma-joined value", () => {
+    const select = multiSelect(["a", "b", "c"], ["a"]);
+    let writes = 0;
+    Object.defineProperty(select, "value", {
+      get: () => "a",
+      set: () => {
+        writes += 1;
+      },
+    });
+    paintControl(select, ["b", "c"]);
+    expect((select as unknown as { options: Array<{ value: string; selected: boolean }> }).options).toEqual([
+      { value: "a", selected: false },
+      { value: "b", selected: true },
+      { value: "c", selected: true },
+    ]);
+    expect(writes).toBe(0);
   });
 });

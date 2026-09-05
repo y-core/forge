@@ -12,17 +12,11 @@ export interface SignedUrlOptions {
   expiresInSeconds?: number;
 }
 
-/** Successful verification result. @public */
-export interface SignedUrlOk {
-  ok: true;
-  key: string;
-}
+/** Why a signed URL failed verification. @public */
+export type SignedUrlFailure = "expired" | "invalid-signature" | "invalid-format";
 
-/** Failed verification result. @public */
-export interface SignedUrlError {
-  ok: false;
-  reason: "expired" | "invalid-signature" | "invalid-format";
-}
+/** A verified signed URL's object key, or the reason it was refused. @public */
+export type SignedUrlVerdict = Result<string, SignedUrlFailure>;
 
 /** Neutral stored object — metadata only (from put/head). @public */
 export interface StoredObject {
@@ -136,6 +130,7 @@ export interface R2ListOptions {
   limit?: number;
   cursor?: string;
   delimiter?: string;
+  include?: readonly ("httpMetadata" | "customMetadata")[];
 }
 
 /** @public */
@@ -211,7 +206,7 @@ export interface ObjectStore {
   head(key: string): Promise<Result<StoredObject | null>>;
   list(options?: StoreListOptions): Promise<Result<ListObjectsResult>>;
   put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null, options?: StorePutOptions): Promise<Result<StoredObject>>;
-  serveObject(request: Request, key: string, options?: ServeOptions): Promise<Response>;
+  serveObject(request: Request, key: string, options?: ServeOptions): Promise<Result<Response>>;
 }
 
 /** Options for resolving an R2 binding from context. @public */

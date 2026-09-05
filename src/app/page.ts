@@ -5,7 +5,7 @@ import { CacheControl } from "../http/headers";
 import { createLogger } from "../logging/logger";
 import { toError } from "../result/result";
 import type { v } from "../validation/validation";
-import { createSubmissionPipeline } from "./pipeline";
+import { createSubmissionPipeline, PIPELINE_ONLY_KEYS } from "./pipeline";
 import type { CacheDirective, PageDefinition } from "./types";
 
 const logger = createLogger("page");
@@ -19,13 +19,14 @@ function buildCacheHeader(cache: "no-store" | CacheDirective | undefined): strin
   return undefined;
 }
 
-function applyResponseHeaders(res: Response, def: { cache?: PageDefinition["cache"]; headers?: Record<string, string> }): Response {
-  const cacheHeader = buildCacheHeader(def.cache);
-  if (!cacheHeader && !def.headers) return res;
+function applyResponseHeaders(res: Response, cacheHeader: string | undefined, extra: Record<string, string> | undefined): Response {
+  if (!cacheHeader && !extra) return res;
   const headers = new Headers(res.headers);
-  if (cacheHeader) headers.set("cache-control", cacheHeader);
-  if (def.headers) {
-    for (const [key, value] of Object.entries(def.headers)) {
+  // A response that states its own caching — a redirect, or a refusal that must not be stored —
+  // keeps it; `def.cache` is the page's default, not an override.
+  if (cacheHeader && !headers.has("cache-control")) headers.set("cache-control", cacheHeader);
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
       headers.set(key, value);
     }
   }
@@ -40,7 +41,20 @@ export function definePage<
   ActionData = unknown,
   S extends v.GenericSchema = v.GenericSchema,
 >(def: PageDefinition<Bindings, ConfigData, LoaderData, ActionData, S>): RequestHandler {
+  if (def.schema === undefined) {
+    const stated = PIPELINE_ONLY_KEYS.filter((key) => (def as unknown as Record<string, unknown>)[key] !== undefined);
+    if (stated.length > 0) {
+      const names = stated.map((key) => `\`${key}\``).join(", ");
+      throw new Error(
+        stated.length === 1
+          ? `definePage: ${names} requires \`schema\` — a submission-pipeline option without a schema is ignored.`
+          : `definePage: ${names} require \`schema\` — submission-pipeline options without a schema are ignored.`,
+      );
+    }
+  }
+
   const pipeline = def.schema === undefined ? undefined : createSubmissionPipeline<S, Bindings, ConfigData>({ ...def, schema: def.schema });
+  const cacheHeader = buildCacheHeader(def.cache);
 
   return async (context) => {
     const config = context.get(ConfigKey) as ConfigData;
@@ -55,12 +69,12 @@ export function definePage<
       if (isMutation && def.action) {
         const submission = pipeline === undefined ? undefined : await pipeline(c, config);
         if (submission !== undefined && !submission.ok) {
-          return applyResponseHeaders(submission.error, def);
+          return applyResponseHeaders(submission.error, cacheHeader, def.headers);
         }
 
         const result = await def.action(c, config, submission?.data as v.InferOutput<S>);
         if (result instanceof Response) {
-          return applyResponseHeaders(result, def);
+          return applyResponseHeaders(result, cacheHeader, def.headers);
         }
         actionData = result as ActionData;
       }
@@ -69,14 +83,14 @@ export function definePage<
       if (def.loader) {
         const result = await def.loader(c, config);
         if (result instanceof Response) {
-          return applyResponseHeaders(result, def);
+          return applyResponseHeaders(result, cacheHeader, def.headers);
         }
         data = result as LoaderData;
       }
 
       const state = { data: data as LoaderData, actionData: actionData as ActionData, method: isMutation ? ("POST" as const) : ("GET" as const) };
       const viewRes = await def.view(c, config, state);
-      return applyResponseHeaders(viewRes, def);
+      return applyResponseHeaders(viewRes, cacheHeader, def.headers);
     } catch (err) {
       const error = toError(err);
       logger.error("Page handler threw", { error: error.message });

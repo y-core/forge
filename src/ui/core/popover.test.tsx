@@ -3,6 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { POPOVER_SCOPE } from "../contracts/overlay-contract";
 import { Popover } from "./popover";
 
 describe("Popover", () => {
@@ -20,22 +21,22 @@ describe("Popover", () => {
 });
 
 describe("Popover.Trigger — data-slot", () => {
-  const TRIGGER_CLASS = "cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const TRIGGER_CLASS = "cursor-pointer list-none focus-ring";
 
   it("emits its own token alone when none was inherited", async () => {
-    expect(await render(<Popover.Trigger id='p' />)).toBe(
+    expect(await render(<Popover.Trigger for='p' />)).toBe(
       `<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="p" aria-controls="p" aria-expanded="false" class="${TRIGGER_CLASS}"></button>`,
     );
   });
 
   it("keeps its own token ahead of one handed down through props", async () => {
-    expect(await render(<Popover.Trigger id='p' data-slot='rail-tool' />)).toBe(
+    expect(await render(<Popover.Trigger for='p' data-slot='rail-tool' />)).toBe(
       `<button type="button" data-slot="popover-trigger rail-tool" command="toggle-popover" commandfor="p" aria-controls="p" aria-expanded="false" class="${TRIGGER_CLASS}"></button>`,
     );
   });
 
   it("treats an empty inherited token as none rather than emitting a trailing space", async () => {
-    expect(await render(<Popover.Trigger id='p' data-slot='' />)).toBe(
+    expect(await render(<Popover.Trigger for='p' data-slot='' />)).toBe(
       `<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="p" aria-controls="p" aria-expanded="false" class="${TRIGGER_CLASS}"></button>`,
     );
   });
@@ -43,26 +44,26 @@ describe("Popover.Trigger — data-slot", () => {
 
 describe("Popover.Trigger", () => {
   it("renders a <button> invoker with command=toggle-popover targeting the content id", async () => {
-    expect(await render(<Popover.Trigger id='menu-1'>Open</Popover.Trigger>)).toBe(
-      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring">Open</button>',
+    expect(await render(<Popover.Trigger for='menu-1'>Open</Popover.Trigger>)).toBe(
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none focus-ring">Open</button>',
     );
   });
 
-  it("uses the id only as commandfor, never as the button's own id", async () => {
-    expect(await render(<Popover.Trigger id='menu-1'>Open</Popover.Trigger>)).toBe(
-      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring">Open</button>',
+  it("uses `for` only as commandfor, never as the button's own id", async () => {
+    expect(await render(<Popover.Trigger for='menu-1'>Open</Popover.Trigger>)).toBe(
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none focus-ring">Open</button>',
     );
   });
 
   it("merges a custom class", async () => {
     expect(
       await render(
-        <Popover.Trigger id='menu-1' class='my-trigger'>
+        <Popover.Trigger for='menu-1' class='my-trigger'>
           Click
         </Popover.Trigger>,
       ),
     ).toBe(
-      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring my-trigger">Click</button>',
+      '<button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-1" aria-controls="menu-1" aria-expanded="false" class="cursor-pointer list-none focus-ring my-trigger">Click</button>',
     );
   });
 });
@@ -70,13 +71,13 @@ describe("Popover.Trigger", () => {
 describe("Popover.Content", () => {
   it("renders a native popover <div> with the linking id and data-slot=popover-content", async () => {
     expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      `<div id="menu-1" data-slot="popover-content" data-scope="${POPOVER_SCOPE}" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>`,
     );
   });
 
   it("defaults to start align and bottom side", async () => {
     expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
@@ -88,7 +89,7 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="end" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="end" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
@@ -100,7 +101,7 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="center" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="center" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
@@ -112,13 +113,37 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="top" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="top" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+    );
+  });
+
+  it("renders left side", async () => {
+    expect(
+      await render(
+        <Popover.Content id='menu-1' side='left'>
+          Items
+        </Popover.Content>,
+      ),
+    ).toBe(
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="left" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+    );
+  });
+
+  it("renders right side", async () => {
+    expect(
+      await render(
+        <Popover.Content id='menu-1' side='right'>
+          Items
+        </Popover.Content>,
+      ),
+    ).toBe(
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="right" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
   it("renders the popover panel chrome classes", async () => {
     expect(await render(<Popover.Content id='menu-1'>Items</Popover.Content>)).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md">Items</div>',
     );
   });
 
@@ -130,7 +155,7 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md w-64">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md w-64">Items</div>',
     );
   });
 
@@ -142,24 +167,24 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md" role="menu" data-note="a&amp;b">Items</div>',
+      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md" role="menu" data-note="a&amp;b">Items</div>',
     );
   });
 });
 
 describe("Popover composition", () => {
-  it("renders the full popover structure with a shared id", async () => {
+  it("renders the full popover structure, the trigger's `for` naming the content's `id`", async () => {
     expect(
       await render(
         <Popover>
-          <Popover.Trigger id='menu-file'>Open menu</Popover.Trigger>
+          <Popover.Trigger for='menu-file'>Open menu</Popover.Trigger>
           <Popover.Content id='menu-file'>
             <div>Item 1</div>
           </Popover.Content>
         </Popover>,
       ),
     ).toBe(
-      '<div data-slot="popover" class="relative inline-block"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-file" aria-controls="menu-file" aria-expanded="false" class="cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-ring">Open menu</button><div id="menu-file" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md"><div>Item 1</div></div></div>',
+      '<div data-slot="popover" class="relative inline-block"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="menu-file" aria-controls="menu-file" aria-expanded="false" class="cursor-pointer list-none focus-ring">Open menu</button><div id="menu-file" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md"><div>Item 1</div></div></div>',
     );
   });
 });

@@ -37,7 +37,7 @@ function focusedId(page: Page): Promise<string | null> {
   return page.evaluate(() => document.activeElement?.id ?? null);
 }
 
-test("groups natively — a fieldset with a legend — and submits a single value", async ({ page }) => {
+test("groups natively — a fieldset with a legend, named radiogroup — and submits a single value", async ({ page }) => {
   await mount(page, await formMarkup());
 
   const shape = await page.evaluate(() => {
@@ -45,7 +45,7 @@ test("groups natively — a fieldset with a legend — and submits a single valu
     return { tag: el?.tagName, role: el?.getAttribute("role"), legend: el?.querySelector("legend")?.textContent };
   });
 
-  expect(shape).toEqual({ tag: "FIELDSET", role: null, legend: "Plan" });
+  expect(shape).toEqual({ tag: "FIELDSET", role: "radiogroup", legend: "Plan" });
   expect(await submitted(page)).toBe("free");
 });
 

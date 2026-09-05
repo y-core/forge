@@ -3,15 +3,21 @@
 import type { FC, JSX } from "../../jsx/types";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { SLIDER_SCOPE, type SliderAction } from "../contracts/slider-contract";
+import { presentationAttrs } from "../contracts/vocabulary";
+import type { Size } from "../contracts/vocabulary";
 import type { FieldDescriptor } from "./field";
-import { fieldControlProps } from "./field";
+import { fieldControlProps, fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
+import { FIELD_SIZE } from "./utils/recipes";
 
-type SliderProps = Omit<JSX.IntrinsicElements["input"], "type" | "children"> & {
-  field?: FieldDescriptor;
-  output?: boolean;
-  orientation?: "horizontal" | "vertical";
+type SliderProps = Omit<JSX.IntrinsicElements["input"], "children" | "size" | "type"> & {
+  field?: FieldDescriptor | undefined;
+  output?: boolean | undefined;
+  orientation?: "horizontal" | "vertical" | undefined;
+  size?: Size | undefined;
+  invalid?: boolean | undefined;
+  busy?: boolean | undefined;
 };
 
 /** HTML's "valid floating-point number": no leading `+`, no surrounding whitespace, no bare
@@ -59,26 +65,42 @@ export function sanitizeRangeValue(attrs: Pick<JSX.IntrinsicElements["input"], "
 
 // The input's box is the hit target, not the track: the track and thumb are painted by the
 // `::-webkit-slider-runnable-track` / `::-moz-range-track` rules in `forge-ui.css`.
-const SLIDER_BASE =
-  "h-8 w-full cursor-pointer appearance-none rounded-full bg-transparent disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+// `cursor-pointer` travels in its own `cn` argument, never beside `state-busy`: the recipe paints
+// `cursor: progress` conditionally, and one literal holding both is a conflict the sorter resolves.
+const SLIDER_BASE = "state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring";
 const SLIDER_VERTICAL = "[writing-mode:vertical-lr] [direction:rtl] h-22 w-8";
 
 /** A range `<input>`, optionally paired with an `<output>` readout of its value. @public */
-export const Slider: FC<SliderProps> = ({ class: cls, field, output, orientation = "horizontal", "data-slot": inherited, ...props }) => {
+export const Slider: FC<SliderProps> = ({
+  class: cls,
+  field,
+  output,
+  orientation = "horizontal",
+  size = "md",
+  invalid = false,
+  busy = false,
+  "data-slot": inherited,
+  ...props
+}) => {
   const resolved = field ? fieldControlProps(props, field) : props;
   const isVertical = orientation === "vertical";
-  const sliderCls = cn(SLIDER_BASE, isVertical && SLIDER_VERTICAL, asClass(cls));
+  const sliderCls = cn(SLIDER_BASE, "cursor-pointer", FIELD_SIZE[size], isVertical && SLIDER_VERTICAL, cls);
+  const state = fieldStateProps(invalid, busy);
   if (!output) {
-    return <input data-slot={slotToken("slider", inherited)} type='range' class={sliderCls} {...resolved} />;
+    return (
+      <input data-slot={slotToken("slider", inherited)} type='range' {...presentationAttrs({ size })} class={sliderCls} {...resolved} {...state} />
+    );
   }
 
   const control = (
     <input
       data-slot={slotToken("slider", inherited)}
       type='range'
+      {...presentationAttrs({ size })}
       class={sliderCls}
       {...scopeAttrs<SliderAction>({ onInput: "sync" })}
       {...resolved}
+      {...state}
     />
   );
   const readout = sanitizeRangeValue(resolved);

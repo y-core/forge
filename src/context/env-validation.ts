@@ -1,6 +1,6 @@
 import type { Middleware } from "@remix-run/fetch-router";
 
-import type { v } from "../validation/mod";
+import { v } from "../validation/mod";
 import { parseEnv } from "../validation/parse-env";
 import { getAppContext } from "./types";
 
@@ -20,4 +20,18 @@ export function validateBindings(schema: v.BaseSchema<unknown, unknown, v.BaseIs
     }
     return next();
   };
+}
+
+/** Builds the schema one binding validator checks: the named binding carries every method in `methods`. @public */
+export function bindingSchema(name: string, methods: readonly string[], label: string): v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>> {
+  return v.object({
+    [name]: v.pipe(
+      v.unknown(),
+      v.check(
+        (val) =>
+          typeof val === "object" && val !== null && methods.every((method) => typeof (val as Record<string, unknown>)[method] === "function"),
+        `${name} must be ${label}`,
+      ),
+    ),
+  });
 }

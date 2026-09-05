@@ -186,6 +186,8 @@ const devHeaders = mergeSecurityHeaders(headers, { scriptSrc: [WRANGLER_LIVE_REL
 
 Middleware that adds CORS response headers for allowed origins and answers preflight (`OPTIONS`) requests with `204`. It validates the request `Origin` against the allowlist — exact strings or single-label subdomain wildcards (`https://*.example.com`). After `next()` returns it **rebuilds** the `Response` with a cloned `Headers` (the downstream response may carry immutable headers), then sets `Access-Control-Allow-Origin` and appends `Origin` to `Vary`.
 
+**`Vary: Origin` is marked on every origin-dependent response, refusals included** — a request with a disallowed `Origin`, or none at all, gets it too, so a shared cache cannot store a refusal and replay it to an allowed origin. The one exception is `origins: ["*"]` without `credentials`, where the `Access-Control-Allow-Origin` header is the constant `"*"`: nothing varies, so no `Vary` is added and a downstream one is left alone. The allowlist is compiled once, at `cors()` time.
+
 `CorsOptions`:
 
 | Field            | Type       | Default                                        | Notes                                                       |

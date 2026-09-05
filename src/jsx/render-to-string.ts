@@ -43,8 +43,11 @@ const ENUMERATED_ATTRS = new Set(["draggable", "spellcheck", "contenteditable"])
 /** Valid HTML attribute name: starts with a letter/`_`/`:`, then letters, digits, `_`, `.`, `:`, `-`. */
 const VALID_ATTR_NAME = /^[A-Za-z_:][\w.:-]*$/;
 
+/** Valid element tag name: a letter, then letters, digits or `-`. */
+const VALID_TAG_NAME = /^[A-Za-z][A-Za-z0-9-]*$/;
+
 /** Renders element attributes to a string of `key="value"` pairs. */
-function renderAttributes(props: Record<string, unknown>, tag: string): string {
+function renderAttributes(props: Record<string, unknown>): string {
   let attrs = "";
   for (const [key, value] of Object.entries(props)) {
     if (key === "children" || key === "key") {
@@ -63,7 +66,9 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
     // would be blocked by the browser anyway.
     if (attrName === "style") continue;
 
-    if (ENUMERATED_ATTRS.has(attrName.toLowerCase())) {
+    const lowerName = attrName.toLowerCase();
+
+    if (ENUMERATED_ATTRS.has(lowerName)) {
       if (value === true) {
         attrs += ` ${attrName}="true"`;
         continue;
@@ -83,7 +88,7 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
 
     if (value === false) continue;
 
-    if (BOOLEAN_ATTRS.has(attrName.toLowerCase())) {
+    if (BOOLEAN_ATTRS.has(lowerName)) {
       if (value) attrs += ` ${attrName}`;
       continue;
     }
@@ -94,11 +99,10 @@ function renderAttributes(props: Record<string, unknown>, tag: string): string {
     }
 
     const raw = String(value);
-    const out = URL_ATTRS.has(attrName.toLowerCase()) ? safeUrl(raw) : raw;
+    const out = URL_ATTRS.has(lowerName) ? safeUrl(raw) : raw;
     attrs += ` ${attrName}="${escapeHtml(out)}"`;
   }
 
-  void tag;
   return attrs;
 }
 
@@ -143,9 +147,13 @@ function renderNodeSync(node: unknown): string | Promise<string> {
   }
 
   const tag = element.type as string;
-  const attrs = renderAttributes(element.props, tag);
+  if (!VALID_TAG_NAME.test(tag)) {
+    throw new Error(`Invalid JSX tag name: "${tag}"`);
+  }
+  const attrs = renderAttributes(element.props);
+  const lowerTag = tag.toLowerCase();
 
-  if (VOID_ELEMENTS.has(tag.toLowerCase())) {
+  if (VOID_ELEMENTS.has(lowerTag)) {
     return `<${tag}${attrs}>`;
   }
 

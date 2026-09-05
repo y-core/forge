@@ -181,12 +181,38 @@ object access, log at the call site or through a logging channel.
 `serveObject(backend, request, key, options?)` retrieves an object and returns a fully-formed
 `Response` ready to return from a handler: `200` with the body, `206` for a satisfied `Range`,
 `304` for a matching `If-None-Match`, `404` when absent, `416` for an unsatisfiable range. It
-sets `Content-Type`, `ETag`, `Accept-Ranges`, `Content-Length`, and `Cache-Control`.
+sets `Content-Type`, `Content-Encoding`, `Content-Language`, `ETag`, `Accept-Ranges`,
+`Content-Length`, `Cache-Control` and `X-Content-Type-Options: nosniff` — the last unconditionally,
+because an object's content type is caller-supplied at upload and is the only non-prose mitigation
+against a stored active type being sniffed.
 
 **No `null` check is needed** — a missing object yields a `404` `Response`, never an unhandled
 rejection.
 
+**A satisfiable ranged read is one round trip.** `serveObject` never heads an object to size a range
+in advance; the extra `head` is spent only after a backend has refused the range, which it signals
+by throwing `UnsatisfiableRangeError` (`@y-core/forge/storage/r2`). `serveObject` catches **only**
+that type — a third-party `ObjectStorageBackend` therefore has an importable thing to throw, where a
+message convention would not have been an API — and answers `416` with `bytes */<size>`, or
+`bytes */*` when the head returns nothing.
+
+**A `Range` is bounded before it reaches the backend** (RFC 9110, section 14.1.1): a first-byte-pos beyond
+`Number.MAX_SAFE_INTEGER` can satisfy no object, so it is a `416` with **no** backend call, while an
+oversized last-byte-pos or suffix **clamps** to the whole object. What must never happen is a
+non-safe number reaching `R2GetOptions`, which R2 answers with a `TypeError` — a 500 for what is a
+client's malformed header.
+
 `ServeOptions` accepts `cacheControl` and `contentDisposition` (`"inline" | "attachment"`).
+
+**With no `contentDisposition` option, the object's stored `Content-Disposition` is used** — but
+only when it is printable ASCII. A stored value carrying a non-Latin-1 byte is dropped rather than
+set, for the same reason the ASCII fallback exists: `Headers.set` throws on it, turning a legitimate
+download into a 500.
+
+**An object's content type is caller-supplied.** A route that lets a caller choose the key, and
+therefore the inferred type, can store `text/html` and have it served back from the app's own
+origin; `nosniff` bounds the damage but does not remove it. Serve untrusted uploads from a separate
+origin, or force `contentDisposition: "attachment"`.
 
 **When a disposition is set, `Content-Disposition` carries an RFC 5987 `filename*=UTF-8''…`
 parameter with the exact name plus an ASCII `filename="…"` fallback** for clients that ignore it.
@@ -197,7 +223,23 @@ quoted-pairs, so a crafted object key cannot break out of the quoted string. A n
 must never reach the `filename=` parameter: `Headers.set` throws on it, turning a legitimate
 download into a 500.
 
-`ObjectStore` exposes the same behaviour bound: `store.serveObject(c.request, key, options?)`.
+**The bound method is deliberately not the same.** `store.serveObject(c.request, key, options?)`
+returns `Promise<Result<Response>>`, through the same `result()` wrapper as the store's other five
+operations — the caller maps the failure to HTTP and logs it. The free function keeps returning a
+bare `Response`, because a `404` or a `416` is a _rendered failure_, not an absent value.
+
+Two things that settles:
+
+- **A rejected key carries the same failure shape as every other operation.** `normalizeKey` throws
+  on a leading `/` or a `..` segment, and the caller reads that as `{ ok: false, error }` — not as a
+  bare `400` with a `null` body.
+- **A backend fault is named.** A bucket outage reaches the caller as its `Error`, so it is
+  distinguishable from a bug in forge.
+
+**No `logger` option is added.** §3a's rule stands: `ObjectStoreOptions` is `{ prefix? }`, and a
+store reports a fault by returning it. This is what
+[`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5e already required of every other operation —
+resolving a binding throws, operating on a resolved store returns `Result`.
 
 ### 3c. Signed URLs for Secure Object Access
 
@@ -209,8 +251,11 @@ Import the key once with `importSigningKey`.
 boundary stays unambiguous even when the object key itself contains the `|` delimiter.
 
 `verifySignedObjectUrl(signingKey, url)` **checks expiry first, then compares signatures in
-constant time**, returning `{ ok: true, key }` or `{ ok: false, reason }` (`"expired"`,
-`"invalid-signature"`, `"invalid-format"`).
+constant time**, returning forge's one `Result` primitive — `SignedUrlVerdict`, i.e.
+`Result<string, SignedUrlFailure>`, whose `data` is the object key and whose `error` is `"expired"`,
+`"invalid-signature"` or `"invalid-format"`. **The reason is for the operator, not the client**
+([`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1c): echoing which check failed tells a caller what to
+change next.
 
 **`hexSecret` must come from a secret binding, never from source code. Never serve an object
 from a signed-URL path without verifying the signature first.**

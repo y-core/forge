@@ -75,9 +75,14 @@ with _which_ field failed and not with what was sent. The three parts it refuses
 each a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source
 text of the schema's own `v.regex`, and `issue.input` is the submission itself.
 
-**`formatValidationIssues` is not interchangeable with it.** That one reproduces `issue.message`,
-which is what makes it the internal diagnostic the env and config validators share (§5a, §5b).
-It must never reach a response a caller reads.
+**No forge renderer reproduces `issue.message` on any channel.** There is no operator-facing
+counterpart that does, because a log is not a safe home for a rejected value either
+([`BOUNDARIES.md`](../governance/BOUNDARIES.md) §4a): the env validator's throw reached the app
+logger, the KV log channel and the debug `500` body, so a malformed secret was persisted verbatim
+on every request. Env validation renders `field: reason` from `issue.type` (`missing` for an absent
+binding) — a closed valibot vocabulary that can carry neither caller text nor schema text.
+`issue.expected` stays out for the same reason it does in a caller-facing refusal: it can be a
+`v.regex` source.
 
 **Omit `abortEarly` (default `false`) when the response must enumerate every failing field** — an
 API response rather than a progressive form. An enumerating refusal is one a caller can lengthen

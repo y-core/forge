@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { fakeR2 } from "../../testing/fakes";
+import { UnsatisfiableRangeError } from "./errors";
+import { r2Backend } from "./r2-backend";
 import { serveObject } from "./serve";
 import type { ObjectBody, ObjectStorageBackend, StoredObject } from "./types";
 
@@ -184,5 +187,129 @@ describe("serveObject — Content-Disposition", () => {
     const backend = makeBackend(makeObjectBody());
     const res = await serveObject(backend, new Request("http://x/test.txt"), "test.txt");
     expect(res.headers.get("Content-Disposition")).toBeNull();
+  });
+});
+
+describe("serveObject — range contract", () => {
+  function countingBackend(
+    obj: ObjectBody | null,
+    opts?: { throwOnGet?: unknown },
+  ): { backend: ObjectStorageBackend; counters: { gets: number; heads: number } } {
+    const counters = { gets: 0, heads: 0 };
+    const backend: ObjectStorageBackend = {
+      name: "counting",
+      async put() {
+        return obj ?? makeObjectBody();
+      },
+      async get() {
+        counters.gets += 1;
+        if (opts?.throwOnGet !== undefined) throw opts.throwOnGet;
+        return obj;
+      },
+      async head() {
+        counters.heads += 1;
+        return obj;
+      },
+      async delete() {},
+      async list() {
+        return { objects: [], truncated: false };
+      },
+    };
+    return { backend, counters };
+  }
+
+  it("refuses a 400-digit first-byte-pos without calling the backend", async () => {
+    const { backend, counters } = countingBackend(makeObjectBody());
+    const res = await serveObject(backend, new Request("http://x/t", { headers: { Range: `bytes=${"9".repeat(400)}-` } }), "test.txt");
+    expect(res.status).toBe(416);
+    expect(res.headers.get("Content-Range")).toBe("bytes */*");
+    expect(counters.gets).toBe(0);
+  });
+
+  it("answers 416 with the size from head when the backend refuses the range", async () => {
+    const { backend, counters } = countingBackend(makeObjectBody(), { throwOnGet: new UnsatisfiableRangeError("test.txt") });
+    const res = await serveObject(backend, new Request("http://x/t", { headers: { Range: "bytes=500-600" } }), "test.txt");
+    expect(res.status).toBe(416);
+    expect(res.headers.get("Content-Range")).toBe("bytes */11");
+    expect(counters.heads).toBe(1);
+  });
+
+  it("answers `bytes */*` when the head that follows a refusal returns nothing", async () => {
+    const { backend } = countingBackend(null, { throwOnGet: new UnsatisfiableRangeError("test.txt") });
+    const res = await serveObject(backend, new Request("http://x/t", { headers: { Range: "bytes=500-600" } }), "test.txt");
+    expect(res.status).toBe(416);
+    expect(res.headers.get("Content-Range")).toBe("bytes */*");
+  });
+
+  it("propagates a plain Error from the backend", async () => {
+    const { backend } = countingBackend(makeObjectBody(), { throwOnGet: new Error("bucket unavailable") });
+    await expect(serveObject(backend, new Request("http://x/t", { headers: { Range: "bytes=0-1" } }), "test.txt")).rejects.toThrow(
+      "bucket unavailable",
+    );
+  });
+
+  it("spends no head on a satisfiable ranged get", async () => {
+    const { backend, counters } = countingBackend(makeObjectBody());
+    const res = await serveObject(backend, new Request("http://x/t", { headers: { Range: "bytes=0-4" } }), "test.txt");
+    expect(res.status).toBe(206);
+    expect(counters.heads).toBe(0);
+    expect(counters.gets).toBe(1);
+  });
+
+  it("clamps an oversized last-byte-pos and an oversized suffix to the whole object", async () => {
+    const backend = makeBackend(makeObjectBody());
+    const bounded = await serveObject(backend, new Request("http://x/t", { headers: { Range: `bytes=0-${"9".repeat(400)}` } }), "test.txt");
+    expect(bounded.status).toBe(206);
+    expect(bounded.headers.get("Content-Range")).toBe("bytes 0-10/11");
+
+    const suffix = await serveObject(makeBackend(makeObjectBody()), new Request("http://x/t", { headers: { Range: "bytes=-9999" } }), "test.txt");
+    expect(suffix.status).toBe(206);
+    expect(suffix.headers.get("Content-Range")).toBe("bytes 0-10/11");
+  });
+});
+
+describe("serveObject — headers", () => {
+  it("emits Content-Encoding, Content-Language and nosniff", async () => {
+    const backend = makeBackend(makeObjectBody({ contentEncoding: "gzip", contentLanguage: "en-GB" }));
+    const res = await serveObject(backend, new Request("http://x/t"), "test.txt");
+    expect(res.headers.get("Content-Encoding")).toBe("gzip");
+    expect(res.headers.get("Content-Language")).toBe("en-GB");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  it("falls back to the object's stored Content-Disposition", async () => {
+    const backend = makeBackend(makeObjectBody({ contentDisposition: 'attachment; filename="report.pdf"' }));
+    const res = await serveObject(backend, new Request("http://x/t"), "test.txt");
+    expect(res.headers.get("Content-Disposition")).toBe('attachment; filename="report.pdf"');
+  });
+
+  it("lets the option override the stored disposition", async () => {
+    const backend = makeBackend(makeObjectBody({ contentDisposition: 'attachment; filename="stored.pdf"' }));
+    const res = await serveObject(backend, new Request("http://x/t"), "test.txt", { contentDisposition: "inline" });
+    expect(res.headers.get("Content-Disposition")).toBe("inline; filename=\"test.txt\"; filename*=UTF-8''test.txt");
+  });
+
+  it("drops a stored disposition carrying a non-ASCII byte rather than throwing", async () => {
+    const backend = makeBackend(makeObjectBody({ contentDisposition: 'attachment; filename="rapport-café.pdf"' }));
+    const res = await serveObject(backend, new Request("http://x/t"), "test.txt");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Disposition")).toBeNull();
+  });
+});
+
+describe("serveObject — against the R2 fake", () => {
+  it("answers 416 with the real size for a range beyond the object", async () => {
+    const backend = r2Backend(fakeR2({ "file.txt": "abcdefghij" }));
+    const res = await serveObject(backend, new Request("http://x/f", { headers: { Range: "bytes=50-60" } }), "file.txt");
+    expect(res.status).toBe(416);
+    expect(res.headers.get("Content-Range")).toBe("bytes */10");
+  });
+
+  it("serves a satisfiable range from the fake", async () => {
+    const backend = r2Backend(fakeR2({ "file.txt": "abcdefghij" }));
+    const res = await serveObject(backend, new Request("http://x/f", { headers: { Range: "bytes=2-4" } }), "file.txt");
+    expect(res.status).toBe(206);
+    expect(res.headers.get("Content-Range")).toBe("bytes 2-4/10");
+    expect(await res.text()).toBe("cde");
   });
 });

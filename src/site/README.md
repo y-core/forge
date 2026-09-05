@@ -62,7 +62,7 @@ await Bun.write("public/sitemap.xml", renderSitemapXml(config));
 ```
 
 In practice a consumer does not call these directly: the `site` block of an assets config makes
-[`@y-core/forge/assets/build`](../assets/README.md) emit both files as a pipeline step.
+[`@y-core/forge/tooling/assets`](../assets/README.md) emit both files as a pipeline step.
 
 ### Build the zone rules
 

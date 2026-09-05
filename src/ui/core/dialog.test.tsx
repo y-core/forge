@@ -8,7 +8,7 @@ import { Dialog } from "./dialog";
 describe("Dialog", () => {
   it("renders a <dialog> with the given id and data-slot=dialog", async () => {
     expect(await render(<Dialog id='confirm'>Body</Dialog>)).toBe(
-      '<dialog id="confirm" data-slot="dialog" closedby="any" class="rounded-xl border border-border bg-popover text-popover-foreground shadow-lg">Body</dialog>',
+      '<dialog id="confirm" data-slot="dialog" aria-labelledby="confirm-title" closedby="any" class="rounded-box border border-border bg-popover text-popover-foreground shadow-lg">Body</dialog>',
     );
   });
 
@@ -20,7 +20,23 @@ describe("Dialog", () => {
         </Dialog>,
       ),
     ).toBe(
-      '<dialog id="confirm" data-slot="dialog" closedby="any" class="rounded-xl border border-border bg-popover text-popover-foreground shadow-lg w-96">Body</dialog>',
+      '<dialog id="confirm" data-slot="dialog" aria-labelledby="confirm-title" closedby="any" class="rounded-box border border-border bg-popover text-popover-foreground shadow-lg w-96">Body</dialog>',
+    );
+  });
+});
+
+describe("Dialog.Title", () => {
+  it("derives its id from the dialog's, so aria-labelledby resolves to the rendered heading", async () => {
+    const html = await render(
+      <Dialog id='confirm'>
+        <Dialog.Title for='confirm'>Delete project?</Dialog.Title>
+      </Dialog>,
+    );
+
+    expect(html).toBe(
+      '<dialog id="confirm" data-slot="dialog" aria-labelledby="confirm-title" closedby="any" class="rounded-box border border-border bg-popover text-popover-foreground shadow-lg">' +
+        '<h2 data-slot="dialog-title" id="confirm-title" class="text-base font-semibold">Delete project?</h2>' +
+        "</dialog>",
     );
   });
 });
@@ -69,8 +85,8 @@ describe("Dialog sections", () => {
   });
 
   it("renders Body with the gutter", async () => {
-    expect(await render(<Dialog.Body>This cannot be undone.</Dialog.Body>)).toBe(
-      '<div data-slot="dialog-body" class="px-6 py-5">This cannot be undone.</div>',
+    expect(await render(<Dialog.Content>This cannot be undone.</Dialog.Content>)).toBe(
+      '<div data-slot="dialog-content" class="px-6 py-5">This cannot be undone.</div>',
     );
   });
 
@@ -81,7 +97,7 @@ describe("Dialog sections", () => {
   });
 
   it("lets a caller's padding evict the section default", async () => {
-    expect(await render(<Dialog.Body class='p-2'>Body</Dialog.Body>)).toBe('<div data-slot="dialog-body" class="p-2">Body</div>');
+    expect(await render(<Dialog.Content class='p-2'>Body</Dialog.Content>)).toBe('<div data-slot="dialog-content" class="p-2">Body</div>');
   });
 });
 
@@ -98,7 +114,7 @@ describe("Dialog composition", () => {
         </>,
       ),
     ).toBe(
-      '<button type="button" data-slot="dialog-trigger" command="show-modal" commandfor="confirm">Delete…</button><dialog id="confirm" data-slot="dialog" closedby="any" class="rounded-xl border border-border bg-popover text-popover-foreground shadow-lg"><p>Are you sure?</p><button type="button" data-slot="dialog-close" command="close" commandfor="confirm">Cancel</button></dialog>',
+      '<button type="button" data-slot="dialog-trigger" command="show-modal" commandfor="confirm">Delete…</button><dialog id="confirm" data-slot="dialog" aria-labelledby="confirm-title" closedby="any" class="rounded-box border border-border bg-popover text-popover-foreground shadow-lg"><p>Are you sure?</p><button type="button" data-slot="dialog-close" command="close" commandfor="confirm">Cancel</button></dialog>',
     );
   });
 });

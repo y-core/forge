@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { Meter } from "./meter";
+import { Meter, meterState } from "./meter";
 
 const ROOT_BASE = "flex w-full max-w-sm flex-col gap-1";
 
@@ -40,7 +40,7 @@ describe("Meter", () => {
     ).toBe(
       `<div data-slot="meter" class="${ROOT_BASE}">` +
         '<label data-slot="meter-label" for="disk" class="text-sm font-medium text-foreground">Disk usage</label>' +
-        '<meter data-slot="meter-track" class="h-2 w-full" id="disk" value="0.72" low="0.3" high="0.8" optimum="0.2"></meter>' +
+        '<meter data-slot="meter-track" data-state="suboptimum" class="h-2 w-full rounded-selector bg-border" id="disk" value="0.72" low="0.3" high="0.8" optimum="0.2"></meter>' +
         '<span data-slot="meter-value" class="text-sm text-muted-foreground tabular-nums">72%</span>' +
         "</div>",
     );
@@ -67,18 +67,20 @@ describe("Meter.Label", () => {
 
 describe("Meter.Track", () => {
   it("renders a native meter carrying the value", async () => {
-    expect(await render(<Meter.Track value={0.5} />)).toBe('<meter data-slot="meter-track" class="h-2 w-full" value="0.5"></meter>');
+    expect(await render(<Meter.Track value={0.5} />)).toBe(
+      '<meter data-slot="meter-track" data-state="optimum" class="h-2 w-full rounded-selector bg-border" value="0.5"></meter>',
+    );
   });
 
   it("passes the platform's own threshold attributes straight through", async () => {
     expect(await render(<Meter.Track value={0.72} min={0} max={1} low={0.3} high={0.8} optimum={0.2} />)).toBe(
-      '<meter data-slot="meter-track" class="h-2 w-full" value="0.72" min="0" max="1" low="0.3" high="0.8" optimum="0.2"></meter>',
+      '<meter data-slot="meter-track" data-state="suboptimum" class="h-2 w-full rounded-selector bg-border" value="0.72" min="0" max="1" low="0.3" high="0.8" optimum="0.2"></meter>',
     );
   });
 
   it("merges a caller class and appends an inherited slot token", async () => {
     expect(await render(<Meter.Track value={0.5} class='h-3' data-slot='quota-track' />)).toBe(
-      '<meter data-slot="meter-track quota-track" class="w-full h-3" value="0.5"></meter>',
+      '<meter data-slot="meter-track quota-track" data-state="optimum" class="w-full rounded-selector bg-border h-3" value="0.5"></meter>',
     );
   });
 });
@@ -94,5 +96,46 @@ describe("Meter.Value", () => {
     expect(await render(<Meter.Value>{`>72% of R&D's quota`}</Meter.Value>)).toBe(
       '<span data-slot="meter-value" class="text-sm text-muted-foreground tabular-nums">&gt;72% of R&amp;D&#39;s quota</span>',
     );
+  });
+});
+
+describe("meterState — HTML's own banding, which decides the fill colour", () => {
+  it("reads the optimum band from where the optimum point sits, not from the value alone", () => {
+    // Optimum below `low`: the low band is the good one, the high band the worst.
+    expect(meterState({ value: 0.1, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("optimum");
+    expect(meterState({ value: 0.5, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("suboptimum");
+    expect(meterState({ value: 0.9, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("poor");
+  });
+
+  // HTML's `GetGaugeRegion` puts `value <= low` in the low region and `value >= high` in the high
+  // one, so a value sitting exactly on a threshold belongs to that threshold's band, not between the
+  // two. Strict comparisons put both boundaries in "medium" and read one band too optimistic.
+  it("puts a value sitting exactly on a threshold in that threshold's own band", () => {
+    expect(meterState({ value: 0.3, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("optimum");
+    expect(meterState({ value: 0.8, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("poor");
+    expect(meterState({ value: 0.3, low: 0.3, high: 0.8, optimum: 0.95 })).toBe("poor");
+    expect(meterState({ value: 0.8, low: 0.3, high: 0.8, optimum: 0.95 })).toBe("optimum");
+  });
+
+  it("mirrors the bands when the optimum point is above `high`", () => {
+    expect(meterState({ value: 0.9, low: 0.3, high: 0.8, optimum: 0.95 })).toBe("optimum");
+    expect(meterState({ value: 0.5, low: 0.3, high: 0.8, optimum: 0.95 })).toBe("suboptimum");
+    expect(meterState({ value: 0.1, low: 0.3, high: 0.8, optimum: 0.95 })).toBe("poor");
+  });
+
+  it("makes both outer bands merely suboptimum when the optimum point is between them", () => {
+    expect(meterState({ value: 0.5, low: 0.3, high: 0.8, optimum: 0.5 })).toBe("optimum");
+    expect(meterState({ value: 0.1, low: 0.3, high: 0.8, optimum: 0.5 })).toBe("suboptimum");
+    expect(meterState({ value: 0.9, low: 0.3, high: 0.8, optimum: 0.5 })).toBe("suboptimum");
+  });
+
+  it("applies HTML's defaults and clamps: no thresholds is one band, and every band is optimum", () => {
+    expect(meterState({ value: 0.5 })).toBe("optimum");
+    expect(meterState({ value: 72, min: 0, max: 100 })).toBe("optimum");
+  });
+
+  it("clamps a high below low, a value outside the range, and a value that is not a number at all", () => {
+    expect(meterState({ value: 200, min: 0, max: 100, low: 30, high: 10, optimum: 0 })).toBe("poor");
+    expect(meterState({ value: Number.NaN, min: 0, max: 100, low: 30, high: 90, optimum: 100 })).toBe("poor");
   });
 });

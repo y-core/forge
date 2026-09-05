@@ -143,6 +143,59 @@ describe("applyMiddlewareChain — canonical order", () => {
     expect(await res.text()).toBe("Too many requests. Please try again later.");
   });
 
+  it("registers a guard group once for overlapping paths", async () => {
+    const order: string[] = [];
+    let limitCalls = 0;
+    const app = new Forge<{ LIMITER: { limit(o: { key: string }): Promise<{ success: boolean }> } }>();
+    applyMiddlewareChain(app, {
+      securityHeaders: {},
+      trustCfHeaders: true,
+      guards: [{ paths: ["/api/*", "/api/users"], rateLimit: { limiter: (c) => c.env.LIMITER }, middleware: [probe("guard", order)] }],
+    });
+    mapHandler(app, "GET", "/api/users", () => new Response("ok"));
+
+    const res = await app.request(
+      "/api/users",
+      { headers: { "CF-Connecting-IP": "203.0.113.7" } },
+      {
+        LIMITER: {
+          limit: async () => {
+            limitCalls += 1;
+            return { success: true };
+          },
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(limitCalls).toBe(1);
+    expect(order).toEqual(["guard"]);
+  });
+
+  it("fires a multi-path group on every path it names and on none it does not", async () => {
+    const order: string[] = [];
+    const app = new Forge();
+    applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: ["/api/*", "/admin/settings"], middleware: [probe("guard", order)] }] });
+    mapHandler(app, "GET", "/api/users", () => new Response("ok"));
+    mapHandler(app, "GET", "/admin/settings", () => new Response("ok"));
+    mapHandler(app, "GET", "/public", () => new Response("ok"));
+
+    await app.request("/api/users");
+    await app.request("/admin/settings");
+    await app.request("/public");
+    expect(order).toEqual(["guard", "guard"]);
+  });
+
+  it("registers nothing for a group with no paths", async () => {
+    const order: string[] = [];
+    const app = new Forge();
+    applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: [], middleware: [probe("guard", order)] }] });
+    mapHandler(app, "GET", "/anything", () => new Response("ok"));
+
+    const res = await app.request("/anything");
+    expect(res.status).toBe(200);
+    expect(order).toEqual([]);
+  });
+
   it("threads default-distrust to rate-limit guards (CF-Connecting-IP ignored → 503)", async () => {
     const app = new Forge<{ LIMITER: { limit(o: { key: string }): Promise<{ success: boolean }> } }>();
     applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: ["/api/save"], rateLimit: { limiter: (c) => c.env.LIMITER } }] });

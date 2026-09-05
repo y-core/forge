@@ -10,7 +10,7 @@ const icon = createIcon("/sprite.svg");
 const narrowIcon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 24 24", "icon-phone": "0 0 24 24" });
 
 const TRIGGER_CLS =
-  "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none select-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring";
+  "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium focus-ring select-none hover:bg-muted/40";
 
 const CHEVRON =
   '<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground group-open/accordion-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg>';
@@ -47,7 +47,7 @@ describe("Accordion", () => {
         </Accordion.Trigger>,
       ),
     ).toBe(
-      '<summary data-slot="accordion-trigger" class="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium outline-none select-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring" id="trg1" data-testid="trigger"><span class="flex-1 ps-1">Section</span><svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground group-open/accordion-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg></summary>',
+      '<summary data-slot="accordion-trigger" class="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium focus-ring select-none hover:bg-muted/40" id="trg1" data-testid="trigger"><span class="flex-1 ps-1">Section</span><svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground group-open/accordion-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg></summary>',
     );
   });
 

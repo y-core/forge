@@ -1,3 +1,6 @@
+/** Resumable-scope name `Navbar` stamps and the chrome client scope registers. Eager. @public */
+export const NAVBAR_SCOPE = "navbar";
+
 /** Document event the navbar scope listens for to re-sync its auth filters. @public */
 export const NAVBAR_FILTERS_EVENT = "navbar:filters";
 

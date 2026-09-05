@@ -3,72 +3,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type Align, applyStateAttrs, type Orientation, type Side, STATE_ATTRS, stateAttrs } from "./state-attrs";
+import { PRESENCE_STATES } from "../../tooling/lint/rules/a11y-aria-beside-data";
+import { ISLAND_STATE_ATTR } from "./island-contract";
+import { type Align, applyStateAttrs, type Orientation, type Side, STATE_ATTRS, stateAttrs, type StateAttrsProps } from "./state-attrs";
+import { PRESENTATION_ATTRS } from "./vocabulary";
+import { WIRING_ATTRS, WIRING_PREFIXES } from "./wiring-attrs";
 
 const UI_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
-const STRUCTURAL_ATTRS = new Set([
-  "data-slot",
-  "data-ref",
-  "data-scope",
-  "data-state",
-  "data-field",
-  "data-format",
-  "data-variant",
-  "data-content",
-  "data-position",
-  "data-sitekey",
-  "data-size",
-  "data-load",
-  "data-challenge",
-  "data-appearance",
-  "data-action",
-  "data-cdata",
-  "data-response-field-name",
-  "data-language",
-  "data-tabindex",
-  "data-label-position",
-  "data-theme",
-  "data-nav",
-  "data-navbar-drawer",
-  "data-setting",
-  "data-tool",
-  "data-duration",
-  "data-composite-item-active",
-  "data-bind-attr",
-  "data-bind-text",
-  "data-open-modal",
-  "data-tabs-mounted",
-  "data-tooltip-mounted",
-  "data-multiple",
-  "data-toolbar-item",
-  "data-activation",
-  "data-value",
-  "data-preset-picker",
-  "data-filter",
-  "data-filters",
-  "data-filter-item",
-  "data-theme-preference",
-  "data-compact",
-  "data-placement",
-  "data-coords",
-  "data-scale-row",
-  "data-swatch",
-  "data-hex",
-  "data-readout",
-  "data-pair",
-  "data-ratio",
-  "data-scheme-output",
-  "data-share-url",
-  "data-copy-target",
-  "data-copy-label",
-  "data-copy-status",
-]);
-
-// `data-hx-` is htmx's own `data-`-prefixed spelling, which forge reads in a selector and never emits.
-const STRUCTURAL_PREFIXES = ["data-on-", "data-hx-"];
-
-const DECLARED = new Set<string>(Object.values(STATE_ATTRS));
+const DECLARED = new Set<string>([...Object.values(STATE_ATTRS), ...Object.values(PRESENTATION_ATTRS), ISLAND_STATE_ATTR]);
 
 function dataAttrNames(source: string): string[] {
   return [...source.matchAll(/data-\[?([a-z][a-z0-9-]*)/g)].map((match) => `data-${match[1]}`);
@@ -122,9 +65,19 @@ describe("stateAttrs", () => {
 
   // Open, closed, popup-open and the two transition phases are the platform's now — `:popover-open`,
   // `[open]`, `:has()` and `@starting-style` express every one of them without an attribute.
-  it("declares exactly the eight names of the convention", () => {
+  it("declares exactly the nine names of the convention", () => {
     expect(Object.values(STATE_ATTRS).sort()).toEqual(
-      ["data-align", "data-checked", "data-disabled", "data-invalid", "data-orientation", "data-pressed", "data-selected", "data-side"].sort(),
+      [
+        "data-align",
+        "data-busy",
+        "data-checked",
+        "data-disabled",
+        "data-invalid",
+        "data-orientation",
+        "data-pressed",
+        "data-selected",
+        "data-side",
+      ].sort(),
     );
   });
 });
@@ -201,11 +154,42 @@ describe("state-attribute conformance", () => {
     for (const file of files) {
       for (const name of dataAttrNames(readFileSync(file, "utf-8"))) {
         if (DECLARED.has(name)) continue;
-        if (STRUCTURAL_ATTRS.has(name)) continue;
-        if (STRUCTURAL_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
+        if (name in WIRING_ATTRS) continue;
+        if (WIRING_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
         offenders.push(`${file.slice(UI_DIR.length + 1)}: ${name}`);
       }
     }
     expect([...new Set(offenders)].sort()).toEqual([]);
+  });
+
+  it("holds no wiring name the source no longer spells, so the allowlist can only shrink", () => {
+    const spelled = new Set(files.flatMap((file) => dataAttrNames(readFileSync(file, "utf-8"))));
+
+    expect(Object.keys(WIRING_ATTRS).filter((name) => !spelled.has(name))).toEqual([]);
+  });
+});
+
+// `forge/a11y-aria-beside-data` hand-lists these because `tooling/lint` is a leaf that may not
+// import `ui` (NAMESPACES.md §3c). This is where the two lists are held together, so a seventh
+// presence flag fails here rather than going unenforced in the linter.
+describe("the presence hooks the lint rule forbids by hand", () => {
+  const EVERY_STATE: Required<StateAttrsProps> = {
+    pressed: true,
+    checked: true,
+    selected: true,
+    disabled: true,
+    invalid: true,
+    busy: true,
+    orientation: "horizontal",
+    side: "top",
+    align: "start",
+  };
+
+  it("names exactly the flags `stateAttrs` emits with an empty value", () => {
+    const emitted = Object.entries(stateAttrs(EVERY_STATE))
+      .filter(([, value]) => value === "")
+      .map(([name]) => name.slice("data-".length));
+
+    expect([...PRESENCE_STATES].sort()).toEqual(emitted.sort());
   });
 });

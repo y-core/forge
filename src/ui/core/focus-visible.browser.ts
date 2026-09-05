@@ -42,10 +42,10 @@ const CONTROLS: readonly Control[] = [
   { name: "Button", slot: "button", html: () => render(Button({ children: "Save" })), focusVisibleOnPointer: false },
 ];
 
-/** A stylesheet that paints the marker through the control's own compiled `focus-visible:` classes. */
+/** A stylesheet that paints the marker through the control's own ring classes — the `focus-ring` recipe, or any bare `focus-visible:` utility. */
 function focusVisibleRule(classes: readonly string[]): string {
   const selector = classes
-    .filter((cls) => cls.startsWith("focus-visible:"))
+    .filter((cls) => cls === "focus-ring" || cls.startsWith("focus-visible:"))
     .map((cls) => `.${escapeClass(cls)}:focus-visible`)
     .join(",");
   return `${selector}{outline:3px ${MARKER_OUTLINE_STYLE} rgb(0,255,0)}`;
@@ -64,7 +64,7 @@ for (const control of CONTROLS) {
     test("emits a focus-visible ring rather than a bare focus: one", async () => {
       const classes = classesOf(await control.html(), control.slot);
 
-      expect(classes).toContain("focus-visible:ring-2");
+      expect(classes).toContain("focus-ring");
       expect(classes.filter((cls) => cls.startsWith("focus:"))).toEqual([]);
     });
 

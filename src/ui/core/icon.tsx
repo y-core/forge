@@ -1,21 +1,24 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC } from "../../jsx/types";
+import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
 export interface IconProps {
   symbol: string;
-  sprite?: string;
-  width?: number | string;
-  height?: number | string;
-  viewBox?: string;
-  class?: string;
-  "aria-hidden"?: string | boolean;
-  "aria-label"?: string;
-  stroke?: string;
-  "stroke-width"?: number | string;
-  "stroke-linecap"?: string;
-  "stroke-linejoin"?: string;
+  sprite?: string | undefined;
+  width?: number | string | undefined;
+  height?: number | string | undefined;
+  viewBox?: string | undefined;
+  class?: string | undefined;
+  /** A token composed after `icon`, so a caller can address this glyph inside a larger component. */
+  "data-slot"?: string | undefined;
+  "aria-hidden"?: string | boolean | undefined;
+  "aria-label"?: string | undefined;
+  stroke?: string | undefined;
+  "stroke-width"?: number | string | undefined;
+  "stroke-linecap"?: string | undefined;
+  "stroke-linejoin"?: string | undefined;
 }
 
 /** Shape of a sprite-bound icon component, as returned by `createIcon`. @public */
@@ -29,6 +32,7 @@ export const Icon: FC<IconProps> = ({
   height,
   viewBox,
   class: cls,
+  "data-slot": inherited,
   "aria-hidden": ariaHidden = "true",
   "aria-label": ariaLabel,
   stroke,
@@ -37,7 +41,7 @@ export const Icon: FC<IconProps> = ({
   "stroke-linejoin": strokeLinejoin,
 }) => (
   <svg
-    data-slot='icon'
+    data-slot={slotToken("icon", inherited)}
     width={width}
     height={height}
     viewBox={viewBox}
@@ -64,6 +68,6 @@ export function createIcon(sprite: string, meta?: Record<string, string>, prefix
     const { name, viewBox, ...rest } = p;
     const id = `${prefix}${String(name)}`;
     const resolvedViewBox = viewBox ?? meta?.[id];
-    return <Icon {...rest} sprite={sprite} symbol={id} {...(resolvedViewBox !== undefined ? { viewBox: resolvedViewBox } : {})} />;
+    return <Icon {...rest} sprite={sprite} symbol={id} viewBox={resolvedViewBox} />;
   };
 }

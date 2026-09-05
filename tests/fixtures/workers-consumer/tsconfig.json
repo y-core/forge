@@ -14,5 +14,5 @@
     "jsxImportSource": "@y-core/forge/jsx",
     "paths": { "@y-core/forge/*": ["../../../src/*"] }
   },
-  "include": ["main.ts", "workerd-globals.d.ts"]
+  "include": ["main.ts", "worker.ts", "workerd-globals.d.ts"]
 }

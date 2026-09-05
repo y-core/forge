@@ -73,6 +73,12 @@ injects it into the CSP `script-src`, and stores it on the request context for `
 
 **Every request gets a fresh nonce** — a static nonce defeats nonce enforcement entirely.
 
+**Only the nonce is per-request.** The CSP is rendered once at factory time into a template holding
+a NUL placeholder where the nonce goes, the other eight headers are computed once and frozen, and a
+request does one `replaceAll` over the template. The placeholder is unreachable to a caller:
+`CSP_SOURCE_TOKEN` is `/^[\x21-\x7e]+$/`, which excludes NUL, and `assertValidCspOptions` still
+throws from the factory — before the first request — rather than from the render.
+
 **Computed headers are queued on the per-request pending-header channel** and flushed once by
 the app's outermost `applyHeaders` pass, rather than each middleware rebuilding its own
 `Response`.
@@ -176,6 +182,24 @@ from `BaseUrlConfig` so the list matches the deployed environment automatically.
 **`cors()` rebuilds the downstream `Response` rather than mutating it in place.** A downstream
 response may carry immutable headers, where in-place mutation would throw or silently no-op;
 rebuilding with a fresh `Headers` clone is correct by construction.
+
+**Every response whose content depends on `Origin` is marked `Vary: Origin` — including the
+refusal.** The rule is not "did we add an ACAO header", it is "does this middleware's output depend
+on the request's `Origin`", and it does on both branches. An unmarked refusal — no ACAO, no `Vary` —
+is one a shared cache may store and replay to an allowed origin, which is the CORS-defeating
+direction; a request carrying no `Origin` at all is the same case. **The price is stated plainly:** a
+non-wildcard `cors()` rebuilds every response, including the ones it refuses. That is the cost of a
+correct cache key, and it follows the same rebuild-rather-than-mutate ruling above.
+**The one exception is `origins: ["*"]` without credentials**, where the ACAO header is the constant
+`"*"`: it is the same for every caller, so `Vary` would only shred the cache key, and it is
+suppressed.
+
+**The allowlist compiles once.** `compileOriginMatcher(patterns)` builds an exact-match `Set` and
+the wildcard patterns' `RegExp`s at factory time; the public `matchOrigin` is now one call into it,
+so there is a single implementation of the matching rules (including the escaped `?` and the
+excluded delimiters, each of which fixes a real widening bug). The preflight header object,
+`methods.join`, `allowedHeaders.join` and `String(maxAge)` are likewise built once rather than per
+preflight.
 
 ### 3b. originGuard — Strict Origin Allowlist
 

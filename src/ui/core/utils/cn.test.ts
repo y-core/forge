@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { cn } from "./cn";
+import { cn, utilityOf } from "./cn";
 
 describe("cn", () => {
   it("joins multiple strings with a space", () => {
@@ -305,5 +305,105 @@ describe("cn and the reserved `text-size-*` namespace", () => {
 
   it("still drops the same step declared as `--text-hero`, which is what the reserved namespace exists to avoid", () => {
     expect(cn(AMBIGUOUS_THEN_COLOR)).toBe("text-red-500");
+  });
+});
+
+describe("cn — the @utility recipes", () => {
+  it("dedupes a repeated recipe and keeps a caller's narrower utility after field-chrome", () => {
+    expect(cn("focus-ring", "focus-ring")).toBe("focus-ring");
+    expect(cn("field-chrome", "rounded-lg")).toBe("field-chrome rounded-lg");
+    expect(cn("field-chrome", "h-8")).toBe("field-chrome h-8");
+    expect(cn("border-field", "border-input")).toBe("border-field border-input");
+    expect(cn("rounded-lg", "field-chrome")).toBe("field-chrome");
+  });
+
+  // A state recipe paints nothing until its own selector matches, so no unconditional utility can
+  // conflict with it. Before the generator gave the five their own slot, `state-invalid` shared
+  // `--tw-ring-color` with every `ring-*` and a caller's ring silently deleted the invalid styling.
+  it("keeps a state recipe beside any caller utility, in either order", () => {
+    expect(cn("state-invalid", "ring-primary")).toBe("state-invalid ring-primary");
+    expect(cn("ring-primary", "state-invalid")).toBe("ring-primary state-invalid");
+    expect(cn("state-invalid", "focus-ring-outset")).toBe("state-invalid focus-ring-outset");
+    expect(cn("focus-ring-outset", "state-invalid")).toBe("focus-ring-outset state-invalid");
+    expect(cn("state-disabled", "opacity-75")).toBe("state-disabled opacity-75");
+    expect(cn("state-busy", "cursor-wait")).toBe("state-busy cursor-wait");
+    expect(cn("focus-ring", "outline-none")).toBe("focus-ring outline-none");
+  });
+
+  it("still dedupes a state recipe against itself, so the slot is a slot and not an escape hatch", () => {
+    expect(cn("state-invalid", "state-invalid")).toBe("state-invalid");
+    expect(cn("focus-ring", "focus-ring-outset")).toBe("focus-ring focus-ring-outset");
+  });
+});
+
+// Held as consts: the formatter's class sorter rewrites a literal written inside a `cn(…)` call.
+const PADDING_PAIR = "p-4 p-8";
+const HEIGHT_PAIR = "h-full h-5";
+
+describe("cn memoisation", () => {
+  it("returns the same string for a repeated call as for a fresh one", () => {
+    expect(cn("flex", "items-center", "gap-2")).toBe("flex items-center gap-2");
+    expect(cn("flex", "items-center", "gap-2")).toBe("flex items-center gap-2");
+  });
+
+  it("agrees across argument splittings that join to the same string", () => {
+    expect(cn("p-4", "p-8")).toBe("p-8");
+    expect(cn(PADDING_PAIR)).toBe("p-8");
+  });
+
+  it("agrees whether or not a falsy entry sits between two classes", () => {
+    expect(cn("h-full", false, "h-5")).toBe("h-5");
+    expect(cn("h-full", null, "h-5")).toBe("h-5");
+    expect(cn(HEIGHT_PAIR)).toBe("h-5");
+  });
+
+  it("resolves every key correctly across more distinct keys than the cache holds", () => {
+    for (let i = 0; i < 600; i += 1) {
+      expect(cn("h-full", `h-[${i}px]`)).toBe(`h-[${i}px]`);
+    }
+  });
+
+  it("still resolves an early key after later keys have filled and reset the cache", () => {
+    expect(cn("h-full", "h-[0px]")).toBe("h-[0px]");
+
+    for (let i = 1000; i < 1600; i += 1) {
+      expect(cn("h-full", `h-[${i}px]`)).toBe(`h-[${i}px]`);
+    }
+
+    expect(cn("h-full", "h-[0px]")).toBe("h-[0px]");
+  });
+
+  it("caches the resolved string rather than the joined input", () => {
+    expect(cn("inline-flex", "flex")).toBe("flex");
+    expect(cn("inline-flex", "flex")).toBe("flex");
+    expect(cn("text-red-500", "text-blue-500")).toBe("text-blue-500");
+    expect(cn("text-red-500", "text-blue-500")).toBe("text-blue-500");
+  });
+});
+
+describe("utilityOf", () => {
+  it("returns a bare utility unchanged", () => {
+    expect(utilityOf("focus-ring-outset")).toBe("focus-ring-outset");
+  });
+
+  it("drops every variant, however many", () => {
+    expect(utilityOf("hover:bg-primary")).toBe("bg-primary");
+    expect(utilityOf("md:hover:focus-visible:ring-2")).toBe("ring-2");
+  });
+
+  it("drops the `!` important marker on either side", () => {
+    expect(utilityOf("!p-4")).toBe("p-4");
+    expect(utilityOf("p-4!")).toBe("p-4");
+  });
+
+  it("drops a `/value` suffix, and keeps a slash inside brackets", () => {
+    expect(utilityOf("bg-muted/40")).toBe("bg-muted");
+    expect(utilityOf("group/filter")).toBe("group");
+    expect(utilityOf("[&>*]:[grid-area:1/1]")).toBe("[grid-area:1/1]");
+  });
+
+  it("keeps a colon inside brackets, which is a selector rather than a variant separator", () => {
+    expect(utilityOf("has-[select:disabled]:opacity-50")).toBe("opacity-50");
+    expect(utilityOf("[scrollbar-color:var(--color-border)_transparent]")).toBe("[scrollbar-color:var(--color-border)_transparent]");
   });
 });

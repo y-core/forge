@@ -60,15 +60,31 @@ describe("Form component", () => {
     );
   });
 
-  it("preserves non-JSON hx-headers strings", async () => {
+  // Passing the string through was the old behaviour, and it shipped a form whose token htmx never
+  // sends: the request 403s with nothing in the markup or the console naming the cause.
+  it("throws rather than dropping the CSRF token into an hx-headers value it cannot merge into", async () => {
+    expect(() => Form({ csrfToken: "abc123", "hx-headers": "js:window.headers", children: null })).toThrow(/cannot merge its csrfToken/);
+  });
+
+  it("still passes a non-JSON hx-headers string through when there is no token to lose", async () => {
     expect(
       await render(
-        <Form csrfToken='abc123' hx-headers='js:window.headers'>
+        <Form hx-headers='js:window.headers'>
+          <input name='x' />
+        </Form>,
+      ),
+    ).toBe('<form data-slot="form" method="post" hx-headers="js:window.headers"><input name="x"></form>');
+  });
+
+  it("keeps a non-string header entry, which htmx serialises just as it does a string", async () => {
+    expect(
+      await render(
+        <Form csrfToken='abc123' hx-headers='{"X-Retry":3,"X-Live":true}'>
           <input name='x' />
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-headers="js:window.headers"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-headers="{&quot;X-Retry&quot;:3,&quot;X-Live&quot;:true,&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><input name="x"></form>',
     );
   });
 
@@ -179,7 +195,7 @@ describe("Form — composed with Honeypot", () => {
         </Form>,
       ),
     ).toBe(
-      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" class="pointer-events-none absolute -left-[9999px] opacity-0"><input type="text" name="__surname" tabindex="-1" autocomplete="off"></div><input name="x"></form>',
+      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" class="pointer-events-none absolute -left-[9999px] opacity-0"><input type="text" name="__hp_c7" tabindex="-1" autocomplete="new-password"></div><input name="x"></form>',
     );
   });
 });

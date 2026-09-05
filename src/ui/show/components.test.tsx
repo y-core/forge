@@ -4,9 +4,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { PAGE_ORDER, SECTIONS, ShowcaseContent, type ShowcasePage } from "./components";
+import { TONES } from "../contracts/vocabulary";
+import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent, type ShowcasePage } from "./components";
 import { sectionBodies } from "./coverage";
 import { showcasePaths } from "./route";
+import { TOAST_CYCLE_DURATION, TOAST_CYCLE_SCOPE } from "./toast-contract";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
@@ -27,6 +29,21 @@ const openTags = (html: string, slot: string) =>
   [...html.matchAll(new RegExp(`<[a-z]+[^>]*data-slot="${slot}"[^>]*>`, "g"))].map((match) => match[0]);
 
 const attrOf = (tag: string, name: string) => tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1] ?? null;
+
+const hasFlag = (tag: string, name: string) => new RegExp(`\\s${name}(?=[\\s>])`).test(tag);
+
+/** The opening tag of the element carrying `attr="value"`, so an attribute is pinned to its element. */
+const tagWith = (html: string, attr: string, value: string) => html.match(new RegExp(`<[a-z]+[^>]*\\s${attr}="${value}"[^>]*>`))?.[0] ?? null;
+
+const navTag = (html: string) => html.match(/<nav\b[^>]*>/)?.[0] ?? null;
+
+const headingText = (html: string) => html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? null;
+
+const badgeChips = (html: string) =>
+  [...html.matchAll(/<span [^>]*data-slot="badge"[^>]*>([\s\S]*?)<\/span>/g)].map((match) => ({
+    tag: match[0].slice(0, match[0].indexOf(">") + 1),
+    label: match[1] ?? "",
+  }));
 
 const axesOf = (html: string, slot: string) => openTags(html, slot).map((tag) => [attrOf(tag, "data-side"), attrOf(tag, "data-align")]);
 
@@ -52,9 +69,13 @@ describe("ShowcaseContent", () => {
   it("renders the shell, the skip target and the page's own prerequisite on every page", async () => {
     for (const which of PAGE_ORDER) {
       const out = await page(which);
-      expect(out).toContain('id="main-content"');
-      expect(out).toContain("UI Component Showcase");
-      expect(out).toContain('id="flash-container"');
+      expect(tagWith(out, "id", "main-content")).toBe(
+        '<main id="main-content" class="mx-auto max-w-4xl min-w-0 flex-1 space-y-12 px-6 py-10 lg:px-10">',
+      );
+      expect(headingText(out)).toBe(`UI Component Showcase — ${SHOWCASE_PAGES[which].label}`);
+      expect(tagWith(out, "id", "flash-container")).toBe(
+        '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="flash-container">',
+      );
     }
   });
 
@@ -64,8 +85,8 @@ describe("ShowcaseContent", () => {
       const groupsIn = (html: string) => html.split('data-slot="navbar-group"').length - 1;
       const bands = new Set(SECTIONS.filter((section) => section.page === which).map((section) => section.group));
       expect({ page: which, pages: groupsIn(pagesRail(out)), toc: groupsIn(tocRail(out)) }).toEqual({ page: which, pages: 1, toc: bands.size });
-      expect(out).toContain('aria-label="Showcase pages"');
-      expect(out).toContain('aria-label="On this page"');
+      expect(navTag(pagesRail(out))).toBe('<nav aria-label="Showcase pages" class="h-full">');
+      expect(navTag(tocRail(out))).toBe('<nav aria-label="On this page" class="h-full">');
     }
   });
 
@@ -90,6 +111,7 @@ describe("ShowcaseContent", () => {
   it("links every page from the rail, as a route rather than a fragment", async () => {
     const out = await page();
     const hrefs = ["/showcase", "/showcase/interactive", "/showcase/runtime", "/showcase/htmx", "/showcase/chrome"];
+    // oxlint-disable-next-line forge/exact-markup-assertion -- a coverage sweep over the page list: the substring is how each route is looked for, and the rail's own link set is asserted exactly above
     expect(hrefs.filter((href) => !out.includes(`href="${href}"`))).toEqual([]);
   });
 
@@ -123,10 +145,12 @@ describe("ShowcaseContent", () => {
   });
 
   it("serves each band from the page its prerequisite names", async () => {
-    expect(await page("index")).toContain('id="button"');
-    expect(await page("htmx")).toContain('id="htmx-demos"');
-    expect(await page("chrome")).toContain('id="theme"');
-    expect(await page("runtime")).toContain('data-scope="show-filter"');
+    expect(tagWith(await page("index"), "id", "button")).toBe('<section id="button" class="scroll-mt-24 space-y-4">');
+    expect(tagWith(await page("htmx"), "id", "htmx-demos")).toBe('<section id="htmx-demos" class="scroll-mt-24 space-y-6">');
+    expect(tagWith(await page("chrome"), "id", "theme")).toBe('<section id="theme" class="scroll-mt-24 space-y-4">');
+    expect(tagWith(await page("runtime"), "data-scope", "show-filter")).toBe(
+      '<div data-scope="show-filter" data-island-state="{&quot;query&quot;:&quot;&quot;}">',
+    );
   });
 
   it("orders the lazy band after the resumable island", async () => {
@@ -136,6 +160,7 @@ describe("ShowcaseContent", () => {
 
   it("renders a section element for every catalog entry, across every page", async () => {
     const all = (await Promise.all(PAGE_ORDER.map((which) => page(which)))).join("");
+    // oxlint-disable-next-line forge/exact-markup-assertion -- a coverage sweep over the catalog: the substring is how a section is looked for across the joined pages, not a claim about the element it landed on
     const unrendered = SECTIONS.filter((section) => !all.includes(`id="${section.id}"`)).map((section) => section.id);
     expect(unrendered).toEqual([]);
   });
@@ -143,7 +168,7 @@ describe("ShowcaseContent", () => {
   it("marks the required label with the marker span, and only that label", async () => {
     const body = await bodyOf("label");
     expect([...body.matchAll(/<span data-slot="label-required"[^>]*>[^<]*<\/span>/g)].map((match) => match[0])).toEqual([
-      '<span data-slot="label-required" aria-hidden="true" class="ms-0.5 text-destructive">*</span>',
+      '<span data-slot="label-required" aria-hidden="true" class="ms-0.5 text-destructive-text">*</span>',
     ]);
   });
 
@@ -153,11 +178,11 @@ describe("ShowcaseContent", () => {
     expect(["field-set", "field-legend", "field-content", "field-title", "field-separator"].filter((slot) => !slots.has(slot))).toEqual([]);
   });
 
-  it("renders both legend variants, the section heading and the inner label", async () => {
+  it("renders both legend kinds, the section heading and the inner label", async () => {
     const body = await bodyOf("form-field");
     expect([...body.matchAll(/<legend[^>]*>/g)].map((match) => match[0])).toEqual([
-      '<legend data-slot="field-legend" data-variant="legend" class="mb-3 font-medium text-base text-foreground">',
-      '<legend data-slot="field-legend" data-variant="label" class="mb-3 font-medium text-sm text-foreground">',
+      '<legend data-slot="field-legend" data-as="legend" class="mb-3 font-medium text-base text-foreground">',
+      '<legend data-slot="field-legend" data-as="label" class="mb-3 font-medium text-sm text-foreground">',
     ]);
   });
 
@@ -193,17 +218,22 @@ describe("ShowcaseContent", () => {
   it("renders the dialog anatomy in trigger, header, body, footer order with a close in each end", async () => {
     const body = await bodyOf("dialog");
     expect([...body.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1])).toEqual([
+      // The band's purpose line, which links each alternative the catalog rules for.
+      "link",
+      "link",
       "dialog-trigger",
       "dialog",
       "dialog-header",
+      "dialog-title",
       "dialog-close",
-      "dialog-body",
+      "dialog-content",
       "dialog-footer",
       "dialog-close",
       // The open, non-modal one: no trigger, because it is already showing.
       "dialog",
       "dialog-header",
-      "dialog-body",
+      "dialog-title",
+      "dialog-content",
       "dialog-footer",
       "dialog-close",
     ]);
@@ -224,7 +254,7 @@ describe("ShowcaseContent", () => {
     const body = await bodyOf("dialog");
     const open = [...body.matchAll(/<dialog[^>]*>/g)].map((match) => match[0]).find((tag) => /\sopen(?=[\s>])/.test(tag)) ?? "";
     expect((open.match(/\sclass="([^"]*)"/)?.[1] ?? "").split(" ")).toEqual([
-      "rounded-xl",
+      "rounded-box",
       "border",
       "border-border",
       "bg-popover",
@@ -255,6 +285,20 @@ describe("ShowcaseContent", () => {
     ]);
   });
 
+  // A dot is a fragment link: without the margin the slide lands at the viewport's top edge and takes
+  // the band's heading, and the page's sticky header, with it.
+  it("gives every carousel slide the scroll margin its dot's fragment jump lands on", async () => {
+    const body = await bodyOf("carousel");
+    expect(openTags(body, "carousel-item").map((tag) => [attrOf(tag, "id"), attrOf(tag, "class")])).toEqual([
+      ["show-carousel-1", "w-full shrink-0 snap-start scroll-mt-36"],
+      ["show-carousel-2", "w-full shrink-0 snap-start scroll-mt-36"],
+      ["show-carousel-3", "w-full shrink-0 snap-start scroll-mt-36"],
+      ["show-carousel-center-1", "w-full shrink-0 snap-center scroll-mt-36"],
+      ["show-carousel-center-2", "w-full shrink-0 snap-center scroll-mt-36"],
+      ["show-carousel-center-3", "w-full shrink-0 snap-center scroll-mt-36"],
+    ]);
+  });
+
   it("renders one toast container per position, every one silenced to aria-live=off", async () => {
     const body = await bodyOf("toast");
     const containers = openTags(body, "toast-container");
@@ -269,12 +313,28 @@ describe("ShowcaseContent", () => {
     expect(containers.map((tag) => attrOf(tag, "aria-live"))).toEqual(["off", "off", "off", "off", "off", "off"]);
   });
 
-  it("serialises the long duration into data-state, leaving the undurated toast an empty state", async () => {
+  it("serialises the cycling toast's duration into data-island-state, leaving the dismiss-only toast an empty state", async () => {
     const body = await bodyOf("toast");
-    expect([...body.matchAll(/data-state="[^"]*"/g)].map((match) => match[0])).toEqual([
-      'data-state="{}"',
-      'data-state="{&quot;duration&quot;:600000}"',
+    expect([...body.matchAll(/data-island-state="[^"]*"/g)].map((match) => match[0])).toEqual([
+      'data-island-state="{}"',
+      `data-island-state="{&quot;duration&quot;:${TOAST_CYCLE_DURATION}}"`,
     ]);
+  });
+
+  it("gives the bottom-right box the cycle scope, and gives no other box one", async () => {
+    const body = await bodyOf("toast");
+    expect([...body.matchAll(/data-scope="show-[a-z-]*"/g)].map((match) => match[0])).toEqual([`data-scope="${TOAST_CYCLE_SCOPE}"`]);
+    expect(body.indexOf(`data-scope="${TOAST_CYCLE_SCOPE}"`)).toBeLessThan(body.indexOf('data-position="bottom-right"'));
+  });
+
+  it("gives each of the six boxes a different tone, in position order", async () => {
+    const body = await bodyOf("toast");
+    // The first six only: the tone × appearance matrix below the grid emits its own toasts.
+    expect(
+      openTags(body, "toast")
+        .slice(0, 6)
+        .map((tag) => attrOf(tag, "data-tone")),
+    ).toEqual(["neutral", "success", "warning", "destructive", "info", "neutral"]);
   });
 
   it("announces from exactly one live region on every page, the flash container", async () => {
@@ -297,6 +357,8 @@ describe("ShowcaseContent", () => {
     }
 
     expect([...(await page("chrome")).matchAll(/<nav\b[^>]*>/g)].map((match) => attrOf(match[0], "aria-label")).sort()).toEqual([
+      "Demo dock",
+      "Demo dock (admin)",
       "Demo navigation",
       "Demo navigation (bottom)",
       "Demo navigation (drawer)",
@@ -315,29 +377,58 @@ describe("ShowcaseContent", () => {
     ]);
   });
 
-  it("shows every badge variant exactly once, in the order the variant union declares", async () => {
-    const body = await bodyOf("badge");
-    expect([...body.matchAll(/data-variant="([^"]*)"/g)].map((match) => match[1])).toEqual([
-      "default",
-      "secondary",
-      "outline",
-      "destructive",
-      "info",
-      "success",
-      "warning",
-    ]);
+  it("shows every tone exactly once in the order TONES declares, then again across the appearance matrix", async () => {
+    const chips = badgeChips(await bodyOf("badge"));
+    const toneChips = chips.filter((chip) => (TONES as readonly string[]).includes(chip.label.toLowerCase()));
+    expect(toneChips.slice(0, TONES.length).map((chip) => attrOf(chip.tag, "data-tone"))).toEqual([...TONES]);
+    expect(toneChips.slice(TONES.length).map((chip) => [attrOf(chip.tag, "data-tone"), attrOf(chip.tag, "data-appearance")])).toEqual(
+      TONES.flatMap((tone) => ["solid", "soft", "outline"].map((appearance) => [tone, appearance])),
+    );
   });
 
-  it("demonstrates the destructive variant and each icon-only size exactly once", async () => {
+  it("shows the outline appearance and the small size as chips of their own beside the tone row", async () => {
+    const chips = badgeChips(await bodyOf("badge"));
+    const extras = chips.filter((chip) => !(TONES as readonly string[]).includes(chip.label.toLowerCase()));
+    expect(extras.map((chip) => [chip.label, attrOf(chip.tag, "data-tone"), attrOf(chip.tag, "data-appearance")])).toEqual([
+      ["Small", "neutral", "soft"],
+      ["Outline", "neutral", "outline"],
+    ]);
+    expect(extras.map((chip) => attrOf(chip.tag, "class")?.includes("px-2 py-px text-[0.6875rem]"))).toEqual([true, false]);
+  });
+
+  it("carries every non-default shape across all three sizes, and the destructive tone through the matrix and each state", async () => {
     const body = await bodyOf("button");
     const classes = [...body.matchAll(/<button[^>]*>/g)].map((match) => attrOf(match[0], "class")?.split(/\s+/) ?? []);
     const having = (...tokens: string[]) => classes.filter((list) => tokens.every((token) => list.includes(token))).length;
     expect({
-      destructive: having("bg-destructive"),
-      iconMd: having("size-9", "p-0"),
-      iconSm: having("size-8", "p-0"),
-      square: having("w-full", "aspect-square", "p-0"),
-    }).toEqual({ destructive: 1, iconMd: 1, iconSm: 1, square: 1 });
+      // Five appearances in the tone matrix, plus resting, disabled and loading in the state grid.
+      destructive: having("[--tone:var(--color-destructive)]"),
+      iconSm: having("rounded-field", "w-control-sm", "px-0"),
+      iconMd: having("rounded-field", "w-control-md", "px-0"),
+      iconLg: having("rounded-field", "w-control-lg", "px-0"),
+      square: having("aspect-square", "w-full", "p-0"),
+      circleSm: having("rounded-selector", "w-control-sm", "px-0"),
+      circleMd: having("rounded-selector", "w-control-md", "px-0"),
+      circleLg: having("rounded-selector", "w-control-lg", "px-0"),
+    }).toEqual({ destructive: 8, iconSm: 1, iconMd: 1, iconLg: 1, square: 3, circleSm: 1, circleMd: 1, circleLg: 1 });
+  });
+
+  it("shows a resting, a disabled and a loading button for primary, neutral and destructive alike", async () => {
+    const body = await bodyOf("button");
+    const tags = [...body.matchAll(/<button[^>]*>/g)].map((match) => match[0]);
+    const toneOf = (tag: string) => attrOf(tag, "class")?.match(/\[--tone:var\(--color-([a-z]+)\)\]/)?.[1] ?? null;
+    // The state grid is the section's last band: three tones by resting, disabled, loading.
+    expect(tags.slice(-9).map((tag) => [toneOf(tag), /\sdisabled[\s>]/.test(tag), attrOf(tag, "aria-busy")])).toEqual([
+      ["primary", false, null],
+      ["foreground", false, null],
+      ["destructive", false, null],
+      ["primary", true, null],
+      ["foreground", true, null],
+      ["destructive", true, null],
+      ["primary", false, "true"],
+      ["foreground", false, "true"],
+      ["destructive", false, "true"],
+    ]);
   });
 
   it("gives every button with no text an accessible name from aria-label", async () => {
@@ -345,12 +436,22 @@ describe("ShowcaseContent", () => {
     const unnamed = [...body.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)]
       .filter((match) => (match[2] ?? "").replace(/<[^>]*>/g, "").trim() === "")
       .map((match) => attrOf(`<button${match[1]}>`, "aria-label"));
-    expect(unnamed).toEqual(["Close panel", "Open menu", "More options"]);
+    expect(unnamed).toEqual(["icon sm", "icon md", "icon lg", "square sm", "square md", "square lg", "circle sm", "circle md", "circle lg"]);
   });
 
-  it("wraps the square button in the width-bearing parent the hierarchy rule requires", async () => {
+  it("wraps every shaped button in the width-bearing parent its own size names, which `aspect-square` reads from", async () => {
     const body = await bodyOf("button");
-    expect(body.match(/<div class="w-16">(<[a-z]+)/)?.[1]).toBe("<button");
+    expect([...body.matchAll(/<div class="(w-control-[a-z]+)"><button[^>]*aria-label="([^"]*)"/g)].map((match) => [match[1], match[2]])).toEqual([
+      ["w-control-sm", "icon sm"],
+      ["w-control-md", "icon md"],
+      ["w-control-lg", "icon lg"],
+      ["w-control-sm", "square sm"],
+      ["w-control-md", "square md"],
+      ["w-control-lg", "square lg"],
+      ["w-control-sm", "circle sm"],
+      ["w-control-md", "circle md"],
+      ["w-control-lg", "circle lg"],
+    ]);
   });
 
   it("places the card action in the header grid, after the title and description", async () => {
@@ -389,8 +490,8 @@ describe("ShowcaseContent", () => {
       "vertical",
     ]);
     expect(bars.filter((tag) => attrOf(tag, "data-orientation") === "vertical").map((tag) => attrOf(tag, "class"))).toEqual([
-      "h-full w-2 rounded-full",
-      "h-full w-2 rounded-full",
+      "h-full w-2 [direction:rtl] [writing-mode:vertical-lr] appearance-none rounded-selector bg-border",
+      "h-full w-2 [direction:rtl] [writing-mode:vertical-lr] appearance-none rounded-selector bg-border",
     ]);
   });
 
@@ -398,7 +499,7 @@ describe("ShowcaseContent", () => {
     const body = await bodyOf("separator");
     const rules = [...body.matchAll(/<hr[^>]*>/g)].map((match) => match[0]);
     expect(rules.map((tag) => attrOf(tag, "aria-orientation"))).toEqual(["horizontal", "vertical"]);
-    expect(rules[1]).toBe('<hr data-slot="separator" aria-orientation="vertical" class="w-px self-stretch border-0 bg-border">');
+    expect(rules[1]).toBe('<hr data-slot="separator" aria-orientation="vertical" class="h-auto w-px self-stretch border-0 bg-border">');
   });
 
   it("lays the horizontal scroll area's content out as one non-wrapping row", async () => {
@@ -416,7 +517,7 @@ describe("ShowcaseContent", () => {
     expect(roots.map((tag) => attrOf(tag, "data-orientation"))).toEqual(["horizontal", "vertical"]);
     expect(openTags(body, "tabs-list").map((tag) => attrOf(tag, "aria-orientation"))).toEqual(["horizontal", "vertical"]);
 
-    const panelIds = openTags(body, "tabs-panel").map((tag) => attrOf(tag, "id"));
+    const panelIds = openTags(body, "tabs-content").map((tag) => attrOf(tag, "id"));
     expect(panelIds).toEqual(["show-tab-a", "show-tab-b", "show-tab-c", "show-vtab-a", "show-vtab-b"]);
     expect(new Set(panelIds).size).toBe(panelIds.length);
 
@@ -429,9 +530,27 @@ describe("ShowcaseContent", () => {
 
     expect(groups.map((tag) => attrOf(tag, "data-orientation"))).toEqual(["horizontal", "horizontal", "horizontal", "vertical", "horizontal"]);
     expect(groups.filter((tag) => tag.includes("data-multiple"))).toHaveLength(1);
-    expect(body).toContain('type="checkbox"');
-    expect(body).toContain('type="radio"');
-    expect(body).toContain('class="sr-only" checked disabled');
+
+    const inputs = [...body.matchAll(/<input[^>]*>/g)].map((match) => match[0]);
+    expect(inputs.map((tag) => [attrOf(tag, "name"), attrOf(tag, "type")])).toEqual([
+      ["projection", "radio"],
+      ["projection", "radio"],
+      ["align", "radio"],
+      ["align", "radio"],
+      ["align", "radio"],
+      ["overlay", "checkbox"],
+      ["overlay", "checkbox"],
+      ["overlay", "checkbox"],
+      ["snap", "radio"],
+      ["snap", "radio"],
+      ["snap", "radio"],
+      ["disabled-sample", "radio"],
+      ["disabled-sample", "radio"],
+    ]);
+    expect(inputs.filter((tag) => hasFlag(tag, "disabled"))).toEqual([
+      '<input data-slot="toggle-group-input" type="radio" name="disabled-sample" value="on" class="sr-only" checked disabled title="On">',
+      '<input data-slot="toggle-group-input" type="radio" name="disabled-sample" value="off" class="sr-only" disabled title="Off">',
+    ]);
   });
 
   it("gives each choice group both orientations, its own field name and unique control ids", async () => {
@@ -463,7 +582,7 @@ describe("ShowcaseContent", () => {
 
     const anchor = items[3] ?? "";
     expect(attrOf(anchor, "href")).toBe("#toolbar");
-    expect(anchor.includes('data-toolbar-item=""')).toBe(true);
+    expect(attrOf(anchor, "data-toolbar-item")).toBe("");
     expect(attrOf(anchor, "type")).toBeNull();
   });
 

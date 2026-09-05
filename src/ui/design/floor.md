@@ -12,11 +12,11 @@ Obligations. Walk this list before you report a UI surface as finished.
 
 **Emit the Design Read before you build.** <!-- rule:forge-ui-design-read -->
 One line, no template, no ceremony: **who** the surface is for, **the one** primary action, and
-**what failure looks like**. It is what decides which `buttonVariants` variant the primary control
-takes and which `Alert` or `Toast` variant the failure path renders.
+**what failure looks like**. It is what decides which `tone` and `appearance` the primary control
+takes and which `tone` the failure path's `Alert` or `Toast` renders.
 
 > Design Read: returning admin scanning failed jobs; primary action is retry; failure is a job that
-> retries and fails again — `destructive` `Alert` in place, row stays.
+> retries and fails again — `tone='destructive'` `Alert` in place, row stays.
 
 **Cap body copy at a comfortable measure — 45–75 characters.** <!-- rule:forge-ui-measure-cap -->
 `max-w-prose`, or an explicit `max-w-*` when the container is not prose. Never full-bleed text — a
@@ -63,8 +63,8 @@ the build fails.
 that id.
 
 **Keep every interactive target at or above the `Button` `sm` box.** <!-- rule:forge-ui-hit-target -->
-`sm` is the floor of the `buttonVariants` size scale (`sm` / `md` / `lg` / `icon` / `icon-sm` /
-`square`). A control does not shrink below it to make a layout fit; the layout gives way.
+`sm` is the floor of the size scale (`sm` / `md` / `lg`), which `shape` squares off rather than
+resizes. A control does not shrink below it to make a layout fit; the layout gives way.
 
 **Honour `prefers-reduced-motion` on every authored motion.** <!-- rule:forge-ui-reduced-motion -->
 Applies to `motion-safe:` / `motion-reduce:` classes and to every declarative state transition —
@@ -72,15 +72,15 @@ Applies to `motion-safe:` / `motion-reduce:` classes and to every declarative st
 
 **Ship a designed empty state on every collection surface.** <!-- rule:forge-ui-empty-state -->
 An empty list is a state, not an absence: a line of text saying what would be here, and the action
-that fills it. `Card.Content` holding a `<p class="text-muted-foreground">` plus a `secondary`
-`Button` is the whole pattern.
+that fills it. `Card.Content` holding a `<p class="text-muted-foreground">` plus a
+`tone='neutral' appearance='outline'` `Button` is the whole pattern.
 
 **Give every control an accessible name.** <!-- rule:forge-ui-accessible-name -->
 Via `Label`, via `FormField.Label`, or via visually-hidden text. An icon-only control
-(`size="icon"`) has no name until you give it one — `Icon` is `aria-hidden` by default.
+(`shape="icon"`) has no name until you give it one — `Icon` is `aria-hidden` by default.
 
-- Wrong: `<Button size="icon"><AppIcon name="close" /></Button>`
-- Right: `<Button size="icon" aria-label="Dismiss"><AppIcon name="close" /></Button>`
+- Wrong: `<Button shape="icon"><AppIcon name="close" /></Button>`
+- Right: `<Button shape="icon" aria-label="Dismiss"><AppIcon name="close" /></Button>`
 
 **Associate every `<label>` with its control.** <!-- rule:forge-ui-a11y-label-association -->
 Either carry a `for` pointing at the control's id, or wrap the control in the label. A label that
@@ -135,12 +135,22 @@ page. For the four status intents there is nothing left to reach for it with —
 Forge's SSR renderer drops it. Nothing errors, nothing warns, and the styling is simply gone from
 the emitted HTML — the most expensive failure mode there is.
 
+**Never restate a component's own base classes to change one of them.** <!-- rule:forge-ui-class-no-restate -->
+Pass only the difference through `class`. A forge component composes its classes through `cn`, which
+keeps the last utility to claim a concern, and the caller's `class` is always the last argument — so
+one utility is enough to win, and the copied ones are dead the moment the component's own defaults
+move. Restating them also hides which utility you meant to change.
+
+- Wrong: `<Button class="inline-flex h-control-md items-center rounded-field px-8 text-sm">` — the
+  whole base, copied, to widen the padding
+- Right: `<Button class="px-8">` — the one utility that differs; the rest still comes from `Button`
+
 **Use Tailwind's default spacing scale.** <!-- rule:forge-ui-spacing-scale-only -->
 Never an arbitrary value where a scale value exists. The scale's steps differ by at least 25%, which
 is what makes two different gaps read as deliberate rather than as a mistake.
 
-- Wrong: `class="p-[7px] gap-[13px] text-[13px]"`
-- Right: `class="p-2 gap-3 text-sm"`
+- Wrong: `class="p-[8px] gap-[12px]"` — both are steps the scale already states
+- Right: `class="p-2 gap-3"`
 
 **Never use `h-screen` or `w-screen`.**
 Mobile browser chrome makes `100vh` taller than the visible viewport, so the bottom of the layout
@@ -165,7 +175,7 @@ and only the fill needs the partner; `text-destructive` and `border-destructive`
 
 Pair within a tier, never across one: a `-strong` surface takes the `-strong-foreground`, and each
 of those pairs is measured on its own surface. `Alert`, `Toast` and `Badge` already hold the right
-pair inside their variants, so consuming the variant is the shorter route to the same thing.
+pair inside each tone, so passing a `tone` is the shorter route to the same thing.
 
 **Hold a surface to two text colors.** <!-- rule:forge-ui-text-color-budget -->
 `text-foreground` for the primary line, `text-muted-foreground` for everything supporting. A third
@@ -177,8 +187,8 @@ per-component radius override, and never square corners next to round ones on on
 
 **Take icons from the sprite.** <!-- rule:forge-ui-real-icons -->
 `Icon` or a `createIcon` binding from `@y-core/forge/ui/core`, typed `ForgeIcon<Name>`. Never an emoji,
-never a hand-rolled inline `<svg>`. Forge's own seven glyphs are enumerated by
-`FORGE_UI_ICON_NAMES` in `@y-core/forge/ui/assets`; an app sprite extends that set through the same
+never a hand-rolled inline `<svg>`. Forge's own twelve glyphs are enumerated by
+`FORGE_UI_ICON_NAMES` in `@y-core/forge/ui/assets/glyphs`; an app sprite extends that set through the same
 factory.
 
 ```tsx

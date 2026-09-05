@@ -1,3 +1,4 @@
+import { UnsatisfiableRangeError } from "./errors";
 import type { ObjectBody, ObjectStorageBackend, ServeOptions } from "./types";
 
 function parseRange(header: string): { offset?: number; length?: number; suffix?: number } | null {
@@ -5,17 +6,24 @@ function parseRange(header: string): { offset?: number; length?: number; suffix?
   if (suffixMatch) {
     const suffix = parseInt(suffixMatch[1] ?? "", 10);
     if (Number.isNaN(suffix)) return null;
-    return { suffix };
+    // An oversized suffix clamps to the whole object (RFC 9110 §14.1.1); what must never happen is
+    // an out-of-safe-range number reaching `R2GetOptions`, which R2 answers with a TypeError → 500.
+    return { suffix: Math.min(suffix, Number.MAX_SAFE_INTEGER) };
   }
   const match = /^bytes=(\d+)-(\d*)$/.exec(header);
   if (!match) return null;
   const offset = parseInt(match[1] ?? "", 10);
   const end = match[2] ? parseInt(match[2], 10) : undefined;
   if (Number.isNaN(offset)) return null;
+  // A first-byte-pos past the safe-integer range can satisfy no object, so it is a 416 with no backend call.
+  if (offset > Number.MAX_SAFE_INTEGER) return null;
   if (end !== undefined && Number.isNaN(end)) return null;
-  if (end !== undefined && offset > end) return null;
-  return { offset, ...(end !== undefined ? { length: end - offset + 1 } : {}) };
+  if (end !== undefined && end < offset) return null;
+  const clampedEnd = end === undefined ? undefined : Math.min(end, Number.MAX_SAFE_INTEGER);
+  return { offset, ...(clampedEnd !== undefined ? { length: clampedEnd - offset + 1 } : {}) };
 }
+
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 
 /** Approximates a filename in printable ASCII — a non-Latin-1 character reaching `Headers.set` throws and turns a legitimate download into a 500. */
 function asciiFallbackFilename(filename: string): string {
@@ -36,13 +44,22 @@ function contentDisposition(type: "inline" | "attachment", filename: string): st
 function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
   const h = new Headers();
   if (obj.contentType) h.set("Content-Type", obj.contentType);
+  if (obj.contentEncoding) h.set("Content-Encoding", obj.contentEncoding);
+  if (obj.contentLanguage) h.set("Content-Language", obj.contentLanguage);
   h.set("ETag", obj.httpEtag);
   h.set("Accept-Ranges", "bytes");
+  // The object's content type is caller-supplied at upload, so a stored `text/html` must never be
+  // sniffed into or out of by the browser.
+  h.set("X-Content-Type-Options", "nosniff");
   const cc = opts?.cacheControl ?? obj.cacheControl;
   if (cc) h.set("Cache-Control", cc);
   if (opts?.contentDisposition) {
     const filename = obj.key.split("/").pop() ?? obj.key;
     h.set("Content-Disposition", contentDisposition(opts.contentDisposition, filename));
+  } else if (obj.contentDisposition !== undefined && PRINTABLE_ASCII.test(obj.contentDisposition)) {
+    // A stored disposition carrying a non-Latin-1 byte throws from `Headers.set`, so it is dropped
+    // rather than turned into a 500.
+    h.set("Content-Disposition", obj.contentDisposition);
   }
   return h;
 }
@@ -69,7 +86,16 @@ export async function serveObject(backend: ObjectStorageBackend, request: Reques
     range = parsed;
   }
 
-  const obj = await backend.get(key, range ? { range } : undefined);
+  let obj: ObjectBody | null;
+  try {
+    obj = await backend.get(key, range ? { range } : undefined);
+  } catch (thrown) {
+    // Only the type forge owns is caught, and the extra `head` is spent only here — a satisfiable
+    // ranged read stays one round trip.
+    if (!(thrown instanceof UnsatisfiableRangeError)) throw thrown;
+    const meta = await backend.head(key);
+    return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${meta?.size ?? "*"}` } });
+  }
   if (!obj) return new Response(null, { status: 404 });
 
   const headers = buildHeaders(obj, options);
@@ -81,6 +107,7 @@ export async function serveObject(backend: ObjectStorageBackend, request: Reques
       const start = Math.max(0, obj.size - suffix);
       const end = obj.size - 1;
       if (start > end) {
+        await obj.body?.cancel();
         return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${obj.size}` } });
       }
       headers.set("Content-Range", `bytes ${start}-${end}/${obj.size}`);
@@ -89,6 +116,7 @@ export async function serveObject(backend: ObjectStorageBackend, request: Reques
     }
 
     if (offset >= obj.size) {
+      await obj.body?.cancel();
       return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${obj.size}` } });
     }
     const end = length !== undefined ? Math.min(offset + length - 1, obj.size - 1) : obj.size - 1;

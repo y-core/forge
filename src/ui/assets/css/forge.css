@@ -41,6 +41,19 @@
    A brand colour goes on `--accent-12`, which forge aliases to `--gray-12` precisely because it
    ships no brand hue of its own.
 
+   ── Changing the shape ───────────────────────────────────────────────────────
+
+   Shape is not a scheme. `theme-base.css` declares the seven shape tokens once — `--radius`,
+   `--radius-field`, `--radius-box`, `--radius-selector`, `--control-h-sm/md/lg` and
+   `--border-width` — and every recipe reads them through `rounded-field`, `rounded-box`,
+   `rounded-selector`, `h-control-*` and `border-field`. A colour scheme never touches them, so any
+   scheme composes with any shape. One alternate ships as the proof:
+
+     @import "@y-core/forge/ui/assets/css/shape-compact.css";   tighter corners, shorter controls
+
+   An application's own shape file is the same seven declarations in one `:root` block, imported
+   after this file.
+
    ── Adding your own scale tokens ─────────────────────────────────────────────
 
    A theme token whose value is a **scale step** is declared in a namespace no colour utility reads.

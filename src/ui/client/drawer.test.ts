@@ -308,7 +308,9 @@ describe("mountNavDrawer", () => {
     expect(wide.el.open).toBe(true);
   });
 
-  it("cycles Tab from the last focusable back to the first", () => {
+  // The summary is the trap's first stop, not the panel's first item: it is a sibling of the panel
+  // and draws the visible close, so a cycle that skipped it would be a keyboard trap (WCAG 2.1.2).
+  it("cycles Tab from the last panel item onto the summary", () => {
     const f = fixture(true);
     mountNavDrawer({ element: f.element });
     f.el.userToggle();
@@ -317,18 +319,29 @@ describe("mountNavDrawer", () => {
     const event = f.doc.press("Tab");
 
     expect(event.defaultPrevented).toBe(true);
-    expect(f.doc.activeElement).toBe(f.el.panel.items[0] as FakeNode);
+    expect(f.doc.activeElement).toBe(f.el.summary);
   });
 
-  it("cycles Shift+Tab from the first focusable back to the last", () => {
+  it("cycles Shift+Tab from the summary back to the last panel item", () => {
+    const f = fixture(true);
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+    f.el.summary.focus();
+
+    const event = f.doc.press("Tab", true);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(f.doc.activeElement).toBe(f.el.panel.items.at(-1) as FakeNode);
+  });
+
+  it("leaves a Shift+Tab from the first panel item to the browser, which reaches the summary natively", () => {
     const f = fixture(true);
     mountNavDrawer({ element: f.element });
     f.el.userToggle();
 
     const event = f.doc.press("Tab", true);
 
-    expect(event.defaultPrevented).toBe(true);
-    expect(f.doc.activeElement).toBe(f.el.panel.items.at(-1) as FakeNode);
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it("leaves a Tab in the middle of the panel to the browser", () => {

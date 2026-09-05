@@ -32,6 +32,33 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
     return prefix ? { ...obj, key: stripPrefix(obj.key) } : obj;
   }
 
+  // Copied field by field, never spread: a spread *reads* the body getters, freezing `bodyUsed` at
+  // false and locking a real `R2ObjectBody`'s stream before the caller ever asks for it.
+  function rekeyBody(obj: ObjectBody): ObjectBody {
+    return {
+      key: stripPrefix(obj.key),
+      size: obj.size,
+      etag: obj.etag,
+      httpEtag: obj.httpEtag,
+      uploaded: obj.uploaded,
+      ...(obj.contentType !== undefined ? { contentType: obj.contentType } : {}),
+      ...(obj.contentEncoding !== undefined ? { contentEncoding: obj.contentEncoding } : {}),
+      ...(obj.contentDisposition !== undefined ? { contentDisposition: obj.contentDisposition } : {}),
+      ...(obj.contentLanguage !== undefined ? { contentLanguage: obj.contentLanguage } : {}),
+      ...(obj.cacheControl !== undefined ? { cacheControl: obj.cacheControl } : {}),
+      ...(obj.metadata !== undefined ? { metadata: obj.metadata } : {}),
+      get body() {
+        return obj.body;
+      },
+      get bodyUsed() {
+        return obj.bodyUsed;
+      },
+      arrayBuffer: () => obj.arrayBuffer(),
+      text: () => obj.text(),
+      blob: () => obj.blob(),
+    };
+  }
+
   return {
     backend,
 
@@ -43,12 +70,7 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
     },
 
     get(key, opts?) {
-      return result(() =>
-        backend.get(prefixKey(normalizeKey(key)), opts).then((obj): ObjectBody | null => {
-          if (!obj) return null;
-          return prefix ? { ...obj, key: stripPrefix(obj.key) } : obj;
-        }),
-      );
+      return result(() => backend.get(prefixKey(normalizeKey(key)), opts).then((obj): ObjectBody | null => (obj ? rekeyBody(obj) : null)));
     },
 
     head(key) {
@@ -61,7 +83,11 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
         const listPrefix = prefix ? (userPrefix ? `${prefix}${PREFIX_SEP}${userPrefix}` : `${prefix}${PREFIX_SEP}`) : userPrefix;
         return backend
           .list({ ...opts, ...(listPrefix !== undefined ? { prefix: listPrefix } : {}) })
-          .then((res): ListObjectsResult => ({ ...res, objects: res.objects.map(stripObjectPrefix) }));
+          .then((res): ListObjectsResult => ({
+            ...res,
+            objects: res.objects.map(stripObjectPrefix),
+            ...(res.delimitedPrefixes !== undefined ? { delimitedPrefixes: res.delimitedPrefixes.map(stripPrefix) } : {}),
+          }));
       });
     },
 
@@ -73,18 +99,8 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
       });
     },
 
-    async serveObject(request, key, opts?) {
-      let fullKey: string;
-      try {
-        fullKey = prefixKey(normalizeKey(key));
-      } catch {
-        return new Response(null, { status: 400 });
-      }
-      try {
-        return await serveObject(backend, request, fullKey, opts);
-      } catch {
-        return new Response(null, { status: 500 });
-      }
+    serveObject(request, key, opts?) {
+      return result(() => serveObject(backend, request, prefixKey(normalizeKey(key)), opts));
     },
   };
 }

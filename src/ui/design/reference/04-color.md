@@ -167,17 +167,18 @@ The scale runs in namespaces, and each is declared in full:
 - `--accent-12` — an alias of `--gray-12`. Forge ships no brand hue, so the accent is the gray, and
   an application supplies a real one by re-declaring this. That extension point is why the alias
   exists rather than `--primary` naming a gray step directly.
-- the fixed status hues — `--red-*`, `--blue-*`, `--emerald-*`, `--green-9`, `--yellow-*` — plus the
-  functional `--red-contrast`, `--green-contrast` and `--yellow-contrast`, Radix's name for the
-  foreground that sits on step 9. Only the greys moved: these are unchanged, and still Tailwind
-  stops, because a status colour is not a thing an application re-themes.
+- the fixed status hues — `--red-*`, `--blue-*`, `--emerald-*`, `--yellow-*` — plus the functional
+  `--red-contrast`, `--blue-contrast`, `--emerald-contrast` and `--yellow-contrast`, Radix's name for
+  the foreground that sits on step 9. Only the greys moved: these are still Tailwind stops, because a
+  status colour is not a thing an application re-themes.
 
-`--red-contrast` and `--green-contrast` are `var(--gray-1)` with no `light-dark()` around it, which is
-worth stating rather than reading as an omission: step 1 is the page, near-white in light and near-black in
-dark, and those are exactly the two answers that token needs. `--yellow-contrast` is the exception —
-near-white on `--yellow-9` measures 1.83, so its foreground stays near-black in _both_ modes, making
-it the one place a `light-dark()` selects between two different **steps** rather than two values:
-`--gray-12` in light, `--gray-1` in dark, which are the same colour seen from either mode.
+Step 9 is the fill and is **held** across modes — one palette stop, no `light-dark()` — so the
+foreground on it has to be near-white in both, which is what `light-dark(var(--gray-1),
+var(--gray-12))` spells: step 1 in light and step 12 in dark are the same near-white seen from either
+mode. That is `--accent-contrast`'s shape, and the reason step 11 exists to carry the hue as text
+where the fill cannot ([`THEME_GENERATION.md`](../../../.decisions/implementation/THEME_GENERATION.md)
+§4). `--yellow-contrast` inverts instead — near-white on `--yellow-9` measures 1.83, so its foreground
+stays near-black in _both_ modes: `--gray-12` in light, `--gray-1` in dark.
 
 The three text weights forge's light mode distinguishes now sit on steps that carry a Radix role:
 `--primary-foreground` is `--gray-1`, and `--secondary-foreground` and `--accent-foreground` are
@@ -194,23 +195,23 @@ the dark half is wrong.
 
 ## The semantic layer, and what each token is for
 
-| Token pair                                   | Use for                                                                                                                  |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `--background` / `--foreground`              | The page itself, and its default text                                                                                    |
-| `--card` / `--card-foreground`               | A raised object — `Card` sets both                                                                                       |
-| `--popover` / `--popover-foreground`         | Layered surfaces: `Menu`, `Popover`, `Tooltip`                                                                           |
-| `--primary` / `--primary-foreground`         | The one primary action; see `01-hierarchy.md`                                                                            |
-| `--secondary` / `--secondary-foreground`     | A filled but subordinate surface                                                                                         |
-| `--muted` / `--muted-foreground`             | A recessed panel, and every line of supporting text                                                                      |
-| `--accent` / `--accent-foreground`           | Interactive state — hover, open, selected                                                                                |
-| `--destructive` / `--destructive-foreground` | Error text and borders, and destructive fills — `Button variant='destructive'`. The app's colour to re-point             |
-| `--success` / `--success-foreground`         | A confirmed outcome, as a fill. The app's colour to re-point                                                             |
-| `--warning` / `--warning-foreground`         | A caution, as a fill. The pair inverts — dark text on yellow. The app's colour to re-point                               |
-| `--border`                                   | Decorative separation only — hairlines, dividers, surface edges. No contrast floor                                       |
-| `--input`                                    | A control's boundary — text fields, `Select`, `Textarea`, and every `border-input`. 3:1                                  |
-| `--track`                                    | The off-state fill of a `Switch` or `Slider` track. Its own token on the same step as `--input`, not an alias of it. 3:1 |
-| `--ring`                                     | The focus indicator. Sits one step beyond `--input`, so a focused control advances. 3:1                                  |
-| `--overlay`                                  | The modal scrim, on an absolute alpha step so it darkens whatever is behind it in either mode                            |
+| Token pair                                                          | Use for                                                                                                                  |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `--background` / `--foreground`                                     | The page itself, and its default text                                                                                    |
+| `--card` / `--card-foreground`                                      | A raised object — `Card` sets both                                                                                       |
+| `--popover` / `--popover-foreground`                                | Layered surfaces: `Menu`, `Popover`, `Tooltip`                                                                           |
+| `--primary` / `--primary-foreground`                                | The one primary action; see `01-hierarchy.md`                                                                            |
+| `--secondary` / `--secondary-foreground`                            | A filled but subordinate surface                                                                                         |
+| `--muted` / `--muted-foreground`                                    | A recessed panel, and every line of supporting text                                                                      |
+| `--accent` / `--accent-foreground`                                  | Interactive state — hover, open, selected                                                                                |
+| `--destructive` / `--destructive-foreground` / `--destructive-text` | A destructive fill and the text on it; `-text` is the tone read as text on a page. The app's colour to re-point          |
+| `--success` / `--success-foreground` / `--success-text`             | A confirmed outcome, as a fill and as text. The app's colour to re-point                                                 |
+| `--warning` / `--warning-foreground` / `--warning-text`             | A caution. The fill pair inverts — dark text on yellow. The app's colour to re-point                                     |
+| `--border`                                                          | Decorative separation only — hairlines, dividers, surface edges. No contrast floor                                       |
+| `--input`                                                           | A control's boundary — text fields, `Select`, `Textarea`, and every `border-input`. 3:1                                  |
+| `--track`                                                           | The off-state fill of a `Switch` or `Slider` track. Its own token on the same step as `--input`, not an alias of it. 3:1 |
+| `--ring`                                                            | The focus indicator, drawn inside the control. One step beyond `--input`, so a focused control advances. 3:1             |
+| `--overlay`                                                         | The modal scrim, on an absolute alpha step so it darkens whatever is behind it in either mode                            |
 
 The twenty `--status-*` tokens are the other half of the semantic layer, and they answer a different
 question — see _Status colour is forge's; the fills are the app's_ below.
@@ -241,7 +242,7 @@ no state at all. <!-- rule:forge-ui-color-semantic-support-only -->
 ```tsx
 import { Badge } from "@y-core/forge/ui/core";
 
-<Badge variant={job.failed ? "destructive" : "default"} aria-hidden='true'>
+<Badge tone={job.failed ? "destructive" : "primary"} appearance='solid' aria-hidden='true'>
   ●
 </Badge>;
 ```
@@ -252,7 +253,9 @@ the state from the accessibility tree entirely, so a screen reader announces an 
 ```tsx
 import { Badge } from "@y-core/forge/ui/core";
 
-<Badge variant={job.failed ? "destructive" : "outline"}>{job.failed ? "Failed" : "Complete"}</Badge>;
+<Badge tone={job.failed ? "destructive" : "neutral"} appearance='outline'>
+  {job.failed ? "Failed" : "Complete"}
+</Badge>;
 ```
 
 ## Dark mode is the argument for tokens
@@ -334,13 +337,13 @@ There is no longer a worst case to take across five ramps, and the reason is str
 changing. **All four shipped schemes are built on one lightness ramp and differ only in hue**, so
 every audited ratio is the same across them to within **0.05** — the widest gap at any audited step
 is `--muted-foreground` in light, 5.17 through 5.22 — by construction rather than by coincidence,
-which is why the contract in `src/cli/pkg/gate/checks/contrast-parse.ts` can pin one set of numbers and have them
+which is why the contract in `src/tooling/gate/checks/contrast-parse.ts` can pin one set of numbers and have them
 describe every scheme alike. A scheme swap cannot move a pair across its floor.
 
 That the property is construction rather than measurement is what adding a scheme demonstrated:
 `theme-gray.css` shipped without a single contract row being re-pinned. One measurement describes
 any scheme built this way, not merely the ones that have been measured. The ratios themselves are
-`src/cli/pkg/gate/checks/contrast-parse.ts`'s to own.
+`src/tooling/gate/checks/contrast-parse.ts`'s to own.
 
 That guarantee is a property of the construction, not of theming in general. A scheme an application
 authors itself is on its own ramp and is bound by no such distance, which is what the rules below are
@@ -452,19 +455,24 @@ into a global one. `--muted-foreground` on `--muted` is where this bites first, 
 ## `--destructive` pairs like every other surface token
 
 `--destructive` pairs with `--destructive-foreground`, in both modes, exactly as `--success` and
-`--warning` do. It reads three ways and all three are supported: as text (`text-destructive`), as a
-border (`border-destructive`), and as a fill — where the pair supplies the foreground so no call
-site has to choose one.
+`--warning` do. It reads three ways and all three are supported: as a fill — where the pair supplies
+the foreground so no call site has to choose one — as a border, and as text, which is a **different
+token**: `--destructive-text`.
 
-| You want                             | Do                                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Destructive text on a normal surface | `text-destructive` on `--background`, `--card` or `--muted`                                 |
-| A filled destructive button          | `Button variant='destructive'`                                                              |
-| A destructive badge or alert         | `Badge variant='destructive'` or `Alert variant='destructive'`, and set no colours yourself |
+The split is not a nicety. `--destructive` is held across modes so a near-white foreground clears it
+in both; a held dark red is unreadable as text on a dark page, which is what `--destructive-text`
+exists for. The same holds for `--info`, `--success` and `--warning`
+([`THEME_GENERATION.md`](../../../.decisions/implementation/THEME_GENERATION.md) §4).
+
+| You want                             | Do                                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------------- |
+| Destructive text on a normal surface | `text-destructive-text` on `--background`, `--card` or `--muted`                      |
+| A filled destructive button          | `Button tone='destructive'`                                                           |
+| A destructive badge or alert         | `Badge tone='destructive'` or `Alert tone='destructive'`, and set no colours yourself |
 
 Default: `bg-destructive` is set together with `text-destructive-foreground` and never with a
-foreground picked by hand, unless the destructive colour is being used as text or as a border
-rather than as a fill. <!-- rule:forge-ui-color-semantic-destructive-pair -->
+foreground picked by hand; the destructive colour used as text is `text-destructive-text` rather
+than the fill. <!-- rule:forge-ui-color-semantic-destructive-pair -->
 
 The rule id is older than the pair and is kept deliberately — it used to say the opposite, that
 `bg-destructive` required a hand-verified foreground because no token existed. Renaming it would
@@ -495,7 +503,7 @@ reason it always was: a panel that follows the brand stops meaning "failed". Wha
 right reach is now a token rather than a hand-written palette pair.
 
 Default: a status surface is expressed with the `--status-*` token for its intent and tier — or by
-consuming the `Alert`, `Toast` or `Badge` variant that already does — and never with a fixed palette
+consuming the `Alert`, `Toast` or `Badge` tone that already does — and never with a fixed palette
 utility, unless a brief calls for a signal hue outside forge's four intents, in which case it is
 declared as a token pair in a theme file, or written as a light utility with its own `dark:`
 counterpart. <!-- rule:forge-ui-color-semantic-variant-fixed -->
@@ -515,13 +523,36 @@ either mode and nothing at the call site says so. Forge's source now contains no
 all.
 
 The measured ratios are not written here, and are not written in the components either. They are
-contract rows in `src/cli/pkg/gate/checks/contrast-parse.ts`, beside the values they describe and re-checked on
+contract rows in `src/tooling/gate/checks/contrast-parse.ts`, beside the values they describe and re-checked on
 every gate run. `alert.tsx` carried them in a comment until the family landed, and carrying them
 there is what let four of them be wrong for as long as they were.
 
 `forge.css` now declares `@custom-variant dark (&:where(.dark, .dark *));` itself, so a consuming app
 no longer adds it — and, since that reconfigures the _app's_ own `dark:` utilities too, the escape
 hatch is re-declaring the variant after the import. `src/ui/README.md` owns that setup.
+
+## Tone by intent, appearance by emphasis
+
+`tone` and `appearance` are two questions, not one: what the message _is_, and how loudly this
+surface has to say it. `Button`, `Badge`, `Alert` and `Toast` all read the same tones through
+`toneVariants`, so the same word means the same thing wherever it is passed.
+
+Default: pick `tone` from what the message is — `destructive` for loss or an irreversible act,
+`warning` for a risk the reader can still avoid, `success` for a claim that something completed,
+`info` for neutral information, `primary` for the one primary action a surface has, and `neutral`
+for everything else — unless a brief gives a tone its own meaning, which is then applied everywhere
+that meaning appears. <!-- rule:forge-ui-tone-by-intent -->
+
+A tone chosen for how it looks rather than for what it means is how a page ends up with three
+primary buttons and a green chip reporting a failure.
+
+Default: `soft` is the resting emphasis for `Alert`, `Badge` and `Toast`, and `solid` is reserved
+for the one surface that must lead the page, never two solid panels in view at once — unless the
+component is `Button`, whose resting appearance is its own fill. <!-- rule:forge-ui-soft-vs-solid -->
+
+Emphasis is relative: a second filled panel does not double the urgency, it halves the first one's.
+All three components already default to `soft`, so the shipped default is the rule and passing
+`appearance='solid'` is the decision that has to be worth making.
 
 ## Radius is one decision, not four
 
@@ -558,7 +589,7 @@ carried in text — draws on _Refactoring UI_ by Adam Wathan and Steve Schoger. 
 rewritten against forge's own system: the twelve-step scale in the scheme files and the semantic
 layer in `theme-base.css`,
 the `color-scheme` that picks each step's mode, and the `--status-*` family the `Badge`, `Alert` and `Toast`
-variants render. The scale-authoring section draws on the same book's account of building a palette
+tones render. The scale-authoring section draws on the same book's account of building a palette
 before building screens, re-derived here against the steps `theme-base.css` consumes.
 
 Three of that account's claims were read and deliberately **not** given rule ids:

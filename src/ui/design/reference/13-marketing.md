@@ -80,19 +80,21 @@ import { Badge, Button, Card } from "@y-core/forge/ui/core";
 
 <Card class='p-6'>
   <Card.Header>
-    <Badge variant='default'>New</Badge>
+    <Badge tone='primary' appearance='solid'>
+      New
+    </Badge>
     <Card.Title>Ship faster</Card.Title>
     <Card.Description>Trusted by 12,000 teams. 312% faster deploys.</Card.Description>
   </Card.Header>
   <Card.Footer>
-    <Button variant='primary'>Start free trial</Button>
-    <Button variant='primary'>Book a demo</Button>
+    <Button>Start free trial</Button>
+    <Button>Book a demo</Button>
   </Card.Footer>
 </Card>;
 ```
 
 Costs the page everything a hero is for: a `Card` frames the message as one item among many rather
-than as the page's thesis, the type steps are the app's, two `primary` buttons mean no primary
+than as the page's thesis, the type steps are the app's, two primary buttons mean no primary
 action, and the two numbers are invented — which is a Floor violation, not a taste note.
 
 ```tsx
@@ -102,10 +104,8 @@ import { Button } from "@y-core/forge/ui/core";
   <h1 class='max-w-prose text-3xl font-semibold text-foreground md:text-5xl'>Ship faster</h1>
   <p class='max-w-prose text-lg text-muted-foreground'>Deploy on every merge, with a rollback that takes one click.</p>
   <div class='flex gap-3'>
-    <Button variant='primary' size='lg'>
-      Start free trial
-    </Button>
-    <Button variant='ghost' size='lg'>
+    <Button size='lg'>Start free trial</Button>
+    <Button tone='neutral' appearance='ghost' size='lg'>
       Read the docs
     </Button>
   </div>

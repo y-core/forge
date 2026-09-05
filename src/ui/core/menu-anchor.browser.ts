@@ -1,7 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { Navbar, type NavDefinition } from "../chrome/navbar";
+import { Navbar } from "../chrome/navbar";
+import type { NavDefinition } from "../chrome/navbar-items";
 import { mount } from "../client/browser-test-helper";
 import { createIcon } from "./icon";
 import { Menu } from "./menu";
@@ -68,7 +69,7 @@ test.describe("Menu — anchored to its trigger", () => {
       id: "file-menu",
       children: [Menu.Item({ id: "new", for: "file-menu", children: "New" }), Menu.Item({ id: "open", for: "file-menu", children: "Open" })],
     });
-    const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+    const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
     await mount(page, `${FIXTURE_STYLE}${html}`, options);
   }
 
@@ -84,7 +85,7 @@ test.describe("Menu — anchored to its trigger", () => {
 
   test("side and align move the panel to the named corner", async ({ page }) => {
     const popup = Menu.Popup({ id: "file-menu", side: "top", align: "end", children: [Menu.Item({ id: "new", for: false, children: "New" })] });
-    const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+    const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
     await mount(page, `${FIXTURE_STYLE}${html}`, CSS);
     await page.click('[data-slot~="menu-trigger"]');
 
@@ -163,16 +164,16 @@ async function twoSubmenus(page: Page, options: Record<string, unknown> = CSS, e
   const popup = Menu.Popup({
     id: "file-menu",
     children: [
-      Menu.SubmenuTrigger({ id: "recent-menu", children: "Recent" }),
+      Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }),
       sub("recent-menu", "alpha"),
       Menu.Item({ id: "spacer1", for: false, children: "Spacer" }),
       Menu.Item({ id: "spacer2", for: false, children: "Spacer" }),
       Menu.Item({ id: "spacer3", for: false, children: "Spacer" }),
-      Menu.SubmenuTrigger({ id: "export-menu", children: "Export" }),
+      Menu.SubmenuTrigger({ for: "export-menu", children: "Export" }),
       sub("export-menu", "beta"),
     ],
   });
-  const html = await render(Menu({ children: [Menu.Trigger({ id: "file-menu", children: "File" }), popup] }));
+  const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
   await mount(page, `${FIXTURE_STYLE}${extraStyle}${html}`, options);
 }
 
@@ -293,7 +294,7 @@ test.describe("Menu — a submenu mid-exit", () => {
 // `--forge-tooltip`, and the two cannot collide because only one of them is a name.
 test.describe("Menu — a composed trigger serves both of its compounds", () => {
   test("a tooltip wrapping a menu trigger anchors each popup to the shared button", async ({ page }) => {
-    const trigger = Tooltip.Trigger({ id: "file", for: "file-tip", asChild: true, children: Menu.Trigger({ id: "file-menu", children: "File" }) });
+    const trigger = Tooltip.Trigger({ id: "file", for: "file-tip", asChild: true, children: Menu.Trigger({ for: "file-menu", children: "File" }) });
     const popup = Menu.Popup({ id: "file-menu", children: [Menu.Item({ id: "new", for: false, children: "New" })] });
     const html = await render(
       Menu({ children: [Tooltip({ children: [trigger, Tooltip.Content({ id: "file-tip", children: "Open the File menu" })] }), popup] }),
@@ -449,7 +450,9 @@ test.describe("the implicit anchor an invoker supplies", () => {
   // `popovertarget`'s, which is what authorises deleting both the binding controller and the names.
   test("a popover opened by commandfor lands under its trigger with no anchor-name in the sheet", async ({ page }) => {
     const html = await render(
-      Popover({ children: [Popover.Trigger({ id: "tips", children: "Tips" }), Popover.Content({ id: "tips", side: "bottom", children: "Body" })] }),
+      Popover({
+        children: [Popover.Trigger({ for: "tips", children: "Tips" }), Popover.Content({ id: "tips", side: "bottom", children: "Body" })],
+      }),
     );
     await mount(
       page,

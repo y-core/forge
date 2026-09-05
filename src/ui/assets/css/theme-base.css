@@ -11,7 +11,16 @@
 :root {
   color-scheme: light;
 
+  /* ── Shape tokens — the one non-colour set, and not a scheme ──────────────
+     `shape-compact.css` re-declares exactly these; a colour scheme never does. */
   --radius: 0.625rem;
+  --radius-field: var(--radius);
+  --radius-box: calc(var(--radius) + 6px);
+  --radius-selector: 9999px;
+  --control-h-sm: 2rem;
+  --control-h-md: 2.5rem;
+  --control-h-lg: 3rem;
+  --border-width: 1px;
 
   /* ── Semantic tokens — declared once, for both modes ───────────────────── */
   --background: var(--gray-1);
@@ -25,6 +34,10 @@
 
   --primary: var(--accent-9);
   --primary-foreground: var(--accent-contrast);
+  --primary-text: var(--accent-11);
+  --primary-soft: var(--accent-3);
+  --primary-soft-foreground: var(--accent-12);
+  --primary-soft-border: var(--accent-6);
 
   --secondary: var(--gray-3);
   --secondary-foreground: var(--gray-12);
@@ -37,11 +50,17 @@
 
   --destructive: var(--red-9);
   --destructive-foreground: var(--red-contrast);
+  --destructive-text: var(--red-11);
+  --info: var(--blue-9);
+  --info-foreground: var(--blue-contrast);
+  --info-text: var(--blue-11);
 
-  --success: var(--green-9);
-  --success-foreground: var(--green-contrast);
+  --success: var(--emerald-9);
+  --success-foreground: var(--emerald-contrast);
+  --success-text: var(--emerald-11);
   --warning: var(--yellow-9);
   --warning-foreground: var(--yellow-contrast);
+  --warning-text: var(--yellow-11);
 
   --border: var(--gray-6);
   --input: var(--gray-10);
@@ -101,6 +120,10 @@
 
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-primary-soft-border: var(--primary-soft-border);
 
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -113,11 +136,17 @@
 
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-text: var(--info-text);
 
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-success-text: var(--success-text);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-warning-text: var(--warning-text);
 
   --color-border: var(--border);
   --color-input: var(--input);
@@ -152,6 +181,16 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* `rounded-field` / `rounded-box` / `rounded-selector` and `h-control-*` / `size-control-*` /
+     `w-control-*`: the shape utilities every recipe reaches for. `border-field` is an `@utility` in
+     `forge-ui.css`, because a `--border-width-*` token lands in the overloaded `border-*` namespace. */
+  --radius-field: var(--radius-field);
+  --radius-box: var(--radius-box);
+  --radius-selector: var(--radius-selector);
+  --spacing-control-sm: var(--control-h-sm);
+  --spacing-control-md: var(--control-h-md);
+  --spacing-control-lg: var(--control-h-lg);
 
   /* Tailwind's own shadow geometry, unchanged, with every colour slot re-pointed at the elevation
      families in `theme-colors.css` — so light renders exactly as it did, and dark, where the cast

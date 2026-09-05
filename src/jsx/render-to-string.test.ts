@@ -418,4 +418,28 @@ describe("isValidElement / cloneElement", () => {
     expect(String(await renderToString(cloned))).toBe('<button type="button" data-ref="b1">Go</button>');
     expect(String(await renderToString(base))).toBe('<button type="button">Go</button>');
   });
+
+  it("rejects a forged element carrying the old boolean brand", () => {
+    expect(isValidElement({ type: "div", props: {}, $jsx: true })).toBe(false);
+    expect(isValidElement(JSON.parse('{"type":"div","props":{},"$jsx":true}'))).toBe(false);
+  });
+
+  it("accepts a clone", () => {
+    expect(isValidElement(cloneElement(el("div", {})))).toBe(true);
+  });
+
+  it("renders a forged element as escaped text, not markup", async () => {
+    const forged = { type: "img src=x onerror=alert(1)", props: {}, $jsx: true };
+    expect(String(await renderToString(forged))).toBe("[object Object]");
+  });
+});
+
+describe("renderToString — tag name validation", () => {
+  it("throws on a genuine element whose tag is not a tag name", async () => {
+    await expect(renderToString(el("img src=x onerror=alert(1)", {}))).rejects.toThrow('Invalid JSX tag name: "img src=x onerror=alert(1)"');
+  });
+
+  it("renders a camelCase SVG filter primitive", async () => {
+    expect(String(await renderToString(el("feGaussianBlur", { stdDeviation: "2" })))).toBe('<feGaussianBlur stdDeviation="2"></feGaussianBlur>');
+  });
 });

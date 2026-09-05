@@ -3,13 +3,14 @@
 
 import { dependentSelect, inlineValidation, liveSearch, paginatedTableLink } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
+import { APPEARANCES, type Appearance, type Size, type Tone, TONES } from "../contracts/vocabulary";
 import { Button } from "../core/button";
 import { FormField } from "../core/field-layout";
 import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Select } from "../core/select";
 import { FlashOob } from "../server/flash";
-import { CatalogPanel } from "./components";
+import { CatalogNote, CatalogPanel } from "./components";
 import type { DependentData, PaginateData, PreviewData, SearchData, ShowcasePaths, ToastData, ValidateData } from "./route";
 
 /** @public */ export const SHOW_SEARCH_ID = "show-search-results";
@@ -71,16 +72,17 @@ const CATEGORY_ITEMS: Record<string, string[]> = {
   grain: ["Barley", "Millet", "Oats", "Quinoa", "Wheat"],
 };
 
-/** Live button preview from variant + size query params. @public */
+/** Live button preview from tone + appearance + size query params. @public */
 export const PreviewFragment: FC<{ data: PreviewData; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
   data,
   icon: _icon,
 }) => {
-  const variant = (["primary", "secondary", "ghost"].includes(data.variant) ? data.variant : "primary") as "primary" | "secondary" | "ghost";
-  const size = (["sm", "md", "lg"].includes(data.size) ? data.size : "md") as "sm" | "md" | "lg";
+  const tone = (TONES as readonly string[]).includes(data.tone) ? (data.tone as Tone) : "primary";
+  const appearance = (APPEARANCES as readonly string[]).includes(data.appearance) ? (data.appearance as Appearance) : "solid";
+  const size = (["sm", "md", "lg"].includes(data.size) ? data.size : "md") as Size;
   return (
-    <div id={SHOW_PREVIEW_ID} class='flex items-center justify-center rounded-xl border border-border bg-muted p-8'>
-      <Button variant={variant} size={size}>
+    <div id={SHOW_PREVIEW_ID} class='flex items-center justify-center rounded-box border border-border bg-muted p-8'>
+      <Button tone={tone} appearance={appearance} size={size}>
         Preview
       </Button>
     </div>
@@ -112,7 +114,7 @@ export const ValidateFragment: FC<{ data: ValidateData; icon: ForgeIcon<"close">
         </FormField.Error>
       ) : null}
       {isValid ? (
-        <FormField.Description name='email' class='text-success'>
+        <FormField.Description name='email' class='text-success-text'>
           Looks good!
         </FormField.Description>
       ) : null}
@@ -175,12 +177,12 @@ export const PaginateFragment: FC<{ data: PaginateData }> = ({ data }) => {
         </span>
         <div class='flex gap-2'>
           {hasPrev ? (
-            <Button variant='secondary' size='sm' {...paginateAttrs(safePage - 1)}>
+            <Button tone='neutral' appearance='outline' size='sm' {...paginateAttrs(safePage - 1)}>
               Previous
             </Button>
           ) : null}
           {hasNext ? (
-            <Button variant='secondary' size='sm' {...paginateAttrs(safePage + 1)}>
+            <Button tone='neutral' appearance='outline' size='sm' {...paginateAttrs(safePage + 1)}>
               Next
             </Button>
           ) : null}
@@ -221,19 +223,31 @@ export const ToastFragment: FC<{ data: ToastData }> = ({ data }) => {
   return <FlashOob messages={messages} />;
 };
 
-/** Preview demo: choose variant + size, see a live Button. @public */
+/** Preview demo: choose tone, appearance and size, see a live Button. @public */
 export const PreviewSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner" | "chevron-down" | "sun" | "moon" | "monitor"> }> = ({
   paths,
   icon: Icon,
 }) => (
-  <CatalogPanel id='demo-preview' title='Live Preview' description='Choose variant and size — the button updates live via HTMX GET.'>
+  <CatalogPanel id='demo-preview' title='Live Preview' description='Choose tone, appearance and size — the button updates live via HTMX GET.'>
     <form class='flex flex-wrap items-end gap-3' hx-get={paths.preview} hx-target={`#${SHOW_PREVIEW_ID}`} hx-swap='outerHTML' hx-trigger='change'>
-      <FormField name='variant' class='w-auto gap-1.5'>
-        <FormField.Label for='preview-variant'>Variant</FormField.Label>
-        <Select id='preview-variant' name='variant' icon={Icon}>
-          <Select.Option value='primary'>primary</Select.Option>
-          <Select.Option value='secondary'>secondary</Select.Option>
-          <Select.Option value='ghost'>ghost</Select.Option>
+      <FormField name='tone' class='w-auto gap-1.5'>
+        <FormField.Label for='preview-tone'>Tone</FormField.Label>
+        <Select id='preview-tone' name='tone' icon={Icon}>
+          {TONES.map((tone) => (
+            <Select.Option key={tone} value={tone} {...(tone === "primary" ? { selected: true } : {})}>
+              {tone}
+            </Select.Option>
+          ))}
+        </Select>
+      </FormField>
+      <FormField name='appearance' class='w-auto gap-1.5'>
+        <FormField.Label for='preview-appearance'>Appearance</FormField.Label>
+        <Select id='preview-appearance' name='appearance' icon={Icon}>
+          {APPEARANCES.map((appearance) => (
+            <Select.Option key={appearance} value={appearance}>
+              {appearance}
+            </Select.Option>
+          ))}
         </Select>
       </FormField>
       <FormField name='size' class='w-auto gap-1.5'>
@@ -247,7 +261,7 @@ export const PreviewSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinner
         </Select>
       </FormField>
     </form>
-    <PreviewFragment data={{ variant: "primary", size: "md" }} icon={Icon} />
+    <PreviewFragment data={{ tone: "primary", appearance: "solid", size: "md" }} icon={Icon} />
   </CatalogPanel>
 );
 
@@ -260,9 +274,9 @@ export const ValidateSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"close"
     <div class='max-w-sm'>
       <ValidateFragment data={{ email: "", paths }} icon={icon} />
     </div>
-    <p class='text-xs text-muted-foreground'>
+    <CatalogNote>
       Uses <code>inlineValidation()</code> from <code>@y-core/forge/html/htmx</code>.
-    </p>
+    </CatalogNote>
   </CatalogPanel>
 );
 
@@ -281,9 +295,9 @@ export const SearchSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
       </FormField>
       <SearchFragment data={{ q: "" }} />
     </div>
-    <p class='text-xs text-muted-foreground'>
+    <CatalogNote>
       Uses <code>liveSearch()</code> with 300 ms debounce.
-    </p>
+    </CatalogNote>
   </CatalogPanel>
 );
 
@@ -293,9 +307,9 @@ export const PaginateSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
     <div class='overflow-x-auto rounded-xl border border-border'>
       <PaginateFragment data={{ page: 1, paths }} />
     </div>
-    <p class='text-xs text-muted-foreground'>
+    <CatalogNote>
       Uses <code>paginatedTableLink()</code> helper on each page button.
-    </p>
+    </CatalogNote>
   </CatalogPanel>
 );
 
@@ -318,9 +332,9 @@ export const DependentSection: FC<{ paths: ShowcasePaths; icon: ForgeIcon<"spinn
         <DependentFragment data={{ category: "fruit" }} icon={Icon} />
       </div>
     </div>
-    <p class='text-xs text-muted-foreground'>
+    <CatalogNote>
       Uses <code>dependentSelect()</code> helper.
-    </p>
+    </CatalogNote>
   </CatalogPanel>
 );
 
@@ -329,13 +343,13 @@ export const ToastSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
   <CatalogPanel id='demo-toast' title='Flash Toast (OOB)' description='Click a type — a toast is injected OOB into #flash-container via HTMX GET.'>
     <div class='flex flex-wrap gap-3'>
       {(["success", "info", "warning", "error"] as const).map((type) => (
-        <Button key={type} variant='secondary' size='sm' hx-get={`${paths.toast}?type=${type}`} hx-swap='none'>
+        <Button key={type} tone='neutral' appearance='outline' size='sm' hx-get={`${paths.toast}?type=${type}`} hx-swap='none'>
           {type}
         </Button>
       ))}
     </div>
-    <p class='text-xs text-muted-foreground'>
+    <CatalogNote>
       Uses <code>FlashOob</code> with <code>hx-swap-oob</code> targeting <code>#flash-container</code>.
-    </p>
+    </CatalogNote>
   </CatalogPanel>
 );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { UnsatisfiableRangeError } from "./errors";
 import { r2Backend } from "./r2-backend";
 import type { R2Bucket, R2Object, R2ObjectBody } from "./types";
 
@@ -103,5 +104,71 @@ describe("r2Backend", () => {
 
   it("name is 'r2'", () => {
     expect(r2Backend(makeBucket()).name).toBe("r2");
+  });
+});
+
+describe("r2Backend — range refusal translation", () => {
+  function throwingBucket(thrown: unknown): R2Bucket {
+    const bucket = makeBucket();
+    return { ...bucket, get: () => Promise.reject(thrown) };
+  }
+
+  const variants: { name: string; thrown: unknown }[] = [
+    {
+      name: "an R2Error naming the range",
+      thrown: Object.assign(new Error("get: The requested range is not satisfiable (10039)"), { name: "R2Error" }),
+    },
+    { name: "a numeric code 10039", thrown: Object.assign(new Error("get: failed"), { name: "R2Error", code: 10039 }) },
+    { name: "an InvalidRange message", thrown: new Error("InvalidRange: the range specified is not valid") },
+  ];
+
+  for (const variant of variants) {
+    it(`translates ${variant.name} into UnsatisfiableRangeError`, async () => {
+      const backend = r2Backend(throwingBucket(variant.thrown));
+      await expect(backend.get("k", { range: { offset: 500 } })).rejects.toBeInstanceOf(UnsatisfiableRangeError);
+    });
+  }
+
+  it("does not translate a TypeError", async () => {
+    const backend = r2Backend(throwingBucket(new TypeError("Incorrect type for the 'offset' field on 'R2GetOptions'")));
+    await expect(backend.get("k", { range: { offset: 500 } })).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it("does not translate an unrelated Error", async () => {
+    const backend = r2Backend(throwingBucket(new Error("bucket unavailable")));
+    await expect(backend.get("k")).rejects.toThrow("bucket unavailable");
+  });
+
+  it("carries the key and the platform error as the cause", async () => {
+    const cause = Object.assign(new Error("get: The requested range is not satisfiable (10039)"), { name: "R2Error" });
+    const backend = r2Backend(throwingBucket(cause));
+    try {
+      await backend.get("photos/sunset.jpg", { range: { offset: 500 } });
+      throw new Error("expected a rejection");
+    } catch (thrown) {
+      expect(thrown).toBeInstanceOf(UnsatisfiableRangeError);
+      expect((thrown as UnsatisfiableRangeError).key).toBe("photos/sunset.jpg");
+      expect((thrown as UnsatisfiableRangeError).cause).toBe(cause);
+    }
+  });
+});
+
+describe("r2Backend — list metadata", () => {
+  it("asks R2 for httpMetadata and customMetadata, and translates both", async () => {
+    let seen: unknown;
+    const bucket: R2Bucket = {
+      ...makeBucket(),
+      async list(opts) {
+        seen = opts?.include;
+        return {
+          objects: [makeR2Object("a.txt", { httpMetadata: { contentType: "text/plain" }, customMetadata: { owner: "jane" } })],
+          truncated: false,
+        };
+      },
+    };
+    const res = await r2Backend(bucket).list({ prefix: "a" });
+    expect(seen).toEqual(["httpMetadata", "customMetadata"]);
+    expect(res.objects[0]?.contentType).toBe("text/plain");
+    expect(res.objects[0]?.metadata).toEqual({ owner: "jane" });
   });
 });

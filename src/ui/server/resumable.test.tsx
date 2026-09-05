@@ -19,13 +19,13 @@ describe("Resumable", () => {
         y
       </Resumable>,
     );
-    expect(out).toBe('<div data-scope="s" data-state="{&quot;query&quot;:&quot;a&quot;,&quot;n&quot;:2}">y</div>');
+    expect(out).toBe('<div data-scope="s" data-island-state="{&quot;query&quot;:&quot;a&quot;,&quot;n&quot;:2}">y</div>');
 
     const decoded = '{"query":"a","n":2}';
     expect(JSON.parse(decoded)).toEqual(state);
   });
 
-  it("omits the id attribute entirely when id is not passed", async () => {
+  it("omits id and data-ref entirely when neither is passed", async () => {
     const out = await render(<Resumable name='s'>z</Resumable>);
     expect(out).toBe('<div data-scope="s">z</div>');
   });
@@ -47,12 +47,7 @@ describe("Resumable", () => {
         z
       </Resumable>,
     );
-    expect(out).toBe('<div data-scope="s" data-state="{&quot;q&quot;:&quot;&quot;}" data-ref="surface" class="p-4">z</div>');
-  });
-
-  it("omits data-ref entirely when ref is not passed", async () => {
-    const out = await render(<Resumable name='s'>z</Resumable>);
-    expect(out).not.toContain("data-ref");
+    expect(out).toBe('<div data-scope="s" data-island-state="{&quot;q&quot;:&quot;&quot;}" data-ref="surface" class="p-4">z</div>');
   });
 
   it("emits the class attribute on the scope root when passed", async () => {

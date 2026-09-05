@@ -37,7 +37,7 @@ describe("applyAssets", () => {
     const env = { ASSETS: { fetch: async () => new Response("Not Found", { status: 404 }) } };
     const res = await app.request("/missing.js", {}, env);
     expect(res.status).toBe(404);
-    expect(await res.text()).toContain("Not found");
+    expect(await res.text()).toBe("<h1>Not found</h1>");
   });
 
   it("registers on a custom path when supplied", async () => {
@@ -62,14 +62,14 @@ describe("serveAssets", () => {
     const { app, env } = makeApp(new Response("Not Found", { status: 404 }));
     const res = await app.request("/missing.js", {}, env as Bindings);
     expect(res.status).toBe(404);
-    expect(await res.text()).toContain("Not found");
+    expect(await res.text()).toBe("<h1>Not found</h1>");
   });
 
   it("renders notFoundView when ASSETS binding is absent", async () => {
     const { app, env } = makeApp(null);
     const res = await app.request("/missing.js", {}, env as Bindings);
     expect(res.status).toBe(404);
-    expect(await res.text()).toContain("Not found");
+    expect(await res.text()).toBe("<h1>Not found</h1>");
   });
 
   it("renders notFoundView for non-GET methods", async () => {

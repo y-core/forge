@@ -1,8 +1,22 @@
 import { describe, expect, it } from "bun:test";
 
-import { buildTheme, lightDark, liveRatios, matchPreset, PRESET_CUSTOM, SCHEME_PRESETS, scaleVars, stepProperty } from "./theme-contract";
+import {
+  buildTheme,
+  DIALS,
+  type DialValues,
+  dialQuery,
+  lightDark,
+  liveRatios,
+  matchPreset,
+  PRESET_CUSTOM,
+  SCHEME_PRESETS,
+  SHAPE_PROPERTIES,
+  scaleVars,
+  shapeVars,
+  stepProperty,
+} from "./theme-contract";
 
-const DEFAULTS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10 };
+const DEFAULTS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10, radiusField: 10, radiusBox: 16, controlH: 40 };
 
 describe("lightDark", () => {
   it("writes both branches when the modes differ", () => {
@@ -65,5 +79,45 @@ describe("liveRatios", () => {
     const primary = liveRatios(theme).find((row) => row.token === "--primary-foreground" && row.mode === "dark");
     expect(primary?.text.endsWith("✗")).toBe(true);
     expect(primary?.value).toBeLessThan(primary?.floor ?? 0);
+  });
+});
+
+describe("shapeVars", () => {
+  it("writes every shape property once, in the order SHAPE_PROPERTIES declares", () => {
+    expect(shapeVars(DEFAULTS).map(([name]) => name)).toEqual([...SHAPE_PROPERTIES]);
+  });
+
+  it("puts the two outer control heights 8px either side of the dialled middle one", () => {
+    expect(shapeVars({ ...DEFAULTS, controlH: 48 })).toEqual([
+      ["--radius-field", "10px"],
+      ["--radius-box", "16px"],
+      ["--control-h-sm", "40px"],
+      ["--control-h-md", "48px"],
+      ["--control-h-lg", "56px"],
+    ]);
+  });
+
+  it("falls back to the shipped shape when a dial is absent", () => {
+    expect(shapeVars({})).toEqual([
+      ["--radius-field", "10px"],
+      ["--radius-box", "16px"],
+      ["--control-h-sm", "32px"],
+      ["--control-h-md", "40px"],
+      ["--control-h-lg", "48px"],
+    ]);
+  });
+});
+
+describe("dialQuery — a dial that is not a finite number", () => {
+  // `??` passes a NaN straight through, so a share URL came out `?ah=NaN` — a link that reproduces
+  // nothing, and that `Number()` on the way back in turns into another NaN.
+  it("falls back for a NaN dial rather than writing it into the URL", () => {
+    const dials: DialValues = {};
+    for (const dial of DIALS) dials[dial.field] = Number.NaN;
+
+    const query = dialQuery(dials);
+
+    expect(query.includes("NaN")).toBe(false);
+    expect(query).toBe(dialQuery({}));
   });
 });

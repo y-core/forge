@@ -24,6 +24,7 @@ description: "The logging namespace: channels and their composable wrappers, the
 - §2d Channel Selection by Environment: the canonical fallback pattern
 - §2e withRedaction and Stack-Redaction Posture: per-channel transforms and `persistStack`
 - §2f Channel Write Failures and `flush`'s Error Contract: what absorbs a failed write, and who observes it
+- §2g Log Ordering — Newest First by Inverted Key: the key format, the clamps, and what purge deletes
 - §3 requestLogger Middleware: the per-request child logger
 - §3a requestLogger Configuration: per-request channels and bindings
 - §3c Ordering — requestId Before requestLogger: why the order is load-bearing
@@ -66,6 +67,8 @@ carry their payload outside enumerable own properties, so each gets an explicit 
 being flattened to `{}`: an ISO 8601 string, `{ type: "Map", entries: [[key, value], …] }`, and
 `{ type: "Set", values: […] }`. A reference that reappears on its own path becomes `"[circular]"`,
 so a cyclic structure stores rather than overflowing the stack.
+
+**The key format is §2g's**, and the viewer inherits its ordering from it.
 
 ### 2d. Channel Selection by Environment
 
@@ -132,6 +135,39 @@ The claim in the first paragraph is therefore unconditional: **no channel failur
 reaches the caller.**
 
 `RequestLoggerOptions` mirrors the option and threads it into the per-request logger (§3a).
+
+### 2g. Log Ordering — Newest First by Inverted Key
+
+**A log listing must open on the newest record**, and KV lists keys in lexicographic order with no
+reverse option — so the order is a property of the key, not of the reader. `kvLogChannel` writes
+
+    `${prefix}||v2||${inverted}||${rand}`,  inverted = String(999_999_999_999_999 - ms).padStart(15, "0")
+
+**Width 15 covers every instant past the year 33000**, so the segment never changes length and
+lexicographic order over it equals numeric order over the instant, reversed. Decimal rather than
+base36: a KV key is read in the dashboard and typed into fixtures, and five saved bytes do not pay
+for the opacity.
+
+**Both clamps are load-bearing.** An unclamped pre-1970 instant yields a **16**-digit string, and
+`"1000000000000000" < "999999999999999"` — it would sort above every real record, at the top of the
+newest-first listing. A `NaN` timestamp falls back to `Date.now()`, so it lands with its neighbours
+rather than at an arbitrary end.
+
+**The list prefix carries `v2` for the same reason.** An old key's third segment starts with `2` (a
+year) and a new one with `9`, so under one prefix every legacy record would sort before every new
+one and bury exactly what the change was for. Outside the prefix they are simply invisible, and
+every record carries `expirationTtl` (7 days by default), so KV reclaims them: there is nothing for
+a migration shim to do.
+
+**`purge` slices the other end.** Under an inverted key the head of a listing is the newest record,
+so `keys.slice(maxLogs)` is what may be deleted — `keys.slice(0, deleteCount)` would delete precisely
+what is worth keeping. No key is ever parsed: the ISO timestamp stays in the metadata and the value.
+
+**Filtering stays per page.** `read` filters the page it listed, so an empty filtered page is not an
+empty result — the empty state says so (`"No log entries match these filters on this page. Load more
+to keep searching."`) rather than claiming no matches. A paging loop is the alternative and is
+refused: it would issue an unbounded number of billed `kv.list` subrequests inside one invocation,
+and would break the cursor contract, since `complete` would then correspond to no single call.
 
 ---
 

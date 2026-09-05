@@ -1,0 +1,66 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
+import { collectFiles } from "./source-scan";
+
+/** What the SSR-boundary check needs to know about the project. @public */
+export interface SsrBoundaryCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** The browser-only directory, relative to `root` — nothing outside it may import from within it. */
+  clientDir: string;
+  /** Directories walked for source files, relative to `root`. */
+  sources: readonly string[];
+  /** Basenames permitted to cross the boundary; the registration entry points. */
+  entryPoints: readonly string[];
+}
+
+const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
+
+// A spec is not shipped, and a `.browser.ts` spec's whole job is to drive the client runtime.
+const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !/\.(test|browser)\.tsx?$/.test(name);
+
+/** Whether `file` is itself inside the client directory, and so may import freely within it. */
+function isClientOwned(file: string, clientDir: string): boolean {
+  return file === clientDir || file.startsWith(`${clientDir}/`);
+}
+
+/** Why `file` may not import from the client directory, or `null` when it may. @public */
+export function boundaryViolation(file: string, config: Pick<SsrBoundaryCheckConfig, "clientDir" | "entryPoints">): string | null {
+  const base = file.slice(file.lastIndexOf("/") + 1);
+  if (isClientOwned(file, config.clientDir)) return null;
+  // A `.tsx` file renders markup, so it runs in the Worker by definition — no entry-point exemption
+  // reaches it, which is what stops a component quietly gaining a browser import.
+  if (file.endsWith(".tsx")) return "a `.tsx` file renders on the server, so it may never import the browser runtime";
+  if (config.entryPoints.includes(base)) return null;
+  return `only ${config.entryPoints.map((name) => `\`${name}\``).join(" / ")} may import the browser runtime from outside \`${config.clientDir}\``;
+}
+
+/** Judges one file's imports against the boundary. @public */
+export function validateSsrBoundary(file: string, source: string, config: Pick<SsrBoundaryCheckConfig, "clientDir" | "entryPoints">): Finding[] {
+  const reason = boundaryViolation(file, config);
+  if (reason === null) return [];
+
+  const crossings = parseImports(source).flatMap((ref) => {
+    // Type-only imports are erased at emit, so they cannot drag browser code into a Worker bundle.
+    if (ref.kind === "type") return [];
+    const target = resolveSpecifier(file, ref.specifier);
+    if (target === null || !isClientOwned(target, config.clientDir)) return [];
+    return [`line ${ref.line}: \`${ref.specifier}\``];
+  });
+
+  if (crossings.length === 0) return [];
+  return [fail("SSR boundary crossed", { file, detail: [reason, ...crossings] })];
+}
+
+/** Walks the configured sources and reports every file that imports the browser runtime it may not. @public */
+export function checkSsrBoundary(config: SsrBoundaryCheckConfig): CheckResult {
+  const files = config.sources.flatMap((dir) => collectFiles(config.root, dir, SCANNED));
+  if (files.length === 0) return scannedNothing(`\`${config.sources.join("`, `")}\` matched no source`, "ssr-boundary");
+
+  const findings = files.flatMap((file) => validateSsrBoundary(file, readFileSync(resolve(config.root, file), "utf-8"), config));
+
+  return checkResult(findings, `${files.length} files respect the ${config.clientDir} boundary`);
+}

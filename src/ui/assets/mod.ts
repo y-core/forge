@@ -1,4 +1,2 @@
-export type { GlyphEntry, GlyphSource } from "./glyphs";
-export { loadSpriteGlyphs, parseSpriteGlyphs } from "./glyphs";
-export type { ForgeUiIconName } from "./sprites";
-export { FORGE_UI_ICON_NAMES, forgeUiSpriteSources } from "./sprites";
+export type { ForgeUiIconName, GlyphEntry, GlyphSource } from "./glyphs";
+export { FORGE_UI_ICON_NAMES, FORGE_UI_SPRITE_FILES, loadSpriteGlyphs, parseSpriteGlyphs } from "./glyphs";

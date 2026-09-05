@@ -3,96 +3,71 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { Badge } from "./badge";
 
+const BOX = "inline-flex items-center rounded-selector border-field font-medium";
+const NEUTRAL =
+  "[--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)]";
+const PRIMARY =
+  "[--tone:var(--color-primary)] [--tone-fg:var(--color-primary-foreground)] [--tone-text:var(--color-primary-text)] [--tone-soft:var(--color-primary-soft)] [--tone-soft-fg:var(--color-primary-soft-foreground)] [--tone-soft-border:var(--color-primary-soft-border)]";
+const WARNING =
+  "[--tone:var(--color-warning)] [--tone-fg:var(--color-warning-foreground)] [--tone-text:var(--color-warning-text)] [--tone-soft:var(--color-status-warning-subtle)] [--tone-soft-fg:var(--color-status-warning-subtle-foreground)] [--tone-soft-border:var(--color-status-warning-border)]";
+const SOFT =
+  "border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]";
+const SOLID =
+  "border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]";
+const OUTLINE = "border-(--tone-text) bg-transparent text-(--tone-text) [--focus-ring:var(--color-ring)] hover:bg-(--tone-soft)";
+
 describe("Badge", () => {
-  it("renders a <span> with data-slot=badge", async () => {
+  it("renders neutral soft at the md size by default, stamping both axes", async () => {
     expect(await render(<Badge>New</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-transparent bg-primary text-primary-foreground">New</span>',
+      `<span data-slot="badge" data-tone="neutral" data-appearance="soft" class="${BOX} px-2.5 py-0.5 text-xs ${NEUTRAL} ${SOFT}">New</span>`,
     );
   });
 
-  it("defaults to the default variant", async () => {
-    expect(await render(<Badge>Label</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-transparent bg-primary text-primary-foreground">Label</span>',
-    );
-  });
-
-  it("renders secondary variant classes", async () => {
-    expect(await render(<Badge variant='secondary'>Secondary</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="secondary" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-transparent bg-secondary text-secondary-foreground">Secondary</span>',
-    );
-  });
-
-  it("renders destructive variant classes", async () => {
-    expect(await render(<Badge variant='destructive'>Error</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="destructive" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-status-danger-border bg-status-danger-strong text-status-danger-strong-foreground">Error</span>',
-    );
-  });
-
-  it("renders info variant classes", async () => {
-    expect(await render(<Badge variant='info'>Info</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="info" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-status-info-border bg-status-info-strong text-status-info-strong-foreground">Info</span>',
-    );
-  });
-
-  it("renders success variant classes", async () => {
-    expect(await render(<Badge variant='success'>Success</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="success" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-status-success-border bg-status-success-strong text-status-success-strong-foreground">Success</span>',
-    );
-  });
-
-  it("renders warning variant classes — the same status intent every forge status surface uses", async () => {
-    expect(await render(<Badge variant='warning'>Warning</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="warning" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-status-warning-border bg-status-warning-strong text-status-warning-strong-foreground">Warning</span>',
-    );
-  });
-
-  it("expresses every status variant through `--status-*` tokens, with no raw palette or `dark:` utility", async () => {
-    const audit: Record<string, { tokens: number; palette: string[]; dark: string[] }> = {};
-    for (const variant of ["destructive", "info", "success", "warning"] as const) {
-      const html = await render(<Badge variant={variant}>x</Badge>);
-      const classes = (html.match(/class="([^"]*)"/)?.[1] ?? "").split(" ");
-      audit[variant] = {
-        tokens: classes.filter((c) => /^(?:bg|text|border)-status-[a-z]+-/.test(c)).length,
-        palette: classes.filter((c) => /^(?:bg|text|border)-[a-z]+-(?:50|[1-9]00|950)$/.test(c)),
-        dark: classes.filter((c) => c.startsWith("dark:")),
-      };
-    }
-
-    expect(audit).toEqual({
-      destructive: { tokens: 3, palette: [], dark: [] },
-      info: { tokens: 3, palette: [], dark: [] },
-      success: { tokens: 3, palette: [], dark: [] },
-      warning: { tokens: 3, palette: [], dark: [] },
-    });
-  });
-
-  it("renders outline variant classes", async () => {
-    expect(await render(<Badge variant='outline'>Outline</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="outline" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-border text-foreground">Outline</span>',
-    );
-  });
-
-  it("includes base inline-flex and rounded-full classes", async () => {
-    expect(await render(<Badge>Base</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-transparent bg-primary text-primary-foreground">Base</span>',
-    );
-  });
-
-  it("merges a custom class with the base classes", async () => {
-    expect(await render(<Badge class='my-badge'>Custom</Badge>)).toBe(
-      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-transparent bg-primary text-primary-foreground my-badge">Custom</span>',
-    );
-  });
-
-  it("forwards id and data-* attributes with HTML-escaped values", async () => {
+  it("renders a primary solid chip", async () => {
     expect(
       await render(
-        <Badge id='b1' data-testid='badge' data-note='a&b'>
-          New
+        <Badge tone='primary' appearance='solid'>
+          Pro
         </Badge>,
       ),
     ).toBe(
-      '<span data-slot="badge" data-variant="default" class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium border-transparent bg-primary text-primary-foreground" id="b1" data-testid="badge" data-note="a&amp;b">New</span>',
+      `<span data-slot="badge" data-tone="primary" data-appearance="solid" class="${BOX} px-2.5 py-0.5 text-xs ${PRIMARY} ${SOLID}">Pro</span>`,
+    );
+  });
+
+  it("renders a warning soft chip on the audited warning text step", async () => {
+    expect(await render(<Badge tone='warning'>Late</Badge>)).toBe(
+      `<span data-slot="badge" data-tone="warning" data-appearance="soft" class="${BOX} px-2.5 py-0.5 text-xs ${WARNING} ${SOFT}">Late</span>`,
+    );
+  });
+
+  it("renders the outline appearance", async () => {
+    expect(await render(<Badge appearance='outline'>Draft</Badge>)).toBe(
+      `<span data-slot="badge" data-tone="neutral" data-appearance="outline" class="${BOX} px-2.5 py-0.5 text-xs ${NEUTRAL} ${OUTLINE}">Draft</span>`,
+    );
+  });
+
+  it("renders the sm size", async () => {
+    expect(await render(<Badge size='sm'>3</Badge>)).toBe(
+      `<span data-slot="badge" data-tone="neutral" data-appearance="soft" class="${BOX} px-2 py-px text-[0.6875rem] ${NEUTRAL} ${SOFT}">3</span>`,
+    );
+  });
+
+  it("merges a caller class and escapes children", async () => {
+    expect(await render(<Badge class='uppercase'>{`R&D's`}</Badge>)).toBe(
+      `<span data-slot="badge" data-tone="neutral" data-appearance="soft" class="${BOX} px-2.5 py-0.5 text-xs ${NEUTRAL} ${SOFT} uppercase">R&amp;D&#39;s</span>`,
+    );
+  });
+
+  it("forwards id and data-* attributes with escaped values", async () => {
+    expect(
+      await render(
+        <Badge id='b1' data-note='a&b'>
+          x
+        </Badge>,
+      ),
+    ).toBe(
+      `<span data-slot="badge" data-tone="neutral" data-appearance="soft" class="${BOX} px-2.5 py-0.5 text-xs ${NEUTRAL} ${SOFT}" id="b1" data-note="a&amp;b">x</span>`,
     );
   });
 });

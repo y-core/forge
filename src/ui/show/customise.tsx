@@ -6,7 +6,7 @@
 // CSSOM by the eager `customise` scope instead.
 
 import type { AppContext } from "../../context/types";
-import type { FC } from "../../jsx/types";
+import type { FC, JSXNode } from "../../jsx/types";
 import type { Mode, Scale } from "../contracts/theme/color";
 import { CRITERION, type ScalePair, scalePairs } from "../contracts/theme/contrast-pairs";
 import {
@@ -88,7 +88,7 @@ export function loadCustomise<Bindings = Record<string, unknown>>(c: AppContext<
 }
 
 /** The row template: family, then a (label, slider) pair per dial. */
-const LEVER_GRID = cn("grid items-center gap-x-3 gap-y-2 md:grid-cols-[4.5rem_7rem_minmax(0,1fr)_7rem_minmax(0,1fr)]");
+const LEVER_GRID = "grid items-center gap-x-3 gap-y-2 md:grid-cols-[4.5rem_7rem_minmax(0,1fr)_7rem_minmax(0,1fr)]";
 
 /** One dial's two cells: its label-with-value, and its slider. */
 const LeverCells: FC<{ dial: Dial; value: number; labelSpan?: string; controlSpan?: string }> = ({ dial, value, labelSpan, controlSpan }) => (
@@ -102,15 +102,7 @@ const LeverCells: FC<{ dial: Dial; value: number; labelSpan?: string; controlSpa
         {`${value}${dial.unit}`}
       </output>
     </div>
-    <Slider
-      bind={dial.field}
-      field={{ name: dial.field }}
-      min={dial.min}
-      max={dial.max}
-      step={dial.step}
-      value={value}
-      {...(controlSpan === undefined ? {} : { class: controlSpan })}
-    />
+    <Slider bind={dial.field} field={{ name: dial.field }} min={dial.min} max={dial.max} step={dial.step} value={value} class={controlSpan} />
   </>
 );
 
@@ -156,9 +148,16 @@ const PresetPicker: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, i
   );
 };
 
+/** The band every customiser section opens with: its scroll anchor, its rule and its heading. */
+const Band: FC<{ id: string; title: string; children?: JSXNode }> = ({ id, title, children }) => (
+  <section id={id} class='scroll-mt-24 space-y-4'>
+    <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>{title}</h2>
+    {children}
+  </section>
+);
+
 const LeversSection: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, icon }) => (
-  <section id='levers' class='scroll-mt-24 space-y-4'>
-    <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>Levers</h2>
+  <Band id='levers' title='Levers'>
     <p class='text-sm text-muted-foreground'>Hue and chroma over a fixed lightness ramp ensuring contrast ratios remain WCAG compliant.</p>
     <Resumable name={CUSTOMISE_SCOPE} state={dials} class='space-y-4'>
       <PresetPicker dials={dials} icon={icon} />
@@ -173,7 +172,7 @@ const LeversSection: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, 
         ))}
       </div>
     </Resumable>
-  </section>
+  </Band>
 );
 
 /** The step numbers, printed once for the whole table rather than once per swatch. */
@@ -219,8 +218,7 @@ const BANDS = STEP_SEGMENTS.map((segment, i) => {
 // Module-local, and named apart from `sections.tsx`'s `@public` `PreviewSection`: two exports of one
 // name in one namespace is the collision, and only one of them is public.
 const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
-  <section id='preview' class='scroll-mt-24 space-y-4'>
-    <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>Scales</h2>
+  <Band id='preview' title='Scales'>
     <p class='text-sm text-muted-foreground'>
       Both generated families, each drawn on the surface it belongs to. Every semantic token resolves through one of these forty-eight steps.
     </p>
@@ -265,7 +263,7 @@ const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
         ))}
       </table>
     </div>
-  </section>
+  </Band>
 );
 
 /** One pair's row: its token and criterion, then a ratio cell per mode. */
@@ -293,11 +291,10 @@ const WcagRow: FC<{ pair: ScalePair; ratios: ReadonlyMap<string, LiveRatio> }> =
 const WcagSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => {
   const ratios = new Map(liveRatios(theme).map((entry) => [entry.key, entry]));
   return (
-    <section id='wcag' class='scroll-mt-24 space-y-4'>
-      <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>WCAG, live</h2>
+    <Band id='wcag' title='WCAG, live'>
       <p class='text-sm text-muted-foreground'>
-        The seven audited pairs the levers can actually move — both sides generated from the scales above, so each recomputes as you drag. The other
-        sixteen have a side on a fixed palette stop no dial reaches; they are checked against the shipped scheme by forge's own audit rather than
+        The nine audited pairs the levers can actually move — both sides generated from the scales above, so each recomputes as you drag. The other
+        twenty have a side on a fixed palette stop no dial reaches; they are checked against the shipped scheme by forge's own audit rather than
         reported here.
       </p>
       <p class='text-sm text-muted-foreground'>
@@ -326,7 +323,7 @@ const WcagSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => {
           </tbody>
         </table>
       </div>
-    </section>
+    </Band>
   );
 };
 
@@ -335,7 +332,7 @@ const WcagSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => {
 /** One target's control: a `size='sm'` Button — the floor of the scale — and the span it announces through. */
 const CopyButton: FC<{ target: CopyTarget }> = ({ target }) => (
   <span class='inline-flex items-center gap-2'>
-    <Button variant='secondary' size='sm' data-on-click={COPY_ACTION} {...{ [COPY_TARGET_ATTR]: target.id }}>
+    <Button tone='neutral' appearance='outline' size='sm' data-on-click={COPY_ACTION} {...{ [COPY_TARGET_ATTR]: target.id }}>
       <span {...{ [COPY_LABEL_ATTR]: "" }}>{target.label}</span>
     </Button>
     <span role='status' class='sr-only' {...{ [COPY_STATUS_ATTR]: target.id }} />
@@ -351,10 +348,11 @@ const copyTarget = (id: string): CopyTarget => {
 const OutputSection: FC<{ theme: GeneratedTheme; dials: DialValues; path: string }> = ({ theme, dials, path }) => {
   const query = dialQuery(dials);
   return (
-    <section id='output' class='scroll-mt-24 space-y-4'>
-      <h2 class='border-b border-border pb-2 text-base font-semibold text-foreground'>Take it away</h2>
+    <Band id='output' title='Take it away'>
       <p class='text-sm text-muted-foreground'>
-        A scheme file is exactly twelve steps per family. This is the scheme. Save it beside <code>theme-neutral.css</code> and import it after.
+        A scheme file is exactly twelve steps per family. This is the scheme, followed by the shape block the shape dials drive. Save the scheme
+        beside <code>theme-neutral.css</code> and import it after; the shape block goes in its own file, the way <code>shape-compact.css</code>{" "}
+        does, or folded into the scheme.
       </p>
       <Resumable name={COPY_SCOPE} class='space-y-4'>
         <div class='flex flex-wrap items-center gap-3'>
@@ -370,7 +368,7 @@ const OutputSection: FC<{ theme: GeneratedTheme; dials: DialValues; path: string
           <code>{schemeCss(theme, dials)}</code>
         </pre>
       </Resumable>
-    </section>
+    </Band>
   );
 };
 

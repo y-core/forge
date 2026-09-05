@@ -1,11 +1,12 @@
 export { bindControls } from "./bind";
 export { type BindTextOptions, bindAttr, bindText } from "./bind-display";
+export { type CarouselDotsOptions, mountCarouselDots } from "./carousel";
 export { mountRovingFocus, type RovingFocusOptions } from "./composite";
 export { activeElement, asElement, closestAcross, contains, eventTarget, isRtl, ownerDocument, ownerWindow, queryAcross, safeStorage } from "./dom";
 export { mountNavDrawer, type NavDrawerOptions } from "./drawer";
 export { type LazyImportOptions, lazy } from "./lazy";
 export { type OpenPopoverAtOptions, openPopoverAt } from "./popover-anchor";
-export { type ResumeContext, registerScope, resume, resumeScope, type ScopeDefinition } from "./resume";
+export { disposeScopesIn, type ResumeContext, registerScope, resume, resumeScope, type ScopeDefinition } from "./resume";
 export { mountScrollSpy, type ScrollSpyOptions } from "./scroll-spy";
 export { computed, createSignal, effect, type ReadonlySignal, type Signal } from "./signal";
 export { type SignalRecord, signalRecord, writeSignal } from "./signal-record";

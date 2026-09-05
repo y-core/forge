@@ -3,21 +3,21 @@
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { TURNSTILE, TURNSTILE_SCOPE } from "../contracts/turnstile-contract";
 import { slotToken } from "./utils/as-child";
-import { asClass, cn } from "./utils/cn";
+import { cn } from "./utils/cn";
 
 export type TurnstileProps = Omit<JSX.IntrinsicElements["div"], "children" | "tabindex"> & {
   siteKey: string;
-  size?: "compact" | "flexible" | "normal";
-  load?: "eager" | "focus";
-  challenge?: "render" | "submit";
-  appearance?: "always" | "execute" | "interaction-only";
-  action?: string;
-  cData?: string;
-  responseFieldName?: string;
-  language?: string;
-  tabindex?: number;
-  unsupported?: JSXNode;
-  children?: JSXNode;
+  size?: "compact" | "flexible" | "normal" | undefined;
+  load?: "eager" | "focus" | undefined;
+  challenge?: "render" | "submit" | undefined;
+  appearance?: "always" | "execute" | "interaction-only" | undefined;
+  action?: string | undefined;
+  cData?: string | undefined;
+  responseFieldName?: string | undefined;
+  language?: string | undefined;
+  tabindex?: number | undefined;
+  unsupported?: JSXNode | undefined;
+  children?: JSXNode | undefined;
 };
 
 const DEFAULT_FALLBACK = "The security challenge couldn't load. Please disable any ad or script blockers for this site and reload the page.";
@@ -27,7 +27,7 @@ const DEFAULT_UNSUPPORTED =
 
 // Cloudflare's published widget dimensions, held only for `appearance="always"`: the other two modes
 // show nothing until they must, so a reservation there would leave a permanent hole.
-const RESERVED_BOX = { compact: cn("h-35 w-37.5"), flexible: cn("h-16.25 w-full min-w-75"), normal: cn("h-16.25 w-75") };
+const RESERVED_BOX = { compact: "h-35 w-37.5", flexible: "h-16.25 w-full min-w-75", normal: "h-16.25 w-75" };
 
 /** Server-rendered Cloudflare Turnstile mount point, placed inside the form and rendered by `mountTurnstile()`. @public */
 export const Turnstile: FC<TurnstileProps> = ({
@@ -61,12 +61,12 @@ export const Turnstile: FC<TurnstileProps> = ({
     data-response-field-name={responseFieldName}
     data-language={language}
     data-tabindex={tabindex}
-    class={cn(appearance === "always" ? RESERVED_BOX[size] : undefined, asClass(cls))}
+    class={cn(appearance === "always" ? RESERVED_BOX[size] : undefined, cls)}
     {...rest}>
-    <p data-ref={TURNSTILE.fallback} role='alert' hidden={true} class='text-sm text-destructive'>
+    <p data-ref={TURNSTILE.fallback} role='alert' hidden={true} class='text-sm text-destructive-text'>
       {children ?? DEFAULT_FALLBACK}
     </p>
-    <p data-ref={TURNSTILE.unsupported} role='alert' hidden={true} class='text-sm text-destructive'>
+    <p data-ref={TURNSTILE.unsupported} role='alert' hidden={true} class='text-sm text-destructive-text'>
       {unsupported ?? DEFAULT_UNSUPPORTED}
     </p>
   </div>

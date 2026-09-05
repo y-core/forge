@@ -1,11 +1,13 @@
 import { describe, expect, it } from "bun:test";
 
 import { resumeScope } from "../client/resume";
+import { ISLAND_STATE_KEY } from "../contracts/island-contract";
+import { SHOW_SCOPES } from "./scope-contract";
 import "./client";
 
 function fakeScopeRoot(state: string): HTMLElement {
   return {
-    dataset: { scope: "show-filter", state },
+    dataset: { scope: SHOW_SCOPES.filter, [ISLAND_STATE_KEY]: state },
     querySelectorAll: () => [] as unknown as NodeListOf<HTMLElement>,
     querySelector: () => null,
   } as unknown as HTMLElement;

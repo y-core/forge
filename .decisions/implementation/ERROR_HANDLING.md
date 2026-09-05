@@ -255,15 +255,20 @@ around. These surfaces `throw` a plain `Error` instead of returning `Result`:
 - `validateEnv` and the `validateBindings` middleware (`app`)
 - `resolveKVStore`, `resolveD1Client`, `resolveObjectStore` (`storage/*`)
 
-**Env and config failures throw the normalized shape `Invalid environment: <path>: <message>; …`**
-produced by `formatValidationIssues` (`@y-core/forge/validation`) — never hand-roll the
-formatting.
+**Env and config failures throw the normalized shape `Invalid environment: <field>: <reason>; …`**
+produced by `formatEnvIssues` (`src/validation/format-issues.ts`, `@internal`) — never hand-roll the
+formatting, and never reproduce `issue.message`, which embeds the rejected value
+([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §1b).
 
 **The dividing line: resolving a binding throws ([`BOUNDARIES.md`](../governance/BOUNDARIES.md)
 §5a); operating on a resolved store returns
 `Result` (§5a).** See [`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §4a.
 
-**`serveObject` (`storage/r2`) is the one ratified exception to "operating returns `Result`."**
-It sits on the HTTP boundary and returns a `Response` — `200`/`206` (range) / `304`
-(conditional) / `404` (missing) / `416` (unsatisfiable range), `400` for an invalid key, `500`
-on backend failure. Callers hand its return value straight back from the handler.
+**The free `serveObject(backend, …)` (`storage/r2`) is the one ratified exception to "operating
+returns `Result`."** It sits on the HTTP boundary and returns a `Response` — `200` / `206` (range)
+/ `304` (conditional) / `404` (missing) / `416` (unsatisfiable range). Callers hand its return
+value straight back from the handler.
+
+**The bound `store.serveObject` is not the exception, and returns `Result<Response>`** — a rejected
+key and a backend fault are failures, not rendered ones, and the store's other five operations
+already say so ([`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §3b).

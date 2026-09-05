@@ -95,7 +95,7 @@ describe("ChromeToolbarSection", () => {
   // `data-orientation` are shared by the two rails on each axis, so only this tells left from right.
   it("gives each flyout-bearing rail an auto popover carrying that rail's own placement", async () => {
     const body = await bodyOf("chrome-toolbar");
-    expect(slotTags(body, "toolbar-flyout").map((tag) => [attrOf(tag, "popover"), attrOf(tag, "data-placement")])).toEqual([
+    expect(slotTags(body, "toolbar-flyout").map((tag) => [attrOf(tag, "popover"), attrOf(tag, "data-side")])).toEqual([
       ["auto", "left"],
       ["auto", "right"],
       ["auto", "bottom"],
@@ -145,23 +145,21 @@ describe("ChromeNavbarSection", () => {
     ]);
   });
 
-  it("renders no navbar-group wrapper, the demo bars being sectioned instead", async () => {
-    expect(slotTags(await bodyOf("chrome-navbar"), "navbar-group")).toEqual([]);
+  it("renders navbar-group wrappers only as megamenu columns: twice per bar, once in the rail", async () => {
+    const body = await bodyOf("chrome-navbar");
+    expect(slotTags(body, "navbar-group")).toHaveLength(3 * 2 * 4 + 3);
+    expect(slotTags(body, "navbar-megamenu")).toHaveLength(4);
+    expect(slotTags(body, "navbar-megamenu-list")).toHaveLength(5);
   });
 
-  it("starts the filtered Admin link hidden and leaves the unfiltered Overview link untouched", async () => {
+  it("starts the filtered Admin link hidden and leaves the unfiltered links untouched", async () => {
     const links = slotTags(await bodyOf("chrome-navbar"), "navbar-link");
-    const perBar = [
-      [null, false],
-      ["admin", true],
-    ];
-    expect(links.map((tag) => [attrOf(tag, "data-filter"), hasFlag(tag, "hidden")])).toEqual([
-      ...perBar,
-      ...perBar,
-      ...perBar,
-      ...perBar,
-      ...perBar,
-    ]);
+    const unfiltered = (n: number) => Array.from({ length: n }, () => [null, false]);
+    // Overview, the megamenu's five links in the popover and again in the list twin, then Admin;
+    // the rail renders the list form only.
+    const bar = [...unfiltered(1 + 5 + 5), ["admin", true]];
+    const rail = [...unfiltered(1 + 5), ["admin", true]];
+    expect(links.map((tag) => [attrOf(tag, "data-filter"), hasFlag(tag, "hidden")])).toEqual([...bar, ...rail, ...bar, ...bar, ...bar]);
   });
 
   it("resolves the slot key into the caller's badge, leaving the key itself out of the markup", async () => {
@@ -173,6 +171,7 @@ describe("ChromeNavbarSection", () => {
       "NavSlot",
       "NavSlot",
     ]);
+    // oxlint-disable-next-line forge/exact-markup-assertion -- a whole-document absence sweep: the slot key must appear nowhere at all, so there is no element to pin it to
     expect(body.includes("status")).toBe(false);
   });
 
