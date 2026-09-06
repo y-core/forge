@@ -17,5 +17,5 @@
   "sortPackageJson": false,
   "sortImports": true,
   "sortTailwindcss": { "functions": ["cn", "cva"], "stylesheet": "src/ui/assets/css/tailwind.css" },
-  "ignorePatterns": [".decisions/governance/**", ".claude"]
+  "ignorePatterns": [".decisions/governance/**", ".claude", "src/tooling/lint/plugin.mjs"]
 }

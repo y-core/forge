@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import { canonical, fileURLToPathish, hasTailwind, loadDesignSystem } from "./design-system";
+import { canonical, fileURLToPathish, hasTailwind, isBareSpecifier, loadDesignSystem } from "./design-system";
 
 /** A throwaway root holding each `name: contents` pair, and the absolute path of `entry` within it. */
 function stylesheet(files: Record<string, string>, entry: string): string {
@@ -33,6 +33,28 @@ describe("fileURLToPathish()", () => {
 
   it("returns a percent-encoded path for a URL whose directory holds a space", () => {
     expect(fileURLToPathish("file:///tmp/my dir/index.css")).toBe("/tmp/my%20dir/index.css");
+  });
+});
+
+describe("isBareSpecifier()", () => {
+  it("calls a scoped package specifier bare", () => {
+    expect(isBareSpecifier("@y-core/forge/ui/assets/css/tailwind.css")).toBe(true);
+  });
+
+  it("calls an unscoped package specifier bare", () => {
+    expect(isBareSpecifier("tailwindcss/theme.css")).toBe(true);
+  });
+
+  it("calls a same-directory relative id a path", () => {
+    expect(isBareSpecifier("./tokens.css")).toBe(false);
+  });
+
+  it("calls a parent-directory relative id a path", () => {
+    expect(isBareSpecifier("../tokens.css")).toBe(false);
+  });
+
+  it("calls an absolute id a path", () => {
+    expect(isBareSpecifier("/tmp/tokens.css")).toBe(false);
   });
 });
 
@@ -69,6 +91,23 @@ describe("loadDesignSystem()", () => {
     const ds = await loadDesignSystem(entry);
 
     expect(ds.candidatesToCss(["text-brand"])[0]).toBe(".text-brand {\n  color: var(--color-brand);\n}\n");
+  });
+
+  it.skipIf(!hasTailwind())("resolves a bare package @import through the resolver, not against the importing file's directory", async () => {
+    const entry = stylesheet(
+      { "entry.css": '@import "tailwindcss/index.css";\n@import "./tokens.css";\n', "tokens.css": "@theme {\n  --color-brand: #123456;\n}\n" },
+      "entry.css",
+    );
+
+    const ds = await loadDesignSystem(entry);
+
+    expect(ds.candidatesToCss(["text-brand"])[0]).toBe(".text-brand {\n  color: var(--color-brand);\n}\n");
+  });
+
+  it.skipIf(!hasTailwind())("reports an unresolvable bare @import as a package that cannot be found, not as a missing sibling file", async () => {
+    const entry = stylesheet({ "entry.css": '@import "tailwindcss";\n@import "@acme/absent/tokens.css";\n' }, "entry.css");
+
+    expect(loadDesignSystem(entry)).rejects.toThrow(/Cannot find (package|module)/);
   });
 
   it.skipIf(!hasTailwind())("returns null for a candidate the compiled system produces no CSS for", async () => {

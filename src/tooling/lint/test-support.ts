@@ -151,6 +151,16 @@ export function declarator(name: string, init: AstNode): AstNode {
   } as unknown as AstNode;
 }
 
+/** A `function name(…): T { … }` declaration, whose annotation the real AST names `returnType`. */
+export function fnDeclaration(name: string, body: AstNode, returnType?: AstNode): AstNode {
+  return { type: "FunctionDeclaration", loc: nextLoc(), id: identifier(name), body, returnType, children: [body] } as unknown as AstNode;
+}
+
+/** A `return value;`, whose value the real AST names `argument`. */
+export function returnStatement(value: AstNode): AstNode {
+  return { type: "ReturnStatement", loc: nextLoc(), argument: value, children: [value] } as unknown as AstNode;
+}
+
 /** A `const` declaration at module scope, which is the scope a class list is written in once. */
 export function declaration(...declarators: AstNode[]): AstNode {
   return other("VariableDeclaration", ...declarators);

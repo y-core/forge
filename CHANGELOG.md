@@ -17,7 +17,61 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`@y-core/forge/tooling/lint/plugin` — the spelling a consumer's `.oxlintrc.json` can actually
+  load.** `"jsPlugins": ["@y-core/forge/tooling/lint"]` could not work in any consumer: oxlint loads
+  a JS plugin through node, and node refuses to strip types from a file under `node_modules`
+  (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which is deliberate and has no opt-out flag. The
+  new subpath is a committed esbuild bundle of `mod.ts` that resolves nothing at load time. Forge is
+  consumed as a git tarball, so there is no publish step that could build it and no `prepare` hook a
+  consumer runs — committing the artifact is the only form that reaches a consumer without the
+  consumer bundling it themselves. `./tooling/lint` is unchanged and still carries the plugin and the
+  two catalogs as TypeScript.
+- **`validate-lint-plugin` (`lintPluginStep`) — the drift check that generated file needs.**
+  It re-bundles `src/tooling/lint/mod.ts` and fails on any difference from the committed
+  `plugin.mjs`, the same contract `validate-design-scale` holds the generated scale to. Regenerate
+  with `bun run gen:lint-plugin`. `esbuild` is an optional peer, so a machine without it reports the
+  step skipped and `--full` fails.
+
+- **`safeCheck` — a `v.check` whose message an env refusal may show.** Every `v.check` shares the
+  single issue type `check`, so the message is the only thing that ever told two of them apart, and
+  the env formatter dropped it: a rule with a sentence written for a deployer read as
+  `Invalid environment: site.url: check`. `safeCheck(requirement, message)` registers the message
+  against the requirement, and `describeEnvIssue` surfaces a registered one verbatim. A plain
+  `v.check` still renders as `check`, so a message interpolating the rejected value cannot reach the
+  throw — nothing can decide that statically, so the author states it, and the default is the safe
+  one. `BaseUrlConfigSchema` is the first adopter.
+
+### Changed
+
+- **`BaseUrlConfigSchema`'s message names the requirement, not an env key.** It read
+  `BASE_URL must use https: (…)` and now reads `must use https: (…)`, with the refusal's own
+  `<field>:` prefix locating the value — the schema validates a value, and which env key supplies it
+  is the consuming app's choice, so the old wording sent an operator whose repo maps `SITE_ORIGIN` to
+  a variable that does not exist.
+
+### Fixed
+
+- **`loadDesignSystem` resolves a bare package `@import`, so a consuming app can compile its own
+  stylesheet.** Every id that was not `tailwindcss*` was joined against the importing file's
+  directory, so an app whose stylesheet opens with `@import "@y-core/forge/ui/assets/css/tailwind.css"`
+  — the import forge publishes for exactly that purpose — failed `cssTokensStep` with an `ENOENT` for
+  a path inside its own `src/assets/`. A package specifier now resolves through the resolver and a
+  relative one against the base, which is one rule rather than a special case for one package name.
+- **`forge/exact-markup-assertion` no longer reports an absence claim.**
+  `expect(html).not.toContain(secret)` and `expect(html.includes(secret)).toBe(false)` both say a
+  string appears nowhere in the document — the one thing an exact match cannot state, and what the
+  0.1.2 note already said these checks are for. Adopting the rule in an app produced 16 such reports,
+  each of which could only ever be suppressed.
+- **`forge/exact-markup-assertion` recognises a list returned by a same-file helper.** A
+  `toContain` on `sectionIds(html)` is exact membership, but only a direct `.split()` / `.map()` was
+  recognised — a helper call is an `Identifier` callee, so it fell through and was reported. The
+  fixpoint that traces markup now also records which bindings yield a list, by return annotation or
+  by what their `return` statements produce.
+- **`bun run gen:class-groups` and `bun run gen:design-scale` can write again.** Both resolved the
+  repository root one directory too high and died with an `ENOENT` on a path outside the repo, so the
+  regeneration command each failing gate step tells you to run could not run at all.
 
 ---
 

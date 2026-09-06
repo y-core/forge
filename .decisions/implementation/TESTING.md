@@ -294,9 +294,16 @@ is not an escape.
 an array is exact membership rather than a substring, and `classOf(out).split(" ")` is the shape a
 test reaches for precisely so `justify-end` stops matching inside `group-open:justify-end`.
 
-**`.includes(` is checked on its receiver, not only behind a matcher.**
-`expect(html.includes(…)).toBe(false)` is the same defect in a form no `.not.toContain` scan would
-ever see.
+**A same-file helper that yields a list counts as one too** — `function sectionIds(html): string[]`,
+by its return annotation or by what its `return` statements produce, resolved in the same fixpoint
+that traces markup. `expect(sectionIds(html)).toContain("terms")` is membership, and the rule would
+otherwise see only an `Identifier` callee it knows nothing about.
+
+**An absence claim is never reported.** `expect(html).not.toContain(secret)` and
+`expect(html.includes(secret)).toBe(false)` — and its `not.toBe(true)` spelling — both say the
+string appears **nowhere in the document**, which is the one thing no exact match can state: there
+is no element to pin it to. `.includes(` is still checked on its receiver whenever the claim is
+presence, which no matcher-name scan would see.
 
 **What it cannot do: it reads one file.** A substring assertion on a value the rule cannot trace
 back to a render — markup arriving as a function parameter, or imported from another file — is not
@@ -306,7 +313,7 @@ reported. §3b is what binds; the rule catches the common shapes of breaking it,
 and `forge/suppression-needs-reason` fails a directive carrying no reason.** Reserve it for a
 genuine closed-world coverage sweep — the `expect(list.filter((x) => !html.includes(…))).toEqual([])`
 shape, where the substring is how the sweep looks each item up rather than a claim about which
-element an attribute landed on. Four exist in the tree today, each with its reason inline.
+element an attribute landed on. Two exist in the tree today, each with its reason inline.
 
 ---
 

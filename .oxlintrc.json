@@ -4,6 +4,9 @@
   // forge's own rules, loaded as raw TypeScript. A consuming app names the published subpath
   // "@y-core/forge/tooling/lint" here instead of this relative path.
   "jsPlugins": ["./src/tooling/lint/mod.ts"],
+  // The committed bundle of that same plugin, which a consumer's oxlint loads instead. `validate-lint-plugin`
+  // holds it against the source; linting or formatting it would be judging esbuild's output.
+  "ignorePatterns": ["src/tooling/lint/plugin.mjs"],
   // `suspicious` stays off — see .decisions/implementation/CODE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {

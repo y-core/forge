@@ -1,6 +1,19 @@
 import { describe, expect, it } from "bun:test";
 
-import { call, callOn, declaration, declarator, identifier, literal, logical, member, other, runRule } from "../test-support.ts";
+import {
+  call,
+  callOn,
+  declaration,
+  declarator,
+  fnDeclaration,
+  identifier,
+  literal,
+  logical,
+  member,
+  other,
+  returnStatement,
+  runRule,
+} from "../test-support.ts";
 import type { AstNode } from "../types.ts";
 import { exactMarkupAssertion } from "./exact-markup-assertion.ts";
 
@@ -34,8 +47,12 @@ describe("exact-markup-assertion", () => {
     expect(runRule(exactMarkupAssertion, program(rendered(), assertion(identifier("out"), "toMatch")))).toHaveLength(1);
   });
 
-  it("reports through `.not`, which no matcher-name scan alone would reach", () => {
-    expect(runRule(exactMarkupAssertion, program(rendered(), assertion(identifier("out"), "toContain", true)))).toHaveLength(1);
+  it("leaves a `.not.toContain` alone — absence is the one thing no exact match can state", () => {
+    expect(runRule(exactMarkupAssertion, program(rendered(), assertion(identifier("out"), "toContain", true)))).toEqual([]);
+  });
+
+  it("leaves a `.not.toMatch` alone for the same reason", () => {
+    expect(runRule(exactMarkupAssertion, program(rendered(), assertion(identifier("out"), "toMatch", true)))).toEqual([]);
   });
 
   it("reports a `.includes` on markup, which no `.not.toContain` scan would see", () => {
@@ -43,6 +60,25 @@ describe("exact-markup-assertion", () => {
 
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("`.includes` on rendered markup");
+  });
+
+  it("leaves an `.includes` asserted `toBe(false)` alone — the same absence claim, differently spelled", () => {
+    const absence = callOn(member(callOn(identifier("expect"), includes(identifier("out"))), "toBe"), literal(false));
+
+    expect(runRule(exactMarkupAssertion, program(rendered(), absence))).toEqual([]);
+  });
+
+  it("leaves an `.includes` asserted `not.toBe(true)` alone, which is the same claim negated twice", () => {
+    const expected = callOn(identifier("expect"), includes(identifier("out")));
+    const absence = callOn(member(member(expected, "not"), "toBe"), literal(true));
+
+    expect(runRule(exactMarkupAssertion, program(rendered(), absence))).toEqual([]);
+  });
+
+  it("still reports an `.includes` asserted `toBe(true)`, which claims presence somewhere unpinned", () => {
+    const presence = callOn(member(callOn(identifier("expect"), includes(identifier("out"))), "toBe"), literal(true));
+
+    expect(runRule(exactMarkupAssertion, program(rendered(), presence))).toHaveLength(1);
   });
 
   it("reports a render called inline, with no binding to trace", () => {
@@ -74,6 +110,26 @@ describe("exact-markup-assertion", () => {
     const list = declaration(declarator("classes", logical(split(), other("ArrayExpression"))));
 
     expect(runRule(exactMarkupAssertion, program(rendered(), list, assertion(identifier("classes"), "toContain")))).toEqual([]);
+  });
+
+  it("leaves a `toContain` on a call to a helper declared to return an array alone", () => {
+    const helper = fnDeclaration("sectionIds", other("BlockStatement"), other("TSTypeAnnotation", other("TSArrayType")));
+
+    expect(runRule(exactMarkupAssertion, program(helper, assertion(call("sectionIds", call("render", literal("<b />"))), "toContain")))).toEqual(
+      [],
+    );
+  });
+
+  it("leaves a `toContain` on a helper whose body returns a list alone, with no annotation to read", () => {
+    const helper = fnDeclaration("sectionIds", other("BlockStatement", returnStatement(split())));
+
+    expect(runRule(exactMarkupAssertion, program(rendered(), helper, assertion(call("sectionIds", identifier("out")), "toContain")))).toEqual([]);
+  });
+
+  it("still reports a helper that returns markup rather than a list", () => {
+    const helper = fnDeclaration("section", other("BlockStatement", returnStatement(call("render", literal("<b />")))));
+
+    expect(runRule(exactMarkupAssertion, program(helper, assertion(call("section"), "toContain")))).toHaveLength(1);
   });
 
   it("leaves a `toContain` on a value no renderer reaches alone", () => {

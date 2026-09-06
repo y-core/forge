@@ -19,6 +19,7 @@ import { hasTailwind } from "./checks/design-system";
 import { checkDocs, type DocsCheckConfig } from "./checks/docs";
 import { checkExports, type ExportsCheckConfig } from "./checks/exports";
 import { checkJsx, type JsxCheckConfig } from "./checks/jsx";
+import { checkLintPlugin, hasEsbuild, type LintPluginCheckConfig } from "./checks/lint-plugin";
 import { checkModernCss, type ModernCssCheckConfig } from "./checks/modern-css";
 import { checkNamespaceGraph, type NamespaceGraphCheckConfig } from "./checks/namespace-graph";
 import { checkReadmeExports, type ReadmeExportsCheckConfig } from "./checks/readme-exports";
@@ -197,6 +198,15 @@ export function classGroupsStep(config: ClassGroupsCheckConfig, options: StepOpt
  *  has to be told which one did. @public */
 export function designScaleStep(config: DesignScaleCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-design-scale", () => checkDesignScale(config), options, { requires: tailwindRequired() });
+}
+
+/** Rebuilds the committed oxlint-plugin bundle and fails on any drift from its TypeScript source.
+ *  A consumer loads that bundle rather than the source, because node refuses to strip types under
+ *  `node_modules`. @public */
+export function lintPluginStep(config: LintPluginCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-lint-plugin", () => checkLintPlugin(config), options, {
+    requires: { tool: "esbuild", probe: hasEsbuild, hint: "bun add -d esbuild" },
+  });
 }
 
 /** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */

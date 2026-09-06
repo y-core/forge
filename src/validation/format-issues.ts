@@ -1,3 +1,4 @@
+import { vouchedMessage } from "./safe-check";
 import type { v } from "./validation";
 
 const UNNAMED_FIELD = "the submitted form";
@@ -31,7 +32,10 @@ export function describeValidationIssue(issue: v.BaseIssue<unknown>): string {
 export function describeEnvIssue(issue: v.BaseIssue<unknown>): string {
   const named = issuePathSegments(issue);
   const field = named.length === 0 ? ENV_UNNAMED_FIELD : describeValidationField(named);
-  return `${field}: ${issue.received === "undefined" ? "missing" : issue.type}`;
+  if (issue.received === "undefined") return `${field}: missing`;
+  // `check` is one type for every rule an author can write, so the message is the only thing that
+  // ever told two of them apart — surfaced when, and only when, `safeCheck` vouched for it.
+  return `${field}: ${vouchedMessage(issue) ?? issue.type}`;
 }
 
 /** Formats env issues as a `field: reason` list joined by `; `. @internal */

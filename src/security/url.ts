@@ -1,4 +1,4 @@
-import { v } from "../validation/mod";
+import { safeCheck, v } from "../validation/mod";
 import type { BaseUrlConfig, DeriveAllowedOriginsOptions, ParsedUrl } from "./types";
 
 const LOOPBACK_ALLOWANCE = "http://localhost and http://127.0.0.1 are allowed for local development";
@@ -7,13 +7,15 @@ const LOOPBACK_ALLOWANCE = "http://localhost and http://127.0.0.1 are allowed fo
 export const BaseUrlConfigSchema = v.pipe(
   v.string(),
   v.url(),
-  v.check((urlStr) => {
+  // The message names the requirement, never the env key that supplies the value: which key that is
+  // belongs to the consumer, and the refusal's own `<field>:` prefix already locates it.
+  safeCheck((urlStr: string) => {
     try {
       return isHttpsOrLoopback(new URL(urlStr));
     } catch {
       return false;
     }
-  }, `BASE_URL must use https: (${LOOPBACK_ALLOWANCE})`),
+  }, `must use https: (${LOOPBACK_ALLOWANCE})`),
   v.transform((urlStr): BaseUrlConfig => {
     const parsed = parseUrl(urlStr);
     return { ...parsed, allowedOrigins: deriveAllowedOrigins(parsed) };

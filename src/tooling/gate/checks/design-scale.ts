@@ -57,7 +57,7 @@ export async function writeDesignScale(config: DesignScaleCheckConfig): Promise<
 }
 
 if (import.meta.main) {
-  const root = resolve(dirname(fileURLToPathish(import.meta.url)), "../../../../..");
+  const root = resolve(dirname(fileURLToPathish(import.meta.url)), "../../../..");
   await writeDesignScale({ root, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" });
   console.log("wrote src/tooling/lint/data/design-scale.ts");
 }

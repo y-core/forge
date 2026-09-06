@@ -318,7 +318,6 @@ describe("Field ids — the empty string is not a missing value", () => {
     const refs = referencedIds(html);
     expect(refs).toEqual(["field-email", "field-email-description", "field-email-error"]);
     const declared = declaredIds(html);
-    // oxlint-disable-next-line forge/exact-markup-assertion -- set membership over two id lists, not a substring of markup; both lists are asserted exactly on the lines around it
     expect(refs.filter((id) => id === "" || !declared.includes(id))).toEqual([]);
     expect(declared).toEqual(["field-email", "field-email-description", "field-email-error"]);
   });

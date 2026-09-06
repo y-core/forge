@@ -21,6 +21,7 @@ export {
   exportsStep,
   formatStep,
   jsxStep,
+  lintPluginStep,
   lintStep,
   modernCssStep,
   namespaceGraphStep,
@@ -50,7 +51,7 @@ export { checkClassGroups, deriveTable, FORGE_STATE_RECIPES, writeClassGroups } 
 export type { ClassGroupTable, RootRow } from "./checks/class-groups-parse";
 export { deriveClassGroups, reach, renderClassGroups, SHORTHAND_CLOSURE, signature } from "./checks/class-groups-parse";
 export type { CssNode, DesignSystem } from "./checks/design-system";
-export { canonical, fileURLToPathish, hasTailwind, loadDesignSystem } from "./checks/design-system";
+export { canonical, fileURLToPathish, hasTailwind, isBareSpecifier, loadDesignSystem } from "./checks/design-system";
 export type { ClassOrderCheckConfig } from "./checks/class-order";
 export { checkClassOrder, droppedToken, validateClassOrder } from "./checks/class-order";
 export type { ClassTokensCheckConfig, SourceLiteral } from "./checks/class-tokens";
@@ -101,6 +102,8 @@ export type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
 export { checkExports, isPublished, parseSubpathPatterns } from "./checks/exports";
 export type { JsxCheckConfig } from "./checks/jsx";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
+export type { LintPluginCheckConfig } from "./checks/lint-plugin";
+export { bundleLintPlugin, checkLintPlugin, hasEsbuild, writeLintPlugin } from "./checks/lint-plugin";
 export type { ModernCssCheckConfig } from "./checks/modern-css";
 export { checkModernCss } from "./checks/modern-css";
 export type { DeferredFinding } from "./checks/modern-css-deferred";

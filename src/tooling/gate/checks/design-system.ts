@@ -32,6 +32,9 @@ export function hasTailwind(): boolean {
 /** Turns a `file://` URL into a path, and leaves a path alone. @public */
 export const fileURLToPathish = (url: string): string => (url.startsWith("file://") ? new URL(url).pathname : url);
 
+/** Whether an `@import` id names a package rather than a path — the two halves of one resolution rule. @public */
+export const isBareSpecifier = (id: string): boolean => !id.startsWith(".") && !id.startsWith("/");
+
 // `loadModule` throws rather than returning a stub: forge's stylesheet uses no `@plugin`/`@config`,
 // and a silent no-op would hide the day it does.
 /** Compiles the stylesheet at `entry` into the design system it declares. @public */
@@ -41,7 +44,7 @@ export async function loadDesignSystem(entry: string): Promise<DesignSystem> {
   };
 
   const loadStylesheet = async (id: string, base: string): Promise<{ path: string; base: string; content: string }> => {
-    const path = id.startsWith("tailwindcss")
+    const path = isBareSpecifier(id)
       ? fileURLToPathish(import.meta.resolve(id === "tailwindcss" ? "tailwindcss/index.css" : id))
       : resolve(base, id);
     return { path, base: dirname(path), content: readFileSync(path, "utf-8") };

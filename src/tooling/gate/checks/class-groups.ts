@@ -64,7 +64,7 @@ export async function writeClassGroups(config: ClassGroupsCheckConfig): Promise<
 }
 
 if (import.meta.main) {
-  const root = resolve(dirname(fileURLToPathish(import.meta.url)), "../../../../..");
+  const root = resolve(dirname(fileURLToPathish(import.meta.url)), "../../../..");
   await writeClassGroups({
     root,
     stylesheet: "src/ui/assets/css/tailwind.css",

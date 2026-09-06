@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { v } from "../validation/mod";
+import { parseEnv } from "../validation/parse-env";
 import { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";
 
 describe("parseUrl", () => {
@@ -203,13 +204,13 @@ describe("BaseUrlConfigSchema", () => {
 
   it("names both loopback allowances in the rejection message", () => {
     const result = v.safeParse(BaseUrlConfigSchema, "http://cornellaw.co.za");
-    expect(result.issues?.[0]?.message).toBe("BASE_URL must use https: (http://localhost and http://127.0.0.1 are allowed for local development)");
+    expect(result.issues?.[0]?.message).toBe("must use https: (http://localhost and http://127.0.0.1 are allowed for local development)");
   });
 
   it("rejects a ws:// loopback URL", () => {
     const result = v.safeParse(BaseUrlConfigSchema, "ws://localhost:8787");
     expect(result.success).toBe(false);
-    expect(result.issues?.[0]?.message).toBe("BASE_URL must use https: (http://localhost and http://127.0.0.1 are allowed for local development)");
+    expect(result.issues?.[0]?.message).toBe("must use https: (http://localhost and http://127.0.0.1 are allowed for local development)");
   });
 
   it("rejects a non-URL string", () => {
@@ -232,5 +233,21 @@ describe("BaseUrlConfigSchema", () => {
     if (result.success) {
       expect(result.output.allowedOrigins).toEqual(["https://localhost:8787"]);
     }
+  });
+});
+
+describe("BaseUrlConfigSchema in an env refusal", () => {
+  const Schema = v.object({ site: v.object({ url: BaseUrlConfigSchema }) });
+
+  it("states the requirement, and names no env key — which key supplies the value is the consumer's choice", () => {
+    expect(() => parseEnv(Schema, { site: { url: "http://example.com" } })).toThrow(
+      new Error("Invalid environment: site.url: must use https: (http://localhost and http://127.0.0.1 are allowed for local development)"),
+    );
+  });
+
+  it("reproduces none of the rejected origin, which is what the narrowing was for", () => {
+    expect(() => parseEnv(Schema, { site: { url: "http://secret-staging.example" } })).toThrow(
+      new Error("Invalid environment: site.url: must use https: (http://localhost and http://127.0.0.1 are allowed for local development)"),
+    );
   });
 });

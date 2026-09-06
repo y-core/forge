@@ -2,10 +2,10 @@
 
 Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge cf gen env`) under the `/cli` sub-path.
 
-| Import path                | Surface                                                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `formDigits`, `describeValidationIssue`, `ValidationResult` |
-| `@y-core/forge/tooling/cf` | `forge cf gen env` env-schema generator API (also a `bin`)                                                                            |
+| Import path                | Surface                                                                                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `formDigits`, `safeCheck`, `describeValidationIssue`, `ValidationResult` |
+| `@y-core/forge/tooling/cf` | `forge cf gen env` env-schema generator API (also a `bin`)                                                                                         |
 
 **Everything except `v` is a sibling of it, not a member.** `strictObject` and `v.strictObject` are two different functions, and the one without the prefix is the recommendation for untrusted input.
 
@@ -16,6 +16,7 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 - **Single valibot entry point** — `v` is the complete valibot namespace re-exported as one import, so every app uses the same pinned valibot version and never deep-imports the upstream package.
 - **`strictObject`** — the strict object schema to use for anything parsing untrusted input. Only a field the schema actually declares counts as declared, so an undeclared key is refused rather than silently dropped, for **every** key a caller can send.
 - **Form-value primitives** — `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`, and `formDigits()` for a control whose separators are cosmetic. A form body reaches a schema exactly as submitted, so trimming, CRLF folding, and separator removal are the schema's job. Each earns its place by making one downstream check mean one thing — a required-field check, a line-counted length, a digit-counted length — and that criterion, not a count, closes the set.
+- **`safeCheck`** — a `v.check` whose message its author has vouched for as naming no input. Every `v.check` shares the single issue type `check`, so the message is the only thing that ever tells two of them apart, and an env refusal drops it — a rule with a sentence written for a deployer reads as the bare word `check`. `safeCheck` registers the message and the env formatter surfaces it verbatim; a plain `v.check` is unchanged, which is what keeps a message that interpolates the rejected value out of the throw.
 - **Bounded issue descriptions** — `describeValidationIssue` names the field one issue is about and nothing else, so a refusal a caller reads cannot carry the submitted value, the schema's own rule, or a length the caller chose. **No forge renderer reproduces `issue.message` on any channel** — not a response, and not a log.
 - **`ValidationResult<T>`** — a domain alias of forge's one `Result` primitive, `Result<T, readonly string[]>` (`{ ok: true; data: T } | { ok: false; error: readonly string[] }`), the canonical return type for any service that validates its own input.
 - **`forge cf gen env` env-schema generator** — reads `wrangler.jsonc` bindings and `.dev.vars` keys and emits a committed, schema-first valibot `EnvSchema` (plus an inferred `type Env`), replacing the env half of `wrangler types`.
@@ -145,6 +146,31 @@ const PaymentSchema = strictObject({
 
 **`formDigits()` is destructive in a way its siblings are not.** `formText()` and `formMultilineText()` only normalize whitespace, but this one discards significant characters: a leading `+` on an international number, an `x` before an extension, a letter in an alphanumeric code. A field that must preserve any of those stays on `formText()`.
 
+#### `safeCheck(requirement, message)`
+
+```typescript
+function safeCheck<TInput>(requirement: (input: TInput) => boolean, message: string): v.CheckAction<TInput, string>;
+```
+
+A `v.check` whose `message` the author states is **value-free** — it describes the requirement and never interpolates the input. An env refusal surfaces a registered message verbatim in place of the bare word `check`:
+
+```typescript
+import { safeCheck, v } from "@y-core/forge/validation";
+
+const OriginSchema = v.pipe(
+  v.string(),
+  v.url(),
+  safeCheck((url) => url.startsWith("https://"), "must use https"),
+);
+// Invalid environment: site.url: must use https
+```
+
+**Nothing can tell statically whether a message names the value, so the author says so.** A plain `v.check` still renders as `check`, which is the fail-closed direction: adopting `safeCheck` is opt-in, one rule at a time, and forgetting it costs detail rather than disclosure.
+
+**Write the requirement, not the variable.** The schema validates a _value_; which env key supplies it is the consuming app's choice, and the refusal's own `<field>:` prefix already locates it. A message reading `BASE_URL must use https` sends an operator whose repo maps `SITE_ORIGIN` to a variable that does not exist.
+
+**The registration is keyed by the predicate function** — valibot hands the very same reference back on the issue. Passing an already-vouched predicate to a plain `v.check` therefore still resolves to the vouched message, and re-vouching one predicate with a second message replaces the first.
+
 #### `describeValidationIssue(issue)`
 
 ```typescript
@@ -160,7 +186,7 @@ const messages = result.issues.map(describeValidationIssue); // ["email"]
 return fragmentResponse(renderValidationErrors(messages), 422);
 ```
 
-**There is no operator-facing counterpart that reproduces `issue.message`.** `formatValidationIssues` used to be one, and it leaked: valibot interpolates the rejected value into its own message, so a malformed secret was reproduced verbatim in the `Invalid environment: …` throw, and from there into the app logger, the KV log channel and the debug 500 body. Env validation now renders `field: reason` from `issue.type` — `missing` for an absent binding — which is a closed valibot vocabulary carrying neither the value nor the schema's text.
+**There is no operator-facing counterpart that reproduces `issue.message`.** `formatValidationIssues` used to be one, and it leaked: valibot interpolates the rejected value into its own message, so a malformed secret was reproduced verbatim in the `Invalid environment: …` throw, and from there into the app logger, the KV log channel and the debug 500 body. Env validation now renders `field: reason` from `issue.type` — `missing` for an absent binding — which is a closed valibot vocabulary carrying neither the value nor the schema's text. The one exception is a message registered through `safeCheck`, which its author has vouched for; nothing else about a `check` issue survives.
 
 #### `ValidationResult<T>`
 

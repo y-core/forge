@@ -150,6 +150,7 @@ same rules on its own tree. Each is also a pre-built step, whose label is its `-
 | `classOrderStep`        | `validate-class-order`         | `checkClassOrder`        | Every class literal is a fixed point of `cn`, so sorting one cannot change what it renders                                     |
 | `classTokensStep`       | `validate-class-tokens`        | `checkClassTokens`       | Every class token in the source resolves to CSS the design system compiles                                                     |
 | `designScaleStep`       | `validate-design-scale`        | `checkDesignScale`       | The design-scale data the lint plugin reads matches the one regenerated from the design system                                 |
+| `lintPluginStep`        | `validate-lint-plugin`         | `checkLintPlugin`        | The committed oxlint-plugin bundle a consumer loads matches a fresh build of its TypeScript source                             |
 | `contrastStep`          | `validate-contrast`            | `checkContrast`          | Every audited foreground/background pair meets its contrast criterion                                                          |
 | `browserStep`           | `test:browser`                 | `hasChromium`            | A launchable browser exists — declared as the step's `requires.probe`                                                          |
 

@@ -23,6 +23,7 @@ import {
   exportsStep,
   formatStep,
   jsxStep,
+  lintPluginStep,
   lintStep,
   modernCssStep,
   namespaceGraphStep,
@@ -214,6 +215,9 @@ export const STEPS: readonly Step[] = [
   // A second step rather than a second assertion inside the first: the two generated files drift for
   // different reasons, and a reader has to be told which one to regenerate.
   designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" }),
+  // The bundle a consumer's oxlint loads, held against the source forge's own `.oxlintrc.json` names:
+  // node refuses to strip types under `node_modules`, so the two copies exist and one can drift.
+  lintPluginStep({ root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs" }),
   contrastStep({
     root: ROOT,
     cssDir: "src/ui/assets/css",

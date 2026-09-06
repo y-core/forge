@@ -22,7 +22,7 @@ description: "The valibot facade, form parsing and its byte cap, CSRF protection
 
 - §1 Validation Namespace: the valibot facade and the action pipeline
 - §1a v Namespace — Complete valibot Re-Export: the facade rule, and what the namespace exports beside `v`
-- §1b v.safeParse with abortEarly: the form-validation default, and which formatter a caller may read
+- §1b v.safeParse with abortEarly: the form-validation default, which formatter a caller may read, and `safeCheck` — the one env message an author may vouch for
 - §1c ValidationResult Type: the domain alias, owned elsewhere
 - §1d defineAction — The Schema Contract: the only way to reach a handler, what its guards consume, and the failure modes
 - §2 Form Namespace — Body Parsing: FormData in, with a byte cap
@@ -54,7 +54,8 @@ facade is what keeps the valibot version single-sourced and lets forge bound its
 
 **`v` is complete, but it is not alone.** The namespace also ships forge's own schema and issue
 helpers, and they are named exports sitting _beside_ `v`, never members of it: `strictObject`
-(§1d), `formText`, `formMultilineText` and `formDigits` (§1d), and `describeValidationIssue` (§1b).
+(§1d), `formText`, `formMultilineText` and `formDigits` (§1d), `safeCheck` (§1b), and
+`describeValidationIssue` (§1b).
 `src/validation/mod.ts` is authoritative for the list. The import shape is what matters here,
 because `strictObject` and `v.strictObject` are two different functions and only one of them is
 the recommendation (§1d). `src/validation/README.md` shows the import and a worked schema.
@@ -83,6 +84,19 @@ on every request. Env validation renders `field: reason` from `issue.type` (`mis
 binding) — a closed valibot vocabulary that can carry neither caller text nor schema text.
 `issue.expected` stays out for the same reason it does in a caller-facing refusal: it can be a
 `v.regex` source.
+
+**`safeCheck` is the one message that survives, and only because its author vouched for it.** Every
+`v.check` in a schema shares the single issue type `check`, so the type alone tells an operator
+nothing: a rule whose sentence was written for a deployer reads as `site.url: check`, and the
+narrowing that kept the rejected value out took the static, author-written sentence with it.
+`safeCheck(requirement, message)` registers `message` against the requirement function, and
+`describeEnvIssue` surfaces a registered one verbatim; a plain `v.check` still renders as `check`.
+Nothing can decide statically whether a message interpolates its input, so the author states it —
+and the default is the safe one, which makes adoption one rule at a time and forgetting it cost
+detail rather than disclosure. **A vouched message names the requirement, never an env key**: the
+schema validates a value, and which key supplies it is the consuming app's choice, so
+`BASE_URL must use https` sends an operator whose repo maps `SITE_ORIGIN` to a variable that does
+not exist. The `<field>:` prefix already locates it.
 
 **Omit `abortEarly` (default `false`) when the response must enumerate every failing field** — an
 API response rather than a progressive form. An enumerating refusal is one a caller can lengthen

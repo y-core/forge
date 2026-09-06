@@ -171,7 +171,6 @@ describe("ChromeNavbarSection", () => {
       "NavSlot",
       "NavSlot",
     ]);
-    // oxlint-disable-next-line forge/exact-markup-assertion -- a whole-document absence sweep: the slot key must appear nowhere at all, so there is no element to pin it to
     expect(body.includes("status")).toBe(false);
   });
 

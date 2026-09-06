@@ -39,7 +39,8 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/tooling/cli`         | CLI command framework                                                | [src/tooling/cli/README.md](src/tooling/cli/README.md)         |
 | `@y-core/forge/tooling/gate`        | Verification gate — steps, presets & checks (Node/Bun only)          | [src/tooling/gate/README.md](src/tooling/gate/README.md)       |
 | `@y-core/forge/tooling/release`     | Release workflow — version, changelog & surface guard                | [src/tooling/release/README.md](src/tooling/release/README.md) |
-| `@y-core/forge/tooling/lint`        | forge's oxlint plugin — name it in `.oxlintrc.json`'s `jsPlugins`    | [src/tooling/lint/README.md](src/tooling/lint/README.md)       |
+| `@y-core/forge/tooling/lint`        | forge's oxlint rules, and the two rule catalogs the gate reads       | [src/tooling/lint/README.md](src/tooling/lint/README.md)       |
+| `@y-core/forge/tooling/lint/plugin` | The same plugin prebuilt — the spelling `.oxlintrc.json` names       | [src/tooling/lint/README.md](src/tooling/lint/README.md)       |
 | `@y-core/forge/tooling/cf`          | Cloudflare — account bindings, zone rules, env schema (`forge cf`)   | [src/tooling/cf/README.md](src/tooling/cf/README.md)           |
 | `@y-core/forge/tooling/term`        | Terminal rendering — width, wrapping, grids & colour                 | [src/tooling/term/README.md](src/tooling/term/README.md)       |
 | `@y-core/forge/config`              | Environment config                                                   | [src/config/README.md](src/config/README.md)                   |
