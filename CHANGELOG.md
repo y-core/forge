@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.2] — 2026-09-06
+
 ### Added
 
 - **`validate-build-time-boundary` — a runtime module that imports build-time code now fails the
@@ -4897,6 +4903,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.2]: https://github.com/y-core/forge/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/y-core/forge/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/y-core/forge/compare/v0.0.91...v0.1.0
 [0.0.91]: https://github.com/y-core/forge/compare/v0.0.90...v0.0.91
