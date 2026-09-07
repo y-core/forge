@@ -125,18 +125,20 @@ describe("formatSummary()", () => {
 describe("listLabel()", () => {
   const conditional: Step = { label: "validate-class-groups", run: () => checkResult([], ""), requires: { tool: "tailwindcss", hint: "x" } };
 
-  it("marks a step with a dependency as conditional in a fast run, naming the dependency", () => {
+  it("marks a step with a dependency as conditional below the full tier, naming the dependency", () => {
     expect(listLabel(conditional, "fast")).toBe("validate-class-groups (conditional — tailwindcss required)");
+    expect(listLabel(conditional, "standard")).toBe("validate-class-groups (conditional — tailwindcss required)");
   });
 
-  it("states the dependency as required under --full, where its absence is a failure", () => {
+  it("states the dependency as required in a full run, where its absence is a failure", () => {
     expect(listLabel({ label: "test:browser", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "x" } }, "full")).toBe(
       "test:browser (requires chromium)",
     );
   });
 
-  it("leaves a step with no dependency its bare label in either mode", () => {
+  it("leaves a step with no dependency its bare label in every mode", () => {
     expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "fast")).toBe("lint");
+    expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "standard")).toBe("lint");
     expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "full")).toBe("lint");
   });
 });
@@ -164,15 +166,24 @@ describe("formatFixSummary()", () => {
 });
 
 describe("formatMissingRequirement()", () => {
-  it("fails the step under --full, naming the absent tool and the exact command that installs it", () => {
-    expect(formatMissingRequirement("test:browser", "chromium", "bun run test:install", "full")).toBe(
-      "✗ test:browser — chromium not found; run `bun run test:install`",
+  it("fails the step in a full run, naming the absent tool and the remedy verbatim", () => {
+    expect(formatMissingRequirement("test:browser", "chromium", "run `bunx playwright install chromium`", "full")).toBe(
+      "✗ test:browser — chromium not found; run `bunx playwright install chromium`",
     );
   });
 
-  it("reports the same event as a skip in a fast run, carrying the install hint with it", () => {
-    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "bun add -d tailwindcss", "fast")).toBe(
+  it("reports the same event as a skip below the full tier, carrying the remedy with it", () => {
+    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "standard")).toBe(
       "○ validate-class-groups — skipped (tailwindcss not found; run `bun add -d tailwindcss`)",
+    );
+    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "fast")).toBe(
+      "○ validate-class-groups — skipped (tailwindcss not found; run `bun add -d tailwindcss`)",
+    );
+  });
+
+  it("prints a multi-route remedy unwrapped, since not every remedy is a single command", () => {
+    expect(formatMissingRequirement("test:browser", "chromium", "run `a`, or use a devbox container — `devctl up`", "full")).toBe(
+      "✗ test:browser — chromium not found; run `a`, or use a devbox container — `devctl up`",
     );
   });
 });

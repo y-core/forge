@@ -91,8 +91,11 @@ announces nothing.
 - Right: `<label for="email">Email</label><input id="email" name="email" />`
 
 **Never skip a heading level.** <!-- rule:forge-ui-heading-order -->
-`Card.Title` renders inside the level its section sits at; choosing a level for its type size is
-what produces the skip. Size with a class, not with the tag.
+A title renders inside the level its section sits at; choosing a level for its type size is what
+produces the skip. Size with a class, not with the tag. Where a compound owns the heading tag,
+`EmptyState.Title`, `Dialog.Title` and `Drawer.Title` take a `level` prop that moves the tag and
+leaves the class alone — that is the prop to reach for when the section sits at a level other than
+the compound's default.
 
 ---
 

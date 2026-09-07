@@ -2,6 +2,7 @@
  *  writing a spawnable file per check. Labels are fixed: they are the `--only` tokens.
  */
 
+import { type AssetManifestCheckConfig, checkAssetManifest } from "./checks/asset-manifest";
 import { type AssetRootCheckConfig, checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
 import { type BuildTimeBoundaryCheckConfig, checkBuildTimeBoundary } from "./checks/build-time-boundary";
@@ -24,12 +25,12 @@ import { checkModernCss, type ModernCssCheckConfig } from "./checks/modern-css";
 import { checkNamespaceGraph, type NamespaceGraphCheckConfig } from "./checks/namespace-graph";
 import { checkReadmeExports, type ReadmeExportsCheckConfig } from "./checks/readme-exports";
 import { checkSsrBoundary, type SsrBoundaryCheckConfig } from "./checks/ssr-boundary";
-import type { CheckStep, CommandStep, StepRequirement } from "./steps";
+import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./steps";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
 export interface StepOptions {
-  /** Restricts the step to `--full` runs. */
-  fullOnly?: boolean;
+  /** The lowest mode the step runs in. */
+  tier?: GateMode;
   /** Replaces the step's default dependency; `null` drops it, so a project that vendors one is not gated on probing it. */
   requires?: StepRequirement | null;
 }
@@ -40,8 +41,10 @@ export interface SourceStepOptions extends StepOptions {
   sources?: readonly string[];
 }
 
-function mode(fullOnly: boolean | undefined, fallback = false): { fullOnly: true } | Record<string, never> {
-  return (fullOnly ?? fallback) ? { fullOnly: true } : {};
+// The key is omitted when the value is the default, so a table reads as the tiers it departs from.
+function tier(value: GateMode | undefined, fallback: GateMode = "fast"): { tier: GateMode } | Record<string, never> {
+  const resolved = value ?? fallback;
+  return resolved === "fast" ? {} : { tier: resolved };
 }
 
 function prerequisite(
@@ -56,14 +59,14 @@ function checkStep(
   label: string,
   run: CheckStep["run"],
   options: StepOptions,
-  defaults: { fullOnly?: boolean; requires?: StepRequirement } = {},
+  defaults: { tier?: GateMode; requires?: StepRequirement } = {},
 ): CheckStep {
-  return { label, run, ...mode(options.fullOnly, defaults.fullOnly), ...prerequisite(options.requires, defaults.requires) };
+  return { label, run, ...tier(options.tier, defaults.tier), ...prerequisite(options.requires, defaults.requires) };
 }
 
 /** `tsc --noEmit`. Belongs first in a table: a type failure cascades into misleading lint and test failures. @public */
 export function typecheckStep(options: StepOptions = {}): CommandStep {
-  return { label: "typecheck", tail: 20, cmd: ["tsc", "--noEmit"], ...mode(options.fullOnly) };
+  return { label: "typecheck", tail: 20, cmd: ["tsc", "--noEmit"], ...tier(options.tier) };
 }
 
 /** `oxlint` over `sources` (default `src/`), with `--fix` as its fixer. @public */
@@ -75,17 +78,17 @@ export function lintStep(options: SourceStepOptions = {}): CommandStep {
     // oxlint exits 0 on `warn`, so without this a green gate would not mean a clean tree.
     cmd: ["oxlint", "--deny-warnings", ...sources],
     fix: ["oxlint", "--fix", ...sources],
-    ...mode(options.fullOnly),
+    ...tier(options.tier),
   };
 }
 
 /** `oxfmt --check` over `sources` (default `src/`), with a bare `oxfmt` run as its fixer. Ordered after `lintStep` so the formatter owns the final byte layout. @public */
 export function formatStep(options: SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["src/"];
-  return { label: "format", tail: 20, cmd: ["oxfmt", "--check", ...sources], fix: ["oxfmt", ...sources], ...mode(options.fullOnly) };
+  return { label: "format", tail: 20, cmd: ["oxfmt", "--check", ...sources], fix: ["oxfmt", ...sources], ...tier(options.tier) };
 }
 
-/** `oxlint --type-aware` over `sources` (default `src/`); always `--full`: it builds its own TypeScript program. @public */
+/** `oxlint --type-aware` over `sources` (default `src/`); defaults to `standard`: it builds its own TypeScript program, so it is too slow for the inner loop. @public */
 export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["src/"];
   return {
@@ -94,27 +97,37 @@ export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep 
     // The unused-directive check rides here, not on `lint`: this run is a superset, so it is the only
     // one that can tell a stale directive from one that only a type-aware rule redeems.
     cmd: ["oxlint", "--type-aware", "--deny-warnings", "--report-unused-disable-directives-severity", "error", ...sources],
-    ...mode(options.fullOnly, true),
+    ...tier(options.tier, "standard"),
   };
 }
 
 /** `bun test` over `sources`, or the whole project when none are named. @public */
 export function testStep(options: SourceStepOptions = {}): CommandStep {
-  return { label: "test", tail: 120, cmd: ["bun", "test", ...(options.sources ?? [])], ...mode(options.fullOnly) };
+  return { label: "test", tail: 120, cmd: ["bun", "test", ...(options.sources ?? [])], ...tier(options.tier) };
 }
 
-/** `playwright test`, always `--full`: it needs a downloaded browser. @public */
+/** `playwright test` under bun, defaulting to the `full` tier: it needs a downloaded browser. @public */
 export function browserStep(options: { hint?: string } & StepOptions = {}): CommandStep {
   return {
     label: "test:browser",
-    // Defaults to `--full` — it needs a downloaded browser — but the caller may state it, so the
+    // Defaults to `full` — it needs a downloaded browser — but the caller may state it, so the
     // step table can be read for which steps run in which mode without opening this file.
-    ...mode(options.fullOnly, true),
+    ...tier(options.tier, "full"),
     tail: 120,
-    cmd: ["playwright", "test"],
-    // The probe targets the downloaded browser, not the `playwright` CLI: the CLI is a devDependency
-    // and always present, so probing it would pass vacuously and let every spec fail at launch.
-    ...prerequisite(options.requires, { tool: "chromium", probe: hasChromium, hint: options.hint ?? "bun run test:install" }),
+    // Under bun, not node: forge ships raw TypeScript, and node refuses to strip types from a file
+    // under `node_modules` — so a consumer's `playwright.config.ts` importing any forge subpath
+    // dies at config load with ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING.
+    cmd: ["bunx", "--bun", "playwright", "test"],
+    // The probe targets the browser, not the `playwright` CLI: the CLI is a devDependency and always
+    // present, so probing it would pass vacuously and let every spec fail at launch. The remedy names
+    // both routes because the reader is, by definition, outside a devbox container — every image there
+    // bakes Chromium, so the probe cannot fail in one. A direct command, not a package script, so
+    // nothing has to be defined for it to work.
+    ...prerequisite(options.requires, {
+      tool: "chromium",
+      probe: hasChromium,
+      hint: options.hint ?? "run `bunx playwright install chromium`, or use a devbox container — `devctl up`",
+    }),
   };
 }
 
@@ -131,6 +144,11 @@ export function namespaceGraphStep(config: NamespaceGraphCheckConfig, options: S
 /** Diffs the files the assets pipeline writes to the asset root against the `run_worker_first` exclusions. @public */
 export function assetRootStep(config: AssetRootCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-asset-root", () => checkAssetRoot(config), options);
+}
+
+/** Checks every path the emitted assets manifest maps to exists under the served asset directory. @public */
+export function assetManifestStep(config: AssetManifestCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-asset-manifest", (gateMode) => checkAssetManifest(config, gateMode), options);
 }
 
 /** Checks every source module has a test beside it, so deleting one is loud rather than silent. @public */
@@ -165,10 +183,10 @@ export function readmeExportsStep(config: ReadmeExportsCheckConfig, options: Ste
   return checkStep("validate-readme-exports", () => checkReadmeExports(config), options);
 }
 
-/** Checks the changelog's headings against the current package version. Defaults to `--full`:
+/** Checks the changelog's headings against the current package version. Defaults to the `full` tier:
  *  requiring a written `[Unreleased]` entry on every inner loop would fail every WIP commit. @public */
 export function changelogStep(config: ChangelogCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-changelog", () => checkChangelog(config), options, { fullOnly: true });
+  return checkStep("validate-changelog", () => checkChangelog(config), options, { tier: "full" });
 }
 
 /** Checks the design corpus against the tree it governs. @public */
@@ -176,9 +194,9 @@ export function designStep(config: DesignCheckConfig, options: StepOptions = {})
   return checkStep("validate-design", () => checkDesign(config), options);
 }
 
-/** The dependency every design-system step shares — `tailwindcss` is an optional peer, skipped in a fast
- *  run and failed by `--full`. */
-const tailwindRequired = (): StepRequirement => ({ tool: "tailwindcss", probe: hasTailwind, hint: "bun add -d tailwindcss" });
+/** The dependency every design-system step shares — `tailwindcss` is an optional peer, skipped below
+ *  the `full` tier and failed by it. */
+const tailwindRequired = (): StepRequirement => ({ tool: "tailwindcss", probe: hasTailwind, hint: "run `bun add -d tailwindcss`" });
 
 /** Measures every audited foreground/background pair against its contrast criterion. @public */
 export function contrastStep(config: ContrastCheckConfig, options: StepOptions = {}): CheckStep {
@@ -205,7 +223,7 @@ export function designScaleStep(config: DesignScaleCheckConfig, options: StepOpt
  *  `node_modules`. @public */
 export function lintPluginStep(config: LintPluginCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-lint-plugin", () => checkLintPlugin(config), options, {
-    requires: { tool: "esbuild", probe: hasEsbuild, hint: "bun add -d esbuild" },
+    requires: { tool: "esbuild", probe: hasEsbuild, hint: "run `bun add -d esbuild`" },
   });
 }
 

@@ -309,8 +309,7 @@ needs `showModal()`, which is a behaviour change, not an extraction.
 ### 1m. The Prop Vocabulary
 
 **Every presentational prop is drawn from one vocabulary**, declared in
-`src/ui/contracts/vocabulary.ts` and `src/ui/contracts/state-attrs.ts`, which are authoritative over
-the values themselves; `src/ui/README.md` states which component takes which.
+`src/ui/contracts/vocabulary.ts` and `state-attrs.ts` — authoritative over the values; `src/ui/README.md` maps prop to component.
 
 | Prop          | What it decides                               | Declared as                 |
 | ------------- | --------------------------------------------- | --------------------------- |
@@ -322,21 +321,22 @@ the values themselves; `src/ui/README.md` states which component takes which.
 | `invalid`     | the control holds a validation error          | `StateAttrsProps`           |
 | `busy`        | the component is waiting on work              | `StateAttrsProps`           |
 
-**No component declares a prop named `variant`.** One name answering two questions — which colour,
-and how much emphasis — is what let `secondary` mean an outlined button and a filled chip at once.
-Asked separately, a pair reads identically on every component that takes it, and `toneVariants`
-(§3h) is the one place either is painted.
+**No component declares a prop named `variant`.** One name answering two questions — which colour and
+how much emphasis — is what let `secondary` mean an outlined button and a filled chip at once. Asked
+separately the pair reads identically everywhere, and `toneVariants` (§3h) paints both.
 
 **`orientation` carries the two layout axes and nothing else**, because a stylesheet matches
-`data-orientation` on exactly that: `Switch`'s label side is `labelPlacement` (§1i), and
-`FormField`'s width-driven collapse is a separate `responsive` boolean.
+`data-orientation` on exactly that: `Switch`'s label side is `labelPlacement` (§1i), `FormField`'s
+width-driven collapse a separate `responsive` boolean.
 
-**One `size` is exempt: `Turnstile` forwards Cloudflare's widget sizes verbatim**, renaming a third
-party's values at a mount point being how a component forge does not ship gets documented (§1f).
+**Two props sit outside the table.** `Turnstile`'s `size` is Cloudflare's, verbatim (§1f). `level`
+picks the heading tag on `EmptyState.Title` (default `3`) and `Dialog`/`Drawer.Title` (default `2`),
+and nothing else — `data-slot`, the class and the derived `id` are identical at every level, so
+`aria-labelledby` still resolves. It is the tool `forge-ui-heading-order` needed. Not `as`, which
+already names a type scale on `FormField.Legend`.
 
-**`conformance.test.tsx` enforces all three by scanning the sources** under `ui/core`, `ui/chrome`
-and `ui/controls`, and carries the exemption with its reason — so adding one is a visible change
-rather than a quiet edit.
+**`conformance.test.tsx` enforces all three** by scanning `ui/core`, `ui/chrome` and `ui/controls`,
+carrying each exemption with its reason — so adding one is visible, not a quiet edit.
 
 ### 1n. Optional Input Props Carry an Explicit `| undefined`
 
@@ -566,7 +566,7 @@ documentation at the point of use, and gzip already collapses the repetition an 
 **`validate-class-groups` regenerates the table and fails the gate on any difference**, so a
 `tailwindcss` release that moves the ground truth is reported rather than silently absorbed, and a
 hand edit to the generated file fails the same way. It runs wherever the optional `tailwindcss` peer
-resolves — skipped in a fast run without it, failed by `--full` ([`TESTING.md`](./TESTING.md) §6).
+resolves — skipped below the `full` tier, failed by a full run ([`TESTING.md`](./TESTING.md) §6).
 
 **The class list is not authoritative for a root's named values.** `getClassList()` enumerates a
 value scale for `left`, `right` and `inset-s` but nothing for `start` and `end` beyond three

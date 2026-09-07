@@ -141,8 +141,11 @@ Override never for the primitive; a brief may restyle the viewport's padding, no
 **A skipped heading level.** A Floor violation — `forge-ui-heading-order`. It arrives one way almost
 every time: the heading needed to be smaller, so the tag was changed instead of the class.
 Default: the level comes from the section's position in the document and the size comes from a
-class — `text-sm font-medium` on an `<h3>` satisfies both — and a compound that fixes its own tag,
-as `Card.Title` does, is left alone. <!-- rule:forge-ui-tell-heading-skip -->
+class — `text-sm font-medium` on an `<h3>` satisfies both. A compound that owns its heading tag takes
+a `level` prop for the position and never a class change for it: `EmptyState.Title`, `Dialog.Title`
+and `Drawer.Title`.
+<!-- rule:forge-ui-tell-heading-skip -->
+
 Override never; see the Floor rule.
 
 ---

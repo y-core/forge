@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  assetManifestStep,
   browserStep,
   changelogStep,
   classGroupsStep,
@@ -43,6 +44,7 @@ const CHECK_STEPS: readonly Step[] = [
     palettePath: () => "/nowhere/theme.css",
   }),
   cssSourcesStep({ root: "/nowhere", uiDir: "ui", cssDir: "css", sourceDir: "src", readme: "README.md" }),
+  assetManifestStep({ root: "/nowhere", assetConfig: "assets.config.ts" }),
 ];
 
 const COMMAND_STEPS: readonly Step[] = [typecheckStep(), lintStep(), formatStep(), testStep(), browserStep()];
@@ -72,6 +74,7 @@ describe("builders — the two step kinds", () => {
       "validate-design",
       "validate-contrast",
       "validate-css-sources",
+      "validate-asset-manifest",
     ]);
   });
 });
@@ -141,8 +144,8 @@ describe("builders — the tool steps", () => {
 });
 
 describe("typeAwareLintStep()", () => {
-  it("is full-only: it builds its own TypeScript program, so it stays off the fast loop", () => {
-    expect(typeAwareLintStep().fullOnly).toBe(true);
+  it("defaults to the standard tier: it builds its own TypeScript program, so it stays off the fast loop", () => {
+    expect(typeAwareLintStep().tier).toBe("standard");
   });
 
   // The type-aware run is a superset of the syntax run, so it is the only one that can tell a stale
@@ -164,8 +167,12 @@ describe("typeAwareLintStep()", () => {
 });
 
 describe("browserStep()", () => {
-  it("is full-only, because it is the one step needing a machine prerequisite", () => {
-    expect(browserStep().fullOnly).toBe(true);
+  it("defaults to the full tier, because it is the one step needing a machine prerequisite", () => {
+    expect(browserStep().tier).toBe("full");
+  });
+
+  it("spawns playwright under bun, since node cannot strip types from a forge subpath under node_modules", () => {
+    expect(browserStep().cmd).toEqual(["bunx", "--bun", "playwright", "test"]);
   });
 
   it("names the browser as the prerequisite, not the playwright CLI that is always installed", () => {
@@ -176,8 +183,8 @@ describe("browserStep()", () => {
     expect(browserStep().requires?.probe).toBe(hasChromium);
   });
 
-  it("hints bun run test:install by default", () => {
-    expect(browserStep().requires?.hint).toBe("bun run test:install");
+  it("names both routes, since a reader who sees it is by definition outside a devbox container", () => {
+    expect(browserStep().requires?.hint).toBe("run `bunx playwright install chromium`, or use a devbox container — `devctl up`");
   });
 
   it("takes a hint of its own, for a project installing the browser some other way", () => {
@@ -185,21 +192,22 @@ describe("browserStep()", () => {
   });
 });
 
-describe("builders — fullOnly", () => {
-  it("runs every check in a fast run except the changelog", () => {
-    expect(CHECK_STEPS.filter((step) => step.fullOnly === true).map((step) => step.label)).toEqual(["validate-changelog"]);
+describe("builders — tier", () => {
+  it("puts every check on the fast tier except the changelog, which defaults to full", () => {
+    expect(CHECK_STEPS.filter((step) => step.tier !== undefined).map((step) => [step.label, step.tier])).toEqual([["validate-changelog", "full"]]);
   });
 
-  it("lets a project hold any check back to --full", () => {
-    expect(jsxStep({ root: "/nowhere" }, { fullOnly: true }).fullOnly).toBe(true);
+  it("lets a project hold any check back to a higher tier", () => {
+    expect(jsxStep({ root: "/nowhere" }, { tier: "full" }).tier).toBe("full");
+    expect(jsxStep({ root: "/nowhere" }, { tier: "standard" }).tier).toBe("standard");
   });
 
   it("lets a project pull the changelog into the fast run, overriding the default", () => {
-    expect(changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }, { fullOnly: false }).fullOnly).toBeUndefined();
+    expect(changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }, { tier: "fast" }).tier).toBeUndefined();
   });
 
-  it("omits fullOnly rather than writing false, so an every-mode step carries no key at all", () => {
-    expect(Object.hasOwn(typecheckStep(), "fullOnly")).toBe(false);
+  it('omits the key rather than writing "fast", so a fast-tier step carries no key at all', () => {
+    expect(Object.hasOwn(typecheckStep(), "tier")).toBe(false);
   });
 });
 
@@ -211,12 +219,12 @@ describe("builders — conditional on tailwindcss", () => {
     cssTokensStep({ root: "/nowhere", stylesheet: "css/tailwind.css", cssDir: "css" }),
   ];
 
-  it("runs the four design-system steps in every mode, naming tailwindcss and the command that installs it", () => {
-    expect(conditional().map((step) => [step.label, step.fullOnly, step.requires?.tool, step.requires?.hint])).toEqual([
-      ["validate-class-groups", undefined, "tailwindcss", "bun add -d tailwindcss"],
-      ["validate-design-scale", undefined, "tailwindcss", "bun add -d tailwindcss"],
-      ["validate-class-tokens", undefined, "tailwindcss", "bun add -d tailwindcss"],
-      ["validate-css-tokens", undefined, "tailwindcss", "bun add -d tailwindcss"],
+  it("runs the four design-system steps from the fast tier up, naming tailwindcss and the command that installs it", () => {
+    expect(conditional().map((step) => [step.label, step.tier, step.requires?.tool, step.requires?.hint])).toEqual([
+      ["validate-class-groups", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
+      ["validate-design-scale", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
+      ["validate-class-tokens", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
+      ["validate-css-tokens", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
     ]);
   });
 
@@ -258,7 +266,7 @@ describe("builders — conditional on tailwindcss", () => {
 describe("builders — config threading", () => {
   it("hands the config it was given to the check, rather than capturing one of its own", async () => {
     const step = changelogStep({ root: "/nowhere/forge-no-such-root", packageVersion: "1.0.0" });
-    const result = await step.run();
+    const result = await step.run("fast");
 
     expect(result.ok).toBe(false);
     expect(result.findings.map((finding) => `${finding.file}: ${finding.message}`)).toEqual(["CHANGELOG.md: file does not exist"]);

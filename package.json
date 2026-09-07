@@ -22,9 +22,9 @@
     "lint": "bun run src/tooling/root/bin.ts verify --only lint",
     "release": "bun run src/tooling/root/bin.ts release",
     "test": "bun test",
-    "test:browser": "playwright test",
-    "test:install": "playwright install chromium",
+    "test:browser": "bunx --bun playwright test",
     "verify": "bun run src/tooling/root/bin.ts verify",
+    "verify:fast": "bun run src/tooling/root/bin.ts verify --mode fast",
     "verify:full": "bun run src/tooling/root/bin.ts verify --full",
     "prepublishOnly": "bun run verify:full"
   },

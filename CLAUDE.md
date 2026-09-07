@@ -70,15 +70,16 @@ Scope is a property of the URL, so no tool takes a `project` argument.
 | `oxfmt`                | Formatter and import sorter (use instead of `prettier`)  |
 
 ```bash
-bun run verify                 # the gate — every step must pass
+bun run verify                 # the gate — the `standard` tier, what a task closes on
+bun run verify:fast            # the inner loop (`verify --mode fast`) — typecheck, lint, format, test
+bun run verify:full            # the release gate (`verify --full`) — everything, prerequisites included
 bun run verify --only lint     # one step, for the dev loop (any step label)
-bun run verify --list          # print the steps, run none
-bun run verify:full            # the release gate — adds the steps needing a machine prerequisite
+bun run verify --list          # print the steps of the selected mode, run none
 bun run lint                   # check only, never write (`verify --only lint`)
 bun run fix                    # every step's fixer (`verify --fix`) — lint and format today
 ```
 
-Gate philosophy, the modes, and the flags: [`TESTING.md`](.decisions/implementation/TESTING.md) §6.
+Gate philosophy, the three modes, and the flags: [`TESTING.md`](.decisions/implementation/TESTING.md) §6.
 The step list itself is `config/steps.ts`.
 
 **Avoid:** `bun-types` (use the custom stub), `eslint` (use `oxlint`), `prettier` (use `oxfmt`), `biome` (retired — use `oxfmt`).

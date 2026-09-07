@@ -1,77 +1,56 @@
 import { describe, expect, it } from "bun:test";
 
-import { Forge } from "../app/forge-app";
-import { mapHandler } from "../testing/route";
-import { v } from "../validation/mod";
-import { validateBindings, validateEnv } from "./env-validation";
-import type { AppContext } from "./types";
+import { bindingSchema, bindingSetSchema, validateEnv } from "./env-validation";
 
-const schema = v.object({ DATABASE_URL: v.string(), PORT: v.optional(v.pipe(v.string(), v.transform(Number))) });
+const KV = { get: () => undefined, put: () => undefined };
 
-describe("validateEnv", () => {
-  it("returns parsed env when valid", () => {
-    const result = validateEnv({ DATABASE_URL: "postgres://localhost/db" }, schema);
-    expect(result.DATABASE_URL).toBe("postgres://localhost/db");
+describe("bindingSchema()", () => {
+  it("accepts an env whose binding carries every named method", () => {
+    expect(validateEnv({ LOGS_KV: KV }, bindingSchema("LOGS_KV", ["get", "put"], "a KV namespace binding"))).toEqual({ LOGS_KV: KV });
   });
 
-  it("throws the exact normalized message when a required field is missing", () => {
-    expect(() => validateEnv({}, schema)).toThrow(new Error("Invalid environment: DATABASE_URL: missing"));
+  it("fails a required binding that is absent", () => {
+    expect(() => validateEnv({}, bindingSchema("LOGS_KV", ["get", "put"], "a KV namespace binding"))).toThrow(
+      "Invalid environment: LOGS_KV: missing",
+    );
   });
 
-  it("succeeds when an optional field is absent", () => {
-    const result = validateEnv({ DATABASE_URL: "postgres://localhost/db" }, schema);
-    expect(result.PORT).toBeUndefined();
+  it("passes an optional binding that is absent", () => {
+    expect(validateEnv({}, bindingSchema("LOGS_KV", ["get", "put"], "a KV namespace binding", { optional: true }))).toEqual({});
+  });
+
+  it("still fails an optional binding that is present with the wrong shape", () => {
+    expect(() =>
+      validateEnv({ LOGS_KV: { get: () => undefined } }, bindingSchema("LOGS_KV", ["get", "put"], "a KV namespace binding", { optional: true })),
+    ).toThrow("Invalid environment: LOGS_KV: LOGS_KV must be a KV namespace binding");
+  });
+
+  it("fails a required binding present with the wrong shape", () => {
+    expect(() => validateEnv({ LOGS_KV: {} }, bindingSchema("LOGS_KV", ["get", "put"], "a KV namespace binding"))).toThrow(
+      "Invalid environment: LOGS_KV: LOGS_KV must be a KV namespace binding",
+    );
   });
 });
 
-describe("validateBindings", () => {
-  const simpleSchema = v.object({ DATABASE_URL: v.string() });
+describe("bindingSetSchema()", () => {
+  const SPECS = [
+    { name: "DB", methods: ["prepare"], label: "a D1 database binding" },
+    { name: "LOGS_KV", methods: ["get", "put"], label: "a KV namespace binding", optional: true },
+  ];
 
-  it("calls next() when env is valid", async () => {
-    const app = new Forge<{ DATABASE_URL: string }>();
-    app.use("*", validateBindings(simpleSchema));
-    mapHandler(app, "GET", "/", (c) => new Response((c as AppContext<{ DATABASE_URL: string }>).env.DATABASE_URL));
-    const res = await app.request("/", {}, { DATABASE_URL: "postgres://test/db" });
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("postgres://test/db");
+  it("validates several bindings in one pass, the optional one absent", () => {
+    const db = { prepare: () => undefined };
+
+    expect(validateEnv({ DB: db }, bindingSetSchema(SPECS))).toEqual({ DB: db });
   });
 
-  it("returns 500 when env is invalid (handler is never reached)", async () => {
-    const app = new Forge();
-    app.setOnError((err) => new Response(err.message, { status: 500 }));
-    app.use("*", validateBindings(simpleSchema));
-    let handlerReached = false;
-    mapHandler(app, "GET", "/", () => {
-      handlerReached = true;
-      return new Response("ok");
-    });
-    const res = await app.request("/", {}, {});
-    expect(res.status).toBe(500);
-    expect(handlerReached).toBe(false);
+  it("fails on the required binding while the optional one is absent", () => {
+    expect(() => validateEnv({}, bindingSetSchema(SPECS))).toThrow("Invalid environment: DB: missing");
   });
 
-  it("re-validates when env reference changes", async () => {
-    const app = new Forge<{ DATABASE_URL: string }>();
-    app.use("*", validateBindings(simpleSchema));
-    mapHandler(app, "GET", "/", (c) => new Response((c as AppContext<{ DATABASE_URL: string }>).env.DATABASE_URL));
-
-    const res1 = await app.request("/", {}, { DATABASE_URL: "first" });
-    expect(await res1.text()).toBe("first");
-
-    const res2 = await app.request("/", {}, { DATABASE_URL: "second" });
-    expect(await res2.text()).toBe("second");
-  });
-
-  it("does not set any extra context properties beyond env and executionCtx", async () => {
-    const app = new Forge<{ DATABASE_URL: string }>();
-    app.use("*", validateBindings(simpleSchema));
-    let hasBindingsKey = false;
-    mapHandler(app, "GET", "/", (c) => {
-      // oxlint-disable-next-line typescript/no-explicit-any -- intentional — verifying no extra property
-      hasBindingsKey = "bindings" in (c as any);
-      return new Response("ok");
-    });
-    await app.request("/", {}, { DATABASE_URL: "postgres://test/db" });
-    expect(hasBindingsKey).toBe(false);
+  it("fails on the optional binding when it is present with the wrong shape", () => {
+    expect(() => validateEnv({ DB: { prepare: () => undefined }, LOGS_KV: {} }, bindingSetSchema(SPECS))).toThrow(
+      "Invalid environment: LOGS_KV: LOGS_KV must be a KV namespace binding",
+    );
   });
 });

@@ -4,6 +4,7 @@ export { bumpSemVer, compareSemVer, formatSemVer, isGreaterThan, parseSemVer } f
 export type { BumpKind, SemVer } from "./semver";
 export type { SourceStepOptions, StepOptions } from "./builders";
 export {
+  assetManifestStep,
   assetRootStep,
   browserStep,
   buildTimeBoundaryStep,
@@ -39,6 +40,8 @@ export {
   parseConsumerExportNames,
   parseTypeExportNames,
 } from "./checks/barrel-parse";
+export type { AssetManifestCheckConfig } from "./checks/asset-manifest";
+export { checkAssetManifest } from "./checks/asset-manifest";
 export type { AssetRootCheckConfig } from "./checks/asset-root";
 export { checkAssetRoot } from "./checks/asset-root";
 export { hasChromium, resolveChromiumPath } from "./checks/browser";
@@ -166,7 +169,7 @@ export type { GateCommandConfig } from "./command";
 export { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
 export type { CheckResult, Finding, FindingLevel } from "./finding";
 export { checkResult, fail, formatCheckResult, formatFinding, reportCheck, scannedNothing, warn } from "./finding";
-export type { CloudflareWorkerStepOptions, GatePackage, LibraryStepOptions } from "./presets";
+export type { CloudflareWorkerDesignOptions, CloudflareWorkerStepOptions, GatePackage, LibraryStepOptions } from "./presets";
 export { cloudflareWorkerSteps, forgeChecks } from "./presets";
 export type { CheckStep, CommandStep, GateMode, Selection, Step, StepBase, StepRequirement } from "./steps";
-export { isCheckStep, selectSteps } from "./steps";
+export { GATE_MODES, isCheckStep, selectSteps } from "./steps";

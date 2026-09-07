@@ -38,6 +38,9 @@ interface DrawerCloseProps extends Omit<JSX.IntrinsicElements["button"], "childr
 interface DrawerTitleProps extends Omit<JSX.IntrinsicElements["h2"], "children" | "id"> {
   /** id of the `Drawer` this heading names — the root's `aria-labelledby` target is derived from it. */
   for: string;
+  /** Heading level, from where the drawer sits in the document. Never from its size — the class is
+   *  fixed, so a level change is a semantic one. Defaults to `2`. */
+  level?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -91,11 +94,14 @@ const DrawerClose: FC<DrawerCloseProps> = ({ for: target, request = false, class
 
 // The root's `aria-labelledby` is derived from its required `id`, so the heading's id is derived the
 // same way from the `for` the compound's other statics already take.
-const DrawerTitle: FC<DrawerTitleProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <h2 data-slot={slotToken("drawer-title", inherited)} id={`${target}-title`} class={cn("text-base font-semibold", cls)} {...rest}>
-    {children}
-  </h2>
-);
+const DrawerTitle: FC<DrawerTitleProps> = ({ for: target, level, class: cls, children, "data-slot": inherited, ...rest }) => {
+  const Heading = `h${level ?? 2}` as "h2";
+  return (
+    <Heading data-slot={slotToken("drawer-title", inherited)} id={`${target}-title`} class={cn("text-base font-semibold", cls)} {...rest}>
+      {children}
+    </Heading>
+  );
+};
 
 const DrawerHeader: FC<DrawerSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <div data-slot={slotToken("drawer-header", inherited)} class={cn(PANEL_HEADER, cls)} {...rest}>

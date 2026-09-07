@@ -197,7 +197,10 @@ without the consumer building it. The cost is that a generated file can drift fr
 is why `validate-lint-plugin` re-bundles and diffs on every gate run, exactly as
 `validate-design-scale` does for the generated scale. Forge's own `.oxlintrc.json` keeps naming
 `./src/tooling/lint/mod.ts`, so a rule edit takes effect here without a regeneration step —
-regenerate with `bun run gen:lint-plugin` before committing it.
+regenerate with `bun run gen:lint-plugin` before committing it. **Pre-bundling is the remedy only
+where the host runtime is not forge's to choose**: oxlint hosts its plugin under node, but
+`browserStep` writes playwright's argv itself, so it spawns `bunx --bun playwright test` and the
+restriction never applies.
 
 **A published module may not import a build-time package, so oxlint's types are restated in
 `types.ts` rather than imported from it.** oxlint is a devDependency, and an import of its types

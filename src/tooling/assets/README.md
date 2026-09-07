@@ -380,7 +380,16 @@ for dev and deploy:
 }
 ```
 
-Both commands write the same path, so whichever ran last wins — run the full build before serving.
+Both commands write the same path, but a build always wins over a types artifact: `gen types` keeps
+an existing build artifact when it still fits the config, so running the gate after a build no longer
+degrades the manifest to unhashed paths. It rewrites only when the shape no longer matches — a bundle
+or a glyph added, a sprite target or prefix renamed — because that module no longer describes the
+config. The command says which it did:
+
+```
+✓ assets: wrote .forge/assets.ts (types only)
+✓ assets: kept .forge/assets.ts — an existing build artifact already fits the config
+```
 
 Because the emitted paths are unhashed and the `viewBox` values are empty, **tests must never assert
 an asset digest or a rendered `viewBox`**: those assertions pass under a full build and fail under

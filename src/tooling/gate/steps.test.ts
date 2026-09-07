@@ -1,17 +1,24 @@
 import { describe, expect, it } from "bun:test";
 
 import { checkResult } from "./finding";
-import { isCheckStep, type Step, selectSteps } from "./steps";
+import { GATE_MODES, isCheckStep, type Step, selectSteps } from "./steps";
 
 const FIXTURE: readonly Step[] = [
   { label: "alpha", tail: 10, cmd: ["a"] },
   { label: "beta", tail: 10, cmd: ["b"], fix: ["b", "--write"] },
-  { label: "gamma", fullOnly: true, tail: 10, cmd: ["c"] },
+  { label: "delta", tier: "standard", tail: 10, cmd: ["d"] },
+  { label: "gamma", tier: "full", tail: 10, cmd: ["c"] },
 ];
 
 function labelsOf(steps: readonly Step[]): string[] {
   return steps.map((step) => step.label);
 }
+
+describe("GATE_MODES", () => {
+  it("is the three tiers in ascending order, which is what the selector ranks against", () => {
+    expect([...GATE_MODES]).toEqual(["fast", "standard", "full"]);
+  });
+});
 
 describe("isCheckStep()", () => {
   const check: Step = { label: "in-process", run: () => checkResult([], "walked nothing") };
@@ -32,16 +39,16 @@ describe("isCheckStep()", () => {
     expect(labelsOf(result.steps)).toEqual(["alpha", "beta", "in-process"]);
   });
 
-  it("holds a check step back to --full when it declares fullOnly, exactly as a command step is", () => {
-    const table: readonly Step[] = [{ ...check, fullOnly: true }];
+  it("holds a check step back to its tier exactly as a command step is", () => {
+    const table: readonly Step[] = [{ ...check, tier: "full" }];
     const result = selectSteps(table, { mode: "fast" });
 
     expect(result.ok).toBe(false);
   });
 });
 
-describe("selectSteps() — mode membership", () => {
-  it("omits fullOnly steps from a fast run", () => {
+describe("selectSteps() — tier membership", () => {
+  it("holds a fast run to the steps declaring no tier", () => {
     const result = selectSteps(FIXTURE, { mode: "fast" });
 
     expect(result.ok).toBe(true);
@@ -51,26 +58,37 @@ describe("selectSteps() — mode membership", () => {
     expect(result.scoped).toBe(false);
   });
 
-  it("includes them in a full run", () => {
+  it("adds the standard tier to a standard run, and no more", () => {
+    const result = selectSteps(FIXTURE, { mode: "standard" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(labelsOf(result.steps)).toEqual(["alpha", "beta", "delta"]);
+    expect(result.total).toBe(3);
+  });
+
+  it("includes every tier in a full run", () => {
     const result = selectSteps(FIXTURE, { mode: "full" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(labelsOf(result.steps)).toEqual(["alpha", "beta", "gamma"]);
-    expect(result.total).toBe(3);
+    expect(labelsOf(result.steps)).toEqual(["alpha", "beta", "delta", "gamma"]);
+    expect(result.total).toBe(4);
   });
 
-  it("makes a full run a superset of a fast one for any table", () => {
+  it("makes fast ⊆ standard ⊆ full for any table", () => {
     const fast = selectSteps(FIXTURE, { mode: "fast" });
+    const standard = selectSteps(FIXTURE, { mode: "standard" });
     const full = selectSteps(FIXTURE, { mode: "full" });
 
-    expect(fast.ok && full.ok).toBe(true);
-    if (!fast.ok || !full.ok) return;
-    expect(labelsOf(fast.steps).every((label) => labelsOf(full.steps).includes(label))).toBe(true);
+    expect(fast.ok && standard.ok && full.ok).toBe(true);
+    if (!fast.ok || !standard.ok || !full.ok) return;
+    expect(labelsOf(fast.steps).every((label) => labelsOf(standard.steps).includes(label))).toBe(true);
+    expect(labelsOf(standard.steps).every((label) => labelsOf(full.steps).includes(label))).toBe(true);
   });
 
-  it("treats an explicit `fullOnly: false` as an every-mode step", () => {
-    const table: readonly Step[] = [{ label: "alpha", fullOnly: false, tail: 10, cmd: ["a"] }];
+  it('treats an explicit `tier: "fast"` as the same as declaring none', () => {
+    const table: readonly Step[] = [{ label: "alpha", tier: "fast", tail: 10, cmd: ["a"] }];
     const result = selectSteps(table, { mode: "fast" });
 
     expect(result.ok).toBe(true);
@@ -86,7 +104,7 @@ describe("selectSteps() — --only filtering", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.scoped).toBe(true);
-    expect(result.total).toBe(3);
+    expect(result.total).toBe(4);
   });
 
   it("preserves table order regardless of the order the labels were given", () => {
@@ -123,7 +141,7 @@ describe("selectSteps() — refusals", () => {
     expect(result.error).toBe('Unknown --only label: "nope". Known labels for a fast run: alpha, beta');
   });
 
-  it("rejects a fullOnly label in a fast run, pointing at what a fast run does hold", () => {
+  it("rejects a higher-tier label in a fast run, pointing at what a fast run does hold", () => {
     const result = selectSteps(FIXTURE, { mode: "fast", only: ["gamma"] });
 
     expect(result.ok).toBe(false);
@@ -147,7 +165,15 @@ describe("selectSteps() — refusals", () => {
     expect(result.error).toBe("No steps selected for a fast run — refusing to report a green gate that ran nothing.");
   });
 
-  it("names the full mode in its refusal, so the message says which run was resolved", () => {
+  it("names the standard mode in its refusal, so the message says which run was resolved", () => {
+    const result = selectSteps([], { mode: "standard" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe("No steps selected for a standard run — refusing to report a green gate that ran nothing.");
+  });
+
+  it("names the full mode in its refusal too", () => {
     const result = selectSteps([], { mode: "full" });
 
     expect(result.ok).toBe(false);
@@ -197,10 +223,10 @@ describe("selectSteps() — table validity", () => {
     expect(labelsOf(result.steps)).toEqual(["class-groups"]);
   });
 
-  it("allows a dependency on a fullOnly step too, since the mode decides what its absence means", () => {
+  it("allows a dependency on a full-tier step too, since the mode decides what its absence means", () => {
     const table: readonly Step[] = [
       { label: "unit", tail: 10, cmd: ["bun"] },
-      { label: "browser", fullOnly: true, tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "install it" } },
+      { label: "browser", tier: "full", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "install it" } },
     ];
 
     expect(selectSteps(table, { mode: "full" }).ok).toBe(true);

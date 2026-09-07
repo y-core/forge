@@ -6,7 +6,7 @@ import { buildCSS } from "./css";
 import { buildFonts } from "./fonts";
 import { buildIcons } from "./icons";
 import { buildJS } from "./js";
-import { buildAll, generateAssetsTypes } from "./pipeline";
+import { buildAll, DEFAULT_ASSETS_PATH, generateAssetsTypes } from "./pipeline";
 import { buildRasters } from "./rasters";
 import { buildSprites } from "./sprites";
 
@@ -157,7 +157,13 @@ export function createAssetsCommands(): CommandBase {
       },
       run: async (_args, flags) => {
         const config = await loadAssetsConfig(flags);
-        await generateAssetsTypes(config, flags.out !== undefined ? { assetsPath: flags.out } : {});
+        const outcome = await generateAssetsTypes(config, flags.out !== undefined ? { assetsPath: flags.out } : {});
+        const path = flags.out ?? DEFAULT_ASSETS_PATH;
+        console.log(
+          outcome === "written"
+            ? `✓ assets: wrote ${path} (types only)`
+            : `✓ assets: kept ${path} — an existing build artifact already fits the config`,
+        );
       },
     }),
   );

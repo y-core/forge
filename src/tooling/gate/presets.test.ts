@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, type Step } from "./steps";
@@ -11,16 +14,19 @@ function fixerOf(step: Step | undefined): readonly string[] | undefined {
   return step === undefined || isCheckStep(step) ? undefined : step.fix;
 }
 
+const DESIGN = { stylesheet: "src/assets/tailwind.css", cssDir: "src/assets" };
+
 describe("cloudflareWorkerSteps() — shape", () => {
   it("emits the fleet's order, minus the optional asset step", () => {
     expect(labelsOf(cloudflareWorkerSteps())).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "format", "test"]);
   });
 
-  it("inserts types:assets after the binding types and before the type check", () => {
+  it("inserts types:assets, then the check that judges what it wrote, before the type check", () => {
     expect(labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }))).toEqual([
       "types:cf-runtime",
       "types:cf-bindings",
       "types:assets",
+      "validate-asset-manifest",
       "typecheck",
       "lint",
       "format",
@@ -34,22 +40,124 @@ describe("cloudflareWorkerSteps() — shape", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("marks no step full-only, so the preset is the same table either mode selects", () => {
+  it("puts every step of the default table on the fast tier, so all three modes select the same table", () => {
     for (const step of cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" })) {
-      expect(step.fullOnly).toBeUndefined();
+      expect(step.tier).toBeUndefined();
     }
+  });
+
+  it("makes test:browser the only row above the fast tier once the browser opt-in is taken", () => {
+    const held = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier !== undefined);
+
+    expect(held.map((step) => [step.label, step.tier])).toEqual([["test:browser", "full"]]);
   });
 });
 
 describe("cloudflareWorkerSteps() — the §6c property", () => {
-  it("declares no machine prerequisite on any step", () => {
+  it("declares no machine prerequisite on any step of the default table", () => {
     const gated = cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" }).filter(
       (step) => step.requires !== undefined,
     );
 
     expect(labelsOf(gated)).toEqual([]);
   });
+
+  it("gates only the two compiling design rows and the browser row once the opt-ins are taken", () => {
+    const gated = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.requires !== undefined);
+
+    expect(labelsOf(gated)).toEqual(["validate-class-tokens", "validate-css-tokens", "test:browser"]);
+    expect(gated.map((step) => step.requires?.tool)).toEqual(["tailwindcss", "tailwindcss", "chromium"]);
+  });
 });
+
+describe("cloudflareWorkerSteps() — the browser row", () => {
+  it("puts test:browser last, on the full tier and behind the downloaded browser", () => {
+    const steps = cloudflareWorkerSteps({ browser: true, assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" });
+    const browser = steps.at(-1);
+
+    expect(browser?.label).toBe("test:browser");
+    expect(browser?.tier).toBe("full");
+    expect(browser?.requires?.tool).toBe("chromium");
+  });
+
+  it("omits the row for an app with no browser suite", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("test:browser");
+    expect(labelsOf(cloudflareWorkerSteps({ browser: false }))).not.toContain("test:browser");
+  });
+});
+
+describe("cloudflareWorkerSteps() — the design rows", () => {
+  it("emits three rows before test when no cssDir is given", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ design: { stylesheet: "src/assets/tailwind.css" } }));
+
+    expect(labels).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "typecheck",
+      "lint",
+      "format",
+      "validate-modern-css",
+      "validate-class-order",
+      "validate-class-tokens",
+      "test",
+    ]);
+    expect(labels).not.toContain("validate-css-tokens");
+  });
+
+  it("adds validate-css-tokens as the fourth row when a cssDir is given", () => {
+    expect(labelsOf(cloudflareWorkerSteps({ design: DESIGN }))).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "typecheck",
+      "lint",
+      "format",
+      "validate-modern-css",
+      "validate-class-order",
+      "validate-class-tokens",
+      "validate-css-tokens",
+      "test",
+    ]);
+  });
+
+  it("omits every design row for an app that does not use ui/*", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }));
+
+    expect(labels).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "types:assets",
+      "validate-asset-manifest",
+      "typecheck",
+      "lint",
+      "format",
+      "test",
+    ]);
+  });
+
+  // The step configs are captured in a closure, so the default is pinned by running the check: a
+  // spec's deliberately self-conflicting literal must be out of scope unless the app names `tests/`.
+  it("defaults design.sources to src/ only, so class-order never reads a spec's fixture literal", async () => {
+    const root = mkdtempSync(join(tmpdir(), "forge-preset-"));
+    mkdirSync(join(root, "src"));
+    mkdirSync(join(root, "tests"));
+    writeFileSync(join(root, "src", "view.tsx"), 'export const view = <div class="flex p-4" />;\n');
+    // Assembled rather than written out, so forge's own `validate-class-order` — which reads this
+    // file — never sees the conflicting literal it is here to prove the preset does not read.
+    const conflicting = ["p-2", "p-4"].join(" ");
+    writeFileSync(join(root, "tests", "cn.test.tsx"), `export const fixture = <div class="${conflicting}" />;\n`);
+
+    expect(await classOrderResult({ root, design: { stylesheet: "x.css" } })).toBe(true);
+    expect(await classOrderResult({ root, design: { stylesheet: "x.css", sources: ["src/", "tests/"] } })).toBe(false);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+async function classOrderResult(options: Parameters<typeof cloudflareWorkerSteps>[0]): Promise<boolean> {
+  const step = cloudflareWorkerSteps(options).find((s) => s.label === "validate-class-order");
+  if (step === undefined || !isCheckStep(step)) throw new Error("validate-class-order missing");
+  return (await step.run("fast")).ok;
+}
 
 describe("cloudflareWorkerSteps() — the generated-type commands", () => {
   it("splits `wrangler types` into its two real invocations", () => {
@@ -174,10 +282,10 @@ describe("forgeChecks() — shape", () => {
     ]);
   });
 
-  it("holds only the changelog back to --full, so every other step is a fast-run assurance", () => {
-    const held = forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.fullOnly === true);
+  it("holds only the changelog back to the full tier, so every other step is a fast-run assurance", () => {
+    const held = forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.tier !== undefined);
 
-    expect(labelsOf(held)).toEqual(["validate-changelog"]);
+    expect(held.map((step) => [step.label, step.tier])).toEqual([["validate-changelog", "full"]]);
   });
 
   it("omits the checks carrying project-specific policy, which a table must name explicitly", () => {
@@ -215,6 +323,6 @@ describe("forgeChecks() — options", () => {
 
     expect(step !== undefined && isCheckStep(step)).toBe(true);
     if (step === undefined || !isCheckStep(step)) return;
-    expect((await step.run()).ok).toBe(false);
+    expect((await step.run("fast")).ok).toBe(false);
   });
 });

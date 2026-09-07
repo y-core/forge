@@ -43,7 +43,7 @@ export interface SummaryInput {
   gate: string;
   /** Steps that ran and passed — the only number a green line may be built from. */
   passed: number;
-  /** Steps whose dependency was absent in a fast run. */
+  /** Steps whose dependency was absent below the `full` tier. */
   skipped: number;
   /** Steps the selection resolved to. */
   selected: number;
@@ -78,7 +78,7 @@ export function formatList(gate: string, labels: readonly string[], total: numbe
   return [`${gate} — ${labels.length} ${plural}`, ...labels.map((label) => `  ${label}`)].join("\n") + scoped;
 }
 
-/** The `--list` label of a step: its own, with the dependency it is conditional on in a fast run. */
+/** The `--list` label of a step: its own, with the dependency it is conditional on below the `full` tier. */
 export function listLabel(step: Step, mode: GateMode): string {
   if (step.requires === undefined) return step.label;
   return mode === "full" ? `${step.label} (requires ${step.requires.tool})` : `${step.label} (conditional — ${step.requires.tool} required)`;
@@ -91,9 +91,9 @@ export function formatFixSummary(input: { gate: string; fixed: number; unfixable
   return `${input.fixed} fixed${detail}${skipped} — re-run \`bun run ${input.gate}\` to confirm.`;
 }
 
-/** Formats the line shown when a step's dependency is absent: skipped in a fast run, failed under `--full`. */
+/** Formats the line shown when a step's dependency is absent: skipped below the `full` tier, failed by it. */
 export function formatMissingRequirement(label: string, tool: string, hint: string, mode: GateMode, style: Colorize = PLAIN): string {
-  const detail = `${tool} not found; run \`${hint}\``;
+  const detail = `${tool} not found; ${hint}`;
   return mode === "full" ? `${style.red("✗")} ${label} — ${detail}` : `${style.yellow("○")} ${label} — skipped (${detail})`;
 }
 

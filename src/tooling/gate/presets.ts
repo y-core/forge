@@ -1,12 +1,17 @@
 import {
+  assetManifestStep,
   assetRootStep,
+  browserStep,
   changelogStep,
   classOrderStep,
+  classTokensStep,
+  cssTokensStep,
   docsStep,
   exportsStep,
   formatStep,
   jsxStep,
   lintStep,
+  modernCssStep,
   testStep,
   typecheckStep,
 } from "./builders";
@@ -15,11 +20,24 @@ import type { ClassOrderCheckConfig } from "./checks/class-order";
 import type { DocsCheckConfig } from "./checks/docs";
 import type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
 import type { JsxCheckConfig } from "./checks/jsx";
+import type { DeferredFinding } from "./checks/modern-css-deferred";
 import type { Step } from "./steps";
 
 const RUNTIME_TYPES = "./.types/cloudflare.d.ts";
 
 const BINDING_TYPES = "./.types/worker-configuration.d.ts";
+
+/** The design rows a Worker app opts into, and the paths they read. @public */
+export interface CloudflareWorkerDesignOptions {
+  /** The stylesheet the design system compiles from. Three of the four rows need it. */
+  stylesheet: string;
+  /** Directory of stylesheets the token check reads; omit to skip `validate-css-tokens`. */
+  cssDir?: string;
+  /** Sources the class rules scan. Defaults to `["src/"]` — deliberately not the table's `sources`. */
+  sources?: readonly string[];
+  /** Platform-CSS findings this app defers. Defaults to `[]`, never forge's own list. */
+  deferred?: readonly DeferredFinding[];
+}
 
 /** Options for the shared Cloudflare Worker step table. @public */
 export interface CloudflareWorkerStepOptions {
@@ -37,8 +55,12 @@ export interface CloudflareWorkerStepOptions {
   workerConfig?: string;
   /** Whether to check `.decisions/governance/` against the pinned corpus. Defaults to `false`. */
   governance?: boolean;
-  /** Application root, needed by the asset-root check. Defaults to `process.cwd()`. */
+  /** Application root, needed by the asset-root and design checks. Defaults to `process.cwd()`. */
   root?: string;
+  /** Whether to emit the `full`-tier `test:browser` step. Defaults to `false`. */
+  browser?: boolean;
+  /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */
+  design?: CloudflareWorkerDesignOptions;
 }
 
 /** The step table every Cloudflare Worker app in this fleet shares, in execution order. @public */
@@ -46,6 +68,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   const sources = options.sources ?? ["src/", "tests/"];
   const tests = options.tests ?? ["tests/"];
   const assetOut = options.assetOut ?? ".forge/assets.ts";
+  const root = options.root ?? process.cwd();
 
   const steps: Step[] = [];
 
@@ -65,6 +88,9 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   if (options.assetConfig !== undefined) {
     steps.push({ label: "types:assets", tail: 20, cmd: ["forge", "assets", "gen", "types", "--config", options.assetConfig, "--out", assetOut] });
+    // The step that may rewrite the artifact is followed by the one that judges it, before a
+    // typecheck and a test run that would otherwise pass on a manifest ahead of the built tree.
+    steps.push(assetManifestStep({ root, assetConfig: options.assetConfig, assetsPath: assetOut }));
   }
 
   steps.push(typecheckStep(), lintStep({ sources }), formatStep({ sources }));
@@ -75,13 +101,32 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     steps.push({ label: "governance", tail: 20, cmd: ["gov", "sync", "--check"], fix: ["gov", "sync"] });
   }
 
+  // Opt-in: an app that uses forge for routing but not `ui/*` gets no rows and needs no
+  // `tailwindcss` peer. `sources` is the design default rather than the table's, because
+  // `classOrderStep` reads every `.tsx` including specs, whose literals are deliberately conflicting.
+  const design = options.design;
+  if (design !== undefined) {
+    const designSources = design.sources ?? ["src/"];
+    steps.push(
+      modernCssStep({ root, sources: designSources, deferred: design.deferred ?? [] }),
+      classOrderStep({ root, sources: designSources }),
+      classTokensStep({ root, sources: designSources, stylesheet: design.stylesheet }),
+    );
+    if (design.cssDir !== undefined) {
+      steps.push(cssTokensStep({ root, stylesheet: design.stylesheet, cssDir: design.cssDir }));
+    }
+  }
+
   steps.push(testStep({ sources: tests }));
 
   // Both halves of the coupling have to be present to compare them: the assets config names what is
   // written to the asset root, the wrangler config names what the Worker is kept out of.
   if (options.assetConfig !== undefined && options.workerConfig !== undefined) {
-    steps.push(assetRootStep({ root: options.root ?? process.cwd(), assetConfig: options.assetConfig, workerConfig: options.workerConfig }));
+    steps.push(assetRootStep({ root, assetConfig: options.assetConfig, workerConfig: options.workerConfig }));
   }
+
+  // Last, and stated at the call site so the table can be read without opening `builders.ts`.
+  if (options.browser) steps.push(browserStep({ tier: "full" }));
 
   return steps;
 }

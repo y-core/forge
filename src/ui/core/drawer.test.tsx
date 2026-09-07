@@ -61,6 +61,20 @@ describe("Drawer.Title", () => {
         "</dialog>",
     );
   });
+
+  // Only the tag may vary: `data-slot`, the class and the derived `id` are what the stylesheet, the
+  // hand-written-DOM path and `aria-labelledby` all read.
+  it("renders each level as its own tag, leaving data-slot, class and id untouched", async () => {
+    for (const level of [1, 2, 3, 4, 5, 6] as const) {
+      expect(
+        await render(
+          <Drawer.Title for='nav' level={level}>
+            t
+          </Drawer.Title>,
+        ),
+      ).toBe(`<h${level} data-slot="drawer-title" id="nav-title" class="text-base font-semibold">t</h${level}>`);
+    }
+  });
 });
 
 describe("Drawer.Trigger", () => {

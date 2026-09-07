@@ -17,7 +17,106 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`StepRequirement.hint` is printed verbatim, so a hint must carry its own verb and backticks.**
+  `formatMissingRequirement` used to wrap it as ``run `<hint>` ``, which forced every remedy into a
+  single command; it now prints the hint as given. **A caller passing a bare noun-phrase hint gets
+  a sentence that reads wrong, and nothing validates it** — the failure is silent and cosmetic, not
+  a type error. Migrate a hint like `"pnpm exec playwright install"` to
+  ``"run `pnpm exec playwright install`"``. Forge's own hints are unchanged on screen: `tailwindcss`
+  and `esbuild` now read ``run `bun add -d tailwindcss` `` and ``run `bun add -d esbuild` `` because
+  the hints themselves carry the verb.
+- **`StepBase.fullOnly` is gone; a step declares `tier?: GateMode` instead.** A table writing
+  `fullOnly: true` must write `tier: "full"`, and `StepOptions.fullOnly` becomes `StepOptions.tier`
+  on every builder. This one **is** a type error, so no table breaks silently. See **Changed** for
+  the three-mode gate it belongs to.
+
+### Added
+
+- **`cloudflareWorkerSteps` emits browser and design rows.** `browser: true` adds the `full`-tier
+  `test:browser` step last in the table. `design: { stylesheet, cssDir?, sources?, deferred? }` adds
+  `validate-modern-css`, `validate-class-order`, `validate-class-tokens` and — only when `cssDir` is
+  given — `validate-css-tokens`, all before `test`. Both are opt-in: an app that does not use `ui/*`
+  gets no rows and needs no `tailwindcss` peer. `design.sources` defaults to `["src/"]` rather than
+  the table's top-level `sources`, because `validate-class-order` reads specs, whose class literals
+  are deliberately self-conflicting; `deferred` defaults to `[]` rather than forge's own list.
+- **`bindingSchema` takes an `optional` flag, and `bindingSetSchema` declares several bindings at
+  once.** `optional: true` relaxes presence only — an absent binding passes, a present one of the
+  wrong shape still fails — which is the schema-side statement of what `rateLimit`'s
+  `required: false` and the optional storage resolvers already do. `BindingSpec` is exported
+  alongside.
+- **`EmptyState.Title`, `Dialog.Title` and `Drawer.Title` take a `level` prop** (`1`–`6`, default `3`
+  on `EmptyState.Title`, `2` on the other two), so a heading's level follows its section's position
+  in the document rather than the compound's default. Only the tag changes: the `data-slot` token,
+  the class string and — on the dialog and drawer titles — the `id` `aria-labelledby` resolves to are
+  byte-identical at every level.
+
+- **`validate-asset-manifest` checks every manifest value exists on disk.** `assetManifestStep` /
+  `checkAssetManifest` read the emitted `.forge/assets.ts` and assert that every `DATA` value
+  resolves to a file under the assets config's `publicDir` — the class of failure where the manifest
+  is ahead of the served tree and SSR renders a `<script src>` the browser 404s. `cloudflareWorkerSteps`
+  emits it whenever `assetConfig` is given, immediately after `types:assets`. A types-only artifact
+  passes a fast run, since its identity paths deliberately do not exist on a clean checkout, and
+  fails a standard or full run naming `forge assets build --minify`.
+
+### Changed
+
+- **The gate has three modes: `fast`, `standard` and `full`.** `GateMode` gains `"standard"` and is
+  derived from the new exported `GATE_MODES` tuple, which is the tiers in ascending order. **A bare
+  `bun run verify` now means `standard`**, the run a task closes on; `fast` — the inner loop — is
+  opt-in via the new `verify:fast` script or `--mode fast`. `--mode <fast|standard|full>` is the
+  canonical flag and `--full` is kept as sugar for `--mode full`; passing both is refused, as is an
+  unrecognised `--mode` value. The banner names the mode canonically, so `--full` prints
+  `verify --mode full`. What an absent prerequisite means is unchanged: only a full run fails on
+  one, `fast` and `standard` skip.
+- **`StepBase.fullOnly` is replaced by `StepBase.tier?: GateMode`** — the lowest mode a step runs
+  in, absent meaning `fast`. Selection is a rank comparison, so `fast ⊆ standard ⊆ full` still holds
+  by construction. `StepOptions.fullOnly` becomes `StepOptions.tier` on every builder. Pre-1.0, so
+  there is no shim: a table writing `fullOnly: true` must write `tier: "full"`.
+  `typeAwareLintStep` now defaults to `"standard"` rather than full-only, `browserStep` and
+  `changelogStep` to `"full"`. **Forge's own table moves accordingly**, so a bare `verify` runs
+  `lint:types` for the first time; only `validate-changelog` and `test:browser` are held to `full`,
+  and `fast` holds `typecheck`, `lint`, `format` and `test` alone.
+- **`checkAssetManifest` tolerates the types-only artifact in `fast` alone.** `standard` and `full`
+  both fail it — a manifest nothing has built is exactly what a run closing a task has to catch.
+- **`CheckStep.run` is handed the run's `GateMode`.** A check whose strictness depends on the mode
+  now has one table row rather than two. Existing zero-argument checks are unaffected — a `() => …`
+  is assignable to the widened type — so only a hand-written check that wants the mode needs a
+  change.
+- **A failed binding check now names the binding.** `bindingSchema` builds its predicate with
+  `safeCheck`, so the message reads `LOGS_KV must be a KV namespace binding` instead of the bare
+  issue type `check`.
+
+### Fixed
+
+- **`browserStep` spawns playwright under bun.** The argv is now
+  `["bunx", "--bun", "playwright", "test"]` rather than `["playwright", "test"]`, which the runner
+  resolved to the `node_modules/.bin` shim and ran under node. Forge ships raw TypeScript, and node
+  refuses to strip types from a file under `node_modules`, so any consumer whose
+  `playwright.config.ts` imported a forge subpath — `resolveChromiumPath`, the very symbol forge
+  publishes for it — died at config load with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, failing
+  `verify --full` before a single spec ran. Forge's own `test:browser` script moves to the same
+  command, so the gate row and the script can no longer diverge. The `browser: true` row is itself
+  still unreleased, so nothing shipped carried the broken argv.
+
+- **`browserStep`'s prerequisite names both routes to a browser.** The default was
+  `bun run test:install`, which assumed every consumer defines that script — forge did, starter did
+  not. It now reads ``run `bunx playwright install chromium`, or use a devbox container — `devctl up` ``:
+  a direct command needing nothing defined anywhere, and the container that supplies one. Forge's own
+  `test:install` script is gone. Anyone who sees the line is by definition outside such a container —
+  every image there bakes Chromium and sets `CHROME_PATH`, the first thing `hasChromium` resolves, so
+  the probe cannot fail in one. A project whose browser arrives some other way passes `hint` itself,
+  as it always could. Both the hint and the `browser` row are unreleased, so no shipped surface changes.
+
+- **`forge assets gen types` no longer clobbers a real build artifact.** Both commands write
+  `.forge/assets.ts`, and the gate preset runs `gen types` on every `verify` — so a verify after a
+  `--minify` build replaced the hashed manifest with unhashed logical names and every asset URL
+  404'd, silently killing the client bundle. `gen types` now keeps an existing build artifact when
+  it still fits the config, comparing the two modules with every emitted value blanked; it rewrites
+  only when the shape has drifted (a bundle or glyph added, a sprite target or prefix renamed).
+  `generateAssetsTypes` returns `AssetsTypesOutcome` (`"written" | "kept-build-artifact"`) and the
+  command prints which it did. `buildAll` is unchanged — a build always writes.
 
 ---
 

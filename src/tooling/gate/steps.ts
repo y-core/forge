@@ -1,18 +1,22 @@
 import { splitList } from "../cli/parse";
 import type { CheckResult } from "./finding";
 
-/** How much of the table to run: `fast` needs nothing beyond `bun install`, `full` adds the steps
- *  that may require a machine prerequisite. @public */
-export type GateMode = "fast" | "full";
+/** The three tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
+export const GATE_MODES = ["fast", "standard", "full"] as const;
 
-/** A dependency a step needs, with the probe that detects it and the hint that installs it — absent, a
- *  fast run reports the step skipped and `--full` fails it. @public */
+/** How much of the table to run: `fast` is the inner loop, `standard` is the gate a task closes on,
+ *  `full` adds everything, including the steps that may require a machine prerequisite. @public */
+export type GateMode = (typeof GATE_MODES)[number];
+
+/** A dependency a step needs, with the probe that detects it and the remedy to print — absent, a
+ *  fast or standard run reports the step skipped and a full run fails it. @public */
 export interface StepRequirement {
   /** What is missing, named verbatim in the skipped and failure lines. */
   tool: string;
   /** Answers whether the dependency is present. Defaults to whether `<tool> --version` exits 0. */
   probe?: () => boolean;
-  /** Install hint shown verbatim when the probe fails. */
+  // Rendered verbatim, so it carries its own verb and backticks: a remedy is not always one command.
+  /** Remedy shown verbatim when the probe fails, e.g. ``run `bun add -d esbuild` ``. */
   hint: string;
 }
 
@@ -20,9 +24,9 @@ export interface StepRequirement {
 export interface StepBase {
   /** Stable identifier — the `--only` token, and the name reported on failure. */
   label: string;
-  /** Restricts this step to `--full` runs; omitted, it runs in every mode. */
-  fullOnly?: boolean;
-  /** Dependency probed before the step runs: absent, a fast run skips this step and `--full` fails it. */
+  /** The lowest mode this step runs in; omitted, it runs from `fast` up. */
+  tier?: GateMode;
+  /** Dependency probed before the step runs: absent, only a full run fails; the lower modes skip. */
   requires?: StepRequirement;
 }
 
@@ -39,8 +43,10 @@ export interface CommandStep extends StepBase {
 
 /** A step run in-process, reported from the findings it returns rather than from captured text. @public */
 export interface CheckStep extends StepBase {
-  /** Invoked by the runner; its findings are printed verbatim, so there is no `tail` to truncate to. */
-  run: () => CheckResult | Promise<CheckResult>;
+  /** Invoked by the runner with the mode of the run, so a check whose strictness depends on it — a
+   *  release gate refusing what a dev loop tolerates — has one row rather than two. Its findings are
+   *  printed verbatim, so there is no `tail` to truncate to. */
+  run: (mode: GateMode) => CheckResult | Promise<CheckResult>;
   cmd?: never;
 }
 
@@ -65,8 +71,12 @@ export type Selection =
     }
   | { ok: false; error: string };
 
+function rank(mode: GateMode): number {
+  return GATE_MODES.indexOf(mode);
+}
+
 function describe(mode: GateMode): string {
-  return mode === "full" ? "a full run" : "a fast run";
+  return `a ${mode} run`;
 }
 
 // The rule is a property of the table itself, so it is checked before the mode is applied — a
@@ -93,7 +103,8 @@ export function selectSteps(steps: readonly Step[], opts: { mode: GateMode; only
   const malformed = invalidTable(steps);
   if (malformed !== undefined) return { ok: false, error: malformed };
 
-  const inMode = opts.mode === "full" ? steps : steps.filter((step) => step.fullOnly !== true);
+  // A rank comparison, so each mode is a superset of the one below it by construction.
+  const inMode = steps.filter((step) => rank(step.tier ?? "fast") <= rank(opts.mode));
   const known = inMode.map((step) => step.label);
 
   const only = opts.only !== undefined && opts.only.length === 0 ? undefined : opts.only;

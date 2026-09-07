@@ -6,7 +6,11 @@ import { cn } from "./utils/cn";
 
 type EmptyStateProps = JSX.IntrinsicElements["div"];
 type EmptyStateFigureProps = JSX.IntrinsicElements["span"];
-type EmptyStateTitleProps = JSX.IntrinsicElements["h3"];
+type EmptyStateTitleProps = JSX.IntrinsicElements["h3"] & {
+  /** Heading level, from the section's position in the document. Never from its size — the class is
+   *  fixed, so a level change is a semantic one. Defaults to `3`. */
+  level?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
+};
 type EmptyStateDescriptionProps = JSX.IntrinsicElements["p"];
 
 const EmptyStateRoot: FC<EmptyStateProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
@@ -24,11 +28,14 @@ const EmptyStateFigure: FC<EmptyStateFigureProps> = ({ class: cls, children, "da
   </span>
 );
 
-const EmptyStateTitle: FC<EmptyStateTitleProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <h3 data-slot={slotToken("empty-state-title", inherited)} class={cn("text-base font-semibold", cls)} {...rest}>
-    {children}
-  </h3>
-);
+const EmptyStateTitle: FC<EmptyStateTitleProps> = ({ class: cls, children, level, "data-slot": inherited, ...rest }) => {
+  const Heading = `h${level ?? 3}` as "h3";
+  return (
+    <Heading data-slot={slotToken("empty-state-title", inherited)} class={cn("text-base font-semibold", cls)} {...rest}>
+      {children}
+    </Heading>
+  );
+};
 
 const EmptyStateDescription: FC<EmptyStateDescriptionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <p data-slot={slotToken("empty-state-description", inherited)} class={cn("max-w-prose text-sm text-pretty text-muted-foreground", cls)} {...rest}>

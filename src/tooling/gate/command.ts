@@ -20,12 +20,13 @@ import {
   listLabel,
   formatSummary,
 } from "./report";
-import { type CheckStep, isCheckStep, type Step, type StepRequirement, selectSteps } from "./steps";
+import { type CheckStep, GATE_MODES, type GateMode, isCheckStep, type Step, type StepRequirement, selectSteps } from "./steps";
 
 /** Where `forge verify` looks for a step table when `--config` names none. @public */
 export const DEFAULT_STEPS_CONFIG = "config/steps.ts";
 
 const gateFlags = {
+  mode: { type: "string" as const, description: "Which tier to run: fast, standard or full (default: standard)" },
   full: { type: "boolean" as const, description: "Also run the steps that may require a machine prerequisite" },
   only: {
     type: "string" as const,
@@ -75,6 +76,17 @@ function absentRequirement(step: Step): StepRequirement | undefined {
   return present ? undefined : required;
 }
 
+// `--full` is sugar for `--mode full`, so the two together are a contradiction to refuse rather than
+// a precedence to invent.
+function resolveMode(flags: { mode: string | undefined; full: boolean | undefined }): { ok: true; mode: GateMode } | { ok: false; error: string } {
+  if (flags.mode !== undefined && flags.full === true) return { ok: false, error: "Pass --mode or --full, not both." };
+  if (flags.full === true) return { ok: true, mode: "full" };
+  if (flags.mode === undefined) return { ok: true, mode: "standard" };
+  const named = GATE_MODES.find((candidate) => candidate === flags.mode);
+  if (named === undefined) return { ok: false, error: `Unknown --mode: "${flags.mode}". Known modes: ${GATE_MODES.join(", ")}.` };
+  return { ok: true, mode: named };
+}
+
 function reportFailure(label: string, output: string, tail: number): void {
   console.log(formatFailureExcerpt(output, tail));
   const path = writeFullLog(label, output);
@@ -83,10 +95,10 @@ function reportFailure(label: string, output: string, tail: number): void {
 
 // A check that throws is a defect in the check, not a verdict — but the gate still owes a summary
 // line, so the throw is reported as that step's failure rather than unwinding the whole run.
-async function runCheck(step: CheckStep, style: Colorize): Promise<{ ok: boolean; ms: number; report: string }> {
+async function runCheck(step: CheckStep, mode: GateMode, style: Colorize): Promise<{ ok: boolean; ms: number; report: string }> {
   const started = Date.now();
   try {
-    const result = await step.run();
+    const result = await step.run(mode);
     return { ok: result.ok, ms: Date.now() - started, report: formatFindingBlock(result.findings, style) };
   } catch (error) {
     return { ok: false, ms: Date.now() - started, report: `    ${error instanceof Error ? error.message : String(error)}` };
@@ -99,7 +111,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
   return createCommand({
     name: "verify",
-    description: "Run the verification gate (--full adds the steps needing a machine prerequisite)",
+    description: "Run the verification gate (--mode fast|standard|full; default standard)",
     flags: gateFlags,
     args: { kind: "none" },
     async run(_args, flags, ctx) {
@@ -108,9 +120,15 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       const style = ctx?.out ?? PLAIN;
       // Annotated: TS narrows past a never-returning call only through an explicitly typed callee.
       const quit: (code: number) => never = ctx?.io.exit ?? exit;
-      const mode = flags.full ? "full" : "fast";
-      // The mode belongs in the verdict: `✓ verify` and `✓ verify --full` are different assurances.
-      const banner = flags.full ? "verify --full" : "verify";
+      const resolved = resolveMode(flags);
+      if (!resolved.ok) {
+        console.error(resolved.error);
+        quit(1);
+      }
+      const { mode } = resolved;
+      // The mode belongs in the verdict: `✓ verify` and `✓ verify --mode full` are different
+      // assurances. Named canonically — `--full` is an input spelling, not an output one.
+      const banner = mode === "standard" ? "verify" : `verify --mode ${mode}`;
 
       const selection = selectSteps(table, { mode, ...(flags.only === undefined ? {} : { only: flags.only }) });
       if (!selection.ok) {
@@ -186,7 +204,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         }
 
         if (isCheckStep(step)) {
-          const { ok, ms, report } = await runCheck(step, style);
+          const { ok, ms, report } = await runCheck(step, mode, style);
           console.log(formatStepLine(step.label, ok, ms, style));
           // Warnings are worth printing on a pass too — they are the check's only voice.
           if (report !== "") console.log(report);

@@ -17,8 +17,8 @@ class Exited extends Error {
   }
 }
 
-const ABSENT = { tool: "tailwindcss", probe: () => false, hint: "bun add -d tailwindcss" };
-const PRESENT = { tool: "tailwindcss", probe: () => true, hint: "bun add -d tailwindcss" };
+const ABSENT = { tool: "tailwindcss", probe: () => false, hint: "run `bun add -d tailwindcss`" };
+const PRESENT = { tool: "tailwindcss", probe: () => true, hint: "run `bun add -d tailwindcss`" };
 
 const passing = (label: string, requires?: Step["requires"]): Step => ({
   label,
@@ -52,7 +52,10 @@ async function run(steps: readonly Step[], flags: Record<string, unknown> = {}):
   const { ctx, logs } = context();
   const command = createGateCommand({ cwd: process.cwd(), steps });
   const original = console.log;
+  const originalError = console.error;
   console.log = (msg: string) => logs.push(msg);
+  // A refusal is written to stderr, so a test asserting one has to see both streams.
+  console.error = (msg: string) => logs.push(msg);
   let code: number | undefined;
   try {
     await command.run?.([], { full: false, list: false, fix: false, only: [], ...flags } as never, ctx);
@@ -61,9 +64,69 @@ async function run(steps: readonly Step[], flags: Record<string, unknown> = {}):
     code = error.code;
   } finally {
     console.log = original;
+    console.error = originalError;
   }
   return { logs, code };
 }
+
+describe("createGateCommand() — the mode reaches a check", () => {
+  const seen: string[] = [];
+  const recording: Step = {
+    label: "validate-thing",
+    run: (mode) => {
+      seen.push(mode);
+      return checkResult([], "");
+    },
+  };
+
+  it("hands a check the mode of the run, which a check may vary its strictness on", async () => {
+    seen.length = 0;
+    await run([recording], { mode: "fast" });
+    await run([recording]);
+    await run([recording], { full: true });
+
+    expect(seen).toEqual(["fast", "standard", "full"]);
+  });
+
+  it("resolves a bare run to standard, so `verify` is the gate and fast is opt-in", async () => {
+    seen.length = 0;
+    await run([recording]);
+
+    expect(seen).toEqual(["standard"]);
+  });
+
+  it("reads --full as sugar for --mode full", async () => {
+    seen.length = 0;
+    await run([recording], { full: true });
+    await run([recording], { mode: "full" });
+
+    expect(seen).toEqual(["full", "full"]);
+  });
+});
+
+describe("createGateCommand() — resolving the mode", () => {
+  const trivial: Step = { label: "alpha", run: () => checkResult([], "") };
+
+  it("refuses --mode and --full together rather than inventing a precedence", async () => {
+    const { logs, code } = await run([trivial], { mode: "fast", full: true });
+
+    expect(logs).toContain("Pass --mode or --full, not both.");
+    expect(code).toBe(1);
+  });
+
+  it("refuses an unrecognised --mode, naming the three it knows", async () => {
+    const { logs, code } = await run([trivial], { mode: "nope" });
+
+    expect(logs).toContain('Unknown --mode: "nope". Known modes: fast, standard, full.');
+    expect(code).toBe(1);
+  });
+
+  it("names the mode canonically in the banner, since --full is an input spelling only", async () => {
+    expect((await run([trivial], { mode: "fast", list: true })).logs).toEqual(["verify --mode fast — 1 step\n  alpha"]);
+    expect((await run([trivial], { list: true })).logs).toEqual(["verify — 1 step\n  alpha"]);
+    expect((await run([trivial], { full: true, list: true })).logs).toEqual(["verify --mode full — 1 step\n  alpha"]);
+  });
+});
 
 describe("createGateCommand() — a step whose dependency is absent", () => {
   it("skips it in a fast run and counts it apart from the steps that passed", async () => {
@@ -86,7 +149,7 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
     const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { full: true });
 
     expect(logs).toContain("✗ delta — tailwindcss not found; run `bun add -d tailwindcss`");
-    expect(logs.at(-1)?.startsWith("✗ verify --full — failed at `delta` (step 2 of 2")).toBe(true);
+    expect(logs.at(-1)?.startsWith("✗ verify --mode full — failed at `delta` (step 2 of 2")).toBe(true);
     expect(code).toBe(1);
   });
 
@@ -136,13 +199,13 @@ describe("createGateCommand() — --fix", () => {
           probed.push("validate-thing");
           return false;
         },
-        hint: "bun add -d tailwindcss",
+        hint: "run `bun add -d tailwindcss`",
       },
     };
     const { logs, code } = await run([check], { fix: true, full: true });
 
     expect(probed).toEqual([]);
-    expect(logs.at(-1)).toBe("0 fixed, 1 without a fixer — re-run `bun run verify --full` to confirm.");
+    expect(logs.at(-1)).toBe("0 fixed, 1 without a fixer — re-run `bun run verify --mode full` to confirm.");
     expect(code).toBeUndefined();
   });
 
@@ -161,7 +224,7 @@ describe("createGateCommand() — --list", () => {
     run: () => {
       throw new Error("--list must run nothing at all");
     },
-    requires: { tool: "tailwindcss", probe: () => false, hint: "bun add -d tailwindcss" },
+    requires: { tool: "tailwindcss", probe: () => false, hint: "run `bun add -d tailwindcss`" },
   };
 
   it("marks a step with a dependency conditional in a fast run, executing none of them", async () => {
@@ -174,6 +237,6 @@ describe("createGateCommand() — --list", () => {
   it("states the dependency as required under --full, where its absence is a failure", async () => {
     const { logs } = await run([exploding], { list: true, full: true });
 
-    expect(logs).toEqual(["verify --full — 1 step\n  validate-class-groups (requires tailwindcss)"]);
+    expect(logs).toEqual(["verify --mode full — 1 step\n  validate-class-groups (requires tailwindcss)"]);
   });
 });

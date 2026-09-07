@@ -37,8 +37,10 @@ Non-negotiable. Twenty-two items, no overrides, and a failure here outranks ever
 8. **Count** collection surfaces, then count designed empty states. Expect equal. `forge-ui-empty-state`
 9. **Count** controls with no visible text, then count those carrying an `aria-label` or an
    `sr-only` span. Expect equal. `forge-ui-accessible-name`
-10. **List** heading levels in document order: `rg -o '<h[1-6]'`. Expect no gap between consecutive
-    entries. `forge-ui-heading-order`
+10. **List** heading levels in document order: `rg -o '<h[1-6]|level=\{[1-6]\}'`. Expect no gap
+    between consecutive entries. The second alternative is not optional — a heading rendered through
+    `EmptyState.Title level={1}` has no `<h1>` in the source to grep for.
+    `forge-ui-heading-order`
 11. **Grep** `rg 'bg-\[#|text-\[#|border-\[#|rgb\(|hsl\(|oklch\('`. Expect 0 hits.
     `forge-ui-color-token-only`
 12. **Grep** `rg 'style='`. Expect 0 hits — forge's SSR renderer drops the attribute silently.

@@ -365,7 +365,7 @@ measured at migration time, 312 came from three rules that collide with forge's 
 `no-shadow`'s only sanctioned exception is the cross-realm `page.evaluate` case in §6.
 
 **Type-aware rules are configured in the same file but only run under `lint:types`** — see
-[`TESTING.md`](./TESTING.md) §6 for why that step is `fullOnly`.
+[`TESTING.md`](./TESTING.md) §6 for which tier that step runs from.
 
 ### 7c. Why `jsx-a11y` is on, and what it does not see
 

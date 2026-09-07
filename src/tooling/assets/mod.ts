@@ -9,7 +9,7 @@ export { hashFile, hashString } from "./hash";
 export { buildIcons } from "./icons";
 export { buildJS } from "./js";
 export { safeJoin } from "./paths";
-export type { BuildOptions } from "./pipeline";
+export type { AssetsTypesOutcome, BuildOptions } from "./pipeline";
 export { buildAll, generateAssetsTypes } from "./pipeline";
 export { buildRasters } from "./rasters";
 export { buildSite } from "./site";

@@ -84,15 +84,28 @@ This is a hard requirement:
 `playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it,
 never restate it here.
 
-**The set sits outside `bun run verify`, and the reason is a prerequisite, not cost.** It needs a
-browser binary that `bun run test:install` fetches, and a prerequisite is the only legitimate
-ground for a set to stand outside `check`. Cost never is. It **is** a step of `bun run verify:full`,
-the release gate, which is permitted to carry a prerequisite
-([`TESTING.md`](../governance/TESTING.md) §6c).
+**The set runs under bun — `bunx --bun playwright test`, in the script and in `browserStep`'s argv
+alike.** `node_modules/.bin/playwright` is a node shim, and node refuses to strip types from a file
+under `node_modules`, so a consumer's `playwright.config.ts` importing any forge subpath dies at
+config load. Forge's own config imports relatively and never hit it; a consumer hits it on the first
+import. It is the same restriction the committed lint-plugin bundle answers, and
+[`NAMESPACES.md`](NAMESPACES.md) §3c is its single home — including why the two remedies differ.
+
+**The set is held back to the `full` tier, and the reason is a prerequisite, not cost.**
+It needs a browser binary, and a prerequisite is the only legitimate ground for holding a step back.
+Cost never is. It runs under `bun run verify:full`, the release gate, which is permitted to carry
+one ([`TESTING.md`](../governance/TESTING.md) §6c).
+
+**The browser comes from the workspace image, so forge ships no install script.** Every devbox
+toolchain image bakes Chromium and sets `CHROME_PATH`, which is what `hasChromium` resolves first —
+the prerequisite is met before anyone runs anything, and the probe never fails in a devbox session.
+`browserStep`'s hint is therefore reached only from outside such a container, and it names both
+routes a reader there has — the direct download, or a devbox container — rather than a script this
+repository would otherwise have to define.
 
 **So the browser set is verified manually and at publish, not in the default gate — a ruling, not
 an oversight.** forge runs no CI, so `bun run test:browser` before a commit that touches
-`src/ui/client/` or a controller is the check, and `prepublishOnly` is the backstop: `--full`
+`src/ui/client/` or a controller is the check, and `prepublishOnly` is the backstop: a full run
 fails hard when a prerequisite probe returns false (`src/tooling/gate/command.ts`) and
 refuses a green when nothing ran, so a chromium-absent machine cannot publish.
 
@@ -366,9 +379,12 @@ guard middleware to test — see [`HTMX.md`](./HTMX.md) §7.
 
 ## 6. The Verification Gate
 
-See [`TESTING.md`](../governance/TESTING.md) §6 for the one-command-two-modes gate, the flag
+See [`TESTING.md`](../governance/TESTING.md) §6 for the one-command-three-modes gate, the flag
 table, the prerequisite line, and the scoped-run rule. `config/steps.ts` owns forge's step list
-([`SOURCE_OF_TRUTH.md`](./SOURCE_OF_TRUTH.md) §2a).
+and its per-step tier ([`SOURCE_OF_TRUTH.md`](./SOURCE_OF_TRUTH.md) §2a): `fast` holds `typecheck`,
+`lint`, `format` and `test`; `standard` adds every `validate-*` row plus
+`typecheck:workers-consumer`, `lint:types` and `governance`; `full` adds `validate-changelog` and
+`test:browser`.
 
 ---
 

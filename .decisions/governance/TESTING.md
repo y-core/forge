@@ -38,7 +38,7 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §5b Negative Case Structure: assert status and body
 - §5c No Mocking of Security Primitives: a testability signal, not a mocking one
 - §6 The Verification Gate: what must pass before a task is complete
-- §6a One Command, Two Modes: the gate and the release gate
+- §6a One Command, Three Modes: the inner loop, the gate, and the release gate
 - §6b What Each Tool Catches: the failure classes
 - §6c The Prerequisite Line: what separates a fast run from a full one
 - §6d A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
@@ -332,13 +332,23 @@ that passes when the guard is deleted.
 
 ## 6. The Verification Gate
 
-### 6a. One Command, Two Modes
+### 6a. One Command, Three Modes
 
-**There is one gate command with a fast mode and a full mode — not two commands.** Two verbs
-sharing every flag and every line of behaviour, differing only in a membership filter, is a mode
-by definition.
+**There is one gate command with three modes — not three commands.** Verbs sharing every flag and
+every line of behaviour, differing only in a membership filter, are a mode by definition.
 
-**A config file owns the step list** — every step, how it runs, and whether it is full-only.
+The three separate the three questions actually being asked:
+
+| Mode | When | What it holds |
+|---|---|---|
+| `fast` | Intra-task, or a small task. Re-run constantly, so it must stay cheap | The steps that answer "did I break the thing in front of me" |
+| `standard` | When a task closes. **This is what a bare `verify` runs** | Everything that substantially verifies the repo, minus the genuinely slow parts |
+| `full` | Before a commit or release, and whenever a change touched a step's prerequisite | Everything |
+
+**The machinery provides the tiers and says where each is appropriate; it does not prescribe what
+goes in them.** Each repository assigns its own steps.
+
+**A config file owns the step list** — every step, how it runs, and which tier it starts at.
 Read it there rather than trusting any prose copy. A step is one of two things: an external
 command, or a check the runner calls in-process.
 
@@ -347,11 +357,12 @@ command, or a check the runner calls in-process.
 
 The runner reports each step as it finishes, stops at the first failure, and names it. **That
 name is the verdict** — read off the summary line, never inferred from raw tool output. The mode
-is part of the verdict, because the two modes are different assurances.
+is part of the verdict, because the three modes are different assurances.
 
 | Flag | Effect |
 |---|---|
-| `--full` | Also run the full-only steps — the ones that may require a machine prerequisite |
+| `--mode <fast\|standard\|full>` | Which tier to run. Default `standard`; an unrecognised value is refused |
+| `--full` | Sugar for `--mode full`. Passing both is refused rather than given a precedence |
 | `--only <a,b>` | Run only those steps; an unknown label is refused, with the known ones listed |
 | `--list` | Print the resolved selection and exit, running nothing |
 | `--fix` | Run each selected step's fixer, then re-run to confirm |
@@ -374,20 +385,26 @@ to.
 
 ### 6c. The Prerequisite Line
 
-**This is the line between the modes, and it is an objective property rather than a judgement.**
-Every step in a fast run works on any machine with the repository's dependencies installed —
-nothing to fetch, no binary beyond the declared dev dependencies. That is what makes the fast run
-the gate anyone may run at any time, and **why cost is never grounds for moving a step out of
-it**.
+**This is the line the `full` tier draws, and it is an objective property rather than a
+judgement.** Every step below `full` works on any machine with the repository's dependencies
+installed — nothing to fetch, no binary beyond the declared dev dependencies. That is what makes
+`fast` and `standard` runs anyone may make at any time.
 
-The full run is the release gate and **is** permitted a prerequisite. A step needing one is
-full-only; a step needing nothing carries no flag and runs in both. **The runner refuses a step
-table that breaks this**, before the mode is applied — so the rule holds for every project that
-consumes the runner, and no repository writes a test of its own to assert it.
+The full run is the release gate and **is** permitted a prerequisite. A step needing one belongs
+on the `full` tier; a step needing nothing may sit anywhere. What an absent prerequisite means is
+the mode's answer, not the step's: **only a full run fails on one — `fast` and `standard` skip
+it.** So the rule holds for every project that consumes the runner, and no repository writes a
+test of its own to assert it.
 
-The mode enum is closed and the full-only marker is a **boolean, not a list of modes**. There is
-consequently no way to express a step the fast run has and the full run does not, so "full is a
-superset of fast" is structural rather than something a test has to catch after the fact.
+**Cost, not machine, is what separates `fast` from `standard`.** Cost is never grounds for moving
+a step out of `standard` — that is the tier a task closes on, and a step that is merely slow
+belongs in it.
+
+The mode enum is closed, and the per-step marker is an **ordered tier — the lowest mode the step
+runs in — rather than a set of modes**. Selection is therefore a rank comparison, and
+`fast ⊆ standard ⊆ full` holds by construction: there is no way to express a step a lower mode has
+and a higher one does not. The superset property survives the third mode for exactly the reason a
+boolean gave it for two.
 
 ### 6d. A Scoped Run Is Not a Gate Run
 

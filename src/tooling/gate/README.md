@@ -31,13 +31,13 @@ import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from
 
 - **A `verify` command** — fail-fast execution over the table `config/steps.ts` default-exports, a
   per-step result line, the failing step named in the summary, the failure's tail plus a path to the
-  untruncated log, and `--full` / `--only` / `--list` / `--fix` / `--config` / `--root`. A missing
-  table is an error, never an empty green.
+  untruncated log, and `--mode` / `--full` / `--only` / `--list` / `--fix` / `--config` / `--root`.
+  A missing table is an error, never an empty green.
 - **A zero-selection refusal** — a run resolving to no steps is refused rather than reported green,
   and a narrowed run brands its summary as scoped.
 - **Dependency probes** (`StepRequirement`) — a step declares a dependency and the predicate that
   answers whether it is present. The probe fires only when that step is selected, and its absence is
-  answered by the mode: a fast run skips the step, `--full` fails it.
+  answered by the mode: `fast` and `standard` skip the step, `full` fails it.
 - **Pure selection** (`selectSteps`) — no disk, no spawning, no clock, no probe, so you can
   unit-test your own table at zero step cost.
 - **Two presets** — `cloudflareWorkerSteps` for this fleet's Worker apps, `forgeChecks` for a
@@ -80,7 +80,15 @@ A pre-built step is a value, so the table stays the one place to read. Anything 
 for is still an ordinary `cmd` entry, as `check:bindings` is above.
 
 ```json
-{ "scripts": { "verify": "forge verify", "verify:full": "forge verify --full", "lint": "forge verify --only lint", "fix": "forge verify --fix" } }
+{
+  "scripts": {
+    "verify": "forge verify",
+    "verify:fast": "forge verify --mode fast",
+    "verify:full": "forge verify --full",
+    "lint": "forge verify --only lint",
+    "fix": "forge verify --fix"
+  }
+}
 ```
 
 `config/steps.ts` is the default; `--config` names another path, and `--root` names the directory
@@ -100,11 +108,12 @@ await execute(createGateCommand({ cwd: resolveAppRoot(), steps: STEPS }));
 Running it:
 
 ```bash
-bun run verify                     # every fast step, fail-fast
+bun run verify                     # the `standard` tier, fail-fast — what a task closes on
+bun run verify:fast                # the inner loop (`--mode fast`)
+bun run verify:full                # everything, prerequisites included (`--full`)
 bun run verify --list              # print the resolved selection, run nothing
 bun run verify --only lint,test    # narrow the run (branded as scoped)
 bun run verify --fix               # run each selected step's fixer instead
-bun run verify:full                # adds the steps that may need a machine prerequisite
 ```
 
 **`--only` and `--fix` are the two halves of a dev loop, and they are not the same verb.** `--only
@@ -135,6 +144,7 @@ same rules on its own tree. Each is also a pre-built step, whose label is its `-
 | `exportsStep`           | `validate-exports`             | `checkExports`           | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable |
 | `namespaceGraphStep`    | `validate-namespace-graph`     | `checkNamespaceGraph`    | Every cross-namespace import is declared, with the right kind, and no mutual value pair                                        |
 | `assetRootStep`         | `validate-asset-root`          | `checkAssetRoot`         | What the assets pipeline writes to the asset root matches the Worker's `run_worker_first` exclusions                           |
+| `assetManifestStep`     | `validate-asset-manifest`      | `checkAssetManifest`     | Every path the emitted assets manifest maps to exists under `publicDir`                                                        |
 | `coLocationStep`        | `validate-co-location`         | `checkCoLocation`        | Every source module has a test beside it, so deleting one is loud                                                              |
 | `buildTimeBoundaryStep` | `validate-build-time-boundary` | `checkBuildTimeBoundary` | No module outside a build-time directory imports one at value                                                                  |
 | `ssrBoundaryStep`       | `validate-ssr-boundary`        | `checkSsrBoundary`       | No Worker-executed module reaches the browser-only tier                                                                        |
@@ -157,6 +167,25 @@ same rules on its own tree. Each is also a pre-built step, whose label is its `-
 The tool steps carry no check: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep`
 (`format`), `typeAwareLintStep` (`lint:types`) and `testStep` (`test`) spawn `tsc`, `oxlint`,
 `oxfmt` and `bun test`.
+
+**`browserStep` spawns `bunx --bun playwright test`, not bare `playwright test`.** Forge ships raw
+TypeScript, and node refuses to strip types from a file under `node_modules`
+(`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which is what the `node_modules/.bin/playwright`
+shim would run under. Under bun your `playwright.config.ts` may import forge subpaths freely —
+`resolveChromiumPath` from `@y-core/forge/tooling/gate` among them. Match your own
+`test:browser` script to the same command so the two cannot diverge.
+
+**The `chromium` prerequisite names both routes — a direct download, or a devbox container:**
+
+```
+✗ test:browser — chromium not found; run `bunx playwright install chromium`, or use a devbox container — `devctl up`
+```
+
+`hasChromium` resolves `CHROME_PATH` first and Playwright's own download second, so a container
+image that bakes a browser satisfies it and the line is never printed there. A direct command
+rather than a package script, so nothing has to be defined for it to work. `hint` is **printed
+verbatim** and therefore carries its own verb and backticks — pass one if your browser arrives some
+other way: `browserStep({ hint: "run \`pnpm exec playwright install\`" })`.
 
 Configuration goes to the builder, in the step table itself — that file already answers "what does
 this repository's gate do?", so a check's allowlists belong with it:
@@ -206,11 +235,13 @@ Every rule id, its tier, its severity and the feature that replaces it are owned
 `MODERN_CSS_RULES` in [`@y-core/forge/tooling/lint`](../lint/README.md); the rule each finding cites
 is stated for readers in forge's design corpus at `src/ui/design/reference/16-platform.md`.
 
-Every builder takes `{ fullOnly, requires }` as its last argument, so a check can be held back to
-`--full` whatever its default, and its dependency replaced or dropped with `requires: null`. Three
-builders default to `--full`: `changelogStep` (requiring a written `[Unreleased]` entry on every
-inner loop would fail every WIP commit), `typeAwareLintStep` and `browserStep`. The design-system
-builders instead default to a `tailwindcss` dependency, so a fast run skips them where it is absent.
+Every builder takes `{ tier, requires }` as its last argument, so a check can be raised to any tier
+whatever its default, and its dependency replaced or dropped with `requires: null`. Three builders
+declare a tier of their own: `changelogStep` and `browserStep` default to `"full"` — requiring a
+written `[Unreleased]` entry on every inner loop would fail every WIP commit, and playwright needs a
+downloaded browser — and `typeAwareLintStep` to `"standard"`, since it builds its own TypeScript
+program. The design-system builders instead default to a `tailwindcss` dependency, so a run below
+the `full` tier skips them where it is absent.
 
 A check returns findings rather than printing and exiting, so you can also compose one:
 
@@ -235,11 +266,18 @@ belongs to; the vocabulary and its purity rules are
 `selectSteps` is pure, so the whole selection surface is assertable without spawning anything:
 
 ```ts
-import { selectSteps } from "@y-core/forge/tooling/gate";
+import { type GateMode, selectSteps } from "@y-core/forge/tooling/gate";
 import { STEPS } from "./steps";
 
 const result = selectSteps(STEPS, { mode: "fast" });
 if (result.ok) expect(result.steps.map((s) => s.label)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "test"]);
+
+// Each mode is a superset of the one below it, by construction — selection is a rank comparison.
+const labels = (mode: GateMode) => {
+  const selection = selectSteps(STEPS, { mode });
+  return selection.ok ? selection.steps.map((s) => s.label) : [];
+};
+expect(labels("fast").every((label) => labels("standard").includes(label))).toBe(true);
 
 // Selection calls no probe, so what a table selects never depends on the machine it runs on.
 expect(selectSteps(STEPS, { mode: "full" }).ok).toBe(true);
@@ -294,7 +332,7 @@ binary attaches it.
 | `--config <path>` | `config/steps.ts`     | Module default-exporting `readonly Step[]`, relative to `--root` or absolute.      |
 | `--root <path>`   | the working directory | Directory every step runs in, and the base a relative `--config` resolves against. |
 
-Plus every flag `createGateCommand` takes — `--full`, `--only`, `--list`, `--fix` — because the
+Plus every flag `createGateCommand` takes — `--mode`, `--full`, `--only`, `--list`, `--fix` — because the
 command delegates to it once the table is loaded rather than reimplementing the run.
 `DEFAULT_STEPS_CONFIG` is the exported default path.
 
@@ -306,7 +344,7 @@ zero-step selection: a green that ran nothing is worse than a red.
 #### `createGateCommand(config)`
 
 Builds the `verify` CLI `Command`. The returned command takes no positional argument and supports
-`--full`, `--only`, `--list` and `--fix`.
+`--mode`, `--full`, `--only`, `--list` and `--fix`.
 
 `GateCommandConfig`:
 
@@ -320,7 +358,8 @@ Flags:
 
 | Flag           | Effect                                                                                                    |
 | -------------- | --------------------------------------------------------------------------------------------------------- |
-| `--full`       | Also run the `fullOnly` steps, and fail rather than skip a step whose dependency is absent.               |
+| `--mode <m>`   | Which tier to run: `fast`, `standard` or `full`. Default `standard`. An unrecognised value is refused.    |
+| `--full`       | Sugar for `--mode full`. Passing both is refused rather than given a precedence.                          |
 | `--only <a,b>` | Run only those steps, in table order. Repeatable. An unknown label is refused with the known ones listed. |
 | `--list`       | Print the resolved selection and exit, running nothing.                                                   |
 | `--fix`        | Run each selected step's fixer instead of the step. Steps without one are counted as having no fixer.     |
@@ -331,8 +370,8 @@ Behaviour worth relying on:
 - **The full log outlives the run.** A failing step's untruncated output is written to a temp file
   and its path printed under the excerpt, so a signal outside the `tail` window is recoverable. A
   filesystem refusal is swallowed — the verdict must always be reported.
-- **A dependency is probed only when its step is selected**, and its absence skips the step in a fast
-  run while failing it under `--full` — the release gate never skips.
+- **A dependency is probed only when its step is selected**, and its absence skips the step below the
+  `full` tier while failing it in a full run — the release gate never skips.
 - **A zero-step selection is refused**, and a narrowed run brands its summary as scoped.
 - **A run whose every step was skipped is refused too**, for the same reason: the summary goes red
   and exit is 1.
@@ -340,30 +379,32 @@ Behaviour worth relying on:
   owes the gate a verdict line.
 - **Exit is direct, not thrown**, so the summary line is the last thing printed and `prepublishOnly`
   still blocks on a red gate.
-- **The mode is in the verdict.** `✓ verify` and `✓ verify --full` are different assurances, so the
-  banner says which ran.
+- **The mode is in the verdict.** `✓ verify` and `✓ verify --mode full` are different assurances, so
+  the banner says which ran. It names the mode canonically: `--full` is an input spelling, not an
+  output one.
 
 ### Step table
 
-| Type              | Shape                                                                                   |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| `GateMode`        | `"fast" \| "full"` — closed. It decides what an absent dependency means: skip, or fail. |
-| `Step`            | `CommandStep \| CheckStep` — a step is spawned, or called; never both                   |
-| `StepBase`        | `{ label; fullOnly?; requires? }` — what both variants carry                            |
-| `CommandStep`     | `StepBase & { cmd; tail; fix? }`                                                        |
-| `CheckStep`       | `StepBase & { run }`                                                                    |
-| `StepRequirement` | `{ tool; probe?; hint }` — absent, a fast run skips the step and `--full` fails it      |
-| `Selection`       | `{ ok: true; steps; total; scoped } \| { ok: false; error }`                            |
+| Type              | Shape                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
+| `GATE_MODES`      | `["fast", "standard", "full"]` — the tiers in ascending order, the one order everything ranks against  |
+| `GateMode`        | `(typeof GATE_MODES)[number]` — closed. It also decides what an absent dependency means: skip, or fail |
+| `Step`            | `CommandStep \| CheckStep` — a step is spawned, or called; never both                                  |
+| `StepBase`        | `{ label; tier?; requires? }` — what both variants carry                                               |
+| `CommandStep`     | `StepBase & { cmd; tail; fix? }`                                                                       |
+| `CheckStep`       | `StepBase & { run }` — `run` is handed the mode, so one row can vary its strictness                    |
+| `StepRequirement` | `{ tool; probe?; hint }` — absent, only a full run fails; the lower tiers skip                         |
+| `Selection`       | `{ ok: true; steps; total; scoped } \| { ok: false; error }`                                           |
 
-| Field      | Type                                        | Description                                                                                                              |
-| ---------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `label`    | `string`                                    | Stable identifier — the `--only` token, and the name reported on failure.                                                |
-| `fullOnly` | `boolean?`                                  | Restrict to `--full` runs. A boolean rather than a mode list, so a full run is a superset of a fast one by construction. |
-| `requires` | `StepRequirement?`                          | Dependency probed before the step runs: absent, a fast run skips this step and `--full` fails it.                        |
-| `cmd`      | `readonly [string, ...string[]]`            | Executable followed by its arguments.                                                                                    |
-| `tail`     | `number`                                    | Lines of captured output shown when the step fails.                                                                      |
-| `fix`      | `readonly [string, ...string[]]?`           | Auto-fixing counterpart invoked by `--fix`.                                                                              |
-| `run`      | `() => CheckResult \| Promise<CheckResult>` | Called in-process. Its findings are printed whole, so there is no `tail` and no fixer.                                   |
+| Field      | Type                                            | Description                                                                                                                                                                                                        |
+| ---------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `label`    | `string`                                        | Stable identifier — the `--only` token, and the name reported on failure.                                                                                                                                          |
+| `tier`     | `GateMode?`                                     | The **lowest** mode this step runs in; absent means `fast`. An ordered tier rather than a set of modes, so `fast ⊆ standard ⊆ full` holds by construction — selection is a rank comparison, not a membership test. |
+| `requires` | `StepRequirement?`                              | Dependency probed before the step runs: absent, only a full run fails it; the lower tiers skip it.                                                                                                                 |
+| `cmd`      | `readonly [string, ...string[]]`                | Executable followed by its arguments.                                                                                                                                                                              |
+| `tail`     | `number`                                        | Lines of captured output shown when the step fails.                                                                                                                                                                |
+| `fix`      | `readonly [string, ...string[]]?`               | Auto-fixing counterpart invoked by `--fix`.                                                                                                                                                                        |
+| `run`      | `(mode) => CheckResult \| Promise<CheckResult>` | Called in-process with the run's `GateMode`. Its findings are printed whole, so there is no `tail` and no fixer.                                                                                                   |
 
 The two variants are exclusive by construction — `cmd?: never` on one and `run?: never` on the other
 — so a step declaring both is a type error rather than a runtime precedence rule. Narrow with
@@ -397,10 +438,16 @@ unscoped run.
 #### `cloudflareWorkerSteps(options?)`
 
 The step table every Cloudflare Worker app in this fleet shares, in execution order:
-`types:cf-runtime` → `types:cf-bindings` → `types:assets` → `typecheck` → `lint` → `format` →
-(`governance`) → `test` → (`validate-asset-root`). Generation leads judgement, so a stale generated
-type surfaces as a type error. No step declares a dependency, so the preset runs unconditionally in a
-fast run.
+`types:cf-runtime` → `types:cf-bindings` → `types:assets` → `validate-asset-manifest` →
+`typecheck` → `lint` → `format` →
+(`governance`) → (`validate-modern-css` → `validate-class-order` → `validate-class-tokens` →
+`validate-css-tokens`) → `test` → (`validate-asset-root`) → (`test:browser`). Generation leads
+judgement, so a stale generated type surfaces as a type error.
+
+**The default table declares no dependency and puts every row on the `fast` tier**, so it runs whole
+in a fast run. The two opt-ins are what change that: `browser` adds the only `full`-tier row, and
+`design` adds the only rows carrying a `tailwindcss` prerequisite — skipped below the `full` tier on
+a machine without it, failed in a full run.
 
 The two `wrangler types` invocations are two steps rather than one `&&` chain, so a failure names
 which one broke. `--config` goes on the bindings invocation only — runtime types do not depend on the
@@ -408,20 +455,44 @@ wrangler config.
 
 `CloudflareWorkerStepOptions`:
 
-| Field           | Type                | Default              | Description                                                                                      |
-| --------------- | ------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
-| `sources`       | `readonly string[]` | `["src/", "tests/"]` | Directories linted, formatted and type-checked.                                                  |
-| `tests`         | `readonly string[]` | `["tests/"]`         | Test paths passed to `bun test`.                                                                 |
-| `assetConfig`   | `string?`           | —                    | Asset config path. Omit to skip the `types:assets` step entirely.                                |
-| `assetOut`      | `string`            | `.forge/assets.ts`   | Where the asset-types emitter writes.                                                            |
-| `wranglerTypes` | `boolean`           | `true`               | Emit the two `wrangler types` steps. `false` for an app that declares its binding types by hand. |
-| `workerConfig`  | `string?`           | —                    | `--config` for the bindings invocation.                                                          |
-| `governance`    | `boolean`           | `false`              | Add the `gov sync --check` step. Opt-in: it needs a cloned corpus.                               |
-| `root`          | `string`            | `process.cwd()`      | Application root, needed by the asset-root check.                                                |
+| Field           | Type                             | Default              | Description                                                                                      |
+| --------------- | -------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| `sources`       | `readonly string[]`              | `["src/", "tests/"]` | Directories linted, formatted and type-checked.                                                  |
+| `tests`         | `readonly string[]`              | `["tests/"]`         | Test paths passed to `bun test`.                                                                 |
+| `assetConfig`   | `string?`                        | —                    | Asset config path. Omit to skip the `types:assets` step entirely.                                |
+| `assetOut`      | `string`                         | `.forge/assets.ts`   | Where the asset-types emitter writes.                                                            |
+| `wranglerTypes` | `boolean`                        | `true`               | Emit the two `wrangler types` steps. `false` for an app that declares its binding types by hand. |
+| `workerConfig`  | `string?`                        | —                    | `--config` for the bindings invocation.                                                          |
+| `governance`    | `boolean`                        | `false`              | Add the `gov sync --check` step. Opt-in: it needs a cloned corpus.                               |
+| `root`          | `string`                         | `process.cwd()`      | Application root, needed by the asset-root and design checks.                                    |
+| `browser`       | `boolean`                        | `false`              | Add the `full`-tier `test:browser` step, last in the table.                                      |
+| `design`        | `CloudflareWorkerDesignOptions?` | —                    | Add the design rows. Omit for an app that does not use `ui/*`.                                   |
+
+`CloudflareWorkerDesignOptions`:
+
+| Field        | Type                         | Default    | Description                                                                     |
+| ------------ | ---------------------------- | ---------- | ------------------------------------------------------------------------------- |
+| `stylesheet` | `string`                     | —          | The stylesheet the design system compiles from. Three of the four rows need it. |
+| `cssDir`     | `string?`                    | —          | Directory of stylesheets; omit to skip `validate-css-tokens`.                   |
+| `sources`    | `readonly string[]`          | `["src/"]` | Sources the class rules scan.                                                   |
+| `deferred`   | `readonly DeferredFinding[]` | `[]`       | Platform-CSS findings this app defers.                                          |
+
+`design.sources` deliberately does **not** fall back to the table's top-level `sources`.
+`classOrderStep` scans every `.tsx`, specs included, and a spec asserting on `cn` holds deliberately
+self-conflicting literals — forge's own table excludes four such files by name. `deferred` defaults
+to `[]` rather than forge's own list, so no app inherits deferrals keyed to `src/ui/…` paths.
 
 The asset-root step is added only when **both** `assetConfig` and `workerConfig` are given: the
 assets config names what is written to the asset root, the wrangler config names what the Worker is
 kept out of, and comparing them needs both halves.
+
+The asset-manifest step needs only `assetConfig`, and sits immediately after `types:assets` — the
+step that may rewrite the artifact is followed by the one that judges it, before a typecheck and a
+test run that would otherwise pass on a manifest ahead of the built tree. **A types-only artifact
+passes a fast run alone — `standard` and `full` both fail it**: `gen types` maps every logical name to itself, and
+those files deliberately do not exist, which is what lets `tsc` run on a clean checkout. A release
+gate has no such excuse — passing there on an artifact nobody built is exactly the 404 the check
+exists to prevent.
 
 The two generated-type paths (`./.types/cloudflare.d.ts` and `./.types/worker-configuration.d.ts`)
 are baked in rather than exposed — every app in the fleet uses them, and an option nobody varies is
@@ -522,5 +593,5 @@ and `findPublicSymbols`.
 - [`@y-core/forge/tooling/cli`](../cli/README.md) — the command framework and `resolveAppRoot`.
 - [`ASSET_AND_BUILD_TOOLING.md`](../../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5f,
   §5g, §5h and §5i — the published gate, the fleet preset, root resolution, and the check layering.
-- [`TESTING.md`](../../../.decisions/implementation/TESTING.md) §6 — the gate's two modes and its
+- [`TESTING.md`](../../../.decisions/implementation/TESTING.md) §6 — the gate's three modes and its
   flags as forge itself runs them.

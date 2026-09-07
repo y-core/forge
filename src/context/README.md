@@ -155,10 +155,55 @@ The context key under which the Workers `ExecutionContext` is stored.
 
 Re-exported from `@remix-run/fetch-router` — the base context type every handler and middleware receives. A thin wrapper over the standard `Request`.
 
+### `validateEnv<T>(env, schema)`
+
+Parses `env` against a valibot schema, returning the validated output or throwing
+`Invalid environment: <field>: <reason>; …`. The rejected value never appears in the message.
+
+### `validateBindings(schema)`
+
+Builds a `Middleware` that runs `validateEnv` on the first request, and again whenever the `env`
+reference changes. Register it with `app.use("*", …)` **before** `app.map(...)`, so no request is
+served against a broken binding. The storage namespaces' `validateKVBinding` / `validateDBBinding` /
+`validateR2Binding` are thin wrappers over it.
+
+### `bindingSchema(name, methods, label, options?)`
+
+The schema for one binding: the named key must carry every method in `methods`, or the failure reads
+`<name> must be <label>`. It is a **shape** check — a value present but of the wrong shape always
+fails.
+
+`options.optional` relaxes presence only: an absent binding passes, a present one of the wrong shape
+still fails. Use it for a binding the code is written to survive without — a KV log channel, a rate
+limiter — never for one that is security-critical.
+
+```ts
+app.use("*", validateBindings(bindingSchema("LOGS_KV", ["get", "put"], "a KV namespace binding", { optional: true })));
+```
+
+### `bindingSetSchema(specs)`
+
+The same, for several bindings in one pass, so an app registers one middleware rather than one per
+binding. Each `BindingSpec` is `{ name, methods, label, optional? }`, and both forms build from the
+same entry so a required and an optional binding cannot diverge.
+
+```ts
+app.use(
+  "*",
+  validateBindings(
+    bindingSetSchema([
+      { name: "DB", methods: ["prepare"], label: "a D1 database binding" },
+      { name: "LOGS_KV", methods: ["get", "put"], label: "a KV namespace binding", optional: true },
+    ]),
+  ),
+);
+```
+
 ### Types
 
 | Type             | Description                                                                         |
 | ---------------- | ----------------------------------------------------------------------------------- |
+| `BindingSpec`    | One binding's declared shape: `name`, `methods`, `label`, and `optional`.           |
 | `ContextVar<T>`  | The accessor pair returned by `contextVar` (`get` / `set` / `getOptional` / `key`). |
 | `ContextKey<T>`  | Opaque key type for context-variable storage.                                       |
 | `Middleware`     | Standard middleware type (re-exported from `@remix-run/fetch-router`).              |

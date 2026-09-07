@@ -37,4 +37,20 @@ describe("EmptyState", () => {
         "</div>",
     );
   });
+
+  // The `data-slot` token and the class string must not vary with the level — only the tag — or the
+  // hand-written-DOM path and every exact-markup assertion downstream break.
+  it("renders Title at the requested level with byte-identical slot and class", async () => {
+    expect(await render(<EmptyState.Title level={1}>No projects</EmptyState.Title>)).toBe(
+      '<h1 data-slot="empty-state-title" class="text-base font-semibold">No projects</h1>',
+    );
+  });
+
+  it("renders each of the six levels as its own tag", async () => {
+    for (const level of [1, 2, 3, 4, 5, 6] as const) {
+      expect(await render(<EmptyState.Title level={level}>t</EmptyState.Title>)).toBe(
+        `<h${level} data-slot="empty-state-title" class="text-base font-semibold">t</h${level}>`,
+      );
+    }
+  });
 });

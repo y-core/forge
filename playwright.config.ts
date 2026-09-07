@@ -5,9 +5,9 @@ import { resolveChromiumPath } from "./src/tooling/gate/mod";
 /**
  * The browser set — real Chromium, one verb of its own (`bun run test:browser`).
  *
- * It sits outside `bun run check` because a browser binary is a *prerequisite*
- * (`bun run test:install`), which is the only legitimate reason a set stands outside the gate.
- * Cost is never one.
+ * The gate runs it as the full-only `test:browser` row, because a browser binary is a
+ * *prerequisite* — the only legitimate reason to hold a step back. Cost is never one. The workspace
+ * image supplies the browser and `CHROME_PATH` names it; nothing downloads one.
  *
  * `bun test` is deliberately untouched by this set: the two never share a process, so no global is
  * ever redefined and forge's Cloudflare `Request`/`Response`/`fetch` semantics stay exactly as the

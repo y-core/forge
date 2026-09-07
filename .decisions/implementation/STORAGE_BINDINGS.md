@@ -311,6 +311,15 @@ For arbitrary non-storage env fields, `validateBindings(schema)` builds a `Middl
 valibot schema — the storage helpers are thin wrappers over it. Its canonical home is
 `@y-core/forge/context`.
 
+**`bindingSchema(name, methods, label, { optional })` declares one binding; `bindingSetSchema(specs)`
+declares several in one pass.** Both build from the same entry, so the two forms cannot diverge, and
+an app validates its whole env with one middleware rather than one per binding.
+
+**`optional: true` means an absent binding passes and a present one of the wrong shape still fails.**
+It relaxes presence, never shape — consistent with §4a's "a shape check, not a presence check", and
+the schema-side statement of what `rateLimit`'s `required: false` and the optional resolvers already
+do at runtime (§5a). A security-critical binding is never declared optional (§5b).
+
 ---
 
 ### 4c. Structural Contracts — Cast-Free Platform Bindings
@@ -358,6 +367,10 @@ Running tests or `wrangler dev` without a full binding configuration leaves stor
 - **Rate limiting** — pass `required: false` so the middleware no-ops.
 - **D1** — provide in-memory fakes in tests rather than branching in production code paths.
 - **Optional resolvers** — pass `required: false` to receive `null` instead of a throw.
+
+**Declare such a binding `optional: true` in the schema (§4b)** so the registered check states the
+same thing the resolver does, rather than the middleware demanding a binding the code is written to
+survive without.
 
 ### 5b. Never Degrade Security
 

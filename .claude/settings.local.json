@@ -1,6 +1,16 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
+    "allow": [
+      "Bash(bun run *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(bun test *)",
+      "Bash(echo \"FIX:$?\")"
+    ],
     "deny": [
       "Bash(git add *)",
       "Bash(git am *)",
@@ -46,9 +56,10 @@
     ]
   },
   "model": "opus[1m]",
-  "attribution": { "commit": "", "pr": "" },
+  "enabledMcpjsonServers": [
+    "ledger"
+  ],
   "effortLevel": "medium",
-  "enabledMcpjsonServers": ["ledger"],
-  "autoMemoryEnabled": false,
-  "showClearContextOnPlanAccept": true
+  "showClearContextOnPlanAccept": true,
+  "autoMemoryEnabled": false
 }

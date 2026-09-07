@@ -427,9 +427,9 @@ into a `ReleaseError` at its own boundary and the file I/O lives with the other 
 
 ### 5e. Changelog Gate Invariants
 
-**`CHANGELOG.md` is checked by a `fullOnly` gate step** — `config/steps.ts` owns the step table
-(see [`TESTING.md`](./TESTING.md) §6). Requiring a written `[Unreleased]` entry on every fast run
-would fail every work-in-progress commit; `verify --full` runs exactly where the invariant bites,
+**`CHANGELOG.md` is checked by a `full`-tier gate step** — `config/steps.ts` owns the step table
+(see [`TESTING.md`](./TESTING.md) §6). Requiring a written `[Unreleased]` entry on every fast or
+standard run would fail every work-in-progress commit; a full run runs exactly where the invariant bites,
 before `prepublishOnly` and before a tag exists.
 
 **It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.**
@@ -473,24 +473,30 @@ assembled at run time, or a gate embedded in a larger CLI.
 | `steps`  | `readonly Step[]` | —                          | The table to resolve against.                                                    |
 | `binDir` | `string`          | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve.                                  |
 
-**One command, two modes — not two commands.** `verify` runs the fast set; `verify --full` adds
-the `fullOnly` steps. Two verbs sharing every flag and differing only in a membership filter is a
-mode by definition, and modelling it as two verbs costs a duplicated binding file per repo, a
-`gate` config field, and a superset invariant that must be _tested_ rather than being true by
-construction.
+**One command, three modes — not three commands.** `verify` runs the `standard` tier, the run a
+task closes on; `verify --mode fast` is the inner loop and `verify --full` (sugar for
+`--mode full`) adds everything, including the steps needing a machine prerequisite. Verbs sharing
+every flag and differing only in a membership filter are a mode by definition, and modelling them
+as separate verbs costs a duplicated binding file per repo, a `gate` config field, and a superset
+invariant that must be _tested_ rather than being true by construction. **A bare `verify` means
+`standard`** because `verify` is "the gate": the cheap run is the one that has to be asked for.
 
 **A dependency's absence is answered by the mode, not the table.** A step carries one `requires` —
-tool, probe, install hint — and the runner asks the probe once: a fast run reports the step skipped,
-`--full` fails it with the hint. That is what lets the four design-system steps run on every machine
-that has `tailwindcss`, an optional peer, instead of only under `--full`, while `--full` never skips,
-because it is the release gate `prepublishOnly` blocks on — a verdict hardcoded in the table could
-state only one of the two. `--list` words a step's dependency per mode: conditional, or required.
+tool, probe, install hint — and the runner asks the probe once: a `fast` or `standard` run reports
+the step skipped, a full run fails it with the hint. That is what lets the four design-system steps
+run on every machine that has `tailwindcss`, an optional peer, instead of only in a full run, while
+a full run never skips, because it is the release gate `prepublishOnly` blocks on — a verdict
+hardcoded in the table could state only one of the two. `--list` words a step's dependency per
+mode: conditional, or required.
 
-**`GateMode` is a closed `"fast" | "full"` union, and `Step.fullOnly` is a boolean.** Together they
-carry the invariant [`TESTING.md`](../governance/TESTING.md) §6c exists to settle: a third mode
-would have no defined answer to "what does an absent browser mean here?", and a _list_ of modes would
-let a table express a step that a fast run has and a full run does not. Neither is a restriction the
-runner enforces at runtime — both are shapes that make the wrong thing unsayable.
+**`GateMode` is a closed union derived from the ordered `GATE_MODES` tuple, and `Step.tier` names
+the lowest mode a step runs in.** Together they carry the invariant
+[`TESTING.md`](../governance/TESTING.md) §6c exists to settle. The tier is ordered rather than a
+_set_ of modes, so selection is a rank comparison and a table cannot express a step a lower mode
+has and a higher one does not — `fast ⊆ standard ⊆ full` by construction. The prerequisite question
+stays binary regardless of how many tiers there are: only a full run fails on an absent one.
+Neither is a restriction the runner enforces at runtime — both are shapes that make the wrong thing
+unsayable.
 
 **`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps
 that invoke tools as `bun x oxlint` need a different prefix, and one config field is cheaper than
@@ -506,7 +512,7 @@ at zero step cost, the same argument that makes forge's `steps.test.ts` worth ha
 
 **Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent.**
 The published surface is exactly `--only`, `--list`, `--fix`, fail-fast, the `requires` probe with
-its mode-decided verdict — skip in a fast run, failure under `--full`, and a red summary when every
+its mode-decided verdict — skip below the `full` tier, failure in a full run, and a red summary when every
 selected step was skipped — and the full-log file. Narrowing a run means enumerating labels; a
 streamed run is `--list` and then the step's own command.
 
@@ -535,7 +541,7 @@ is surface for nothing, the same argument that keeps the runner's temp-dir prefi
 commands the fleet runs", which is only assertable literally — a table that type-checks but names a
 command no app can run is a preset nobody can adopt, and no structural assertion catches it.
 
-**Every preset step is prerequisite-free**, so the whole preset is legal in a fast run
+**Every preset step is prerequisite-free and on the `fast` tier**, so the whole preset is legal in a fast run
 ([`TESTING.md`](../governance/TESTING.md) §6c). A `requires` added to any of them would break that
 for every app at once, which is why `presets.test.ts` asserts the absence as a property.
 
@@ -684,6 +690,23 @@ that every path is unhashed and every `viewBox` empty.
 disk and returns without writing, so an unchanged build does not touch the mtime — which is what
 keeps the twice-per-build codegen from retriggering every watcher, typechecker, and dev server
 downstream of it.
+
+**`gen types` is non-destructive, and the shape identity is what makes it so.** Both commands write
+the same path, and the gate runs `gen types` on every verify — so without a guard the cheap artifact
+replaces a real build and every hashed URL 404s. Because the two artifacts differ only in values,
+"does this build artifact still fit the config?" is answerable: blank every emitted value in each
+(`structuralSignature`) and compare. Equal means the build artifact is current, and `gen types`
+keeps it. Unequal — an added bundle, a renamed sprite target, a new glyph, a changed prefix — means
+the module on disk no longer describes the config, and rewriting it as a types artifact is the
+correct outcome: a stale build must not be pinned in place of one the config can still be
+typechecked against. `buildAll` is unaffected; a build always writes.
+
+**The guard keeps `gen types` from degrading the manifest; `validate-asset-manifest` catches it
+being ahead of the tree for any other reason** — a `public/` nobody rebuilt, a pruned hashed output,
+a hand-edited artifact. The check asserts one thing: every `DATA` value resolves to a file under
+`publicDir`. A types-only artifact passes a fast run, because its identity paths deliberately do not
+exist — that is what lets `tsc` run on a clean checkout — and fails a `standard` or `full` run,
+where a green on an artifact nobody built is the 404 it exists to prevent.
 
 ### 6c. The Emitted Glyph Union — the ForgeIcon Seam
 

@@ -40,6 +40,9 @@ interface DialogCloseProps extends Omit<JSX.IntrinsicElements["button"], "childr
 interface DialogTitleProps extends Omit<JSX.IntrinsicElements["h2"], "children" | "id"> {
   /** id of the `Dialog` this heading names — the root's `aria-labelledby` target is derived from it. */
   for: string;
+  /** Heading level, from where the dialog sits in the document. Never from its size — the class is
+   *  fixed, so a level change is a semantic one. Defaults to `2`. */
+  level?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -82,11 +85,14 @@ const DialogClose: FC<DialogCloseProps> = ({ for: target, request = false, class
 // The root's `aria-labelledby` is derived from its required `id`, so the heading's id is derived the
 // same way from the `for` the compound's other statics already take — one written id per dialog, and
 // no context to prop-drill.
-const DialogTitle: FC<DialogTitleProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <h2 data-slot={slotToken("dialog-title", inherited)} id={`${target}-title`} class={cn("text-base font-semibold", cls)} {...rest}>
-    {children}
-  </h2>
-);
+const DialogTitle: FC<DialogTitleProps> = ({ for: target, level, class: cls, children, "data-slot": inherited, ...rest }) => {
+  const Heading = `h${level ?? 2}` as "h2";
+  return (
+    <Heading data-slot={slotToken("dialog-title", inherited)} id={`${target}-title`} class={cn("text-base font-semibold", cls)} {...rest}>
+      {children}
+    </Heading>
+  );
+};
 
 const DialogHeader: FC<DialogSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <div data-slot={slotToken("dialog-header", inherited)} class={cn(PANEL_HEADER, cls)} {...rest}>
