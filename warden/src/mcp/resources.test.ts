@@ -20,7 +20,7 @@ const knowledge = openIndex(root, "libs", { path: ":memory:", canonRoot, canonVe
 describe("RESOURCES and TEMPLATES", () => {
   it("declares the catalogue fixed and both corpora parameterised", () => {
     expect(RESOURCES.map((resource) => resource.uri)).toEqual(["knowledge://catalogue"]);
-    expect(TEMPLATES.map((template) => template.uriTemplate)).toEqual(["knowledge://canon/{tree}/{path}", "knowledge://local/{path}"]);
+    expect(TEMPLATES.map((template) => template.uriTemplate)).toEqual(["knowledge://canon/{path}", "knowledge://project/{path}"]);
   });
 });
 
@@ -29,16 +29,23 @@ describe("readResource()", () => {
     expect(readResource(knowledge, "knowledge://catalogue")?.contents[0]?.text).toContain("CODE_RULES.md");
   });
 
-  it("serves one canon document whole, by tree and path", () => {
-    expect(readResource(knowledge, "knowledge://canon/libs/CODE_RULES.md")?.contents[0]?.text).toContain("The comment budget is a ceiling.");
+  it("serves both corpora in the catalogue — canon alone answers half of what governs a repository", () => {
+    const text = readResource(knowledge, "knowledge://catalogue")?.contents[0]?.text;
+    expect(text).toContain("## This repository — its own documents");
+    expect(text).toContain("docs/A.md");
+  });
+
+  it("serves one canon document whole, addressed by path alone", () => {
+    expect(readResource(knowledge, "knowledge://canon/CODE_RULES.md")?.contents[0]?.text).toContain("The comment budget is a ceiling.");
   });
 
   it("serves one of this repository's own documents", () => {
-    expect(readResource(knowledge, "knowledge://local/docs/A.md")?.contents[0]?.text).toContain("The comment budget is a ceiling.");
+    expect(readResource(knowledge, "knowledge://project/docs/A.md")?.contents[0]?.text).toContain("The comment budget is a ceiling.");
   });
 
-  it("does not serve a canon document under the wrong tree", () => {
-    expect(readResource(knowledge, "knowledge://canon/shared/CODE_RULES.md")).toBeUndefined();
+  it("does not serve a project document under the canon template, or the reverse", () => {
+    expect(readResource(knowledge, "knowledge://canon/docs/A.md")).toBeUndefined();
+    expect(readResource(knowledge, "knowledge://project/CODE_RULES.md")).toBeUndefined();
   });
 
   it("returns undefined for a URI it does not serve, so the caller answers with an error", () => {

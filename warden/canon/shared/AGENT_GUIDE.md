@@ -23,7 +23,7 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 
 ## 0. Quick Reference
 
-- §1 Document Access Path: Guide Index → `## 0.` → target section, using plain `Read`
+- §1 Document Access Path: how to look up a governing rule — search, then read the section
 - §2 Section Numbering Convention: why numbers exist and what a parser accepts
 - §2a Level-2 and Level-3 Numbering: `## N.` and `### Na.` mechanics
 - §2b Forbidden Heading Patterns: dot-notation, unnumbered headings, column-1 samples
@@ -35,13 +35,13 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 - §5 Cross-Reference Format: how documents point at each other
 - §5a Inter-Document Links: relative markdown links
 - §5b Intra-Document Section References: the `§N` shorthand
-- §5c Guide Index Registration: every document is reachable from `CLAUDE.md`
+- §5c The Agent Roster Is Reconciled Both Ways: no document register, but every agent named exists
 - §5d Crossing the Governance Boundary: which direction a link may run
 - §6 Document Size and Scope: what belongs in a governing document at all
 - §6a Size Targets and the Split-or-Cut Threshold: 200–600 target, 800 hard fail
 - §6b Subsection Citability Test: a `###` exists to be cited, not to be long
 - §6c Decisions Versus Usage — the README Boundary: examples live beside the source
-- §6d Governance Versus Implementation — the Directory Boundary: portable rule or local fact
+- §6d The Canon Versus This Repository's Docs: portable rule or local fact
 - §7 Quick Reference Convention: one line per `##` and `###`
 - §8 Single Home Rule and the Source-of-Truth Register: where each fact is allowed to live
 - §9 No Dated or Ticketed Content: no dates, task IDs, or changelog notes
@@ -50,22 +50,46 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 
 ## 1. Document Access Path
 
-Governing documents are plain markdown, read with `Read` and searched with `Grep`. There is
-no section-server and no special access tool.
+**To look up a governing rule, search for it and then read it.** Do not infer a rule, and do
+not hunt for the document by hand. The two steps use the warden knowledge tools:
 
-The intended path to a rule is three steps:
+1. **`knowledge_search`** — ask the question in the words you would use with a colleague. It
+   ranks the governing corpus and returns chunk ids of the form `canon:CODE_RULES.md#5c`.
+2. **`knowledge_read`** — takes one of those ids and returns that section whole. Ask for
+   `neighbours` when the rule that scopes a section is likely to sit beside it.
 
-1. **Guide Index in `CLAUDE.md`** — one line per document, across both of its tables (§5c);
-   picks the document.
-2. **`## 0. Quick Reference`** — one line per section; picks the section.
-3. **The target section** — read it, and follow its links rather than re-deriving its rules.
+**`knowledge_outline`** takes a document path and lists every section with its one-line
+summary: the answer to "this file is 62 KB and I need one section". Outline, then read.
 
-This path is why §7 mandates a complete Quick Reference: with no external index, that block
-_is_ the index. A document whose `## 0.` omits sections is unnavigable, not merely untidy.
+**An empty result is an answer.** Search refuses a question the corpus does not cover rather
+than returning its ten least-bad matches, so nothing is governing a subject that comes back
+empty — write what the task needs and do not infer a rule from a near miss. That refusal is
+what makes the tool safe to trust, and it is why searching is instructed rather than merely
+permitted. The converse does not hold: a non-empty result is not proof of coverage, so when
+the hits come back but none of them addresses what was asked, that is no rule either — say so
+rather than stretching the nearest one to fit.
+
+**The chunk id is the citation.** Cite the id you read — `CODE_RULES.md §5c` in prose, the
+full `canon:CODE_RULES.md#5c` where the corpus matters — so a later gate run can resolve
+the claim and fail if it has moved. An uncited rule is unfalsifiable.
+
+**Name the corpus.** `canon:…` is the fleet's law, shipped to every repository; `project:…` is
+this repository's own `docs/`. Titles and glosses collide across the two — a `TESTING.md`
+exists in both — so the label is the only thing distinguishing which one a hit came from, and
+a canon rule cannot be amended from a consumer (§6d).
+
+**The catalogue is the map, and it is served, not written.** The `knowledge://catalogue` resource
+lists every document one index covers — the canon and this repository's own — each with the sentence
+its own frontmatter uses. A host can pin it at session start, so picking a document costs no turn.
+
+**Where no warden MCP is configured**, the same two steps run from a terminal: `warden search` ranks
+the corpus and `warden outline <path>` lists a document's sections with their one-line summaries.
+The fallback is the same path through the same index, reached by a different transport — not a
+hand-maintained table in another file.
 
 Reading a full document is legitimate when the whole document is the subject — a review pass,
-a rewrite, or a first encounter with an unfamiliar domain. Prefer the path above when hunting
-one rule.
+a rewrite, or a first encounter with an unfamiliar domain. Prefer search when hunting one
+rule.
 
 ---
 
@@ -149,8 +173,8 @@ Every `docs/` document opens with YAML frontmatter carrying exactly two fields:
     description: "One sentence describing what this document governs."
     ---
 
-**Exactly two.** A field no tool reads and no reader acts on is drift waiting to happen; if a
-repository wants an ordering hint, the Guide Index already provides one.
+**Exactly two.** A field no tool reads and no reader acts on is drift waiting to happen — and both
+of these are read: the title and the description are what the catalogue lists a document by (§1).
 
 ### 4a. Title Field
 
@@ -203,20 +227,18 @@ Within one document, use the `§N` shorthand inline:
 The export validation rule (§3f) interacts with the barrel catalog (§3a).
 ```
 
-### 5c. Guide Index Registration
+### 5c. The Agent Roster Is Reconciled Both Ways
 
-Every `docs/` document must appear in the Guide Index in `CLAUDE.md` with a one-line
-description. **The index carries two tables, one per directory** — Governance and
-Implementation — because the index and the directories must agree in both directions. A
-document missing from the index, an index row naming a file that does not exist, or a row
-filed under the wrong table is a defect.
+**A governing document is not registered anywhere.** Warden indexes the corpus and serves it, so a
+document is found by asking a question — registering it in a hand-maintained table would add a list
+that can disagree with the directory it describes, to solve a problem search already solves (§1).
 
-**The same agreement holds for the agents the index names.** `CLAUDE.md` delegates the whole
-gate discipline to `cc-tester` by name and introduces the four agents that route work to it, so
-an agent named with no definition behind it delegates to nothing, and an agent defined and never
-named is one no reader is told exists. `gov sync --check` reconciles the names in
-`CLAUDE.md` against `.claude/agents/` in both directions. It measures existence only: what an
-agent _does_ stays convention, enforced by the agent obeying its own stated boundaries.
+**The agents `CLAUDE.md` names are a different matter, and are reconciled.** It delegates the whole
+gate discipline to `cc-tester` by name and introduces the agents that route work to it, so an agent
+named with no definition behind it delegates to nothing, and an agent defined and never named is one
+no reader is told exists. `warden sync --check` reconciles the names in `CLAUDE.md` against
+`.claude/agents/` in both directions. It measures existence only: what an agent _does_ stays
+convention, enforced by the agent obeying its own stated boundaries.
 
 ### 5d. Crossing the Governance Boundary
 
@@ -225,8 +247,9 @@ implementation.** A governance document is byte-identical across every repositor
 this corpus, so a link into a repository's own `docs/` would resolve in one repo and
 dangle in the others.
 
-An implementation document cites the portable rule it specialises with a relative link up and
-across, and states only what is local to the repository:
+An implementation document cites the portable rule it specialises and states only what is local to
+the repository. Where the canon is on disk the citation may carry a relative link; where it is not,
+the name and the section are the whole citation (§6d):
 
     See `DOC.md` §N for the rule this section specialises.
 
@@ -234,10 +257,9 @@ Where a governance document genuinely must name a local artifact — a register,
 config file — it **names the path in prose and does not link it** (§8 is the standing case).
 Prose survives a repository that has not written that file yet; a link does not.
 
-`gov sync --check` enforces the direction: it reports any markdown link in
-the canon whose target reaches into `docs/`. A boundary with nothing
-checking it is the failure this corpus refuses, and the check is what makes §5d a gate step
-rather than a convention.
+`warden sync --check` enforces the direction: it reports any markdown link in the canon whose target
+reaches into `docs/`. A boundary with nothing checking it is the failure this corpus refuses, and
+the check is what makes this a gate step rather than a convention.
 
 ---
 
@@ -295,8 +317,12 @@ different repository belongs in the canon.
 repository to edit: it is served from warden, and a rule that must genuinely change is changed
 in warden and released everywhere at once.
 
-**Cite a canon document by name and section, never by path** — `CODE_RULES.md §5c`. A path
-would resolve only in the repository that happens to hold the canon on disk.
+**Cite a canon document by whatever resolves where the citation lives.** A repository reading the
+canon from the installed package cites it by name and section — `CODE_RULES.md §5c` — because a path
+would dangle there. The repository that houses the canon on disk may link it relatively instead: the
+link resolves, and the docs check holds the path against the file. Either way the name and the
+section are what the citation is; the path, where one is written, is a convenience for the reader
+who can follow it.
 
 ---
 
@@ -313,7 +339,9 @@ blockquote, containing **one line per `##` and per `###` section**, in document 
 
 Each line orients; none restates. If a reader can act on the `## 0.` line without opening the
 section, the line has absorbed the section's content and the duplication will drift. Add
-sections here as they are written — a stale map is worse than none, because it is trusted.
+sections here as they are written — a stale map is worse than none, because it is trusted by
+a reader following §1's fallback path, and because the gloss is also a ranked column in the
+knowledge index, so a stale one misdirects search as well.
 
 ---
 

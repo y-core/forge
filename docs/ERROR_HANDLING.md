@@ -21,7 +21,7 @@ description: "The published Result signatures, the http fragment renderers, and 
 - §1 Result Monad: the single failure channel and its constructors
 - §1a The Unified Result Primitive: `Result<T,E>`, `ok`/`err`, `result`, `toError`
 - §1b Narrowing a Result: the `if (!r.ok)` guard and early return
-- §1c GuardResult and ValidationResult Aliases: domain shapes that narrow only `E`
+- §1c `GuardResult` and `ValidationResult` Domain Aliases: domain shapes that narrow only `E`
 - §2 Fragment Renderers: `SafeHtml` in, status on the response
 - §2a renderError: single-message failure fragment
 - §2b renderSuccess: success banner fragment

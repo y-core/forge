@@ -25,11 +25,15 @@ export function walkUpToRepo(from: string): string | undefined {
   }
 }
 
-/** Resolves the repository warden acts on: `--root`, then `WARDEN_ROOT`, then the app warden is
- *  installed into, then the nearest package root above `cwd`. @public */
+/** Resolves the repository warden acts on: `--root`, then `WARDEN_REPO_ROOT`, then the app warden
+ *  is installed into, then the nearest package root above `cwd`.
+ *
+ *  The variable is `WARDEN_REPO_ROOT`, not `WARDEN_ROOT`: that name belongs to the installed
+ *  `warden/` directory above, and exporting its value into the environment would silently point
+ *  every command at the library instead of the repository. @public */
 export function resolveRepoRoot(explicit?: string, env: Record<string, string | undefined> = process.env, cwd = process.cwd()): string {
   if (explicit !== undefined && explicit !== "") return resolve(explicit);
-  const stated = env.WARDEN_ROOT;
+  const stated = env.WARDEN_REPO_ROOT;
   if (stated !== undefined && stated !== "") return resolve(stated);
   const installed = installedAppRoot();
   if (installed !== undefined) return installed;

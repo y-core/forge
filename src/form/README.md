@@ -1,3 +1,8 @@
+---
+title: Form Submission Handling
+description: "Byte-capped form-data parsing, stateless CSRF protection, honeypot bot detection and Turnstile verification, each composable on its own."
+---
+
 # `@y-core/forge/form`
 
 Form submission handling for server-rendered apps on `@remix-run/fetch-router` + Cloudflare Workers:
@@ -245,16 +250,16 @@ Behaviour by method:
   `context.url.pathname`, exposed via `csrfTokenCtx`. Then calls `next()`.
 - **Mutations (`POST`, etc.)** — reads the token from the `headerName` header, falling back to the
   `tokenField` form field, and verifies it against the current pathname (and `subject`, if configured).
-  On **any** token failure it short-circuits with a bare `403` `Response` and never calls `next()`.
-  A body that exceeds `maxBytes` is a size failure, not a token failure, and short-circuits with a
-  bare `413` instead — reporting it as `403` would send the client hunting for a token problem that
-  does not exist.
+  On **any** token failure it short-circuits with a bare `403` `Response` and never calls `next()`;
+  an oversized body short-circuits with a bare `413` instead
+  ([`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §3a).
 
 #### Binding tokens to a session (recommended when a session exists)
 
-Path binding alone does not stop a token minted in one user's browser from being replayed by
-another user against the same path. When the app has sessions, bind the token to the session id —
-the standard composition is a one-line `subject` resolver reading `sessionCtx`:
+When the app has sessions, bind the token to the session id — the standard composition is a
+one-line `subject` resolver reading `sessionCtx`. The fixation risk path-only binding leaves open,
+and why `subject` is required rather than defaulted, are
+[`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §3a's:
 
 ```ts
 import { csrfProtection } from "@y-core/forge/form";
@@ -269,9 +274,8 @@ const csrfGuard = csrfProtection({
 ```
 
 Register `sessionMiddleware` **before** `csrfGuard` so the session exists when the subject is
-resolved. `form` and `session` are independent leaf namespaces — this composition lives in the
-consuming app, which is why forge does not auto-wire it. The subject-mismatch contract is pinned
-by the integration test in `csrf.test.ts` ("subject binding — wrong session returns 403").
+resolved. The subject-mismatch contract is pinned by the integration test in `csrf.test.ts`
+("subject binding — wrong session returns 403").
 
 ### CSRF context accessors — `csrfTokenCtx`, `csrfMinterCtx`, `csrfFieldCtx`
 
@@ -353,9 +357,8 @@ freshness window. There is no bare-`number` shorthand.
 ### Key rotation — `importCsrfKeyRing`
 
 `importCsrfKeyRing` imports multiple hex secrets into a `CsrfKeyRing`. The **first** secret becomes the
-active signing key (`activeKeyId`); **all** secrets remain valid for verification. This lets you rotate
-the signing secret without invalidating tokens minted under the previous one — add the new secret at
-the front, deploy, and retire the old secret only after the longest token lifetime has elapsed.
+active signing key (`activeKeyId`); **all** secrets remain valid for verification. The rotation
+procedure that ordering supports is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §3b's.
 
 ```ts
 const ring = await importCsrfKeyRing([env.CSRF_SECRET_NEW, env.CSRF_SECRET_OLD]);
@@ -377,13 +380,10 @@ is hidden from human users. Returns `false` when the field is absent, empty, or 
 | `field` | `string` | `HONEYPOT_FIELD_DEFAULT` (`"__hp_c7"`) | The decoy field name to inspect. |
 
 **A `defineAction` route does not call this.** It names `honeypot: CONTACT_DECOY`, and the pipeline
-runs the check before the schema and drops the field because it checked it — so the schema never has
-to declare a field no human fills. There is no default for that option and no shorthand: a name forge
-could supply is a name every bot already knows to skip, in every deployment at once.
-
-Hold the name as **one app-owned constant referenced twice** — by the view that renders the decoy and
-by the action that checks it. Forgetting the action half is then a missing argument at the call site
-rather than a form that silently stops being protected.
+runs the check before the schema and drops the field because it checked it. Why the option has no
+default and no shorthand, why the name is held as one app-owned constant referenced twice, and why
+it must be meaningless rather than plausible are
+[`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4a's.
 
 For a handler outside the pipeline, combine `isHoneypotFilled` with an early return so bot
 submissions never reach business logic:
@@ -394,12 +394,9 @@ if (isHoneypotFilled(formData, CONTACT_DECOY)) return new Response("Bad request"
 
 #### Rendering the decoy — compose `<Honeypot />` explicitly
 
-**`Form` renders no honeypot.** An unconditional one reaches `method="get"` too, where the browser
-serialises the decoy into the query string of every resulting URL — `?__hp_c7=` in the address bar,
-in bookmarks, in shared links, in history and in the outbound `Referer` — while protecting nothing,
-since `isHoneypotFilled` is only consulted by mutation handlers.
-
-Render `Honeypot` from `@y-core/forge/ui/core` on the forms that submit mutations:
+**`Form` renders no honeypot** — why explicit composition beats an unconditional one is
+[`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4a's. Render `Honeypot` from
+`@y-core/forge/ui/core` on the forms that submit mutations:
 
 ```tsx
 import { Form, Honeypot } from "@y-core/forge/ui/core";
@@ -411,16 +408,8 @@ import { Form, Honeypot } from "@y-core/forge/ui/core";
 ```
 
 `Honeypot` takes an optional `field` defaulting to `HONEYPOT_FIELD_DEFAULT`. Pass the app's own
-constant instead — the default is public, so it is the one name every bot already knows — and pass the
-same constant to whatever checks it: `defineAction`'s `honeypot`, or `isHoneypotFilled`'s second
-argument. The rendered markup carries no attribute naming the wrapper as a honeypot, for the same
-reason the field name should not be forge's: an attribute nothing reads still identifies the decoy.
-
-Whatever name you choose, keep it meaningless. A decoy called `surname`, `company` or `website`
-matches the browser's own autofill heuristics, which ignore `autocomplete="off"` for name and address
-fields — the browser fills the decoy for a user with a saved profile and the submission is refused
-with nothing on screen to explain it. The input carries `autocomplete="new-password"` for the same
-reason: it is the one token every browser honours as _never autofill this_.
+constant instead, and pass the same constant to whatever checks it — `defineAction`'s `honeypot`, or
+`isHoneypotFilled`'s second argument.
 
 Nothing fails at build or at runtime when the child is missing — the form simply stops being
 protected — so treat `<Honeypot />` as part of the shape of a mutation form rather than an addition
@@ -437,10 +426,10 @@ The token field and the client IP live **inside** `options` (`tokenField` / `rem
 trailing positional arguments.
 
 **A `defineAction` route does not call this either.** It names `turnstile: { secretKey, verify }`, and
-the pipeline verifies the token and drops the token field in one step. `tokenField` is fixed when the
-route is defined, because the field is dropped whether or not verification ever reaches the network,
-while `secretKey` and `verify` resolve per request — a secret lives in a binding, and the hostname a
-token must have been minted on is usually the request's own.
+the pipeline verifies the token and drops the token field in one step. Why `tokenField` is fixed at
+definition time while the rest resolves per request, what each option's `<Turnstile>` widget half
+is, and what an unverifiable CAPTCHA does are
+[`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4b's.
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |

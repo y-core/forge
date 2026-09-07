@@ -64,8 +64,9 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
       "INSERT INTO source (corpus, tree, path, title, description, weight, size, mtime, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     );
     const insertChunk = db.prepare(
-      "INSERT INTO chunk (id, source_id, section, title, heading_path, gloss, rules, search_body, body, ordinal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO chunk (id, source_id, section, title, heading_path, gloss, rules, body, ordinal, searchable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING rowid",
     );
+    const insertSearch = db.prepare("INSERT INTO chunk_fts (rowid, title, heading_path, gloss, rules, search_body) VALUES (?, ?, ?, ?, ?, ?)");
     const insertRelation = db.prepare("INSERT INTO relation (from_id, kind, to_id, raw) VALUES (?, ?, ?, ?)");
 
     for (const entry of loaded) {
@@ -83,7 +84,7 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
       ) as { id: number } | null;
       const sourceId = row?.id ?? 0;
       for (const chunk of entry.chunks) {
-        insertChunk.run(
+        const inserted = insertChunk.get(
           chunk.id,
           sourceId,
           chunk.section,
@@ -91,18 +92,21 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
           chunk.headingPath,
           chunk.gloss,
           chunk.rules,
-          chunk.searchBody,
           chunk.body,
           chunk.ordinal,
-        );
+          chunk.searchable ? 1 : 0,
+        ) as { rowid: number } | null;
+        // The FTS row is written from the chunk in hand rather than selected back out of `chunk`,
+        // which is what lets the content table drop `search_body` entirely. An organising heading is
+        // skipped here and only here: it stays addressable and outlined, but never competes for a
+        // rank it has no prose to earn.
+        if (chunk.searchable) {
+          insertSearch.run(inserted?.rowid ?? 0, chunk.title, chunk.headingPath, chunk.gloss, chunk.rules, chunk.searchBody);
+        }
       }
       for (const relation of entry.relations) insertRelation.run(relation.from, relation.kind, relation.to ?? null, relation.raw);
     }
 
-    // The FTS table is external-content, so it is filled from `chunk` rather than written twice.
-    db.run(
-      "INSERT INTO chunk_fts (rowid, title, heading_path, gloss, rules, search_body) SELECT rowid, title, heading_path, gloss, rules, search_body FROM chunk",
-    );
     stampVersions(db, canonVersion);
   });
 

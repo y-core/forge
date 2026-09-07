@@ -1,6 +1,11 @@
+---
+title: Reviewing a UI
+description: "The audit pass run against someone else's markup, or your own an hour later, whose output is a list of findings."
+---
+
 # Reviewing a UI
 
-This file is used to _audit_ a surface rather than to build one. It is the pass you run against
+This file _audits_ a surface rather than building one. It is the pass you run against
 someone else's markup — or your own, an hour later — and its output is a list of findings, each one
 attributable to a rule that already exists in this corpus.
 
@@ -8,7 +13,17 @@ The review has three parts, run in order: a heuristic pass over named dimensions
 and a report. The order matters, because the persona pass finds things the dimension pass cannot
 see, and the report shape is what makes both of them arguable.
 
-## Part 1 — the heuristic pass
+## 0. Quick Reference
+
+- §1 Part 1 — the heuristic pass: eleven dimensions in order, each scored against the file that owns it
+- §2 Part 2 — severity: a scale drawn where it is checkable, and why a Floor violation is always P0
+- §3 Part 3 — personas: the six passes that read use rather than markup
+- §4 Part 4 — the report: one finding per line, five fields, ordered by severity
+- §4a The rule that keeps the review honest: a finding with no rule id is promoted or dropped
+
+---
+
+## 1. Part 1 — the heuristic pass
 
 Walk the dimensions below in order. Each one is scored against the `reference/` file that owns it;
 a finding is only a finding if it can name the rule id it violates.
@@ -36,7 +51,7 @@ Default: contrast, token pairing, and any dark-mode-sensitive finding is checked
 and `.dark`, and the finding names which theme it was observed in, unless the surface ships in one
 theme only. <!-- rule:forge-ui-review-both-themes -->
 
-## Part 2 — severity
+## 2. Part 2 — severity
 
 Two reviewers should assign the same severity to the same finding. That is the only test this scale
 has to pass, so the boundaries are drawn where they are checkable rather than where they feel right.
@@ -65,7 +80,7 @@ Default: a P3 finding is reported at most three times per review, because a repo
 notes outnumber defects gets read as a taste document and the P0s go unfixed — unless the review
 was explicitly requested as a polish pass. <!-- rule:forge-ui-review-p3-budget -->
 
-## Part 3 — personas
+## 3. Part 3 — personas
 
 The dimension pass reads markup. The persona pass reads _use_, and each persona catches a class of
 defect that no other one will surface.
@@ -87,7 +102,7 @@ Default: the keyboard-only and screen-reader passes are run on every review rega
 because both surface P0s and neither is inferable from reading markup alone, unless the surface
 renders no interactive element at all. <!-- rule:forge-ui-review-a11y-personas-always -->
 
-## Part 4 — the report
+## 4. Part 4 — the report
 
 One finding per line. Five fields, in this order, with no prose paragraph around them:
 
@@ -109,7 +124,7 @@ Default: a review reports findings and does not rewrite the surface, unless the 
 the fixes to be applied, in which case the report is still produced first so each change is
 attributable to a rule. <!-- rule:forge-ui-review-no-rewrite -->
 
-### The rule that keeps the review honest
+### 4a. The rule that keeps the review honest
 
 **A finding with no rule id is not a finding.** When you cannot name one, exactly two things are
 true and you must pick between them:

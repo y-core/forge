@@ -1,3 +1,8 @@
+---
+title: Accessibility
+description: "Why accessibility is a design input rather than a retrofit, and the decisions that cannot be added at the end."
+---
+
 # Accessibility
 
 Accessibility is a design input, not a retrofit. Almost nothing on this page can be added at the
@@ -12,7 +17,23 @@ Everything here is Tier 2. The Floor it rests on — `forge-ui-contrast-floor`,
 
 ---
 
-## Contrast, per theme
+## 0. Quick Reference
+
+- §1 Contrast, per theme: the sequencing — the pair is a decision taken while composing, not after
+- §2 ARIA alongside data attributes, never instead of: two publications of one state, and what each drives
+- §3 Names: a visible label first, and what an icon-only control has left to carry one
+- §3a Labels and the wiring behind them: why the helpers return `undefined` rather than a dangling IDREF
+- §3b Naming a control with no visible text: the `sr-only` span, and the `aria-label` fallback
+- §3c Required markers and `aria-readonly`: which element carries the state, and which cannot
+- §4 Heading order: level from position, size from a class
+- §5 Motion and live regions: one live region, why the container is it, and what a skeleton announces
+- §5a One live region, and why `Toast` is not one: nested regions, insertions, and the silent toast
+- §5b Politeness and the announced wait: when a message earns an interruption, and pairing a skeleton
+- §6 An optional prop a reader's tooling can still see: why `?: T | undefined` is an accessibility rule
+
+---
+
+## 1. Contrast, per theme
 
 `forge-ui-contrast-floor` is the Floor: 4.5:1 for body text, 3:1 for large text and UI boundaries,
 in **both** `:root` and `.dark`.
@@ -46,7 +67,7 @@ failure looks like when contrast and `forge-ui-not-color-alone` are both deferre
 
 ---
 
-## ARIA alongside data attributes, never instead of
+## 2. ARIA alongside data attributes, never instead of
 
 This is the section most specific to forge, and the mistake it names is invisible in a screenshot.
 
@@ -79,7 +100,9 @@ is what eventually produces an element whose styling and whose announcement disa
 
 ---
 
-## Names
+## 3. Names
+
+### 3a. Labels and the wiring behind them
 
 Default: name a control with a visible `Label` or `FormField.Label` — unless the design genuinely
 has no room for a visible label, in which case see the screen-reader-only rule
@@ -110,6 +133,8 @@ error rather than ignoring.
 </FormField>
 ```
 
+### 3b. Naming a control with no visible text
+
 Default: when a control genuinely has no visible text — an icon-only `Button shape="icon"` — pair a
 decorative `Icon` with visually-hidden text rather than an `aria-label`, wherever the layout allows
 it — unless the sr-only span would be read twice because the control already has a
@@ -127,6 +152,8 @@ form wherever the layout allows it. <!-- rule:forge-ui-icon-button-label -->
 triggers it. Those two shapes size the control to its glyph, so there is no text left in it to carry
 a name, and `Icon` is `aria-hidden` by default — the button ships nameless unless one is given.
 
+### 3c. Required markers and `aria-readonly`
+
 Default: keep the required marker decorative and carry requiredness on the control — unless the form
 has no visual required convention at all. <!-- rule:forge-ui-a11y-required-marker -->
 `Label`'s `required` prop renders an `aria-hidden` asterisk; the `required` attribute on the input
@@ -143,7 +170,7 @@ the input's own `readonly` carry the state.
 
 ---
 
-## Heading order
+## 4. Heading order
 
 `forge-ui-heading-order` is the Floor: never skip a level.
 
@@ -155,13 +182,15 @@ The skip almost always arrives the same way: a designer wants smaller text, so t
 
 ---
 
-## Motion and live regions
+## 5. Motion and live regions
 
 Default: author motion inside `motion-safe:` and give `motion-reduce:` the settled state, rather
 than treating reduced motion as a later pass — unless the movement conveys information that has no
 static equivalent. <!-- rule:forge-ui-a11y-reduced-motion-pair -->
 `forge-ui-reduced-motion` is the Floor; this is where in the process it gets satisfied. Durations and
 the one-moment budget are [`09-interaction.md`](./09-interaction.md)'s.
+
+### 5a. One live region, and why `Toast` is not one
 
 Default: route transient announcements into the existing flash region and add no live region of your
 own — unless the surface has a genuinely separate stream of updates that must not interleave with
@@ -182,6 +211,8 @@ therefore silent**, and giving one `role="status"` would not fix that: `role="st
 arriving one, so it is read where the reader meets it; urgency goes through the flash region. A
 caller who genuinely needs an announcement passes `role` themselves, and the politeness rule below
 governs which.
+
+### 5b. Politeness and the announced wait
 
 Default: leave a live region polite — unless the message is a failure that stops the reader's current
 task, which is the only case that earns an interruption. <!-- rule:forge-ui-a11y-live-politeness -->
@@ -214,7 +245,7 @@ the utterance — so give it a real one rather than the `Loading…` default.
 
 ---
 
-## An optional prop a reader's tooling can still see
+## 6. An optional prop a reader's tooling can still see
 
 Default: declare every optional prop a consumer passes a value into as `?: T | undefined` — unless
 the type is one an application never constructs. <!-- rule:forge-ui-optional-prop-undefined -->

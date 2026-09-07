@@ -57,7 +57,7 @@ that only cites a rule number gives the author nothing to weigh.
 
 | Invariant | Owner |
 | --- | --- |
-| No deprecation shim or backward-compatible path before v1.0.0 | `CLAUDE.md` |
+| No deprecation shim or backward-compatible path before v1.0.0 | this repository's `LIBRARY_ARCHITECTURE.md` |
 | No hardcoded secret, key, or credential in source | §3c |
 | A barrel uses named exports only — no `export *` | [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §1b |
 | No sibling-barrel import outside the named exemptions | [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §2 |

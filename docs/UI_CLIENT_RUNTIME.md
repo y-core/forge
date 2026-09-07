@@ -38,18 +38,17 @@ description: "The browser-only UI tier: mount controllers, signals, lazy loading
 - §4 htmx Bundle Import: the side-effect entry point
 - §5 Never Use ui/client in an SSR Context: pointer to the governance rule that owns it
 
-Every exported symbol's signature, options, and worked usage — including the controller
-primitives, the globals a browser controller may not reach for, and `mountRovingFocus` — is
-documented with the export surface in [`src/ui/README.md`](../src/ui/README.md) under
-`@y-core/forge/ui/client`. This document carries only what was decided and why.
+Every exported symbol's signature, options and worked usage — the controller primitives, the globals
+a browser controller may not reach for, and `mountRovingFocus` among them — is documented with the
+export surface in [`src/ui/README.md`](../src/ui/README.md). This document carries only what was
+decided and why.
 
 ---
 
 ## 1. Runtime Boundary
 
-See [`BOUNDARIES.md`](../warden/canon/libs/BOUNDARIES.md) §1 for the SSR-versus-browser boundary, which
-subpath tiers may be imported where, and why it is kept by import path rather than a runtime
-check.
+See [`BOUNDARIES.md`](../warden/canon/libs/BOUNDARIES.md) §1 for the SSR-versus-browser boundary,
+which subpath tiers may be imported where, and why it is kept by import path rather than a runtime check.
 
 ---
 
@@ -62,12 +61,11 @@ safe and a controller can be torn down. §2d states that contract as a rule.
 consumer wrote is public and carries its own per-root guard: `mountScrollSpy`, `mountCarouselDots`,
 `mountViewportCollapse`, `openPopoverAt`, `mountRovingFocus`. A controller that is a registered
 scope's `setup` body is not: `mountMenu`, `mountTabs`, `mountTooltip`, `mountNumberField`,
-`mountInputFormat`, `mountTurnstile`, `mountExpandedState`. Those scopes are `eager`, so `resume()` is their only correct
-caller and a second call would double-mount. Being internal without being un-`@public` is what
-[`NAMESPACE_DESIGN.md`](../warden/canon/libs/NAMESPACE_DESIGN.md) §1c permits — its gate proves
-`@public → barrel`, not the converse. `mountRovingFocus` is public despite backing four scopes
-because it is a primitive those scopes _call_ rather than a scope's `setup`, and an author building
-their own composite is obliged to reach for it.
+`mountInputFormat`, `mountTurnstile`, `mountExpandedState`. Those scopes are `eager`, so `resume()`
+is their only correct caller and a second call would double-mount. Being internal without being
+un-`@public` is what [`NAMESPACE_DESIGN.md`](../warden/canon/libs/NAMESPACE_DESIGN.md) §1c permits —
+its gate proves `@public → barrel`, not the converse. `mountRovingFocus` is public despite backing
+four scopes because it is a primitive those scopes _call_ rather than a scope's `setup`.
 
 ### 2b. Theme Controller and FOUC Prevention
 
@@ -87,22 +85,22 @@ before first paint**, preventing a flash of unstyled content.
 [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §2a.
 
 **A pre-paint inline script is for state the server cannot know, and a second one is not minted for
-state it can.** This is where that precedent lives: any surface that renders one state and corrects
-it on the client is tested against it. The theme passes on every count — its correct value is in
-`localStorage`, which no server can read, and the wrong intermediate state is a full-page inversion.
-The viewport-driven disclosure (§2l) passes on none: its input is a width the stylesheet already
-responds to, a disclosure default is opt-in where a theme is universal and every inline script is a
-CSP hash _every_ consumer carries, and its wrong intermediate state is "navigation visible" — the
-accessible no-JS fallback rather than a defect. **The residual is stated rather than hidden:** the
-correction lands when the app's client entry runs, so deferring that entry behind a large bundle
-widens the window in which the disclosure shows the state the server rendered.
+state it can.** Every surface that renders one state and corrects it on the client is tested against
+that rule. The theme passes on every count: its value is in `localStorage`, which no server can
+read, and the wrong intermediate state is a full-page inversion. The viewport-driven disclosure
+(§2l) passes on none — its input is a width the stylesheet already answers, a disclosure default is
+opt-in where a theme is universal and every inline script is a CSP hash _every_ consumer carries,
+and its wrong intermediate state is "navigation visible", the accessible no-JS fallback rather than
+a defect. **The residual is stated rather than hidden:** the correction lands when the app's client
+entry runs, so deferring that entry behind a large bundle widens the window in which the disclosure
+shows what the server rendered.
 
 **The theme preference is held per document, not per scope.** A navbar toggle beside a settings
-toggle is a legitimate composition, and each scope hydrating its own `pref` meant cycling one left
-the other advancing from a stale value. The shared state is refcounted per document, the same shape
-`resume.ts` uses (§3c), and its effects are created inside a **nested `withOwner`** so they land in
-a bag the resuming scope's own owner does not empty — otherwise the first toggle disposed would take
-the painting with it.
+toggle is a legitimate composition, and each scope hydrating its own `pref` left the other advancing
+from a stale value. The shared state is refcounted per document, the same shape `resume.ts` uses
+(§3c), and its effects are created inside a **nested `withOwner`** so they land in a bag the resuming
+scope's own owner does not empty — otherwise the first toggle disposed would take the painting with
+it.
 
 **`isDark` is a stable binding over the live documents, not a slot.** Its getter delegates to the
 most recently acquired one, so it can be captured before `resume()` runs and still report the truth
@@ -115,9 +113,8 @@ The `navbar` scope applies the token list the event carries to every filterable 
 server seeds the same set at render, so the first paint is already correct. A channel rather than a
 forge-held signal for two reasons: the emitter — a login, an htmx swap, an app's own router — need
 not hold a reference to any forge module, and two bars on one page each resume their own scope while
-both must follow one push. The listener is removed by the disposer `setup` returns (§2d), so a
-torn-down bar stops following the channel. `src/ui/README.md` owns the event's name and payload
-shape.
+both must follow one push. The listener is removed by the disposer `setup` returns (§2d).
+`src/ui/README.md` owns the event's name and payload shape.
 
 ### 2c. The `turnstile` Scope — CAPTCHA Controller
 
@@ -371,22 +368,21 @@ on screen. Four properties are load-bearing:
 - **A menu opened from `contextmenu` must be held back until the button is released**, or the
   platform light-dismisses it on the very `pointerup` that ended the right-click: `contextmenu` fires
   _between_ `pointerdown` and `pointerup`, and the dismiss pass on that release finds neither target
-  inside a popup, so everything is hidden one event after it was shown. `afterPointerUp` defers the
-  show to a one-shot **capture-phase** `pointerup` on the owner document, which runs ahead of the
-  dismiss pass's own listeners and before any paint. Callers pass `event.buttons !== 0`, never a flat
-  `true`: a keyboard-raised `contextmenu` (Menu key, `Shift+F10`) reports no buttons and is followed
-  by no release, so an unconditional guard arms a listener the _next_ unrelated click fires.
+  inside a popup. `afterPointerUp` defers the show to a one-shot **capture-phase** `pointerup` on the
+  owner document, ahead of the dismiss pass's own listeners and before any paint. Callers pass
+  `event.buttons !== 0`, never a flat `true`: a keyboard-raised `contextmenu` (Menu key, `Shift+F10`)
+  reports no buttons and is followed by no release, so an unconditional guard arms a listener the
+  _next_ unrelated click fires.
 
 The popup opts in with `Menu.Popup`'s `coords` prop, which stamps `data-coords` and selects the
 coordinate rule; `openPopoverAt` stamps it too, so a popup that opens both ways needs no second
 markup variant. Calling it again **repositions** an open popup.
 
-**It returns a disposer, because the deferred path arms a listener.** Nothing in `ui/client` installs
-a listener and returns `void`. The disposer cancels a pending arm, and a second call on the same
-element cancels the first rather than arming a second listener — otherwise the earlier one would show
-the panel at stale coordinates on the next release. The deferred show also bails when the element has
-left the document, since an htmx swap between the arm and the release would otherwise call
-`showPopover()` on a detached node.
+**It returns a disposer, because the deferred path arms a listener.** The disposer cancels a pending
+arm, and a second call on the same element cancels the first rather than arming a second — otherwise
+the earlier one would show the panel at stale coordinates on the next release. The deferred show
+bails when the element has left the document, since an htmx swap between the arm and the release
+would otherwise call `showPopover()` on a detached node.
 
 ### 2j. `mountCarouselDots` — Strip-Driven Dot Marker
 
@@ -396,22 +392,21 @@ strip, but nothing in the platform moves the highlight with it. This controller 
 nothing else — the scrolling stays the platform's.
 
 **It observes the slides against the _strip_ as the observer root, not the viewport**, and marks the
-dot of the slide with the highest intersection ratio. A carousel is a horizontal scroller inside the
-page; against the viewport every slide of a visible strip intersects at once.
+dot of the slide with the highest intersection ratio — against the viewport every slide of a visible
+strip intersects at once.
 
 **It lifts both class spellings off the server-rendered row rather than restating them.** Unlike
 `mountScrollSpy`'s nav, a dot's selected look is baked into utility classes by `Pagination.Item`'s
-variants, so there is no attribute for a stylesheet to select on. Reading the `on` and `off` spelling
-from the rendered dots keeps the theme, the size and any caller class in one place — the component —
-instead of making the controller a second home for them.
+variants, so there is no attribute for a stylesheet to select on. Reading the `on` and `off`
+spellings off the rendered dots keeps the theme, the size and any caller class in the component
+rather than making the controller a second home for them.
 
 **It keeps the last marking while nothing is visible**, where §2k blanks the row. Mid-flick every
 slide can fall below the first threshold, and a highlight that blinks off on every scroll is worse
 than one that is briefly stale; a strip, unlike a page, always has a current slide.
 
-**There is no autoplay, and adding one would need a ruling first.** An unrequested timed advance
-moves content out from under a reader, which
-[`09-interaction.md`](../src/ui/design/reference/09-interaction.md) does not budget for.
+**There is no autoplay, and adding one would need a ruling first.** An unrequested timed advance moves
+content out from under a reader, which [`09-interaction.md`](../src/ui/design/reference/09-interaction.md) does not budget for.
 
 ### 2k. `mountScrollSpy` — Fragment Nav Current Marker
 
@@ -431,17 +426,17 @@ previous holder — so at most one link carries it, and none does while nothing 
 
 **It fails quiet in every direction, and that is safe here specifically**: no links, no resolvable
 target, or a realm without `IntersectionObserver` yields a no-op disposer, and the links are real
-anchors that navigate on their own. The disposer clears the attribute as well as disconnecting —
+anchors that navigate on their own. The disposer clears the attribute as well as disconnecting, since
 a marker outliving its observer would show two current sections until the re-mount's first callback.
 
 ### 2l. `mountViewportCollapse` — Width-Driven Disclosure
 
 **A `<details>` cannot make its own `open` state depend on viewport width** — no CSS writes that
-property — so the only question is which state the server renders and which side JavaScript
-corrects. **The server renders open**: with scripting unavailable the navigation is visible, which is
-the accessible answer, so the controller only ever removes something. §2b states why that trade-off
-does not earn a pre-paint script the way the theme does. The controller drives the property both
-ways while in control — collapsed while its query matches, expanded while it does not.
+property — so the only question is which state the server renders and which side JavaScript corrects.
+**The server renders open**: with scripting unavailable the navigation is visible, which is the
+accessible answer, so the controller only ever removes something. §2b states why that does not earn
+a pre-paint script the way the theme does. The controller drives the property both ways while in
+control.
 
 **It stops driving the disclosure the moment the user does, for the lifetime of the mount.** A rail
 that slams shut every time a phone rotates is worse than no controller at all. The decision is per
@@ -475,8 +470,8 @@ swapping the implementation behind them is the whole migration if that ever inve
 **By the time a write returns, every dependent has observed the settled value.** A write enqueues
 its subscribers and the queue drains synchronously — re-read after each run rather than snapshotted,
 which collapses a chain to a single run of its shared reader. Synchronous rather than deferred to a
-microtask, because a scope action writes a signal and the painted DOM has to be there before the
-event handler returns.
+microtask: a scope action writes a signal, and the painted DOM has to be there before the handler
+returns.
 
 **A `computed` is lazy and pull-based**, so a read answers from its sources' _current_ values and
 nothing can observe a derived value assembled before one of its sources moved — the torn read an
@@ -495,15 +490,15 @@ read graph cannot see and which is not knowable until it happens.
 
 **Effects paint; commands belong in the handler that caused them.** The island model already
 separates the roles (§3c): `on` handlers command, `computed` derives, `effect` paints. The
-sanctioned replacements need no new API — `computed` for derivation, an `on` handler for a command,
-and `queueMicrotask` for a genuinely deferred one, which runs with no active node and so writes
-after the flush has settled.
+replacements need no new API — `computed` for derivation, an `on` handler for a command, and
+`queueMicrotask` for a genuinely deferred one, which runs with no active node and so writes after
+the flush has settled.
 
 **A throwing effect clears the queue.** The throw reaches whoever performed the write, and the
 effects queued behind the thrower are skipped until the next write — carrying them forward would run
-them on an unrelated caller's stack. **A cycle throws past a per-node run cap**, a backstop rather
-than the first line: an effect that writes the signal it reads is refused by the write rule before
-the cap could count.
+them on an unrelated caller's stack. **A cycle throws past a per-node run cap**, a backstop rather than the
+first line: an effect that writes the signal it reads is refused by the write rule before the cap
+could count.
 
 ### 3b. Lazy Loading
 
@@ -520,10 +515,9 @@ handler, to `console.error`, because an error with nowhere to go is the one outc
 refuses. The element is re-observed after a fixed delay, and **both bounds are load-bearing**: the
 cap exists because `observe()` invokes its callback _immediately_ for an element already on screen,
 so an uncapped re-observe on a visible element is a spin loop; the delay is what makes the retry a
-retry, since re-observing at once spends the whole budget within a few frames of the first failure.
-Re-observing rather than calling `load()` again is deliberate too — an element scrolled out of view
-waits for re-entry instead of loading off-screen. A throw from `init` is reported the same way and
-stops there, since the load succeeded. The disposer clears a pending retry timer, so a load still in
+retry. Re-observing rather than calling `load()` again keeps an element scrolled out of view waiting
+for re-entry instead of loading off-screen. A throw from `init` is reported the same way and stops
+there, since the load succeeded. The disposer clears a pending retry timer, so a load still in
 flight when a scope tears down neither re-observes nor runs `init`.
 
 ### 3c. Resumable Scopes
@@ -531,8 +525,7 @@ flight when a scope tears down neither re-observes nor runs `init`.
 `registerScope(name, definition)` binds a scope's actions; `resume()` installs the single
 delegated island listener that drives every registered scope.
 
-**Register every scope before calling `resume()`** — including the side-effect import that
-registers forge's own scopes ([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §2d).
+**Register every scope before calling `resume()`**, the side-effect import that registers forge's own scopes included ([`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) §2d).
 
 **A component whose markup names a scope must guarantee the scope exists.** A side-effect module
 registering scopes for markup a _sibling_ renders imports the module those scopes live in, rather
@@ -547,11 +540,11 @@ preference.
 
 **Scope discovery descends into open shadow roots.** The eager pass walks the tree rather than
 running one flat `querySelectorAll`, because a selector cannot cross a shadow boundary: a scope
-rendered inside a web component would otherwise never be _visited_, so its `setup` would never run
-and nothing would warn. Only an eager scope fails that way — the delegated half climbs out through
-`host`, so a lazy scope inside a shadow root works either way. `resume(within)` accepts a
-`ShadowRoot` as the walk root, so a web component can resume only its own subtree; the delegated
-listeners still go on the containing document, since the four scope events are composed.
+rendered inside a web component would never be _visited_, so its `setup` would never run and nothing
+would warn. Only an eager scope fails that way — the delegated half climbs out through `host`.
+`resume(within)` accepts a `ShadowRoot` as the walk root, so a web component can resume only its own
+subtree; the delegated listeners still go on the containing document, the scope events being
+composed.
 
 **Installing the listeners and resuming a tree are two jobs, and `resume` keeps them apart.** The
 delegation is installed once per **document** and refcounted by the live `resume` calls holding it;
@@ -592,11 +585,9 @@ still fires and the platform still ignores a command it does not know.
 **`@y-core/forge/ui/client/htmx` is imported for its side effect only, from the client entry**; it
 uses no exports, attaches `htmx` to `window`, and registers the built-in extensions.
 
-**The module is listed in `package.json` `sideEffects`, which is what stops a bundler
-tree-shaking it away.** That file owns the list — never restate which modules are side-effectful.
-
-**Never import htmx from a CDN URL** — this entry point is what pins the version to the forge
-package.
+**The module is listed in `package.json` `sideEffects`, which is what stops a bundler tree-shaking
+it away.** That file owns the list — never restate which modules are side-effectful. **Never import
+htmx from a CDN URL**: this entry point is what pins the version to the forge package.
 
 ---
 

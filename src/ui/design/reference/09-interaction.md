@@ -1,3 +1,8 @@
+---
+title: Interaction
+description: "Focus, keyboard, control state and motion — how a surface responds to being used rather than looked at."
+---
+
 # Interaction
 
 Focus, keyboard, control state, and motion. Everything here is Tier 2 — a written brief may rebut
@@ -11,7 +16,27 @@ one.
 
 ---
 
-## Focus
+## 0. Quick Reference
+
+- §1 Focus: one ring, one token, drawn inside the control, and the `focus-visible` variant
+- §1a The ring token and where it is drawn: why `--ring` is a solid step, and the outset exception
+- §1b `focus-visible`, never bare `focus`: the ring that flashes on every mouse press
+- §1c Fixing an undersized target: move up the size scale rather than padding a smaller control
+- §2 Keyboard: adopt the shipped composite models rather than writing a second one
+- §2a `mountRovingFocus` and the radio exception: what the controller supplies, and where the platform already does
+- §2b The initial tab stop: `ACTIVE_COMPOSITE_ITEM`, and why `Toolbar` does not derive it
+- §2c Listbox shapes and registered scopes: where focus lives during the interaction, and who mounts the controller
+- §3 Disabled, read-only, hidden: three ways to withhold a control, and what each one tells the reader
+- §4 Motion: one moment per interaction, at the ratified dial of 3
+- §4a Declarative entry and exit: `starting:`, `transition-discrete`, and keeping a popover in the top layer
+- §4b Popups and trigger state: no bare `display` utility, and reading the popup's state with `:has()`
+- §4c Duration and animatable properties: under 200ms in, shorter out, `transform` and `opacity` only
+
+---
+
+## 1. Focus
+
+### 1a. The ring token and where it is drawn
 
 Default: draw focus with `focus-visible:ring-2 focus-visible:ring-ring`, and reach for no other
 treatment — one ring, one token, app-wide — unless a brief specifies a distinct focus style for a
@@ -19,13 +44,12 @@ named surface. <!-- rule:forge-ui-interaction-ring-token -->
 The ring colour is `--ring`, declared once in `src/ui/assets/css/theme-base.css` and resolving
 through `--gray-11` — the scheme file supplies that step's value per mode, so the same class is
 legible on both without the token itself knowing which mode it is in. It is a **solid step in both
-modes**, one step beyond `--input`: an earlier revision made the light value a 50%-alpha `color-mix`, which
-composites against whatever is behind it and measured below the very border it was meant to replace.
-A focus indicator is non-text contrast under WCAG 1.4.11 and has a 3:1 floor of its own, so it
-cannot be expressed as a tint. Visibility itself is the Floor (`forge-ui-focus-ring`); this rule is
-about not inventing a second treatment beside it. That measurement is also why
-`forge-ui-platform-color-mix` in [`16-platform.md`](./16-platform.md) excludes ring, border and
-outline tokens from the derived form it otherwise asks for.
+modes**, one step beyond `--input`: a mix carrying alpha composites against whatever is behind it,
+so the value measured is not the value that paints. A focus indicator is non-text contrast under
+WCAG 1.4.11 and has a 3:1 floor of its own, so it cannot be expressed as a tint. Visibility itself
+is the Floor (`forge-ui-focus-ring`); this rule is about not inventing a second treatment beside it.
+That is also why `forge-ui-platform-color-mix` in [`16-platform.md`](./16-platform.md) excludes
+ring, border and outline tokens from the derived form it otherwise asks for.
 
 **Forge's own controls draw that ring _inside_ the element**, through the `focus-ring` utility. An
 outer ring is wrong on any control that shares an edge with a neighbour — inside a `Join` it cuts the
@@ -47,11 +71,15 @@ track is the input's sibling.
 Your own elements carry no tone tokens, so `focus-visible:ring-2 focus-visible:ring-ring` above stays
 the right reach for them; use `focus-ring` when you are composing forge's controls.
 
+### 1b. `focus-visible`, never bare `focus`
+
 Default: use the `focus-visible` variant, never bare `focus` — unless the control is reachable
 _only_ by pointer, which in practice never happens. <!-- rule:forge-ui-interaction-focus-visible -->
 `focus` fires on a mouse click too, so a ring flashes on every button press and trains the reader to
 ignore it. `focus-visible` is the browser's own judgement about whether the user is navigating by
 keyboard, and it is a better judgement than any heuristic written at the call site.
+
+### 1c. Fixing an undersized target
 
 Default: fix an undersized target by moving up the `buttonVariants` size scale, never by adding
 padding to a smaller one — unless the control is not a button at all and the brief names its
@@ -74,11 +102,13 @@ or three pixels each — visible as a ragged edge, and untraceable to any one li
 
 ---
 
-## Keyboard
+## 2. Keyboard
 
 Forge ships the composite keyboard models. The rule is to adopt them, and the reason is not effort —
 it is that two models on one page make arrow keys mean two different things depending on where the
 reader happens to be.
+
+### 2a. `mountRovingFocus` and the radio exception
 
 Default: give a composite widget its keyboard with `mountRovingFocus`, not a `keydown` handler —
 unless the widget is a single control with one key binding that no composite pattern
@@ -94,6 +124,8 @@ tab stop, arrow keys that move _and_ check, Home/End. Mounting the controller be
 keys two handlers, and the second one moves focus without checking, so the group's value and its
 focus stop agreeing.
 
+### 2b. The initial tab stop
+
 Default: mark the item that should hold the tab stop at mount with `ACTIVE_COMPOSITE_ITEM` from
 `@y-core/forge/ui/contracts` — unless nothing in the composite is selected on first render, in which
 case the first item takes it. <!-- rule:forge-ui-interaction-active-item -->
@@ -103,6 +135,8 @@ the first one marked and ignores the rest. Which of them the tab stop belongs on
 not one `pressed` can give. Without the marker a composite that shows a selection
 puts the tab stop somewhere else, and the first Tab press moves focus to a row that is not the one
 highlighted.
+
+### 2c. Listbox shapes and registered scopes
 
 Default: reach for `Select` — the native `<select>` — for a listbox-shaped control, rather than
 building a listbox out of `div`s and pointing `mountRovingFocus` at it — unless real focus genuinely
@@ -146,7 +180,7 @@ import { ACTIVE_COMPOSITE_ITEM } from "@y-core/forge/ui/contracts";
 
 ---
 
-## Disabled, read-only, hidden
+## 3. Disabled, read-only, hidden
 
 Three ways to withhold a control, and they communicate three different things. Choosing by
 convenience is how a reader ends up staring at a greyed button with no way to learn why. Withholding
@@ -184,7 +218,7 @@ revealed by `focus-within`.
 
 ---
 
-## Motion
+## 4. Motion
 
 Forge's ratified motion dial is 3 of 10 ([`UI_DESIGN_GUIDANCE.md`](../../../../docs/UI_DESIGN_GUIDANCE.md) §8).
 That setting is what the rules below encode: movement that reads as the interface _responding_, and
@@ -197,6 +231,8 @@ was asked for, and the reader waits for all three. _Which_ changes may carry mot
 [`12-density.md`](./12-density.md)'s (`forge-ui-density-motion-budget`); this rule bounds how much
 motion any one of them gets.
 
+### 4a. Declarative entry and exit
+
 Default: express entry with `starting:` and exit with `transition-discrete` on the base rule, and
 select open state with the `open:` / `not-open:` variants — unless the element is not a native
 popover, `<dialog>` or `<details>`, in which case a plain `transition-*` class is correct. <!-- rule:forge-ui-interaction-transition-controller -->
@@ -208,6 +244,8 @@ an exit that omits it is dropped out of the layer on frame one. Tailwind's `open
 `&:is([open], :popover-open, :open)` — one variant covering all three element kinds. Reaching for
 `requestAnimationFrame` to start an entry instead is `forge-ui-platform-entry-motion` in
 [`16-platform.md`](./16-platform.md), which is the same rule seen from the other side.
+
+### 4b. Popups and trigger state
 
 Default: put no bare `display` utility on a `[popover]` element or a `<dialog>` — reach for
 `opacity`, `visibility` or a `transform` instead — unless the utility is variant-gated on the open
@@ -226,6 +264,8 @@ any ancestor read from a descendant's state, is `forge-ui-platform-parent-state`
 [`16-platform.md`](./16-platform.md). Match the structure: a trigger that is
 the popup's **parent's** child reads `:has(> …:popover-open)`, and a submenu row that **precedes** its
 panel reads `:has(+ …:popover-open)`.
+
+### 4c. Duration and animatable properties
 
 Default: keep an enter under 200ms and an exit shorter than its enter — roughly 120–200ms in,
 80–150ms out — unless a brief specifies a slower deliberate reveal. <!-- rule:forge-ui-interaction-duration -->

@@ -1,3 +1,8 @@
+---
+title: Site Surface Derived From Routes
+description: "robots.txt, sitemap.xml and an edge allow-list, all derived from the route map rather than hand-maintained beside it."
+---
+
 # `@y-core/forge/site`
 
 Everything downstream of the route table: what a crawler may index, and what the edge may let

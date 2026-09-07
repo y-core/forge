@@ -1,3 +1,8 @@
+---
+title: In-House SSR JSX Runtime
+description: "Renders JSX straight to an HTML string on the server with security defaults in the renderer — no virtual DOM, no hydration, no client runtime."
+---
+
 # `@y-core/forge/jsx`
 
 Forge's in-house server-side rendering (SSR) JSX runtime. It is **not** React — there is no virtual
@@ -268,13 +273,16 @@ The renderer is the security boundary for SSR output:
 | Text content | HTML-escaped. |
 | Attribute values | HTML-escaped. |
 | URL attributes (`href`, `src`, `action`, `formaction`, `poster`, `cite`, …) | Scheme-sanitized to block `javascript:`-style injection. |
-| Inline `style` attributes | **Silently dropped** — not emitted in the HTML. The shipped CSP uses `style-src 'self'` (no `'unsafe-inline'`), so an inline `style` would be blocked by the browser anyway. |
+| Inline `style` attributes | **Silently dropped** — not emitted in the HTML. |
 | Boolean attributes (`disabled`, `checked`, `required`, …) | Emitted as a bare attribute name when truthy, omitted when falsy. |
 | `aria-*` truthy values | Emitted as string `"true"` per the WAI-ARIA spec. |
 | Void elements (`br`, `img`, `input`, `hr`, …) | Emitted with no closing tag and no children. |
 
 Because inline `style` is dropped, move styling to classes (Tailwind/CSS) — a `style="…"` prop will
-not appear in the output even though it type-checks.
+not appear in the output even though it type-checks. Why the drop is the renderer's rather than the
+CSP's alone is [`UI_SSR_COMPONENTS.md`](../../docs/UI_SSR_COMPONENTS.md) §1a's; which schemes the URL
+pass admits, and why no `hx-*` attribute is covered by it, are
+[`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2d's.
 
 ### Embedding pre-rendered HTML
 
@@ -299,3 +307,17 @@ function Icon({ markup }: { markup: SafeHtml }) {
 
 All three converge on the same `createElement` factory and the same `renderToString` walk — the choice
 of runtime affects only how the compiler emits element-construction calls, never the rendered output.
+
+---
+
+## See also
+
+- [`@y-core/forge/http`](../http/README.md) — `htmlResponse`, `fragmentResponse`, and the `SafeHtml`
+  brand this renderer passes through unescaped.
+- [`@y-core/forge/ui/core`](../ui/README.md) — the SSR components built on this runtime.
+- [`UI_SSR_COMPONENTS.md`](../../docs/UI_SSR_COMPONENTS.md) — the component contract the renderer
+  serves, and the dropped-`style` ruling (§1a).
+- [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) — automatic URL sanitization at render
+  time and its limits (§2d).
+- [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) — the `html` tag and `escapeHtml`, for the raw
+  string paths outside this runtime (§3).

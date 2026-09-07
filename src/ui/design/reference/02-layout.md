@@ -1,9 +1,31 @@
+---
+title: Layout and Spacing
+description: "Why most wrong-looking layouts are wrong in their distances rather than their structure, and the spacing scale that relates them."
+---
+
 # Layout and Spacing
 
 Most layouts that look wrong are not wrong in structure. They are wrong in the distances between
 things — gaps picked one at a time, each defensible alone, none of them related to any other.
 
-## The scale is the vocabulary
+---
+
+## 0. Quick Reference
+
+- §1 The scale is the vocabulary: a small chosen step set, and the 25% test that keeps two steps distinct
+- §2 Ambiguous spacing: more space around a group than within it, at a ratio of at least two
+- §2a Worked example — a form: the gaps `FormField.Group` and `FormField.Content` already encode
+- §2b Worked example — a card: `Card`'s section padding, and why content goes in the sections
+- §3 Stacking: at most three layers, and what a deeper pile should be instead
+- §4 Width and the measure: which ceiling each kind of region takes, and when none applies
+- §5 Tables and lists: two comparable columns make a table; one value per record makes a list
+- §6 Grouping without borders: proximity, then a muted panel or `Separator`, then a `Card` last
+- §6a Before / after — the bordered list: nested cards dissolving the boundary they sit inside
+- §7 Bounding a region that grows: which regions take a `ScrollArea` and which take the document scroll
+
+---
+
+## 1. The scale is the vocabulary
 
 Tailwind v4 builds every spacing utility from one base unit of `0.25rem` (4px), so `p-4` is 16px
 and `gap-6` is 24px. Anything expressible as a multiple of that unit is a legal utility, which is
@@ -22,7 +44,7 @@ surface does not control. <!-- rule:forge-ui-layout-step-distance -->
 The 25% test is easy to apply in your head: 12px and 16px differ by a third and read as two
 levels; 20px and 24px differ by a fifth and read as one level rendered inconsistently.
 
-## Ambiguous spacing
+## 2. Ambiguous spacing
 
 A group of elements reads as a group when there is more space _around_ it than _within_ it. When
 the two are equal — or worse, inverted — the reader has to parse the content to find the
@@ -31,7 +53,7 @@ boundaries, which is work the layout was supposed to do.
 Default: the gap separating two groups is at least twice the gap separating members within a
 group, unless a `Separator` or a background change is already carrying the boundary. <!-- rule:forge-ui-layout-group-gap-ratio -->
 
-### Worked example — a form
+### 2a. Worked example — a form
 
 Forge's field primitives already encode the ratio, so the rule mostly reduces to _use them and do
 not override the gaps_:
@@ -91,7 +113,7 @@ Default: `FormField.Group` and `FormField.Content` keep their built-in gaps, unl
 density that requires the whole form to move together — in which case both move, and the ratio
 between them is preserved. <!-- rule:forge-ui-layout-field-gap-ladder -->
 
-### Worked example — a card
+### 2b. Worked example — a card
 
 `Card`'s own sections encode the same relationship at a larger scale:
 
@@ -112,7 +134,7 @@ as an image or a table that should bleed to the border. <!-- rule:forge-ui-layou
 Default: spacing between siblings is expressed with `gap-*` on the flex or grid parent rather than
 margins on the children, unless one child needs a distance the others do not. <!-- rule:forge-ui-layout-gap-over-margin -->
 
-## Stacking
+## 3. Stacking
 
 A `Stack` layers its children in one cell: the first child is the readable one and the next two peek
 out behind it, fanned towards `placement`. It is for a pile the reader will open — a deck of cards,
@@ -121,7 +143,7 @@ a bundle of thumbnails — where the offset says "there is more" and the top ite
 Default: a `Stack` shows at most three layers and only the top one is read; a pile deeper than that
 is a count (`Badge` in an `Indicator`) or a list, never a taller fan. <!-- rule:forge-ui-layout-stack-depth -->
 
-## Width and the measure
+## 4. Width and the measure
 
 A container that spans the viewport is not a layout decision; it is the absence of one. Every text
 region needs a ceiling, and `forge-ui-measure-cap` is the Floor that sets it.
@@ -136,7 +158,7 @@ region needs a ceiling, and `forge-ui-measure-cap` is the Floor that sets it.
 Default: a content column carries a `max-w-*` ceiling and centres with `mx-auto`, unless the
 region is a table, a canvas, or a media element whose value comes from filling the space. <!-- rule:forge-ui-layout-measure-container -->
 
-## Tables and lists
+## 5. Tables and lists
 
 A table earns its markup when a reader compares rows on the same attributes — three columns of like
 values, scanned down rather than across. One value per record is a list, and a `<table>` around it
@@ -148,7 +170,7 @@ single-value-per-record sequence uses a list, unless the columns exist only to a
 against its value — a definition list or a `Field` layout carries that
 better. <!-- rule:forge-ui-table-not-list -->
 
-## Grouping without borders
+## 6. Grouping without borders
 
 The most common way a machine-composed layout announces itself is a border around everything. A
 border is the loudest available way to say "these things belong together", and it is almost never
@@ -178,7 +200,7 @@ merge. <!-- rule:forge-ui-layout-muted-panel -->
 elevations that between them communicate nothing. When a card's content needs internal grouping,
 that is exactly the case the `--muted` panel above exists for.
 
-### Before / after — the bordered list
+### 6a. Before / after — the bordered list
 
 ```tsx
 import { Card } from "@y-core/forge/ui/core";
@@ -209,7 +231,7 @@ import { Card, Separator } from "@y-core/forge/ui/core";
 </Card.Content>;
 ```
 
-## Bounding a region that grows
+## 7. Bounding a region that grows
 
 A list whose length comes from data will eventually be longer than its slot. Letting the page grow
 is right for a primary content column and wrong for a sidebar, a panel, or anything beside it.

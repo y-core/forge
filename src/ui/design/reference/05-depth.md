@@ -1,3 +1,8 @@
+---
+title: Depth and Elevation
+description: "When a surface may lift off the page, and what shadow, border and background each mean when it does."
+---
+
 # Depth and Elevation
 
 Everything here is a **Default** — rebuttable only by an explicit written brief, never by preference.
@@ -10,7 +15,20 @@ inventing one.
 
 ---
 
-## The ladder
+## 0. Quick Reference
+
+- §1 The ladder: the five levels a product UI has, and the primitive that already occupies each
+- §1a The two modes spell a level differently: a cast shadow in light, a rim and a falloff in dark
+- §1b Claiming a level: reach for the primitive, raise only what is closer, and keep the body flat
+- §2 Choosing a separator: spacing, a background token, a hairline, a shadow — cheapest first
+- §3 Shadows describe a light source: blurred and offset on the block axis, and never stacked
+- §3a Before / after: a `Card` at a `Dialog`'s distance, and the modal that stops feeling modal
+- §4 Nesting: the two answers `forge-ui-no-nested-card` leaves open, and one elevation change per step
+- §5 Radius: one `--radius` family, and the step following the elevation rather than the size
+
+---
+
+## 1. The ladder
 
 | Level | Surface | Primitive | What it means |
 | --- | --- | --- | --- |
@@ -24,6 +42,8 @@ Every one of those shadow classes is what the primitive already renders — `Car
 `shadow-sm border border-border bg-card text-card-foreground`, `Dialog` is `shadow-lg`, `Menu.Popup`
 is `shadow-md`. Reaching for the right level therefore means reaching for the right component.
 
+### 1a. The two modes spell a level differently
+
 The two modes spell that claim differently, and the shadow token does the switching so a component
 does not. In light a level is a cast shadow. In dark black ink over a near-black surface would render
 nothing, so the same value drops the cast layers and carries the level with a 1px inset rim plus a
@@ -31,6 +51,8 @@ soft outer falloff whose radius is the level — a clean edge transition, not a 
 is the fainter of the two for exactly that reason. Both spellings come out of the `--cast-*` and
 `--rim-*` families in `src/ui/assets/css/theme-colors.css`; the geometry is Tailwind's, unchanged, in
 `theme-base.css`. Nothing about choosing a level changes: it is still the primitive you reach for.
+
+### 1b. Claiming a level
 
 **Default: express elevation by picking the primitive that already sits at that level, not by adding
 a shadow utility to a lower one.** <!-- rule:forge-ui-depth-primitive-first -->
@@ -58,7 +80,7 @@ flow that is genuinely modal, such as re-authentication.
 
 ---
 
-## Choosing a separator
+## 2. Choosing a separator
 
 Given two regions that must read as distinct, three things separate them and they are not
 interchangeable.
@@ -85,7 +107,7 @@ token, and only under a brief that themes overlays separately.
 
 ---
 
-## Shadows describe a light source
+## 3. Shadows describe a light source
 
 A shadow in forge is soft and offset downward, because it is standing in for a light above the
 interface. A hard shadow with no blur is not a smaller version of that — it is a second shape, and it
@@ -105,7 +127,7 @@ consistently rather than to one element.
 Override when the card genuinely is lifted — a drag-in-progress state — and then only for the
 duration of the lift.
 
-### Before / after
+### 3a. Before / after
 
 ```tsx
 // Wrong — a Card raised to Dialog height to signal "this one matters".
@@ -137,7 +159,7 @@ import { Card } from "@y-core/forge/ui/core";
 
 ---
 
-## Nesting
+## 4. Nesting
 
 `forge-ui-no-nested-card` forbids a `Card` inside `Card.Content` outright: two borders and two
 shadows that encode one object. The design question it leaves open is what to do instead, and there
@@ -188,7 +210,7 @@ models.
 
 ---
 
-## Radius
+## 5. Radius
 
 Forge has one radius. `--radius` is declared in `src/ui/assets/css/theme-base.css`, and
 `--radius-sm`, `--radius-md`, `--radius-lg` and `--radius-xl` are computed from it — so a theme that

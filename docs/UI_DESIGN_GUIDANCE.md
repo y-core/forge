@@ -38,7 +38,7 @@ description: "Why the src/ui/design corpus exists, its two-tier rule model, the 
 - §4b Two Enforcement Mechanisms: the check step and the oxlint plugin, and the two registers that keep them honest
 - §5 Three-Way Documentation Boundary: which of three homes owns a given statement
 - §5a Routing Rule for a New Design Rule: design rules and anti-patterns never land in `docs/`
-- §6 Format Exemption and This Document's Scope: the corpus is exempt; this file is not
+- §6 The Corpus Is Subject to the Governing-Doc Format: numbering and a Quick Reference, because warden reads both
 - §7 Sourcing Constraint and Attribution: facts are usable, prose is not, credit is owed
 - §7a Attribution Placement — Corpus Footer and File Footers: where a `## Sources` section belongs, and where one would be noise
 - §8 Dial Defaults — Density, Variance, Motion: forge's ratified app-UI setting on three scales
@@ -166,6 +166,13 @@ section numbers:
 
 Ids are unordered. They carry no sequence and no hierarchy — grouping is the corpus's headings'
 job, not the identifier's.
+
+**The corpus's section numbers carry the same obligation, for the same reason.** They are never
+renamed, never renumbered, and never reused once published, exactly as
+[`AGENT_GUIDE.md`](../warden/canon/shared/AGENT_GUIDE.md) §2c requires of every governing
+document's. A section number is the address `knowledge_read` resolves, so renumbering silently
+redirects a saved citation to a different chunk. A new section appends, or takes a `###` child
+number under the section it belongs to; a deleted one leaves its number retired.
 
 **Retired ids.** `forge-ui-viewport-units` is retired. `h-screen` and `w-screen` are two class
 names, which is a restriction list rather than a rule that admits judgement, and the guidance prose
@@ -357,26 +364,35 @@ consumer-facing corpus, however design-shaped it sounds.
 
 ---
 
-## 6. Format Exemption and This Document's Scope
+## 6. The Corpus Is Subject to the Governing-Doc Format
 
-`warden/src/checks/docs.ts`, configured by `config/steps.ts`, scopes to `docs/`, `CLAUDE.md`, the root `README.md`, every
-`src/**/README.md`, and `.claude/agents/`. The corpus at `src/ui/design/` matches none of those.
+`warden/src/checks/docs.ts`, configured by `config/steps.ts`, scopes to `docs/`, `CLAUDE.md`, the
+root `README.md`, every `src/**/README.md`, `.claude/agents/`, the fleet canon, and the corpus at
+`src/ui/design/`. The last two are `extraDirs` entries marked `numbered`, which is what puts a tree
+outside `docs/` under the whole format rather than the per-line prose rules alone.
 
-Therefore:
+**The corpus is fully subject to that format** — `## N.` numbered headings, a `## 0. Quick
+Reference` naming every one of them, the frontmatter fields, and the size thresholds. Exactly as
+this document is, and the gate enforces both.
 
-- **The corpus is exempt** from the governing-doc format. No `## N.` numbering, no `## 0. Quick
-Reference`, no line cap. Its files are organized for a reader learning to compose a UI, in
-  whatever shape serves that; its citation anchors are the rule ids of §3, not section numbers.
-- **This document is fully subject** to it. Numbered headings, the Quick Reference, the
-  frontmatter fields, the size thresholds, the ban on dated and ticketed content — all of it
-  applies here, and the gate enforces it here.
+The reason is retrieval, not house style. Warden indexes the corpus, and the Quick Reference line is
+where a section's **gloss** comes from: the one-line summary a search result prints under the
+heading trail, and a ranked column in its own right, weighted far above the section's body text. A
+corpus with no Quick Reference competes on four of five ranked columns and prints a bare heading to
+every reader who searches it.
 
-The exemption is stated explicitly because it is the question a reader arrives with. Left unsaid,
-the reasonable inference is that the corpus was written to the governing-doc format and failed
-to follow it.
+The size thresholds bind for the same reason. A section is what `knowledge_read` returns whole, so a
+section too large to be an answer is a section nobody can usefully be handed — and a section that
+cannot be summarised in one Quick Reference line is carrying more than one idea and wants `###`
+children. The Quick Reference is therefore the forcing function on size, not a description of it.
 
-The exemption is from the `validate-docs` step only. The corpus's own gate step (§4) has no
-equivalent carve-out.
+A numbered section and a rule id (§3) address different things and neither replaces the other: **a
+rule id names a sentence; a section number names a chunk.** A finding cites the sentence it rests
+on. Only the section number is addressable by `knowledge_read`.
+
+None of this is a constraint on how the corpus reads. Its files are still organized for a reader
+learning to compose a UI; numbering the sections that organization already produces costs that
+reader nothing and is what makes the corpus reachable by a question.
 
 ---
 
@@ -411,9 +427,9 @@ because the re-derivation those rules went through (§7) is corpus-wide rather t
 
 **A file carries its own footer only when it rests on a source of its own that the corpus-level
 credit does not cover** — a named third-party palette a forge stylesheet resamples, with its version
-and license, rather than an argument re-derived in forge's terms. The colour reference is the one
-file in that position, because its subject is values forge carries rather than judgements forge
-re-argued.
+and license, rather than an argument re-derived in forge's terms. The colour-authoring reference is
+the one file in that position, because its subject is values forge carries rather than judgements
+forge re-argued.
 
 **A file with no such source carries no footer, and that is the correct state rather than a gap.**
 A `## Sources` section listing what a page did not draw on credits nobody, and a corpus where every

@@ -17,7 +17,7 @@ function fixture(files: Record<string, string>, prefix: string): SourceDoc[] {
     const full = join(root, path);
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, source, "utf-8");
-    return { corpus: "local" as const, path, file: full, weight: 1.2 };
+    return { corpus: "project" as const, path, file: full, weight: 1.2 };
   });
 }
 
@@ -53,6 +53,65 @@ describe("build()", () => {
     build(db, fixture({ "docs/A.md": doc("A", "The comment budget.") }, "warden-fts-"), "1.0.0");
 
     expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"budget"')?.c).toBe(1);
+    db.close();
+  });
+
+  it("keeps the prose the tokenizer saw out of the content table, which is a third of the file", () => {
+    const db = openDatabase(":memory:");
+    build(db, fixture({ "docs/A.md": doc("A", "The comment budget.") }, "warden-no-search-body-"), "1.0.0");
+
+    expect(() => db.query("SELECT search_body FROM chunk").all()).toThrow();
+    db.close();
+  });
+
+  it("searches correctly after a second build over the same handle", () => {
+    const db = openDatabase(":memory:");
+    const first = fixture({ "docs/A.md": doc("A", "The comment budget.") }, "warden-rebuild-one-");
+    const second = fixture({ "docs/A.md": doc("A", "A honeypot field.") }, "warden-rebuild-two-");
+
+    build(db, first, "1.0.0");
+    build(db, second, "1.0.0");
+
+    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"honeypot"')?.c).toBe(1);
+    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"budget"')?.c).toBe(0);
+    db.close();
+  });
+
+  it("indexes an organising heading for reading but not for searching", () => {
+    const db = openDatabase(":memory:");
+    const source = [
+      "---",
+      "title: A",
+      'description: "One sentence."',
+      "---",
+      "",
+      "## 0. Quick Reference",
+      "",
+      "- §3 Catalog: every subpath",
+      "- §3a Paths: the table",
+      "",
+      "## 3. Catalog",
+      "",
+      "### 3a. Paths",
+      "",
+      "The honeypot table.",
+      "",
+    ].join("\n");
+    build(db, fixture({ "docs/A.md": source }, "warden-organising-"), "1.0.0");
+
+    // Addressable and outlined, so a `§3` citation resolves and a reader sees the title they scan for.
+    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk WHERE section = '3'").get()?.c).toBe(1);
+    // Absent from the index, so it cannot outrank the child that carries the rule. Asserted through
+    // MATCH on a term only its own gloss carries: on an external-content table a bare `WHERE rowid`
+    // reads the content table and finds the row whether or not it was ever indexed.
+    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"subpath"')?.c).toBe(0);
+    // Its title is still reachable, because every child's heading trail carries it — which is why
+    // indexing the stub as well would add a competitor and reach nothing new.
+    expect(
+      db
+        .query<{ id: string }>("SELECT chunk.id FROM chunk_fts JOIN chunk ON chunk.rowid = chunk_fts.rowid WHERE chunk_fts MATCH ?")
+        .get('"catalog"')?.id,
+    ).toContain("#3a");
     db.close();
   });
 

@@ -6,10 +6,10 @@ import { canonical } from "../../../src/tooling/gate/checks/design-system";
 import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
 import { renderCatalogue } from "../catalogue/render";
 import { discover } from "../corpus/source";
-import { build } from "../index/build";
+import { build, load } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
 import { unresolved } from "../search/related";
-import type { Tree } from "../types";
+import type { SourceDoc, Tree } from "../types";
 import { canonVersion } from "../version";
 
 /** What the knowledge check needs to know about the project. @public */
@@ -46,7 +46,23 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
 
   const db = openDatabase(config.indexPath ?? gateIndexPath(root));
   try {
-    const report = build(db, sources, canonVersion());
+    // A build that throws is a document the gate should name, not a stack trace the gate dies on —
+    // a `UNIQUE` violation here means two sections claimed one id, which is a located finding.
+    let report;
+    try {
+      report = build(db, sources, canonVersion());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const collision = duplicateChunkId(sources);
+      return checkResult(
+        [
+          collision === undefined
+            ? fail(`the index could not be built — ${message}`)
+            : fail(`two sections claim the id \`${collision.id}\` — give one of them its own number`, { file: collision.file }),
+        ],
+        "the build failed.",
+      );
+    }
     const findings: Finding[] = [
       ...emptyDocuments(db),
       ...missingGloss(db, config.docsDir ?? "docs"),
@@ -61,6 +77,23 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
   } finally {
     db.close();
   }
+}
+
+/** The first chunk id two sections claim, when a failed build has one to name. Re-reads the corpus
+ *  rather than the half-written database, which the failure has already rolled back. */
+function duplicateChunkId(sources: readonly SourceDoc[]): { id: string; file: string } | undefined {
+  try {
+    const seen = new Set<string>();
+    for (const entry of load(sources)) {
+      for (const chunk of entry.chunks) {
+        if (seen.has(chunk.id)) return { id: chunk.id, file: entry.doc.path };
+        seen.add(chunk.id);
+      }
+    }
+  } catch {
+    // The read itself is what failed, so there is no id to name and the raw message stands.
+  }
+  return undefined;
 }
 
 /** A document that produced no chunk is a document nothing can retrieve. */

@@ -2,8 +2,11 @@
 // Avoids pulling in @types/node, which pollutes the global scope and conflicts
 // with the Wrangler/workerd-generated Workers runtime types and DOM types.
 
-// Node's Buffer extends Uint8Array; declare minimally so execSync return type resolves.
-declare type Buffer = Uint8Array;
+// Node's Buffer extends Uint8Array; declare minimally so execSync return type resolves, plus the
+// one method beyond it that forge calls.
+declare interface Buffer extends Uint8Array {
+  equals(other: Uint8Array): boolean;
+}
 
 // A stdin/stdout stream, declared only as far as the prompt in `cli/sync` needs it: whether a
 // terminal is attached, and something readline can be handed.
@@ -108,6 +111,7 @@ declare module "node:fs" {
   export function mkdtempSync(prefix: string): string;
   export function copyFileSync(src: string, dest: string): void;
   export function renameSync(oldPath: string, newPath: string): void;
+  export function symlinkSync(target: string, path: string): void;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function unlinkSync(path: string): void;
   export function openSync(path: string, flags: string): number;

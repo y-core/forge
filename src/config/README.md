@@ -1,3 +1,8 @@
+---
+title: Typed Environment Configuration
+description: "Maps raw Worker bindings to a validated config object that resolves on first access and caches per env object."
+---
+
 # `@y-core/forge/config`
 
 Typed, lazy environment configuration for Cloudflare Workers. Map raw Worker bindings to a structured,

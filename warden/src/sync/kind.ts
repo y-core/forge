@@ -12,16 +12,39 @@ export function readKind(manifest: unknown): Kind | undefined {
   return declared === "libs" || declared === "apps" ? declared : undefined;
 }
 
-/** Resolves the tree this repository clones, from `--kind` or the manifest. @public */
-export function resolveKind(root: string, explicit?: string): Kind {
-  if (explicit === "libs" || explicit === "apps") return explicit;
+/** A manifest that will not parse is the caller's file and the caller's fix, so it is reported as
+ *  one rather than raised as a bare `SyntaxError` from inside a resolution. */
+function parseManifest(file: string): unknown {
+  try {
+    return JSON.parse(readFileSync(file, "utf-8"));
+  } catch (error) {
+    throw new CliError("invalid-args", `${file} is not valid JSON — ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** Where a resolved kind came from — `default` is the absence of any declaration. @public */
+export type KindSource = "flag" | "manifest" | "default";
+
+/** Resolves the tree this repository clones, from `--kind` or the manifest, and says which.
+ *
+ *  **`libs` is declared; `apps` is what everything else is.** There are a handful of libraries and
+ *  potentially hundreds of applications, so the common case is the one that needs no configuration
+ *  and the rare one announces itself. An absent key, an absent `warden` object and an absent
+ *  `package.json` are all the same answer, which is why no repository is required to carry the key.
+ *
+ *  An *invalid* `--kind` still throws: that is a typo the caller wants told about, not an
+ *  omission. @public */
+export function resolveKindSource(root: string, explicit?: string): { kind: Kind; source: KindSource } {
+  if (explicit === "libs" || explicit === "apps") return { kind: explicit, source: "flag" };
   if (explicit !== undefined && explicit !== "") {
     throw new CliError("invalid-args", `unknown kind "${explicit}" — warden knows "libs" and "apps"`);
   }
   const manifest = resolve(root, "package.json");
-  const declared = existsSync(manifest) ? readKind(JSON.parse(readFileSync(manifest, "utf-8"))) : undefined;
-  if (declared === undefined) {
-    throw new CliError("invalid-args", 'no tree selected — add `"warden": { "kind": "libs" | "apps" }` to package.json, or pass --kind');
-  }
-  return declared;
+  const declared = existsSync(manifest) ? readKind(parseManifest(manifest)) : undefined;
+  return declared === undefined ? { kind: "apps", source: "default" } : { kind: declared, source: "manifest" };
+}
+
+/** Resolves the tree this repository clones, from `--kind` or the manifest. @public */
+export function resolveKind(root: string, explicit?: string): Kind {
+  return resolveKindSource(root, explicit).kind;
 }

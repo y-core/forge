@@ -1,3 +1,8 @@
+---
+title: Internal Cryptographic Primitives
+description: "A sealed internal module — not an import path. Its capabilities surface through the barrel of whichever namespace owns the concern."
+---
+
 # `@y-core/forge` — `crypto` (Internal)
 
 > **Internal module — NOT a public namespace.**

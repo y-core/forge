@@ -12,9 +12,9 @@ description: "Reader-centred prose for governing documents and for what an agent
 >
 > Defers to: [`AGENT_GUIDE.md`](./AGENT_GUIDE.md) for document _form_ — frontmatter, numbering,
 > size, cross-references, and the Quick Reference convention;
-> [`CODE_RULES.md`](./CODE_RULES.md) §5 for source comments, which this document does not govern
+> `CODE_RULES.md` §5 for source comments, which this document does not govern
 > and does not loosen;
-> [`CODE_REVIEW.md`](./CODE_REVIEW.md) §1b for the shape of a review finding.
+> `CODE_REVIEW.md` §1b for the shape of a review finding.
 
 ---
 
@@ -63,10 +63,10 @@ Two surfaces, one rule set:
 | `CLAUDE.md` sections, `README.md`, per-directory READMEs | **yes** | — |
 | What an agent says to a human user | **yes** | — |
 | Generated CLI help and error text | **yes** | — |
-| Source comments | no | [`CODE_RULES.md`](./CODE_RULES.md) §5 |
+| Source comments | no | `CODE_RULES.md` §5 |
 | Document form — numbering, frontmatter, size, Quick Reference | no | [`AGENT_GUIDE.md`](./AGENT_GUIDE.md) |
 | Agent-to-agent reports | no | each agent definition's `## Return Format` |
-| The shape of a review finding | no | [`CODE_REVIEW.md`](./CODE_REVIEW.md) §1b |
+| The shape of a review finding | no | `CODE_REVIEW.md` §1b |
 
 The boundary against `AGENT_GUIDE.md` is **form versus plainness**, and it is the one worth
 stating twice. `AGENT_GUIDE.md` decides that a document carries a `## 0. Quick Reference` and
@@ -76,7 +76,7 @@ document is a defect here and nowhere else.
 
 The boundary against the comment budget runs the other way. This document **never** licenses a
 source comment. Where a rule below would improve a comment, the improvement is to delete the
-comment and route its content per [`CODE_RULES.md`](./CODE_RULES.md) §5c.
+comment and route its content per `CODE_RULES.md` §5c.
 
 ---
 
@@ -145,8 +145,8 @@ Context changes what the text should look like.
   something else. There is no second page to turn to and no index.
 - **Limited attention.** The reader is mid-task. Attention spent parsing your structure is
   attention taken from the work.
-- **Arrival at one section.** A governing document is usually reached through `rg` or through the
-  Guide Index, landing in the middle. Every section must make sense to somebody who has read no
+- **Arrival at one section.** A governing document is usually reached through search, landing in
+  the middle. Every section must make sense to somebody who has read no
   other section of that document. That is why cross-references exist (`AGENT_GUIDE.md` §5) —
   a section that only makes sense in sequence is a section most of its readers will misread.
 - **Consequence of misunderstanding.** A destructive command, a security control, and a naming
@@ -535,7 +535,7 @@ to pass it — including the caveats §3d says may never be compressed away.
 _Holds instead:_
 
 1. **Review.** Prose quality is a review finding like any other, reported in the shape
-   [`CODE_REVIEW.md`](./CODE_REVIEW.md) §1b sets, naming the consequence rather than the
+   `CODE_REVIEW.md` §1b sets, naming the consequence rather than the
    section number.
 2. **The repeated question (§6c).** A follow-up that a reader should not have had to ask is
    evidence, and it is the only measurement of this that exists. Acting on it is what makes §6

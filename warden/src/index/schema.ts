@@ -2,10 +2,10 @@
 
 /** Bumped whenever the tables change shape. A mismatch rebuilds rather than migrates: the index is
  *  a derived artifact under `.forge/`, never committed, and a full build is under a second. @public */
-export const SCHEMA_VERSION = "1";
+export const SCHEMA_VERSION = "3";
 
 /** Bumped whenever chunking, glossing or weighting changes what the same documents would produce. @public */
-export const INDEXER_VERSION = "3";
+export const INDEXER_VERSION = "6";
 
 /** `tokenchars` is the highest-leverage knob here: without `-_/.§` the tokenizer splits
  *  `Result<T,E>`, `ui/core`, `forge-ui-focus-ring`, `@y-core/forge/ui/show` and `§5c` into pieces,
@@ -47,9 +47,9 @@ CREATE TABLE chunk (
   heading_path TEXT NOT NULL,
   gloss        TEXT NOT NULL,
   rules        TEXT NOT NULL,
-  search_body  TEXT NOT NULL,
   body         TEXT NOT NULL,
-  ordinal      INTEGER NOT NULL
+  ordinal      INTEGER NOT NULL,
+  searchable   INTEGER NOT NULL
 );
 
 CREATE INDEX chunk_by_source ON chunk (source_id, ordinal);
@@ -64,6 +64,12 @@ CREATE TABLE relation (
 CREATE INDEX relation_from ON relation (from_id);
 CREATE INDEX relation_to ON relation (to_id);
 
+-- \`search_body\` is the stripped prose the tokenizer sees, and \`chunk\` deliberately does not store
+-- it: it is a near-duplicate of \`body\` worth a third of the file, and the FTS row is written from
+-- the in-memory chunk instead. The cost is that the two fts5 operations which read the content
+-- table back now fail loudly with "no such column": \`'rebuild'\`, \`snippet()\`/\`highlight()\`, and any
+-- scan of \`chunk_fts\` not restricted by \`MATCH\` (count the rows in \`chunk\` instead). None is used;
+-- \`MATCH\`, \`bm25()\` and \`rowid\` resolve without touching the content table.
 CREATE VIRTUAL TABLE chunk_fts USING fts5(
   title, heading_path, gloss, rules, search_body,
   content = 'chunk',

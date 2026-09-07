@@ -1,3 +1,8 @@
+---
+title: The Release Workflow
+description: "Resolves the next version from git history, guards the public export surface against a silent shrink, promotes the changelog, commits and tags."
+---
+
 # `@y-core/forge/tooling/release`
 
 **The release workflow** — `forge release` resolves the next version from git history, guards the
@@ -23,7 +28,7 @@ import { createReleaseCommand, ReleaseError, resolveVersion } from "@y-core/forg
 
 > The release path and its refusals, and the export surface a release compares, are owned by
 > [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2a
-> and §5b.
+> and §2b.
 
 ---
 
@@ -301,6 +306,6 @@ unpushed and untagged, because that is the state the reader has to clean up.
   and the barrel parser this namespace builds on.
 - [`@y-core/forge/tooling/cli`](../cli/README.md) — the command framework `createReleaseCommand`
   returns a `Command` of.
-- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2a,
-  §5b, §5c, §5d and §5e — the release workflow, the compared surface, the git and manifest
-  internals, and the changelog contract.
+- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2a, §2b, §2c, §2d and §2e — the release
+  workflow, the compared surface, the git and manifest internals, the unreleased contract, and the
+  changelog gate invariants.

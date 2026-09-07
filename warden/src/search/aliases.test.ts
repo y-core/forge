@@ -29,3 +29,14 @@ describe("aliasTerms()", () => {
     expect(aliasTerms(["barrel", "namespace"])).toEqual([]);
   });
 });
+
+describe("placement bridges", () => {
+  it("reaches the growth rules from the words a placement question is asked in", () => {
+    expect(aliasTerms(["put"])).toContain("growth");
+    expect(aliasTerms(["belongs"])).toContain("classification");
+  });
+
+  it("still never displaces the reader's own term", () => {
+    expect(aliasTerms(["growth", "put"])).not.toContain("growth");
+  });
+});

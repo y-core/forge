@@ -181,12 +181,29 @@ export const STEPS: readonly Step[] = [
       packageName: pkg.name,
       exports: EXPORTS,
       decisionsDir: "docs",
+      kind: "libs",
       // The source, not `.claude/agents/` — a fix applied to the synced copy is reverted by the
       // next sync, and the reversion looks like nobody's change.
-      extraDirs: ["warden/claude/agents"],
+      // Each kind-scoped, because a bare `CODE_RULES.md` names a different file to each reader and
+      // the citing file's own tree is the only thing that says which.
+      extraDirs: [
+        { dir: "warden/claude/agents/libs", kind: "libs" },
+        { dir: "warden/claude/agents/apps", kind: "apps" },
+        { dir: "warden/canon/shared", kind: "shared", numbered: true },
+        { dir: "warden/canon/libs", kind: "libs", numbered: true },
+        { dir: "warden/canon/apps", kind: "apps", numbered: true },
+        { dir: "warden/README.md", kind: "libs" },
+        // Numbered like the canon and for the same reason: warden indexes it, and a section with no
+        // `## 0. Quick Reference` line has no gloss — the heaviest column it can be ranked on, and
+        // the line a search result prints under every hit.
+        { dir: "src/ui/design", numbered: true },
+      ],
       // Forge is the canon's home, so a citation into it resolves on disk. Without this root those
       // citations would land outside `docs/` and be skipped in silence rather than checked.
-      citableDirs: ["warden/canon/shared", "warden/canon/libs"],
+      citableDirs: ["warden/canon/shared", "warden/canon/libs", "warden/canon/apps"],
+      // All three trees, `apps` included: forge houses the canon, so a stale gloss here ships to
+      // every consumer of it, and no consumer has the files to catch it.
+      agreementDirs: ["warden/canon", "src/ui/design"],
       documentedNonExports: ["./auth", "./handler", "./all", "./crypto"],
       // Written by the compiler and by build configuration, never by a consumer, so a documented row
       // for any of them would advertise an import the reader must not write.
@@ -199,7 +216,7 @@ export const STEPS: readonly Step[] = [
   readmeExportsStep(
     {
       root: ROOT,
-      readmes: ["src/ui/README.md", "src/storage/README.md", "src/testing/README.md"],
+      readmes: ["src/ui/README.md", "src/storage/README.md", "src/testing/README.md", "warden/README.md"],
       // Four are side-effect imports whose section documents registered scopes rather than symbols,
       // and `./ui/client/htmx` re-exports the vendored library itself, which has no forge surface.
       exempt: ["./ui/core/client", "./ui/client/htmx", "./ui/chrome/client", "./ui/show/client"],

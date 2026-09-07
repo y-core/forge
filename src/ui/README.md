@@ -1,3 +1,8 @@
+---
+title: The UI Component Surface
+description: "Source-distributed primitives over native elements: props, signatures, variants and worked examples for every component forge ships."
+---
+
 # `@y-core/forge/ui`
 
 Source-distributed UI primitives for forge apps. Every component is a thin wrapper over a native element with default
@@ -119,9 +124,9 @@ carries a `--X-text` sibling — the tone read as text on a page surface — bec
 text step is not ([`THEME_GENERATION.md`](../../docs/THEME_GENERATION.md) §4).
 
 **Component rules sit in `@layer components`**, so a utility passed at the call site wins over a component default —
-`<Dialog class="max-w-sm">` narrows the dialog, as it reads. The consequence runs the other way too: a rule your app
-puts in `@layer components` loses to every forge utility in `@layer utilities`, whatever its specificity, so declare
-`@layer app;` _after_ the forge imports and put your chrome rules there.
+`<Dialog class="max-w-sm">` narrows the dialog, as it reads. Declare `@layer app;` _after_ the forge imports and put
+your own chrome rules there; why the remedy is a layer and never specificity is
+[`UI_CLASS_COMPOSITION.md`](../../docs/UI_CLASS_COMPOSITION.md) §2e.
 
 ### Dark mode
 
@@ -138,12 +143,12 @@ utilities too. To get the media query back, re-declare `@custom-variant dark` yo
 
 A pure-markdown **design corpus** ships inside this package at `src/ui/design/`. The boundary between it and this
 README is one sentence: **this README says how to call a component; the corpus says which one to reach for, and what
-good looks like once it is composed.** It is already sitting in `node_modules`, so point a Claude Code skills
-directory at `node_modules/@y-core/forge/src/ui/design` (`SKILL.md` is the entry) or read the harness-neutral
-`src/ui/design/index.md`, which carries the same routing table; every file it routes to is reachable through the
+good looks like once it is composed.** It is already sitting in `node_modules`, so read
+`src/ui/design/index.md` — the corpus's entry point in any harness, carrying the routing table that sends a question
+to the one file answering it; every file it routes to is reachable through the
 `./ui/design/*.md` subpath. **Load `src/ui/design/floor.md` before any UI work** — it is the only unconditional file;
-`catalog.md` answers which component fits a job, and `reference/` holds one file per design dimension. The tier scheme
-and rule identifiers are [`UI_DESIGN_GUIDANCE.md`](../../docs/UI_DESIGN_GUIDANCE.md)'s.
+`catalog.md` answers which component fits a job, and `reference/` holds one file per design dimension. The two rule
+tiers are [`UI_DESIGN_GUIDANCE.md`](../../docs/UI_DESIGN_GUIDANCE.md) §2's and the `forge-ui-` identifier scheme §3's.
 
 ---
 

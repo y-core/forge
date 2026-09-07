@@ -11,6 +11,10 @@ description: "How to review forge code: the blocking invariants, a detection com
 >
 > **This document restates no rule.** Every item below is either a `detect:` command or a link
 > to the document that owns the rule. If you want to know _why_ a rule exists, follow the link.
+>
+> Defers to: [`CODE_REVIEW.md`](../warden/canon/libs/CODE_REVIEW.md) for the fleet's review
+> standard — this document adds forge's own invariants and detection commands to it, and replaces
+> none of them.
 
 ---
 
@@ -44,9 +48,15 @@ requirement, and the finding format.
 These are forge's own invariants. **Any one of them blocks a merge regardless of severity
 argument.**
 
+**The canon's invariants bind alongside these, not underneath them.** The table below is what forge
+adds; the fleet's list is the canon's own §2, and three of its entries appear nowhere here —
+browser-only code imported from a Worker path, untrusted input validated at the boundary, and PII
+reaching a log record. Each still blocks a merge. Read both tables, or read the canon's and treat
+this one as the delta.
+
 | Invariant | Owner |
 | --- | --- |
-| No deprecation shim or backward-compatible path before v1.0.0 | `CLAUDE.md` |
+| No deprecation shim or backward-compatible path before v1.0.0 | [`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §7 |
 | No hardcoded secret, key, or credential in source | §3c |
 | `mod.ts` uses named exports only — no `export *` | [`NAMESPACE_DESIGN.md`](../warden/canon/libs/NAMESPACE_DESIGN.md) §1b |
 | No sibling-barrel import outside the two exemptions | [`NAMESPACES.md`](./NAMESPACES.md) §2 |
@@ -57,10 +67,6 @@ argument.**
 | A security guard has both a pass and a fail test | [`TESTING.md`](./TESTING.md) §5a |
 | No props interface types an icon as bare `ForgeIcon` or `ForgeIcon<string>` | §3b |
 | No comment outside the permitted budget | [`CODE_RULES.md`](../warden/canon/libs/CODE_RULES.md) §5a |
-
-**The pre-1.0 shim ban is the one most often argued away.** A published shim is unrecoverable:
-once a consumer depends on it, removing it is a breaking change, which is precisely what a
-pre-1.0 version number exists to avoid.
 
 ---
 

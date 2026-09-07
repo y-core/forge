@@ -1,3 +1,8 @@
+---
+title: Terminal Measurement and Output
+description: "How wide a string is, how wide the window is, how to lay text out in columns, and how much colour the stream can carry."
+---
+
 # `@y-core/forge/tooling/term`
 
 Everything forge needs to know about the terminal it is writing to: how wide a

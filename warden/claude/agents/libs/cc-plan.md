@@ -29,11 +29,18 @@ guess.
 1. Follow the **Planning Ruleset** below.
 2. Read `CLAUDE.md` — the constitution, the facade doctrine, and the Growth Rules placement
    recipes.
-3. Identify which namespace(s) the change touches, then read the governing doc — locate it via
-   the **Guide Index**, then use that doc's `## 0. Quick Reference` to jump to the section you
-   need. **The canon is not in the index**: search it for the portable rule, and read `docs/`
-   for this repository's catalog and its local rulings. A placement question almost always needs
-   both.
+3. **Before choosing a namespace, search the corpus** — `knowledge_search` with the
+   placement question in plain words, then `knowledge_read` on the chunk id it returns
+   (`AGENT_GUIDE.md §1`). Placement is where retrieval most changes the answer: the section
+   that rules on it is usually titled after the namespace, not after your question.
+   Search **both corpora** — `canon` carries the portable rule, `local` this repository's
+   catalog and its local rulings, and a placement question almost always needs both. Name the
+   corpus when you cite, because the titles collide.
+   **An empty result is an answer**: nothing governs it, so decide on the merits and say in the
+   plan that you did — never infer a rule from a near miss. Cite the chunk id for every
+   placement claim so a reviewer can resolve it.
+   Where no warden MCP is configured, the same index is `warden search` and
+   `warden outline <path>` from a terminal.
 4. Explore the actual code before assuming anything about it.
 
 ## Scratch Files and Probes

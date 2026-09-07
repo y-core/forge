@@ -1,3 +1,8 @@
+---
+title: Density, Variance, and Motion
+description: "The three dials that tune a forge surface, each on a scale, and the specific class and component choices each one cashes out in."
+---
+
 # Density, Variance, and Motion
 
 Three dials describe how a forge surface is tuned, each on a 1–10 scale. They are not style
@@ -17,7 +22,17 @@ day, having arrived to finish a task. Variance costs recognition there, and moti
 Default: an app surface is built at density 5, variance 4, and motion 3 unless a written brief
 sets a different value, and a dial moved by inference from the surrounding code is not a brief. <!-- rule:forge-ui-density-app-default -->
 
-## Inferring the dials from the brief
+## 0. Quick Reference
+
+- §1 Inferring the dials from the brief: the signal each surface gives, and stating which one you read
+- §2 What raised density actually changes: control size, gap step, one card, a bounded scroll, tabular numerals
+- §2a Before / after — a dense job list: a card per row, a primary per row, and one screen of six
+- §3 What density never changes: the Floor has no density setting, at 10 as at 3
+- §4 Variance and motion, briefly: repeating the composition, and motion only on a state the user caused
+
+---
+
+## 1. Inferring the dials from the brief
 
 Most briefs do not name a number. They name a surface, and the surface implies the dial. Read the
 signal, take the setting, and say in one line which signal you read — a reviewer who disagrees with
@@ -44,7 +59,7 @@ Default: when two signals conflict — a data table inside an onboarding wizard 
 takes the denser setting and the surrounding page keeps the looser one, unless the brief describes
 the two as one continuous surface. <!-- rule:forge-ui-density-conflicting-signals -->
 
-## What raised density actually changes
+## 2. What raised density actually changes
 
 Density is not a scale factor applied to everything. It moves five specific things, all of which
 terminate in a forge primitive.
@@ -89,7 +104,7 @@ extending the page, unless the region is the page's only content. <!-- rule:forg
 Default: any column of numbers — counts, durations, currency, byte sizes — carries `tabular-nums`,
 unless the number appears once and is not part of a column. <!-- rule:forge-ui-density-tabular-numerals -->
 
-### Before / after — a dense job list
+### 2a. Before / after — a dense job list
 
 ```tsx
 import { Badge, Button, Card } from "@y-core/forge/ui/core";
@@ -139,7 +154,7 @@ import { Badge, Button, Card, ScrollArea, Separator } from "@y-core/forge/ui/cor
 </Card>;
 ```
 
-## What density never changes
+## 3. What density never changes
 
 This is the paragraph that matters most, because density is the standing excuse for shrinking a
 control past the point where it can be used. **The Floor does not have a density setting.** At
@@ -166,7 +181,7 @@ surface at two text colors, and `forge-ui-measure-cap` still holds on any body c
 into the dense layout — a description does not become full-bleed because the rows around it are
 tight.
 
-## Variance and motion, briefly
+## 4. Variance and motion, briefly
 
 Variance is how much two comparable surfaces are allowed to differ. At forge's default of 4, the
 second surface of a kind copies the first: the same `Card` compound in the same order, the same

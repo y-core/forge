@@ -1,3 +1,8 @@
+---
+title: Structured Channel-Based Logging
+description: "Fans each log record out to one or more channels, with request-logging middleware and an optional viewer for persisted logs."
+---
+
 # `@y-core/forge/logging`
 
 Structured, channel-based logging for forge apps on Cloudflare Workers. A logger fans each
@@ -235,14 +240,11 @@ try {
 ### `kvLogChannel(kv, options?)`
 
 Returns a read/write channel that persists records to a Cloudflare KV namespace and reads
-them back for the log viewer. Keys are `{prefix}||v2||{invertedTimestamp}||{rand}`, where the
-timestamp is inverted (`999999999999999 - ms`, zero-padded to 15 digits), so a lexicographic list
-is **newest-first** — KV offers no reverse order, so the ordering has to live in the key. A
-crypto-random suffix avoids same-millisecond collisions, and `purge` drops the **tail**, which is
-the oldest. Records written under the previous, un-inverted key format stop listing and expire by
-their TTL. Per-entry
-metadata (level, prefix, message, timestamp, requestId) lets the viewer list rows without
-per-row reads.
+them back for the log viewer. Keys are `${prefix}||v2||${inverted}||${rand}`, which makes a
+lexicographic list newest-first and gives same-millisecond writes distinct keys — the inversion,
+the `v2` segment, and which end `purge` slices are
+[`STRUCTURED_LOGGING.md`](../../docs/STRUCTURED_LOGGING.md) §2g's. Per-entry metadata (level,
+prefix, message, timestamp, requestId) lets the viewer list rows without per-row reads.
 
 ```ts
 import { kvLogChannel } from "@y-core/forge/logging";
@@ -313,7 +315,7 @@ app.get("/orders", (c) => {
 
 ### Wire request logging into an app
 
-1. Register `requestId()` **before** `requestLogger` so the request id is set when the `bindings` callback runs. If reordered, `requestId` is `undefined` in every record.
+1. Register `requestId()` **before** `requestLogger` so the request id is set when the `bindings` callback runs ([`STRUCTURED_LOGGING.md`](../../docs/STRUCTURED_LOGGING.md) §3c).
 2. Resolve channels per-request from the environment — fall back to console-only when `LOGS_KV` is unbound (local dev without wrangler).
 3. Read the per-request logger with `requestLog.get(c)` in handlers and middleware.
 
@@ -321,14 +323,14 @@ app.get("/orders", (c) => {
 (no query string), `status`, `duration` (ms), and any `bindings` such as `requestId`. The
 level is derived from the response status code:
 
-| Status range | Level | Meaning |
-| --- | --- | --- |
-| `< 400` | `info` | Successful requests |
-| `4xx` | `warn` | Client errors — expected, not ops-actionable |
-| `5xx` | `error` | Server errors — ops-actionable |
+| Status range | Level |
+| --- | --- |
+| `< 400` | `info` |
+| `4xx` | `warn` |
+| `5xx` | `error` |
 
-This keeps alert noise low: 404s and 422s stay at `warn`. `requestLogger` never emits
-`debug`; reserve `debug` for explicit `createLogger` use and avoid it in production configs.
+What each level is meant to signal, and why `requestLogger` never emits `debug`, are
+[`STRUCTURED_LOGGING.md`](../../docs/STRUCTURED_LOGGING.md) §4a's and §4b's.
 
 A throwing route handler never reaches `requestLogger` — the app's error boundary sits below it
 and converts the throw into a 500 first, so the summary shows `status: 500` with no error detail.
@@ -517,9 +519,11 @@ its eviction policy are `src/logging/logger.ts`'s.
 
 ### KV key layout and retention
 
-`kvLogChannel` keys are `{prefix}||{isoTimestamp}||{rand}` where `rand` is 8 hex chars (32
+`kvLogChannel` keys are `${prefix}||v2||${inverted}||${rand}`, where `inverted` is a fixed-width
+descending timestamp that makes a KV listing open on the newest record and `rand` is 8 hex chars (32
 bits) of crypto randomness, avoiding the same-millisecond collisions that last-write-wins KV
-would otherwise drop. Each `write` stores `KvLogMetadata` (`level`, `prefix`, `message`
+would otherwise drop. The inversion, its two clamps, the `v2` segment and the end `purge` slices are
+[`STRUCTURED_LOGGING.md`](../../docs/STRUCTURED_LOGGING.md) §2g's. Each `write` stores `KvLogMetadata` (`level`, `prefix`, `message`
 truncated to 256 chars, `timestamp`, optional `requestId` truncated to 64 chars) so the
 viewer lists rows from list metadata alone. Retention is enforced two ways: `defaultTtl` is
 the hard backstop on every entry, and a probabilistic purge (running with `purgeProbability`

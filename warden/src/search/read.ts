@@ -56,11 +56,34 @@ function toSection(row: Row): Section {
   };
 }
 
+// Hierarchy is implicit in the `§N`/`§Na` id shape, there being no parent column: a child is the
+// parent's section plus a letter, so the scan stops at the first section that is not one. Comparing
+// prefixes alone would take `§10` for a child of `§1`.
+function childrenOf(db: Database, id: string, own: Row): Row[] {
+  const rows = db
+    .query<Row>(`${SELECT} WHERE chunk.source_id = (SELECT source_id FROM chunk WHERE id = ?) AND chunk.ordinal > ? ORDER BY chunk.ordinal`)
+    .all(id, own.ordinal);
+  const kept: Row[] = [];
+  for (const row of rows) {
+    const suffix = row.section.slice(own.section.length);
+    if (!row.section.startsWith(own.section) || suffix === "" || /^[0-9]/.test(suffix)) break;
+    kept.push(row);
+  }
+  return kept;
+}
+
 /** One section by chunk id, with its immediate neighbours when asked for. A neighbour is what makes
  *  a `### Na.` hit readable: the rule above it is usually the one that scopes it. @public */
 export function readSection(db: Database, id: string, neighbours = 0): Section[] {
   const own = db.query<Row>(`${SELECT} WHERE chunk.id = ?`).get(id);
   if (own === null) return [];
+  // A bodyless `§N` is an addressable heading whose rule lives in its `§Na` children, and search
+  // ranks the parent above them — so reading one has to answer with them, or it answers nothing.
+  // `neighbours` is an ordinal window rather than a tree walk, and would pull in the section before.
+  if (own.body === "") {
+    const children = childrenOf(db, id, own);
+    if (children.length > 0) return [own, ...children].map(toSection);
+  }
   if (neighbours <= 0) return [toSection(own)];
   const rows = db
     .query<Row>(
@@ -71,10 +94,11 @@ export function readSection(db: Database, id: string, neighbours = 0): Section[]
 }
 
 /** Every section of one document, by path — the answer to "this file is 62 KB and I need one
- *  section". A path may name a document in either corpus; both are returned in that order. @public */
+ *  section". A path may name a document in more than one corpus; each is returned whole,
+ *  one after another, never interleaved. @public */
 export function outline(db: Database, path: string): OutlineEntry[] {
   return db
-    .query<Row>(`${SELECT} WHERE source.path = ? ORDER BY source.corpus, chunk.ordinal`)
+    .query<Row>(`${SELECT} WHERE source.path = ? ORDER BY source.id, chunk.ordinal`)
     .all(path)
     .map((row) => ({
       id: row.id,
@@ -88,5 +112,5 @@ export function outline(db: Database, path: string): OutlineEntry[] {
 
 /** Every section of one document, whole. @public */
 export function readDocument(db: Database, path: string): Section[] {
-  return db.query<Row>(`${SELECT} WHERE source.path = ? ORDER BY source.corpus, chunk.ordinal`).all(path).map(toSection);
+  return db.query<Row>(`${SELECT} WHERE source.path = ? ORDER BY source.id, chunk.ordinal`).all(path).map(toSection);
 }

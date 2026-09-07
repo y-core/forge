@@ -58,8 +58,9 @@ export function freshness(db: Database, sources: readonly SourceDoc[], canonVers
     : { fresh: false, rebuild: false, stale, reason: `${stale.length} document${stale.length === 1 ? "" : "s"} changed` };
 }
 
-/** The advisory a search prints over a stale index. It never refuses: the paths it returns are
- *  still the right paths, and a search that failed on staleness would be a search nobody trusts. @public */
+/** The advisory a search prints over an index it could not bring forward. A caller refreshes first
+ *  and only reaches this when the rebuild itself failed, so the line means "behind, and stuck" —
+ *  never merely "behind", which the refresh would have fixed before any result was served. @public */
 export function advisory(state: Freshness): string {
   if (state.fresh) return "";
   const detail = state.stale.length > 0 ? `: ${state.stale.slice(0, 5).join(", ")}${state.stale.length > 5 ? ", …" : ""}` : "";

@@ -41,10 +41,13 @@ at the size it specifies, and stop there.
 ## First Steps (always)
 
 1. Follow the **Coding Ruleset** below.
-2. Identify which layer(s) your change touches, then read the governing doc — locate it via the
-   **`CLAUDE.md` Guide Index**, then use that doc's `## 0. Quick Reference` to jump to the
-   section you need. The canon is not in the index — search it; the index names
-   `docs/` for this application's routes, config, bindings, and design system.
+2. **Never infer a rule mid-implementation — search for it.** `knowledge_search` with the
+   question in plain words, then `knowledge_read` on the chunk id (`AGENT_GUIDE.md §1`).
+   `canon` carries the portable rule, `local` this application's routes, config, bindings and
+   design system. **An empty result is an answer** — nothing governs it, so follow the
+   surrounding code and say so; a near miss is not a rule. Cite the chunk id when a rule
+   decides your change. Where no warden MCP is configured, the same index is `warden search`
+   and `warden outline <path>` from a terminal.
 3. Read every file in full before modifying it. Understand the existing pattern before adding to
    it.
 
@@ -218,8 +221,10 @@ signature**, which `Grep` will under-report on re-exported or aliased symbols.
 
 ## Coding Ruleset
 
-> Before touching a layer, read its governing doc — locate it via the **`CLAUDE.md` Guide
-> Index**. That doc owns the rules; this section owns only the conventions that span every layer.
+> Before touching a layer, read its governing doc — reach it with `knowledge_search` then
+> `knowledge_read` (`AGENT_GUIDE.md §1`), or with `warden search` and `warden outline` where no
+> warden MCP is configured. That doc owns the rules; this section owns only the conventions
+> that span every layer.
 
 ### Naming Conventions
 

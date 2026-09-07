@@ -1,3 +1,8 @@
+---
+title: The Result Primitive
+description: "Forge's single discriminated-union result type, its value constructors, and the wrapper that captures any throw as data."
+---
+
 # `@y-core/forge/result`
 
 A tiny, dependency-free utility for explicit, type-safe error handling. It is forge's
@@ -119,9 +124,9 @@ function parsePort(raw: string): Result<number, string> {
 }
 ```
 
-`ok` / `err` are the only sanctioned value-constructors — a documented exception to
-forge's `create*` factory-naming rule, because they construct **values**, not
-configured objects (the naming follows the neverthrow convention).
+`ok` / `err` are the only sanctioned value-constructors, and the reason they are a
+documented exception to forge's `create*` factory-naming rule is
+[`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §1a's.
 
 ### Guard checks with `GuardResult`
 
@@ -179,9 +184,9 @@ const contact = r.data;
 type Result<T, E = Error> = { ok: true; data: T } | { ok: false; error: E };
 ```
 
-A discriminated union representing the outcome of a fallible operation. Use it as
-the return type for any function that can fail in a predictable way — never return
-`null | T` or throw for expected failures.
+A discriminated union representing the outcome of a fallible operation. When to
+reach for it rather than `null | T` or a throw is
+[`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §1a's.
 
 | Type parameter | Default | Description |
 | --- | --- | --- |
@@ -189,8 +194,9 @@ the return type for any function that can fail in a predictable way — never re
 | `E` | `Error` | Type of the failure payload, available as `error` when `ok` is `false`. |
 
 Always check `r.ok` before accessing `r.data` or `r.error`; the union narrows
-automatically inside the guard. There is exactly **one** failure field — `error`;
-the domain aliases below reuse it rather than introducing new fields.
+automatically inside the guard. The single-failure-channel rule the domain aliases
+below reuse rather than extend is [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §1a's, and
+the narrow-and-return-early shape is §1b's.
 
 ### `ok(data?)` and `err(error)`
 
@@ -222,8 +228,9 @@ type GuardResult<R = string> = Result<void, R>;
 A domain alias of `Result` for predicate/authorization checks (origin, CSRF,
 Turnstile) that produce no success value. The success arm is `void`; the failure
 channel carries a machine-readable reason code in `.error` — typically a
-string-literal union (e.g. `"missing" | "disallowed"`). The reason is for server
-diagnostics only; never surface it to clients.
+string-literal union (e.g. `"missing" | "disallowed"`). That the reason is a server
+diagnostic, never echoed to a client, is
+[`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §1c's.
 
 | Type parameter | Default | Description |
 | --- | --- | --- |

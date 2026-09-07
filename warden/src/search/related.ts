@@ -24,6 +24,10 @@ interface Row {
 export function related(db: Database, id: string, kinds?: readonly string[], depth = 1): Related[] {
   const seen = new Set<string>([id]);
   const found: Related[] = [];
+  // `seen` guards re-queueing a node; it cannot guard emission. A mutual pair of edges is one row
+  // reached from both ends, and widening a section to its document re-reaches every document-level
+  // edge once per section on the frontier.
+  const emitted = new Set<string>();
   let frontier = [id];
 
   for (let level = 0; level < Math.max(1, depth); level++) {
@@ -41,6 +45,9 @@ export function related(db: Database, id: string, kinds?: readonly string[], dep
 
       for (const row of out) {
         if (kinds !== undefined && !kinds.includes(row.kind)) continue;
+        const key = `${row.kind}|${row.to_id ?? ""}|${row.raw}`;
+        if (emitted.has(key)) continue;
+        emitted.add(key);
         found.push({ kind: row.kind, ...(row.to_id === null ? {} : { id: row.to_id }), raw: row.raw });
         if (row.to_id !== null && !seen.has(row.to_id)) {
           seen.add(row.to_id);
@@ -50,6 +57,9 @@ export function related(db: Database, id: string, kinds?: readonly string[], dep
       for (const row of inbound) {
         const kind = `${row.kind}-by`;
         if (kinds !== undefined && !kinds.includes(kind)) continue;
+        const key = `${kind}|${row.from_id}|${row.raw}`;
+        if (emitted.has(key)) continue;
+        emitted.add(key);
         found.push({ kind, id: row.from_id, raw: row.raw });
         if (!seen.has(row.from_id)) {
           seen.add(row.from_id);

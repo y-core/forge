@@ -1,14 +1,45 @@
+---
+title: The Floor
+description: "The design invariants. Nothing here is overridable by a brief, a preference, or the surrounding code."
+---
+
 # Floor
 
 The invariants. Nothing here is overridable — not by a brief, not by a preference, not by the
-surrounding code. Read **Verify** as a pass before you call the work done; hold **Refuse** the whole
-time you are generating.
+surrounding code. Read **Verify** (§1) as a pass before you call the work done; hold **Refuse** (§2)
+the whole time you are generating.
 
 ---
 
-## Verify
+## 0. Quick Reference
 
-Obligations. Walk this list before you report a UI surface as finished.
+- §1 Verify — the Obligations: walk this list before reporting a UI surface finished
+- §1a The Design Read: one line naming the audience, the primary action, and what failure looks like
+- §1b Measure and Contrast: cap body copy at 45–75 characters, and clear the ratio in both modes
+- §1c Status Is Never Colour Alone: the token plus an icon plus text, and the two attributes a field needs
+- §1d Focus Stays Visible: the ring against `--ring`, and why `outline-none` alone is a deleted affordance
+- §1e Every Suppressed Affordance Is Replaced: what each suppression utility deletes, and what forge puts back
+- §1f Hit Target and Reduced Motion: the `Button` `sm` box as the floor, and motion that honours the preference
+- §1g The Designed Empty State: an empty collection is a state, not an absence
+- §1h Accessible Names and Label Association: a control with no name, and a label wired to nothing
+- §1i Heading Order: never skip a level, and the `level` prop that keeps a compound honest
+- §2 Refuse — the Prohibitions: these never appear in output, whatever was asked for
+- §2a Colour Tokens, Never Literals: no hex, no `rgb()`, and the one case a palette utility survives
+- §2b No Inline Style, and No Restated Base Classes: the silently dropped attribute, and the copied class list
+- §2c The Spacing Scale, and Viewport Units: no arbitrary value where a step exists, and never `h-screen`
+- §2d No Nested Card: two borders and two elevations that encode nothing
+- §2e Foreground Pairing: every background token with its partner, and never an opacity guess
+- §2f Two Text Colours, One Radius: the colour budget, and the single radius everything derives from
+- §2g Icons from the Sprite: `Icon` and `createIcon`, never an emoji and never an inline `<svg>`
+- §2h Never Invent Data: no fabricated metrics, testimonials, or placeholder identities
+
+---
+
+## 1. Verify — the Obligations
+
+Walk this list before you report a UI surface as finished.
+
+### 1a. The Design Read
 
 **Emit the Design Read before you build.** <!-- rule:forge-ui-design-read -->
 One line, no template, no ceremony: **who** the surface is for, **the one** primary action, and
@@ -17,6 +48,8 @@ takes and which `tone` the failure path's `Alert` or `Toast` renders.
 
 > Design Read: returning admin scanning failed jobs; primary action is retry; failure is a job that
 > retries and fails again — `tone='destructive'` `Alert` in place, row stays.
+
+### 1b. Measure and Contrast
 
 **Cap body copy at a comfortable measure — 45–75 characters.** <!-- rule:forge-ui-measure-cap -->
 `max-w-prose`, or an explicit `max-w-*` when the container is not prose. Never full-bleed text — a
@@ -27,6 +60,8 @@ paragraph in an unbounded `Card.Content` is the common breach.
 Both themes, every time — a pairing that clears the floor on `--background` can fail on the dark
 value of the same token. Verify the pair you actually shipped, not the token's light value.
 
+### 1c. Status Is Never Colour Alone
+
 **Never carry status by color alone.** <!-- rule:forge-ui-not-color-alone -->
 Pair the token with an `Icon` and with text. On a field, carry it with both `data-invalid` and
 `aria-invalid`, and note that **two mechanisms emit them**: `FormField`'s `invalid` prop puts
@@ -34,33 +69,44 @@ Pair the token with an `Icon` and with text. On a field, carry it with both `dat
 only through `fieldControlProps`. Setting `invalid` alone styles the field and announces nothing. A
 red `Alert` with no icon and no `Alert.Title` naming the failure is a color-only status.
 
+### 1d. Focus Stays Visible
+
 **Keep focus visible on every interactive element.** <!-- rule:forge-ui-focus-ring -->
 `focus-visible:ring-2 focus-visible:ring-ring` against the `--ring` token. `outline-none` without a
 replacement ring is a removed affordance, not a style choice.
 
+This is §1e applied to `outline-none`. It keeps its own id, and is cited by that id.
+
+### 1e. Every Suppressed Affordance Is Replaced
+
 **Replace every affordance you suppress.** <!-- rule:forge-ui-affordance-replacement -->
 Each suppression utility deletes something the browser drew, and forge names what goes back in its
-place. `appearance-none` on a `type='range'` leaves no track and no thumb — `Slider` redraws both as
-authored `::-webkit-slider-runnable-track` / `::-moz-range-track` and thumb rules in
-`forge-ui.css`, because no utility class reaches a UA pseudo-element. On a `<select>` it leaves no
-arrow — `Select` reserves `pe-10` and positions its own `aria-hidden` `chevron-down` `Icon`. On a
-checkbox or radio it leaves nothing to mark checked — and it also gives up the exemption 1.4.11
-grants a control the author has not modified, so `CheckboxGroup` and `RadioGroup` replace _two_
-things: the box, with an explicit `border-input` boundary and a `checked:bg-primary` fill, and the
-user's own palette, with the `@media (forced-colors: active)` block in `forge-ui.css` §9 — without
-which a High Contrast reader gets two identically empty squares. `list-none` removes
-the markers that separated the items — a `Separator` or a deliberate `gap-*` takes over. `p-0`
-removes the box that made the target hittable — restore a size that clears `forge-ui-hit-target`.
-`border-0` removes the boundary — restore it with `border-input`, `border-border`, or a
-`Separator`. A hidden `::marker`
-is the `<summary>` case: `Collapsible.Trigger` and `Accordion.Trigger` both set `list-none` to drop
-the UA disclosure triangle, and both draw their own `chevron-down` `Icon` back in its place,
-rotating on `group-open/accordion-item` and `group-open/collapsible-item` respectively. Neither can
-forget it: the `icon` prop is required on both, so the replacement is supplied at every call site or
-the build fails.
+place.
 
-`forge-ui-focus-ring` is this rule applied to `outline-none`. It keeps its own id, and is cited by
-that id.
+- `appearance-none` on a `type='range'` leaves no track and no thumb — `Slider` redraws both as
+  authored `::-webkit-slider-runnable-track` / `::-moz-range-track` and thumb rules in
+  `forge-ui.css`, because no utility class reaches a UA pseudo-element.
+- On a `<select>` it leaves no arrow — `Select` reserves `pe-10` and positions its own `aria-hidden`
+  `chevron-down` `Icon`.
+- On a checkbox or radio it leaves nothing to mark checked — and it also gives up the exemption
+  1.4.11 grants a control the author has not modified, so `CheckboxGroup` and `RadioGroup` replace
+  _two_ things: the box, with an explicit `border-input` boundary and a `checked:bg-primary` fill,
+  and the user's own palette, with the `@media (forced-colors: active)` block in `forge-ui.css` —
+  without which a High Contrast reader gets two identically empty squares.
+- `list-none` removes the markers that separated the items — a `Separator` or a deliberate `gap-*`
+  takes over.
+- `p-0` removes the box that made the target hittable — restore a size that clears
+  `forge-ui-hit-target`.
+- `border-0` removes the boundary — restore it with `border-input`, `border-border`, or a
+  `Separator`.
+
+A hidden `::marker` is the `<summary>` case: `Collapsible.Trigger` and `Accordion.Trigger` both set
+`list-none` to drop the UA disclosure triangle, and both draw their own `chevron-down` `Icon` back in
+its place, rotating on `group-open/accordion-item` and `group-open/collapsible-item` respectively.
+Neither can forget it: the `icon` prop is required on both, so the replacement is supplied at every
+call site or the build fails.
+
+### 1f. Hit Target and Reduced Motion
 
 **Keep every interactive target at or above the `Button` `sm` box.** <!-- rule:forge-ui-hit-target -->
 `sm` is the floor of the size scale (`sm` / `md` / `lg`), which `shape` squares off rather than
@@ -70,10 +116,14 @@ resizes. A control does not shrink below it to make a layout fit; the layout giv
 Applies to `motion-safe:` / `motion-reduce:` classes and to every declarative state transition —
 `starting:`, `open:`, `not-open:`, `transition-discrete` — alike.
 
+### 1g. The Designed Empty State
+
 **Ship a designed empty state on every collection surface.** <!-- rule:forge-ui-empty-state -->
 An empty list is a state, not an absence: a line of text saying what would be here, and the action
 that fills it. `Card.Content` holding a `<p class="text-muted-foreground">` plus a
 `tone='neutral' appearance='outline'` `Button` is the whole pattern.
+
+### 1h. Accessible Names and Label Association
 
 **Give every control an accessible name.** <!-- rule:forge-ui-accessible-name -->
 Via `Label`, via `FormField.Label`, or via visually-hidden text. An icon-only control
@@ -90,6 +140,8 @@ announces nothing.
 - Wrong: `<label>Email</label><input name="email" />`
 - Right: `<label for="email">Email</label><input id="email" name="email" />`
 
+### 1i. Heading Order
+
 **Never skip a heading level.** <!-- rule:forge-ui-heading-order -->
 A title renders inside the level its section sits at; choosing a level for its type size is what
 produces the skip. Size with a class, not with the tag. Where a compound owns the heading tag,
@@ -99,9 +151,11 @@ the compound's default.
 
 ---
 
-## Refuse
+## 2. Refuse — the Prohibitions
 
-Prohibitions. These never appear in output, whatever was asked for.
+These never appear in output, whatever was asked for.
+
+### 2a. Colour Tokens, Never Literals
 
 **Never write a raw color literal in a `class`.** <!-- rule:forge-ui-color-token-only -->
 No `#hex`, no `rgb()`, no `hsl()`, no `oklch()`. Use the semantic tokens — `--background`
@@ -134,6 +188,8 @@ page. For the four status intents there is nothing left to reach for it with —
 - Right: `class="bg-status-danger-subtle text-status-danger-subtle-foreground"` — a fixed status
   hue, themed in both modes
 
+### 2b. No Inline Style, and No Restated Base Classes
+
 **Never write a `style=` attribute.** <!-- rule:forge-ui-no-inline-style -->
 Forge's SSR renderer drops it. Nothing errors, nothing warns, and the styling is simply gone from
 the emitted HTML — the most expensive failure mode there is.
@@ -148,6 +204,8 @@ move. Restating them also hides which utility you meant to change.
   whole base, copied, to widen the padding
 - Right: `<Button class="px-8">` — the one utility that differs; the rest still comes from `Button`
 
+### 2c. The Spacing Scale, and Viewport Units
+
 **Use Tailwind's default spacing scale.** <!-- rule:forge-ui-spacing-scale-only -->
 Never an arbitrary value where a scale value exists. The scale's steps differ by at least 25%, which
 is what makes two different gaps read as deliberate rather than as a mistake.
@@ -159,9 +217,13 @@ is what makes two different gaps read as deliberate rather than as a mistake.
 Mobile browser chrome makes `100vh` taller than the visible viewport, so the bottom of the layout
 sits under the URL bar. Use `min-h-dvh`.
 
+### 2d. No Nested Card
+
 **Never nest a `Card` inside `Card.Content`.** <!-- rule:forge-ui-no-nested-card -->
 Two borders and two elevations that encode nothing. Separate the inner regions with `Separator`, or
 promote them to siblings of the outer `Card`.
+
+### 2e. Foreground Pairing
 
 **Use every background token with its paired `*-foreground`.** <!-- rule:forge-ui-foreground-pairing -->
 `bg-card`/`text-card-foreground`, `bg-primary`/`text-primary-foreground`,
@@ -180,6 +242,8 @@ Pair within a tier, never across one: a `-strong` surface takes the `-strong-for
 of those pairs is measured on its own surface. `Alert`, `Toast` and `Badge` already hold the right
 pair inside each tone, so passing a `tone` is the shorter route to the same thing.
 
+### 2f. Two Text Colours, One Radius
+
 **Hold a surface to two text colors.** <!-- rule:forge-ui-text-color-budget -->
 `text-foreground` for the primary line, `text-muted-foreground` for everything supporting. A third
 is a hierarchy you are asserting with color that weight, size, or spacing should carry instead.
@@ -187,6 +251,8 @@ is a hierarchy you are asserting with color that weight, size, or spacing should
 **Keep one radius.** <!-- rule:forge-ui-one-radius -->
 `--radius`, with `--radius-sm` / `--radius-md` / `--radius-lg` / `--radius-xl` computed from it. No
 per-component radius override, and never square corners next to round ones on one surface.
+
+### 2g. Icons from the Sprite
 
 **Take icons from the sprite.** <!-- rule:forge-ui-real-icons -->
 `Icon` or a `createIcon` binding from `@y-core/forge/ui/core`, typed `ForgeIcon<Name>`. Never an emoji,
@@ -198,6 +264,8 @@ factory.
 import { createIcon } from "@y-core/forge/ui/core";
 const AppIcon = createIcon("/assets/icons.svg");
 ```
+
+### 2h. Never Invent Data
 
 **Never invent data.** <!-- rule:forge-ui-no-fabricated-data -->
 No metrics, no testimonials, no placeholder identities — not "John Doe", not "Acme Inc", not

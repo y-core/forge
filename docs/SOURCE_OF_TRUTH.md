@@ -27,7 +27,7 @@ description: "Which file owns each fact in forge, so every other document cites 
 - §2b Enforced Rules: the checks that own their own rule sets
 - §2c Cloudflare Reconciliation: the files that decide what `forge cf sync` creates and writes
 - §2d UI Contracts and Data Tables: the files prose may not re-enumerate
-- §2e The One Prose Row: what a source comment may contain
+- §2e The Prose Rows: the rulings whose home is a document, and the five READMEs that own their own
 - §3 Rows That Name More Than One File: policy split from matchers
 - §3a The Barrel Row: exports and barrel-parse
 - §3b The Namespace-Graph Rows: data, policy, and parser
@@ -108,6 +108,8 @@ commits its derived table, the committed module is the row — `class-groups.ts`
 | Which substring assertions on markup fail, and what suppresses one, as _enforced_ | `src/tooling/lint/rules/exact-markup-assertion.ts` |
 | The SSR/browser import boundary as _enforced_ | `src/tooling/gate/checks/ssr-boundary.ts` |
 | Changelog and package-version agreement as _enforced_ | `warden/src/checks/changelog.ts` |
+| Which documents warden indexes, and the retrieval weight each carries | `warden/src/corpus/source.ts` |
+| The `warden` command surface — every command, its flags, and what each writes | `warden/src/cli/commands.ts` + `warden/src/cli/knowledge.ts` |
 | Which modern-CSS findings fail, warn, or are deferred, as _enforced_ | `src/tooling/gate/checks/modern-css.ts` + `src/tooling/gate/checks/modern-css-deferred.ts` |
 
 ### 2c. Cloudflare Reconciliation
@@ -139,14 +141,32 @@ row names the file that decides it; no prose here restates a naming rule or a ha
 | Theme dial fields, parameters, ranges, units and fallbacks | `src/ui/contracts/theme/theme-contract.ts` |
 | The showcase's demo coverage manifest, and the gaps it excuses | `src/ui/show/coverage.ts` + `src/ui/show/coverage-missing.ts` |
 
-### 2e. The One Prose Row
+### 2e. The Prose Rows
 
-Every row above names a _source_ file. This one names a governing document, because the fact it
-owns is a rule rather than data — and a source file must not restate it:
+Every row above names a _source_ file. These name prose, because what they own is a **ruling**
+rather than data — §1b's enumerability test is what separates the two, and a ruling has a single
+home for the same reason a table does.
 
 | Owns | File |
 | --- | --- |
 | What a source comment may contain, and where displaced rationale goes | [`CODE_RULES.md`](../warden/canon/libs/CODE_RULES.md) §5 |
+| The `config` namespace's rulings — the store, resolution order, and what a consumer may read | `src/config/README.md` |
+| The `session` namespace's rulings — cookie construction, signing, and the middleware's contract | `src/session/README.md` |
+| The `site` namespace's rulings — what a site descriptor carries and what reads it | `src/site/README.md` |
+| The `tooling/cf` rulings — the `cf·verb·object` grammar, id-is-identity, vars-never-written, the `.dev.vars` markers | `src/tooling/cf/README.md` |
+| The `tooling/term` rulings — the terminal-output surface and what may call it | `src/tooling/term/README.md` |
+
+**Five READMEs own their namespace's rulings outright, because no `docs/` document covers them.**
+The alternative was five new governing documents whose whole content would have been what the
+README already said — a second copy of a ruling is the failure this register exists to prevent, and
+writing one on purpose is worse than tolerating the asymmetry. So for these five namespaces the
+README **is** the governing prose: cite it as the owner, and do not restate its rulings in a
+`docs/` document. Every other namespace's README stays what §4's check assumes — API reference,
+deferring its rulings to the `docs/` document that owns them.
+
+**A row moves the day a `docs/` document is written for one of these namespaces**, and the README
+is reduced to reference in the same change. Adding the document without moving the row is how the
+two copies start.
 
 ---
 

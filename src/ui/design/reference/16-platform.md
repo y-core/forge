@@ -1,3 +1,8 @@
+---
+title: Platform
+description: "What the browser now does in one declaration that the surrounding ecosystem still writes by hand, paired form by form."
+---
+
 # Platform
 
 The browser now does, in one declaration, a long list of things the surrounding ecosystem still
@@ -29,9 +34,36 @@ A silent exception and a missed rule are the same thing in a review.
 
 ---
 
-## Tier A — the older spelling
+## 0. Quick Reference
+
+- §1 Tier A — the older spelling: flat and not rebuttable, because the replacement renders the same box
+- §1a Boxes, centring and clipping: `aspect-ratio`, `place-items`, `scrollbar-color`, `line-clamp`
+- §1b Colour, density and stacking: `light-dark()`, `image-set()`, `isolation: isolate`
+- §1c Logical spacing: the inline-axis spellings, and the two positions that stay physical
+- §2 Tier B — behaviour the platform implements: adopting an implementation also adopts its semantics
+- §2a Modals and popovers: the native `<dialog>`, the Popover API, and light dismissal as the discriminator
+- §2b Disclosure and inertness: `<details>` reaching find-in-page, and `inert` over a `tabindex` sweep
+- §2c Entry and repeating motion: `@starting-style` over `requestAnimationFrame`, keyframes over `setInterval`
+- §2d Paths, gradients and reveals: `offset-path`, a registered angle, a CSS mask, `animation-timeline`
+- §2e Layout the platform can drive: scrolling, snapping, `anchor()` and `field-sizing`
+- §2f Ancestors, counters and numbers: `:has()`, CSS counters, and an interpolated `@property`
+- §2g Theme detection: why forge's own theme is script's job and the OS's is not
+- §3 Tier C — the authoring form: how a stylesheet is ordered, scoped and wrapped
+- §3a Cascade and scope: `@layer`, native nesting, `@scope`, and `:is()` against a comma list
+- §3b Container queries and subgrid: sizing against a container, and inheriting a parent's tracks
+- §3c Height interpolation and `display: contents`: `interpolate-size`, and the box a wrapper takes with it
+- §3d Controls: `accent-color`, and the view transition a full navigation earns
+- §3e Type: `text-balance` above `text-2xl`, `text-pretty` on body copy, and a self-sizing `Textarea`
+- §3f The one place the modern answer is refused: ring, border and outline tokens are excluded outright
+- §4 Sources: the curation this file's catalogue rests on, and what was re-derived
+
+---
+
+## 1. Tier A — the older spelling
 
 Flat, and not rebuttable. Each of these is a pattern whose replacement renders the same box.
+
+### 1a. Boxes, centring and clipping
 
 **Reserve a ratio box with `aspect-ratio`, never with a percentage `padding-bottom` inside a
 `position: relative` rule.** <!-- rule:forge-ui-platform-aspect-ratio -->
@@ -64,6 +96,8 @@ one the surrounding layout assumed — that is what changes when the standard pr
 and it is usually a `flex` or `block` box coming back. A clamped `Card.Description` is the common
 site.
 
+### 1b. Colour, density and stacking
+
 **Express a per-mode value with `light-dark()`, never by declaring the same selector a second time
 under `prefers-color-scheme`.** <!-- rule:forge-ui-platform-light-dark -->
 A second declaration of one selector is two places to edit, and the second one is the one that gets
@@ -86,6 +120,8 @@ background, and it escapes the parent's paint order entirely to do it. Forge's o
 sit at `z-50` — `Popover.Content`, `Menu`, `Tooltip`, `Toast` — precisely so that the ordering is
 positive and local. The one case to look at before rewriting is a decorative layer that was
 _deliberately_ painting behind an ancestor's background; isolating it brings it forward.
+
+### 1c. Logical spacing
 
 **Write inline-axis spacing logically.** <!-- rule:forge-ui-platform-logical-spacing -->
 `ms-` and `me-` for `ml-` and `mr-`, `ps-` and `pe-` for `pl-` and `pr-`, `border-s` and `border-e`,
@@ -121,13 +157,13 @@ than left to be inferred.
 
 ---
 
-## Tier B — behaviour the platform implements
+## 2. Tier B — behaviour the platform implements
 
 Each of these replaces script with a browser behaviour, and each replacement brings semantics the
 script did not have. That is why they are `Default:` rather than flat: the semantics are usually what
 you wanted, and occasionally they are exactly what you cannot have.
 
-### Overlays and disclosure
+### 2a. Modals and popovers
 
 Default: open a modal with `Dialog`, which renders a native `<dialog>` and takes `showModal()`
 through the client runtime, rather than declaring `role="dialog"`, `role="alertdialog"` or
@@ -149,6 +185,8 @@ and a panel whose whole purpose is to stay open is not a popover however it is p
 this rule looks at the file as a whole — a module that declares a popover anywhere is taken to be
 using the API.
 
+### 2b. Disclosure and inertness
+
 Default: build a disclosure from `Collapsible` or `Accordion`, both of which render native
 `<details>` and `<summary>`, rather than toggling `aria-expanded` from a click handler — unless the
 trigger and the panel cannot be one subtree, as a header control that expands a region elsewhere in
@@ -166,7 +204,7 @@ A `Dialog` opened as a modal gets this for free and needs none of it. The sweep 
 panel does instead, and it is worse than it looks: it restores whatever it saved, so any element
 whose `tabindex` changed while the panel was open comes back wrong.
 
-### Motion the platform can declare
+### 2c. Entry and repeating motion
 
 Default: express entry motion with `@starting-style` and `transition-behavior: allow-discrete` — the
 `starting:` and `transition-discrete` utilities `forge-ui-interaction-transition-controller` already
@@ -183,6 +221,8 @@ which no keyframe can read. <!-- rule:forge-ui-platform-ticker -->
 Keyframes run off the main thread, so the motion survives a busy tab where the interval stutters.
 The gate is not optional here: `forge-ui-reduced-motion` is Floor, and a declared animation is gated
 with `motion-safe:` and given a settled `motion-reduce:` state exactly as an authored transition is.
+
+### 2d. Paths, gradients and reveals
 
 Default: declare a fixed path with `offset-path` rather than computing coordinates per frame with
 `Math.sin` or `Math.cos` inside `requestAnimationFrame` — unless the path is derived from data at
@@ -216,7 +256,7 @@ Forge ships two observers and neither is this pattern: `lazy` loads a module and
 marks the active navigation link. What separates them is the callback body — neither touches a class
 on the observed element.
 
-### Layout the platform can drive
+### 2e. Layout the platform can drive
 
 Default: declare `scroll-behavior` and clear a sticky header with `scroll-margin`, rather than
 animating a scroll from script with a `behavior: 'smooth'` option or `offsetTop` arithmetic — unless
@@ -250,7 +290,7 @@ out from under them. <!-- rule:forge-ui-platform-field-sizing -->
 The scripted version capped the height implicitly, by only ever measuring content that fitted. The
 declarative one does not, so pair it with a `max-h-*` step or the control grows without bound.
 
-### State a selector can read
+### 2f. Ancestors, counters and numbers
 
 Default: select an ancestor from a descendant's state with `:has()`, as
 `forge-ui-interaction-trigger-state` already does for a popup's trigger, rather than reaching
@@ -274,6 +314,8 @@ value, which generated content is never announced as. <!-- rule:forge-ui-platfor
 That exception covers most product UI. `Meter` and `Progress` carry their value in the DOM because
 it has to be there for the control's accessible value to exist at all; a count-up is a marketing
 moment, and it is subject to `forge-ui-reduced-motion` like every other one.
+
+### 2g. Theme detection
 
 Default: resolve a per-mode value with `light-dark()` rather than reading
 `matchMedia('(prefers-color-scheme: …)')` in script — unless the theme is the **app's** rather than
@@ -309,12 +351,12 @@ import { Dialog } from "@y-core/forge/ui/core";
 
 ---
 
-## Tier C — the authoring form
+## 3. Tier C — the authoring form
 
 These change how a stylesheet is written rather than what it renders. Their overrides are almost
 always about specificity or containment, so read the consequence rather than the syntax.
 
-### Cascade and scope
+### 3a. Cascade and scope
 
 Default: order a stylesheet's cascade in named `@layer` blocks, as `forge-ui.css` does with its
 `components` and `utilities` layers, rather than relying on source order — unless the sheet's rules
@@ -326,9 +368,9 @@ inverts the order it had, because everything left outside now wins.
 Default: author plain CSS and use native nesting rather than `.scss` or `.sass` — unless the file
 genuinely needs what the preprocessor has and CSS does not, such as a loop or a mixin generating
 rules. <!-- rule:forge-ui-platform-nesting -->
-Nesting alone is no longer a reason to compile anything. One difference survives the port and is
-worth knowing before it bites: native nesting resolves a bare type selector differently from the
-preprocessor, which needed no `&` in front of an element name.
+Nesting alone is not a reason to compile anything. One difference is worth knowing before it bites:
+native nesting resolves a bare type selector differently from the preprocessor, which needs no `&`
+in front of an element name.
 
 Default: bound a family of five or more selectors sharing a class prefix with `@scope` rather than
 carrying the prefix on every one — unless the family's members are not all inside one subtree, since
@@ -341,7 +383,7 @@ the list's own specificity is what a later rule depends on, since `:is()` takes 
 its most specific argument and `:where()` takes none, and neither equals the
 list's. <!-- rule:forge-ui-platform-selector-list -->
 
-### Sizing and containment
+### 3b. Container queries and subgrid
 
 Default: size a component against its container with `@container`, as `Field`'s
 `@container/field-group` does, rather than against the viewport with a `(min-width:)` or
@@ -361,6 +403,8 @@ afterwards. <!-- rule:forge-ui-platform-subgrid -->
 that restates those tracks has quietly promised to be edited twice. Subgrid also makes the child
 stretch to the parent's tracks, where an independently sized one did not.
 
+### 3c. Height interpolation and `display: contents`
+
 Default: transition to an `auto` height under `interpolate-size: allow-keywords` — declared once at
 `:root`, as `forge-ui.css` declares it — rather than standing a fixed `max-height` in for the height
 you actually wanted — unless the collapsed box has a real maximum of its own that is not the
@@ -378,7 +422,7 @@ on. <!-- rule:forge-ui-platform-display-contents -->
 Check the accessibility role too: the box took its role with it until recently, and a wrapper that
 was carrying one is not a candidate.
 
-### Controls and type
+### 3d. Controls
 
 Default: tint a native checkbox or radio with `accent-color` rather than `appearance-none` and a
 hand-drawn box — unless the mark itself has to be redrawn, which is what `CheckboxGroup` and
@@ -397,6 +441,8 @@ capture. <!-- rule:forge-ui-platform-view-transition -->
 A fragment swap is a different thing and belongs to [`11-htmx.md`](./11-htmx.md); this is the
 document-level case. The capture freezes the page, so work started in the callback delays the frame
 the reader is waiting on — and the whole moment is gated by `forge-ui-reduced-motion`.
+
+### 3e. Type
 
 Default: give a heading at `text-2xl` or larger the `text-balance` utility — `Card.Title`,
 `Dialog.Title` and `Alert.Title` are where this lands — unless the heading is a single short line
@@ -417,7 +463,7 @@ This is the unadopted case of `forge-ui-platform-field-sizing`, which is the scr
 override is the same, and so is the caution — once the control sizes to content, `rows` stops being
 the height and only a `max-h-*` step bounds it.
 
-### The one place the modern answer is refused
+### 3f. The one place the modern answer is refused
 
 Default: derive a suffixed shade — `-hover`, `-active`, `-subtle`, `-strong` and the rest — from the
 token it shades with `color-mix()`, rather than declaring a second literal beside the first, unless
@@ -426,10 +472,10 @@ where a mix carrying alpha composites against whatever is behind it and the valu
 the value that paints. <!-- rule:forge-ui-platform-color-mix -->
 
 **Ring, border and outline tokens are excluded outright**, and the exclusion is a finding rather than
-a preference. An earlier revision expressed the light `--ring` as a 50%-alpha `color-mix()`; because
-a mix with `transparent` composites against the backdrop, the ring measured _below the very border it
-was replacing_ and under the 3:1 non-text floor WCAG 1.4.11 sets for a focus indicator.
-[`09-interaction.md`](./09-interaction.md)'s `forge-ui-interaction-ring-token` records the outcome:
+a preference. A mix with `transparent` composites against the backdrop, so a ring expressed that way
+measures against whatever is behind it rather than against the surface, and lands under the 3:1
+non-text floor WCAG 1.4.11 sets for a focus indicator.
+[`09-interaction.md`](./09-interaction.md)'s `forge-ui-interaction-ring-token` states the rule:
 `--ring` is a solid step in both modes, one beyond `--input`, resolving through `--gray-11`. A focus
 indicator cannot be expressed as a tint.
 
@@ -456,7 +502,7 @@ the ramp rather than faking the step in between.
 
 ---
 
-## Sources
+## 4. Sources
 
 The catalogue this file rests on — which hand-written patterns are worth naming at all, and which
 platform feature replaces each one — is curated by **CSS Radar** (`cssradar.com`) and by

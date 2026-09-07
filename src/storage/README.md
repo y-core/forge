@@ -1,3 +1,8 @@
+---
+title: Cloudflare Storage Clients
+description: "Typed, codec-aware, injection-safe clients for D1, Workers KV and R2, each returning a Result and resolving its binding the same way."
+---
+
 # `@y-core/forge/storage`
 
 Typed, codec-aware clients for the three Cloudflare Workers storage services: **D1** (SQL database),
@@ -133,8 +138,7 @@ import { sql, uuidv7 } from "@y-core/forge/storage/db";
 await db.execute(sql`INSERT INTO orders (id, customer_id) VALUES (${uuidv7()}, ${customerId})`);
 ```
 
-Store it in a `TEXT` column. Consecutive IDs share a leading prefix, so inserts append to the right
-edge of the primary-key B-tree and `ORDER BY id` doubles as creation order — keyset pagination needs
+Store it in a `TEXT` column, and `ORDER BY id` doubles as creation order — keyset pagination needs
 no separate timestamp index:
 
 ```sql
@@ -143,7 +147,9 @@ CREATE TABLE orders (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL);
 SELECT * FROM orders WHERE id > ?1 ORDER BY id LIMIT 50;
 ```
 
-**Never use a UUIDv7 as a secret.** It discloses its creation time and mint rate by construction.
+What that ordering buys against the B-tree, the monotonic counter it depends on under the Workers
+frozen clock, and the rule that a UUIDv7 is **never** a secret are
+[`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §1e's.
 
 ##### Storing the bytes instead — `uuidv7Bytes()`
 
@@ -168,7 +174,7 @@ if (row.ok && row.data) console.log(uuidFromBytes(row.data.id)); // "0192f8a1-b2
 await db.queryOne(sql`SELECT * FROM events WHERE id = ${uuidToBytes(id)}`);
 ```
 
-The cost of the `BLOB` form is legibility: byte arrays in every `wrangler d1 execute` result,
+Concretely, the legibility §1e prices means byte arrays in every `wrangler d1 execute` result,
 dashboard query, log line and error message; `x'0192…'` literals in hand-written SQL; no `LIKE` or
 prefix matching on the id; and a `json_object('id', id)` that no longer produces anything sendable
 to a client.
@@ -457,7 +463,7 @@ Retrieves an object and returns a ready-to-return `Response`. It always resolves
 
 It sets `Content-Type`, `Content-Encoding`, `Content-Language`, `ETag`, `Accept-Ranges`, `Content-Length`, `Cache-Control` and `X-Content-Type-Options: nosniff`. With no `contentDisposition` option it falls back to the object's stored `Content-Disposition`, dropping one that carries a non-ASCII byte rather than throwing from `Headers.set`.
 
-A satisfiable ranged read is **one round trip** — no `head` is spent sizing the range in advance. A backend that cannot satisfy a range throws `UnsatisfiableRangeError`, which `serveObject` catches (and only that type) to answer `416` with the size from a `head`. A first-byte-pos beyond `Number.MAX_SAFE_INTEGER` is a `416` with no backend call at all; an oversized last-byte-pos or suffix clamps to the whole object.
+A satisfiable ranged read is **one round trip**, and a backend that cannot satisfy a range signals it by throwing `UnsatisfiableRangeError`. The round-trip guarantee, the bounds a `Range` is held to before it reaches the backend, and why `nosniff` is set unconditionally are [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §3b's.
 
 ```ts
 import { serveObject, r2Backend } from "@y-core/forge/storage/r2";
@@ -487,11 +493,10 @@ const store = createObjectStore(r2Backend(c.env.ASSETS_BUCKET), { prefix: "uploa
 ```
 
 > **Security — uploads whose key a caller chooses.** `put` infers the content type from the key's
-> extension, so a caller who names their upload `x.html` has it stored as `text/html` and served
-> back from your own origin — a stored XSS against every page that shares it. `serveObject` sets
-> `X-Content-Type-Options: nosniff`, which bounds this but does not remove it. Serve untrusted
-> uploads from a **separate origin**, or force `contentDisposition: "attachment"`, or pass an
-> explicit `contentType` on `put` rather than letting the key decide.
+> extension, so a caller who names their upload `x.html` has it stored as `text/html`. What that
+> risks and the three ways out are [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §3b's;
+> the third, unnamed there, is to pass an explicit `contentType` on `put` rather than letting the
+> key decide.
 
 #### Content-type helpers
 

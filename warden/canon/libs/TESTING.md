@@ -38,7 +38,7 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §5b Negative Case Structure: assert status and body
 - §5c No Mocking of Security Primitives: a testability signal, not a mocking one
 - §6 The Verification Gate: what must pass before a task is complete
-- §6a One Command, Two Modes: the gate and the release gate
+- §6a One Command, Three Modes: the inner loop, the gate and the release gate
 - §6b What Each Tool Catches: the failure classes
 - §6c The Prerequisite Line: what separates a fast run from a full one
 - §6d A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
@@ -336,26 +336,36 @@ that passes when the guard is deleted.
 
 ## 6. The Verification Gate
 
-### 6a. One Command, Two Modes
+### 6a. One Command, Three Modes
 
-**There is one gate command with a fast mode and a full mode — not two commands.** Two verbs
-sharing every flag and every line of behaviour, differing only in a membership filter, is a mode
-by definition.
+**There is one gate command with three modes — fast, standard and full — not three commands.**
+Verbs sharing every flag and every line of behaviour, differing only in a membership filter, are
+modes by definition. **`standard` is what a bare invocation runs**, and it is what a task closes
+on; `fast` is the inner loop and `full` is the release gate.
 
 **A config file owns the step list** — every step, how it runs, and whether it is full-only.
 Read it there rather than trusting any prose copy. A step is one of two things: an external
 command, or a check the runner calls in-process.
 
-**Every step must pass with zero errors before a task is declared complete.** A partial pass —
-"types pass, lint has one warning" — is a failure, and skipping a step is not permitted.
+**Every step the run actually executed must pass with zero errors before a task is declared
+complete.** A partial pass — "types pass, lint has one warning" — is a failure.
+
+**A step may declare a prerequisite, and what an absent one means is the mode's answer rather than
+the step's.** The runner probes once per step. Below the `full` tier the step is **skipped**, named
+as skipped with the hint that would install its dependency; in a **`full` run it fails** with that
+same hint, because `full` is the release gate a publish blocks on and a release may not be assured
+by a step nobody ran. **A run in which every selected step skipped is red** — for the reason a
+zero-step selection is refused (§6d): it proves nothing.
 
 The runner reports each step as it finishes, stops at the first failure, and names it. **That
 name is the verdict** — read off the summary line, never inferred from raw tool output. The mode
-is part of the verdict, because the two modes are different assurances.
+is part of the verdict, because the three modes are different assurances, and **a skipped step is
+part of it too** — a green that skipped a step is not the green that ran it.
 
 | Flag | Effect |
 | --- | --- |
-| `--full` | Also run the full-only steps — the ones that may require a machine prerequisite |
+| `--mode <fast\|standard\|full>` | Select the tier; omitted, the run is `standard` |
+| `--full` | Sugar for `--mode full`; passing both is refused rather than given a precedence |
 | `--only <a,b>` | Run only those steps; an unknown label is refused, with the known ones listed |
 | `--list` | Print the resolved selection and exit, running nothing |
 | `--fix` | Run each selected step's fixer, then re-run to confirm |
@@ -384,14 +394,16 @@ nothing to fetch, no binary beyond the declared dev dependencies. That is what m
 the gate anyone may run at any time, and **why cost is never grounds for moving a step out of
 it**.
 
-The full run is the release gate and **is** permitted a prerequisite. A step needing one is
-full-only; a step needing nothing carries no flag and runs in both. **The runner refuses a step
-table that breaks this**, before the mode is applied — so the rule holds for every project that
-consumes the runner, and no repository writes a test of its own to assert it.
+The full run is the release gate and **is** permitted a prerequisite. A step whose prerequisite is
+never worth waiting for is full-only; a step needing nothing carries no marker and runs in every
+mode. Between them sits the step that declares a `requires` probe — it runs wherever its dependency
+happens to be installed, and §6a's mode-decided verdict is what keeps that from weakening the
+release gate.
 
-The mode enum is closed and the full-only marker is a **boolean, not a list of modes**. There is
-consequently no way to express a step the fast run has and the full run does not, so "full is a
-superset of fast" is structural rather than something a test has to catch after the fact.
+The mode enum is closed and ordered, and a step names **the lowest mode it runs in — a rank, not a
+set of modes**. There is consequently no way to express a step a lower mode has and a higher one
+does not, so `fast ⊆ standard ⊆ full` is structural rather than something a test has to catch after
+the fact.
 
 ### 6d. A Scoped Run Is Not a Gate Run
 

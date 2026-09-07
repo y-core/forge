@@ -1,3 +1,8 @@
+---
+title: HTTP Responses and Safe HTML
+description: "Response builders for pages, fragments and redirects; typed header-value builders; and a safe-HTML toolkit that escapes by default."
+---
+
 # `@y-core/forge/http`
 
 HTTP response construction and HTML output helpers for server-rendered apps on
@@ -351,4 +356,19 @@ joinPath("showcase", "ui", "preview"); // "showcase/ui/preview" (no leading slas
   `"#"`. Apply `safeUrl` first, then `escapeHtml` the result.
 - **`successAttr` is validated, not escaped.** `renderSuccess` rejects an attribute name that is not a
   valid HTML identifier (`^[A-Za-z_][A-Za-z0-9_-]*$`) by throwing. Keep `successAttr` developer-supplied
-  configuration — never derive it from request input.
+  configuration — never derive it from request input. Why it alone is interpolated verbatim while
+  every option _class_ value is escaped is [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §2d's.
+
+---
+
+## See also
+
+- [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) — the fragment renderers' contract and where the
+  status goes (§2), the fragment options and their escaping (§2d), and the `htmlResponse` / `html` /
+  `escapeHtml` render paths (§3).
+- [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) — automatic `safeUrl` sanitization at
+  JSX render time, and why no `hx-*` attribute is covered by it (§2d).
+- [`NAMESPACES.md`](../../docs/NAMESPACES.md) — the ruling that every HTTP output concern lands here
+  rather than reaching for `@remix-run/headers` or `@remix-run/html-template` directly (§5d).
+- [`@y-core/forge/session`](../session/) — `createCookie`, preferred over the raw `SetCookie` builder
+  for application cookies.

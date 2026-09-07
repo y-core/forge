@@ -28,6 +28,7 @@ description: "Structural principles: the dependency facade, the runtime-only no-
 - §4b Breaking the Facade: the sanctioned way to add an export
 - §5 Demand Composition in Practice: assembly at the consumer
 - §6 Cloudflare Workers Runtime Model: the module-scope constraints
+- §7 Pre-1.0 API Evolution: no shim, no compatibility path, and how a breaking change ships instead
 
 ---
 
@@ -157,3 +158,26 @@ catalogued in [`NAMESPACES.md`](./NAMESPACES.md) §3a.
 See [`LIBRARY_ARCHITECTURE.md`](../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §6 for the isolate model, the
 module-scope prohibitions, and the rule that a `waitUntil` promise must cover every piece of work
 its function started. Runtime background and worked examples are in `src/app/README.md`.
+
+---
+
+## 7. Pre-1.0 API Evolution
+
+**Before v1.0.0, forge ships no deprecation shim and no backward-compatible path.** A renamed export
+is renamed; a removed one is removed; a changed signature changes. There is no alias left behind, no
+`@deprecated` re-export, and no dual code path that accepts both the old shape and the new one.
+
+**A published shim is unrecoverable.** Once a consumer depends on it, removing it is itself a
+breaking change — which is precisely what a pre-1.0 version number exists to avoid. The shim
+therefore does not defer the break; it doubles it, and the second one lands after the version number
+has stopped warning anybody.
+
+**What ships instead is the signal.** A commit altering or removing a published export carries the
+`minor:` subject prefix, so the version number moves and the surface guard is answered rather than
+silenced ([`BUILD_TOOLING.md`](./BUILD_TOOLING.md) §2j). Consumers pin codeload tarballs at a tag, so
+nobody is upgraded without choosing to; the changelog entry written in the same commit is what tells
+them what changed.
+
+**This expires at 1.0.0, and not before.** After that the same rule reads differently — a breaking
+change becomes a `major:` and the question of a migration path is open on its own merits. Until
+then, the absence of shims is what keeps the surface small enough to reach 1.0 at all.

@@ -89,7 +89,7 @@ describe("chunkDocument()", () => {
   });
 
   it("gives every chunk the id a citation already spells", () => {
-    expect(chunks.map((chunk) => chunk.id)).toEqual(["canon/libs:CODE_RULES.md#1", "canon/libs:CODE_RULES.md#1a", "canon/libs:CODE_RULES.md#2"]);
+    expect(chunks.map((chunk) => chunk.id)).toEqual(["canon:CODE_RULES.md#1", "canon:CODE_RULES.md#1a", "canon:CODE_RULES.md#2"]);
   });
 
   it("chunks at the leaf: a parent keeps its lead paragraph and nothing of its children", () => {
@@ -115,12 +115,66 @@ describe("chunkDocument()", () => {
   });
 });
 
+describe("chunkDocument() — a document numbering two sections the same", () => {
+  const source = ["## 1. One", "", "First.", "", "## 1. One Again", "", "Second.", ""].join("\n");
+
+  it("suffixes the second rather than colliding, so a build reports it instead of throwing", () => {
+    expect(chunkDocument(DOC, source).map((chunk) => chunk.section)).toEqual(["1", "1-2"]);
+  });
+});
+
+describe("chunkDocument() — a fence-only section that carries a gloss", () => {
+  const source = ["## 0. Quick Reference", "", "- §1 Usage: how to call it", "", "## 1. Usage", "", "```ts", "run();", "```", ""].join("\n");
+
+  it("is searchable on the columns that outrank the body, not discarded with the bodyless", () => {
+    const [chunk] = chunkDocument(DOC, source);
+
+    expect(chunk?.searchBody).toBe("");
+    expect(chunk?.gloss).toBe("Usage: how to call it");
+    expect(chunk?.searchable).toBe(true);
+  });
+});
+
+describe("chunkDocument() — a heading quoted inside a fence", () => {
+  const readme: SourceDoc = { corpus: "project", path: "src/ui/README.md", file: "/nowhere/README.md", weight: 0.9 };
+  const source = ["# UI", "", "## One", "", "Before.", "", "```md", "## Fake Heading", "```", "", "After.", ""].join("\n");
+
+  it("is a line of an example, not a boundary — the section stays whole", () => {
+    const chunks = chunkDocument(readme, source);
+
+    expect(chunks.map((chunk) => chunk.section)).toEqual(["~one"]);
+    expect(chunks[0]?.body).toContain("Before.");
+    expect(chunks[0]?.body).toContain("After.");
+  });
+});
+
 describe("chunkDocument() — a document with no section numbers", () => {
-  const readme: SourceDoc = { corpus: "local", path: "src/ui/README.md", file: "/nowhere/README.md", weight: 0.9 };
+  const readme: SourceDoc = { corpus: "project", path: "src/ui/README.md", file: "/nowhere/README.md", weight: 0.9 };
   const source = ["# UI", "", "## Sub-path A", "", "### Exports", "", "One.", "", "## Sub-path B", "", "### Exports", "", "Two.", ""].join("\n");
 
-  it("qualifies a repeated slug by its parent, and drops a parent whose children carry everything", () => {
-    expect(chunkDocument(readme, source).map((chunk) => chunk.section)).toEqual(["~sub-path-a~exports", "~sub-path-b~exports"]);
+  it("qualifies a repeated slug by its parent", () => {
+    expect(chunkDocument(readme, source).map((chunk) => chunk.section)).toEqual([
+      "~sub-path-a",
+      "~sub-path-a~exports",
+      "~sub-path-b",
+      "~sub-path-b~exports",
+    ]);
+  });
+
+  it("keeps a parent whose children carry everything, but out of the search index", () => {
+    const byName = new Map(chunkDocument(readme, source).map((chunk) => [chunk.section, chunk]));
+
+    expect(byName.get("~sub-path-a")?.searchable).toBe(false);
+    expect(byName.get("~sub-path-a")?.body).toBe("");
+    expect(byName.get("~sub-path-a~exports")?.searchable).toBe(true);
+  });
+
+  it("keeps a fence-only section readable but out of the search index", () => {
+    const fenced = ["# UI", "", "## Usage", "", "```ts", "run();", "```", ""].join("\n");
+    const [chunk] = chunkDocument(readme, fenced);
+
+    expect(chunk?.searchable).toBe(false);
+    expect(chunk?.body).toContain("run();");
   });
 
   it("keeps every id unique, which is what makes one an address", () => {

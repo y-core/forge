@@ -1,11 +1,15 @@
+---
+title: Schema Validation
+description: "The whole valibot API under one import, forge's own schema and issue helpers beside it, and the result type the request pipeline carries."
+---
+
 # `@y-core/forge/validation`
 
-Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge cf gen env`) under the `/cli` sub-path.
+Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, and carries the `ValidationResult<T>` result type used across forge's request pipeline.
 
 | Import path | Surface |
 | --- | --- |
 | `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `formDigits`, `safeCheck`, `describeValidationIssue`, `ValidationResult` |
-| `@y-core/forge/tooling/cf` | `forge cf gen env` env-schema generator API (also a `bin`) |
 
 **Everything except `v` is a sibling of it, not a member.** `strictObject` and `v.strictObject` are two different functions, and the one without the prefix is the recommendation for untrusted input.
 
@@ -19,13 +23,10 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 - **`safeCheck`** — a `v.check` whose message its author has vouched for as naming no input. Every `v.check` shares the single issue type `check`, so the message is the only thing that ever tells two of them apart, and an env refusal drops it — a rule with a sentence written for a deployer reads as the bare word `check`. `safeCheck` registers the message and the env formatter surfaces it verbatim; a plain `v.check` is unchanged, which is what keeps a message that interpolates the rejected value out of the throw.
 - **Bounded issue descriptions** — `describeValidationIssue` names the field one issue is about and nothing else, so a refusal a caller reads cannot carry the submitted value, the schema's own rule, or a length the caller chose. **No forge renderer reproduces `issue.message` on any channel** — not a response, and not a log.
 - **`ValidationResult<T>`** — a domain alias of forge's one `Result` primitive, `Result<T, readonly string[]>` (`{ ok: true; data: T } | { ok: false; error: readonly string[] }`), the canonical return type for any service that validates its own input.
-- **`forge cf gen env` env-schema generator** — reads `wrangler.jsonc` bindings and `.dev.vars` keys and emits a committed, schema-first valibot `EnvSchema` (plus an inferred `type Env`), replacing the env half of `wrangler types`.
 
 ---
 
-## `@y-core/forge/validation`
-
-### Usage
+## Usage
 
 Declare the schema with `strictObject` and the form-text primitives, parse untrusted input with `v.safeParse`, and convert the result into a `ValidationResult` at the system boundary.
 
@@ -64,9 +65,9 @@ sendContact(outcome.data);
 
 A route on `defineAction` (from `@y-core/forge/app`) writes none of this: it hands the same `ContactSchema` to the pipeline, which reads the body, parses with `abortEarly`, and renders the refusal through `describeValidationIssue` itself. Write a function like the one above for a **service** that validates its own input, or for a handler outside that pipeline.
 
-### Core Components & APIs
+## Core Components & APIs
 
-#### `v` — valibot namespace
+### `v` — valibot namespace
 
 `v` is the entire valibot namespace re-exported under one name. Use `v.object(...)`, `v.string()`, `v.pipe(...)`, `v.email()`, `v.minLength()`, `v.safeParse(...)`, `v.InferOutput<...>`, and every other valibot primitive, action, and combinator through this prefix. Never import `valibot` directly — `v` guarantees the forge-pinned version and avoids dual-package conflicts.
 
@@ -79,7 +80,7 @@ const result = v.safeParse(schema, { count: 3 }); // { success, output | issues 
 
 `v.safeParse(schema, value, config?)` returns a valibot result (`success`/`output`/`issues`), not a `ValidationResult`. Pass `{ abortEarly: true }` to stop at the first issue (typical for field-level form errors); omit it to collect every issue. An enumerating refusal is one a caller can lengthen by adding fields, so choose it deliberately.
 
-#### `strictObject(entries, message?)`
+### `strictObject(entries, message?)`
 
 ```ts
 function strictObject<TEntries extends v.ObjectEntries>(
@@ -102,7 +103,7 @@ The correction is applied **at construction**, so it survives composition: the p
 
 > A schema written with raw `v.strictObject` keeps the original behaviour. This is opt-in rather than automatic, and the choice is visible at the call site.
 
-#### `formText()` / `formMultilineText()`
+### `formText()` / `formMultilineText()`
 
 ```ts
 function formText(): v.GenericSchema<string, string>; // trim
@@ -124,7 +125,7 @@ const MessageSchema = strictObject({
 
 **The fold runs before the trim, and that ordering is about length, not output.** `trim` treats `\r` and `\n` alike, so the two operations produce the same string in either order. What the order decides is what the rest of the pipe sees: under `v.pipe(formMultilineText(), v.maxLength(500))` each line break counts once, so a 500-character limit means the same thing whether the newline arrived as LF or CRLF instead of silently halving the budget for line breaks.
 
-#### `formDigits()`
+### `formDigits()`
 
 ```ts
 function formDigits(): v.GenericSchema<string, string>; // every non-digit removed
@@ -146,7 +147,7 @@ const PaymentSchema = strictObject({
 
 **`formDigits()` is destructive in a way its siblings are not.** `formText()` and `formMultilineText()` only normalize whitespace, but this one discards significant characters: a leading `+` on an international number, an `x` before an extension, a letter in an alphanumeric code. A field that must preserve any of those stays on `formText()`.
 
-#### `safeCheck(requirement, message)`
+### `safeCheck(requirement, message)`
 
 ```ts
 function safeCheck<TInput>(requirement: (input: TInput) => boolean, message: string): v.CheckAction<TInput, string>;
@@ -171,7 +172,7 @@ const OriginSchema = v.pipe(
 
 **The registration is keyed by the predicate function** — valibot hands the very same reference back on the issue. Passing an already-vouched predicate to a plain `v.check` therefore still resolves to the vouched message, and re-vouching one predicate with a second message replaces the first.
 
-#### `describeValidationIssue(issue)`
+### `describeValidationIssue(issue)`
 
 ```ts
 function describeValidationIssue(issue: v.BaseIssue<unknown>): string;
@@ -188,7 +189,7 @@ return fragmentResponse(renderValidationErrors(messages), 422);
 
 **There is no operator-facing counterpart that reproduces `issue.message`.** `formatValidationIssues` used to be one, and it leaked: valibot interpolates the rejected value into its own message, so a malformed secret was reproduced verbatim in the `Invalid environment: …` throw, and from there into the app logger, the KV log channel and the debug 500 body. Env validation now renders `field: reason` from `issue.type` — `missing` for an absent binding — which is a closed valibot vocabulary carrying neither the value nor the schema's text. The one exception is a message registered through `safeCheck`, which its author has vouched for; nothing else about a `check` issue survives.
 
-#### `ValidationResult<T>`
+### `ValidationResult<T>`
 
 A domain alias of forge's one `Result` primitive describing the outcome of a validation pass — its failure channel carries the per-field message list in the single `error` field:
 
@@ -208,92 +209,7 @@ This type is defined in and re-exported from `@y-core/forge/result` (the single 
 
 ## `@y-core/forge/tooling/cf`
 
-The `forge cf gen env` env-schema generator. It reads a Cloudflare `wrangler.jsonc` config plus a `.dev.vars` secrets file and emits a single committed module containing a runtime valibot `EnvSchema` and a compile-time `type Env = v.InferOutput<typeof EnvSchema>` — a schema-first replacement for the env half of `wrangler types`. The package exposes both the `forge cf gen env` binary and the underlying functions.
-
-### Usage
-
-The generator is one third of the **standard three-part env setup** (see the full guide in [src/config/README.md](../config/README.md)):
-
-1. **`src/app/env.config.ts`** — optional hand-written policy, a `Partial<GenOptions>`: e.g. `optional: new Set(["RATE_LIMITER"])` for bindings absent under `wrangler dev`, `refinements: { SESSION_SECRET: { minLength: 32 } }` for per-var constraints.
-2. **`src/app/env.schema.ts`** — the **generated** module (`EnvSchema` + `type Env`), committed and regenerated whenever `wrangler.jsonc` bindings change.
-3. **`validateBindings(EnvSchema)`** (`@y-core/forge/app`) — registered as middleware so the contract is enforced on the first request.
-
-Run the generator as a `package.json` script:
-
-```json
-{ "scripts": { "gen:env": "forge cf gen env" } }
-```
-
-```bash
-bun run gen:env
-```
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--wrangler` | `wrangler.jsonc` | Path to the wrangler config. |
-| `--dev-vars` | `.dev.vars` | Path to the `.dev.vars` secrets file. |
-| `--out` | `src/app/env.schema.ts` | Output module path. |
-| `--config` | `src/app/env.config.ts` | Host-policy module exporting a `Partial<GenOptions>`; built-in `DEFAULT_OPTIONS` are used when this file is absent. |
-
-The command reads the wrangler bindings and dev-vars keys, collects entries, emits the module, and runs an oxfmt format pass so the generated file passes the lint gate. A typical generated module:
-
-```ts
-/** env.schema.ts — GENERATED — do not edit; run `bun run gen:env`. */
-import { v } from "@y-core/forge/validation";
-
-export const EnvSchema = v.object({
-  MY_KV: v.custom<KVNamespace>((x) => typeof x === "object" && x !== null, "MY_KV must be a KV namespace binding"),
-  ASSETS: v.custom<Fetcher>((x) => typeof x === "object" && x !== null, "ASSETS must be a Fetcher binding"),
-  API_BASE_URL: v.string(),
-});
-
-export type Env = v.InferOutput<typeof EnvSchema>;
-```
-
-Override generation policy with a `--config` module that exports a `Partial<GenOptions>` (as `options` or `default`), merged over `DEFAULT_OPTIONS`:
-
-```ts
-// src/app/env.config.ts
-import type { GenOptions } from "@y-core/forge/tooling/cf";
-
-export const options: Partial<GenOptions> = { optional: new Set(["ANALYTICS"]), refinements: { API_BASE_URL: { minLength: 8 } } };
-```
-
-To call the generator programmatically (e.g. wiring it into a custom CLI via `execute`):
-
-```ts
-import { execute } from "@y-core/forge/tooling/cli";
-import { createGenEnvCommand } from "@y-core/forge/tooling/cf";
-
-await execute(createGenEnvCommand());
-```
-
-### Core Components & APIs
-
-#### Command API (`cf-env-command`)
-
-| Export | Signature | Description |
-| --- | --- | --- |
-| `createGenEnvCommand` | `() => CommandBase` | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge cf gen env` bin entry. |
-| `readWranglerConfig` | `(path: string) => Record<string, unknown>` | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped). |
-| `loadOptions` | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given. |
-
-#### Generator internals (`cf-env-registry` + `cf-env-gen`)
-
-The generator core is split across two files, and **all of it is `@internal`** — none of these
-symbols are barrel-exported. Drive generation through the command API above (`createGenEnvCommand`); there is
-no supported way to assemble a schema from the internal pieces.
-
-- **`cf-env-registry.ts`** holds the **data**: the `REGISTRY` binding-kind table (`configKey → nameField
-→ TS type` rows in wrangler's collection order), the `DEFAULT_OPTIONS` policy default, the baked
-  `HEADER` comment, and the `BindingDef` / `Entry` shapes. All `@internal`.
-- **`cf-env-gen.ts`** holds the **codegen**: the pure `collectBindings`, `collectVars`, `emit`, and
-  `stripJsonc` functions that walk the registry and render the module text. All `@internal`.
-
-#### Types
-
-Only `GenOptions` is public — the host-policy shape you pass via a `--config` module.
-
-| Type | Shape | Description |
-| --- | --- | --- |
-| `GenOptions` | `{ optional: Set<string>; refinements: Record<string, { minLength?: number }>; bindingCheck: string }` | Host policy layered over the generated schema: optional bindings, per-var refinements, and the shared `v.custom` presence check. Merged over the internal `DEFAULT_OPTIONS`. |
+The `forge cf gen env` env-schema generator lives in the Cloudflare tooling namespace, not here —
+it emits a valibot `EnvSchema` this namespace's `v` then types. Its flags, the three-part env
+setup it belongs to, and its programmatic API are documented in
+[`src/tooling/cf/README.md`](../tooling/cf/README.md).

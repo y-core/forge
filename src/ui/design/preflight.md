@@ -1,3 +1,8 @@
+---
+title: Preflight Checklist
+description: "The pass to run against your own output before reporting work done — every item a number or a yes/no with the evidence beside it."
+---
+
 # Preflight
 
 Run this against your own output, before you report the work as done.
@@ -13,9 +18,36 @@ Where a command is given, run the command. Scope it to the files you changed.
 
 ---
 
-## Block 1 — Floor
+## 0. Quick Reference
+
+- §1 Block 1 — Floor: twenty-two non-negotiable items, each a count or a grep with an expected result
+- §1a Design Read, Measure and Contrast: items 1–3
+- §1b Status, Focus, Hit Target and Motion: items 4–7
+- §1c Empty States, Names and Heading Order: items 8–10
+- §1d Tokens, Inline Style, Scale and Viewport Units: items 11–14
+- §1e Cards, Foreground Pairing, Colour Budget and Radius: items 15–18
+- §1f Icons, Invented Data, Affordances and Class Restatement: items 19–22
+- §2 Block 2 — Defaults: rebuttable items; where you depart, name the brief line beside the count
+- §2a Hierarchy and Component Choice: items 23–29
+- §2b Layout, Spacing and Density: items 30–37
+- §2c Type: items 38–43
+- §2d Colour: items 44–47
+- §2e Media: items 48–51
+- §2f Depth: items 52–53
+- §2g Forms: items 54–58
+- §2h States and Swaps: items 59–64
+- §2i Interaction and Announcement: items 65–69
+- §2j Tells: items 70–73
+- §2k Platform: items 74–80, the seven platform rules checked on every surface
+- §3 Reporting: the output is the counts, and what an unanswerable item counts as
+
+---
+
+## 1. Block 1 — Floor
 
 Non-negotiable. Twenty-two items, no overrides, and a failure here outranks everything in Block 2.
+
+### 1a. Design Read, Measure and Contrast
 
 1. **Name** the Design Read you emitted: who the surface is for, the one primary action, what
    failure looks like. Expect three answers, written before the markup. `forge-ui-design-read`
@@ -24,6 +56,9 @@ Non-negotiable. Twenty-two items, no overrides, and a failure here outranks ever
 3. **Name** every foreground/background token pair on the surface and its measured ratio in each
    mode. Expect ≥ 4.5:1 for body text and ≥ 3:1 for large text and UI boundaries, in both.
    `forge-ui-contrast-floor`
+
+### 1b. Status, Focus, Hit Target and Motion
+
 4. **Count** status indications carried by colour with no icon and no word beside them. Expect 0.
    `forge-ui-not-color-alone`
 5. **Grep** `rg 'outline-none'` and, for each hit, name the replacement ring on the same element.
@@ -34,6 +69,9 @@ Non-negotiable. Twenty-two items, no overrides, and a failure here outranks ever
    `motion-reduce:` settled state. Expect the two numbers equal:
    `rg -o 'transition-|animate-' | wc -l` against `rg -o 'motion-safe:' | wc -l`.
    `forge-ui-reduced-motion`
+
+### 1c. Empty States, Names and Heading Order
+
 8. **Count** collection surfaces, then count designed empty states. Expect equal. `forge-ui-empty-state`
 9. **Count** controls with no visible text, then count those carrying an `aria-label` or an
    `sr-only` span. Expect equal. `forge-ui-accessible-name`
@@ -41,6 +79,9 @@ Non-negotiable. Twenty-two items, no overrides, and a failure here outranks ever
     between consecutive entries. The second alternative is not optional — a heading rendered through
     `EmptyState.Title level={1}` has no `<h1>` in the source to grep for.
     `forge-ui-heading-order`
+
+### 1d. Tokens, Inline Style, Scale and Viewport Units
+
 11. **Grep** `rg 'bg-\[#|text-\[#|border-\[#|rgb\(|hsl\(|oklch\('`. Expect 0 hits.
     `forge-ui-color-token-only`
 12. **Grep** `rg 'style='`. Expect 0 hits — forge's SSR renderer drops the attribute silently.
@@ -49,6 +90,9 @@ Non-negotiable. Twenty-two items, no overrides, and a failure here outranks ever
     `forge-ui-spacing-scale-only`
 14. **Grep** `rg 'h-screen|w-screen'`. Expect 0 hits; `min-h-dvh` is the replacement — a Floor rule
     that carries no id, because two class names are a restriction list rather than a rule.
+
+### 1e. Cards, Foreground Pairing, Colour Budget and Radius
+
 15. **Count** `Card` elements that have a `Card` ancestor. Expect 0. `forge-ui-no-nested-card`
 16. **Count** background token utilities, then count paired foregrounds on the same element or its
     parent. Expect equal, and expect `rg 'text-white/|text-black/'` to return 0 hits.
@@ -56,6 +100,9 @@ Non-negotiable. Twenty-two items, no overrides, and a failure here outranks ever
 17. **Count** distinct text colour utilities per surface. Expect at most 2. `forge-ui-text-color-budget`
 18. **List** every corner-radius utility used: `rg -o 'rounded[a-z-]*'`. Expect every one to be a
     step of the `--radius` family, and no arbitrary value. `forge-ui-one-radius`
+
+### 1f. Icons, Invented Data, Affordances and Class Restatement
+
 19. **Grep** `rg '<svg'` and scan the same files for emoji characters. Expect 0 of each; glyphs come
     from `Icon` or a `createIcon` binding. `forge-ui-real-icons`
 20. **Name** the source of every number, person, company and quote on the surface. Expect a real
@@ -70,11 +117,11 @@ Non-negotiable. Twenty-two items, no overrides, and a failure here outranks ever
 
 ---
 
-## Block 2 — Defaults
+## 2. Block 2 — Defaults
 
 Rebuttable only by a written brief. Where you depart, name the brief line beside the count.
 
-### Hierarchy and component choice
+### 2a. Hierarchy and Component Choice
 
 23. **Count** primary buttons per surface — `primary` is `Button`'s default `tone`, so count both
     the buttons carrying `tone='primary'` and those carrying no `tone` at all:
@@ -95,7 +142,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 29. **Count** `Card`s with no title, no description and no action. Expect 0.
     `forge-ui-catalog-container-card`
 
-### Layout, spacing and density
+### 2b. Layout, Spacing and Density
 
 30. **List** the distinct spacing steps used: `rg -o 'gap-[0-9.]+|p[xytblr]?-[0-9.]+' | sort -u`.
     Expect at most four, none within 25% of another. `forge-ui-layout-step-distance`
@@ -115,7 +162,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 37. **Count** `Card`s rendered once per list row. Expect 0; rows separate with `Separator` inside one
     `Card.Content`. `forge-ui-density-separator-over-card`
 
-### Type
+### 2c. Type
 
 38. **List** the type steps on the surface: `rg -o 'text-(xs|sm|base|lg|xl|[0-9]xl)' | sort -u`.
     Expect three or four, and expect 0 adjacent-step pairs. `forge-ui-type-scale-jump`
@@ -130,7 +177,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 43. **Count** label-shaped elements that are not `Label`, not `FormField.Label`, and do not apply
     `FIELD_LABEL_CLASSES` through `cn`. Expect 0. `forge-ui-type-label-class`
 
-### Colour
+### 2d. Colour
 
 44. **Grep** `rg 'bg-(gray|slate|zinc|stone|neutral|red|blue|emerald|yellow|amber)-[0-9]'` in
     application markup. Expect 0 hits. For a status surface the answer is a `--status-*` token —
@@ -147,7 +194,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 47. **Count** opacity modifiers applied to a colour utility to fake an intermediate shade. Expect 0;
     move one stop along the ramp instead. `forge-ui-color-scale-no-adhoc-tint`
 
-### Media
+### 2e. Media
 
 48. **Count** text elements rendered over a photograph, then count `absolute inset-0` scrims behind
     them. Expect equal — the ratio must be token against token before `forge-ui-contrast-floor` can
@@ -162,14 +209,14 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
     with any larger box carried by an enclosure around the glyph rather than by the glyph itself.
     `forge-ui-media-icon-intended-size`
 
-### Depth
+### 2f. Depth
 
 52. **Grep** `rg 'shadow-(sm|md|lg)'` and, for each hit, name the component it sits on. Expect 0 on a
     component that already renders a shadow. `forge-ui-depth-no-shadow-stack`
 53. **Count** elevation changes along the deepest containment path. Expect at most 1 per step.
     `forge-ui-depth-one-step`
 
-### Forms
+### 2g. Forms
 
 54. **Count** submitted controls that can be rejected, then count those wrapped in `FormField` with
     a `FormField.Label` and a `FormField.Error`. Expect equal. `forge-ui-catalog-field-wrapper`
@@ -182,7 +229,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 58. **Count** control names imported from both `@y-core/forge/ui/core` and
     `@y-core/forge/ui/controls` in one module without an alias. Expect 0. `forge-ui-form-one-barrel`
 
-### States and swaps
+### 2h. States and Swaps
 
 59. **Count** the states you designed for the surface: empty, loading, error, success. Expect 4, or
     a named reason a state cannot occur. `forge-ui-state-four`
@@ -196,7 +243,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 64. **Count** swap targets that contain the control which triggered the request. Expect 0 — that
     swap drops focus to `<body>`. `forge-ui-htmx-restore-focus`
 
-### Interaction and announcement
+### 2i. Interaction and Announcement
 
 65. **Count** live regions on the page. Expect exactly 1, the flash container.
     `forge-ui-a11y-one-live-region`
@@ -208,7 +255,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 69. **Count** animated properties that are not `transform` or `opacity`. Expect 0, less a disclosure
     whose height change is the point. `forge-ui-interaction-no-motion-on-layout`
 
-### Tells
+### 2j. Tells
 
 70. **Grep** `rg 'bg-clip-text'`. Expect 0 hits. `forge-ui-tell-gradient-text`
 71. **Grep** `rg 'backdrop-blur'`. Expect 0 hits on a surface in the page flow.
@@ -218,7 +265,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 73. **Count** headings carrying an eyebrow line above them. Expect 0, or 1 that names a category the
     heading cannot. `forge-ui-tell-eyebrow-kicker`
 
-### Platform
+### 2k. Platform
 
 Seven of the forty rules in [`reference/16-platform.md`](./reference/16-platform.md) — the ones an
 agent writes from muscle memory, and that one grep answers with a number. The rest of that file is
@@ -244,7 +291,7 @@ no brief rebuts them**; 78–80 are Defaults like the rest of this block.
 
 ---
 
-## Reporting
+## 3. Reporting
 
 **The output of this pass is the counts, not a claim of compliance.** Report the number each item
 produced, beside the item's rule id. A report that says the surface passes, without the numbers that

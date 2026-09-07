@@ -1,3 +1,8 @@
+---
+title: Forms
+description: "Labels, help text, validation timing and error placement — what a form owes the person filling it in."
+---
+
 # Forms
 
 Everything here is a **Default** — rebuttable only by an explicit written brief. The Floor rules
@@ -6,7 +11,21 @@ cited below are not.
 A form is where craft is most often skipped, because every part of it already works: an unlabelled
 input still submits. The rules below are about the parts that do not announce their absence.
 
-## Which field primitive
+---
+
+## 0. Quick Reference
+
+- §1 Which field primitive: `FormField`, `Field`, the group primitives and `OtpInput`, and what separates them
+- §2 `Toggle`, `Switch` and `ToggleGroup`: three two-state controls, picked by what the value means
+- §3 Never hand-write the wiring: the id helpers, the `field` descriptor, and when a `scope` is owed
+- §3a Before / after: a dangling IDREF from three hand-written ids, against one derived `name`
+- §4 `ui/core` bases versus `ui/controls` bound variants: which barrel a control comes from, and why never both
+- §5 Error UX: where the message renders, when validation runs, and the invalid triple
+- §6 Form-level composition: honeypot and challenge placement, one primary, and which set to mark
+
+---
+
+## 1. Which field primitive
 
 Three primitives look interchangeable and are not.
 
@@ -43,7 +62,7 @@ focus-advance script.** <!-- rule:forge-ui-form-otp-one-field -->
 field, and the server validates it with `v.pipe(formDigits(), v.length(6))`. Override never — a
 per-cell array assembles its value client-side, which is exactly the value a no-script render loses.
 
-## `Toggle`, `Switch` and `ToggleGroup`
+## 2. `Toggle`, `Switch` and `ToggleGroup`
 
 Three two-state controls. All three submit — what separates them is what the value means.
 
@@ -70,7 +89,7 @@ the form's meaning is `RadioGroup` with its label and error slots. <!-- rule:for
 
 ---
 
-## Never hand-write the wiring
+## 3. Never hand-write the wiring
 
 Forge exports the id derivation as functions precisely so two places cannot disagree about an id. A
 hand-written `for="email"` beside an `id="field-email"` is silent: nothing errors, nothing warns, and
@@ -109,7 +128,7 @@ points at the first control. Pass the same `scope` to the control and to every c
 Override when the page provably renders one such field, which is the common case and why `scope` is
 opt-in.
 
-### Before / after
+### 3a. Before / after
 
 ```tsx
 // Wrong — ids written by hand in three places.
@@ -141,7 +160,7 @@ unconditionally — no `{error && …}` guard, and therefore no branch that can 
 
 ---
 
-## `ui/core` bases versus `ui/controls` bound variants
+## 4. `ui/core` bases versus `ui/controls` bound variants
 
 `@y-core/forge/ui/controls` exports `Input`, `Select`, `Slider`, `Switch`, `Textarea` and
 `ToggleGroup` under the _same names_ as `@y-core/forge/ui/core`, adding a required `bind` prop that
@@ -176,7 +195,7 @@ control is bound is how a bound control loses its label.
 
 ---
 
-## Error UX
+## 5. Error UX
 
 **Default: the message renders inside the field's own `FormField`, adjacent to the control.**
 <!-- rule:forge-ui-form-error-inline -->
@@ -235,7 +254,7 @@ const AppIcon = createIcon("/assets/icons.svg");
 
 ---
 
-## Form-level composition
+## 6. Form-level composition
 
 `Form` renders a `<form>`, wires CSRF from a `csrfToken` prop, and passes htmx attributes through. It
 renders **no** honeypot — that is composed.

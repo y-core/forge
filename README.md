@@ -1,3 +1,8 @@
+---
+title: Forge Library Overview
+description: "What @y-core/forge is, the design principles every namespace is written against, and the catalogue of namespaces a consumer imports."
+---
+
 # `@y-core/forge` — Reusable Component Library
 
 A collection of namespaced TypeScript modules for building server-rendered web applications on **`@remix-run/fetch-router` + Cloudflare Workers**, with HTMX for progressive enhancement and Tailwind CSS for styling. Each namespace is independently useful and carries no dependency on any other namespace in this library.

@@ -14,7 +14,7 @@ function fixture(files: Record<string, string>, prefix: string): { root: string;
     const full = join(root, path);
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, source, "utf-8");
-    return { corpus: "local" as const, path, file: full, weight: 1.2 };
+    return { corpus: "project" as const, path, file: full, weight: 1.2 };
   });
   return { root, sources };
 }

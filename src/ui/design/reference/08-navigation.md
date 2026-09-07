@@ -1,3 +1,8 @@
+---
+title: Navigation
+description: "How a user knows where they are and how they get elsewhere — the navigation patterns forge's primitives support."
+---
+
 # Navigation
 
 Everything here is a **Default** — rebuttable only by an explicit written brief. The Floor rules
@@ -18,7 +23,29 @@ in `06-forms.md` applies to the pair — `forge-ui-form-one-barrel`.
 
 ---
 
-## `Navbar`
+## 0. Quick Reference
+
+- §1 `Navbar`: the destinations bar, built from a `NavDefinition` rather than from children
+- §1a The definition and its four item shapes: `NavLink`, `NavMenu`, `NavSlot`, `NavGroup`, and the roles they carry
+- §1b One bar, built from a definition: one per application, two or three sections, destinations only
+- §1c Menus, groups and megamenus: when a dropdown hides the list the reader came to survey
+- §1d Placement and the collapsible rail: what `collapsible="always"` resolves `placement` to, and why
+- §1e The rail's box in the layout: width and `shrink-0` on the scope root, and the height chain scrolling needs
+- §1f The collapsed rail's width: 56px, the toggle's edge, and the narrow width as an override over a wide base
+- §1g The collapsed panel below `md`: `collapsedAs="drawer"`, its four dismissals, and the containing-block trap
+- §1h Labelling destinations: name a destination for what the user wants, and carry visible text
+- §1i Indicating the current location: the bar does not know the request, so the app renders the marker
+- §2 `Dock`: three to five equal top-level destinations at phone width, and when it is a `Navbar` instead
+- §3 `Toolbar`: verbs on the object currently open, grouped rather than separated item by item
+- §4 `Pagination`, and when scrolling is not it: an addressable position, and the lists that need one
+- §5 `Tabs`, and when it is a router in disguise: panels already on the page, never a URL
+- §6 Theme: the published constants, the pre-paint script, and where the toggle lives
+
+---
+
+## 1. `Navbar`
+
+### 1a. The definition and its four item shapes
 
 `Navbar` is built from a `NavDefinition`, not from JSX children: `NavDefinition` holds `sections`,
 and each `NavSection` holds `items`, typed `NavSectionItem` — any `NavItem`, plus `NavGroup`.
@@ -49,6 +76,8 @@ The bar is **not** a `role="menubar"`, and must not be given the role. A menubar
 roving tab stop of their own, and forge ships no menubar controller; claiming the role without the
 behaviour announces a keyboard interface that is not there.
 
+### 1b. One bar, built from a definition
+
 **Default: one `Navbar` per application, and it holds destinations only.**
 <!-- rule:forge-ui-nav-one-primary -->
 
@@ -69,6 +98,8 @@ that is genuinely not the primary bar is ordinary markup.
 Sibling sections spread across the bar, so two reads as ends and three as ends-plus-centre. A fourth
 has no spatial meaning left to claim. Override under a brief for a dense application bar with a
 declared zone model.
+
+### 1c. Menus, groups and megamenus
 
 **Default: `NavMenu` nests one level.** <!-- rule:forge-ui-nav-menu-depth -->
 The renderer supports deeper nesting — a submenu opens `side="inline-end"` beside its parent panel —
@@ -98,6 +129,8 @@ is a dropdown wearing a panel. Override never — the counts are the affordance.
 A `NavLink` announces a destination; an account menu and a `ThemeToggle` are not destinations.
 Override never.
 
+### 1d. Placement and the collapsible rail
+
 **Default: leave `placement` unset and let the collapse mode pick it — `"top"` for the ordinary bar.**
 <!-- rule:forge-ui-nav-placement-top -->
 
@@ -119,6 +152,8 @@ start expanded; there is no controller behind that prop, so the state it renders
 user sees. Override with `placement="right"` for a trailing-edge rail, or with an explicit horizontal
 placement for the rare bar that stays collapsed at every width.
 
+### 1e. The rail's box in the layout
+
 **Default: the rail's width and `shrink-0` go on the flex item, which is the `Resumable` scope
 root.** <!-- rule:forge-ui-nav-rail-flex-item -->
 `Resumable` takes a `class` for exactly this: the scope root is the box the parent flex row lays out,
@@ -139,6 +174,8 @@ links above the `<details>` — the scope root and the `<nav>` landmark both tak
 flex item in a `flex` row is one. Override for a short rail on a short page, where scrolling away
 with the content costs the reader nothing.
 
+### 1f. The collapsed rail's width
+
 **Default: collapsed, the rail is one button wide — `w-14`, 56px — with the toggle at the leading
 edge; open, it is 16rem with the toggle trailing.**
 <!-- rule:forge-ui-nav-rail-collapsed-width -->
@@ -149,7 +186,7 @@ and above** the rail stays in the flow at both widths — no floating, no absolu
 nothing escaping its column on overflow — so the content beside it reflows rather than being
 covered. The documented override is below `md`, where `collapsedAs="drawer"` takes the panel out of
 the flow deliberately (`forge-ui-nav-drawer-when`); the flex item then wants `max-md:w-auto`, so an
-open rail does not reserve a column for a panel that is no longer in it. State the narrow width as
+open rail does not reserve a column for a panel that is not in it. State the narrow width as
 the **override over a wide base** (`has-[…]:w-14` on a `w-64` item), never a narrow base widened when
 open: a browser without `:has()` then degrades to the full column rather than pinning a strip that
 clips the open panel. Override under a brief for a collapsed state that shows glyphs with labels,
@@ -179,7 +216,7 @@ import { Resumable } from "@y-core/forge/ui/server";
 </div>;
 ```
 
-### The collapsed panel below `md`
+### 1g. The collapsed panel below `md`
 
 `collapsedAs` decides what the collapsed panel _does_, where `collapsible` decides _when_ it
 collapses. `"inline"`, the default, expands the panel in the document flow, which pushes the page
@@ -224,6 +261,8 @@ The slide itself depends on the closed `<details>`'s content being rendered, whi
 `::details-content` shows the panel without animating it — it still overlays correctly, and it is the
 same dependency the desktop bar already has.
 
+### 1h. Labelling destinations
+
 **Default: name a destination for what the user wants there, not for the system that serves it.**
 <!-- rule:forge-ui-nav-user-labels -->
 
@@ -237,7 +276,7 @@ then needs its own accessible name under `forge-ui-accessible-name` plus a targe
 `forge-ui-hit-target`. Override for a `Toolbar` rail, whose items are icon-only by design and carry
 `label` for exactly that reason.
 
-### Indicating the current location
+### 1i. Indicating the current location
 
 `NavLink` has no current-page flag: the bar is rendered from configuration and does not know the
 request. Render the indicator yourself, through the shape that exists for content the definition
@@ -301,7 +340,7 @@ paired cue is already there and the app adds nothing to get it.
 
 ---
 
-## `Dock`
+## 2. `Dock`
 
 A `Dock` is the phone-width primary navigation: a fixed bottom bar of three to five top-level
 destinations of equal weight, each a glyph over a one-word label. It hides at `md:` and the `Navbar`
@@ -311,7 +350,7 @@ Default: reach for `Dock` only when every destination is a top-level one and the
 a sixth belongs behind the `Navbar`'s menu, and a bar that must also hold a user slot or a search box
 is a bottom-placed `Navbar`. <!-- rule:forge-ui-nav-dock-when -->
 
-## `Toolbar`
+## 3. `Toolbar`
 
 The chrome `Toolbar` renders a rail from a `ToolbarDefinition`: `groups`, each a `ToolbarGroup` of
 `ToolbarItem`s, where an item is a `ToolbarAction`, a `ToolbarPopover`, a `ToolbarSeparator` or a
@@ -336,7 +375,7 @@ every item is a peer tool — a drawing palette.
 
 ---
 
-## `Pagination`, and when scrolling is not it
+## 4. `Pagination`, and when scrolling is not it
 
 A paged list has an addressable position: the reader can bookmark page 4, come back to it, and reach
 the footer. Infinite scroll gives up all three, and it gives them up on exactly the lists — search
@@ -350,7 +389,7 @@ to. <!-- rule:forge-ui-pagination-vs-scroll -->
 addressability argument applies: a slide the reader can link to, and return to, is a slide worth
 paging; a strip with no stable slides is a feed and wants no dots.
 
-## `Tabs`, and when it is a router in disguise
+## 5. `Tabs`, and when it is a router in disguise
 
 `Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden`, so the first render is
 correct with no JavaScript.
@@ -378,7 +417,7 @@ case; this is the one that shows up most.
 
 ---
 
-## Theme
+## 6. Theme
 
 `@y-core/forge/ui/chrome` publishes the theme contract as constants so that no consumer restates it:
 

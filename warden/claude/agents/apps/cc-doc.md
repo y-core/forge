@@ -6,7 +6,7 @@ description: >
   on exports. Understands the numbered-section format and the canon/docs boundary.
 
   Examples of when to invoke:
-  - "Document the new route and register the doc in the Guide Index"
+  - "Document the new route"
   - "Update the config implementation doc to reflect the new binding"
   - "Write the README for the services directory"
   - "Add TSDoc to the newly exported model types"
@@ -45,11 +45,12 @@ Three corollaries you will need constantly:
 1. **Implementation docs** (`docs/`) — follow
    `AGENT_GUIDE.md` exactly. It owns the format: frontmatter fields,
    section numbering, the `## 0. Quick Reference` convention, size thresholds, cross-reference
-   syntax, and the ban on dated or ticketed content. Read it before writing; do not work from
-   memory of another project's conventions.
+   syntax, and the ban on dated or ticketed content. Search it and read the sections that bear
+   on what you are writing (`AGENT_GUIDE.md §1`); do not work from memory of another project's
+   conventions.
 
-2. **`CLAUDE.md`** — every new doc gets a Guide Index row, **in the table matching its
-   directory**. Both tables must agree with their directories in both directions.
+2. **`CLAUDE.md`** — the repository's own preamble. It registers no document: warden indexes
+   `docs/` and serves it, so a new document needs no row anywhere (`AGENT_GUIDE.md` §5c).
 
 3. **READMEs** — developer-facing, per directory that warrants one:
    - **Features** — capabilities as concise bullets
@@ -106,7 +107,7 @@ done.
 5. Draft: frontmatter, the opening blockquote with its **Defers to** list, `## 0. Quick
    Reference` with one line per `##` and `###`, then the body.
 6. Delegate the gate to `cc-tester` where the repository has a docs step.
-7. Register in the `CLAUDE.md` Guide Index, in the matching table, if the doc is new.
+7. Confirm the new document is reachable — `knowledge_search` for the rule it carries returns it.
 
 **For READMEs:** inventory the exported surface, match the established style of the existing
 READMEs, and verify every example against real exports — exact names, signatures, and import
@@ -173,9 +174,16 @@ Full-gate runs go to `cc-tester` regardless of depth.
 
 ## Navigation
 
-Plain `Read`, `Grep`, and `Glob`. Governing docs are read via the **`CLAUDE.md` Guide Index** →
-the doc's `## 0. Quick Reference` → the target section; read a doc in full when the whole doc is
-the subject, as it is during a rewrite.
+**Before writing a section, search for the document that owns the fact.** `knowledge_search`
+in plain words, then `knowledge_read` on the chunk id — that is also how you find whether the
+rule you are about to write already has a home, and `knowledge_outline` lists a long document's
+sections without reading it (`AGENT_GUIDE.md §1`). Search `canon` and `local` both: a rule
+already carried by the canon must not be restated in `docs/`, and an empty result is an
+answer — nothing owns it yet. Cite the chunk id you deferred to.
+
+Where no warden MCP is configured, the same index is `warden search` then
+`warden outline <path>` → the target section. Read a doc in full when the whole doc is the
+subject, as it is during a rewrite. `Read`, `Grep` and `Glob` remain the tools for source.
 
 The TypeScript LSP plugin is available; use it to confirm a symbol's real name and signature
 before documenting it.

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { check, checkAgents, checkTree } from "./check";
+import { check, checkAgents, checkBoundary, checkTree } from "./check";
 
 function tree(files: Record<string, string>, prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -25,7 +25,7 @@ describe("checkTree()", () => {
 
   it("names a missing, a modified and an extra file", () => {
     const from = tree({ "cc-dev.md": "dev", "cc-doc.md": "doc" }, "warden-check-drift-from-");
-    const repo = tree({ ".claude/agents/cc-dev.md": "edited in place", ".claude/agents/cc-own.md": "local" }, "warden-check-drift-repo-");
+    const repo = tree({ ".claude/agents/cc-dev.md": "edited in place", ".claude/agents/cc-own.md": "project" }, "warden-check-drift-repo-");
 
     expect(checkTree(repo, { tree: ".claude/agents", from })).toEqual([
       { code: "modified", detail: ".claude/agents/cc-dev.md" },
@@ -61,11 +61,39 @@ describe("checkAgents()", () => {
   });
 });
 
+describe("checkBoundary()", () => {
+  it("reports nothing when the canon cites a local document by name in prose", () => {
+    const canon = tree({ "shared/AGENT_GUIDE.md": "See `docs/TESTING.md` §3a for the local ruling.\n" }, "warden-boundary-clean-");
+
+    expect(checkBoundary(canon)).toEqual([]);
+  });
+
+  it("names every canon link whose target reaches into docs/, file and href both", () => {
+    const canon = tree(
+      { "shared/AGENT_GUIDE.md": "See [`TESTING.md`](../docs/TESTING.md) §3a.\n", "libs/CODE_RULES.md": "Clean.\n" },
+      "warden-boundary-drift-",
+    );
+
+    expect(checkBoundary(canon)).toEqual([
+      { code: "boundary", detail: "shared/AGENT_GUIDE.md links `../docs/TESTING.md` — governance never cites a repository's own docs/" },
+    ]);
+  });
+});
+
 describe("check()", () => {
-  it("runs every tree check and the agent reconciliation together", () => {
+  it("runs every tree check, the agent reconciliation and the boundary scan together", () => {
     const from = tree({ "cc-dev.md": "dev" }, "warden-check-all-from-");
     const repo = tree({ "CLAUDE.md": "delegate to cc-dev", ".claude/agents/cc-dev.md": "dev" }, "warden-check-all-repo-");
+    const canon = tree({ "shared/AGENT_GUIDE.md": "Clean.\n" }, "warden-check-all-canon-");
 
-    expect(check(repo, [{ tree: ".claude/agents", from }])).toEqual([]);
+    expect(check(repo, [{ tree: ".claude/agents", from }], canon)).toEqual([]);
+  });
+
+  it("surfaces a boundary violation through the one report a sync --check prints", () => {
+    const from = tree({ "cc-dev.md": "dev" }, "warden-check-b-from-");
+    const repo = tree({ "CLAUDE.md": "delegate to cc-dev", ".claude/agents/cc-dev.md": "dev" }, "warden-check-b-repo-");
+    const canon = tree({ "shared/AGENT_GUIDE.md": "See [x](./docs/X.md).\n" }, "warden-check-b-canon-");
+
+    expect(check(repo, [{ tree: ".claude/agents", from }], canon).map((problem) => problem.code)).toEqual(["boundary"]);
   });
 });

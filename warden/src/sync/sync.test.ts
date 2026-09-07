@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -48,6 +48,12 @@ describe("identical()", () => {
     expect(identical(join(root, "a.md"), join(root, "b.md"))).toBe(false);
   });
 
+  it("reports two files of the same length differing in one byte as different", () => {
+    const root = tree({ "a.md": "one", "b.md": "one".replace("e", "a") }, "warden-onebyte-");
+
+    expect(identical(join(root, "a.md"), join(root, "b.md"))).toBe(false);
+  });
+
   it("reports files of different lengths as different", () => {
     const root = tree({ "a.md": "one", "b.md": "one and more" }, "warden-length-");
 
@@ -75,6 +81,17 @@ describe("sync()", () => {
     expect(sync(repo, [{ tree: ".claude/agents", from }])).toEqual([".claude/agents"]);
     expect(readFileSync(join(repo, ".claude/agents/kept.md"), "utf-8")).toBe("new");
     expect(existsSync(join(repo, ".claude/agents/dropped.md"))).toBe(false);
+  });
+
+  it("leaves the destination intact when the copy fails partway", () => {
+    const from = tree({ "kept.md": "new" }, "warden-sync-fail-from-");
+    const repo = tree({ ".claude/agents/kept.md": "old" }, "warden-sync-fail-repo-");
+    // A dangling symlink is read as a file and copied as one, so the copy throws partway — which is
+    // exactly where the destination used to be already deleted with nothing to restore from.
+    symlinkSync(join(from, "absent.md"), join(from, "broken.md"));
+
+    expect(() => sync(repo, [{ tree: ".claude/agents", from }])).toThrow();
+    expect(readFileSync(join(repo, ".claude/agents/kept.md"), "utf-8")).toBe("old");
   });
 
   it("skips a tree the installed corpus does not carry, writing nothing", () => {

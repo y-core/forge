@@ -1,10 +1,10 @@
 import { stripFences } from "../checks/docs";
+import { quickReference } from "../checks/docs-parse";
 import type { Chunk, SourceDoc } from "../types";
 import { chunkId, headingSlug } from "./ident";
 
 const HEADING = /^(#{2,3}) (.*)$/;
 const NUMBERED = /^(\d[A-Za-z0-9]*)\. (.+)$/;
-const QUICK_REFERENCE = /^## 0\. /;
 const BOLD = /\*\*([^*]+)\*\*/g;
 const INLINE_LINK = /\[([^\]]*)\]\([^)]*\)/g;
 // `.` is a token character, so `mod.ts` survives — but so would `budget.`, and a reader searching
@@ -26,18 +26,11 @@ export function frontmatter(source: string): { title: string; description: strin
  *
  *  The block is never emitted as a chunk of its own: it names every section, so it matches every
  *  query and would win every search. Redistributing each line into the section it names turns the
- *  corpus's best retrieval signal — already gate-enforced to be complete — into a ranked column. @public */
+ *  corpus's best retrieval signal — gate-enforced to be both complete and in step with the headings
+ *  it summarises — into a ranked column. The parsing is `quickReference`'s, so the line this indexes
+ *  is exactly the line the gate approved. @public */
 export function glossary(lines: readonly string[]): Map<string, string> {
-  const start = lines.findIndex((line) => QUICK_REFERENCE.test(line));
-  if (start === -1) return new Map();
-  const gloss = new Map<string, string>();
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (line.startsWith("## ")) break;
-    const match = line.match(/^\s*[-*]\s*§([0-9][A-Za-z0-9]*)\s+(.*)$/);
-    if (match) gloss.set(match[1] ?? "", (match[2] ?? "").trim());
-  }
-  return gloss;
+  return quickReference(lines);
 }
 
 /** The bolded lead clauses of a block — where a governing document states its rule. @public */
@@ -87,7 +80,10 @@ export function chunkDocument(doc: SourceDoc, source: string): Chunk[] {
   const raw = source.split("\n");
   const stripped = stripFences(source);
   const gloss = glossary(stripped);
-  const found = headings(raw);
+  // Scanned on the stripped source, not `raw`: a `## Heading` inside a code fence is a line of an
+  // example, and taking it as a boundary splits the section it is quoted in. `stripFences` blanks
+  // lines rather than removing them, so `heading.line` still indexes into `raw`.
+  const found = headings(stripped);
 
   const chunks: Chunk[] = [];
   const taken = new Set<string>();
@@ -97,9 +93,13 @@ export function chunkDocument(doc: SourceDoc, source: string): Chunk[] {
   // A `~slug` corpus repeats headings — a README carries one `### Exports` per sub-path — so the
   // slug is qualified by its parent, and a still-colliding one takes a numeric suffix. An id has to
   // be unique before it can be an address.
+  //
+  // A repeated `## N.` is a defect `validate-docs` reports, but only in the citable trees: a README
+  // with two `## 3.` headings reaches here, and an id that is merely unique is a better answer than
+  // a `UNIQUE` violation thrown out of the middle of a build.
   const uniqueSection = (heading: Heading, parentOf: Heading | undefined): string => {
-    if (!heading.section.startsWith("~")) return heading.section;
-    const qualified = heading.level === 3 && parentOf !== undefined ? `${parentOf.section}${heading.section}` : heading.section;
+    const qualified =
+      heading.section.startsWith("~") && heading.level === 3 && parentOf !== undefined ? `${parentOf.section}${heading.section}` : heading.section;
     let candidate = qualified;
     for (let n = 2; taken.has(candidate); n++) candidate = `${qualified}-${n}`;
     taken.add(candidate);
@@ -114,26 +114,41 @@ export function chunkDocument(doc: SourceDoc, source: string): Chunk[] {
     const next = found[index + 1];
     const end = next === undefined ? raw.length : next.line;
     const block = raw.slice(heading.line + 1, end);
-    if (block.join("").trim() === "" && heading.level === 2 && found[index + 1]?.level === 3) {
-      // A parent whose lead paragraph is empty carries nothing its children do not.
-      continue;
-    }
+    const organising = block.join("").trim() === "" && heading.level === 2 && found[index + 1]?.level === 3;
 
     const section = uniqueSection(heading, parent);
     const trail =
       heading.level === 3 && parent !== undefined
         ? `${parent.section}. ${parent.title} › ${heading.section}. ${heading.title}`
         : `${heading.section}. ${heading.title}`;
+    const searchBody = proseOf(stripped.slice(heading.line + 1, end));
+    const glossOf = gloss.get(heading.section) ?? "";
+    const rules = ruleClauses(block);
     chunks.push({
-      id: chunkId(doc.corpus, doc.tree, doc.path, section),
+      id: chunkId(doc.corpus, doc.path, section),
       section,
       title: heading.title,
       headingPath: trail,
-      gloss: gloss.get(heading.section) ?? "",
-      rules: ruleClauses(block),
-      searchBody: proseOf(stripped.slice(heading.line + 1, end)),
+      gloss: glossOf,
+      rules,
+      searchBody,
       body: block.join("\n").trim(),
       ordinal: ordinal++,
+      // Two shapes are emitted but not indexed, because the title is what a reader scans an outline
+      // for and the target of every `§N` citation the corpus writes — dropping them made
+      // `NAMESPACES.md §3` an id that resolved nowhere.
+      //
+      // A `## N.` organising `### Na.` children states nothing itself; its title is already carried
+      // by every child's heading trail, so indexing it adds a competitor and reaches nothing new.
+      // That holds even when the Quick Reference glosses it, which is why `organising` stands
+      // beside the emptiness test rather than being subsumed by it.
+      //
+      // A section that is nothing but a code fence is non-empty raw and empty once stripped, so it
+      // could only match on its own title. The gloss and the rules are what make this a guard
+      // rather than `searchBody !== ""`: `COLUMN_WEIGHTS` ranks both above the body, so a
+      // fence-only section carrying a real Quick Reference line stays reachable by exactly the
+      // columns that matter most.
+      searchable: !organising && (searchBody !== "" || glossOf !== "" || rules !== ""),
     });
   }
 

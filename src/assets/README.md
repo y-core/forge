@@ -1,3 +1,8 @@
+---
+title: Runtime Asset Lookup
+description: "Two pure helpers that resolve a logical asset or sprite name to its content-hashed public URL, against a mapping baked in at build time."
+---
+
 # `@y-core/forge/assets`
 
 Two pure lookup helpers a Worker calls at request time: a logical asset name in, a public,

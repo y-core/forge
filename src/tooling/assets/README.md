@@ -1,3 +1,8 @@
+---
+title: The Asset Build Pipeline
+description: "Turns a typed asset config into hashed, cache-busted static output plus a generated, fully-typed asset module."
+---
+
 # `@y-core/forge/tooling/assets`
 
 The asset pipeline for `@y-core/forge` consumer projects — the namespace that turns a typed
@@ -568,5 +573,5 @@ Source **reads** (`from`, font `url`, remote sprite `source.path`) are intention
   module calls, and the only asset code a Worker may import.
 - [`@y-core/forge/tooling/cli`](../cli/README.md) — the command framework `createAssetsCommands`
   builds on, and `resolveAppRoot`.
-- [`ASSET_PIPELINE.md`](../../../docs/ASSET_PIPELINE.md) §1,
-  §2 and §6 — the config contract, the pipeline's ordered stages, and the generated module.
+- [`ASSET_PIPELINE.md`](../../../docs/ASSET_PIPELINE.md) §1, §2 and §4 — the config contract, the
+  pipeline and its change detection, and the generated module with its ordered stages.

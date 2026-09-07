@@ -5,6 +5,19 @@
  *  that can fail on an expired proxy rule. Each entry is OR-ed in at low weight and never replaces
  *  the reader's own terms, so a precise query is never diluted by one. @public */
 export const ALIASES: ReadonlyMap<string, readonly string[]> = new Map([
+  // Placement. "Where does this go?" is the highest-stakes question asked of this corpus — the
+  // answer decides which namespace code lands in — and it is the one lexical retrieval served
+  // worst, because the sections that answer it are titled after the namespace rather than after
+  // the asking. These reach the growth rules and the classification sections by the words those
+  // sections are filed under.
+  ["put", ["growth", "namespace", "belongs"]],
+  ["belong", ["growth", "namespace", "classification"]],
+  ["belongs", ["growth", "namespace", "classification"]],
+  ["goes", ["growth", "namespace", "belongs"]],
+  ["live", ["growth", "namespace", "belongs"]],
+  ["lives", ["growth", "namespace", "belongs"]],
+  ["home", ["growth", "namespace", "belongs"]],
+  ["new", ["growth", "adding"]],
   ["throw", ["Result", "err", "ok"]],
   ["throws", ["Result", "err", "ok"]],
   ["exception", ["Result", "err", "ok"]],

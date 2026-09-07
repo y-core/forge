@@ -5,19 +5,24 @@ import { dirname, join } from "node:path";
 
 import { openIndex } from "../index/open";
 import type { Knowledge } from "../index/open";
+import { search } from "../search/search";
 import { handle, serve, type Transport } from "./server";
 
 const DOC =
   '---\ntitle: Rules\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\nThe comment budget is a ceiling.\n';
 
-function knowledge(): Knowledge {
+function served(): { index: Knowledge; root: string } {
   const root = mkdtempSync(join(tmpdir(), "warden-mcp-"));
   const canonRoot = join(root, "canon");
   for (const path of [join(root, "docs/A.md"), join(canonRoot, "libs/CODE_RULES.md"), join(canonRoot, "shared/AGENT_GUIDE.md")]) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, DOC, "utf-8");
   }
-  return openIndex(root, "libs", { path: ":memory:", canonRoot, canonVersion: "1.0.0" });
+  return { index: openIndex(root, "libs", { path: ":memory:", canonRoot, canonVersion: "1.0.0" }), root };
+}
+
+function knowledge(): Knowledge {
+  return served().index;
 }
 
 /** An in-memory transport: `lines` are fed in, everything written is captured. */
@@ -116,6 +121,48 @@ describe("serve() — stdout purity", () => {
 
     expect(out).toHaveLength(2);
     expect((JSON.parse(out[1] ?? "{}") as { id: number }).id).toBe(2);
+    index.close();
+  });
+});
+
+describe("handle() freshness", () => {
+  /** The body of the one `content` entry a tool call answers with. */
+  function body(response: ReturnType<typeof handle>): string {
+    const result = (response as { result?: { content?: Array<{ text?: string }> } } | undefined)?.result;
+    return result?.content?.[0]?.text ?? "";
+  }
+
+  it("serves a document edited after the server started, without a restart", () => {
+    const { index, root } = served();
+    const call = { name: "knowledge_search", arguments: { query: "honeypots" } };
+
+    expect(body(handle(index, "tools/call", call, 1))).toContain("No section of this corpus covers");
+
+    writeFileSync(join(root, "docs/A.md"), `${DOC}\nA sentence about honeypots.\n`, "utf-8");
+
+    expect(body(handle(index, "tools/call", call, 2))).toContain("docs/A.md");
+    index.close();
+  });
+
+  it("serves a document added after the server started, through the resource templates too", () => {
+    const { index, root } = served();
+    const uri = "knowledge://project/docs/B.md";
+
+    expect(handle(index, "resources/read", { uri }, 1)).toHaveProperty("error");
+
+    writeFileSync(join(root, "docs/B.md"), DOC.replace("The comment budget is a ceiling.", "Turnstile fails closed."), "utf-8");
+
+    expect(JSON.stringify(handle(index, "resources/read", { uri }, 2))).toContain("Turnstile fails closed.");
+    index.close();
+  });
+
+  it("does not rebuild for a method that only describes the server", () => {
+    const { index, root } = served();
+
+    writeFileSync(join(root, "docs/A.md"), `${DOC}\nA sentence about honeypots.\n`, "utf-8");
+    handle(index, "tools/list", {}, 1);
+
+    expect(search(index.db, "honeypots")).toEqual([]);
     index.close();
   });
 });

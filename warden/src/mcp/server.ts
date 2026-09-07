@@ -10,14 +10,26 @@ import { callTool, TOOLS } from "./tools";
 
 const PROTOCOL_VERSION = "2024-11-05";
 
+/** The methods that answer from the corpus, and so must see it as it is now rather than as it was
+ *  when the server started. The rest — `initialize`, `ping`, the two list methods — describe the
+ *  server itself and cannot go stale. */
+const SERVES_CONTENT = new Set(["tools/call", "resources/read"]);
+
 /** A minimal readable/writable pair, so `serve` can be driven by a test as well as by stdio. @public */
 export interface Transport {
   read(): AsyncIterable<string>;
   write(line: string): void;
 }
 
-/** Answers one request. Exported so a test can drive the protocol without a process. @public */
+/** Answers one request. Exported so a test can drive the protocol without a process.
+ *
+ *  A content-serving method refreshes first. The server holds one index for the life of the session
+ *  while an agent edits the very documents it indexes, so the alternative is answering every
+ *  question from the corpus as it stood at startup — silently, and indistinguishably from a correct
+ *  answer. @public */
 export function handle(knowledge: Knowledge, method: string, params: Record<string, unknown>, id: string | number | null): RpcResponse | undefined {
+  if (SERVES_CONTENT.has(method)) knowledge.refresh();
+
   switch (method) {
     case "initialize":
       return ok(id, {

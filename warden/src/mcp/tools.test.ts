@@ -32,21 +32,34 @@ describe("callTool()", () => {
     const result = callTool(knowledge, "knowledge_search", { query: "comment budget" });
 
     expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toContain("canon/libs:CODE_RULES.md#1");
+    expect(result.content[0]?.text).toContain("canon:CODE_RULES.md#1");
   });
 
-  it("says so plainly when nothing matches", () => {
-    expect(callTool(knowledge, "knowledge_search", { query: "zzzzz" }).content[0]?.text).toContain("No match");
+  it("names an uncovered question as a property of the corpus, not as a failed lookup", () => {
+    const text = callTool(knowledge, "knowledge_search", { query: "zzzzz" }).content[0]?.text ?? "";
+
+    expect(text).toContain("No section of this corpus covers");
+    expect(text).toContain("do not infer a rule from a near miss");
   });
 
   it("refuses an empty query rather than returning the whole corpus", () => {
     expect(callTool(knowledge, "knowledge_search", { query: "   " }).isError).toBe(true);
   });
 
+  it("says which corpus a hit governs, since a repository specialises the canon under the same name", () => {
+    const canon = callTool(knowledge, "knowledge_search", { query: "comment budget", corpus: "canon" }).content[0]?.text ?? "";
+    const local = callTool(knowledge, "knowledge_search", { query: "comment budget", corpus: "project" }).content[0]?.text ?? "";
+
+    expect(canon).toContain("fleet canon");
+    expect(local).toContain("this repository");
+  });
+
+  it("says it on a read too, which is where acting on the wrong one of the pair does the damage", () => {
+    expect(callTool(knowledge, "knowledge_read", { id: "canon:CODE_RULES.md#1" }).content[0]?.text).toContain("fleet canon");
+  });
+
   it("reads one section whole", () => {
-    expect(callTool(knowledge, "knowledge_read", { id: "canon/libs:CODE_RULES.md#1" }).content[0]?.text).toContain(
-      "The comment budget is a ceiling.",
-    );
+    expect(callTool(knowledge, "knowledge_read", { id: "canon:CODE_RULES.md#1" }).content[0]?.text).toContain("The comment budget is a ceiling.");
   });
 
   it("points a bad id back at search rather than failing blankly", () => {
@@ -60,11 +73,11 @@ describe("callTool()", () => {
     const text = callTool(knowledge, "knowledge_outline", { path: "CODE_RULES.md" }).content[0]?.text ?? "";
 
     expect(text).toContain("§1 One");
-    expect(text).toContain("canon/libs:CODE_RULES.md#1");
+    expect(text).toContain("canon:CODE_RULES.md#1");
   });
 
   it("returns the edges a section declares", () => {
-    expect(callTool(knowledge, "knowledge_related", { id: "canon/libs:CODE_RULES.md#1" }).content[0]?.text).toContain("defers");
+    expect(callTool(knowledge, "knowledge_related", { id: "canon:CODE_RULES.md#1" }).content[0]?.text).toContain("defers");
   });
 
   it("names an unknown tool rather than answering it", () => {

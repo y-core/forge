@@ -72,7 +72,7 @@ test fixtures.
 
 **This list names classes, not symbols.** Naming symbols here would make this document a second
 copy of an export map that changes faster than prose does
-([`AGENT_GUIDE.md`](./AGENT_GUIDE.md) §8).
+(`AGENT_GUIDE.md` §8).
 
 ### 1c. What Application Code Is For
 

@@ -1,3 +1,8 @@
+---
+title: The Verification Gate
+description: "The verify command over a declared step table, a pre-built step per check forge ships, and the changelog and semver parsers it reads version state with."
+---
+
 # `@y-core/forge/tooling/gate`
 
 **The verification gate** — the `forge verify` command over a step table you declare in
@@ -23,7 +28,9 @@ import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from
 
 > The barrel rule, what stays unpublished and why, the check layering, and where a project root
 > comes from are owned by
-> [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2.
+> [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2 — as are the three modes and their
+> flags (§2f), and the general law behind them
+> [`TESTING.md`](../../../warden/canon/libs/TESTING.md) §6a.
 
 ---
 
@@ -36,8 +43,8 @@ import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from
 - **A zero-selection refusal** — a run resolving to no steps is refused rather than reported green,
   and a narrowed run brands its summary as scoped.
 - **Dependency probes** (`StepRequirement`) — a step declares a dependency and the predicate that
-  answers whether it is present. The probe fires only when that step is selected, and its absence is
-  answered by the mode: `fast` and `standard` skip the step, `full` fails it.
+  answers whether it is present, and the mode answers its absence
+  ([`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f).
 - **Pure selection** (`selectSteps`) — no disk, no spawning, no clock, no probe, so you can
   unit-test your own table at zero step cost.
 - **Two presets** — `cloudflareWorkerSteps` for this fleet's Worker apps, `forgeChecks` for a
@@ -96,8 +103,9 @@ every step runs in when it is not the working directory. **An absent default pat
 silent empty gate** — and so is a `--config` naming a file that does not exist, so a typo can never
 read as a green run.
 
-**`createGateCommand` stays published** for the case the binary cannot serve: a table assembled at
-run time, or a gate embedded in a larger CLI of your own.
+**`createGateCommand` stays published** for the case the binary cannot serve — the bin-versus-factory
+split, and the one-runner-one-table design it comes from, are
+[`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f's.
 
 ```ts
 import { execute } from "@y-core/forge/tooling/cli";
@@ -399,18 +407,17 @@ Behaviour worth relying on:
 - **The full log outlives the run.** A failing step's untruncated output is written to a temp file
   and its path printed under the excerpt, so a signal outside the `tail` window is recoverable. A
   filesystem refusal is swallowed — the verdict must always be reported.
-- **A dependency is probed only when its step is selected**, and its absence skips the step below the
-  `full` tier while failing it in a full run — the release gate never skips.
-- **A zero-step selection is refused**, and a narrowed run brands its summary as scoped.
-- **A run whose every step was skipped is refused too**, for the same reason: the summary goes red
-  and exit is 1.
+- **A dependency is probed only when its step is selected**, its absence answered by the mode; a
+  zero-step selection is refused, and so is a run whose every step skipped. All three are
+  [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f's, over the law in
+  [`TESTING.md`](../../../warden/canon/libs/TESTING.md) §6a.
+- **A narrowed run brands its summary as scoped**, so a scoped green never reads as a green gate.
 - **A check that throws fails its step**, rather than unwinding the run — a defect in a check still
   owes the gate a verdict line.
 - **Exit is direct, not thrown**, so the summary line is the last thing printed and `prepublishOnly`
   still blocks on a red gate.
-- **The mode is in the verdict.** `✓ verify` and `✓ verify --mode full` are different assurances, so
-  the banner says which ran. It names the mode canonically: `--full` is an input spelling, not an
-  output one.
+- **The mode is in the verdict**, named canonically: `--full` is an input spelling, not an output
+  one.
 
 ### Step table
 
@@ -624,7 +631,9 @@ and `findPublicSymbols`.
 - [`@y-core/forge/tooling/lint`](../lint/README.md) — the oxlint plugin and the rule catalogs
   `validate-design` and `validate-modern-css` read.
 - [`@y-core/forge/tooling/cli`](../cli/README.md) — the command framework and `resolveAppRoot`.
-- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f,
-  §5g, §5h and §5i — the published gate, the fleet preset, root resolution, and the check layering.
+- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f, §2g, §2h and §2i — the published gate,
+  the fleet preset, root resolution, and why checks are functions rather than scripts.
 - [`TESTING.md`](../../../docs/TESTING.md) §6 — the gate's three modes and its
   flags as forge itself runs them.
+- [`TESTING.md`](../../../warden/canon/libs/TESTING.md) §6a — the general law the modes and the
+  dependency skip implement.

@@ -29,16 +29,16 @@ export interface Divergence {
 }
 
 /** Which corpus a document belongs to: the fleet's, or this repository's own. @public */
-export type Corpus = "canon" | "local";
+export type Corpus = "canon" | "project";
 
-/** Which canon tree a document belongs to. Local documents carry none. @public */
+/** Which canon tree a document belongs to. Project documents carry none. @public */
 export type Tree = "shared" | "libs" | "apps";
 
 /** One indexable document, before it is read. @public */
 export interface SourceDoc {
   corpus: Corpus;
   tree?: Tree;
-  /** Repository-relative for `local`, canon-relative for `canon` — the spelling a citation uses. */
+  /** Repository-relative for `project`, canon-relative for `canon` — the spelling a citation uses. */
   path: string;
   /** Absolute path on disk. */
   file: string;
@@ -63,6 +63,9 @@ export interface Chunk {
   /** The section verbatim, for `knowledge_read`. */
   body: string;
   ordinal: number;
+  /** Whether the chunk competes in search. False for a heading that only organises its children:
+   *  it is addressable and appears in an outline, but has no prose of its own to rank. */
+  searchable: boolean;
 }
 
 /** One edge between documents, resolved or not. @public */

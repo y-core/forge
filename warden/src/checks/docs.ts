@@ -4,7 +4,23 @@ import { dirname, relative, resolve } from "node:path";
 import type { ExportsMap } from "../../../src/tooling/gate/checks/exports";
 import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
 import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
-import { findSubpathCitations, uncitedSubpaths } from "./docs-parse";
+import { findSubpathCitations, quickReference, uncitedSubpaths } from "./docs-parse";
+
+/** The canon tree a directory's documents are read from. @public */
+export type DocKind = "libs" | "apps" | "shared";
+
+/** An `extraDirs` entry that declares its readers' tree. @public */
+export interface ExtraDir {
+  /** Directory relative to `root`, or one `.md` document. */
+  dir: string;
+  /** The tree its readers stand in; omitted where they read this repository's own documents. */
+  kind?: DocKind;
+  /** Whether its documents are numbered governing prose, held to the full `decisionsDir` format.
+   *
+   *  Off by default because an `extraDirs` entry is as often unnumbered prose — the agent briefs —
+   *  where every section would report as malformed and every file as missing its Quick Reference. */
+  numbered?: boolean;
+}
 
 /** What the docs check needs to know about the project. @public */
 export interface DocsCheckConfig {
@@ -20,12 +36,22 @@ export interface DocsCheckConfig {
   guideIndexOwner?: string;
   /** The repository front page, held to the strict subpath rules. Defaults to `README.md`. */
   rootReadme?: string;
-  /** Extra directories of markdown held to the prose rules, relative to `root`. */
-  extraDirs?: readonly string[];
+  /** The canon tree this repository's own documents read from — `libs` for a library, `apps` for an
+   *  application. Without it a bare citation into a canon that ships more than one tree is
+   *  ambiguous, because nothing else says which of them this repository is shipped. */
+  kind?: DocKind;
+  /** Extra directories of markdown held to the prose rules, relative to `root`.
+   *
+   *  A bare string is a directory whose documents read as this repository's own. The object form
+   *  declares which canon tree the directory's readers stand in, which is what lets a bare
+   *  `CODE_RULES.md` citation resolve: the same filename exists in more than one tree, and only the
+   *  citing file's position says which one it meant. */
+  extraDirs?: readonly (string | ExtraDir)[];
   /** Directories of numbered documents this repository cites but does not own — the fleet canon.
    *  Their sections resolve a citation; they are not themselves validated or index-reconciled.
    *  Each is keyed by its own directory name, so `libs/TESTING.md` cannot silently displace the
-   *  `TESTING.md` this repository owns — a bare citation naming both is reported ambiguous. */
+   *  `TESTING.md` this repository owns; a bare citation naming both is settled by where the citing
+   *  file sits, and reported ambiguous only where that leaves more than one candidate. */
   citableDirs?: readonly string[];
   /** Source root walked for `README.md` files, relative to `root`. Defaults to `src`. */
   sourceDir?: string;
@@ -39,6 +65,13 @@ export interface DocsCheckConfig {
   sizeFail?: number;
   /** Maximum frontmatter `description` length. Defaults to 200. */
   descriptionMax?: number;
+  /** Directories held to Quick Reference agreement and nothing else.
+   *
+   *  For a tree that is governed prose but not this repository's own — the canon, in the repository
+   *  that houses it. Its Quick Reference lines become the index's glosses exactly as a local
+   *  document's do, so a stale one mis-describes a section to every consumer; the rest of these
+   *  checks are written against a repository's own conventions and are not its to answer. */
+  agreementDirs?: string[];
 }
 
 interface Section {
@@ -56,6 +89,7 @@ const BACKTICKED_PATH = /`((?:src|config|\.claude)\/[^`]*)`/g;
 const UNRESOLVABLE_PATH = /[*<{…\s]/;
 const ROT_PROSE = /\b(previously|no longer|used to|formerly|renamed from|fixed by|has since)\b/i;
 const INLINE_CODE = /`[^`]*`/g;
+const INLINE_LINK = /\[([^\]]*)\]\([^)]*\)/g;
 
 const LIST_MARKER = /^ {0,3}(?:[-*+]|\d+[.)])\s/;
 
@@ -167,12 +201,68 @@ export function validateNoRot(file: string, lines: readonly string[]): Finding[]
   return findings;
 }
 
+/** A title flattened for comparison: links to their text, backticks and case dropped, whitespace
+ *  collapsed, and a trailing parenthetical removed — `Fragment Renderers (`http` namespace)` and
+ *  `Fragment Renderers: …` name the same section and must not read as a disagreement. */
+function flattenTitle(text: string): string {
+  return text
+    .replace(INLINE_LINK, "$1")
+    .replace(/`/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .toLowerCase();
+}
+
+/** The phrase a title leads with, up to the punctuation that starts its qualifier. Both spellings
+ *  are in use — `Expected Errors — User Input` in a heading against `Expected Errors: user input`
+ *  in the Quick Reference — and neither is drift. */
+function leadPhrase(text: string): string {
+  return (flattenTitle(text).split(/\s+—\s+|\s+–\s+|:|;|,/)[0] ?? "").trim();
+}
+
+/** Every Quick Reference line must still name the heading it summarises.
+ *
+ *  **The existing check proves the block is complete, not that it is true.** A renamed heading
+ *  leaves its Quick Reference line behind, and that line is not decoration: the indexer redistributes
+ *  it as the section's gloss, so it becomes the summary every search result displays *and* a ranked
+ *  retrieval column. A stale one therefore mis-describes the section to every reader and skews what
+ *  the section matches on, while every other check stays green.
+ *
+ *  Held to the leading phrase rather than the whole line, and satisfied when either side is a prefix
+ *  of the other. The corpus abbreviates a heading in its Quick Reference on purpose, and a check
+ *  that failed on that would be turned off within a week. What survives is the case this exists
+ *  for: a heading renamed to say something else. */
+function validateQuickReferenceAgreement(file: string, lines: readonly string[], sections: readonly Section[]): Finding[] {
+  const entries = quickReference(lines);
+  const findings: Finding[] = [];
+
+  for (const section of sections) {
+    if (section.number === "0") continue;
+    const entry = entries.get(section.number);
+    if (entry === undefined) continue;
+
+    const heading = leadPhrase(section.title);
+    const summary = leadPhrase(entry);
+    if (heading === "" || summary === "") continue;
+    if (heading.startsWith(summary) || summary.startsWith(heading)) continue;
+
+    findings.push(
+      fail(`Quick Reference §${section.number} says \`${summary}\` where the heading says \`${heading}\` — one of the two is stale`, {
+        file,
+        line: section.line + 1,
+      }),
+    );
+  }
+  return findings;
+}
+
 /** Prose narrating a change — a governing document describes only the present. */
-function warnRotProse(file: string, lines: readonly string[]): Finding[] {
+function validateRotProse(file: string, lines: readonly string[]): Finding[] {
   const findings: Finding[] = [];
   for (let i = 0; i < lines.length; i++) {
     const match = lines[i]?.replace(INLINE_CODE, " ").match(ROT_PROSE);
-    if (match) findings.push(warn(`historical phrasing \`${match[0]}\` — governing docs carry no history`, { file, line: i + 1 }));
+    if (match) findings.push(fail(`historical phrasing \`${match[0]}\` — governing docs carry no history`, { file, line: i + 1 }));
   }
   return findings;
 }
@@ -268,7 +358,14 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
   }
   if (existsSync(resolve(root, guideIndexOwner))) files.push(guideIndexOwner);
   if (existsSync(resolve(root, rootReadme))) files.push(rootReadme);
-  for (const dir of config.extraDirs ?? []) {
+  const extraDirs: readonly ExtraDir[] = (config.extraDirs ?? []).map((entry) => (typeof entry === "string" ? { dir: entry } : entry));
+  for (const { dir } of extraDirs) {
+    // An entry may name one document rather than a directory: a governing file that sits beside a
+    // tree already held under a different kind cannot be reached by widening that tree's root.
+    if (dir.endsWith(".md")) {
+      if (existsSync(resolve(root, dir))) files.push(dir);
+      continue;
+    }
     files.push(...collectFiles(root, dir, (name) => name.endsWith(".md")));
   }
   files.push(...collectFiles(root, sourceDir, (name) => name === "README.md"));
@@ -278,7 +375,18 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     return scannedNothing(`\`${decisionsDir}\`, \`${guideIndexOwner}\`, \`${rootReadme}\` and \`${sourceDir}\` hold no document`, "docs", "read");
 
   const isGoverning = (file: string): boolean =>
-    file.startsWith(`${decisionsDir}/`) || file === guideIndexOwner || (config.extraDirs ?? []).some((dir) => file.startsWith(`${dir}/`));
+    file.startsWith(`${decisionsDir}/`) || file === guideIndexOwner || extraDirs.some(({ dir }) => file === dir || file.startsWith(`${dir}/`));
+
+  // Which tree a citing file's reader stands in — the whole of what a bare cross-tree citation has
+  // to go on. A file under no kind-scoped root reads this repository's own documents.
+  const declaredKindOf = (file: string): DocKind | undefined => extraDirs.find(({ dir }) => file === dir || file.startsWith(`${dir}/`))?.kind;
+
+  // A numbered `extraDirs` tree is governing prose that happens not to live under `decisionsDir` —
+  // the fleet canon in the repository housing it, and the design corpus. It earns the numbering,
+  // Quick Reference and size checks; its sections are not registered as citation targets, because
+  // a `citableDirs` entry already keys those by tree and a second bare key would displace them.
+  const isNumbered = (file: string): boolean =>
+    file.startsWith(`${decisionsDir}/`) || extraDirs.some(({ dir, numbered }) => numbered === true && (file === dir || file.startsWith(`${dir}/`)));
 
   const isStrict = (file: string): boolean => isGoverning(file) || file === rootReadme;
 
@@ -289,17 +397,17 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
   for (const file of files) {
     const source = readFileSync(resolve(root, file), "utf-8");
     sources.set(file, source);
-    if (!file.startsWith(`${decisionsDir}/`)) continue;
+    if (!isNumbered(file)) continue;
     const { sections, findings: sectionFindings } = parseSections(file, stripFences(source));
     findings.push(...sectionFindings);
     parsed.set(file, sections);
-    sectionsByDoc.set(file.slice(decisionsDir.length + 1), new Set(sections.map((section) => section.number)));
+    if (file.startsWith(`${decisionsDir}/`))
+      sectionsByDoc.set(file.slice(decisionsDir.length + 1), new Set(sections.map((section) => section.number)));
   }
 
   // A citable root registers its sections and nothing else. Without one, a citation into a document
   // outside `decisionsDir` resolves to no key and is skipped in silence — which is how a whole tree
   // of rules stops being checked the moment it moves out from under this directory.
-  const ownedDocs = [...sectionsByDoc.keys()];
   const docRoots = [decisionsPath, ...(config.citableDirs ?? []).map((dir) => dirname(resolve(root, dir)))];
   for (const dir of config.citableDirs ?? []) {
     const base = dirname(dir);
@@ -310,23 +418,56 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
   }
 
   // Keys are `subdir/DOC.md` once the tree nests, but a citation may name either form. A same-line
-  // link resolves it exactly; a bare basename resolves only while it names one document.
+  // link resolves it exactly; a bare basename is settled by where the citing file sits.
   const docKeys = [...sectionsByDoc.keys()];
-  const resolveDocKey = (file: string, cited: string, line: string): { key?: string; ambiguous?: string[] } => {
+  const resolveDocKey = (file: string, cited: string, line: string): { keys?: string[]; ambiguous?: string[] } => {
     for (const match of line.matchAll(/\]\((\.{0,2}\/?[A-Za-z0-9._\-/]+\.md)\)/g)) {
       const [, href = ""] = match;
       if (href !== cited && !href.endsWith(`/${cited}`)) continue;
       const target = resolve(dirname(resolve(root, file)), href);
       for (const base of docRoots) {
         const key = relative(base, target);
-        if (!key.startsWith("..") && sectionsByDoc.has(key)) return { key };
+        if (!key.startsWith("..") && sectionsByDoc.has(key)) return { keys: [key] };
       }
     }
-    const matches = docKeys.filter((key) => key === cited || key.endsWith(`/${cited}`));
-    const only = matches[0];
-    if (matches.length === 1 && only !== undefined) return { key: only };
-    if (matches.length > 1) return { ambiguous: matches };
-    return {};
+
+    // A citation may spell the decisions directory it is pointing into — the canon does exactly
+    // that, naming a reader's own `docs/X.md` in prose (`AGENT_GUIDE.md` §5d). The key is stored
+    // relative to that directory, so the prefix has to come off before the name can match.
+    const local = cited.startsWith(`${decisionsDir}/`);
+    const name = local ? cited.slice(decisionsDir.length + 1) : cited;
+    const matches = docKeys.filter((key) => (local ? key === name : key === name || key.endsWith(`/${name}`)));
+    if (matches.length === 0) return {};
+    if (matches.length === 1) return { keys: matches };
+
+    const settle = (candidates: string[]): { keys: string[] } | undefined => (candidates.length === 1 ? { keys: candidates } : undefined);
+    const declared = declaredKindOf(file);
+    const kind = declared ?? config.kind;
+
+    // A document of this repository's own means this repository's own document first — the same
+    // preference `resolveDoc` applies. Falling through is a citation into the canon, which this
+    // repository reads at its own kind exactly as a kind-scoped reader reads theirs.
+    if (declared === undefined) {
+      const own = settle(matches.filter((key) => !key.includes("/")));
+      if (own !== undefined) return own;
+    }
+    if (kind === undefined) return { ambiguous: matches };
+
+    // A reader scoped to one kind means their own tree, and `shared` where that tree has no such
+    // document — the two trees a consumer of that kind is ever shipped.
+    if (kind !== "shared") {
+      return (
+        settle(matches.filter((key) => key.startsWith(`${kind}/`))) ??
+        settle(matches.filter((key) => key.startsWith("shared/"))) ?? { ambiguous: matches }
+      );
+    }
+
+    // A `shared` document is read by every kind at once, so no single tree is the one it meant and
+    // no path it could cite would be right for both readers. The citation is resolved when every
+    // tree carrying the filename carries the section too, which makes the cross-kind disagreement —
+    // the drift only the repository housing the canon can see — the thing that fails.
+    const trees = matches.filter((key) => key.includes("/"));
+    return trees.length > 0 ? { keys: trees } : { ambiguous: matches };
   };
 
   for (const file of files) {
@@ -368,16 +509,23 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
       for (const match of citationLine.matchAll(INTER_DOC_CITATION)) {
         const [pair, doc = "", section = "", conjuncts = ""] = match;
         bare = bare.replace(pair, " ");
-        const { key, ambiguous } = resolveDocKey(file, doc, citationLine);
+        const { keys, ambiguous } = resolveDocKey(file, doc, citationLine);
         if (ambiguous !== undefined) {
           findings.push(fail(`\`${doc} §${section}\` is ambiguous — ${ambiguous.join(" and ")} both match; cite the path`, { file, line: i + 1 }));
           continue;
         }
-        if (key === undefined) continue;
+        // Skipping here is how a typo'd or renamed document name passed: a citation naming a
+        // document in neither corpus resolves to nothing, and nothing is not a finding by default.
+        if (keys === undefined) {
+          findings.push(fail(`\`${doc} §${section}\` names no document in this repository or the canon`, { file, line: i + 1 }));
+          continue;
+        }
         const cited = [section, ...[...conjuncts.matchAll(BARE_SECTION)].map((conjunct) => conjunct[1] ?? "")];
         for (const number of cited) {
-          if (!sectionsByDoc.get(key)?.has(number)) {
-            findings.push(fail(`\`${doc} §${number}\` does not resolve to a section in that document`, { file, line: i + 1 }));
+          for (const key of keys) {
+            if (sectionsByDoc.get(key)?.has(number)) continue;
+            const where = keys.length === 1 ? "that document" : `\`${key}\``;
+            findings.push(fail(`\`${doc} §${number}\` does not resolve to a section in ${where}`, { file, line: i + 1 }));
           }
         }
       }
@@ -391,11 +539,11 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
       }
     }
 
-    if (!file.startsWith(`${decisionsDir}/`)) continue;
+    if (!isNumbered(file)) continue;
 
     findings.push(...validateFrontmatter(file, source, descriptionMax));
     findings.push(...validatePaths(file, stripped, root));
-    findings.push(...warnRotProse(file, stripped));
+    findings.push(...validateRotProse(file, stripped));
 
     const lineCount = source.split("\n").length;
     if (lineCount > sizeFail) findings.push(fail(`${lineCount} lines exceeds the ${sizeFail}-line hard limit — split or cut`, { file }));
@@ -408,6 +556,17 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
       const listed = new Set([...quickRef.lines.join("\n").matchAll(/§([0-9][A-Za-z0-9]*)/g)].map((match) => match[1]));
       const missing = (parsed.get(file) ?? []).filter((s) => s.number !== "0" && !listed.has(s.number)).map((s) => s.number);
       if (missing.length > 0) findings.push(warn(`Quick Reference omits ${missing.map((n) => `§${n}`).join(", ")}`, { file }));
+      findings.push(...validateQuickReferenceAgreement(file, stripped, parsed.get(file) ?? []));
+    }
+  }
+
+  // Held to this one rule and no other: a gloss that lies reaches every consumer of the corpus.
+  const scanned = new Set(files);
+  for (const dir of config.agreementDirs ?? []) {
+    for (const file of collectFiles(root, dir, (name) => name.endsWith(".md"))) {
+      if (scanned.has(file)) continue;
+      const lines = stripFences(readFileSync(resolve(root, file), "utf-8"));
+      findings.push(...validateQuickReferenceAgreement(file, lines, parseSections(file, lines).sections));
     }
   }
 
@@ -420,32 +579,6 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
           file: rootReadme,
         }),
       );
-    }
-  }
-
-  const indexPath = resolve(root, guideIndexOwner);
-  if (existsSync(indexPath)) {
-    const lines = readFileSync(indexPath, "utf-8").split("\n");
-    const block = blockAfter(lines, /^## Guide Index/);
-    if (block === null) {
-      findings.push(fail("no `## Guide Index` section", { file: guideIndexOwner }));
-    } else {
-      const indexed = new Set<string>();
-      const linkRe = new RegExp(`\\]\\((?:\\./)?${decisionsDir}/((?:[A-Za-z0-9_-]+/)?[A-Za-z0-9_]+\\.md)\\)`, "g");
-      for (const line of block.lines) {
-        for (const match of line.matchAll(linkRe)) {
-          const [, doc = ""] = match;
-          indexed.add(doc);
-          if (!existsSync(resolve(decisionsPath, doc))) {
-            findings.push(fail(`Guide Index names \`${doc}\`, which does not exist`, { file: guideIndexOwner }));
-          }
-        }
-      }
-      for (const doc of [...ownedDocs].sort()) {
-        if (!indexed.has(doc)) {
-          findings.push(fail(`\`${decisionsDir}/${doc}\` is not registered in the Guide Index`, { file: guideIndexOwner }));
-        }
-      }
     }
   }
 

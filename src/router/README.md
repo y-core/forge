@@ -1,3 +1,8 @@
+---
+title: Declarative Route Configuration
+description: "Routes as plain data, bound to handlers by a structurally-checked controller — the same map powers type-safe URL generation and introspection."
+---
+
 # `@y-core/forge/router`
 
 Declarative, type-safe route configuration for forge apps. Routes are plain **data** — a map of
@@ -279,6 +284,9 @@ Re-exported types, grouped by concern:
 - [`@y-core/forge/app`](../app/README.md) — `createApp`, `definePage`, `defineAction`, and
   `app.map(routes, controller)`, which consume the route maps built here.
 - [`@y-core/forge/context`](../context/README.md) — the `AppContext` extensions to `RequestContext`.
+- [`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) — the declarative route-map and
+  controller rulings (§1a, §1b), the `app.map` registration order (§1c), the no-`head`-verb ruling
+  (§1d), and middleware ordering (§3).
 - [`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) — upstream engine reference
   for `createRouter`, controllers, middleware, and the `resource`/`resources`/`form` helpers.
 - [`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern) — upstream reference for

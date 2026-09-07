@@ -256,8 +256,8 @@ integration namespace is a feature that does not belong in that leaf.
 - [ ] Added to `package.json` `exports`, or registered on the sealed-internal allowlist
 - [ ] Classified leaf or integration in the graph config, with every edge declared (§3a, §3b)
 - [ ] The export and graph gate steps pass
-- [ ] Registered in the `CLAUDE.md` Guide Index if it gains a governing document
-      ([`AGENT_GUIDE.md`](./AGENT_GUIDE.md) §5c)
+- [ ] Any governing document it gains is reachable by search — no register lists it
+      (`AGENT_GUIDE.md` §1)
 
 ### 5c. Extraction Triggers
 

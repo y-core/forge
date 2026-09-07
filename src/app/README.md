@@ -1,3 +1,8 @@
+---
+title: App Bootstrap and Request Lifecycle
+description: "Turns a route table, middleware and handlers into a single Workers fetch export, wrapped in a fail-closed error boundary."
+---
+
 # `@y-core/forge/app`
 
 App bootstrap and request lifecycle for `@y-core/forge` — the namespace that turns a set of routes, middleware, and handlers into a single Cloudflare Workers `fetch` default export.
@@ -151,7 +156,7 @@ Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) int
 | `headers` | `Record<string, string>` | Optional. Extra response headers, merged onto whatever the view returned. Applied last, so it overrides `cache` too. |
 | `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Called if `action`, `loader`, or `view` throws. If omitted, the error re-throws to the app's error boundary. |
 
-**The submission sequence's options are declared here too.** `honeypot`, `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. **Each requires a `schema`**: without one there is no sequence to configure, so stating one is a compile error and `definePage` throws at registration naming the keys. `onValidationError` is what lets a self-posting page answer a refused body by re-rendering its own view with the field errors in place, instead of the default `422` fragment.
+**The submission sequence's options are declared here too.** `honeypot`, `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. **Each requires a `schema`**, and `definePage` throws at registration naming any that were stated without one; why the shared surface is inherited rather than restated, and why a pipeline option without a schema is refused at all, is `ROUTING_AND_MIDDLEWARE.md` §2d's.
 
 ```ts
 import { definePage } from "@y-core/forge/app";
@@ -190,7 +195,7 @@ Wires a `read → guard → validate → handle` pipeline into a POST handler th
 
 **What reaches the schema.** Every entry the caller sent, minus the fields a guard on that request consumed. An **absent field is absent** rather than `""`, which is what keeps `v.optional` reachable and required-ness a presence check. A **repeated key arrives as an array**, so a scalar schema refuses it in its own words and a route that genuinely accepts many says so with `v.array`. A **`File` passes through unchanged**, so an upload schema can see one.
 
-**Nothing is dropped on a guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them; the CSRF field is dropped because `csrfProtection` published the field it took the token from. A route with no CSRF middleware drops nothing for CSRF, so a submitted `_csrf` is an ordinary undeclared field that a strict schema refuses — which names the missing middleware instead of absorbing its absence. See [`docs/ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §2b for the rule and the alternatives it rejects.
+**Nothing is dropped on a guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them; the CSRF field is dropped because `csrfProtection` published the field it took the token from. There is no option for naming a field to drop — the derived-not-declared rule, what a route with no CSRF middleware therefore does with a submitted `_csrf`, and the two alternatives that were rejected are `ROUTING_AND_MIDDLEWARE.md` §2b's.
 
 **Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`, and `formDigits()` for a control whose separators are cosmetic — all from `@y-core/forge/validation`. The body read passes values through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "`.
 
@@ -352,7 +357,7 @@ In most code, prefer the `config` argument passed to your loader/view/handle, or
 
 ### 1. Declare routes as data
 
-Build the route map with `route()` from `@y-core/forge/router` — names mapped to `{ method, pattern }`. The map carries no handlers.
+Build the route map with `route()` from `@y-core/forge/router` — names mapped to `{ method, pattern }`. Why the map carries no handlers, and why registration order against `app.use` matters, are `ROUTING_AND_MIDDLEWARE.md` §1a's and §1c's.
 
 ```ts
 import { route } from "@y-core/forge/router";
@@ -386,16 +391,7 @@ export default app;
 
 ### Middleware ordering
 
-**Prefer `applyMiddlewareChain`** — it encodes the canonical global order once, so apps never re-derive it:
-
-```text
-requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders)
-  → validateBindings(bindings) → session → per-path guards (origin → rateLimit → middleware[])
-```
-
-Each guard in a group is registered **once** for all of the group's `paths` — registering per path would give two overlapping patterns two `rateLimit` instances and halve the budget.
-
-Global middleware (`app.use`) runs before route-level middleware (in the controller action); within each, handlers run left-to-right. When hand-writing a chain instead of using the builder, the load-bearing rule is: `createSecurityHeaders` must be registered **before any nonce consumer** (session, guards, views) — pure tracing middleware (`requestId`, `requestLogger`) may precede it. See [`docs/ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §3d/§3e for the authoritative contract.
+**Prefer `applyMiddlewareChain`** — it encodes the canonical global order once, so apps never re-derive it. The chain it encodes, the guard-major registration that keeps one `rateLimit` per group, the global-before-route-level rule, and the nonce-consumer rule a hand-written chain must still respect are all `ROUTING_AND_MIDDLEWARE.md` §3a, §3d and §3e's.
 
 ### Page rendering
 
@@ -415,7 +411,7 @@ view: (_c, _cfg, state) => renderPage(<Home data={state.data} />),
 
 ### `HEAD` request handling
 
-`Forge.fetch` rewrites `HEAD` to an internal `GET` by copy-constructing the request (`new Request(request, { method: "GET" })`), so `signal`, `cf`, `redirect` and `credentials` carry into the handler as well as the headers. It runs the full chain, cancels the GET response's body, then returns a body-less `Response` with that status and headers. Handlers never need to special-case `HEAD` — and `@y-core/forge/router` exports no `head` verb, because a `HEAD` route could never match.
+`Forge.fetch` rewrites `HEAD` to an internal `GET` by copy-constructing the request (`new Request(request, { method: "GET" })`), so `signal`, `cf`, `redirect` and `credentials` carry into the handler as well as the headers. It runs the full chain, cancels the GET response's body, then returns a body-less `Response` with that status and headers. Handlers never need to special-case `HEAD`; why `router` therefore exports no `head` verb, and when a `HEAD` branch inside a unit is still correct, is `ROUTING_AND_MIDDLEWARE.md` §1d's.
 
 ### Lazy router build and per-request state
 
@@ -449,7 +445,7 @@ expect(res.status).toBe(200);
 
 ## Security
 
-- **Hardened error boundary.** Every throw — inside the middleware chain or in router internals outside it — yields a `500` page with `x-content-type-options: nosniff`, `content-security-policy: default-src 'none'`, and `referrer-policy: no-referrer`. The in-chain path overlays the consumer's CSP via the pending-header pass; out-of-chain throws still get this baseline. Error responses thus carry security headers by construction.
+- **Hardened error boundary.** Every throw — inside the middleware chain or in router internals outside it — yields a `500` page that carries security headers by construction. The three paths, the baseline header set an out-of-chain throw ships, and what a guard throwing mid-chain does and does not queue are [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §5b's.
 - **Error detail is gated.** The default `500` page reveals the error message **only** when `isDebug(c)` returns `true`; otherwise it shows a generic message. Never wire `isDebug` to a value an attacker controls.
 - **Validation failures are generic by default.** `defineAction` collapses body-parse and handler failures to neutral `400`/`500` fragments — supply `onError` only if you control what is surfaced, and do not leak internal exception detail to clients.
 - **A refusal names the field and nothing else**, and **`onValidationError` opts out of that bound** — it receives the raw issues, so an app rendering more than the field name is choosing to. What the default refusal refuses to reproduce, and why, is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1b.
@@ -461,7 +457,7 @@ expect(res.status).toBe(200);
 
 ## Architecture
 
-`app` is an **integration namespace**: it composes `form` (form parsing for `defineAction`), `http` (fragment/error responses, cache headers), `logging` (the error logger), `result` (`ValidationResult`, `toError`), `router` (the underlying `@remix-run/fetch-router`), `security`, and `validation` (`validateEnv` schemas). Consumers reach all of it through `@y-core/forge/app` and never import `@remix-run/*` directly — the facade isolates version churn ([`warden/canon/libs/LIBRARY_ARCHITECTURE.md`](../../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §1a).
+`app` is an **integration namespace** — what that classification obliges, and the facade rule that keeps `@remix-run/*` out of a consumer's imports, are `NAMESPACE_DESIGN.md` §3's and [`LIBRARY_ARCHITECTURE.md`](../../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §1a's.
 
 Per the Workers runtime model, `createApp` is a factory that captures bindings at request time, not at module evaluation — module-level state stays request-independent across V8 isolates. Use `c.executionCtx.waitUntil` for work that should outlive the response.
 
@@ -469,6 +465,7 @@ Related docs:
 
 - [`docs/ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) — route map, controller, middleware ordering, `definePage`/`defineAction` lifecycle.
 - [`docs/LIBRARY_ARCHITECTURE.md`](../../docs/LIBRARY_ARCHITECTURE.md) — facade pattern, namespace tiers, Workers runtime constraints.
+- [`docs/ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) — the error boundary's three paths and their header guarantees (§5b), and the `definePage`/`defineAction` recovery divergence (§5d).
 
 ---
 

@@ -8,7 +8,22 @@ import type { Corpus, SourceDoc, Tree } from "../types";
 const CANON_TREES: readonly Tree[] = ["shared", "libs", "apps"];
 
 /** Retrieval weight by path. Derived rather than declared: a frontmatter field stating the same
- *  thing could drift from where the document actually lives, and this cannot. @public */
+ *  thing could drift from where the document actually lives, and this cannot.
+ *
+ *  **Canon sits above `docs/` deliberately, and the margin is small on purpose.** The canon states
+ *  the rule and `docs/` states this repository's answer to it, so where both match, the rule leads.
+ *  Inverting it was measured rather than argued: it moves a repository-specific question up about
+ *  three ranks and costs the golden set five, because most queries want the rule. The weight is also
+ *  a weaker lever than it looks — a scoped search finds a `docs/` section far higher than an
+ *  unscoped one does, and that is the ~1,000 competing chunks, not this multiplier.
+ *
+ *  **The 0.9 README weight was re-examined after the duplication sweep and left alone.** The premise
+ *  for raising it was that a README chunk no longer competes with the doc it copied; the measurement
+ *  did not support acting on it. The noise the sweep was meant to clear — heading stubs at ranks 2-4
+ *  of "how many comments am I allowed to write" — is mostly `src/ui/design/` routing tables at 1.0
+ *  and 1.3, which a README weight does not reach, and raising 0.9 would lift the one README stub
+ *  among them rather than sink it. The floor margin widened on its own (0.392/0.308 before the sweep,
+ *  0.390/0.271 after), which is the sweep's real effect. @public */
 export function weightOf(corpus: Corpus, path: string): number {
   if (corpus === "canon") return 1.3;
   if (path === "src/ui/design/floor.md") return 1.3;
@@ -29,15 +44,18 @@ export function canonSources(kind: Tree, canonRoot = CANON_ROOT): SourceDoc[] {
   );
 }
 
-/** The repository's own indexable documents: `docs/`, the design corpus, and every README. @public */
+/** The repository's own indexable documents: `docs/`, the design corpus, every README, and warden's own. @public */
 export function localSources(root: string, docsDir = "docs"): SourceDoc[] {
   const paths = [
     ...collectFiles(root, docsDir, (name) => name.endsWith(".md")),
     ...collectFiles(root, "src/ui/design", (name) => name.endsWith(".md")),
     ...collectFiles(root, "src", (name) => name === "README.md"),
     ...(existsSync(resolve(root, "README.md")) ? ["README.md"] : []),
+    ...(existsSync(resolve(root, "warden/README.md")) ? ["warden/README.md"] : []),
   ];
-  return [...new Set(paths)].sort().map((path) => ({ corpus: "local" as const, path, file: resolve(root, path), weight: weightOf("local", path) }));
+  return [...new Set(paths)]
+    .sort()
+    .map((path) => ({ corpus: "project" as const, path, file: resolve(root, path), weight: weightOf("project", path) }));
 }
 
 /** Every document one index covers, canon first, each path posix-spelled so an id is host-independent. @public */

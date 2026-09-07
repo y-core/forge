@@ -1,3 +1,8 @@
+---
+title: HTMX Surfaces
+description: "The design consequences of swapping fragments: what a partial update does to focus, state and the reader's sense of place."
+---
+
 # HTMX Surfaces
 
 This page is about the _design_ consequences of swapping fragments. The API — `hxAttrs`,
@@ -14,7 +19,17 @@ Everything here is Tier 2. It leans on two Floor rules — `forge-ui-empty-state
 
 ---
 
-## The fragment is a surface
+## 0. Quick Reference
+
+- §1 The fragment is a surface: its own boundary, its own three states, and the smallest region that changed
+- §2 Latency choreography: the placeholder ships in the initial render, before any request goes out
+- §3 Indicators — which element is busy: the control the reader touched, and disabling it in flight
+- §4 Where a result lands: out-of-band into the flash region, at a stable id with one writer
+- §5 Focus after a swap: a swap over the focused element drops focus to `<body>`
+
+---
+
+## 1. The fragment is a surface
 
 Default: design the swap target as a standalone surface with its own boundary, heading and spacing,
 rather than as raw content dropped into a parent's layout — unless the fragment is a single inline
@@ -40,7 +55,7 @@ the target is destroyed and rebuilt, including scroll position, selection, and f
 
 ---
 
-## Latency choreography
+## 2. Latency choreography
 
 The swap is the second thing that happens. The first is the request, and what the page does during
 it is a design decision that is almost always made by default — badly.
@@ -76,7 +91,7 @@ the region a height before the network is involved at all.
 
 ---
 
-## Indicators — which element is busy
+## 3. Indicators — which element is busy
 
 Default: put the busy state on the control the reader touched, via `hxAttrs`' `indicator` — unless
 the request was not initiated by a control, as with `infiniteScroll`, where the indicator belongs at
@@ -101,7 +116,7 @@ two records.
 
 ---
 
-## Where a result lands
+## 4. Where a result lands
 
 Default: send the outcome of a background or global action to the flash region out-of-band with
 `FlashOob`, rather than into the swapped surface — unless the message is _about_ the swapped content
@@ -129,7 +144,7 @@ changed. <!-- rule:forge-ui-htmx-append-not-replace -->
 
 ---
 
-## Focus after a swap
+## 5. Focus after a swap
 
 **A swap that replaces the focused element drops focus to `<body>`.** The reader's next Tab starts
 from the top of the document, and a screen reader loses its position entirely. This is a design

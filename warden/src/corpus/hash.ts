@@ -1,4 +1,4 @@
-/** FNV-1a over the bytes of `text`, as eight hex digits.
+/** FNV-1a over the UTF-16 code units of `text`, as eight hex digits.
  *
  *  A content hash is the third and most expensive freshness tier, reached only for a file whose
  *  size and mtime already disagree with the index — so it runs on a handful of files, never the

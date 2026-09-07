@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 import type { Kind, SyncTree } from "../types";
@@ -27,8 +27,7 @@ export function walk(dir: string, base = dir): string[] {
 export function identical(a: string, b: string): boolean {
   const left = readFileSync(a);
   const right = readFileSync(b);
-  if (left.length !== right.length) return false;
-  return left.every((byte, index) => byte === right[index]);
+  return left.equals(right);
 }
 
 /** Copies every file under `from` into `to`, creating directories as it goes. @public */
@@ -48,9 +47,19 @@ export function sync(repo: string, trees: readonly SyncTree[]): string[] {
   for (const { tree, from } of trees) {
     if (!existsSync(from)) continue;
     const to = resolve(repo, tree);
-    // Delete first rather than copy over: a copy-over silently keeps a file the corpus has dropped.
-    rmSync(to, { recursive: true, force: true });
-    copyTree(from, to);
+    // Staged into a sibling and renamed over, so a copy that fails midway leaves the previous tree
+    // whole: the destination is only ever a complete tree or the one that was already there. It is
+    // replaced rather than copied over, because a copy-over silently keeps a file the corpus
+    // dropped — and the rename is what makes replacing it survivable.
+    const staged = `${to}.warden-staging`;
+    rmSync(staged, { recursive: true, force: true });
+    try {
+      copyTree(from, staged);
+      rmSync(to, { recursive: true, force: true });
+      renameSync(staged, to);
+    } finally {
+      rmSync(staged, { recursive: true, force: true });
+    }
     written.push(tree);
   }
   return written;

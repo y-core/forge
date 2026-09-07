@@ -21,9 +21,16 @@ function doc(title: string, header: string, body: string): string {
 
 const root = mkdtempSync(join(tmpdir(), "warden-related-"));
 const sources: SourceDoc[] = [
-  { corpus: "canon", tree: "libs", path: "CODE_RULES.md", file: write(root, "CODE_RULES.md", doc("Rules", "", "Body.")), weight: 1.3 },
   {
-    corpus: "local",
+    corpus: "canon",
+    tree: "libs",
+    path: "CODE_RULES.md",
+    // Defers back, so the pair is mutual — the shape that emitted one physical row twice.
+    file: write(root, "CODE_RULES.md", doc("Rules", "> Defers to: [`TESTING.md`](./docs/TESTING.md) §1 for the gate.", "Body.")),
+    weight: 1.3,
+  },
+  {
+    corpus: "project",
     path: "docs/TESTING.md",
     file: write(
       root,
@@ -39,27 +46,41 @@ build(db, sources, "1.0.0");
 
 describe("related()", () => {
   it("returns what a section cites, resolved to a chunk id", () => {
-    expect(related(db, "local:docs/TESTING.md#1", ["cites"])).toEqual([
+    expect(related(db, "project:docs/TESTING.md#1", ["cites"])).toEqual([
       { kind: "cites", raw: "ABSENT.md §1" },
-      { kind: "cites", id: "canon/libs:CODE_RULES.md#5c", raw: "CODE_RULES.md §5c" },
+      { kind: "cites", id: "canon:CODE_RULES.md#5c", raw: "CODE_RULES.md §5c" },
     ]);
   });
 
-  it("reaches a document-level `defers` edge from any section of that document", () => {
-    expect(related(db, "local:docs/TESTING.md#1", ["defers"])).toEqual([{ kind: "defers", id: "canon/libs:CODE_RULES.md", raw: "CODE_RULES.md" }]);
+  it("reaches a document-level `defers` edge from any section of that document, resolved to the section its prose names", () => {
+    expect(related(db, "project:docs/TESTING.md#1", ["defers"])).toEqual([
+      { kind: "defers", id: "canon:CODE_RULES.md#5c", raw: "CODE_RULES.md §5c" },
+    ]);
+  });
+
+  it("resolves a `defers` written as a markdown link once, not once per spelling", () => {
+    expect(related(db, "canon:CODE_RULES.md#1", ["defers"])).toEqual([
+      { kind: "defers", id: "project:docs/TESTING.md#1", raw: "docs/TESTING.md §1" },
+    ]);
   });
 
   it("answers the inbound question too — what else depends on this rule", () => {
-    expect(related(db, "canon/libs:CODE_RULES.md#1", ["defers-by"]).map((edge) => edge.id)).toEqual(["local:docs/TESTING.md"]);
+    expect(related(db, "canon:CODE_RULES.md#5c", ["defers-by"]).map((edge) => edge.id)).toEqual(["project:docs/TESTING.md"]);
+  });
+
+  it("emits a mutual edge once, however many times the walk reaches it", () => {
+    const edges = related(db, "project:docs/TESTING.md#1", undefined, 3);
+    const keys = edges.map((edge) => `${edge.kind}|${edge.id ?? ""}|${edge.raw}`);
+    expect(keys).toEqual([...new Set(keys)]);
   });
 
   it("returns nothing for an id nothing touches", () => {
-    expect(related(db, "canon/libs:NOTHING.md#1")).toEqual([]);
+    expect(related(db, "canon:NOTHING.md#1")).toEqual([]);
   });
 });
 
 describe("unresolved()", () => {
   it("keeps a citation that resolved to nothing, with the spelling the document wrote", () => {
-    expect(unresolved(db)).toEqual([{ kind: "cites", id: "local:docs/TESTING.md#1", raw: "ABSENT.md §1" }]);
+    expect(unresolved(db)).toEqual([{ kind: "cites", id: "project:docs/TESTING.md#1", raw: "ABSENT.md §1" }]);
   });
 });

@@ -16,14 +16,39 @@ export function gateIndexPath(root: string): string {
   return join(root, ".forge", "warden", "gate.sqlite");
 }
 
-/** Opens a database at `path`, creating the schema when it is new. `:memory:` is honoured. @public */
+/** Opens a database at `path`, creating the schema when it is new and replacing it when its shape
+ *  has changed. `:memory:` is honoured.
+ *
+ *  **A `SCHEMA_VERSION` bump has to reach the tables, not just the rows.** `build` empties and
+ *  refills; it never alters a column, so an index written by an older schema would keep its old
+ *  shape forever and fail the first insert naming a new column. The index is a derived artifact
+ *  under `.forge/` and rebuilds in well under a second, so it is dropped and recreated rather than
+ *  migrated. @public */
 export function openDatabase(path: string): Database {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path, { create: true });
   db.run("PRAGMA journal_mode = WAL");
   db.run("PRAGMA foreign_keys = ON");
+  // WAL lets a reader and a writer coexist but not two writers, and a build takes about 150 ms —
+  // so a `warden index` racing the server's `refresh()` should wait rather than serve a stale index.
+  db.run("PRAGMA busy_timeout = 5000");
+
   const tables = db.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'").all();
-  if (tables.length === 0) db.exec(SCHEMA);
+  if (tables.length === 0) {
+    db.exec(SCHEMA);
+    return db;
+  }
+
+  // An absent stamp is not a mismatch: `meta` and the tables are created together, so a database
+  // carrying one but no stamp died between the two and already has this shape.
+  const stamped = readMeta(db, "schema_version");
+  if (stamped !== undefined && stamped !== SCHEMA_VERSION) {
+    for (const table of db.query<{ name: string; type: string }>("SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view')").all()) {
+      // An fts5 table owns shadow tables that go with it, and dropping those directly is an error.
+      if (!table.name.startsWith("chunk_fts_")) db.run(`DROP ${table.type} IF EXISTS "${table.name}"`);
+    }
+    db.exec(SCHEMA);
+  }
   return db;
 }
 

@@ -344,6 +344,14 @@ since only mutation handlers consult a honeypot at all. Explicit composition put
 exactly where it defends something. The rendered markup carries no attribute naming it as a
 honeypot, for the same reason the field name is unpublished.
 
+**The chosen name must be meaningless, and that is a correctness rule rather than taste.** A decoy
+called `surname`, `company` or `website` matches the browser's own autofill heuristics, which ignore
+`autocomplete="off"` for name and address fields — so the browser fills the decoy for any user with
+a saved profile and the submission is refused with nothing on screen to explain it. The rendered
+input carries `autocomplete="new-password"` for the same reason: it is the one token every browser
+honours as _never autofill this_. A plausible-sounding name is not the property the decoy needs;
+unguessable and never-autofilled is.
+
 ### 4b. `verifyTurnstile` — Cloudflare Turnstile CAPTCHA
 
 `verifyTurnstile(formData, secretKey, options)` calls the siteverify API and returns a

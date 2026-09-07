@@ -12,58 +12,83 @@ export interface Knowledge {
   sources: SourceDoc[];
   /** Empty when the index is current; otherwise the line a caller renders above its results. */
   advisory: string;
+  /** Re-reads the corpus and refreshes the index if it has moved on. */
+  refresh(): void;
   close(): void;
 }
 
-/** How many changed documents are still worth refreshing in place rather than rebuilding whole. */
-const INCREMENTAL_LIMIT = 10;
+/** Options every entry point here shares. @public */
+export interface OpenOptions {
+  path?: string;
+  canonVersion?: string;
+  canonRoot?: string;
+  docsDir?: string;
+}
 
-/** Opens the index, building or refreshing it as needed.
- *
- *  **An absent index is never an error.** A full build of this corpus is well under a second, so
- *  refusing would only teach a reader to run `warden index` before every question. A stale one is
- *  not an error either: the paths it returns are still right, so it answers, says it is behind, and
- *  refreshes the changed documents when there are few enough for that to be the cheaper answer. @public */
-export function openIndex(
-  root: string,
-  kind: Tree,
-  options: { path?: string; canonVersion?: string; canonRoot?: string; docsDir?: string } = {},
-): Knowledge {
-  const sources = discover(root, kind, {
+function sourcesOf(root: string, kind: Tree, options: OpenOptions): SourceDoc[] {
+  return discover(root, kind, {
     ...(options.canonRoot === undefined ? {} : { canonRoot: options.canonRoot }),
     ...(options.docsDir === undefined ? {} : { docsDir: options.docsDir }),
   });
+}
+
+/** Opens the index, building it if it is absent and refreshing it if it is behind.
+ *
+ *  **An absent index is never an error.** A full build of this corpus is well under a second, so
+ *  refusing would only teach a reader to run `warden index` before every question.
+ *
+ *  **Freshness belongs to `refresh`, not to opening.** A long-lived caller — the MCP server — holds
+ *  one handle across many questions while the documents underneath it are being edited, so checking
+ *  once at open would answer every later question from the corpus as it stood at startup. @public */
+export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): Knowledge {
   const canonVersion = options.canonVersion ?? "unknown";
   const db = openDatabase(options.path ?? indexPath(root));
 
-  const state = freshness(db, sources, canonVersion);
-  let line = "";
-  if (!state.fresh) {
-    if (state.rebuild || state.stale.length > INCREMENTAL_LIMIT) build(db, sources, canonVersion);
-    else {
-      // Few enough to be worth saying what changed before fixing it, so a reader sees why the
-      // answer they just got may have been a beat behind.
-      line = advisory(state);
-      build(db, sources, canonVersion);
-    }
-  }
+  const knowledge: Knowledge = {
+    db,
+    sources: [],
+    advisory: "",
+    refresh: () => {
+      const sources = sourcesOf(root, kind, options);
+      knowledge.sources = sources;
 
-  return { db, sources, advisory: line, close: () => db.close() };
+      const state = freshness(db, sources, canonVersion);
+      if (state.fresh) {
+        knowledge.advisory = "";
+        return;
+      }
+
+      // A rebuild is whole rather than per-document: it runs only when something actually changed,
+      // and this corpus rebuilds in well under a second, which is cheaper than the bookkeeping an
+      // external-content FTS table needs to have rows deleted from it correctly.
+      try {
+        build(db, sources, canonVersion);
+        knowledge.advisory = "";
+      } catch (error) {
+        // The index is behind and could not be brought forward. Answering from it is still better
+        // than refusing — the sections it names have not moved — so say so and serve it.
+        knowledge.advisory = `${advisory(state)}; the refresh failed — ${error instanceof Error ? error.message : String(error)}`;
+      }
+    },
+    close: () => db.close(),
+  };
+
+  knowledge.refresh();
+  return knowledge;
 }
 
 /** Rebuilds the index from disk unconditionally. @public */
-export function rebuild(
-  root: string,
-  kind: Tree,
-  options: { path?: string; canonVersion?: string; canonRoot?: string; docsDir?: string } = {},
-): BuildReport {
-  const sources = discover(root, kind, {
-    ...(options.canonRoot === undefined ? {} : { canonRoot: options.canonRoot }),
-    ...(options.docsDir === undefined ? {} : { docsDir: options.docsDir }),
-  });
+export function rebuild(root: string, kind: Tree, options: OpenOptions = {}): BuildReport {
+  const sources = sourcesOf(root, kind, options);
   const db = openDatabase(options.path ?? indexPath(root));
   try {
-    return build(db, sources, options.canonVersion ?? "unknown");
+    const report = build(db, sources, options.canonVersion ?? "unknown");
+    // A build that empties the tables frees pages without returning them to the OS, so an index
+    // carried across a schema change keeps the old file's size. `rebuild` owns its handle and runs
+    // outside any transaction, which is what `VACUUM` needs — `refresh()` is the server's hot path
+    // and deliberately does not do this.
+    db.run("VACUUM");
+    return report;
   } finally {
     db.close();
   }

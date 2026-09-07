@@ -1,3 +1,8 @@
+---
+title: Test Fixtures for Forge Apps
+description: "The fixtures every consumer previously hand-rolled: a loaded request context, real CSRF minting, in-memory storage fakes, and an SSR render helper."
+---
+
 # `@y-core/forge/testing`
 
 Shared test utilities for apps built on forge — the fixtures every consumer previously hand-rolled: a pre-loaded request context, real CSRF token minting, typed in-memory storage fakes, an SSR render helper, a `Request` builder, and a single-route registrar.

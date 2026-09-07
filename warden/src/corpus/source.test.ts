@@ -18,11 +18,11 @@ function tree(files: readonly string[], prefix: string): string {
 describe("weightOf()", () => {
   it("ranks the canon above this repository's docs, and both above a README", () => {
     expect(weightOf("canon", "CODE_RULES.md")).toBe(1.3);
-    expect(weightOf("local", "src/ui/design/floor.md")).toBe(1.3);
-    expect(weightOf("local", "docs/NAMESPACES.md")).toBe(1.2);
-    expect(weightOf("local", "src/ui/design/reference/04-color.md")).toBe(1.0);
-    expect(weightOf("local", "src/ui/README.md")).toBe(0.9);
-    expect(weightOf("local", "README.md")).toBe(0.9);
+    expect(weightOf("project", "src/ui/design/floor.md")).toBe(1.3);
+    expect(weightOf("project", "docs/NAMESPACES.md")).toBe(1.2);
+    expect(weightOf("project", "src/ui/design/reference/04-color.md")).toBe(1.0);
+    expect(weightOf("project", "src/ui/README.md")).toBe(0.9);
+    expect(weightOf("project", "README.md")).toBe(0.9);
   });
 });
 
@@ -63,7 +63,7 @@ describe("discover()", () => {
 
     expect(discover(root, "libs", { canonRoot }).map((doc) => `${doc.corpus}:${doc.path}`)).toEqual([
       "canon:CODE_RULES.md",
-      "local:docs/NAMESPACES.md",
+      "project:docs/NAMESPACES.md",
     ]);
   });
 });

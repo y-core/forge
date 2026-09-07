@@ -1,3 +1,8 @@
+---
+title: The Lint Plugin and Rule Catalogs
+description: "Forge's oxlint plugin of AST-anchored rules, and the catalogs that tie each rule id to the design-corpus file justifying it."
+---
+
 # `@y-core/forge/tooling/lint`
 
 **forge's oxlint plugin, and the two rule catalogs the gate reads.** A consuming repository names

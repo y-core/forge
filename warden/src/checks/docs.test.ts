@@ -25,7 +25,7 @@ function docWithSub(title: string, body: string): string {
 }
 
 function index(...rows: string[]): string {
-  return `# CLAUDE.md\n\n## Guide Index\n\n${rows.join("\n")}\n`;
+  return `# CLAUDE.md\n\n## Governing Documents\n\n${rows.join("\n")}\n`;
 }
 
 const run = (root: string) => checkDocs({ root, packageName: "@y-core/forge", exports: {} });
@@ -44,13 +44,13 @@ describe("checkDocs() — nested document discovery", () => {
     expect(result.summary).toBe("2 documents verified, 0 warnings.");
   });
 
-  it("reports a nested document that no Guide Index row registers", () => {
+  it("does not require a document to be registered anywhere — warden indexes it, so nothing lists it", () => {
     const root = fixtureRoot({ ".decisions/governance/TESTING.md": doc("Testing", "Body."), "CLAUDE.md": index("- nothing here") });
 
-    expect(messages(root)).toContain("`.decisions/governance/TESTING.md` is not registered in the Guide Index");
+    expect(run(root).ok).toBe(true);
   });
 
-  it("reports a Guide Index row naming a nested document that does not exist", () => {
+  it("reports a link naming a nested document that does not exist", () => {
     const root = fixtureRoot({
       ".decisions/governance/TESTING.md": doc("Testing", "Body."),
       "CLAUDE.md": index(
@@ -59,7 +59,7 @@ describe("checkDocs() — nested document discovery", () => {
       ),
     });
 
-    expect(messages(root)).toContain("Guide Index names `governance/ABSENT.md`, which does not exist");
+    expect(messages(root)).toContain("link target `.decisions/governance/ABSENT.md` does not exist");
   });
 
   it("fails rather than passing vacuously when the directory exists and holds no documents", () => {
@@ -94,6 +94,19 @@ describe("checkDocs() — cross-references across a subdirectory", () => {
     });
 
     expect(messages(root)).toContain("`governance/TESTING.md §9` does not resolve to a section in that document");
+  });
+
+  it("reports a §N citation naming a document that exists in neither corpus", () => {
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      ".decisions/implementation/SUITES.md": doc("Suites", "The rule in TSETING.md §1 applies."),
+      "CLAUDE.md": index(
+        "- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules",
+        "- [`SUITES.md`](.decisions/implementation/SUITES.md): this repository's suites",
+      ),
+    });
+
+    expect(messages(root)).toContain("`TSETING.md §1` names no document in this repository or the canon");
   });
 
   it("resolves a bare basename while exactly one document carries it", () => {
@@ -253,7 +266,7 @@ describe("checkDocs() — historical phrasing", () => {
   const phrases = ["previously", "no longer", "used to", "formerly", "renamed from", "fixed by", "has since", "Previously"];
 
   for (const phrase of phrases) {
-    it(`warns without failing on \`${phrase}\``, () => {
+    it(`fails on \`${phrase}\``, () => {
       const root = fixtureRoot({
         ".decisions/governance/TESTING.md": doc("Testing", `The rule ${phrase} the sentinel.`),
         "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
@@ -261,20 +274,19 @@ describe("checkDocs() — historical phrasing", () => {
 
       const result = run(root);
 
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
       expect(result.findings).toEqual([
         {
-          level: "warn",
+          level: "fail",
           message: `historical phrasing \`${phrase}\` — governing docs carry no history`,
           file: ".decisions/governance/TESTING.md",
           line: 12,
         },
       ]);
-      expect(result.summary).toBe("2 documents verified, 1 warning.");
     });
   }
 
-  it("does not warn on historical phrasing inside a fenced code block", () => {
+  it("does not report historical phrasing inside a fenced code block", () => {
     const root = fixtureRoot({
       ".decisions/governance/TESTING.md": doc("Testing", "```md\nThe rule previously named the sentinel.\n```"),
       "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
@@ -283,7 +295,7 @@ describe("checkDocs() — historical phrasing", () => {
     expect(run(root).findings).toEqual([]);
   });
 
-  it("does not warn on historical phrasing inside an inline code span", () => {
+  it("does not report historical phrasing inside an inline code span", () => {
     const root = fixtureRoot({
       ".decisions/governance/TESTING.md": doc("Testing", "The `no longer` flag is read at startup."),
       "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
@@ -390,22 +402,101 @@ describe("checkDocs() — a citable root this repository does not own", () => {
     ]);
   });
 
-  it("does not hold the canon itself to the Guide Index", () => {
+  it("does not hold the canon itself to a consumer's own document rules", () => {
     const root = fixtureRoot(canon("Body."));
 
     expect(runCanon(root).ok).toBe(true);
   });
 
-  it("reports a bare basename matching both a local document and a canon one as ambiguous", () => {
+  it("reads a bare basename matching both a local document and a canon one as the local one", () => {
     const root = fixtureRoot({
-      "docs/TESTING.md": doc("Testing", "It also names TESTING.md §9."),
+      "docs/TESTING.md": doc("Testing", "It also names TESTING.md §1."),
       "CLAUDE.md": index("- [`TESTING.md`](docs/TESTING.md): the testing rules"),
-      "warden/canon/libs/TESTING.md": doc("Testing", "Body."),
+      "warden/canon/libs/TESTING.md": docWithSub("Testing", "Body."),
     });
 
-    expect(runCanon(root).findings.map((finding) => finding.message)).toEqual([
-      "`TESTING.md §9` is ambiguous — TESTING.md and libs/TESTING.md both match; cite the path",
-    ]);
+    expect(runCanon(root).findings.map((finding) => finding.message)).toEqual([]);
+  });
+
+  it("checks a bare basename matching both against the local document, not the canon one", () => {
+    const root = fixtureRoot({
+      "docs/TESTING.md": doc("Testing", "It also names TESTING.md §1a."),
+      "CLAUDE.md": index("- [`TESTING.md`](docs/TESTING.md): the testing rules"),
+      "warden/canon/libs/TESTING.md": docWithSub("Testing", "Body."),
+    });
+
+    expect(runCanon(root).findings.map((finding) => finding.message)).toEqual(["`TESTING.md §1a` does not resolve to a section in that document"]);
+  });
+});
+
+describe("checkDocs() — which canon tree a bare citation means", () => {
+  const trees = (body: Record<string, string>) => ({
+    "docs/SUITES.md": doc("Suites", "Body."),
+    "CLAUDE.md": index("- [`SUITES.md`](docs/SUITES.md): the suites"),
+    "warden/canon/libs/CODE_RULES.md": doc("Code Rules", "Body."),
+    "warden/canon/apps/CODE_RULES.md": doc("Code Rules", "Body."),
+    "warden/canon/shared/AGENT_GUIDE.md": doc("Agent Guide", "Body."),
+    ...body,
+  });
+  const runTrees = (root: string, kind?: "libs" | "apps") =>
+    checkDocs({
+      root,
+      packageName: "@y-core/forge",
+      exports: {},
+      decisionsDir: "docs",
+      ...(kind === undefined ? {} : { kind }),
+      citableDirs: ["warden/canon/shared", "warden/canon/libs", "warden/canon/apps"],
+      extraDirs: [
+        { dir: "warden/claude/agents/libs", kind: "libs" },
+        { dir: "warden/claude/agents/apps", kind: "apps" },
+        { dir: "warden/canon/shared", kind: "shared" },
+      ],
+    }).findings.map((finding) => finding.message);
+
+  it("resolves a citation from a kind-scoped reader to that reader's own tree", () => {
+    const root = fixtureRoot(trees({ "warden/claude/agents/apps/cc-dev.md": doc("Dev", "It names CODE_RULES.md §1.") }));
+
+    expect(runTrees(root)).toEqual([]);
+  });
+
+  it("names the reader's own tree when the cited section is missing from it", () => {
+    const root = fixtureRoot(trees({ "warden/claude/agents/libs/cc-dev.md": doc("Dev", "It names CODE_RULES.md §9.") }));
+
+    expect(runTrees(root)).toEqual(["`CODE_RULES.md §9` does not resolve to a section in that document"]);
+  });
+
+  it("falls back to `shared` for a document the reader's own tree does not carry", () => {
+    const root = fixtureRoot(trees({ "warden/claude/agents/libs/cc-dev.md": doc("Dev", "It names AGENT_GUIDE.md §1.") }));
+
+    expect(runTrees(root)).toEqual([]);
+  });
+
+  it("requires a citation from `shared` to hold in every tree carrying the document", () => {
+    const root = fixtureRoot({ ...trees({}), "warden/canon/shared/AGENT_GUIDE.md": doc("Agent Guide", "It names CODE_RULES.md §1.") });
+
+    expect(runTrees(root)).toEqual([]);
+  });
+
+  it("names the tree that is missing the section a `shared` document cites", () => {
+    const root = fixtureRoot({
+      ...trees({}),
+      "warden/canon/shared/AGENT_GUIDE.md": doc("Agent Guide", "It names CODE_RULES.md §1a."),
+      "warden/canon/libs/CODE_RULES.md": docWithSub("Code Rules", "Body."),
+    });
+
+    expect(runTrees(root)).toEqual(["`CODE_RULES.md §1a` does not resolve to a section in `apps/CODE_RULES.md`"]);
+  });
+
+  it("resolves a local citation into the canon at this repository's own kind", () => {
+    const root = fixtureRoot({ ...trees({}), "docs/SUITES.md": doc("Suites", "It names CODE_RULES.md §1a.") });
+
+    expect(runTrees(root, "libs")).toEqual(["`CODE_RULES.md §1a` does not resolve to a section in that document"]);
+  });
+
+  it("reports a local citation into a canon of more than one tree as ambiguous when no kind is declared", () => {
+    const root = fixtureRoot({ ...trees({}), "docs/SUITES.md": doc("Suites", "It names CODE_RULES.md §1.") });
+
+    expect(runTrees(root)).toEqual(["`CODE_RULES.md §1` is ambiguous — libs/CODE_RULES.md and apps/CODE_RULES.md both match; cite the path"]);
   });
 });
 
@@ -420,6 +511,60 @@ describe("checkDocs() — extra directories", () => {
     const result = checkDocs({ root, packageName: "@y-core/forge", exports: {}, extraDirs: ["warden/claude/agents"] });
 
     expect(result.findings.map((finding) => finding.message)).toEqual(["calendar date `2026-01-01` — governing docs carry no history"]);
+  });
+
+  it("leaves an unmarked extra directory's unnumbered prose alone", () => {
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "CLAUDE.md": soleIndex,
+      "corpus/floor.md": "# Floor\n\n## Verify\n\nBody.\n",
+    });
+
+    const result = checkDocs({ root, packageName: "@y-core/forge", exports: {}, extraDirs: ["corpus"] });
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([]);
+  });
+
+  it("holds a `numbered` extra directory to the numbering and Quick Reference rules", () => {
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "CLAUDE.md": soleIndex,
+      "corpus/floor.md": "# Floor\n\n## Verify\n\nBody.\n",
+    });
+
+    const result = checkDocs({ root, packageName: "@y-core/forge", exports: {}, extraDirs: [{ dir: "corpus", numbered: true }] });
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "unnumbered heading `Verify` — every section needs a citable number",
+      "missing YAML frontmatter",
+      "no `## 0. Quick Reference` — the document has no section map",
+    ]);
+  });
+
+  it("registers no citation key for a `numbered` extra directory, leaving the canon's own tree keys standing", () => {
+    const root = fixtureRoot({
+      "docs/SUITES.md": doc("Suites", "It names [`CODE_RULES.md`](../warden/canon/libs/CODE_RULES.md) §1."),
+      "CLAUDE.md": index("- [`SUITES.md`](docs/SUITES.md): the suites"),
+      "warden/canon/libs/CODE_RULES.md": doc("Code Rules", "Body."),
+      "warden/canon/apps/CODE_RULES.md": doc("Code Rules", "Body."),
+      "warden/canon/shared/AGENT_GUIDE.md": doc("Agent Guide", "Body."),
+    });
+
+    const result = checkDocs({
+      root,
+      packageName: "@y-core/forge",
+      exports: {},
+      decisionsDir: "docs",
+      kind: "libs",
+      citableDirs: ["warden/canon/shared", "warden/canon/libs", "warden/canon/apps"],
+      extraDirs: [
+        { dir: "warden/canon/shared", kind: "shared", numbered: true },
+        { dir: "warden/canon/libs", kind: "libs", numbered: true },
+        { dir: "warden/canon/apps", kind: "apps", numbered: true },
+      ],
+    });
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([]);
   });
 });
 
@@ -441,6 +586,95 @@ describe("checkDocs() — what indentation hides", () => {
   it("still strips a real indented code block, which opens after a blank line and outside a list", () => {
     const body = ["The shape of a reference:", "", "    - §1z Topic: what it decides", "    - §2z Other: what it decides"].join("\n");
     const root = fixtureRoot({ ".decisions/governance/TESTING.md": doc("Testing", body), "CLAUDE.md": soleIndex });
+
+    expect(messages(root)).toEqual([]);
+  });
+});
+
+describe("checkDocs() — Quick Reference agreement", () => {
+  /** A document whose Quick Reference line for §1 is `entry` and whose §1 heading is `heading`. */
+  function drifted(heading: string, entry: string): string {
+    return [
+      "---",
+      "title: Testing",
+      'description: "One sentence describing what this document governs."',
+      "---",
+      "",
+      "## 0. Quick Reference",
+      "",
+      `- §1 ${entry}`,
+      "",
+      `## 1. ${heading}`,
+      "",
+      "Body.",
+      "",
+    ].join("\n");
+  }
+
+  const at = (source: string) => fixtureRoot({ ".decisions/governance/TESTING.md": source, "CLAUDE.md": soleIndex });
+
+  it("fails a Quick Reference line naming a section the heading no longer names", () => {
+    const root = at(drifted("`tooling/lint` — a Barrel That Is Also a Plugin", "`cli/pkg/lint` — an Export Target: the published file"));
+
+    expect(messages(root)).toEqual(["Quick Reference §1 says `cli/pkg/lint` where the heading says `tooling/lint` — one of the two is stale"]);
+  });
+
+  it("accepts an em dash in the heading against a colon in the Quick Reference", () => {
+    expect(messages(at(drifted("Expected Errors — User Input", "Expected Errors: user input, not exceptions")))).toEqual([]);
+  });
+
+  it("accepts a Quick Reference that abbreviates the heading it summarises", () => {
+    expect(messages(at(drifted("`htmlResponse` Pattern", "htmlResponse: full-page render")))).toEqual([]);
+  });
+
+  it("accepts a trailing parenthetical the Quick Reference drops", () => {
+    expect(messages(at(drifted("Validation Namespace (valibot facade)", "Validation Namespace: the facade")))).toEqual([]);
+  });
+
+  it("says nothing about a section the Quick Reference does not list — that is the omission check's finding", () => {
+    const source = drifted("One", "One: what it decides").replace("## 1. One", "## 1. One\n\nBody.\n\n## 2. Two");
+
+    expect(messages(at(source))).toEqual(["Quick Reference omits §2"]);
+  });
+});
+
+describe("checkDocs() — agreementDirs", () => {
+  const canon = [
+    "---",
+    "title: Rules",
+    'description: "One sentence describing what this document governs."',
+    "---",
+    "",
+    "## 0. Quick Reference",
+    "",
+    "- §1 Governance Versus Implementation: portable rule or local fact",
+    "",
+    "## 1. The Canon Versus This Repository's Docs",
+    "",
+    "See `NOWHERE.md` §9 and `src/absent.ts`.",
+    "",
+  ].join("\n");
+
+  it("holds a tree outside this repository's own docs to Quick Reference agreement", () => {
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "CLAUDE.md": soleIndex,
+      "warden/canon/shared/AGENT_GUIDE.md": canon,
+    });
+
+    // Only the agreement finding: the canon is governed prose, but the citation and path rules are
+    // written against a repository's own conventions and are not the canon's to answer.
+    expect(checkDocs({ root, packageName: "@y-core/forge", exports: {}, agreementDirs: ["warden/canon"] }).findings.map((f) => f.message)).toEqual([
+      "Quick Reference §1 says `governance versus implementation` where the heading says `the canon versus this repository's docs` — one of the two is stale",
+    ]);
+  });
+
+  it("leaves that tree entirely unread when no agreementDirs is configured", () => {
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "CLAUDE.md": soleIndex,
+      "warden/canon/shared/AGENT_GUIDE.md": canon,
+    });
 
     expect(messages(root)).toEqual([]);
   });

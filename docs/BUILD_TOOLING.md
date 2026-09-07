@@ -34,6 +34,7 @@ description: "The dependency-free CLI framework, the published verification gate
 - §2g cloudflareWorkerSteps — the Fleet Preset: a step-table factory, not new machinery
 - §2h Roots Are Stated or Derived, Never Discovered: no function walks the disk to find the project
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
+- §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
 
 ---
 
@@ -70,10 +71,16 @@ flag argument from the declaration: a `string` flag with a `default` or `require
 to `string`, every other `string` flag to `string | undefined`, and a boolean to `boolean`. No
 handler casts, and a renamed flag fails to typecheck at its reader.
 
-**Number parsing, repeated flags, and array values are deliberately absent.** A numeric flag is a
-string plus the caller's own validation, which keeps the parser total — it has no way to fail on
-input it was handed; a list is a comma-joined string the command splits, which is why the gate
-runner takes `--only lint,typecheck` rather than a repeated flag.
+**Number parsing is deliberately absent.** A numeric flag is a string plus the caller's own
+validation, which keeps the parser total — it has no way to fail on input it was handed.
+
+**A repeatable flag is opt-in per definition, and repeating an unmarked one is refused.**
+`multiple: true` resolves that flag to `string[]`; without it a second occurrence is an error rather
+than a last-wins overwrite, because silently discarding an argument the caller typed is the failure
+mode a parser exists to prevent. `ResolvedFlags` tests `multiple` **before** `default` and
+`required`, so a repeatable flag is `string[]` whether or not it carries either. **A comma-joined
+string is still the default shape for a list** — the gate runner takes `--only lint,typecheck` and
+splits it — and `multiple` is for the case where a value may itself contain a comma.
 
 ### 1c. Errors Carry a Kind, Not an Exit Code
 
@@ -484,5 +491,40 @@ is what keeps it from being forge's script wearing a config parameter. **That co
 in the consuming repository's `config/steps.ts`**, beside the step table: that file already answers
 "what does this repository's gate do?", so a step is one entry in it — the builder for the check,
 and the config it runs with.
+
+### 2j. Trunk-Only Development and the Amend Floor
+
+**Forge develops on the trunk: no branches, no pull requests, no worktrees.** There is no CI, so a
+pull request has nothing to run and nobody to review it — the gate is `bun run verify`, run locally
+before the commit that claims it. And branch-shaped git is the unreliable part of this container:
+`git stash`, fresh branches and worktree removal have each broken here, where commit, amend and tag
+have not. Trunk-only is therefore a fit to the machinery that works, not a preference about
+workflow.
+
+**The invariant that replaces the discipline a branch would have provided is the amend floor.**
+`git describe --tags --abbrev=0` marks it. **Above the floor, history is private** — amend, reword
+and reorder freely. **At or below it, history is published**: consumers pin codeload tarballs at a
+tag, so a consumer has already fetched those commits, and rewriting them changes what they got
+without changing the version they asked for.
+
+Three habits carry the rest:
+
+1. **Commit per verified unit** — one coherent change, at the point `bun run verify` is green for
+   it. A later fix to that same unit is `--amend`; a different concern is a new commit. Below the
+   tag the log is the only bisect surface there is.
+2. **Never `git stash`.** Commit the work in progress and `--amend` it into shape later;
+   `git reflog` recovers a bad amend, where a lost stash entry has no such handle.
+3. **Write the `[Unreleased]` changelog entry in the commit that earns it.** `validate-changelog`
+   refuses an empty `[Unreleased]` at release time, which catches the omission far from the change
+   that caused it.
+
+**A commit that alters or removes a published export carries the `minor:` subject prefix**
+(`major:` once forge is 1.0). `resolveVersion` reads only the `major:` and `minor:` prefixes and
+defaults everything else to patch, so the prefix is the sole machine-readable "this will break
+you" — and pre-1.0 forge ships breaking changes with no shim while consumers pin by tag, which
+makes that signal the only warning they get. The surface guard (`removedSurfaceSince` in
+`surface.ts`) already refuses a shrinking export surface under an auto-patch release; reaching for
+`--allow-semver` silences that guard rather than answering it, and the answer it is asking for is
+the prefix.
 
 ---

@@ -1,12 +1,13 @@
 export type { Hit, SearchOptions } from "./search";
-export { search } from "./search";
+export { corpusLabel, search } from "./search";
+export { coverage, documentFrequency, idf } from "./coverage";
 export type { OutlineEntry, Section } from "./read";
 export { outline, readDocument, readSection } from "./read";
 export type { Related } from "./related";
 export { related, unresolved } from "./related";
 export { ALIASES, aliasTerms } from "./aliases";
 export { matchExpression, terms } from "./query";
-export type { Knowledge } from "../index/open";
+export type { Knowledge, OpenOptions } from "../index/open";
 export { openIndex, rebuild } from "../index/open";
 export type { BuildReport } from "../index/build";
 export { build, load } from "../index/build";

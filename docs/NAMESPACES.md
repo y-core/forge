@@ -23,17 +23,19 @@ description: "Barrel export rules, the authoritative subpath catalog, leaf-versu
 - §3 Authoritative Namespace Catalog: every subpath and its classification
 - §3a Public Export Paths: the catalog table
 - §3b Internal Namespaces: sealed-internal `crypto`
-- §3c `cli/pkg/lint` — an Export Target Without a Barrel: the one published file, and the private directory behind it
+- §3c `tooling/lint` — a Namespace Whose Barrel Is Also a Plugin: the published surface, the two rule catalogs, and the prebuilt copy a consumer loads
 - §4 Namespace Classification: the leaf/integration split
 - §4a Leaf Namespace Rules: no cross-namespace forge imports beyond the §4c primitives
 - §4b Integration Namespace Rules: where edges are declared, and what the graph gate proves
 - §4c Foundational Primitive Namespaces: `result`, `crypto`, `context` and `validation` sit below the split
 - §5 Growth Rules: where a new concern belongs
 - §5a security — Transport-Layer Hardening Only: what goes to a future `auth`
-- §5b ui/core — SSR Components Only: and the deliberate `ui/controls` shadowing
+- §5b ui/core — SSR Components Only: the server/browser split with `ui/client`, and the deliberate `ui/controls` shadowing
 - §5c app — Bootstrap and Pipeline Builders: the third-builder trigger and what counts toward it
 - §5d http — All HTTP Output Concerns: the canonical output home
 - §5e Exported Factory and Type Naming Convention: `create*`, `resolve*`, and type suffixes
+- §5f ui/client — Where a Browser Controller Belongs: controllers, signals, and lazy-loaded resources
+- §5g tooling — Where a Developer-Facing Tool Belongs: a command, a gate check, a lint rule or a release step, and why none of it is Worker-reachable
 - §6 When to Add a New Namespace: criteria and checklist
 
 ---
@@ -340,6 +342,7 @@ _out_ of a transport-security namespace:
 | Session management and cookie storage | `session` |
 | Authentication — JWT, OAuth, magic links, login | a future `auth` |
 | Permissions and RBAC | a future `auth` |
+| API-key lifecycle — issue, rotate, revoke, verify | a future `auth` |
 | Timing-safe comparison and other primitives | sealed-internal `crypto` (§3b) |
 | Input sanitization and schema validation | `form` and `validation` |
 
@@ -418,6 +421,37 @@ Exported option and shape types take a suffix chosen by what the type _is_:
 
 **A declarative shape must not be named `*Config`** (that suffix implies validated env/data),
 and **behaviour knobs must not be named `*Config` or `*Definition`.**
+
+### 5f. ui/client — Where a Browser Controller Belongs
+
+**A new browser controller, signal, or lazy-loaded resource goes to `ui/client`.** These are the
+things that only exist once a document is live: a mount controller that binds behaviour to an
+element, a signal other code subscribes to, a module fetched on demand. None of them has a home in
+`ui/core`, which renders markup on the server and stops there (§5b).
+
+The line is what executes the code, not what it is about. A module under `ui/client` is never
+imported from a Worker-executed file — the import alone pulls browser globals into the server
+bundle ([`BOUNDARIES.md`](../warden/canon/libs/BOUNDARIES.md) §1). A component that needs
+behaviour is therefore built as two pieces: the markup in `ui/core`, and the controller in
+`ui/client` that finds it by its `data-*` hooks. The mechanism — the mount contract, the signal
+API, the lazy-loading seam — is in [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2.
+
+### 5g. tooling — Where a Developer-Facing Tool Belongs
+
+**A new command, gate check, lint rule or release step goes to one of the `tooling` namespaces** —
+`tooling/cli`, `tooling/term`, `tooling/gate`, `tooling/lint`, `tooling/release`, `tooling/cf`,
+`tooling/assets`. Pick by the artifact the tool acts on: the command surface and its flag parsing
+are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is `tooling/gate`
+(and a check is a function, not a script — [`BUILD_TOOLING.md`](./BUILD_TOOLING.md) §2i), a lint
+rule is `tooling/lint`, a release step is `tooling/release`, a Cloudflare API call is
+`tooling/cf`, and driving an external builder is `tooling/assets`
+([`ASSET_PIPELINE.md`](./ASSET_PIPELINE.md) §2c).
+
+**None of it is ever Worker-reachable.** Membership in `src/tooling/` _is_ the build-time exemption
+from the Web-APIs-only rule, which is what §4a settles and `validate-build-time-boundary` enforces
+per file — so a tool placed here may use Node APIs, and a module that a Worker path imports may not
+be placed here. Reaching for a `tooling` namespace to escape the Web-APIs rule for something a
+request handler runs is the one way to get this wrong, and the step fails it.
 
 ---
 

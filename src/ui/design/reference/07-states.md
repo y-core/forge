@@ -1,3 +1,8 @@
+---
+title: States
+description: "Empty, loading, error and success: the states a surface must design for, not the one happy path it usually gets."
+---
+
 # States
 
 Everything here is a **Default** — rebuttable only by an explicit written brief. The Floor rules
@@ -21,7 +26,18 @@ with no data and no mutation.
 
 ---
 
-## Loading: `Skeleton` or `Spinner`
+## 0. Quick Reference
+
+- §1 Loading: `Skeleton` or `Spinner`: the choice is the known shape, not the duration
+- §1a Before / after: a centred spinner collapsing a card, against skeletons in the answer's shape
+- §2 Empty: a sentence saying what would be here, one control that puts it here, and hiding the rest
+- §3 Error: in place or as a toast, always with the retry, and why status colour is not `--destructive`
+- §4 Success: the toast that confirms a mutation, the flash that survives a redirect, and naming what happened
+- §5 Progress and measurement: `Progress` for a known total, `Meter` for a value in a range
+
+---
+
+## 1. Loading: `Skeleton` or `Spinner`
 
 The choice is not about duration. It is about whether you already know the shape of what is arriving.
 
@@ -55,7 +71,7 @@ more often than the wait did. Override when the result's height is genuinely unb
 A `Spinner` in the submit button _and_ a skeleton over the table means two claims about one wait.
 Override when two genuinely independent requests are in flight in two regions.
 
-### Before / after
+### 1a. Before / after
 
 ```tsx
 // Wrong — a centred spinner where the shape is fully known.
@@ -99,7 +115,7 @@ announces one wait twice and stops announcing it at two different moments.
 
 ---
 
-## Empty
+## 2. Empty
 
 An empty collection is a state to compose, not markup to omit. The pattern is a sentence saying what
 would be here, and the one control that puts something here.
@@ -147,14 +163,14 @@ import { Alert, Button, Card } from "@y-core/forge/ui/core";
 
 ---
 
-## Error
+## 3. Error
 
 **Default: a failure that belongs to a visible surface renders an `Alert` `tone='destructive'` in place, and
 the surface keeps its content.** <!-- rule:forge-ui-state-error-inline -->
 Replacing a table with an error message destroys the data the user was reading. Override when the
 content is known stale and showing it would mislead.
 
-**Default: a failure of work the user is no longer watching renders a `Toast` `tone='destructive'`.**
+**Default: a failure of work the user has navigated away from renders a `Toast` `tone='destructive'`.**
 <!-- rule:forge-ui-state-error-toast -->
 
 Background saves, long uploads, anything the user navigated away from. Override when the failure
@@ -178,11 +194,11 @@ objection is that `--destructive` is the _application's_ destructive colour and 
 legitimately re-point it, whereas a status panel has to stay red to mean "failed". `--destructive` is also
 a _fill_, held across modes so a near-white foreground clears it; error **text** is
 `text-destructive-text`, which is the step that flips
-([`THEME_GENERATION.md`](../../../docs/THEME_GENERATION.md) §4).
+([`THEME_GENERATION.md`](../../../../docs/THEME_GENERATION.md) §4).
 
 ---
 
-## Success
+## 4. Success
 
 **Default: a completed mutation is confirmed by a `Toast` `success`, not by an `Alert`.**
 <!-- rule:forge-ui-state-success-toast -->
@@ -213,7 +229,7 @@ where the count is the message.
 
 ---
 
-## Progress and measurement
+## 5. Progress and measurement
 
 `Progress` and `Meter` render different elements for different claims, and they are not
 interchangeable.

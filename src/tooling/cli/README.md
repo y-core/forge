@@ -1,3 +1,8 @@
+---
+title: The CLI Toolkit
+description: "Typed, hierarchical commands with declared flags, plus the process, PATH and scoped-logging primitives forge's own scripts run on."
+---
+
 # `@y-core/forge/tooling/cli`
 
 A small, dependency-free toolkit for building **typed, hierarchical command-line tools** in
@@ -22,6 +27,8 @@ import { createCommand, addCommand, execute, run, requireTools, scopeLogger } fr
 - **Typed flags** — declare a flag map once; `ResolvedFlags<F>` infers each flag's runtime type. A
   `boolean` flag resolves to `boolean`; a `string` flag with a `default` or `required: true` resolves
   to `string`; every other `string` flag resolves to `string | undefined`. No casts in your handler.
+  Why the record is keyed by long name, and why number parsing and repeated flags are absent, are
+  [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §1b's.
 - **Hierarchical commands** — compose commands into a tree with `addCommand`. `execute` walks the
   tree by matching leading non-flag tokens to sub-command names, then dispatches to the deepest match.
 - **Persistent flags** — a flag marked `persistent: true` is inherited by every descendant command,
@@ -30,8 +37,10 @@ import { createCommand, addCommand, execute, run, requireTools, scopeLogger } fr
   `execute` enforces the positional-argument count before invoking your handler.
 - **Auto-generated help** — `formatHelp` and `formatUsage` render Cobra-style help text; `--help` /
   `-h` is handled for free, and group commands invoked without a sub-command print their help.
-- **Structured errors** — `CliError` carries a discriminated `kind`; `execute` formats it to stderr
-  and exits non-zero. User-facing messages never leak stack traces.
+- **Structured errors** — `CliError` carries a discriminated `kind` rather than an exit code;
+  `execute` formats it to stderr and exits 1, and user-facing messages never leak stack traces. The
+  two-valued exit contract behind that is
+  [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §1c's.
 - **Process primitives** — `run` spawns child processes with inherited stdio and throws on failure;
   `capture` buffers their combined output and returns the exit code instead; `requireTools` asserts
   external tools are on `PATH` with install hints; `hasTool` / `probeOk` answer a prerequisite check
@@ -387,7 +396,19 @@ Formats a `CliError` for display as `Error: <message>`.
 > → `--profile`); the optional **short** alias is the `short` field (e.g. `"p"` → `-p`). There is no
 > separate `long` field on `FlagDef`.
 
-> **Note on repeatable flags:** `ResolvedFlags` tests `multiple` **before** `default` and `required`,
-> so a repeatable flag resolves to `string[]` whether or not it carries either. Mind the inference
-> trap — a table written `{ type: "string" as const, multiple: true }` widens `multiple` to `boolean`
-> and falls through to `string | undefined`. Write `multiple: true as const`.
+> **Note on repeatable flags:** when `multiple: true` a flag resolves to `string[]`, and repeating an
+> unmarked flag is refused — the ruling and its ordering against `default`/`required` are
+> [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §1b's. Mind the inference trap: a table written
+> `{ type: "string" as const, multiple: true }` widens `multiple` to `boolean` and falls through to
+> `string | undefined`. Write `multiple: true as const`.
+
+---
+
+## See also
+
+- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) — the decisions behind this surface:
+  commands as values (§1a), the typed flag record (§1b), the kind-not-exit-code error contract
+  (§1c), and why `CommandBase` and `Command` stay separate (§1d).
+- [`@y-core/forge/tooling/gate`](../gate/README.md) — the verification gate built on this framework.
+- [`@y-core/forge/tooling/term`](../term/README.md) — the terminal-output sink the CLIs render
+  through.

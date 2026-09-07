@@ -57,15 +57,49 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   template per corpus. A chunk id is the citation a human already writes —
   `canon/libs:CODE_RULES.md#5c` — so retrieval and prose share one namespace.
 
+  **Coverage ranks as well as admits, and placement questions reach the growth rules.** A hit's rank
+  is its BM25 score with 40% of it scaled by coverage — BM25 rewards a rare term wherever it lands,
+  so one uncommon word could drag a chunk above the section that answered the whole question. The
+  blend was swept against the golden set: BM25 alone and coverage alone both rank worse. Separately,
+  the vocabulary a placement question is asked in — put, belongs, goes, lives, home — now bridges to
+  the growth rules and the classification sections, which are titled after the namespace rather than
+  after the asking. "Where do I put a new CORS middleware" moved from tenth to first.
+
+  **Every hit says which corpus governs it.** A repository specialises a canon document under the
+  same filename and the same section numbers, so `canon/libs:CODE_REVIEW.md#3a` and
+  `local:docs/CODE_REVIEW.md#3a` come back with identical titles and identical glosses; each is now
+  labelled `fleet canon` or `this repository`, on searches and on reads, in the MCP and in the CLI.
+  The same ambiguity was silently dropping citations — a `shared` rule citing `libs/ERROR_HANDLING.md`
+  matched both corpora and resolved to neither — so resolution now prefers the citing document's own
+  tree, then its own corpus, before giving up. Unresolved citations across forge's corpus: 7 to 3,
+  and the remaining three name files the corpus does not hold.
+
+  **A heading that only organises its children is addressable, outlined, and unsearchable.** A `## N.`
+  with no lead paragraph of its own is still the title a reader scans an outline for and the target
+  of every `§N` citation the corpus writes, so it is emitted as a chunk; it stays out of the search
+  index, because its title is already carried by every child's heading trail and indexing it would
+  add a bodyless competitor that reaches nothing new.
+
+  **A question the corpus does not cover returns nothing.** Each hit carries a coverage figure from
+  0 to 1 — the share of the query's information that section actually addresses, weighting each term
+  by how rare it is and a term the index has never seen at twice its rarest. Below a calibrated floor
+  a hit is not offered, so an empty result is an answer: no rule here governs what was asked. Without
+  it BM25 ranks candidates only against each other, and a question about payment-webhook retries
+  comes back with ten confident sections about origin guards. The `warden:queries` gate step holds
+  the floor to a golden set and a negative set and reports the margin between them on every run.
+
   **No embeddings, deliberately.** The corpus is ~1,000 chunks of technical identifiers, where
   lexical retrieval is the stronger method; it carries a hand-written per-section gloss a generic
   corpus does not; and an embedding provider would make every fresh clone and CI run depend on an
   egress rule. A curated alias table covers the paraphrase queries that would otherwise be lost.
 
   The index lives at `.forge/warden/index.sqlite`, gitignored and rebuilt on demand. **An absent
-  index is never an error and a stale one never refuses**: it answers, says it is behind, and
-  refreshes. The gate builds its own at `.forge/warden/gate.sqlite`, so a working index can never
-  change a verdict.
+  index is never an error, and a served one is never behind**: every question that reads the corpus
+  re-checks it first and refreshes what changed, so an answer reflects the documents as they are
+  rather than as they were when the server started — the case that matters, because the agent
+  asking is usually the one editing. Only a refresh that fails leaves an advisory, and it still
+  answers rather than refusing. The gate builds its own at `.forge/warden/gate.sqlite`, so a working
+  index can never change a verdict.
 
 - **Two gate steps, `warden:index` and `warden:queries`.** The first asserts what retrieval depends
   on — every document chunked, no duplicate id, every numbered section glossed, the catalogue in

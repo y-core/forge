@@ -1,3 +1,8 @@
+---
+title: Media
+description: "Photographs and glyphs — the two things that arrive on a surface no token controls, and how to keep them from defeating the theme."
+---
+
 # Media
 
 Two things arrive on a surface that no token controls: a photograph, and a glyph. Both defeat the
@@ -10,7 +15,19 @@ Forge ships no image component and no aspect-ratio primitive. The one image elem
 bg-muted`, and its prop type makes `alt` required rather than optional. Every rule in the first
 section is that composition, generalised.
 
-## Images on a surface
+## 0. Quick Reference
+
+- §1 Images on a surface: putting a token surface back under text, and boxing an image you do not control
+- §1a Scrims and treated images: why the pair has to be token against token again
+- §1b Fixed boxes, clipped corners and `alt`: what `Avatar.Image` already composes, generalised
+- §1c Before / after — a caption over a hero image: contrast the gate cannot compute, and the fix
+- §2 A carousel is the last resort: same-kind media the reader chooses between, never content to read
+- §3 Glyphs at the size they were drawn: `size-4` or `size-5`, and growing the enclosure instead
+- §3a Before / after — an empty-state mark: a glyph at four times its stroke, against an enclosure
+
+---
+
+## 1. Images on a surface
 
 A photograph carries its own light and dark regions, so a foreground colour that is measured
 against a token is not measured against anything the reader actually sees. `forge-ui-contrast-floor`
@@ -18,6 +35,8 @@ is a Floor rule, and this is the one composition where it cannot be checked: the
 token against token, and no ratio exists between `--foreground` and a photograph. The fix is not to
 find a colour that works over the picture — it is to put a surface back underneath the text, so the
 pair being measured is a pair the gate can see again.
+
+### 1a. Scrims and treated images
 
 Default: text laid over a photograph sits above an `absolute inset-0` scrim carrying a background
 token at reduced opacity — `bg-background/70` under dark text, `bg-foreground/60` under light — so
@@ -40,6 +59,8 @@ usual answer elsewhere. It is unavailable twice over here: it can only be writte
 opposite of the tight, low shadow `forge-ui-depth-soft-shadow` describes. Treating the image keeps
 the decision in the layer that caused the problem.
 
+### 1b. Fixed boxes, clipped corners and `alt`
+
 Default: an image whose proportions the surface does not control — an upload, an avatar, a
 third-party thumbnail — renders into a fixed box, `aspect-square` or `aspect-video` with
 `object-cover` and `overflow-hidden` on the container, rather than at whatever ratio the file
@@ -60,7 +81,7 @@ the surrounding text already says everything it says, matching the contract `Ava
 by typing `alt` as required rather than
 optional. <!-- rule:forge-ui-media-alt-required -->
 
-### Before / after — a caption over a hero image
+### 1c. Before / after — a caption over a hero image
 
 ```tsx
 <div class='relative'>
@@ -86,7 +107,7 @@ The pair is `--foreground` on `--background` again — a ratio the gate computes
 in dark mode — the box is one height whatever the upload was, and the corner comes from the
 container.
 
-## A carousel is the last resort
+## 2. A carousel is the last resort
 
 `Carousel` shows one slide and hides the rest, and asks the reader to operate it to see any other.
 Everything it hides is content the reader has not read, and most readers never operate it at all.
@@ -103,7 +124,7 @@ The dots are what keep the platform honest: each is an anchor to a slide's `id`,
 addressable, bookmarkable, and reachable by keyboard with no script — the same argument
 `forge-ui-pagination-vs-scroll` makes for a paged list.
 
-## Glyphs at the size they were drawn
+## 3. Glyphs at the size they were drawn
 
 An icon in the sprite was drawn at a small size, with a stroke weight chosen for it. Scaled to four
 times that, the stroke thins visibly against every other line on the surface and the shape reads as
@@ -129,7 +150,7 @@ Sizing an icon _button_ is a different rule and it is `forge-ui-hierarchy-icon-b
 one fixes which `shape` and `size` an icon-only `Button` takes. This one is about the glyph inside
 whatever box was chosen.
 
-### Before / after — an empty-state mark
+### 3a. Before / after — an empty-state mark
 
 ```tsx
 import { createIcon } from "@y-core/forge/ui/core";

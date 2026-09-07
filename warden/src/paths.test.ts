@@ -40,13 +40,19 @@ describe("resolveRepoRoot()", () => {
   it("prefers the explicit root over every other source", () => {
     const { root, nested } = repoFixture();
 
-    expect(resolveRepoRoot(root, { WARDEN_ROOT: "/elsewhere" }, nested)).toBe(root);
+    expect(resolveRepoRoot(root, { WARDEN_REPO_ROOT: "/elsewhere" }, nested)).toBe(root);
   });
 
-  it("falls back to WARDEN_ROOT in the environment", () => {
+  it("falls back to WARDEN_REPO_ROOT in the environment", () => {
     const { root, nested } = repoFixture();
 
-    expect(resolveRepoRoot(undefined, { WARDEN_ROOT: root }, nested)).toBe(root);
+    expect(resolveRepoRoot(undefined, { WARDEN_REPO_ROOT: root }, nested)).toBe(root);
+  });
+
+  it("ignores `WARDEN_ROOT`, which names the installed library and not a repository", () => {
+    const { root, nested } = repoFixture();
+
+    expect(resolveRepoRoot(undefined, { WARDEN_ROOT: "/elsewhere" }, nested)).toBe(root);
   });
 
   it("walks up from the working directory when nothing else states one", () => {

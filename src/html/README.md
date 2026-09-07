@@ -1,3 +1,8 @@
+---
+title: Server-Side HTMX Utilities
+description: "Request-header detection, response-header builders, JSX attribute helpers and pre-built interaction patterns — server-side only, never in the browser."
+---
+
 # `@y-core/forge/html`
 
 Server-side HTMX utilities for Forge apps on Cloudflare Workers: request-header detection, response-header builders, JSX attribute helpers, and pre-built interaction patterns.
@@ -76,7 +81,7 @@ function isHxRequest(c: RequestContext): boolean;
 
 Returns `true` when the request carries an `HX-Request: true` header — i.e. it originated from the HTMX client rather than a normal browser navigation.
 
-> **Security note.** `HX-Request` is a client-supplied header; any caller can set it. `isHxRequest` is a **UX routing hint, not a security boundary.** It tells you _how to render_, never _whether the caller is allowed_. For any mutation route, combine it with origin verification (`verifyOrigin` / `originGuard` from `@y-core/forge/security`) and CSRF verification (`csrfProtection` from `@y-core/forge/form`). See [Integration Guide](#integration-guide).
+> **Security note.** `HX-Request` is a client-supplied header, so `isHxRequest` is a **UX routing hint, not a security boundary** — the ruling is [`HTMX.md`](../../docs/HTMX.md) §7's. For any mutation route, combine it with origin verification (`verifyOrigin` / `originGuard` from `@y-core/forge/security`) and CSRF verification (`csrfProtection` from `@y-core/forge/form`). See [Integration Guide](#integration-guide).
 
 ### Inbound header reader — `readHxRequest`
 
@@ -187,6 +192,12 @@ Three props are encoded specially:
 | `values` | `Record<string, string>` | `hx-vals` (JSON) | Omitted when the map is empty |
 | `headers` | `Record<string, string>` | `hx-headers` (JSON) | Omitted when the map is empty |
 | `boost` | `boolean` | `hx-boost` (`"true"` / `"false"`) | Emitted whenever defined |
+
+**Every value here is emitted as the caller wrote it.** Selector-valued props (`target`, `select`,
+`selectOob`, `include`, `indicator`, `disabledElt`), the two JSON props, and the URL-valued verbs
+are not sanitized, so they must be developer-supplied and never derived from request input — the
+trust posture, and why URL-valued `hx-*` attributes are deliberately left out of `safeUrl`, are
+[`HTMX.md`](../../docs/HTMX.md) §7's and §7a's.
 
 ### Swap-strategy constants — `SWAP`
 
@@ -311,3 +322,6 @@ Without these CSP sources the Turnstile iframe and its verification calls are bl
 - [`@y-core/forge/http`](../http/) — `fragmentResponse`, `htmlResponse`, redirect helpers
 - [`@y-core/forge/security`](../security/) — origin verification, CSP headers, `TURNSTILE_CSP`
 - [`@y-core/forge/form`](../form/) — CSRF token minting and verification
+- [`HTMX.md`](../../docs/HTMX.md) — the selector and JSON trust posture and the `isHxRequest`
+  not-a-boundary ruling (§7), why URL-valued and `hx-on:*` attributes stay unsanitized (§7a, §7b),
+  and the form-independent `sync` default (§8)

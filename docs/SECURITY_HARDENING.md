@@ -206,8 +206,11 @@ preflight.
 Middleware that rejects any request whose `Origin` is not in the allowlist. Use on webhook or
 privileged endpoints.
 
-**Requests with no `Origin` header are allowed through** (same-origin browser requests, curl) —
-`originGuard` only blocks cross-origin requests from non-listed origins.
+**It fails closed on no signal at all.** `Origin` decides where it is present; otherwise the
+`Referer`'s origin does; a request carrying neither is `"missing"` and is refused with `403` like a
+disallowed one. Safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) are exempt before the check runs, so
+what this refuses is a state-changing request that offered no origin evidence — a curl `POST`, not a
+same-origin navigation.
 
 ### 3c. verifyOrigin — Inline Origin Check
 
@@ -238,7 +241,7 @@ Three middleware defend against cross-origin mutation. They form a deliberate ti
 | --- | --- | --- | --- |
 | `originProtection(options)` | `Sec-Fetch-Site` **and** the `Origin`/`Referer` allowlist, both applied | Falls back to Fetch-Metadata vouching; fails closed with no signal at all | **The default.** Broadest coverage — modern browsers plus older UAs |
 | `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless `allowMissingHeader` | Stricter, no allowlist |
-| `originGuard(allowed)` | `Origin`/`Referer` only | Allowed through | Webhook/privileged endpoints keyed purely on an origin allowlist |
+| `originGuard(allowed)` | `Origin`/`Referer` only | Fails closed (`403`) — no signal is refused like a disallowed one | Webhook/privileged endpoints keyed purely on an origin allowlist |
 
 **`originProtection` is the authoritative recommended default** — the other two are the
 single-signal tiers it is built from.

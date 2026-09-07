@@ -1,3 +1,8 @@
+---
+title: Marketing Surfaces
+description: "Forge's secondary target, and the whole file is conditional: where a marketing page may depart from the product-UI defaults."
+---
+
 # Marketing Surfaces
 
 **This is forge's secondary target, and the whole file is conditional.** Forge's primitives, its
@@ -7,7 +12,7 @@ who has not decided anything yet, where variance earns attention rather than cos
 
 So read this file as a **standing case for a written brief**, in the sense of
 `docs/UI_DESIGN_GUIDANCE.md` §2c, raising the three dials of `12-density.md` from their
-ratified app-UI defaults (§8) toward roughly density 3, variance 7, motion 5.
+ratified app-UI defaults (`UI_DESIGN_GUIDANCE.md` §8) toward roughly density 3, variance 7, motion 5.
 
 Default: marketing dial settings apply only when a written brief identifies the surface as a
 public-facing marketing or landing page, and never by inference from a route name, a file path, or
@@ -17,7 +22,17 @@ Default: a surface behind authentication is built at forge's app defaults even w
 promotional — an upgrade prompt, a feature announcement — unless the brief names it a marketing
 surface explicitly. <!-- rule:forge-ui-marketing-authenticated-stays-app -->
 
-## What actually changes
+## 0. Quick Reference
+
+- §1 What actually changes: four levers — type steps, vertical rhythm, the hero, the one accent moment
+- §2 Building it from components forge actually has: which primitive serves which marketing section
+- §2a Before / after — the hero: a card framing the thesis as one item, against a plain section
+- §3 What does not change: every Floor rule, and the fabrication rule most of all
+- §4 Motion at 5: one entrance per section, and nothing that moves without the reader
+
+---
+
+## 1. What actually changes
 
 Four things, and only four. Everything else on the page is composed exactly as it would be in the
 app.
@@ -45,7 +60,7 @@ Default: exactly one element per page uses `--primary` as a filled surface — t
 `Button` is the usual holder — and every other call to action on the page is `secondary` or
 `ghost`, unless the brief specifies a repeated end-of-section call to action. <!-- rule:forge-ui-marketing-one-accent -->
 
-## Building it from components forge actually has
+## 2. Building it from components forge actually has
 
 Forge ships no marketing-specific components, and none are needed. A landing page is the existing
 primitives at a different rhythm.
@@ -73,7 +88,7 @@ service failure, which is the one case `destructive` is earned. <!-- rule:forge-
 Default: a capture form opens in a `Dialog` triggered by an explicit control, and never on a timer,
 a scroll position, or an exit-intent listener, unless the brief specifies the trigger. <!-- rule:forge-ui-marketing-dialog-capture -->
 
-### Before / after — the hero
+### 2a. Before / after — the hero
 
 ```tsx
 import { Badge, Button, Card } from "@y-core/forge/ui/core";
@@ -115,7 +130,7 @@ import { Button } from "@y-core/forge/ui/core";
 Two text colors, one accent, the measure capped, and one claim — which happens to be true of the
 product being described.
 
-## What does not change
+## 3. What does not change
 
 **Every Floor rule holds, unchanged, on a marketing page.** The dials of `12-density.md` are Tier 2
 Defaults; the Floor has no tier above it and no brief reaches it. Specifically:
@@ -151,7 +166,7 @@ Default: a section that has no real content yet is left out of the page rather t
 sample content, unless the brief asks for a wireframe, in which case every placeholder is labelled
 as one in the surrounding copy. <!-- rule:forge-ui-marketing-omit-unfilled-section -->
 
-## Motion at 5
+## 4. Motion at 5
 
 The raised motion dial buys entrance transitions on scroll and a longer duration on state changes.
 It does not buy anything that moves without the user causing it.

@@ -30,6 +30,40 @@ describe("openDatabase()", () => {
     expect(readMeta(second, "probe")).toBe("kept");
     second.close();
   });
+
+  it("replaces the tables when the stored schema version is not this one", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "warden-db-schema-")), "index.sqlite");
+
+    const first = openDatabase(path);
+    writeMeta(first, "schema_version", "0");
+    writeMeta(first, "probe", "dropped with the rest");
+    first.run("ALTER TABLE chunk DROP COLUMN searchable");
+    first.close();
+
+    // A rebuild empties and refills; only this can change a column, so without it an index written
+    // by an older schema keeps its shape and fails the first insert naming a new one.
+    const second = openDatabase(path);
+
+    expect(() => second.query("SELECT searchable FROM chunk").all()).not.toThrow();
+    expect(readMeta(second, "probe")).toBeUndefined();
+    second.close();
+  });
+
+  it("removes a column the current schema has dropped, not only restores one it added", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "warden-db-dropped-")), "index.sqlite");
+
+    const first = openDatabase(path);
+    writeMeta(first, "schema_version", "0");
+    first.run("ALTER TABLE chunk ADD COLUMN search_body TEXT NOT NULL DEFAULT ''");
+    first.close();
+
+    // A leftover `NOT NULL` column an insert no longer names is the failure this guards: the old
+    // shape has to go, not be widened around.
+    const second = openDatabase(path);
+
+    expect(() => second.query("SELECT search_body FROM chunk").all()).toThrow();
+    second.close();
+  });
 });
 
 describe("meta", () => {

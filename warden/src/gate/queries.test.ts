@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { openDatabase } from "../index/db";
 import { checkGoldenQueries } from "./queries";
 
 function doc(gloss: string, body: string): string {
@@ -23,11 +24,13 @@ function repo(prefix: string): string {
   return root;
 }
 
-const config = (root: string) => ({ root, kind: "libs" as const, indexPath: ":memory:", canonRoot: join(root, "warden/canon") });
+// `negative: []` by default so each case states its own; the shipped set is written against the
+// real corpus and would be measuring nothing against this three-document fixture.
+const config = (root: string) => ({ root, kind: "libs" as const, indexPath: ":memory:", canonRoot: join(root, "warden/canon"), negative: [] });
 
 const COVERING = [
-  { query: "comment budget ceiling", expect: "canon/libs:CODE_RULES.md#1" },
-  { query: "section numbering cited", expect: "canon/shared:AGENT_GUIDE.md#1" },
+  { query: "comment budget ceiling", expect: "canon:CODE_RULES.md#1" },
+  { query: "section numbering cited", expect: "canon:AGENT_GUIDE.md#1" },
 ];
 
 describe("checkGoldenQueries()", () => {
@@ -35,32 +38,55 @@ describe("checkGoldenQueries()", () => {
     const result = checkGoldenQueries({ ...config(repo("warden-golden-ok-")), queries: COVERING });
 
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe("2 golden queries, 2 documents reached top-1.");
+    expect(result.summary).toBe("2 golden queries, 2 documents reached top-1, floor margin 1.000 answered / 0.000 refused.");
+  });
+
+  it("fails a negative query the corpus answered anyway — what stops the floor being deleted", () => {
+    const result = checkGoldenQueries({
+      ...config(repo("warden-golden-negative-")),
+      queries: COVERING,
+      negative: ["comment budget ceiling"],
+      coverage: false,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings[0]?.message).toContain("the corpus does not answer this and retrieval offered");
+  });
+
+  it("passes a negative query the floor refuses, and reports the margin it had left", () => {
+    const result = checkGoldenQueries({
+      ...config(repo("warden-golden-refused-")),
+      queries: COVERING,
+      negative: ["kubernetes ingress controller"],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain("floor margin 1.000 answered /");
   });
 
   it("prints the query, the expected id and the actual top hits when a query misses", () => {
     const result = checkGoldenQueries({
       ...config(repo("warden-golden-miss-")),
-      queries: [{ query: "comment budget ceiling", expect: "canon/libs:CODE_RULES.md#9" }],
+      queries: [{ query: "comment budget ceiling", expect: "canon:CODE_RULES.md#9" }],
       coverage: false,
     });
 
     const [finding] = result.findings;
 
     expect(finding?.message).toContain('"comment budget ceiling"');
-    expect(finding?.message).toContain("canon/libs:CODE_RULES.md#9");
-    expect(finding?.message).toContain("1. canon/libs:CODE_RULES.md#1");
+    expect(finding?.message).toContain("canon:CODE_RULES.md#9");
+    expect(finding?.message).toContain("1. canon:CODE_RULES.md#1");
   });
 
   it("fails an `absent` id that comes back — a corpus quoting its own anti-patterns is the hazard", () => {
     const result = checkGoldenQueries({
       ...config(repo("warden-golden-absent-")),
-      queries: [{ query: "comment budget ceiling", expect: "canon/libs:CODE_RULES.md#1", absent: ["canon/libs:CODE_RULES.md#1"] }],
+      queries: [{ query: "comment budget ceiling", expect: "canon:CODE_RULES.md#1", absent: ["canon:CODE_RULES.md#1"] }],
       coverage: false,
     });
 
     expect(result.findings.map((finding) => finding.message)).toContain(
-      '"comment budget ceiling" — `canon/libs:CODE_RULES.md#1` must not be returned, and was',
+      '"comment budget ceiling" — `canon:CODE_RULES.md#1` must not be returned, and was',
     );
   });
 
@@ -68,7 +94,7 @@ describe("checkGoldenQueries()", () => {
     const result = checkGoldenQueries({ ...config(repo("warden-golden-coverage-")), queries: [COVERING[0] as (typeof COVERING)[number]] });
 
     expect(result.findings.map((finding) => finding.message)).toContain(
-      "`canon/shared:AGENT_GUIDE.md` is top-1 for no golden query — add one, or retrieval has stopped serving it",
+      "`canon:AGENT_GUIDE.md` is top-1 for no golden query — add one, or retrieval has stopped serving it",
     );
   });
 
@@ -80,6 +106,24 @@ describe("checkGoldenQueries()", () => {
 
   it("says the set is unmeasured rather than passing on an empty one", () => {
     expect(checkGoldenQueries({ ...config(repo("warden-golden-empty-")), queries: [] }).findings[0]?.message).toContain("the golden set is empty");
+  });
+
+  it("leaves a fresh index alone, so the gate does not build the same database twice", () => {
+    const root = repo("warden-golden-fresh-");
+    const indexPath = join(root, "gate.sqlite");
+    const settings = { ...config(root), indexPath, queries: COVERING };
+
+    expect(checkGoldenQueries(settings).ok).toBe(true);
+    const db = openDatabase(indexPath);
+    db.run("UPDATE chunk SET title = 'sentinel'");
+    db.close();
+
+    expect(checkGoldenQueries(settings).ok).toBe(true);
+    const after = openDatabase(indexPath);
+    const titles = after.query<{ title: string }>("SELECT DISTINCT title FROM chunk").all();
+    after.close();
+
+    expect(titles).toEqual([{ title: "sentinel" }]);
   });
 
   it("is deterministic — the same corpus twice gives the same verdict", () => {

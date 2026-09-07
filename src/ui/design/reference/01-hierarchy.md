@@ -1,10 +1,30 @@
+---
+title: Hierarchy
+description: "What a screen tells a user to do first: how emphasis, size and placement rank the actions on a surface."
+---
+
 # Hierarchy
 
 Hierarchy is the answer to one question a user asks of every screen: _what am I supposed to do
 here?_ Forge's primitives already encode an answer. `Button` ships three resting looks for an
 action, and that is not a shortage — it is the action pyramid, spelled as an API.
 
-## The action pyramid is `Button`'s three looks
+---
+
+## 0. Quick Reference
+
+- §1 The action pyramid is `Button`'s three looks: primary, outline and ghost as three levels of ink
+- §1a Before / after — the three-primary dialog: three filled buttons, and the surface with no opinion
+- §2 De-emphasise before you emphasise: lower the neighbours rather than raise the element
+- §3 Icon-only actions: `shape='icon'` against `shape='square'`, and which size matches which row
+- §4 Severity is a ladder, and `neutral` is the bottom rung: what each `tone` claims about a message
+- §5 Labels are a last resort: when a value needs no label, and what to spend when it does
+- §5a Before / after — a labelled detail block: `Label` competing with its value, and the `Field` that does not
+- §6 Where the primary action lives: `Card.Footer` for the action, `Card.Action` for the card-level control
+
+---
+
+## 1. The action pyramid is `Button`'s three looks
 
 | Tier | Button | What it is for | How many per surface |
 | --- | --- | --- | --- |
@@ -28,7 +48,7 @@ draws a border from `--input` and no fill, and the ghost one is text with a hove
 `--accent`. Three levels of ink, in descending order. Reaching outside them means fighting the
 system.
 
-### Before / after — the three-primary dialog
+### 1a. Before / after — the three-primary dialog
 
 ```tsx
 import { Button, Card } from "@y-core/forge/ui/core";
@@ -57,7 +77,7 @@ import { Button, Card } from "@y-core/forge/ui/core";
 </Card.Footer>;
 ```
 
-## De-emphasise before you emphasise
+## 2. De-emphasise before you emphasise
 
 The instinct when something does not stand out is to make it louder. The cheaper move, almost
 always, is to make its neighbours quieter — a surface has a fixed budget of attention, and
@@ -76,7 +96,7 @@ line that matters; `--muted-foreground` carries everything supporting. A third c
 what `forge-ui-text-color-budget` forbids, and `Card.Title` / `Card.Description` are already
 built as that exact pair — copy the relationship rather than inventing a new one.
 
-## Icon-only actions
+## 3. Icon-only actions
 
 `Button` `shape` offers `icon` as a square box the size scale drives, and `square` as a
 _relationship_ — full width, aspect-ratio 1.
@@ -98,7 +118,7 @@ specifies a fluid grid of equal cells. <!-- rule:forge-ui-hierarchy-square-needs
 Every icon-only button still needs an accessible name — `forge-ui-accessible-name` is a Floor
 rule, and a `Tooltip` is not a substitute for one.
 
-## Severity is a ladder, and `neutral` is the bottom rung
+## 4. Severity is a ladder, and `neutral` is the bottom rung
 
 `Alert` and `Toast` take the same `tone` scale — `neutral` / `destructive` / `info` / `success` /
 `warning`, `neutral` being the default. Each non-`neutral` tone is a claim about how much the
@@ -126,7 +146,7 @@ A list where every row carries a filled primary badge has a list with no signal 
 Colour alone never carries the severity — `forge-ui-not-color-alone` is a Floor rule, and an
 `Alert.Title` is the usual way to satisfy it.
 
-## Labels are a last resort
+## 5. Labels are a last resort
 
 A label exists because a value would otherwise be ambiguous. When the value is self-evident — an
 email address, a timestamp, a currency amount in a column headed with its currency — the label is
@@ -149,7 +169,7 @@ Default: a section whose purpose is obvious from its layout carries a visually h
 rather than a visible one, unless the section is one of several that a user must choose between
 by name. <!-- rule:forge-ui-hierarchy-hidden-section-title -->
 
-### Before / after — a labelled detail block
+### 5a. Before / after — a labelled detail block
 
 ```tsx
 import { Card, Label } from "@y-core/forge/ui/core";
@@ -182,7 +202,7 @@ import { Card, Field } from "@y-core/forge/ui/core";
 `Field` renders its label as a `<span>` at `text-xs font-medium text-muted-foreground` — quieter
 than the value by construction, and two text colors total.
 
-## Where the primary action lives
+## 6. Where the primary action lives
 
 Default: a `Card`'s single most important action renders in `Card.Footer`, and a
 surface-level control that acts on the card as a whole renders in `Card.Action`, unless the card

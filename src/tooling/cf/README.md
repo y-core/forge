@@ -1,3 +1,8 @@
+---
+title: Cloudflare Account and Zone Reconciliation
+description: "Reconciles account bindings against what exists and zone rules against a site config, and generates the env schema from both."
+---
+
 # `@y-core/forge/tooling/cf`
 
 Everything that talks to Cloudflare: reconciling account bindings against what exists,
@@ -259,19 +264,18 @@ It reads the `zone` block of a [`@y-core/forge/site`](../../site/README.md) conf
 two phase entry point rulesets: `http_request_firewall_custom` for the route-derived allow-list,
 and `http_request_dynamic_redirect` for a host-to-apex redirect.
 
-The redirect **consolidates a zone onto its apex** — every source host must be a subdomain of it.
-This is not a general URL forwarder: a source outside the apex could never fire, since the rule is
-deployed to the apex's own zone, and a source equal to the apex is a loop. Both are refused when the
-rule is built, not after it is committed.
+The redirect **consolidates a zone onto its apex** — every source host must be a subdomain of it,
+and a source outside it or equal to it is refused when the rule is built rather than after it is
+committed. Why, and the once-stated apex the rule reads, are
+[`@y-core/forge/site`](../../site/README.md)'s.
 
 **A `PUT` replaces the phase's whole rule list.** A rule this config does not describe does not
 survive a `--commit` — including one authored by hand in the dashboard. That is the point of one
 source of truth, and it is also the thing to know before the first commit.
 
-**Sync before you push.** Allowing a path that does not exist yet is harmless; deploying a path
-that is not yet allowed is an outage, because the edge answers it before the Worker ever sees it.
-The order is always `forge sync zone --commit` → push → deploy. `--check` in the gate turns "you
-forgot" into a local failure, which is the only place it is cheap to catch.
+**Sync before you push** — the order is always `forge sync zone --commit` → push → deploy, and the
+asymmetry that makes it one-directional is [`@y-core/forge/site`](../../site/README.md)'s. `--check`
+in the gate turns "you forgot" into a local failure, which is the only place it is cheap to catch.
 
 Credentials are `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN`, read from the environment; either
 missing is refused before any call is made. `--zone-id` / `--api-token` exist for a one-off, but a
@@ -289,11 +293,10 @@ permission is what is missing. The permission that unlocks both phases at once i
 by zone, is the part nothing in the response suggests — and the reason both phases fail together,
 where a missing per-phase zone permission would fail only one.
 
-**An expression is capped at 4096 characters per rule**, on every plan; exceeding it fails the write
-with code 20127 rather than truncating. That is the ceiling a generated allow-list grows into — the
-per-phase rule count (5 on Free, 20 on Pro, 100 on Business) does not bind, since the allow-list is
-one rule. The limit is enforced and tested where the expression is built, in
-[`@y-core/forge/site`](../../site/README.md)'s `EXPRESSION_MAX_CHARS`.
+**An expression is capped at 4096 characters per rule**, and that — not the per-phase rule count —
+is the ceiling a generated allow-list grows into. The cap is enforced and tested where the
+expression is built, so both the limit and the two ways out of it are
+[`@y-core/forge/site`](../../site/README.md)'s.
 
 **An auth failure does not tell you which.** Cloudflare returns one code for a token it rejects and
 for a valid token missing a permission, so the failure row names both and prints Cloudflare's own
@@ -311,6 +314,81 @@ missing permission.
 This is a **CLI credential, not a Worker secret.** Nothing here is a `.dev.vars` key: `forge cf sync`
 pushes marked keys from that file to Cloudflare, and a token with edit rights on the zone is the
 last thing that should be sitting in a file with that machinery pointed at it.
+
+## Generating the env schema
+
+`forge cf gen env` reads the `wrangler.jsonc` config plus the `.dev.vars` secrets file and emits a
+single committed module containing a runtime valibot `EnvSchema` and a compile-time
+`type Env = v.InferOutput<typeof EnvSchema>` — a schema-first replacement for the env half of
+`wrangler types`. It is one third of the **standard three-part env setup** (the full guide is
+[src/config/README.md](../../config/README.md)):
+
+1. **`src/app/env.config.ts`** — optional hand-written policy, a `Partial<GenOptions>`: e.g.
+   `optional: new Set(["RATE_LIMITER"])` for bindings absent under `wrangler dev`, or
+   `refinements: { SESSION_SECRET: { minLength: 32 } }` for per-var constraints.
+2. **`src/app/env.schema.ts`** — the **generated** module (`EnvSchema` + `type Env`), committed and
+   regenerated whenever `wrangler.jsonc` bindings change.
+3. **`validateBindings(EnvSchema)`** ([`@y-core/forge/app`](../../app/README.md)) — registered as
+   middleware so the contract is enforced on the first request.
+
+Run it as a `package.json` script:
+
+```json
+{ "scripts": { "gen:env": "forge cf gen env" } }
+```
+
+```bash
+bun run gen:env
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--wrangler` | `wrangler.jsonc` | Path to the wrangler config. |
+| `--dev-vars` | `.dev.vars` | Path to the `.dev.vars` secrets file. |
+| `--out` | `src/app/env.schema.ts` | Output module path. |
+| `--config` | `src/app/env.config.ts` | Host-policy module exporting a `Partial<GenOptions>`; built-in `DEFAULT_OPTIONS` are used when this file is absent. |
+
+The command reads the wrangler bindings and dev-vars keys, collects entries, emits the module, and
+runs an oxfmt format pass so the generated file passes the lint gate. A typical generated module:
+
+```ts
+/** env.schema.ts — GENERATED — do not edit; run `bun run gen:env`. */
+import { v } from "@y-core/forge/validation";
+
+export const EnvSchema = v.object({
+  MY_KV: v.custom<KVNamespace>((x) => typeof x === "object" && x !== null, "MY_KV must be a KV namespace binding"),
+  ASSETS: v.custom<Fetcher>((x) => typeof x === "object" && x !== null, "ASSETS must be a Fetcher binding"),
+  API_BASE_URL: v.string(),
+});
+
+export type Env = v.InferOutput<typeof EnvSchema>;
+```
+
+Override generation policy with a `--config` module exporting a `Partial<GenOptions>` (as `options`
+or `default`), merged over `DEFAULT_OPTIONS`:
+
+```ts
+// src/app/env.config.ts
+import type { GenOptions } from "@y-core/forge/tooling/cf";
+
+export const options: Partial<GenOptions> = { optional: new Set(["ANALYTICS"]), refinements: { API_BASE_URL: { minLength: 8 } } };
+```
+
+### Generator API
+
+| Export | Signature | Description |
+| --- | --- | --- |
+| `createGenEnvCommand` | `() => CommandBase` | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge cf gen env` bin entry. |
+| `readWranglerConfig` | `(path: string) => Record<string, unknown>` | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped). |
+| `loadOptions` | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given. |
+| `GenOptions` | `{ optional: Set<string>; refinements: Record<string, { minLength?: number }>; bindingCheck: string }` | The host-policy shape a `--config` module exports. The only public type of the three generator modules. |
+
+The generator core behind those is `@internal` and barrel-exports nothing: `cf-env-registry.ts`
+holds the data (the `REGISTRY` binding-kind table in wrangler's collection order, the
+`DEFAULT_OPTIONS` policy default, the baked `HEADER` comment, and the `BindingDef` / `Entry`
+shapes), and `cf-env-gen.ts` holds the codegen (`collectBindings`, `collectVars`, `emit`,
+`stripJsonc`). **Drive generation through `createGenEnvCommand`** — there is no supported way to
+assemble a schema from the internal pieces.
 
 ## Programmatic use
 

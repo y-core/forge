@@ -1,3 +1,8 @@
+---
+title: Sessions and Cookies
+description: "A curated cookie and session surface plus forge's own session lifecycle middleware and a hardened, HMAC-signed cookie constructor."
+---
+
 # `@y-core/forge/session`
 
 Session management and cookie primitives for Cloudflare Workers. This namespace combines a curated re-export of the `@remix-run/cookie` and `@remix-run/session` surface with two forge-specific additions: `sessionMiddleware` (a request/response session lifecycle middleware that avoids cache-defeating cookie writes) and `createSignedCookie` (a hardened cookie constructor that enforces `httpOnly`, `secure`, and HMAC signing).
@@ -244,7 +249,7 @@ Use `createCookie` for non-sensitive values. For sensitive cookies, use `createS
 
 ## Security
 
-This namespace handles cookies and session state. Session and cookie management is deliberately **out of scope for `@y-core/forge/security`**, which covers transport-layer hardening only — these primitives live here instead.
+This namespace handles cookies and session state. Session and cookie management is deliberately **out of scope for `@y-core/forge/security`**, which covers transport-layer hardening only — the split is [`NAMESPACES.md`](../../docs/NAMESPACES.md) §5a's, and the boundary behind it [`BOUNDARIES.md`](../../warden/canon/libs/BOUNDARIES.md) §2's.
 
 Bind CSRF tokens to the session id so a token minted in one browser cannot be replayed from another: wire `sessionCtx` into `csrfProtection`'s `subject` resolver, registering `sessionMiddleware` first. The pattern is [src/form/README.md](../form/README.md)'s.
 

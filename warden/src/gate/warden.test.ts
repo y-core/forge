@@ -51,6 +51,17 @@ describe("checkWarden()", () => {
     expect(result.summary).toContain("3 documents");
   });
 
+  it("reports on a document with two `## 1.` headings instead of dying inside the build", () => {
+    const duplicated =
+      '---\ntitle: Rules\ndescription: "Six rules."\n---\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\nBody.\n\n## 1. One Again\n\nBody.\n';
+    const result = run(repo("warden-gate-duplicate-", { catalogue: CATALOGUE, docA: duplicated }));
+
+    // The id is disambiguated rather than colliding, so `validate-docs` is left to name the
+    // duplicate and the gate still gets to run every other check.
+    expect(result.summary).toContain("3 documents");
+    expect(result.findings.map((finding) => finding.message).join("\n")).not.toContain("the index could not be built");
+  });
+
   it("fails on catalogue drift, naming the command that fixes it", () => {
     const result = run(repo("warden-gate-drift-", { catalogue: `${CATALOGUE}\n- \`GHOST.md\` — Ghost: nothing.\n` }));
 

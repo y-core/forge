@@ -1,3 +1,8 @@
+---
+title: Per-Request Context Accessors
+description: "Type-safe accessors over the framework's stringly-keyed request context, and the loudly-failing seam that exposes env and executionCtx."
+---
+
 # `@y-core/forge/context`
 
 Per-request context utilities for `@remix-run/fetch-router` on Cloudflare Workers. This namespace turns the framework's stringly-keyed `RequestContext` into a set of **type-safe accessors** and exposes the Workers `env` / `executionCtx` through a single, loudly-failing `AppContext` seam.
@@ -208,3 +213,16 @@ app.use(
 | `ContextKey<T>` | Opaque key type for context-variable storage. |
 | `Middleware` | Standard middleware type (re-exported from `@remix-run/fetch-router`). |
 | `RequestHandler` | Standard route handler type (re-exported from `@remix-run/fetch-router`). |
+
+---
+
+## See also
+
+- [`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) — why `context` is a public
+  subpath and what it is the canonical home of (§4), the rule that a namespace publishes its own
+  accessor rather than letting consumers invent slots (§4a), the one-accessor-per-slot rule (§4b),
+  and what a handler reads from `c` (§5d).
+- [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) — the resolve/validate binding pattern the
+  storage namespaces build on `validateBindings`.
+- [`@y-core/forge/app`](../app/README.md) — `createApp`, which injects the per-request state
+  `getAppContext` asserts on.

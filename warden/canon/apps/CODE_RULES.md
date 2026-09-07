@@ -84,7 +84,7 @@ export const HONEYPOT_FIELD_DEFAULT = "__surname";
 ```
 
 One file owns each such value, and it is named in the source-of-truth register
-([`AGENT_GUIDE.md`](./AGENT_GUIDE.md) §8) rather than restated anywhere else.
+(`AGENT_GUIDE.md` §8) rather than restated anywhere else.
 
 ### 1d. Factory Naming and Bare Constructors
 

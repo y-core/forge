@@ -1,10 +1,31 @@
+---
+title: Typography
+description: "The four decisions that separate type that reads well from type that reads as machine-composed: sizes, weights, measure and rhythm."
+---
+
 # Typography
 
 Type carries most of a product UI. Almost all of it is text, and the difference between a screen
 that reads well and one that reads as machine-composed is usually four decisions: which sizes,
 which weights, how wide, and how tight.
 
-## Pick sizes that are obviously different
+---
+
+## 0. Quick Reference
+
+- §1 Pick sizes that are obviously different: three or four steps with distance between them, and the responsive headline
+- §2 Two weights: one normal, one heavier, and what forge's primitives already set
+- §2a Before / after — a card heading: three weights and a 2px gap, against the untouched pair
+- §3 Measure: the 45–75 character band `max-w-prose` lands inside
+- §4 Leading runs inverse to size: which leading each size takes, and where forge already sets it
+- §5 Tracking: `tracking-tight` above `text-2xl`, and none at all on body copy
+- §6 Numerals that align: what `tabular-nums` costs a jittering value, and where it is owed
+- §6a Before / after — a stat row: a count that shifts sideways on every update
+- §7 Labels: `FIELD_LABEL_CLASSES` through `cn`, and the four properties that drift when retyped
+
+---
+
+## 1. Pick sizes that are obviously different
 
 Tailwind's default scale runs `text-xs` 12px, `text-sm` 14px, `text-base` 16px, `text-lg` 18px,
 `text-xl` 20px, `text-2xl` 24px, `text-3xl` 30px, `text-4xl` 36px. Adjacent steps at the small end
@@ -39,7 +60,7 @@ This is a size decision, not a hierarchy one: `forge-ui-type-scale-jump` still g
 steps the surface uses, and the responsive pair counts as the one step it resolves to at any given
 width.
 
-## Two weights
+## 2. Two weights
 
 Default: a surface uses at most two font weights — a normal weight for body copy and one heavier
 weight for emphasis — unless a brief specifies a display face with its own weight range. <!-- rule:forge-ui-type-two-weights -->
@@ -54,7 +75,7 @@ Default: emphasis within body copy is achieved by raising weight or changing to
 `--muted-foreground`, never by increasing size, unless the emphasised text is a heading that
 outranks the surrounding copy. <!-- rule:forge-ui-type-weight-over-size -->
 
-### Before / after — a card heading
+### 2a. Before / after — a card heading
 
 ```tsx
 import { Card } from "@y-core/forge/ui/core";
@@ -82,7 +103,7 @@ Untouched, `Card.Title` is `font-semibold` on `--card-foreground` and `Card.Desc
 `text-sm` on `--muted-foreground`. Two weights, two colours, and the relationship is already
 correct.
 
-## Measure
+## 3. Measure
 
 Default: a body-copy column targets a line length of 45–75 characters — `max-w-prose` lands inside
 that band at the default font size — unless the region is a table or a code block, where wrapping
@@ -92,7 +113,7 @@ costs more than the long line does. <!-- rule:forge-ui-type-measure-target -->
 target inside it: a column much narrower than 45 characters breaks the reading rhythm as badly as
 one much wider than 75 loses the return sweep.
 
-## Leading runs inverse to size
+## 4. Leading runs inverse to size
 
 The larger the text, the less leading it needs, because the eye has less horizontal distance to
 travel back across relative to the letterforms.
@@ -108,7 +129,7 @@ Default: leading tightens as size increases and loosens as size decreases, follo
 above, unless the text sits in a fixed-height row where the line box must match a control's
 height. <!-- rule:forge-ui-type-leading-inverse -->
 
-## Tracking
+## 5. Tracking
 
 Type is spaced for body sizes by default, which means it is slightly too loose once it gets large
 and correct everywhere else.
@@ -120,7 +141,7 @@ Default: body copy carries no tracking utility at all — letterspacing paragrap
 readability rather than raising it — with the single exception of a short all-caps label, where
 `tracking-wide` compensates for uniform letterform width. <!-- rule:forge-ui-type-tracking-body -->
 
-## Numerals that align
+## 6. Numerals that align
 
 Proportional digits have different widths, so a number that updates in place jitters, and a column
 of numbers fails to line up under its own decimal point.
@@ -129,7 +150,7 @@ Default: any number that changes in place — a live count, a timer, a `Progress
 — or that appears in a column beside other numbers is set with `tabular-nums`, unless the number
 appears exactly once as inline prose. <!-- rule:forge-ui-type-tabular-numerals -->
 
-### Before / after — a stat row
+### 6a. Before / after — a stat row
 
 ```tsx
 import { Field } from "@y-core/forge/ui/core";
@@ -150,7 +171,7 @@ import { Field } from "@y-core/forge/ui/core";
 </Field>;
 ```
 
-## Labels
+## 7. Labels
 
 Default: a form label renders through `Label` or `FormField.Label`, and any bespoke label-shaped
 element applies `FIELD_LABEL_CLASSES` through `cn` rather than restating its classes, unless the

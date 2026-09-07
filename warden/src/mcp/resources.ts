@@ -35,13 +35,13 @@ export const RESOURCES: readonly ResourceSpec[] = [
 /** The two templates — one per corpus. @public */
 export const TEMPLATES: readonly ResourceTemplate[] = [
   {
-    uriTemplate: "knowledge://canon/{tree}/{path}",
+    uriTemplate: "knowledge://canon/{path}",
     name: "Canon document",
-    description: "One document of the fleet canon, whole. `tree` is `shared`, `libs` or `apps`.",
+    description: "One document of the fleet canon, whole.",
     mimeType: "text/markdown",
   },
   {
-    uriTemplate: "knowledge://local/{path}",
+    uriTemplate: "knowledge://project/{path}",
     name: "Repository document",
     description: "One of this repository's own governing documents, whole.",
     mimeType: "text/markdown",
@@ -56,16 +56,16 @@ export interface ResourceContents {
 /** Reads one resource by URI, or `undefined` when the URI names none. @public */
 export function readResource(knowledge: Knowledge, uri: string): ResourceContents | undefined {
   if (uri === "knowledge://catalogue") {
-    return { contents: [{ uri, mimeType: "text/markdown", text: renderCatalogue(knowledge.db) }] };
+    return { contents: [{ uri, mimeType: "text/markdown", text: renderCatalogue(knowledge.db, { local: true }) }] };
   }
 
-  const canon = uri.match(/^knowledge:\/\/canon\/(shared|libs|apps)\/(.+)$/);
-  const local = uri.match(/^knowledge:\/\/local\/(.+)$/);
-  const path = canon?.[2] ?? local?.[1];
+  const canon = uri.match(/^knowledge:\/\/canon\/(.+)$/);
+  const project = uri.match(/^knowledge:\/\/project\/(.+)$/);
+  const path = canon?.[1] ?? project?.[1];
   if (path === undefined) return undefined;
 
-  const tree = canon?.[1];
-  const sections = readDocument(knowledge.db, path).filter((section) => (tree === undefined ? section.corpus === "local" : section.tree === tree));
+  const corpus = canon === null ? "project" : "canon";
+  const sections = readDocument(knowledge.db, path).filter((section) => section.corpus === corpus);
   if (sections.length === 0) return undefined;
 
   const body = sections.map((section) => `## ${section.section}. ${section.title}\n\n${section.body}`).join("\n\n");

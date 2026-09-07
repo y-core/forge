@@ -1,4 +1,4 @@
-export { renderCatalogue } from "./catalogue/render";
+export { type CatalogueScope, renderCatalogue } from "./catalogue/render";
 export { createWardenCommands } from "./cli/commands";
 export { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./cli/knowledge";
 export { bindings, DEFAULT_ARCH, declaredVersion, executables, installedVersion, placeNatives } from "./cli/natives";
@@ -12,20 +12,19 @@ export { canonSources, discover, localSources, repoRelative, weightOf } from "./
 export type { GoldenCheckConfig } from "./gate/queries";
 export { checkGoldenQueries } from "./gate/queries";
 export type { GoldenQuery } from "./gate/golden";
-export { GOLDEN } from "./gate/golden";
+export { GOLDEN, NEGATIVE } from "./gate/golden";
 export type { WardenCheckConfig } from "./gate/warden";
 export { checkWarden } from "./gate/warden";
-export type { BuildReport } from "./index/build";
-export { build, load } from "./index/build";
-export { gateIndexPath, indexPath, openDatabase, readMeta, stampVersions, versionsMatch, writeMeta } from "./index/db";
-export type { Freshness } from "./index/freshness";
-export { advisory, freshness } from "./index/freshness";
-export type { Knowledge } from "./index/open";
-export { openIndex, rebuild } from "./index/open";
+export { readMeta, stampVersions, versionsMatch, writeMeta } from "./index/db";
 export { COLUMN_WEIGHTS, INDEXER_VERSION, SCHEMA, SCHEMA_VERSION, TOKENIZE } from "./index/schema";
+// The knowledge surface is re-exported through its own barrel rather than restated module by
+// module, so `search/mod.ts` stays the one place that decides what it is. A star re-export would
+// say it in one line and is banned, so the names are listed — but they are listed once.
+export type { BuildReport, Freshness, Knowledge, OpenOptions } from "./search/mod";
+export { advisory, build, freshness, gateIndexPath, indexPath, load, openDatabase, openIndex, rebuild } from "./search/mod";
 export { CANON_ROOT, CLAUDE_ROOT, resolveRepoRoot, walkUpToRepo, WARDEN_ROOT } from "./paths";
-export { check, checkAgents, checkTree } from "./sync/check";
-export { readKind, resolveKind } from "./sync/kind";
+export { check, checkAgents, checkBoundary, checkTree } from "./sync/check";
+export { type KindSource, readKind, resolveKind, resolveKindSource } from "./sync/kind";
 export { seed, seedFiles } from "./sync/seed";
 export { copyTree, identical, sync, syncTrees, walk } from "./sync/sync";
 export type { Chunk, Corpus, Divergence, Kind, Relation, SeedFile, SourceDoc, SyncOutcome, SyncTree, Tree } from "./types";

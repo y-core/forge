@@ -1,3 +1,8 @@
+---
+title: Transport-Layer Hardening
+description: "Content-Security-Policy with per-request nonces, CORS, origin and cross-origin guards, rate limiting and content-type checks — before any application logic runs."
+---
+
 # `@y-core/forge/security`
 
 Transport-layer request/response hardening for Forge apps on Cloudflare Workers: Content-Security-Policy with per-request nonces, CORS, origin verification, cross-origin (Fetch Metadata) protection, rate limiting, request identity, and content-type guards.
@@ -74,9 +79,11 @@ Headers set on every response:
 | `X-Content-Type-Options` | `nosniff` |
 | `Permissions-Policy` | `camera`, `microphone`, `geolocation`, `payment` — each `()` (disabled) unless allowlisted |
 | `X-Frame-Options` | `DENY` |
-| `Cross-Origin-Opener-Policy` | `same-origin` — use `same-origin-allow-popups` if the app opens OAuth/payment popups |
-| `Cross-Origin-Resource-Policy` | `same-origin` — use `cross-origin` for intentionally embeddable resources |
-| `Cross-Origin-Embedder-Policy` | **not set** — opt in via `crossOriginEmbedderPolicy` (`require-corp` breaks any subresource without CORP/CORS opt-in) |
+| `Cross-Origin-Opener-Policy` | `same-origin`, overridable via `crossOriginOpenerPolicy` |
+| `Cross-Origin-Resource-Policy` | `same-origin`, overridable via `crossOriginResourcePolicy` |
+| `Cross-Origin-Embedder-Policy` | **not set** — opt in via `crossOriginEmbedderPolicy` |
+
+Which headers are in this set, why `X-Frame-Options` is emitted although `frame-ancestors` already covers it, when to loosen each override, and why COEP is opt-in are [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2e's.
 
 `SecurityHeadersOptions`:
 
@@ -172,7 +179,7 @@ const withNonce = applySecurityHeaders(page, { scriptSrc: ["'self'", NONCE], non
 
 ### `mergeSecurityHeaders(base, extra)`
 
-Layers extra CSP sources onto a base `SecurityHeadersOptions`, concatenating each directive's source list (and shallow-merging `permissionsPolicy`, overriding `hstsMaxAge`). A directive the base omits falls back to its default before the concatenation, so merging onto a partial base never drops `'self'` or the nonce placeholder; `workerSrc` and `childSrc` have no default and stay absent unless one side provides them. The canonical use is adding dev-only sources — such as the Wrangler live-reload inline-script hash — in the dev worker entry only, so they cannot leak into production by construction.
+Layers extra CSP sources onto a base `SecurityHeadersOptions`, concatenating each directive's source list (and shallow-merging `permissionsPolicy`, overriding `hstsMaxAge`). A directive the base omits falls back to its default before the concatenation, so merging onto a partial base never drops `'self'` or the nonce placeholder; `workerSrc` and `childSrc` have no default and stay absent unless one side provides them. Its canonical use — dev-only sources in the dev worker entry alone — is [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2c's.
 
 ```ts
 import { mergeSecurityHeaders } from "@y-core/forge/security";
@@ -184,9 +191,9 @@ const devHeaders = mergeSecurityHeaders(headers, { scriptSrc: [WRANGLER_LIVE_REL
 
 ### `cors(options)`
 
-Middleware that adds CORS response headers for allowed origins and answers preflight (`OPTIONS`) requests with `204`. It validates the request `Origin` against the allowlist — exact strings or single-label subdomain wildcards (`https://*.example.com`). After `next()` returns it **rebuilds** the `Response` with a cloned `Headers` (the downstream response may carry immutable headers), then sets `Access-Control-Allow-Origin` and appends `Origin` to `Vary`.
+Middleware that adds CORS response headers for allowed origins and answers preflight (`OPTIONS`) requests with `204`. It validates the request `Origin` against the allowlist — exact strings or single-label subdomain wildcards (`https://*.example.com`). After `next()` returns it rebuilds the `Response` with a cloned `Headers`, then sets `Access-Control-Allow-Origin` and appends `Origin` to `Vary`.
 
-**`Vary: Origin` is marked on every origin-dependent response, refusals included** — a request with a disallowed `Origin`, or none at all, gets it too, so a shared cache cannot store a refusal and replay it to an allowed origin. The one exception is `origins: ["*"]` without `credentials`, where the `Access-Control-Allow-Origin` header is the constant `"*"`: nothing varies, so no `Vary` is added and a downstream one is left alone. The allowlist is compiled once, at `cors()` time.
+**`Vary: Origin` is marked on every origin-dependent response, refusals included**, with one exception — `origins: ["*"]` without `credentials`, where the constant `"*"` means nothing varies. The rule that decides this, the cache-poisoning direction it closes, and the rebuild-rather-than-mutate ruling above it are [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §3a's. The allowlist is compiled once, at `cors()` time.
 
 `CorsOptions`:
 
@@ -214,7 +221,7 @@ Pure predicate: returns `true` when `origin` matches any entry in `patterns` exa
 
 ### `originGuard(allowedOrigins)`
 
-Middleware that rejects requests whose `Origin`/`Referer` does not match the allowlist with `403 Forbidden`. Safe methods (`GET`, `HEAD`, `OPTIONS`, `TRACE`) are exempt. Requests with no `Origin` and no `Referer` are treated as missing and rejected.
+Middleware that rejects requests whose `Origin`/`Referer` does not match the allowlist with `403 Forbidden`. Safe methods (`GET`, `HEAD`, `OPTIONS`, `TRACE`) are exempt, and a state-changing request carrying neither header is refused like a disallowed one ([`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §3b).
 
 ```ts
 import { originGuard } from "@y-core/forge/security";
@@ -372,7 +379,7 @@ This namespace is **transport-layer only**. The guards below are the building bl
 
 ### CSP nonces vs. inline scripts
 
-`createSecurityHeaders` emits a strict CSP with **no `'unsafe-inline'`** for either `script-src` or `style-src`. Both `style-src` and `font-src` default to `'self'` and are extensible via the `styleSrc`/`fontSrc` options — widening them to a CDN origin never introduces `'unsafe-inline'`. Every inline `<script>` must carry the per-request nonce from `getNonce(c)`; inline `style=` attributes are dropped by the JSX renderer because the policy forbids them. A static nonce defeats the mechanism — the factory always mints a fresh one per request.
+`createSecurityHeaders` emits a strict CSP with **no `'unsafe-inline'`** for either `script-src` or `style-src`, so every inline `<script>` must carry the per-request nonce from `getNonce(c)`, and inline `style=` attributes are dropped by the JSX renderer. The fresh-nonce-per-request contract is [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2a's, and which headers are in the emitted set and why — including that widening `styleSrc`/`fontSrc` never introduces `'unsafe-inline'` — is §2e's.
 
 ### CSRF defense lives in two places
 
@@ -386,7 +393,7 @@ The origin guards here are **not** a token mechanism — they are a complementar
 
 #### `crossOriginProtection(options?)` / `checkCrossOriginProtection(request, options?)`
 
-Rejects state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`/`TRACE`) with `403` unless the browser **Fetch Metadata** `Sec-Fetch-Site` header says `same-origin` or `none`. This is an **allowlist, not a denylist**: `same-site` is rejected too, because any sibling subdomain produces it and a subdomain you do not control is an attacker for CSRF purposes. This matches Go's `http.CrossOriginProtection`. Requests with no `Sec-Fetch-Site` header are rejected by default (fail-closed) unless `allowMissingHeader: true` is passed.
+Rejects state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`/`TRACE`) with `403` unless the browser **Fetch Metadata** `Sec-Fetch-Site` header says `same-origin` or `none`, and rejects a request carrying no such header unless `allowMissingHeader: true` is passed. It matches Go's `http.CrossOriginProtection`. Why `same-site` is rejected too — the allowlist-not-denylist reading — is [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §3e's.
 
 `checkCrossOriginProtection` is the pure predicate form, returning a `CrossOriginResult` (a `GuardResult` alias — `{ ok: true } | { ok: false; error: "missing-fetch-metadata" | "cross-site" | "same-site" }`, with the failure reason code in `.error`) so you can branch on it instead of auto-rejecting. `same-site` is reported distinctly from `cross-site` because the two describe different attackers — a sibling subdomain you may partly control, versus an unrelated origin.
 
@@ -434,11 +441,11 @@ app.use("/api/*", originProtection({ allowedOrigins: (c) => c.var.config.allowed
 
 ### Out-of-band responses keep their headers
 
-Responses produced **outside** the middleware chain (router internals, a 500 thrown before the chain runs) never see `createSecurityHeaders`. Use `applySecurityHeaders(response, options?)` to harden them explicitly (pass `options.nonce` to reuse a nonce already embedded in the markup). The app's last-resort `500` already ships a baseline-hardened response (`X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`, `Referrer-Policy: no-referrer`), so no error path emits an unprotected response.
+Responses produced **outside** the middleware chain (router internals, a 500 thrown before the chain runs) never see `createSecurityHeaders`. Use `applySecurityHeaders(response, options?)` to harden them explicitly (pass `options.nonce` to reuse a nonce already embedded in the markup). The app's last-resort `500` already ships a baseline-hardened response of its own — that baseline, and the three error paths it belongs to, are [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §5b's.
 
 ### Dev/prod CSP split without leakage
 
-Keep dev-only CSP sources (live-reload hashes, local tooling origins) out of the production policy by computing them in the dev worker entry only, via `mergeSecurityHeaders`:
+Keep dev-only CSP sources (live-reload hashes, local tooling origins) out of the production policy by computing them in the dev worker entry only, via `mergeSecurityHeaders` — the containment guarantee this buys is [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2c's:
 
 ```ts
 import { createSecurityHeaders, mergeSecurityHeaders } from "@y-core/forge/security";

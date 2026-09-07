@@ -236,7 +236,7 @@ replaces a real build and every hashed URL 404s. Because the two artifacts diffe
 "does this build artifact still fit the config?" is answerable: blank every emitted value in each
 (`structuralSignature`) and compare. Equal means the build artifact is current, and `gen types`
 keeps it. Unequal — an added bundle, a renamed sprite target, a new glyph, a changed prefix — means
-the module on disk no longer describes the config, and rewriting it as a types artifact is the
+the module on disk describes a config that has moved on, and rewriting it as a types artifact is the
 correct outcome: a stale build must not be pinned in place of one the config can still be
 typechecked against. `buildAll` is unaffected; a build always writes.
 

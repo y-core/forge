@@ -29,15 +29,20 @@ You author tests. You do not run the gate — see _Running Tests_.
 
 > **`TESTING.md` owns the testing doctrine** — the app-request pattern, the
 > environment fixture, the exact-match assertion rule, the fakes-over-mocks posture, and the
-> fail-closed expectations. Read it before writing a test; do not expect this file to restate it.
+> fail-closed expectations. **Never assert a testing rule you have not read** — reach it with
+> `knowledge_search` then `knowledge_read` (`AGENT_GUIDE.md §1`); do not expect this file to
+> restate it.
 >
 > This file covers only what is specific to _being the test-authoring agent_: the process, the
 > per-layer coverage expectations, and the handoff.
 
 ## First Steps (always)
 
-1. Read `TESTING.md` — start at its `## 0. Quick Reference` and read the
-   sections you need.
+1. Search the corpus for the testing rules that bear on this change — `knowledge_search`, then
+   `knowledge_read` on the chunk ids; `knowledge_outline` on the testing doc lists its sections
+   without reading the whole file. An empty result is an answer: nothing governs it, so follow
+   the neighbouring tests. Where no warden MCP is configured, read `TESTING.md` from its
+   `## 0. Quick Reference`.
 2. Read the route map and the controller binding, so you know which guards the route under test
    actually carries and in what order.
 3. Read the implementation files in full before writing any test. Understand every branch,
