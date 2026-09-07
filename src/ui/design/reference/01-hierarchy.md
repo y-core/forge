@@ -6,11 +6,11 @@ action, and that is not a shortage — it is the action pyramid, spelled as an A
 
 ## The action pyramid is `Button`'s three looks
 
-| Tier      | Button                                | What it is for                                                 | How many per surface                |
-| --------- | ------------------------------------- | -------------------------------------------------------------- | ----------------------------------- |
-| Primary   | the default — `tone='primary'`        | The one thing the surface exists for                           | Exactly one                         |
-| Secondary | `tone='neutral' appearance='outline'` | The real alternative a user might take instead                 | Zero or one, usually                |
-| Tertiary  | `tone='neutral' appearance='ghost'`   | Everything else — cancel, dismiss, back, row-level affordances | As many as the surface honestly has |
+| Tier | Button | What it is for | How many per surface |
+| --- | --- | --- | --- |
+| Primary | the default — `tone='primary'` | The one thing the surface exists for | Exactly one |
+| Secondary | `tone='neutral' appearance='outline'` | The real alternative a user might take instead | Zero or one, usually |
+| Tertiary | `tone='neutral' appearance='ghost'` | Everything else — cancel, dismiss, back, row-level affordances | As many as the surface honestly has |
 
 Default: exactly one primary button renders per surface — a page, a `Dialog`, or a `Card` each
 count as one surface — unless a written brief describes a surface with two genuinely co-equal
@@ -81,12 +81,12 @@ built as that exact pair — copy the relationship rather than inventing a new o
 `Button` `shape` offers `icon` as a square box the size scale drives, and `square` as a
 _relationship_ — full width, aspect-ratio 1.
 
-| You have                                                      | Use                      | Why                                                                                    |
-| ------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------- |
-| A standalone icon action beside `md` controls                 | `shape='icon'`           | A 40px square — `--control-h-md`, so it matches the `md` row exactly                   |
-| An icon action inside a dense toolbar or beside `sm` controls | `shape='icon' size='sm'` | A 32px square — `--control-h-sm`, so the two line up                                   |
-| An icon action beside `lg` controls                           | `shape='icon' size='lg'` | A 48px square — `--control-h-lg`                                                       |
-| An icon action in a rail whose width the app owns             | `shape='square'`         | Takes the parent's width and stays square, so the rail's token stays the single source |
+| You have | Use | Why |
+| --- | --- | --- |
+| A standalone icon action beside `md` controls | `shape='icon'` | A 40px square — `--control-h-md`, so it matches the `md` row exactly |
+| An icon action inside a dense toolbar or beside `sm` controls | `shape='icon' size='sm'` | A 32px square — `--control-h-sm`, so the two line up |
+| An icon action beside `lg` controls | `shape='icon' size='lg'` | A 48px square — `--control-h-lg` |
+| An icon action in a rail whose width the app owns | `shape='square'` | Takes the parent's width and stays square, so the rail's token stays the single source |
 
 Default: an icon-only `Button` uses `shape='icon'` and never a text size with a hand-tuned
 padding override, unless the button sits in a container whose width is set by the app, in which
@@ -105,13 +105,13 @@ rule, and a `Tooltip` is not a substitute for one.
 message matters. Making that claim when the message does not carry it is the fastest way to teach
 a user to ignore the component.
 
-| The message says                                        | Tone          | Note                                                    |
-| ------------------------------------------------------- | ------------- | ------------------------------------------------------- |
-| Here is context you may want                            | `neutral`     | The correct choice far more often than it gets used     |
-| This succeeded and the outcome is not visible elsewhere | `success`     | If the outcome _is_ visible, say nothing                |
-| Something needs attention but nothing is broken         | `warning`     | Not for "are you sure"                                  |
-| An operation failed, or data will be lost               | `destructive` | Reserve it; spending it on validation noise devalues it |
-| A neutral fact worth a colour of its own                | `info`        | Rarely earns its place over `neutral`                   |
+| The message says | Tone | Note |
+| --- | --- | --- |
+| Here is context you may want | `neutral` | The correct choice far more often than it gets used |
+| This succeeded and the outcome is not visible elsewhere | `success` | If the outcome _is_ visible, say nothing |
+| Something needs attention but nothing is broken | `warning` | Not for "are you sure" |
+| An operation failed, or data will be lost | `destructive` | Reserve it; spending it on validation noise devalues it |
+| A neutral fact worth a colour of its own | `info` | Rarely earns its place over `neutral` |
 
 Default: an `Alert` or `Toast` uses `tone='neutral'` unless the message names a specific failure, a
 specific risk, or a completed action whose result the user cannot otherwise see. <!-- rule:forge-ui-hierarchy-severity-default-first -->
@@ -138,12 +138,12 @@ in a form the user will submit, where a `Label` is required by
 
 When a label is genuinely needed, spend as little as possible on it:
 
-| Situation                                        | Reach for                                                                                                                 |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| A read-only detail row                           | `Field` with `orientation='horizontal'` — label and value on one line, label already at `text-xs` on `--muted-foreground` |
-| A stacked read-only detail                       | `Field` with the default `orientation='vertical'`                                                                         |
-| A real form control                              | `FormField.Label`, or a `Label` carrying `FIELD_LABEL_CLASSES`                                                            |
-| A group heading a sighted user reads from layout | a visually hidden heading, so `forge-ui-heading-order` still holds                                                        |
+| Situation | Reach for |
+| --- | --- |
+| A read-only detail row | `Field` with `orientation='horizontal'` — label and value on one line, label already at `text-xs` on `--muted-foreground` |
+| A stacked read-only detail | `Field` with the default `orientation='vertical'` |
+| A real form control | `FormField.Label`, or a `Label` carrying `FIELD_LABEL_CLASSES` |
+| A group heading a sighted user reads from layout | a visually hidden heading, so `forge-ui-heading-order` still holds |
 
 Default: a section whose purpose is obvious from its layout carries a visually hidden heading
 rather than a visible one, unless the section is one of several that a user must choose between

@@ -8,7 +8,6 @@ export {
   assetRootStep,
   browserStep,
   buildTimeBoundaryStep,
-  changelogStep,
   classGroupsStep,
   classOrderStep,
   classTokensStep,
@@ -17,19 +16,18 @@ export {
   cssSourcesStep,
   cssTokensStep,
   designScaleStep,
-  designStep,
-  docsStep,
   exportsStep,
   formatStep,
   jsxStep,
   lintPluginStep,
   lintStep,
+  markdownStep,
   modernCssStep,
   namespaceGraphStep,
-  readmeExportsStep,
   ssrBoundaryStep,
   testStep,
   typeAwareLintStep,
+  checkStep,
   typecheckStep,
 } from "./builders";
 export {
@@ -47,8 +45,6 @@ export { checkAssetRoot } from "./checks/asset-root";
 export { hasChromium, resolveChromiumPath } from "./checks/browser";
 export type { BuildTimeBoundaryCheckConfig } from "./checks/build-time-boundary";
 export { buildTimeSubpaths, checkBuildTimeBoundary, isBuildTime } from "./checks/build-time-boundary";
-export type { ChangelogCheckConfig } from "./checks/changelog";
-export { checkChangelog, validateChangelog } from "./checks/changelog";
 export type { ClassGroupsCheckConfig } from "./checks/class-groups";
 export { checkClassGroups, deriveTable, FORGE_STATE_RECIPES, writeClassGroups } from "./checks/class-groups";
 export type { ClassGroupTable, RootRow } from "./checks/class-groups-parse";
@@ -84,8 +80,6 @@ export type { DesignScaleCheckConfig } from "./checks/design-scale";
 export { checkDesignScale, deriveScale, writeDesignScale } from "./checks/design-scale";
 export type { DesignScale } from "./checks/design-scale-parse";
 export { deriveDesignScale, renderDesignScale } from "./checks/design-scale-parse";
-export type { DesignCheckConfig } from "./checks/design";
-export { checkDesign } from "./checks/design";
 export type { BarrelImport, ClassLiteral, CustomPropertyCitation, RuleMarker } from "./checks/design-parse";
 export {
   findBarrelImports,
@@ -97,16 +91,40 @@ export {
   isValidRuleId,
   parseDeclaredCustomProperties,
 } from "./checks/design-parse";
-export type { DocsCheckConfig } from "./checks/docs";
-export { checkDocs, parseSections, stripFences, validateFrontmatter, validateNoRot } from "./checks/docs";
-export type { SubpathCitation } from "./checks/docs-parse";
-export { findSubpathCitations, uncitedSubpaths } from "./checks/docs-parse";
 export type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
 export { checkExports, isPublished, parseSubpathPatterns } from "./checks/exports";
 export type { JsxCheckConfig } from "./checks/jsx";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
 export type { LintPluginCheckConfig } from "./checks/lint-plugin";
 export { bundleLintPlugin, checkLintPlugin, hasEsbuild, writeLintPlugin } from "./checks/lint-plugin";
+export type { MarkdownCheckConfig } from "./checks/markdown";
+export { checkMarkdown, fixMarkdown, resolveMarkdownFiles } from "./checks/markdown";
+export type {
+  BlockSpan,
+  EmphasisRule,
+  FenceRule,
+  FenceSpan,
+  Heading,
+  LineLengthRule,
+  ListItem,
+  MarkdownDoc,
+  MarkdownLineKind,
+  MarkdownRules,
+  ResolvedMarkdownRules,
+  TableBlock,
+  TableRow,
+  TrailingWhitespaceRule,
+} from "./checks/markdown-parse";
+export {
+  DEFAULT_MARKDOWN_RULES,
+  flattenListItems,
+  parseMarkdown,
+  renderMarkdown,
+  renderTableRow,
+  resolveMarkdownRules,
+  splitTableRow,
+  validateMarkdown,
+} from "./checks/markdown-parse";
 export type { ModernCssCheckConfig } from "./checks/modern-css";
 export { checkModernCss } from "./checks/modern-css";
 export type { DeferredFinding } from "./checks/modern-css-deferred";
@@ -149,8 +167,6 @@ export {
   resolveSpecifier,
   sectionWindow,
 } from "./checks/namespace-graph-parse";
-export type { ReadmeExportsCheckConfig } from "./checks/readme-exports";
-export { checkReadmeExports } from "./checks/readme-exports";
 export type { DocumentedSymbol, ImportPathAnchor } from "./checks/readme-exports-parse";
 export { parseExportsHeadingLine, parseExportsTableSymbols, parseImportPathAnchors, parseTypesProse } from "./checks/readme-exports-parse";
 export {

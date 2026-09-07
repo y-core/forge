@@ -3,7 +3,7 @@
 Everything that talks to Cloudflare: reconciling account bindings against what exists,
 reconciling zone rules against a site config, and generating the env schema from both.
 
-```sh
+```bash
 forge cf sync                 # status for the account scope. Writes nothing
 forge cf sync --commit        # create the missing remotes, write the resolved ids back
 forge cf sync account         # the same, said explicitly
@@ -129,7 +129,7 @@ fresh bytes of hex, the shape `openssl rand -hex 32` produces. A third-party API
 cannot: overwrite it and it is gone. So rotation is opt-in per key, declared beside
 the key it governs:
 
-```sh
+```bash
 # .dev.vars
 
 # foundry:generate
@@ -138,7 +138,7 @@ SESSION_SECRET=ab3f…
 STRIPE_API_KEY=sk_live_…   # unmarked — never rotated
 ```
 
-```sh
+```bash
 forge sync --commit --rotate SESSION_SECRET           # new value on Cloudflare
 forge sync --commit --local --rotate SESSION_SECRET   # new value in .dev.vars
 ```
@@ -188,20 +188,20 @@ Writes are atomic: a temp file beside the config, then a rename.
 
 ## What each action means
 
-| action          | meaning                                                                      |
-| --------------- | ---------------------------------------------------------------------------- |
-| `in-sync`       | verified present on both sides; nothing to do                                |
-| `local-only`    | by design never goes remote — an unmarked `.dev.vars` key                    |
-| `deploy-pushes` | the next `wrangler deploy` puts it there; this tool never writes it          |
-| `drift`         | present on both sides, and the two disagree                                  |
-| `would-create`  | `--commit` would create it here                                              |
-| `would-rotate`  | `--commit` would generate a new value remotely — the local one is never sent |
-| `created`       | a write happened — it did not exist and now does                             |
-| `updated`       | a write happened — it existed and its value was changed                      |
-| `rotated`       | a write happened — a freshly generated value replaced the remote one         |
-| `remote-only`   | present remotely and declared nowhere locally                                |
-| `unavailable`   | the remote target does not exist, or the surface cannot carry this binding   |
-| `error`         | the operation failed; the detail carries the cause                           |
+| action | meaning |
+| --- | --- |
+| `in-sync` | verified present on both sides; nothing to do |
+| `local-only` | by design never goes remote — an unmarked `.dev.vars` key |
+| `deploy-pushes` | the next `wrangler deploy` puts it there; this tool never writes it |
+| `drift` | present on both sides, and the two disagree |
+| `would-create` | `--commit` would create it here |
+| `would-rotate` | `--commit` would generate a new value remotely — the local one is never sent |
+| `created` | a write happened — it did not exist and now does |
+| `updated` | a write happened — it existed and its value was changed |
+| `rotated` | a write happened — a freshly generated value replaced the remote one |
+| `remote-only` | present remotely and declared nowhere locally |
+| `unavailable` | the remote target does not exist, or the surface cannot carry this binding |
+| `error` | the operation failed; the detail carries the cause |
 
 `unavailable` is reserved for a missing **remote target** — a Pages project or Worker script that is
 not there. A binding a `--commit` would create is `would-create`, not `unavailable`.
@@ -225,14 +225,14 @@ remote, and sending an operator to look for a secret that is there is the worse 
 The token needs one account permission per resource type it touches — **Read** for a
 status run, **Edit** for `--commit`:
 
-| touching                                  | permission         |
-| ----------------------------------------- | ------------------ |
-| a Pages project's vars and secrets        | Cloudflare Pages   |
-| a Worker's settings, secrets, rate limits | Workers Scripts    |
-| KV namespaces                             | Workers KV Storage |
-| D1 databases                              | D1                 |
-| R2 buckets                                | Workers R2 Storage |
-| queues                                    | Queues             |
+| touching | permission |
+| --- | --- |
+| a Pages project's vars and secrets | Cloudflare Pages |
+| a Worker's settings, secrets, rate limits | Workers Scripts |
+| KV namespaces | Workers KV Storage |
+| D1 databases | D1 |
+| R2 buckets | Workers R2 Storage |
+| queues | Queues |
 
 The Workers token templates do **not** grant Cloudflare Pages, so a token that reads
 a Worker's settings fails on a Pages project. Cloudflare returns one code for a
@@ -249,7 +249,7 @@ That sharing is what the directory layout now says: `api/`, `config/`, `table.ts
 sit at the root of this namespace because both scopes use them, with `account/`, `zone/` and
 `gen/` as consumers.
 
-```sh
+```bash
 forge sync zone --config config/site.ts   # read-only report, the default
 forge sync zone --commit                  # writes the entry point rulesets
 forge sync zone --check                   # exit non-zero on drift, for the gate
@@ -300,7 +300,7 @@ for a valid token missing a permission, so the failure row names both and prints
 message beneath the table. To separate them without guessing, ask Cloudflare about the token
 itself:
 
-```sh
+```bash
 curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   https://api.cloudflare.com/client/v4/user/tokens/verify; echo "EXIT:$?"
 ```

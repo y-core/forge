@@ -216,6 +216,62 @@ describe("createGateCommand() — --fix", () => {
 
     expect(logs.filter((line) => line.includes("fix:")).length).toBe(2);
   });
+
+  it("calls a check's fixer in-process, and its `run` not at all", async () => {
+    const called: string[] = [];
+    const step: Step = {
+      label: "validate-markdown",
+      run: () => {
+        called.push("run");
+        return checkResult([], "");
+      },
+      fix: () => {
+        called.push("fix");
+      },
+    };
+    const { logs, code } = await run([step], { fix: true });
+
+    expect(called).toEqual(["fix"]);
+    expect(logs.some((line) => line.startsWith("✓ fix:validate-markdown"))).toBe(true);
+    expect(logs.at(-1)).toBe("1 fixed — re-run `bun run verify` to confirm.");
+    expect(code).toBeUndefined();
+  });
+
+  it("counts a check without a fixer unfixable, as it always did", async () => {
+    const { logs } = await run([passing("validate-thing")], { fix: true });
+
+    expect(logs.some((line) => line.includes("fix:validate-thing"))).toBe(false);
+    expect(logs.at(-1)).toBe("0 fixed, 1 without a fixer — re-run `bun run verify` to confirm.");
+  });
+
+  it("fails the run when a fixer throws, naming the step and printing what it said", async () => {
+    const step: Step = {
+      label: "validate-markdown",
+      run: () => checkResult([], ""),
+      fix: () => {
+        throw new Error("EACCES: docs/a.md");
+      },
+    };
+    const { logs, code } = await run([step], { fix: true });
+
+    expect(logs.some((line) => line.startsWith("✗ fix:validate-markdown"))).toBe(true);
+    expect(logs).toContain("    EACCES: docs/a.md");
+    expect(code).toBe(1);
+  });
+
+  it("never invokes a fixer on a run that is not --fix, whichever steps were selected", async () => {
+    const called: string[] = [];
+    const step: Step = {
+      label: "validate-markdown",
+      run: () => checkResult([], ""),
+      fix: () => {
+        called.push("fix");
+      },
+    };
+    await run([step], { only: ["validate-markdown"] });
+
+    expect(called).toEqual([]);
+  });
 });
 
 describe("createGateCommand() — --list", () => {

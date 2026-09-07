@@ -23,5 +23,5 @@
     "jsx": "react-jsx",
     "jsxImportSource": "@y-core/forge/jsx"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "config/**/*.ts", ".types/**/*.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "config/**/*.ts", "warden/**/*.ts", ".types/**/*.d.ts"]
 }

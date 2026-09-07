@@ -7,12 +7,12 @@ Every surface that displays data owes four states, not one. The success path is 
 designed; the other three are the ones a user actually meets on a slow network, a cold cache, or a
 first login.
 
-| State   | Owed on                | Forge primitives                             |
-| ------- | ---------------------- | -------------------------------------------- |
-| Empty   | any collection         | `Alert`, `Button`, `Card`                    |
-| Loading | anything fetched       | `Skeleton`, `Spinner`, `Progress`            |
-| Error   | anything that can fail | `Alert` `destructive`, `Toast` `destructive` |
-| Success | any mutation           | `Toast` `success`, `Flash`                   |
+| State | Owed on | Forge primitives |
+| --- | --- | --- |
+| Empty | any collection | `Alert`, `Button`, `Card` |
+| Loading | anything fetched | `Skeleton`, `Spinner`, `Progress` |
+| Error | anything that can fail | `Alert` `destructive`, `Toast` `destructive` |
+| Success | any mutation | `Toast` `success`, `Flash` |
 
 **Default: design all four before shipping the surface.** <!-- rule:forge-ui-state-four -->
 `forge-ui-empty-state` makes the empty one a Floor obligation; the other three are Defaults because a
@@ -25,12 +25,12 @@ with no data and no mutation.
 
 The choice is not about duration. It is about whether you already know the shape of what is arriving.
 
-| Given                                                       | Choose     |
-| ----------------------------------------------------------- | ---------- |
+| Given | Choose |
+| --- | --- |
 | The result has a known shape and will occupy this exact box | `Skeleton` |
-| The shape is unknown, or the count is unknown               | `Spinner`  |
-| The wait lives inside a control rather than a region        | `Spinner`  |
-| The work is measurable and the total is known               | `Progress` |
+| The shape is unknown, or the count is unknown | `Spinner` |
+| The wait lives inside a control rather than a region | `Spinner` |
+| The work is measurable and the total is known | `Progress` |
 
 **Default: a region whose result shape is known renders `Skeleton` blocks in that shape.**
 <!-- rule:forge-ui-state-skeleton-shape -->
@@ -178,7 +178,7 @@ objection is that `--destructive` is the _application's_ destructive colour and 
 legitimately re-point it, whereas a status panel has to stay red to mean "failed". `--destructive` is also
 a _fill_, held across modes so a near-white foreground clears it; error **text** is
 `text-destructive-text`, which is the step that flips
-([`THEME_GENERATION.md`](../../../.decisions/implementation/THEME_GENERATION.md) §4).
+([`THEME_GENERATION.md`](../../../docs/THEME_GENERATION.md) §4).
 
 ---
 
@@ -218,11 +218,11 @@ where the count is the message.
 `Progress` and `Meter` render different elements for different claims, and they are not
 interchangeable.
 
-| Given                                                     | Choose     |
-| --------------------------------------------------------- | ---------- |
-| A task advancing toward completion, with a known total    | `Progress` |
-| A quantity within a known range — disk used, quota, score | `Meter`    |
-| A task with no known total                                | `Spinner`  |
+| Given | Choose |
+| --- | --- |
+| A task advancing toward completion, with a known total | `Progress` |
+| A quantity within a known range — disk used, quota, score | `Meter` |
+| A task with no known total | `Spinner` |
 
 **Default: `Progress` renders only when the total is known.**
 <!-- rule:forge-ui-state-progress-determinate -->

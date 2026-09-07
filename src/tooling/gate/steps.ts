@@ -47,6 +47,10 @@ export interface CheckStep extends StepBase {
    *  release gate refusing what a dev loop tolerates — has one row rather than two. Its findings are
    *  printed verbatim, so there is no `tail` to truncate to. */
   run: (mode: GateMode) => CheckResult | Promise<CheckResult>;
+  /** Auto-fixing counterpart invoked by `--fix`, called in-process like `run`. Absent, the step is
+   *  counted as having no fixer. A fixer writes and reports nothing; `run` reports and writes
+   *  nothing — the two halves of the dev loop are not the same verb. */
+  fix?: () => void | Promise<void>;
   cmd?: never;
 }
 

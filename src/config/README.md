@@ -4,7 +4,7 @@ Typed, lazy environment configuration for Cloudflare Workers. Map raw Worker bin
 validated config object that resolves on first access and is cached **per distinct `env` object** for
 the lifetime of the Worker instance.
 
-```typescript
+```ts
 import { createConfig, env, optionalGroup, resolveConfig, registerConfig, retrieveConfig } from "@y-core/forge/config";
 ```
 
@@ -41,7 +41,7 @@ Production apps use a **two-layer** model, and the layers have different sources
 
 The three files of layer 1, end to end:
 
-```typescript
+```ts
 // src/app/env.config.ts — hand-written policy (optional; defaults used when absent)
 import type { GenOptions } from "@y-core/forge/tooling/cf";
 export const options: Partial<GenOptions> = {
@@ -69,7 +69,7 @@ Define a `Config` once at module scope by mapping env variables to a shape and v
 Build it with the `createConfig` factory — the `Config` constructor is private, so `new Config(...)`
 is not available:
 
-```typescript
+```ts
 import { createConfig, env } from "@y-core/forge/config";
 import { v } from "@y-core/forge/validation";
 
@@ -82,7 +82,7 @@ const emailConfig = createConfig(
 Resolve it inside any handler from the Workers `env`. The first call validates and caches; later calls
 return the cached value:
 
-```typescript
+```ts
 // Inside a loader, action, or middleware with access to the Workers env.
 const { apiKey, fromAddress } = emailConfig.get(c.env);
 ```
@@ -91,7 +91,7 @@ The first argument to `createConfig(...)` is an **env mapping**: a record whose 
 references (read from the raw environment) or string literals (used verbatim). Mappings nest, so you can
 group related variables:
 
-```typescript
+```ts
 const siteConfig = createConfig(
   { site: { name: env("SITE_NAME"), debug: env("DEBUG") }, email: { from: env("EMAIL_FROM") } },
   v.object({
@@ -119,23 +119,23 @@ Creates a lazy `Config` holder that resolves an env mapping through a schema and
 distinct `env` object. This is the public factory — the `Config` constructor is private, so build every
 holder through `createConfig`.
 
-```typescript
+```ts
 createConfig<ConfigData>(map, schema, overrides?): Config<ConfigData>
 ```
 
-| Parameter   | Type                                       | Description                                                                                                                                 |
-| ----------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `map`       | `EnvMapping`                               | A string literal, an `EnvRef` from `env(name)`, or a nested record of either. Describes how the raw environment maps into the config shape. |
-| `schema`    | `v.BaseSchema<unknown, ConfigData, …>`     | A valibot schema that validates and types the mapped result. Resolution throws if it fails.                                                 |
-| `overrides` | `ConfigOverrides<ConfigData>` _(optional)_ | A `{ detect, patch }` pair applied after validation when `detect(rawEnv)` returns `true`.                                                   |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `map` | `EnvMapping` | A string literal, an `EnvRef` from `env(name)`, or a nested record of either. Describes how the raw environment maps into the config shape. |
+| `schema` | `v.BaseSchema<unknown, ConfigData, …>` | A valibot schema that validates and types the mapped result. Resolution throws if it fails. |
+| `overrides` | `ConfigOverrides<ConfigData>` _(optional)_ | A `{ detect, patch }` pair applied after validation when `detect(rawEnv)` returns `true`. |
 
 The returned `Config<ConfigData>` exposes:
 
-| Method  | Signature                      | Description                                                                                                                                                                                                         |
-| ------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `get`   | `(env: object) => ConfigData`  | Resolves config for `env`, caching the parsed result **per distinct `env` object** (a `WeakMap`). Each distinct `env` resolves once; a different `env` resolves independently — there is no first-env-wins caching. |
-| `seed`  | `(config: ConfigData) => void` | Test helper. Sets a fixed value returned by every `get()`, bypassing env resolution.                                                                                                                                |
-| `reset` | `() => void`                   | Test helper. Clears the seed and the per-`env` cache, restoring lazy resolution on the next `get()`.                                                                                                                |
+| Method | Signature | Description |
+| --- | --- | --- |
+| `get` | `(env: object) => ConfigData` | Resolves config for `env`, caching the parsed result **per distinct `env` object** (a `WeakMap`). Each distinct `env` resolves once; a different `env` resolves independently — there is no first-env-wins caching. |
+| `seed` | `(config: ConfigData) => void` | Test helper. Sets a fixed value returned by every `get()`, bypassing env resolution. |
+| `reset` | `() => void` | Test helper. Clears the seed and the per-`env` cache, restoring lazy resolution on the next `get()`. |
 
 > The cache lives as long as the V8 isolate, **not** a single request — which is correct on Workers
 > because bindings are stable per isolate. Because resolution is keyed per distinct `env` object,
@@ -147,11 +147,11 @@ The returned `Config<ConfigData>` exposes:
 Creates an `EnvRef` — a marker that resolves to `rawEnv[name]` when the mapping is applied. Use it as a
 mapping value wherever a config field should come from a Worker binding.
 
-```typescript
+```ts
 env<K extends string>(name: K): EnvRef<K>
 ```
 
-```typescript
+```ts
 const map = { apiKey: env("RESEND_API_KEY") }; // → { apiKey: rawEnv.RESEND_API_KEY }
 ```
 
@@ -167,17 +167,17 @@ many unrelated bindings, so only declared keys reach the parsed config. Two cons
 `defaults` value must itself satisfy its entry schema, and a key that is neither required nor defaulted
 is still validated — declare it `v.optional(...)` if it may legitimately be absent.
 
-```typescript
+```ts
 optionalGroup(entries, { required, defaults? })
 ```
 
-| Parameter          | Type                                                   | Description                                                                                         |
-| ------------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `entries`          | `Record<string, v.GenericSchema>`                      | Per-field valibot schemas for each key in the group.                                                |
-| `options.required` | `(keyof entries)[] \| "all"`                           | Keys that must be present. If any is absent, the whole group is `null`. `"all"` requires every key. |
-| `options.defaults` | `Partial<Record<keyof entries, unknown>>` _(optional)_ | Default values for keys that are absent but not required.                                           |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `entries` | `Record<string, v.GenericSchema>` | Per-field valibot schemas for each key in the group. |
+| `options.required` | `(keyof entries)[] \| "all"` | Keys that must be present. If any is absent, the whole group is `null`. `"all"` requires every key. |
+| `options.defaults` | `Partial<Record<keyof entries, unknown>>` _(optional)_ | Default values for keys that are absent but not required. |
 
-```typescript
+```ts
 import { optionalGroup } from "@y-core/forge/config";
 import { v } from "@y-core/forge/validation";
 
@@ -195,11 +195,11 @@ Resolves a `Config` store for the given `env`, tolerating a missing store. Retur
 a store is present, or an empty object cast to `T` when `store` is `undefined`. Pairs naturally with
 `retrieveConfig`, which may return `undefined`.
 
-```typescript
+```ts
 resolveConfig<T>(store: Config<T> | undefined, env: object): T
 ```
 
-```typescript
+```ts
 const cfg = resolveConfig(retrieveConfig<EmailCfg>(host), c.env);
 ```
 
@@ -209,12 +209,12 @@ Associate a `Config` store with any host object through a module-private `WeakMa
 expose and read config **by reference** without importing the store directly — the mechanism by which
 `createApp({ config })` and `applyAssets` share the app's config.
 
-```typescript
+```ts
 registerConfig(target: object, store: unknown): void
 retrieveConfig<T>(target: object): Config<T> | undefined
 ```
 
-```typescript
+```ts
 import { registerConfig, retrieveConfig, resolveConfig } from "@y-core/forge/config";
 
 registerConfig(hostObject, emailConfig);
@@ -237,7 +237,7 @@ Pass an `overrides` object to patch the resolved config when a detector matches 
 `detect` runs against the raw env, and `patch` transforms the already-validated config — so overrides
 never bypass schema validation.
 
-```typescript
+```ts
 const config = createConfig(
   { apiUrl: env("API_URL"), debug: env("DEBUG") },
   v.object({
@@ -259,7 +259,7 @@ per-`env` cache so the next `get()` resolves lazily again. Because resolution is
 `reset()` between them; call `reset()` only to clear a `seed()` or to force re-resolution for the
 same `env`.
 
-```typescript
+```ts
 import { describe, expect, it, beforeEach } from "bun:test";
 
 beforeEach(() => emailConfig.reset());
@@ -275,7 +275,7 @@ it("uses the seeded value", () => {
 `InferConfig<E>` extracts the resolved config type from a record that carries a `Config` field. Use it to
 type code that reads config off an env-shaped object.
 
-```typescript
+```ts
 import type { InferConfig } from "@y-core/forge/config";
 
 type AppConfig = InferConfig<{ Config: { site: { name: string } } }>;
@@ -286,19 +286,19 @@ type AppConfig = InferConfig<{ Config: { site: { name: string } } }>;
 
 ## API Reference
 
-| Export                         | Kind     | Description                                                                                                       |
-| ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `createConfig`                 | function | Creates a lazy `Config` holder from an env mapping + valibot schema; the public factory (constructor is private). |
-| `Config`                       | class    | Lazy config holder (resolved per distinct `env`); construct via `createConfig`, not `new`.                        |
-| `env`                          | function | Creates an `EnvRef` that reads `rawEnv[name]` at resolution time.                                                 |
-| `optionalGroup`                | function | Valibot schema for an optional group that collapses to `null` when required keys are absent.                      |
-| `resolveConfig`                | function | Resolves a `Config` store for an `env`, returning `{}` when the store is `undefined`.                             |
-| `registerConfig`               | function | Associates a `Config` store with a host object via a `WeakMap`.                                                   |
-| `retrieveConfig`               | function | Retrieves the `Config` store previously associated with a host object.                                            |
-| `Config` (type)                | —        | See class above.                                                                                                  |
-| `ConfigContext<C>`             | type     | `{ config: C }` — the per-request variable set by the route config injector.                                      |
-| `ConfigDescriptor<ConfigData>` | type     | `{ map, schema, overrides? }` — the internal descriptor a `Config` resolves through.                              |
-| `ConfigOverrides<ConfigData>`  | type     | `{ detect, patch }` — environment-aware override pair.                                                            |
-| `EnvMapping`                   | type     | A string literal, an `EnvRef`, or a nested record of either.                                                      |
-| `EnvRef<K>`                    | type     | `{ readonly __env: K }` — a marker produced by `env(name)`.                                                       |
-| `InferConfig<E>`               | type     | Infers the resolved config type from a record carrying a `Config` field.                                          |
+| Export | Kind | Description |
+| --- | --- | --- |
+| `createConfig` | function | Creates a lazy `Config` holder from an env mapping + valibot schema; the public factory (constructor is private). |
+| `Config` | class | Lazy config holder (resolved per distinct `env`); construct via `createConfig`, not `new`. |
+| `env` | function | Creates an `EnvRef` that reads `rawEnv[name]` at resolution time. |
+| `optionalGroup` | function | Valibot schema for an optional group that collapses to `null` when required keys are absent. |
+| `resolveConfig` | function | Resolves a `Config` store for an `env`, returning `{}` when the store is `undefined`. |
+| `registerConfig` | function | Associates a `Config` store with a host object via a `WeakMap`. |
+| `retrieveConfig` | function | Retrieves the `Config` store previously associated with a host object. |
+| `Config` (type) | — | See class above. |
+| `ConfigContext<C>` | type | `{ config: C }` — the per-request variable set by the route config injector. |
+| `ConfigDescriptor<ConfigData>` | type | `{ map, schema, overrides? }` — the internal descriptor a `Config` resolves through. |
+| `ConfigOverrides<ConfigData>` | type | `{ detect, patch }` — environment-aware override pair. |
+| `EnvMapping` | type | A string literal, an `EnvRef`, or a nested record of either. |
+| `EnvRef<K>` | type | `{ readonly __env: K }` — a marker produced by `env(name)`. |
+| `InferConfig<E>` | type | Infers the resolved config type from a record carrying a `Config` field. |

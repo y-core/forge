@@ -2,7 +2,7 @@
 
 This page is about the _design_ consequences of swapping fragments. The API — `hxAttrs`,
 `hxHeaders`, the pattern helpers, `isHxRequest`, the trust posture on selector-valued attributes —
-belongs to [`HTMX.md`](../../../../.decisions/implementation/HTMX.md) and `src/html/README.md`, and is not
+belongs to [`HTMX.md`](../../../../docs/HTMX.md) and `src/html/README.md`, and is not
 restated here.
 
 The one idea everything below follows from: **a swapped region is a surface, not a hole.** It is
@@ -91,13 +91,13 @@ flight. <!-- rule:forge-ui-htmx-disable-inflight -->
 against a double submit. Building the same form by hand and forgetting it is the common route to
 two records.
 
-| The wait is for…                           | Indicator goes on                               | Placeholder                                  |
-| ------------------------------------------ | ----------------------------------------------- | -------------------------------------------- |
-| A form submission                          | the submitting `Button` (`disabledElt: "this"`) | none — the control's own state is the signal |
-| A region of content loading                | the region                                      | `Skeleton` at the incoming shape             |
-| A live search                              | the search `Input`'s row                        | `Skeleton` rows in the reserved result box   |
-| An appended page (`infiniteScroll`)        | the sentinel at the list's end                  | `Skeleton` row where the next item lands     |
-| A background action with no visible target | nothing on the page                             | `FlashOob` on completion                     |
+| The wait is for… | Indicator goes on | Placeholder |
+| --- | --- | --- |
+| A form submission | the submitting `Button` (`disabledElt: "this"`) | none — the control's own state is the signal |
+| A region of content loading | the region | `Skeleton` at the incoming shape |
+| A live search | the search `Input`'s row | `Skeleton` rows in the reserved result box |
+| An appended page (`infiniteScroll`) | the sentinel at the list's end | `Skeleton` row where the next item lands |
+| A background action with no visible target | nothing on the page | `FlashOob` on completion |
 
 ---
 

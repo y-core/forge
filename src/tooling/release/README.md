@@ -22,7 +22,7 @@ import { createReleaseCommand, ReleaseError, resolveVersion } from "@y-core/forg
 > `SemVer` functions are imported from the gate, not re-exported here.
 
 > The release path and its refusals, and the export surface a release compares, are owned by
-> [`ASSET_AND_BUILD_TOOLING.md`](../../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5a
+> [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2a
 > and §5b.
 
 ---
@@ -183,10 +183,10 @@ try {
 Resolves an optional config module and runs the release. `createReleaseBinCommand()` builds it, and
 the `forge` binary attaches it.
 
-| Flag              | Default               | Effect                                                                                                                                   |
-| ----------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config <path>` | `config/release.ts`   | Module default-exporting `Omit<ReleaseCommandConfig, "cwd">`. **Optional** — an absent default path releases with the built-in defaults. |
-| `--root <path>`   | the working directory | The repository the release happens in, supplied as `cwd`.                                                                                |
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--config <path>` | `config/release.ts` | Module default-exporting `Omit<ReleaseCommandConfig, "cwd">`. **Optional** — an absent default path releases with the built-in defaults. |
+| `--root <path>` | the working directory | The repository the release happens in, supplied as `cwd`. |
 
 Plus `--dry`/`-n`, `--allow-dirty`, `--allow-empty-changelog` and `--allow-semver`, and the optional
 positional version, all delegated to `createReleaseCommand`. `DEFAULT_RELEASE_CONFIG` is the exported
@@ -202,28 +202,28 @@ the zero-config case rather than a mistake.
 Builds the `release` CLI `Command`. The returned command takes a single optional positional argument
 — an explicit version — plus the four flags below.
 
-| Parameter | Type                   | Description                                                                                |
-| --------- | ---------------------- | ------------------------------------------------------------------------------------------ |
-| `config`  | `ReleaseCommandConfig` | Project configuration (see below).                                                         |
-| `deps`    | `ReleaseDeps`          | Optional dependency overrides for testing; defaults to the real git/pkg/version functions. |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `config` | `ReleaseCommandConfig` | Project configuration (see below). |
+| `deps` | `ReleaseDeps` | Optional dependency overrides for testing; defaults to the real git/pkg/version functions. |
 
 `ReleaseCommandConfig`:
 
-| Field           | Type       | Default                | Description                                                                                                                               |
-| --------------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `cwd`           | `string`   | —                      | Repository working directory. Required.                                                                                                   |
-| `tagPrefix`     | `string`   | `"v"`                  | Prefix for git tags (e.g. `v1.2.3`).                                                                                                      |
-| `stageFiles`    | `string[]` | what the release wrote | `["package.json"]`, plus `changelogFile` when a changelog was promoted. Naming it **replaces** the derived list rather than adding to it. |
-| `changelogFile` | `string`   | `"CHANGELOG.md"`       | Changelog to promote, relative to `cwd`. A missing file skips promotion.                                                                  |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `cwd` | `string` | — | Repository working directory. Required. |
+| `tagPrefix` | `string` | `"v"` | Prefix for git tags (e.g. `v1.2.3`). |
+| `stageFiles` | `string[]` | what the release wrote | `["package.json"]`, plus `changelogFile` when a changelog was promoted. Naming it **replaces** the derived list rather than adding to it. |
+| `changelogFile` | `string` | `"CHANGELOG.md"` | Changelog to promote, relative to `cwd`. A missing file skips promotion. |
 
 Flags:
 
-| Flag                      | Short | Effect                                                                                                         |
-| ------------------------- | ----- | -------------------------------------------------------------------------------------------------------------- |
-| `--dry`                   | `-n`  | Report the resolved version and the promotion that would happen; write nothing, and skip the clean-tree check. |
-| `--allow-dirty`           | —     | Skip the clean-working-tree refusal.                                                                           |
-| `--allow-empty-changelog` | —     | Release despite an empty `[Unreleased]`. Promotion still runs; a malformed changelog is still refused.         |
-| `--allow-semver`          | —     | Release a patch despite a shrinking public export surface.                                                     |
+| Flag | Short | Effect |
+| --- | --- | --- |
+| `--dry` | `-n` | Report the resolved version and the promotion that would happen; write nothing, and skip the clean-tree check. |
+| `--allow-dirty` | — | Skip the clean-working-tree refusal. |
+| `--allow-empty-changelog` | — | Release despite an empty `[Unreleased]`. Promotion still runs; a malformed changelog is still refused. |
+| `--allow-semver` | — | Release a patch despite a shrinking public export surface. |
 
 ### Version resolution
 
@@ -232,21 +232,21 @@ Flags:
 Computes the next version from git state and returns a `VersionResult`. Throws `ReleaseError` on
 invalid or non-monotonic versions.
 
-| Parameter           | Type           | Description                                                     |
-| ------------------- | -------------- | --------------------------------------------------------------- |
-| `options.explicit`  | `string?`      | Forces a specific version; must be greater than the latest tag. |
-| `options.cwd`       | `string`       | Repository working directory.                                   |
-| `options.tagPrefix` | `string`       | Tag prefix used to strip and match tags.                        |
-| `deps`              | `VersionDeps?` | Optional git/pkg overrides for testing.                         |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `options.explicit` | `string?` | Forces a specific version; must be greater than the latest tag. |
+| `options.cwd` | `string` | Repository working directory. |
+| `options.tagPrefix` | `string` | Tag prefix used to strip and match tags. |
+| `deps` | `VersionDeps?` | Optional git/pkg overrides for testing. |
 
 `VersionResult`:
 
-| Field      | Type                                                                                         | Description                                                   |
-| ---------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `version`  | `string`                                                                                     | Resolved version string (no prefix), e.g. `"1.3.0"`.          |
-| `reason`   | `"explicit" \| "auto-patch" \| "auto-minor" \| "auto-major" \| "first-release" \| "in-sync"` | How the version was derived.                                  |
-| `previous` | `string \| null`                                                                             | The latest tag, or `null` for a first release.                |
-| `evidence` | `BumpEvidence?`                                                                              | Set only on an `auto-*` reason — no other path reads commits. |
+| Field | Type | Description |
+| --- | --- | --- |
+| `version` | `string` | Resolved version string (no prefix), e.g. `"1.3.0"`. |
+| `reason` | `"explicit" \| "auto-patch" \| "auto-minor" \| "auto-major" \| "first-release" \| "in-sync"` | How the version was derived. |
+| `previous` | `string \| null` | The latest tag, or `null` for a first release. |
+| `evidence` | `BumpEvidence?` | Set only on an `auto-*` reason — no other path reads commits. |
 
 `BumpEvidence` is `{ commit?: { sha: string; subject: string }; commitCount: number }`. `commit` is
 absent for a patch, which no commit asks for.
@@ -277,18 +277,18 @@ and a `minor:`/`major:` bump have already said what they are.
 
 Extends `Error` with a discriminated `kind` field for programmatic handling.
 
-| `kind`                | Raised when                                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `invalid-version`     | A version string cannot be parsed, or `package.json` has no `version`.                                           |
-| `version-not-greater` | An explicit version is not greater than the latest tag.                                                          |
-| `version-mismatch`    | `package.json` and the latest tag disagree with no new commits.                                                  |
-| `git-error`           | A `git` command exits non-zero, including a tag that could not be created after the commit landed.               |
-| `pkg-update`          | Reading or writing `package.json` or the changelog fails.                                                        |
-| `manifest-malformed`  | A `package.json` the surface guard reads cannot be parsed.                                                       |
-| `working-tree-dirty`  | The working tree has uncommitted changes and `--allow-dirty` was not passed.                                     |
-| `changelog-empty`     | `[Unreleased]` carries no entry while commits exist since the tag, and `--allow-empty-changelog` was not passed. |
-| `changelog-malformed` | The changelog does not parse, or cannot be promoted. No flag overrides this.                                     |
-| `surface-shrink`      | A patch release drops a public export and `--allow-semver` was not passed.                                       |
+| `kind` | Raised when |
+| --- | --- |
+| `invalid-version` | A version string cannot be parsed, or `package.json` has no `version`. |
+| `version-not-greater` | An explicit version is not greater than the latest tag. |
+| `version-mismatch` | `package.json` and the latest tag disagree with no new commits. |
+| `git-error` | A `git` command exits non-zero, including a tag that could not be created after the commit landed. |
+| `pkg-update` | Reading or writing `package.json` or the changelog fails. |
+| `manifest-malformed` | A `package.json` the surface guard reads cannot be parsed. |
+| `working-tree-dirty` | The working tree has uncommitted changes and `--allow-dirty` was not passed. |
+| `changelog-empty` | `[Unreleased]` carries no entry while commits exist since the tag, and `--allow-empty-changelog` was not passed. |
+| `changelog-malformed` | The changelog does not parse, or cannot be promoted. No flag overrides this. |
+| `surface-shrink` | A patch release drops a public export and `--allow-semver` was not passed. |
 
 A tag that fails to create after the commit landed says so in the message — the commit is named as
 unpushed and untagged, because that is the state the reader has to clean up.
@@ -301,6 +301,6 @@ unpushed and untagged, because that is the state the reader has to clean up.
   and the barrel parser this namespace builds on.
 - [`@y-core/forge/tooling/cli`](../cli/README.md) — the command framework `createReleaseCommand`
   returns a `Command` of.
-- [`ASSET_AND_BUILD_TOOLING.md`](../../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5a,
+- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2a,
   §5b, §5c, §5d and §5e — the release workflow, the compared surface, the git and manifest
   internals, and the changelog contract.

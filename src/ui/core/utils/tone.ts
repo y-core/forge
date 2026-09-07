@@ -3,7 +3,7 @@ import { cva } from "./cva";
 
 export { APPEARANCES, type Appearance, type Tone, TONES };
 
-// The six properties per tone, and the recipe grid that reads them: `UI_SSR_COMPONENTS.md` §3h.
+// The six properties per tone, and the recipe grid that reads them: `UI_CLASS_COMPOSITION.md` §1e.
 const TONE_VARS: Record<Tone, string> = {
   neutral:
     "[--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] " +

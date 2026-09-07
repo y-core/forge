@@ -10,12 +10,12 @@ input still submits. The rules below are about the parts that do not announce th
 
 Three primitives look interchangeable and are not.
 
-| Given                                                                   | Choose                         | Why                                                                                                         |
-| ----------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| A control that is validated, can be wrong, and has a server-side `name` | `FormField`                    | A `<fieldset>` that wires `id` / `for` / `aria-describedby` / `aria-invalid` from one `name`                |
-| A settings row — a labelled control with no validation and no error     | `Field`                        | A layout row with a decorative `<span>` label; no form semantics at all                                     |
-| Several checkboxes or radios answering one question                     | `CheckboxGroup` / `RadioGroup` | Real `<input type="checkbox">` / `<input type="radio">`; radio grouping and roving focus are the platform's |
-| A one-time code the reader types or pastes                              | `OtpInput` inside `FormField`  | One `<input autocomplete="one-time-code">` painted as cells; the value is the platform's, not assembled     |
+| Given | Choose | Why |
+| --- | --- | --- |
+| A control that is validated, can be wrong, and has a server-side `name` | `FormField` | A `<fieldset>` that wires `id` / `for` / `aria-describedby` / `aria-invalid` from one `name` |
+| A settings row — a labelled control with no validation and no error | `Field` | A layout row with a decorative `<span>` label; no form semantics at all |
+| Several checkboxes or radios answering one question | `CheckboxGroup` / `RadioGroup` | Real `<input type="checkbox">` / `<input type="radio">`; radio grouping and roving focus are the platform's |
+| A one-time code the reader types or pastes | `OtpInput` inside `FormField` | One `<input autocomplete="one-time-code">` painted as cells; the value is the platform's, not assembled |
 
 **Default: reach for `FormField` whenever the value is submitted and can be rejected.**
 <!-- rule:forge-ui-form-formfield-default -->
@@ -47,11 +47,11 @@ per-cell array assembles its value client-side, which is exactly the value a no-
 
 Three two-state controls. All three submit — what separates them is what the value means.
 
-| Given                                 | Choose        | What it renders                                                       |
-| ------------------------------------- | ------------- | --------------------------------------------------------------------- |
-| An on/off setting                     | `Switch`      | `<input type="checkbox" role="switch">` — it has a `name` and a value |
-| A mode the reader presses on and off  | `Toggle`      | A `<label>` around a native checkbox, styled through `:has(:checked)` |
-| One choice out of a small visible set | `ToggleGroup` | A `<fieldset>` of pressed buttons; `type` picks single or multiple    |
+| Given | Choose | What it renders |
+| --- | --- | --- |
+| An on/off setting | `Switch` | `<input type="checkbox" role="switch">` — it has a `name` and a value |
+| A mode the reader presses on and off | `Toggle` | A `<label>` around a native checkbox, styled through `:has(:checked)` |
+| One choice out of a small visible set | `ToggleGroup` | A `<fieldset>` of pressed buttons; `type` picks single or multiple |
 
 **Default: pick by what the value means, not by which one looks right.**
 <!-- rule:forge-ui-form-toggle-by-submission -->
@@ -76,14 +76,14 @@ Forge exports the id derivation as functions precisely so two places cannot disa
 hand-written `for="email"` beside an `id="field-email"` is silent: nothing errors, nothing warns, and
 clicking the label stops focusing the control.
 
-| Helper                             | Gives you                                                                    |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| `fieldId(name, scope?)`            | the control's id                                                             |
-| `fieldDescriptionId(name, scope?)` | the description element's id                                                 |
-| `fieldErrorId(name, scope?)`       | the error element's id                                                       |
-| `fieldControlProps(props, field)`  | id, name, disabled, `aria-describedby`, `aria-invalid` merged onto a control |
-| `fieldDescribedBy(name, options)`  | just the `aria-describedby`, for a `<fieldset>`-shaped group                 |
-| `FIELD_LABEL_CLASSES`              | the shared label class string                                                |
+| Helper | Gives you |
+| --- | --- |
+| `fieldId(name, scope?)` | the control's id |
+| `fieldDescriptionId(name, scope?)` | the description element's id |
+| `fieldErrorId(name, scope?)` | the error element's id |
+| `fieldControlProps(props, field)` | id, name, disabled, `aria-describedby`, `aria-invalid` merged onto a control |
+| `fieldDescribedBy(name, options)` | just the `aria-describedby`, for a `<fieldset>`-shaped group |
+| `FIELD_LABEL_CLASSES` | the shared label class string |
 
 **Default: derive every field id through the helpers, never as a string literal.**
 <!-- rule:forge-ui-form-id-helpers -->
@@ -147,11 +147,11 @@ unconditionally — no `{error && …}` guard, and therefore no branch that can 
 `ToggleGroup` under the _same names_ as `@y-core/forge/ui/core`, adding a required `bind` prop that
 stamps `data-field` for the client signal runtime.
 
-| Given                                             | Import from                                            |
-| ------------------------------------------------- | ------------------------------------------------------ |
-| The value is read by the server on submit         | `@y-core/forge/ui/core`                                |
-| A browser signal must see the value as it changes | `@y-core/forge/ui/controls`                            |
-| Both — a bound control inside a submitted form    | `@y-core/forge/ui/controls`, plus a `field` descriptor |
+| Given | Import from |
+| --- | --- |
+| The value is read by the server on submit | `@y-core/forge/ui/core` |
+| A browser signal must see the value as it changes | `@y-core/forge/ui/controls` |
+| Both — a bound control inside a submitted form | `@y-core/forge/ui/controls`, plus a `field` descriptor |
 
 **Default: reach for the `ui/core` base until a client signal actually reads the value.**
 <!-- rule:forge-ui-form-bind-when-client -->

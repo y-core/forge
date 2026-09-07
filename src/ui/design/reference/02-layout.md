@@ -36,10 +36,10 @@ group, unless a `Separator` or a background change is already carrying the bound
 Forge's field primitives already encode the ratio, so the rule mostly reduces to _use them and do
 not override the gaps_:
 
-| Level                                                    | Primitive                          | Gap it sets     |
-| -------------------------------------------------------- | ---------------------------------- | --------------- |
-| Between fields                                           | `FormField.Group`, `FormField.Set` | `gap-6` — 24px  |
-| Between the label, control, and description of one field | `FormField.Content`                | `gap-1.5` — 6px |
+| Level | Primitive | Gap it sets |
+| --- | --- | --- |
+| Between fields | `FormField.Group`, `FormField.Set` | `gap-6` — 24px |
+| Between the label, control, and description of one field | `FormField.Content` | `gap-1.5` — 6px |
 
 24px around, 6px within: a 4× ratio, and the fields separate at a glance.
 
@@ -95,11 +95,11 @@ between them is preserved. <!-- rule:forge-ui-layout-field-gap-ladder -->
 
 `Card`'s own sections encode the same relationship at a larger scale:
 
-| Region         | Padding     | Internal gap                            |
-| -------------- | ----------- | --------------------------------------- |
-| `Card.Header`  | `px-6 py-5` | `gap-1.5` between title and description |
-| `Card.Content` | `px-6 py-5` | whatever the content sets               |
-| `Card.Footer`  | `px-6 py-4` | `gap-2` between actions                 |
+| Region | Padding | Internal gap |
+| --- | --- | --- |
+| `Card.Header` | `px-6 py-5` | `gap-1.5` between title and description |
+| `Card.Content` | `px-6 py-5` | whatever the content sets |
+| `Card.Footer` | `px-6 py-4` | `gap-2` between actions |
 
 The title and its description sit 6px apart; the header and the content sit 40px apart, because
 each contributes its own 20px of vertical padding. Title-to-description is unmistakably tighter
@@ -126,12 +126,12 @@ is a count (`Badge` in an `Indicator`) or a list, never a taller fan. <!-- rule:
 A container that spans the viewport is not a layout decision; it is the absence of one. Every text
 region needs a ceiling, and `forge-ui-measure-cap` is the Floor that sets it.
 
-| Region                           | Reach for                                  |
-| -------------------------------- | ------------------------------------------ |
-| A body-copy column               | `max-w-prose`                              |
-| A centred form or settings panel | `max-w-md` to `max-w-xl`                   |
-| A page's main content column     | `max-w-5xl` to `max-w-7xl`, with `mx-auto` |
-| A data table                     | no ceiling; bound the scroll instead       |
+| Region | Reach for |
+| --- | --- |
+| A body-copy column | `max-w-prose` |
+| A centred form or settings panel | `max-w-md` to `max-w-xl` |
+| A page's main content column | `max-w-5xl` to `max-w-7xl`, with `mx-auto` |
+| A data table | no ceiling; bound the scroll instead |
 
 Default: a content column carries a `max-w-*` ceiling and centres with `mx-auto`, unless the
 region is a table, a canvas, or a media element whose value comes from filling the space. <!-- rule:forge-ui-layout-measure-container -->
@@ -156,11 +156,11 @@ the one the content needs.
 
 Three ways to group, in ascending order of force:
 
-| Force    | Device                                                      | When                                                           |
-| -------- | ----------------------------------------------------------- | -------------------------------------------------------------- |
-| Lightest | Proximity alone — a `gap-*` ratio                           | Default; works for most groupings                              |
-| Middle   | A `--muted` background panel, or a `Separator` between runs | The boundary matters but the group is not a distinct object    |
-| Heaviest | A `Card`, which draws `--border` and `shadow-sm`            | The group is a distinct object the user could act on as a unit |
+| Force | Device | When |
+| --- | --- | --- |
+| Lightest | Proximity alone — a `gap-*` ratio | Default; works for most groupings |
+| Middle | A `--muted` background panel, or a `Separator` between runs | The boundary matters but the group is not a distinct object |
+| Heaviest | A `Card`, which draws `--border` and `shadow-sm` | The group is a distinct object the user could act on as a unit |
 
 Default: grouping is expressed by spacing first, by a `--muted` background or a `Separator`
 second, and by a `Card`'s border last, unless a brief describes a surface of peer objects — a

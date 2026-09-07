@@ -2,7 +2,8 @@
   "name": "@y-core/forge",
   "version": "0.1.4",
   "bin": {
-    "forge": "./src/tooling/root/bin.ts"
+    "forge": "./src/tooling/root/bin.ts",
+    "warden": "./warden/src/bin.ts"
   },
   "type": "module",
   "description": "Server-rendered web utilities and an integrated command layer for Cloudflare Workers — HTMX + Tailwind",
@@ -11,7 +12,7 @@
     "url": "git+https://github.com/y-core/forge.git"
   },
   "license": "MIT",
-  "governance": {
+  "warden": {
     "kind": "libs"
   },
   "scripts": {
@@ -48,7 +49,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
-    "@y-core/governance": "https://codeload.github.com/y-core/governance/tar.gz/refs/tags/v0.4.4",
     "esbuild": "^0.28.1",
     "oxfmt": "0.66.0",
     "oxlint": "1.80.0",
@@ -255,7 +255,28 @@
     "./validation": {
       "types": "./src/validation/mod.ts",
       "import": "./src/validation/mod.ts"
-    }
+    },
+    "./warden": {
+      "types": "./warden/src/mod.ts",
+      "import": "./warden/src/mod.ts"
+    },
+    "./warden/checks": {
+      "types": "./warden/src/checks/mod.ts",
+      "import": "./warden/src/checks/mod.ts"
+    },
+    "./warden/knowledge": {
+      "types": "./warden/src/search/mod.ts",
+      "import": "./warden/src/search/mod.ts"
+    },
+    "./warden/mcp": {
+      "types": "./warden/src/mcp/mod.ts",
+      "import": "./warden/src/mcp/mod.ts"
+    },
+    "./warden/steps": {
+      "types": "./warden/src/steps.ts",
+      "import": "./warden/src/steps.ts"
+    },
+    "./warden/canon/*.md": "./warden/canon/*.md"
   },
   "files": [
     "README.md",
@@ -279,6 +300,7 @@
     "src/tooling/",
     "src/ui/",
     "src/validation/",
+    "warden/",
     "!**/*-test-helper.ts",
     "!**/*.browser.ts",
     "!**/*.test.ts",

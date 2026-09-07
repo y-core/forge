@@ -58,14 +58,14 @@ beside them drives **assistive technology**. They are not alternatives, and neit
 **A `data-state` with no ARIA counterpart styles perfectly and announces nothing.** The component
 looks right in every review that is conducted by looking.
 
-| What you are expressing             | The styling hook                                                                      | The ARIA counterpart                                                      |
-| ----------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| A disclosure or popup is open       | the native state — `[open]` on `<details>` / `<dialog>`, `:popover-open` on a popover | the platform's own, since `<summary>` and an invoker button both carry it |
-| A toggle is pressed                 | `data-pressed`                                                                        | `aria-pressed`                                                            |
-| A tab is the current one            | `data-selected`                                                                       | `aria-selected`                                                           |
-| A checkable control is checked      | `data-checked`                                                                        | `aria-checked`, or the native `checked`                                   |
-| A field holds an error              | `data-invalid`                                                                        | `aria-invalid` plus `aria-describedby`                                    |
-| A control is inert but discoverable | `data-disabled`                                                                       | `aria-disabled`                                                           |
+| What you are expressing | The styling hook | The ARIA counterpart |
+| --- | --- | --- |
+| A disclosure or popup is open | the native state — `[open]` on `<details>` / `<dialog>`, `:popover-open` on a popover | the platform's own, since `<summary>` and an invoker button both carry it |
+| A toggle is pressed | `data-pressed` | `aria-pressed` |
+| A tab is the current one | `data-selected` | `aria-selected` |
+| A checkable control is checked | `data-checked` | `aria-checked`, or the native `checked` |
+| A field holds an error | `data-invalid` | `aria-invalid` plus `aria-describedby` |
+| A control is inert but discoverable | `data-disabled` | `aria-disabled` |
 
 Default: emit both halves for every state you express, and emit the `data-*` half through
 `stateAttrs` or `applyStateAttrs` rather than by writing the attribute name — unless the element is

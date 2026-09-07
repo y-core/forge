@@ -185,7 +185,7 @@ async function generateAssetsModule(
   writeAssetsModule(outputPath, renderAssetsModule(manifest, spriteGroups, publicPrefix, cursorBakes, header));
 }
 
-/** The emitted module with every value blanked — the shape `ASSET_AND_BUILD_TOOLING.md` §6b holds the build and types artifacts to. @internal */
+/** The emitted module with every value blanked — the shape `ASSET_PIPELINE.md` §4b holds the build and types artifacts to. @internal */
 export function structuralSignature(module: string): string {
   const lines = module.split("\n");
   let start = 0;

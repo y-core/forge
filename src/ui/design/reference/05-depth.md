@@ -12,13 +12,13 @@ inventing one.
 
 ## The ladder
 
-| Level | Surface                    | Primitive                       | What it means                              |
-| ----- | -------------------------- | ------------------------------- | ------------------------------------------ |
-| 0     | Flat on `--background`     | any `<div>`                     | Part of the page. Nothing sits above it.   |
-| 1     | A hairline                 | `Separator`, `border-border`    | Two regions of one surface, told apart.    |
-| 2     | `shadow-sm` on `--card`    | `Card`                          | A grouped object you can point at.         |
-| 3     | `shadow-md` on `--popover` | `Popover.Content`, `Menu.Popup` | Transient, tied to a trigger, dismissible. |
-| 4     | `shadow-lg` on `--popover` | `Dialog`, `Toast`               | Above everything; blocks or interrupts.    |
+| Level | Surface | Primitive | What it means |
+| --- | --- | --- | --- |
+| 0 | Flat on `--background` | any `<div>` | Part of the page. Nothing sits above it. |
+| 1 | A hairline | `Separator`, `border-border` | Two regions of one surface, told apart. |
+| 2 | `shadow-sm` on `--card` | `Card` | A grouped object you can point at. |
+| 3 | `shadow-md` on `--popover` | `Popover.Content`, `Menu.Popup` | Transient, tied to a trigger, dismissible. |
+| 4 | `shadow-lg` on `--popover` | `Dialog`, `Toast` | Above everything; blocks or interrupts. |
 
 Every one of those shadow classes is what the primitive already renders — `Card` is
 `shadow-sm border border-border bg-card text-card-foreground`, `Dialog` is `shadow-lg`, `Menu.Popup`
@@ -63,12 +63,12 @@ flow that is genuinely modal, such as re-authentication.
 Given two regions that must read as distinct, three things separate them and they are not
 interchangeable.
 
-| Given                                   | Choose                                                       | Because                                                   |
-| --------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
-| Two parts of one object (header ↔ body) | `Separator`, or `Card.Header`'s own `border-b border-border` | One object, one elevation                                 |
-| Two peer objects in a list              | spacing — a `gap-*` step                                     | Whitespace separates without adding a level               |
-| A region on a differently-shaded ground | `bg-muted` with `text-muted-foreground`                      | A background change reads as a different _kind_ of region |
-| A surface that covers something         | `Card`, `Popover.Content`, `Dialog`                          | Only a covering surface earns a shadow                    |
+| Given | Choose | Because |
+| --- | --- | --- |
+| Two parts of one object (header ↔ body) | `Separator`, or `Card.Header`'s own `border-b border-border` | One object, one elevation |
+| Two peer objects in a list | spacing — a `gap-*` step | Whitespace separates without adding a level |
+| A region on a differently-shaded ground | `bg-muted` with `text-muted-foreground` | A background change reads as a different _kind_ of region |
+| A surface that covers something | `Card`, `Popover.Content`, `Dialog` | Only a covering surface earns a shadow |
 
 **Default: try spacing, then a background token, then a hairline, before a shadow.**
 <!-- rule:forge-ui-depth-separator-order -->

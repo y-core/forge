@@ -14,15 +14,15 @@ This namespace runs **server-side only** (SSR / Workers). It reads inbound `HX-*
 
 ## Features
 
-| Feature                             | Entry point                                                                                                                                             |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HTMX request detection              | `isHxRequest`                                                                                                                                           |
-| Typed inbound-header reader         | `readHxRequest`, `HxRequest`                                                                                                                            |
-| Individual request-header accessors | `hxTrigger`, `hxTarget`, `hxTriggerName`, `hxCurrentUrl`, `isPartial`, `isBoosted`                                                                      |
-| Response-header builder             | `hxHeaders`, `HxResponseProps`, `HxResponseHeaders`                                                                                                     |
-| JSX attribute builder               | `hxAttrs`, `HxAttrsProps`, `HxAttrs`                                                                                                                    |
-| Swap-strategy constants             | `SWAP`                                                                                                                                                  |
-| Interaction patterns                | `formSubmit`, `liveSearch`, `inlineValidation`, `infiniteScroll`, `paginatedTableLink`, `asyncDialogTrigger`, `dependentSelect`, `oobSwap`, `oobAppend` |
+| Feature | Entry point |
+| --- | --- |
+| HTMX request detection | `isHxRequest` |
+| Typed inbound-header reader | `readHxRequest`, `HxRequest` |
+| Individual request-header accessors | `hxTrigger`, `hxTarget`, `hxTriggerName`, `hxCurrentUrl`, `isPartial`, `isBoosted` |
+| Response-header builder | `hxHeaders`, `HxResponseProps`, `HxResponseHeaders` |
+| JSX attribute builder | `hxAttrs`, `HxAttrsProps`, `HxAttrs` |
+| Swap-strategy constants | `SWAP` |
+| Interaction patterns | `formSubmit`, `liveSearch`, `inlineValidation`, `infiniteScroll`, `paginatedTableLink`, `asyncDialogTrigger`, `dependentSelect`, `oobSwap`, `oobAppend` |
 
 The request readers accept a `RequestContext` from `@remix-run/fetch-router` (the `c` you already have inside a route handler or middleware). The builders and patterns take plain typed props and return plain maps (`Record<string, string>`), so they are pure and trivially testable.
 
@@ -103,14 +103,14 @@ String fields default to `""` when the header is absent.
 
 Use these when you only need one header; each reads a single inbound `HX-*` header off `c.request`.
 
-| Function           | Reads header                | Returns                                            |
-| ------------------ | --------------------------- | -------------------------------------------------- |
-| `hxTrigger(c)`     | `HX-Trigger`                | `string` (id of the triggering element, or `""`)   |
-| `hxTarget(c)`      | `HX-Target`                 | `string` (id of the swap target, or `""`)          |
-| `hxTriggerName(c)` | `HX-Trigger-Name`           | `string` (name of the triggering element, or `""`) |
-| `hxCurrentUrl(c)`  | `HX-Current-URL`            | `string` (browser URL, or `""`)                    |
-| `isBoosted(c)`     | `HX-Boosted`                | `boolean` (request came from `hx-boost`)           |
-| `isPartial(c)`     | `HX-Request` + `HX-Boosted` | `boolean` (HTMX request **and not** boosted)       |
+| Function | Reads header | Returns |
+| --- | --- | --- |
+| `hxTrigger(c)` | `HX-Trigger` | `string` (id of the triggering element, or `""`) |
+| `hxTarget(c)` | `HX-Target` | `string` (id of the swap target, or `""`) |
+| `hxTriggerName(c)` | `HX-Trigger-Name` | `string` (name of the triggering element, or `""`) |
+| `hxCurrentUrl(c)` | `HX-Current-URL` | `string` (browser URL, or `""`) |
+| `isBoosted(c)` | `HX-Boosted` | `boolean` (request came from `hx-boost`) |
+| `isPartial(c)` | `HX-Request` + `HX-Boosted` | `boolean` (HTMX request **and not** boosted) |
 
 `isPartial` is the right predicate when boosted navigations should still receive a full page: it returns `true` only for genuine partial swaps, excluding `hx-boost` navigations.
 
@@ -131,17 +131,17 @@ function hxHeaders(props: HxResponseProps): HxResponseHeaders; // = Record<strin
 
 Builds a map of outbound `HX-*` response headers to spread into `fragmentResponse` / `htmlResponse`. Every prop is optional; `undefined` and empty-string values are omitted. `refresh` only emits a header when `true`.
 
-| Prop                 | Type      | Header                    | Effect                                               |
-| -------------------- | --------- | ------------------------- | ---------------------------------------------------- |
-| `redirect`           | `string`  | `HX-Redirect`             | Client-side redirect to the URL                      |
-| `refresh`            | `boolean` | `HX-Refresh`              | Force a full page refresh (emitted only when `true`) |
-| `pushUrl`            | `string`  | `HX-Push-Url`             | Push the URL onto browser history                    |
-| `replaceUrl`         | `string`  | `HX-Replace-Url`          | Replace the current history entry                    |
-| `trigger`            | `string`  | `HX-Trigger`              | Fire client-side event(s) immediately                |
-| `triggerAfterSettle` | `string`  | `HX-Trigger-After-Settle` | Fire event(s) after the settle step                  |
-| `triggerAfterSwap`   | `string`  | `HX-Trigger-After-Swap`   | Fire event(s) after the swap step                    |
-| `retarget`           | `string`  | `HX-Retarget`             | Override the swap target (CSS selector)              |
-| `reswap`             | `string`  | `HX-Reswap`               | Override the swap strategy                           |
+| Prop | Type | Header | Effect |
+| --- | --- | --- | --- |
+| `redirect` | `string` | `HX-Redirect` | Client-side redirect to the URL |
+| `refresh` | `boolean` | `HX-Refresh` | Force a full page refresh (emitted only when `true`) |
+| `pushUrl` | `string` | `HX-Push-Url` | Push the URL onto browser history |
+| `replaceUrl` | `string` | `HX-Replace-Url` | Replace the current history entry |
+| `trigger` | `string` | `HX-Trigger` | Fire client-side event(s) immediately |
+| `triggerAfterSettle` | `string` | `HX-Trigger-After-Settle` | Fire event(s) after the settle step |
+| `triggerAfterSwap` | `string` | `HX-Trigger-After-Swap` | Fire event(s) after the swap step |
+| `retarget` | `string` | `HX-Retarget` | Override the swap target (CSS selector) |
+| `reswap` | `string` | `HX-Reswap` | Override the swap strategy |
 
 ```ts
 import { hxHeaders } from "@y-core/forge/html/htmx";
@@ -167,40 +167,40 @@ Converts a typed, camelCased props object into a flat `hx-*` attribute map for s
 // → hx-post="/api/contact" hx-target="#result" hx-swap="outerHTML"
 ```
 
-| Prop        | Attribute       | Prop          | Attribute         |
-| ----------- | --------------- | ------------- | ----------------- |
-| `get`       | `hx-get`        | `sync`        | `hx-sync`         |
-| `post`      | `hx-post`       | `confirm`     | `hx-confirm`      |
-| `put`       | `hx-put`        | `encoding`    | `hx-encoding`     |
-| `patch`     | `hx-patch`      | `pushUrl`     | `hx-push-url`     |
-| `delete`    | `hx-delete`     | `replaceUrl`  | `hx-replace-url`  |
-| `target`    | `hx-target`     | `params`      | `hx-params`       |
-| `swap`      | `hx-swap`       | `include`     | `hx-include`      |
-| `select`    | `hx-select`     | `indicator`   | `hx-indicator`    |
+| Prop | Attribute | Prop | Attribute |
+| --- | --- | --- | --- |
+| `get` | `hx-get` | `sync` | `hx-sync` |
+| `post` | `hx-post` | `confirm` | `hx-confirm` |
+| `put` | `hx-put` | `encoding` | `hx-encoding` |
+| `patch` | `hx-patch` | `pushUrl` | `hx-push-url` |
+| `delete` | `hx-delete` | `replaceUrl` | `hx-replace-url` |
+| `target` | `hx-target` | `params` | `hx-params` |
+| `swap` | `hx-swap` | `include` | `hx-include` |
+| `select` | `hx-select` | `indicator` | `hx-indicator` |
 | `selectOob` | `hx-select-oob` | `disabledElt` | `hx-disabled-elt` |
-| `trigger`   | `hx-trigger`    |               |                   |
+| `trigger` | `hx-trigger` |  |  |
 
 Three props are encoded specially:
 
-| Prop      | Type                     | Output                            | Notes                         |
-| --------- | ------------------------ | --------------------------------- | ----------------------------- |
-| `values`  | `Record<string, string>` | `hx-vals` (JSON)                  | Omitted when the map is empty |
-| `headers` | `Record<string, string>` | `hx-headers` (JSON)               | Omitted when the map is empty |
-| `boost`   | `boolean`                | `hx-boost` (`"true"` / `"false"`) | Emitted whenever defined      |
+| Prop | Type | Output | Notes |
+| --- | --- | --- | --- |
+| `values` | `Record<string, string>` | `hx-vals` (JSON) | Omitted when the map is empty |
+| `headers` | `Record<string, string>` | `hx-headers` (JSON) | Omitted when the map is empty |
+| `boost` | `boolean` | `hx-boost` (`"true"` / `"false"`) | Emitted whenever defined |
 
 ### Swap-strategy constants — `SWAP`
 
 `SWAP` provides the canonical HTMX swap-strategy strings so call sites avoid stringly-typed literals:
 
-| Constant           | Value           |
-| ------------------ | --------------- |
-| `SWAP.innerHtml`   | `"innerHTML"`   |
-| `SWAP.outerHtml`   | `"outerHTML"`   |
-| `SWAP.beforeEnd`   | `"beforeend"`   |
-| `SWAP.afterEnd`    | `"afterend"`    |
+| Constant | Value |
+| --- | --- |
+| `SWAP.innerHtml` | `"innerHTML"` |
+| `SWAP.outerHtml` | `"outerHTML"` |
+| `SWAP.beforeEnd` | `"beforeend"` |
+| `SWAP.afterEnd` | `"afterend"` |
 | `SWAP.beforeBegin` | `"beforebegin"` |
-| `SWAP.delete`      | `"delete"`      |
-| `SWAP.none`        | `"none"`        |
+| `SWAP.delete` | `"delete"` |
+| `SWAP.none` | `"none"` |
 
 ```ts
 import { hxAttrs, SWAP } from "@y-core/forge/html/htmx";
@@ -212,15 +212,15 @@ hxAttrs({ get: "/rows", target: "#list", swap: SWAP.beforeEnd });
 
 Each pattern returns an `HxAttrs` map (spread directly onto the triggering element) with sensible defaults baked in. Every default is overridable via the matching prop.
 
-| Pattern              | Required props              | Defaults                                                                    | Notes                                                                                         |
-| -------------------- | --------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `formSubmit`         | `post`, `target`            | `swap=outerHTML`, `disabledElt=this`                                        | Optional `encoding`, `pushUrl`                                                                |
-| `liveSearch`         | `get`, `target`             | `swap=innerHTML`, `trigger="input changed delay:300ms, search"`             | Optional `pushUrl`                                                                            |
-| `inlineValidation`   | `get`, `target`             | `swap=outerHTML`, `trigger="change delay:200ms, blur"`, `sync="this:abort"` | `sync` default is form-independent; pass `sync="closest form:abort"` for cross-field aborting |
-| `infiniteScroll`     | `get`, `target`             | `swap=beforeend`, `trigger="revealed"`                                      | `trigger` always `revealed`; optional `select`                                                |
-| `paginatedTableLink` | `get`, `target`, `page`     | `swap=outerHTML`                                                            | Builds `?page=N`; optional `pageParam`, `query`                                               |
-| `dependentSelect`    | `get`, `target`             | `swap=outerHTML`, `trigger="change"`                                        |                                                                                               |
-| `asyncDialogTrigger` | `get`, `target`, `dialogId` | `swap=innerHTML`                                                            | Also emits `data-dialog-open`, `aria-haspopup="dialog"`, `aria-controls`                      |
+| Pattern | Required props | Defaults | Notes |
+| --- | --- | --- | --- |
+| `formSubmit` | `post`, `target` | `swap=outerHTML`, `disabledElt=this` | Optional `encoding`, `pushUrl` |
+| `liveSearch` | `get`, `target` | `swap=innerHTML`, `trigger="input changed delay:300ms, search"` | Optional `pushUrl` |
+| `inlineValidation` | `get`, `target` | `swap=outerHTML`, `trigger="change delay:200ms, blur"`, `sync="this:abort"` | `sync` default is form-independent; pass `sync="closest form:abort"` for cross-field aborting |
+| `infiniteScroll` | `get`, `target` | `swap=beforeend`, `trigger="revealed"` | `trigger` always `revealed`; optional `select` |
+| `paginatedTableLink` | `get`, `target`, `page` | `swap=outerHTML` | Builds `?page=N`; optional `pageParam`, `query` |
+| `dependentSelect` | `get`, `target` | `swap=outerHTML`, `trigger="change"` |  |
+| `asyncDialogTrigger` | `get`, `target`, `dialogId` | `swap=innerHTML` | Also emits `data-dialog-open`, `aria-haspopup="dialog"`, `aria-controls` |
 
 ```tsx
 import { formSubmit, liveSearch, infiniteScroll, paginatedTableLink } from "@y-core/forge/html/htmx";

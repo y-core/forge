@@ -113,11 +113,11 @@ Constructs a full-page HTML `Response`, guaranteeing a leading `<!DOCTYPE html>`
 a plain string. For HTMX partials that must **not** carry a DOCTYPE, use `fragmentResponse` instead.
 The `content-type` is fixed: passing a `content-type` key in `headers` (case-insensitive) **throws**.
 
-| Parameter | Type                     | Default | Description                                                                                              |
-| --------- | ------------------------ | ------- | -------------------------------------------------------------------------------------------------------- |
-| `body`    | `string \| SafeHtml`     | —       | The page markup. A leading DOCTYPE is ensured.                                                           |
-| `status`  | `number`                 | `200`   | HTTP status code.                                                                                        |
-| `headers` | `Record<string, string>` | —       | Extra headers, merged into the response. `content-type` is fixed — passing it (case-insensitive) throws. |
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `body` | `string \| SafeHtml` | — | The page markup. A leading DOCTYPE is ensured. |
+| `status` | `number` | `200` | HTTP status code. |
+| `headers` | `Record<string, string>` | — | Extra headers, merged into the response. `content-type` is fixed — passing it (case-insensitive) throws. |
 
 ### Fragment responses — `fragmentResponse`
 
@@ -130,11 +130,11 @@ charset=utf-8`. No DOCTYPE is added — fragments are swapped into an existing d
 a `SafeHtml` value or a string. Use `htmlResponse` for full documents. As with `htmlResponse`, the
 `content-type` is fixed: passing a `content-type` key in `headers` (case-insensitive) **throws**.
 
-| Parameter | Type                     | Default | Description                                                                                              |
-| --------- | ------------------------ | ------- | -------------------------------------------------------------------------------------------------------- |
-| `body`    | `string \| SafeHtml`     | —       | The fragment markup (no DOCTYPE).                                                                        |
-| `status`  | `number`                 | `200`   | HTTP status code.                                                                                        |
-| `headers` | `Record<string, string>` | —       | Extra headers, merged into the response. `content-type` is fixed — passing it (case-insensitive) throws. |
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `body` | `string \| SafeHtml` | — | The fragment markup (no DOCTYPE). |
+| `status` | `number` | `200` | HTTP status code. |
+| `headers` | `Record<string, string>` | — | Extra headers, merged into the response. `content-type` is fixed — passing it (case-insensitive) throws. |
 
 ### Redirects — `redirect`, `createRedirectResponse`
 
@@ -147,11 +147,11 @@ function createRedirectResponse(url: string, status?: number, headers?: Record<s
 `Location` header set to `url`. The default status is `302`; pass `303` (See Other) after a successful
 form POST or `301`/`307`/`308` as appropriate.
 
-| Parameter | Type                     | Default | Description                                                 |
-| --------- | ------------------------ | ------- | ----------------------------------------------------------- |
-| `url`     | `string`                 | —       | The redirect target (the `Location` header value).          |
-| `status`  | `number`                 | `302`   | Redirect status code.                                       |
-| `headers` | `Record<string, string>` | —       | Extra headers (e.g. `Set-Cookie`) merged into the response. |
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `url` | `string` | — | The redirect target (the `Location` header value). |
+| `status` | `number` | `302` | Redirect status code. |
+| `headers` | `Record<string, string>` | — | Extra headers (e.g. `Set-Cookie`) merged into the response. |
 
 ```ts
 import { redirect, SetCookie } from "@y-core/forge/http";
@@ -190,11 +190,11 @@ your own stylesheet, or override `class` and `ulClass` with your own.
 
 **`FragmentOptions`:**
 
-| Field         | Type     | Default                          | Applies to               | Description                                                                                                        |
-| ------------- | -------- | -------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `class`       | `string` | banner-specific Tailwind classes | all three                | Overrides the wrapper `<div>` class.                                                                               |
-| `successAttr` | `string` | `"data-success"`                 | `renderSuccess`          | Marker attribute name on the success wrapper. Must match `^[A-Za-z_][A-Za-z0-9_-]*$`, else `renderSuccess` throws. |
-| `ulClass`     | `string` | `"mt-2 list-disc ps-5"`          | `renderValidationErrors` | Class of the inner `<ul>`.                                                                                         |
+| Field | Type | Default | Applies to | Description |
+| --- | --- | --- | --- | --- |
+| `class` | `string` | banner-specific Tailwind classes | all three | Overrides the wrapper `<div>` class. |
+| `successAttr` | `string` | `"data-success"` | `renderSuccess` | Marker attribute name on the success wrapper. Must match `^[A-Za-z_][A-Za-z0-9_-]*$`, else `renderSuccess` throws. |
+| `ulClass` | `string` | `"mt-2 list-disc ps-5"` | `renderValidationErrors` | Class of the inner `<ul>`. |
 
 ### Safe HTML — `html`, `rawHtml`, `isSafeHtml`, `SafeHtml`
 
@@ -241,12 +241,12 @@ fragments) where the `html` tag is not in play.
 
 `safeUrl` sanitizes a URL for use in `href`/`src`-style attributes:
 
-| Input shape                                              | Result                   |
-| -------------------------------------------------------- | ------------------------ |
-| Relative / scheme-less URL (`/path`, `page.html`)        | passes through unchanged |
-| `http:`, `https:`, `mailto:`, `tel:` absolute URL        | passes through unchanged |
-| `javascript:`, `vbscript:`, `data:`, or any other scheme | collapses to `"#"`       |
-| Protocol-relative (`//host`, `\\host`)                   | collapses to `"#"`       |
+| Input shape | Result |
+| --- | --- |
+| Relative / scheme-less URL (`/path`, `page.html`) | passes through unchanged |
+| `http:`, `https:`, `mailto:`, `tel:` absolute URL | passes through unchanged |
+| `javascript:`, `vbscript:`, `data:`, or any other scheme | collapses to `"#"` |
+| Protocol-relative (`//host`, `\\host`) | collapses to `"#"` |
 
 It defeats obfuscation via leading/embedded whitespace, control characters, and mixed case. The caller
 remains responsible for HTML-escaping the returned value.
@@ -266,16 +266,16 @@ raw string). Instantiate with `new`, passing the corresponding `*Init` object, t
 — pass the stringified value as a header value in a `Response` init or into `htmlResponse` /
 `fragmentResponse` / `redirect`.
 
-| Builder              | Init type                | Builds the value for  | Example init fields                                                 |
-| -------------------- | ------------------------ | --------------------- | ------------------------------------------------------------------- |
-| `ContentType`        | `ContentTypeInit`        | `Content-Type`        | `mediaType`, `charset`, `boundary`                                  |
-| `CacheControl`       | `CacheControlInit`       | `Cache-Control`       | `maxAge`, `sMaxage`, `noStore`, `noCache`, `public`                 |
-| `SetCookie`          | `SetCookieInit`          | `Set-Cookie`          | `name`, `value`, `path`, `httpOnly`, `secure`, `sameSite`, `maxAge` |
-| `Accept`             | `AcceptInit`             | `Accept`              | media-type preferences                                              |
-| `Vary`               | `VaryInit`               | `Vary`                | header names                                                        |
-| `ContentDisposition` | `ContentDispositionInit` | `Content-Disposition` | `type`, `filename`                                                  |
-| `ContentRange`       | `ContentRangeInit`       | `Content-Range`       | `start`, `end`, `size`                                              |
-| `Range`              | `RangeInit`              | `Range`               | byte ranges                                                         |
+| Builder | Init type | Builds the value for | Example init fields |
+| --- | --- | --- | --- |
+| `ContentType` | `ContentTypeInit` | `Content-Type` | `mediaType`, `charset`, `boundary` |
+| `CacheControl` | `CacheControlInit` | `Cache-Control` | `maxAge`, `sMaxage`, `noStore`, `noCache`, `public` |
+| `SetCookie` | `SetCookieInit` | `Set-Cookie` | `name`, `value`, `path`, `httpOnly`, `secure`, `sameSite`, `maxAge` |
+| `Accept` | `AcceptInit` | `Accept` | media-type preferences |
+| `Vary` | `VaryInit` | `Vary` | header names |
+| `ContentDisposition` | `ContentDispositionInit` | `Content-Disposition` | `type`, `filename` |
+| `ContentRange` | `ContentRangeInit` | `Content-Range` | `start`, `end`, `size` |
+| `Range` | `RangeInit` | `Range` | byte ranges |
 
 `fragmentResponse` and `htmlResponse` fix `content-type` themselves (passing that key throws), so
 use the builders for the **other** headers you merge in, and reach for a raw `Response` when you must
@@ -307,10 +307,10 @@ function joinPath(base: string, ...segments: string[]): string;
 Joins a base path with zero or more segments into a clean URL path: it collapses duplicate slashes
 between parts, trims a trailing slash, and preserves a leading slash when `base` has one.
 
-| Parameter  | Type       | Description                                              |
-| ---------- | ---------- | -------------------------------------------------------- |
-| `base`     | `string`   | The base path; a leading `/` is preserved in the result. |
-| `segments` | `string[]` | Additional segments to append.                           |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `base` | `string` | The base path; a leading `/` is preserved in the result. |
+| `segments` | `string[]` | Additional segments to append. |
 
 ```ts
 import { joinPath } from "@y-core/forge/http";
@@ -322,19 +322,19 @@ joinPath("showcase", "ui", "preview"); // "showcase/ui/preview" (no leading slas
 
 ### Types
 
-| Type                     | Description                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `SafeHtml`               | Branded string for HTML safe to emit without further escaping; produced only via `html` / `rawHtml`. |
-| `HtmlTemplateTag`        | The signature of the `html` tagged-template function.                                                |
-| `FragmentOptions`        | `{ class?, successAttr?, ulClass? }` for the `render*` fragment helpers.                             |
-| `ContentTypeInit`        | Structured input for `ContentType`.                                                                  |
-| `CacheControlInit`       | Structured input for `CacheControl`.                                                                 |
-| `SetCookieInit`          | Structured input for `SetCookie`.                                                                    |
-| `AcceptInit`             | Structured input for `Accept`.                                                                       |
-| `VaryInit`               | Structured input for `Vary`.                                                                         |
-| `ContentDispositionInit` | Structured input for `ContentDisposition`.                                                           |
-| `ContentRangeInit`       | Structured input for `ContentRange`.                                                                 |
-| `RangeInit`              | Structured input for `Range`.                                                                        |
+| Type | Description |
+| --- | --- |
+| `SafeHtml` | Branded string for HTML safe to emit without further escaping; produced only via `html` / `rawHtml`. |
+| `HtmlTemplateTag` | The signature of the `html` tagged-template function. |
+| `FragmentOptions` | `{ class?, successAttr?, ulClass? }` for the `render*` fragment helpers. |
+| `ContentTypeInit` | Structured input for `ContentType`. |
+| `CacheControlInit` | Structured input for `CacheControl`. |
+| `SetCookieInit` | Structured input for `SetCookie`. |
+| `AcceptInit` | Structured input for `Accept`. |
+| `VaryInit` | Structured input for `Vary`. |
+| `ContentDispositionInit` | Structured input for `ContentDisposition`. |
+| `ContentRangeInit` | Structured input for `ContentRange`. |
+| `RangeInit` | Structured input for `Range`. |
 
 ---
 

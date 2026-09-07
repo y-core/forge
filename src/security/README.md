@@ -10,16 +10,16 @@ This namespace operates on the raw HTTP layer — before any application logic r
 
 ## Features
 
-| Feature                                                                                  | Entry point                                                                                                   |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Feature | Entry point |
+| --- | --- |
 | Security headers (CSP nonce, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy) | `createSecurityHeaders`, `applySecurityHeaders`, `mergeSecurityHeaders`, `getNonce`, `NONCE`, `TURNSTILE_CSP` |
-| CORS                                                                                     | `cors`, `matchOrigin`                                                                                         |
-| Origin allowlist enforcement                                                             | `originGuard`, `verifyOrigin`                                                                                 |
-| Cross-origin (Fetch Metadata) protection                                                 | `crossOriginProtection`, `checkCrossOriginProtection`, `originProtection`                                     |
-| Rate limiting (Cloudflare binding)                                                       | `rateLimit`                                                                                                   |
-| Request identity                                                                         | `requestId`, `requestIdCtx`                                                                                   |
-| Content-type guard                                                                       | `requireFormContentType`                                                                                      |
-| URL / origin config                                                                      | `parseUrl`, `deriveAllowedOrigins`, `BaseUrlConfigSchema`                                                     |
+| CORS | `cors`, `matchOrigin` |
+| Origin allowlist enforcement | `originGuard`, `verifyOrigin` |
+| Cross-origin (Fetch Metadata) protection | `crossOriginProtection`, `checkCrossOriginProtection`, `originProtection` |
+| Rate limiting (Cloudflare binding) | `rateLimit` |
+| Request identity | `requestId`, `requestIdCtx` |
+| Content-type guard | `requireFormContentType` |
+| URL / origin config | `parseUrl`, `deriveAllowedOrigins`, `BaseUrlConfigSchema` |
 
 All middleware factories return a Forge `Middleware` (`@remix-run/fetch-router`). Pure predicates (`matchOrigin`, `verifyOrigin`, `checkCrossOriginProtection`, `parseUrl`, `deriveAllowedOrigins`) take plain inputs and return plain results — register them as middleware only via their wrapping factories.
 
@@ -29,9 +29,9 @@ All middleware factories return a Forge `Middleware` (`@remix-run/fetch-router`)
 
 Register `createSecurityHeaders` and `requestId` once at the app level; apply route-specific guards (`cors`, `originGuard`, `rateLimit`, `requireFormContentType`) only where needed.
 
-> Apps composing the full global chain should prefer `applyMiddlewareChain` (`@y-core/forge/app`) — it registers these in the canonical order automatically (see [ROUTING_AND_MIDDLEWARE.md](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §3e). The manual registrations below remain valid; the one ordering rule is that `createSecurityHeaders` precedes any nonce consumer (`requestId`/logging may come first).
+> Apps composing the full global chain should prefer `applyMiddlewareChain` (`@y-core/forge/app`) — it registers these in the canonical order automatically (see [ROUTING_AND_MIDDLEWARE.md](../../docs/ROUTING_AND_MIDDLEWARE.md) §3e). The manual registrations below remain valid; the one ordering rule is that `createSecurityHeaders` precedes any nonce consumer (`requestId`/logging may come first).
 
-```typescript
+```ts
 import { createSecurityHeaders, requestId, cors, NONCE } from "@y-core/forge/security";
 
 // App-wide: every response gets a fresh CSP nonce + hardened headers, and a request ID.
@@ -66,39 +66,39 @@ Middleware factory. Mints a fresh per-request nonce (16 random bytes, base64url-
 
 Headers set on every response:
 
-| Header                         | Value                                                                                                                                                                                                                                                                      |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Content-Security-Policy`      | Strict policy — `default-src 'self'`, `style-src`/`font-src` defaulting to `'self'` and extensible via `styleSrc`/`fontSrc` (never `'unsafe-inline'`), `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `upgrade-insecure-requests`, plus your directives |
-| `Strict-Transport-Security`    | `max-age=<hstsMaxAge>; includeSubDomains; preload` (default `hstsMaxAge` = `63072000`)                                                                                                                                                                                     |
-| `Referrer-Policy`              | `strict-origin-when-cross-origin`                                                                                                                                                                                                                                          |
-| `X-Content-Type-Options`       | `nosniff`                                                                                                                                                                                                                                                                  |
-| `Permissions-Policy`           | `camera`, `microphone`, `geolocation`, `payment` — each `()` (disabled) unless allowlisted                                                                                                                                                                                 |
-| `X-Frame-Options`              | `DENY`                                                                                                                                                                                                                                                                     |
-| `Cross-Origin-Opener-Policy`   | `same-origin` — use `same-origin-allow-popups` if the app opens OAuth/payment popups                                                                                                                                                                                       |
-| `Cross-Origin-Resource-Policy` | `same-origin` — use `cross-origin` for intentionally embeddable resources                                                                                                                                                                                                  |
-| `Cross-Origin-Embedder-Policy` | **not set** — opt in via `crossOriginEmbedderPolicy` (`require-corp` breaks any subresource without CORP/CORS opt-in)                                                                                                                                                      |
+| Header | Value |
+| --- | --- |
+| `Content-Security-Policy` | Strict policy — `default-src 'self'`, `style-src`/`font-src` defaulting to `'self'` and extensible via `styleSrc`/`fontSrc` (never `'unsafe-inline'`), `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `upgrade-insecure-requests`, plus your directives |
+| `Strict-Transport-Security` | `max-age=<hstsMaxAge>; includeSubDomains; preload` (default `hstsMaxAge` = `63072000`) |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Permissions-Policy` | `camera`, `microphone`, `geolocation`, `payment` — each `()` (disabled) unless allowlisted |
+| `X-Frame-Options` | `DENY` |
+| `Cross-Origin-Opener-Policy` | `same-origin` — use `same-origin-allow-popups` if the app opens OAuth/payment popups |
+| `Cross-Origin-Resource-Policy` | `same-origin` — use `cross-origin` for intentionally embeddable resources |
+| `Cross-Origin-Embedder-Policy` | **not set** — opt in via `crossOriginEmbedderPolicy` (`require-corp` breaks any subresource without CORP/CORS opt-in) |
 
 `SecurityHeadersOptions`:
 
-| Field                       | Type                                                           | Default               | Notes                                                         |
-| --------------------------- | -------------------------------------------------------------- | --------------------- | ------------------------------------------------------------- |
-| `scriptSrc`                 | `CspSourceValue[]`                                             | `["'self'", NONCE]`   | CSP `script-src`                                              |
-| `connectSrc`                | `CspSourceValue[]`                                             | `["'self'"]`          | CSP `connect-src`                                             |
-| `frameSrc`                  | `CspSourceValue[]`                                             | `["'self'"]`          | CSP `frame-src`                                               |
-| `imgSrc`                    | `CspSourceValue[]`                                             | `["'self'", "data:"]` | CSP `img-src`                                                 |
-| `styleSrc`                  | `CspSourceValue[]`                                             | `["'self'"]`          | CSP `style-src` — widen for a web-font CDN stylesheet         |
-| `fontSrc`                   | `CspSourceValue[]`                                             | `["'self'"]`          | CSP `font-src` — widen for a web-font CDN's font files        |
-| `workerSrc`                 | `CspSourceValue[]`                                             | —                     | Emitted only when provided                                    |
-| `childSrc`                  | `CspSourceValue[]`                                             | —                     | Emitted only when provided                                    |
-| `hstsMaxAge`                | `number`                                                       | `63072000`            | HSTS `max-age` in seconds                                     |
-| `permissionsPolicy`         | `PermissionsPolicyOptions`                                     | all disabled          | `{ camera?, microphone?, geolocation?, payment? }` allowlists |
-| `crossOriginOpenerPolicy`   | `"same-origin" \| "same-origin-allow-popups" \| "unsafe-none"` | `"same-origin"`       | COOP; loosen for OAuth/payment popup flows                    |
-| `crossOriginResourcePolicy` | `"same-origin" \| "same-site" \| "cross-origin"`               | `"same-origin"`       | CORP; loosen for embeddable assets/APIs                       |
-| `crossOriginEmbedderPolicy` | `"require-corp" \| "credentialless"`                           | — (not emitted)       | COEP; opt-in only                                             |
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `scriptSrc` | `CspSourceValue[]` | `["'self'", NONCE]` | CSP `script-src` |
+| `connectSrc` | `CspSourceValue[]` | `["'self'"]` | CSP `connect-src` |
+| `frameSrc` | `CspSourceValue[]` | `["'self'"]` | CSP `frame-src` |
+| `imgSrc` | `CspSourceValue[]` | `["'self'", "data:"]` | CSP `img-src` |
+| `styleSrc` | `CspSourceValue[]` | `["'self'"]` | CSP `style-src` — widen for a web-font CDN stylesheet |
+| `fontSrc` | `CspSourceValue[]` | `["'self'"]` | CSP `font-src` — widen for a web-font CDN's font files |
+| `workerSrc` | `CspSourceValue[]` | — | Emitted only when provided |
+| `childSrc` | `CspSourceValue[]` | — | Emitted only when provided |
+| `hstsMaxAge` | `number` | `63072000` | HSTS `max-age` in seconds |
+| `permissionsPolicy` | `PermissionsPolicyOptions` | all disabled | `{ camera?, microphone?, geolocation?, payment? }` allowlists |
+| `crossOriginOpenerPolicy` | `"same-origin" \| "same-origin-allow-popups" \| "unsafe-none"` | `"same-origin"` | COOP; loosen for OAuth/payment popup flows |
+| `crossOriginResourcePolicy` | `"same-origin" \| "same-site" \| "cross-origin"` | `"same-origin"` | CORP; loosen for embeddable assets/APIs |
+| `crossOriginEmbedderPolicy` | `"require-corp" \| "credentialless"` | — (not emitted) | COEP; opt-in only |
 
 Every string source in every directive must be a single CSP source token: non-empty, and free of whitespace, `;`, `,` and control characters — a malformed entry silently breaks the whole policy, so it throws instead. `'unsafe-inline'` is rejected outright, case-insensitively, in every directive. The `NONCE` symbol is exempt (it is not a string). Both `createSecurityHeaders` (at construction) and `applySecurityHeaders` (per call) apply the rule.
 
-```typescript
+```ts
 import { createSecurityHeaders, NONCE, TURNSTILE_CSP, type SecurityHeadersOptions } from "@y-core/forge/security";
 
 const headers: SecurityHeadersOptions = {
@@ -126,11 +126,11 @@ The Cloudflare Turnstile CDN origin (`"https://challenges.cloudflare.com"`) as a
 
 Both default to `["'self'"]` and take a source list like any other directive, for a third-party stylesheet or font host. `mergeSecurityHeaders` concatenates them, and a directive the base omits falls back to its default before the concatenation — so merging `{ styleSrc: ["https://cdn.example.com"] }` onto a base that never mentioned `styleSrc` yields `style-src 'self' https://cdn.example.com`, keeping the app's own stylesheet.
 
-```typescript
+```ts
 const withCdnSheet = mergeSecurityHeaders(headers, { styleSrc: ["https://cdn.example.com"] });
 ```
 
-> **For web fonts, prefer self-hosting over widening** — the asset pipeline's `fonts.downloads` fetches at build time and serves same-origin, needing no CSP change at all ([`../assets/README.md`](../assets/README.md)); why a font CDN is the wrong default is [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §2e's.
+> **For web fonts, prefer self-hosting over widening** — the asset pipeline's `fonts.downloads` fetches at build time and serves same-origin, needing no CSP change at all ([`../assets/README.md`](../assets/README.md)); why a font CDN is the wrong default is [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2e's.
 
 ### `getNonce(context)`
 
@@ -149,19 +149,19 @@ There are exactly two supported paths, depending on whether the response passes 
 
 2. **Outside the chain (out-of-band responses):** mint your own nonce, render the markup with it, then harden the response with the same value so header and markup agree:
 
-   ```typescript
+   ```ts
    const nonce = crypto.randomUUID().replaceAll("-", "");
    const page = htmlResponse(renderErrorPage(nonce));
    return applySecurityHeaders(page, { nonce });
    ```
 
-**Failure mode:** `getNonce` never throws. If `createSecurityHeaders` did not run, it returns `""` — the empty `nonce` attribute will not satisfy the CSP, so the affected script fails closed (blocked) instead of executing unnonced. If scripts are unexpectedly blocked, check the middleware registration order first (see [ROUTING_AND_MIDDLEWARE.md §3d](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md)).
+**Failure mode:** `getNonce` never throws. If `createSecurityHeaders` did not run, it returns `""` — the empty `nonce` attribute will not satisfy the CSP, so the affected script fails closed (blocked) instead of executing unnonced. If scripts are unexpectedly blocked, check the middleware registration order first (see [ROUTING_AND_MIDDLEWARE.md §3d](../../docs/ROUTING_AND_MIDDLEWARE.md)).
 
 ### `applySecurityHeaders(response, options?)`
 
 Applies the full header set directly to a `Response`, returning a new `Response`. Use for out-of-band responses that never pass through the middleware chain (for example an error page produced before the chain runs). `options` is `ApplySecurityHeadersOptions` — all `SecurityHeadersOptions` fields plus an optional explicit `nonce`; when `options.nonce` is omitted a fresh one is minted.
 
-```typescript
+```ts
 import { applySecurityHeaders } from "@y-core/forge/security";
 
 const hardened = applySecurityHeaders(new Response("oops", { status: 500 }));
@@ -174,7 +174,7 @@ const withNonce = applySecurityHeaders(page, { scriptSrc: ["'self'", NONCE], non
 
 Layers extra CSP sources onto a base `SecurityHeadersOptions`, concatenating each directive's source list (and shallow-merging `permissionsPolicy`, overriding `hstsMaxAge`). A directive the base omits falls back to its default before the concatenation, so merging onto a partial base never drops `'self'` or the nonce placeholder; `workerSrc` and `childSrc` have no default and stay absent unless one side provides them. The canonical use is adding dev-only sources — such as the Wrangler live-reload inline-script hash — in the dev worker entry only, so they cannot leak into production by construction.
 
-```typescript
+```ts
 import { mergeSecurityHeaders } from "@y-core/forge/security";
 
 const WRANGLER_LIVE_RELOAD_HASH = "'sha256-g5a3SrOYIecCloZ8S7M4xdT1pbYi6e7mjHrmwphRxfE='";
@@ -190,17 +190,17 @@ Middleware that adds CORS response headers for allowed origins and answers prefl
 
 `CorsOptions`:
 
-| Field            | Type       | Default                                        | Notes                                                       |
-| ---------------- | ---------- | ---------------------------------------------- | ----------------------------------------------------------- |
-| `origins`        | `string[]` | — (required)                                   | Exact origins, `"*"`, or `"https://*.example.com"` patterns |
-| `methods`        | `string[]` | `GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS` | Preflight `Access-Control-Allow-Methods`                    |
-| `allowedHeaders` | `string[]` | `["Content-Type"]`                             | Preflight `Access-Control-Allow-Headers`                    |
-| `credentials`    | `boolean`  | `false`                                        | Sets `Access-Control-Allow-Credentials`                     |
-| `maxAge`         | `number`   | `86400`                                        | Preflight cache duration (seconds)                          |
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `origins` | `string[]` | — (required) | Exact origins, `"*"`, or `"https://*.example.com"` patterns |
+| `methods` | `string[]` | `GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS` | Preflight `Access-Control-Allow-Methods` |
+| `allowedHeaders` | `string[]` | `["Content-Type"]` | Preflight `Access-Control-Allow-Headers` |
+| `credentials` | `boolean` | `false` | Sets `Access-Control-Allow-Credentials` |
+| `maxAge` | `number` | `86400` | Preflight cache duration (seconds) |
 
 Combining `credentials: true` with a wildcard `"*"` origin throws at construction — the two are mutually exclusive per the CORS spec.
 
-```typescript
+```ts
 import { cors } from "@y-core/forge/security";
 
 app.use("/api/*", cors({ origins: ["https://app.example.com", "https://*.preview.example.com"] }));
@@ -216,7 +216,7 @@ Pure predicate: returns `true` when `origin` matches any entry in `patterns` exa
 
 Middleware that rejects requests whose `Origin`/`Referer` does not match the allowlist with `403 Forbidden`. Safe methods (`GET`, `HEAD`, `OPTIONS`, `TRACE`) are exempt. Requests with no `Origin` and no `Referer` are treated as missing and rejected.
 
-```typescript
+```ts
 import { originGuard } from "@y-core/forge/security";
 
 app.use("/webhook/*", originGuard(["https://trusted.example.com"]));
@@ -226,14 +226,14 @@ app.use("/webhook/*", originGuard(["https://trusted.example.com"]));
 
 Pure predicate behind `originGuard`. Checks the `Origin` header first, then falls back to the `Referer` origin, against `allowedOrigins`. Returns an `OriginResult` — a `GuardResult` alias, so the failure reason code lives in the single `error` field:
 
-```typescript
+```ts
 type OriginResult = { ok: true } | { ok: false; error: "missing" | "disallowed" };
 // ≡ GuardResult<"missing" | "disallowed"> from @y-core/forge/result
 ```
 
 Use it for one-off in-handler checks instead of route-wide middleware.
 
-```typescript
+```ts
 import { verifyOrigin } from "@y-core/forge/security";
 
 const result = verifyOrigin(c.request, allowedOrigins);
@@ -246,15 +246,15 @@ Middleware that enforces a Cloudflare Workers Rate Limiting binding. Resolves th
 
 `RateLimitOptions`:
 
-| Field            | Type                                   | Default                 | Notes                                                                                                                                                               |
-| ---------------- | -------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `limiter`        | `(c) => RateLimitBinding \| undefined` | — (required)            | Resolves the binding from app context                                                                                                                               |
-| `key`            | `(c) => string`                        | see `trustCfHeaders`    | The rate-limit key. Always overrides the default, whatever `trustCfHeaders` says                                                                                    |
-| `onLimit`        | `(c) => Response \| Promise<Response>` | `429 Too many requests` | Response when the limit is exceeded                                                                                                                                 |
-| `required`       | `boolean`                              | `true`                  | When `true`, returns `503` if the binding is absent; `false` skips the check                                                                                        |
-| `trustCfHeaders` | `boolean`                              | `false`                 | Opts the **default** key into reading `CF-Connecting-IP`. Left at `false` with no custom `key`, the default resolver throws and the request fails closed with `503` |
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `limiter` | `(c) => RateLimitBinding \| undefined` | — (required) | Resolves the binding from app context |
+| `key` | `(c) => string` | see `trustCfHeaders` | The rate-limit key. Always overrides the default, whatever `trustCfHeaders` says |
+| `onLimit` | `(c) => Response \| Promise<Response>` | `429 Too many requests` | Response when the limit is exceeded |
+| `required` | `boolean` | `true` | When `true`, returns `503` if the binding is absent; `false` skips the check |
+| `trustCfHeaders` | `boolean` | `false` | Opts the **default** key into reading `CF-Connecting-IP`. Left at `false` with no custom `key`, the default resolver throws and the request fails closed with `503` |
 
-```typescript
+```ts
 import { rateLimit, type RateLimitBinding } from "@y-core/forge/security";
 
 interface AppEnv {
@@ -276,19 +276,19 @@ Declare the binding in `wrangler.jsonc`:
 ]
 ```
 
-Under `trustCfHeaders: true` an **absent** `CF-Connecting-IP` still fails closed with `503`. The trust boundary itself — which surfaces carry the flag, and how `applyMiddlewareChain` threads one value to all of them — is [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §5c's.
+Under `trustCfHeaders: true` an **absent** `CF-Connecting-IP` still fails closed with `503`. The trust boundary itself — which surfaces carry the flag, and how `applyMiddlewareChain` threads one value to all of them — is [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §5c's.
 
 #### Choosing a rate-limit key
 
 The key defines _what_ gets throttled — pick it to match the abuse you are defending against:
 
-| Strategy                                           | Key                                                                              | When                                                                                                                                            |
-| -------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Per-IP (the default, under `trustCfHeaders: true`) | `CF-Connecting-IP` header                                                        | Anonymous endpoints behind Cloudflare. Coarse: NAT/CGNAT users share an IP; botnets rotate IPs.                                                 |
-| Per-session                                        | `key: (c) => sessionCtx.get(c).id`                                               | Session-bearing apps — throttles the actor, not the network. The `sessionCtx` import couples _your app_ (not forge) to `@y-core/forge/session`. |
-| Route-scoped composite                             | `key: (c) => \`${c.url.pathname}:${c.request.headers.get("CF-Connecting-IP")}\`` | One shared binding across several routes, each with an independent budget per client.                                                           |
+| Strategy | Key | When |
+| --- | --- | --- |
+| Per-IP (the default, under `trustCfHeaders: true`) | `CF-Connecting-IP` header | Anonymous endpoints behind Cloudflare. Coarse: NAT/CGNAT users share an IP; botnets rotate IPs. |
+| Per-session | `key: (c) => sessionCtx.get(c).id` | Session-bearing apps — throttles the actor, not the network. The `sessionCtx` import couples _your app_ (not forge) to `@y-core/forge/session`. |
+| Route-scoped composite | `key: (c) => \`${c.url.pathname}:${c.request.headers.get("CF-Connecting-IP")}\`` | One shared binding across several routes, each with an independent budget per client. |
 
-```typescript
+```ts
 import { sessionCtx } from "@y-core/forge/session";
 
 const perSession = rateLimit<AppEnv>({
@@ -305,7 +305,7 @@ A `key` function that throws (e.g. `sessionCtx.get` before the session middlewar
 
 By default it always mints a `crypto.randomUUID()` and **ignores** any inbound `CF-Ray`. Pass `trustCfHeaders: true` to adopt `CF-Ray` instead, falling back to a UUID when it is absent, empty, or whitespace-only:
 
-```typescript
+```ts
 import { requestId, requestIdCtx } from "@y-core/forge/security";
 
 app.use("*", requestId({ trustCfHeaders: true })); // behind Cloudflare — adopt CF-Ray
@@ -314,13 +314,13 @@ app.use("*", requestId({ trustCfHeaders: true })); // behind Cloudflare — adop
 const id = requestIdCtx.getOptional(c); // string | undefined
 ```
 
-Register at the top of the middleware stack so downstream middleware (e.g. `requestLogger`) can correlate by request ID. Off Cloudflare, `CF-Ray` is client-supplied — which is why adopting it is opt-in ([`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §5c).
+Register at the top of the middleware stack so downstream middleware (e.g. `requestLogger`) can correlate by request ID. Off Cloudflare, `CF-Ray` is client-supplied — which is why adopting it is opt-in ([`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §5c).
 
 ### `requireFormContentType()`
 
 Middleware that rejects requests whose `Content-Type` is not `application/x-www-form-urlencoded` or `multipart/form-data` with `415 Unsupported Media Type`. The comparison is case-insensitive (RFC 9110 §8.3.1) and ignores any `; charset=…` parameter. Apply only on HTML form endpoints — never on JSON API routes.
 
-```typescript
+```ts
 import { requireFormContentType } from "@y-core/forge/security";
 
 app.use("/form/*", requireFormContentType());
@@ -336,7 +336,7 @@ Computes the allowed-origin list for a `ParsedUrl`. Always includes the base ori
 
 `{ extraOrigins: [...] }` appends further origins after those. Each entry must be a **normalized origin** — exactly what a browser puts in an `Origin` header, so no path, no trailing slash, no credentials, no redundant default port — and must be `https:` or an `http://localhost` / `http://127.0.0.1` loopback, the same rule `BaseUrlConfigSchema` applies. Anything else throws, which for a dev entrypoint is boot time. An entry already in the list is dropped, so passing the base origin back in is harmless.
 
-```typescript
+```ts
 import { parseUrl, deriveAllowedOrigins } from "@y-core/forge/security";
 
 const parsed = parseUrl("https://example.com");
@@ -356,7 +356,7 @@ deriveAllowedOrigins(parseUrl(env.BASE_URL), { extraOrigins: ["https://localhost
 
 A Valibot schema that validates a URL string and transforms it into a `BaseUrlConfig` (`ParsedUrl` plus `allowedOrigins`). It rejects non-`https:` URLs, except `http://localhost` and `http://127.0.0.1` for local development. Use it to derive a deployment's allowed-origin list from a `BASE_URL` env var, then feed `config.allowedOrigins` into `cors`/`originGuard`.
 
-```typescript
+```ts
 import { BaseUrlConfigSchema } from "@y-core/forge/security";
 import { v } from "@y-core/forge/validation";
 
@@ -376,11 +376,11 @@ This namespace is **transport-layer only**. The guards below are the building bl
 
 ### CSRF defense lives in two places
 
-| Layer                | Mechanism                             | Where                                                                       |
-| -------------------- | ------------------------------------- | --------------------------------------------------------------------------- |
-| Token-based CSRF     | Per-session token mint + verify       | `@y-core/forge/form` (`csrfProtection`, `mintCsrf`)                         |
-| Origin-based CSRF    | Fetch Metadata / Origin allowlist     | This namespace (`crossOriginProtection`, `originProtection`, `originGuard`) |
-| Content-type defense | Reject non-form bodies on form routes | This namespace (`requireFormContentType`)                                   |
+| Layer | Mechanism | Where |
+| --- | --- | --- |
+| Token-based CSRF | Per-session token mint + verify | `@y-core/forge/form` (`csrfProtection`, `mintCsrf`) |
+| Origin-based CSRF | Fetch Metadata / Origin allowlist | This namespace (`crossOriginProtection`, `originProtection`, `originGuard`) |
+| Content-type defense | Reject non-form bodies on form routes | This namespace (`requireFormContentType`) |
 
 The origin guards here are **not** a token mechanism — they are a complementary defense. Token CSRF protection comes from `@y-core/forge/form`. A typical form route combines all three: `requireFormContentType()`, an origin/cross-origin guard, and the form-namespace CSRF verify.
 
@@ -390,29 +390,29 @@ Rejects state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`/`TRA
 
 `checkCrossOriginProtection` is the pure predicate form, returning a `CrossOriginResult` (a `GuardResult` alias — `{ ok: true } | { ok: false; error: "missing-fetch-metadata" | "cross-site" | "same-site" }`, with the failure reason code in `.error`) so you can branch on it instead of auto-rejecting. `same-site` is reported distinctly from `cross-site` because the two describe different attackers — a sibling subdomain you may partly control, versus an unrelated origin.
 
-```typescript
+```ts
 import { crossOriginProtection } from "@y-core/forge/security";
 
 app.use("/form/*", crossOriginProtection());
 ```
 
-| `CrossOriginProtectionOptions` field | Type      | Default | Notes                                                        |
-| ------------------------------------ | --------- | ------- | ------------------------------------------------------------ |
-| `allowMissingHeader`                 | `boolean` | `false` | When `true`, allows requests with no `Sec-Fetch-Site` header |
+| `CrossOriginProtectionOptions` field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `allowMissingHeader` | `boolean` | `false` | When `true`, allows requests with no `Sec-Fetch-Site` header |
 
 #### `originProtection(options)`
 
-A combined guard for mutating routes: Fetch Metadata **and** an `Origin`/`Referer` allowlist, both applied. Safe methods are always exempt. It is the **recommended default** of the three origin guards; which tier to reach for, and why `Sec-Fetch-Site` is a veto rather than a pass, are [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §3e's.
+A combined guard for mutating routes: Fetch Metadata **and** an `Origin`/`Referer` allowlist, both applied. Safe methods are always exempt. It is the **recommended default** of the three origin guards; which tier to reach for, and why `Sec-Fetch-Site` is a veto rather than a pass, are [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §3e's.
 
 > **List the app's own origin in `allowedOrigins`**, or its own same-origin mutations are rejected.
 
 `OriginProtectionOptions`:
 
-| Field            | Type                          | Notes                                                                                                                                                                                                |
-| ---------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field | Type | Notes |
+| --- | --- | --- |
 | `allowedOrigins` | `string[] \| (c) => string[]` | Static list, or a per-request resolver over the app context (e.g. parsed `BASE_URL` config). Consulted on **every** mutating request carrying `Origin`/`Referer` — must include the app's own origin |
 
-```typescript
+```ts
 import { originProtection } from "@y-core/forge/security";
 
 app.use("/api/*", originProtection({ allowedOrigins: (c) => c.var.config.allowedOrigins }));
@@ -420,12 +420,12 @@ app.use("/api/*", originProtection({ allowedOrigins: (c) => c.var.config.allowed
 
 ### Out-of-scope (do not look for it here)
 
-| Concern                                | Where it lives                                                 |
-| -------------------------------------- | -------------------------------------------------------------- |
-| CSRF token mint/verify                 | `@y-core/forge/form`                                           |
-| Session management                     | `@y-core/forge/session`                                        |
-| Authentication / RBAC                  | Future `@y-core/forge/auth`                                    |
-| Constant-time comparison               | Internal `src/crypto/` (`@internal`)                           |
+| Concern | Where it lives |
+| --- | --- |
+| CSRF token mint/verify | `@y-core/forge/form` |
+| Session management | `@y-core/forge/session` |
+| Authentication / RBAC | Future `@y-core/forge/auth` |
+| Constant-time comparison | Internal `src/crypto/` (`@internal`) |
 | HTMX request detection (`isHxRequest`) | `@y-core/forge/html/htmx` (a UX hint, not a security boundary) |
 
 ---
@@ -440,7 +440,7 @@ Responses produced **outside** the middleware chain (router internals, a 500 thr
 
 Keep dev-only CSP sources (live-reload hashes, local tooling origins) out of the production policy by computing them in the dev worker entry only, via `mergeSecurityHeaders`:
 
-```typescript
+```ts
 import { createSecurityHeaders, mergeSecurityHeaders } from "@y-core/forge/security";
 
 // production base — shared
@@ -460,7 +460,7 @@ The hash cannot reach production because production never imports the dev entry.
 
 **Symptom:** every write in local development 403s, while the same code is fine in production. The origin guards compare origins by exact string, so a dev server speaking `http` behind a TLS-terminating proxy rejects the browser's `https` origin — its own forms included.
 
-**What to do:** serve https at every hop in dev — the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `extraOrigins` only in the proxy-less case. The ruling, including why the scheme is never patched up in middleware and why HSTS and `Secure` cookies stay hardcoded, is [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) §3f's.
+**What to do:** serve https at every hop in dev — the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `extraOrigins` only in the proxy-less case. The ruling, including why the scheme is never patched up in middleware and why HSTS and `Secure` cookies stay hardcoded, is [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §3f's.
 
 ---
 
@@ -469,6 +469,6 @@ The hash cannot reach production because production never imports the dev entry.
 - [`@y-core/forge/form`](../form/) — CSRF tokens, form parsing with byte caps
 - [`@y-core/forge/session`](../session/) — session cookies and middleware
 - [`@y-core/forge/http`](../http/) — `safeUrl` URL sanitization, response fragments
-- [`SECURITY_HARDENING.md`](../../.decisions/implementation/SECURITY_HARDENING.md) — the header
+- [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) — the header
   factory and its nonce contract (§2), origin-guard tiering (§3e), the https-everywhere dev posture
   (§3f), rate-limit key selection (§4d), and the Cloudflare header trust boundary (§5c)

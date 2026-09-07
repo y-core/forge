@@ -6,7 +6,6 @@ import { type AssetManifestCheckConfig, checkAssetManifest } from "./checks/asse
 import { type AssetRootCheckConfig, checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
 import { type BuildTimeBoundaryCheckConfig, checkBuildTimeBoundary } from "./checks/build-time-boundary";
-import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
 import { type ClassGroupsCheckConfig, checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder, type ClassOrderCheckConfig } from "./checks/class-order";
 import { checkClassTokens, type ClassTokensCheckConfig } from "./checks/class-tokens";
@@ -14,16 +13,14 @@ import { type CoLocationCheckConfig, checkCoLocation } from "./checks/co-locatio
 import { type ContrastCheckConfig, checkContrast } from "./checks/contrast";
 import { type CssSourcesCheckConfig, checkCssSources } from "./checks/css-sources";
 import { type CssTokensCheckConfig, checkCssTokens } from "./checks/css-tokens";
-import { checkDesign, type DesignCheckConfig } from "./checks/design";
 import { checkDesignScale, type DesignScaleCheckConfig } from "./checks/design-scale";
 import { hasTailwind } from "./checks/design-system";
-import { checkDocs, type DocsCheckConfig } from "./checks/docs";
 import { checkExports, type ExportsCheckConfig } from "./checks/exports";
 import { checkJsx, type JsxCheckConfig } from "./checks/jsx";
 import { checkLintPlugin, hasEsbuild, type LintPluginCheckConfig } from "./checks/lint-plugin";
+import { checkMarkdown, fixMarkdown, type MarkdownCheckConfig } from "./checks/markdown";
 import { checkModernCss, type ModernCssCheckConfig } from "./checks/modern-css";
 import { checkNamespaceGraph, type NamespaceGraphCheckConfig } from "./checks/namespace-graph";
-import { checkReadmeExports, type ReadmeExportsCheckConfig } from "./checks/readme-exports";
 import { checkSsrBoundary, type SsrBoundaryCheckConfig } from "./checks/ssr-boundary";
 import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./steps";
 
@@ -55,13 +52,21 @@ function prerequisite(
   return resolved === undefined ? {} : { requires: resolved };
 }
 
-function checkStep(
+/** Wraps a check function as a step, applying the tier and prerequisite an option table overrides.
+ *  Published so a check living outside this namespace builds its step the same way. @public */
+export function checkStep(
   label: string,
   run: CheckStep["run"],
   options: StepOptions,
-  defaults: { tier?: GateMode; requires?: StepRequirement } = {},
+  defaults: { tier?: GateMode; requires?: StepRequirement; fix?: CheckStep["fix"] } = {},
 ): CheckStep {
-  return { label, run, ...tier(options.tier, defaults.tier), ...prerequisite(options.requires, defaults.requires) };
+  return {
+    label,
+    run,
+    ...(defaults.fix === undefined ? {} : { fix: defaults.fix }),
+    ...tier(options.tier, defaults.tier),
+    ...prerequisite(options.requires, defaults.requires),
+  };
 }
 
 /** `tsc --noEmit`. Belongs first in a table: a type failure cascades into misleading lint and test failures. @public */
@@ -168,30 +173,14 @@ export function buildTimeBoundaryStep(config: BuildTimeBoundaryCheckConfig, opti
   return checkStep("validate-build-time-boundary", () => checkBuildTimeBoundary(config), options);
 }
 
+/** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */
+export function markdownStep(config: MarkdownCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-markdown", () => checkMarkdown(config), options, { fix: () => fixMarkdown(config) });
+}
+
 /** Checks every shipped `.tsx` file carries the runtime pragmas. @public */
 export function jsxStep(config: JsxCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-jsx", () => checkJsx(config), options);
-}
-
-/** Checks the governing documents against the subpaths they are required to cite. @public */
-export function docsStep(config: DocsCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-docs", () => checkDocs(config), options);
-}
-
-/** Checks a README's per-subpath export tables against the barrels they document. @public */
-export function readmeExportsStep(config: ReadmeExportsCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-readme-exports", () => checkReadmeExports(config), options);
-}
-
-/** Checks the changelog's headings against the current package version. Defaults to the `full` tier:
- *  requiring a written `[Unreleased]` entry on every inner loop would fail every WIP commit. @public */
-export function changelogStep(config: ChangelogCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-changelog", () => checkChangelog(config), options, { tier: "full" });
-}
-
-/** Checks the design corpus against the tree it governs. @public */
-export function designStep(config: DesignCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-design", () => checkDesign(config), options);
 }
 
 /** The dependency every design-system step shares — `tailwindcss` is an optional peer, skipped below

@@ -111,12 +111,12 @@ the classic fallback path.
 
 ### Export paths
 
-| Import path                         | Source               | Purpose                                                                   |
-| ----------------------------------- | -------------------- | ------------------------------------------------------------------------- |
-| `@y-core/forge/jsx/jsx-runtime`     | `jsx-runtime.ts`     | Automatic JSX transform runtime — auto-imported by the compiler.          |
-| `@y-core/forge/jsx/jsx-dev-runtime` | `jsx-dev-runtime.ts` | Dev-mode JSX runtime (`jsxDEV`).                                          |
-| `@y-core/forge/jsx/register`        | `register.ts`        | Classic-mode shim for esbuild's zero-config fallback.                     |
-| `@y-core/forge/jsx`                 | `mod.ts`             | `renderPage` / `renderToString` — the public renderer (namespace barrel). |
+| Import path | Source | Purpose |
+| --- | --- | --- |
+| `@y-core/forge/jsx/jsx-runtime` | `jsx-runtime.ts` | Automatic JSX transform runtime — auto-imported by the compiler. |
+| `@y-core/forge/jsx/jsx-dev-runtime` | `jsx-dev-runtime.ts` | Dev-mode JSX runtime (`jsxDEV`). |
+| `@y-core/forge/jsx/register` | `register.ts` | Classic-mode shim for esbuild's zero-config fallback. |
+| `@y-core/forge/jsx` | `mod.ts` | `renderPage` / `renderToString` — the public renderer (namespace barrel). |
 
 You import directly from `jsx-runtime`, `jsx-dev-runtime`, or `register` only in build configuration
 or app entry setup — never to call a function in component code.
@@ -131,11 +131,11 @@ returns a complete HTML document.
 function renderPage(node: JSXNode, init?: { status?: number; headers?: Record<string, string> }): Promise<Response>;
 ```
 
-| Parameter      | Type                     | Default | Description                                                |
-| -------------- | ------------------------ | ------- | ---------------------------------------------------------- |
-| `node`         | `JSXNode`                | —       | The JSX tree to render.                                    |
-| `init.status`  | `number`                 | `200`   | HTTP status code for the response.                         |
-| `init.headers` | `Record<string, string>` | —       | Extra response headers, merged with the HTML content type. |
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `node` | `JSXNode` | — | The JSX tree to render. |
+| `init.status` | `number` | `200` | HTTP status code for the response. |
+| `init.headers` | `Record<string, string>` | — | Extra response headers, merged with the HTML content type. |
 
 Returns a `Promise<Response>` whose body is `<!DOCTYPE html>` followed by the rendered HTML.
 
@@ -156,9 +156,9 @@ Renders a JSX tree to a `SafeHtml` value (no doctype, no `Response` wrapper). Im
 function renderToString(node: unknown): Promise<SafeHtml>;
 ```
 
-| Parameter | Type      | Description             |
-| --------- | --------- | ----------------------- |
-| `node`    | `JSXNode` | The JSX tree to render. |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `node` | `JSXNode` | The JSX tree to render. |
 
 Returns a `Promise<SafeHtml>` — a string branded as safe, already escaped. Use it for partial HTML
 responses or to compose markup that another `SafeHtml` template embeds.
@@ -263,15 +263,15 @@ async function User({ id }: { id: string }) {
 
 The renderer is the security boundary for SSR output:
 
-| Concern                                                                     | Behaviour                                                                                                                                                                    |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Text content                                                                | HTML-escaped.                                                                                                                                                                |
-| Attribute values                                                            | HTML-escaped.                                                                                                                                                                |
-| URL attributes (`href`, `src`, `action`, `formaction`, `poster`, `cite`, …) | Scheme-sanitized to block `javascript:`-style injection.                                                                                                                     |
-| Inline `style` attributes                                                   | **Silently dropped** — not emitted in the HTML. The shipped CSP uses `style-src 'self'` (no `'unsafe-inline'`), so an inline `style` would be blocked by the browser anyway. |
-| Boolean attributes (`disabled`, `checked`, `required`, …)                   | Emitted as a bare attribute name when truthy, omitted when falsy.                                                                                                            |
-| `aria-*` truthy values                                                      | Emitted as string `"true"` per the WAI-ARIA spec.                                                                                                                            |
-| Void elements (`br`, `img`, `input`, `hr`, …)                               | Emitted with no closing tag and no children.                                                                                                                                 |
+| Concern | Behaviour |
+| --- | --- |
+| Text content | HTML-escaped. |
+| Attribute values | HTML-escaped. |
+| URL attributes (`href`, `src`, `action`, `formaction`, `poster`, `cite`, …) | Scheme-sanitized to block `javascript:`-style injection. |
+| Inline `style` attributes | **Silently dropped** — not emitted in the HTML. The shipped CSP uses `style-src 'self'` (no `'unsafe-inline'`), so an inline `style` would be blocked by the browser anyway. |
+| Boolean attributes (`disabled`, `checked`, `required`, …) | Emitted as a bare attribute name when truthy, omitted when falsy. |
+| `aria-*` truthy values | Emitted as string `"true"` per the WAI-ARIA spec. |
+| Void elements (`br`, `img`, `input`, `hr`, …) | Emitted with no closing tag and no children. |
 
 Because inline `style` is dropped, move styling to classes (Tailwind/CSS) — a `style="…"` prop will
 not appear in the output even though it type-checks.
@@ -291,11 +291,11 @@ function Icon({ markup }: { markup: SafeHtml }) {
 
 ### Runtime variants
 
-| Runtime      | Export                    | When used                                                                                                        |
-| ------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Automatic    | `jsx`, `jsxs`, `Fragment` | Production transform with `jsx: "react-jsx"`. `jsxs` is an alias of `jsx`.                                       |
-| Dev          | `jsxDEV`, `Fragment`      | Dev transform with `jsx: "react-jsxdev"`.                                                                        |
-| Classic shim | `register` side-effect    | esbuild zero-config fallback; installs a `React` global mapping `createElement`/`Fragment` to the forge runtime. |
+| Runtime | Export | When used |
+| --- | --- | --- |
+| Automatic | `jsx`, `jsxs`, `Fragment` | Production transform with `jsx: "react-jsx"`. `jsxs` is an alias of `jsx`. |
+| Dev | `jsxDEV`, `Fragment` | Dev transform with `jsx: "react-jsxdev"`. |
+| Classic shim | `register` side-effect | esbuild zero-config fallback; installs a `React` global mapping `createElement`/`Fragment` to the forge runtime. |
 
 All three converge on the same `createElement` factory and the same `renderToString` walk — the choice
 of runtime affects only how the compiler emits element-construction calls, never the rendered output.

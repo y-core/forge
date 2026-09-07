@@ -136,14 +136,14 @@ scheme. `theme-neutral.css` is achromatic, so its steps are Radix's `gray` uncha
 chroma and hue from Tailwind's `stone`, `gray` and `slate`, resampled at each one — see
 `## Sources`. Each position carries a stated meaning rather than a habit:
 
-| Step | Role                                    | Step | Role                              |
-| ---- | --------------------------------------- | ---- | --------------------------------- |
-| 1    | App background                          | 7    | UI element border and focus rings |
-| 2    | Subtle background                       | 8    | Hovered UI element border         |
-| 3    | UI element background                   | 9    | Solid backgrounds                 |
-| 4    | Hovered UI element background           | 10   | Hovered solid backgrounds         |
-| 5    | Active / selected UI element background | 11   | Low-contrast text                 |
-| 6    | Subtle borders and separators           | 12   | High-contrast text                |
+| Step | Role | Step | Role |
+| --- | --- | --- | --- |
+| 1 | App background | 7 | UI element border and focus rings |
+| 2 | Subtle background | 8 | Hovered UI element border |
+| 3 | UI element background | 9 | Solid backgrounds |
+| 4 | Hovered UI element background | 10 | Hovered solid backgrounds |
+| 5 | Active / selected UI element background | 11 | Low-contrast text |
+| 6 | Subtle borders and separators | 12 | High-contrast text |
 
 That table is **Radix's published vocabulary, not forge's mapping**. The two agree everywhere except
 the borders, for the measured reason the section above gives: reach for `--border`, `--input`,
@@ -176,7 +176,7 @@ Step 9 is the fill and is **held** across modes — one palette stop, no `light-
 foreground on it has to be near-white in both, which is what `light-dark(var(--gray-1),
 var(--gray-12))` spells: step 1 in light and step 12 in dark are the same near-white seen from either
 mode. That is `--accent-contrast`'s shape, and the reason step 11 exists to carry the hue as text
-where the fill cannot ([`THEME_GENERATION.md`](../../../.decisions/implementation/THEME_GENERATION.md)
+where the fill cannot ([`THEME_GENERATION.md`](../../../docs/THEME_GENERATION.md)
 §4). `--yellow-contrast` inverts instead — near-white on `--yellow-9` measures 1.83, so its foreground
 stays near-black in _both_ modes: `--gray-12` in light, `--gray-1` in dark.
 
@@ -195,23 +195,23 @@ the dark half is wrong.
 
 ## The semantic layer, and what each token is for
 
-| Token pair                                                          | Use for                                                                                                                  |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `--background` / `--foreground`                                     | The page itself, and its default text                                                                                    |
-| `--card` / `--card-foreground`                                      | A raised object — `Card` sets both                                                                                       |
-| `--popover` / `--popover-foreground`                                | Layered surfaces: `Menu`, `Popover`, `Tooltip`                                                                           |
-| `--primary` / `--primary-foreground`                                | The one primary action; see `01-hierarchy.md`                                                                            |
-| `--secondary` / `--secondary-foreground`                            | A filled but subordinate surface                                                                                         |
-| `--muted` / `--muted-foreground`                                    | A recessed panel, and every line of supporting text                                                                      |
-| `--accent` / `--accent-foreground`                                  | Interactive state — hover, open, selected                                                                                |
-| `--destructive` / `--destructive-foreground` / `--destructive-text` | A destructive fill and the text on it; `-text` is the tone read as text on a page. The app's colour to re-point          |
-| `--success` / `--success-foreground` / `--success-text`             | A confirmed outcome, as a fill and as text. The app's colour to re-point                                                 |
-| `--warning` / `--warning-foreground` / `--warning-text`             | A caution. The fill pair inverts — dark text on yellow. The app's colour to re-point                                     |
-| `--border`                                                          | Decorative separation only — hairlines, dividers, surface edges. No contrast floor                                       |
-| `--input`                                                           | A control's boundary — text fields, `Select`, `Textarea`, and every `border-input`. 3:1                                  |
-| `--track`                                                           | The off-state fill of a `Switch` or `Slider` track. Its own token on the same step as `--input`, not an alias of it. 3:1 |
-| `--ring`                                                            | The focus indicator, drawn inside the control. One step beyond `--input`, so a focused control advances. 3:1             |
-| `--overlay`                                                         | The modal scrim, on an absolute alpha step so it darkens whatever is behind it in either mode                            |
+| Token pair | Use for |
+| --- | --- |
+| `--background` / `--foreground` | The page itself, and its default text |
+| `--card` / `--card-foreground` | A raised object — `Card` sets both |
+| `--popover` / `--popover-foreground` | Layered surfaces: `Menu`, `Popover`, `Tooltip` |
+| `--primary` / `--primary-foreground` | The one primary action; see `01-hierarchy.md` |
+| `--secondary` / `--secondary-foreground` | A filled but subordinate surface |
+| `--muted` / `--muted-foreground` | A recessed panel, and every line of supporting text |
+| `--accent` / `--accent-foreground` | Interactive state — hover, open, selected |
+| `--destructive` / `--destructive-foreground` / `--destructive-text` | A destructive fill and the text on it; `-text` is the tone read as text on a page. The app's colour to re-point |
+| `--success` / `--success-foreground` / `--success-text` | A confirmed outcome, as a fill and as text. The app's colour to re-point |
+| `--warning` / `--warning-foreground` / `--warning-text` | A caution. The fill pair inverts — dark text on yellow. The app's colour to re-point |
+| `--border` | Decorative separation only — hairlines, dividers, surface edges. No contrast floor |
+| `--input` | A control's boundary — text fields, `Select`, `Textarea`, and every `border-input`. 3:1 |
+| `--track` | The off-state fill of a `Switch` or `Slider` track. Its own token on the same step as `--input`, not an alias of it. 3:1 |
+| `--ring` | The focus indicator, drawn inside the control. One step beyond `--input`, so a focused control advances. 3:1 |
+| `--overlay` | The modal scrim, on an absolute alpha step so it darkens whatever is behind it in either mode |
 
 The twenty `--status-*` tokens are the other half of the semantic layer, and they answer a different
 question — see _Status colour is forge's; the fills are the app's_ below.
@@ -264,17 +264,17 @@ import { Badge } from "@y-core/forge/ui/core";
 `color-scheme: dark`, which picks the dark branch of every **step** those tokens resolve through. The
 values below are `theme-neutral.css`'s scale, which is what an app gets with no theme file of its own:
 
-| Token                | Step          | Light branch | Dark branch |
-| -------------------- | ------------- | ------------ | ----------- |
-| `--background`       | `--gray-1`    | `#f9f9f9`    | `#111111`   |
-| `--foreground`       | `--gray-12`   | `#202020`    | `#eeeeee`   |
-| `--card`             | `--gray-2`    | `#fcfcfc`    | `#191919`   |
-| `--muted`            | `--gray-3`    | `#f0f0f0`    | `#222222`   |
-| `--muted-foreground` | `--gray-11`   | `#646464`    | `#b4b4b4`   |
-| `--primary`          | `--accent-12` | `#202020`    | `#eeeeee`   |
-| `--border`           | `--gray-6`    | `#d9d9d9`    | `#3a3a3a`   |
-| `--input`            | `--gray-10`   | `#838383`    | `#7b7b7b`   |
-| `--ring`             | `--gray-11`   | `#646464`    | `#b4b4b4`   |
+| Token | Step | Light branch | Dark branch |
+| --- | --- | --- | --- |
+| `--background` | `--gray-1` | `#f9f9f9` | `#111111` |
+| `--foreground` | `--gray-12` | `#202020` | `#eeeeee` |
+| `--card` | `--gray-2` | `#fcfcfc` | `#191919` |
+| `--muted` | `--gray-3` | `#f0f0f0` | `#222222` |
+| `--muted-foreground` | `--gray-11` | `#646464` | `#b4b4b4` |
+| `--primary` | `--accent-12` | `#202020` | `#eeeeee` |
+| `--border` | `--gray-6` | `#d9d9d9` | `#3a3a3a` |
+| `--input` | `--gray-10` | `#838383` | `#7b7b7b` |
+| `--ring` | `--gray-11` | `#646464` | `#b4b4b4` |
 
 Read the last two columns as the two branches of the _step's_ one declaration, not as the token's
 value. Each token in the first column is declared exactly once and means the same thing in both modes — `--background` is the app
@@ -462,13 +462,13 @@ token**: `--destructive-text`.
 The split is not a nicety. `--destructive` is held across modes so a near-white foreground clears it
 in both; a held dark red is unreadable as text on a dark page, which is what `--destructive-text`
 exists for. The same holds for `--info`, `--success` and `--warning`
-([`THEME_GENERATION.md`](../../../.decisions/implementation/THEME_GENERATION.md) §4).
+([`THEME_GENERATION.md`](../../../docs/THEME_GENERATION.md) §4).
 
-| You want                             | Do                                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------------- |
-| Destructive text on a normal surface | `text-destructive-text` on `--background`, `--card` or `--muted`                      |
-| A filled destructive button          | `Button tone='destructive'`                                                           |
-| A destructive badge or alert         | `Badge tone='destructive'` or `Alert tone='destructive'`, and set no colours yourself |
+| You want | Do |
+| --- | --- |
+| Destructive text on a normal surface | `text-destructive-text` on `--background`, `--card` or `--muted` |
+| A filled destructive button | `Button tone='destructive'` |
+| A destructive badge or alert | `Badge tone='destructive'` or `Alert tone='destructive'`, and set no colours yourself |
 
 Default: `bg-destructive` is set together with `text-destructive-foreground` and never with a
 foreground picked by hand; the destructive colour used as text is `text-destructive-text` rather
@@ -483,11 +483,11 @@ strand every citation of it; the id names the _question_, and the answer is what
 Four intents — `danger`, `warning`, `success`, `info` — each with five roles, make up the
 `--status-*` family:
 
-| Role                                                           | Use for                                                                                                               |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `--status-danger-subtle` / `--status-danger-subtle-foreground` | The panel tier: `Alert`, `Toast`, and the banners `src/http/fragment.ts` renders                                      |
+| Role | Use for |
+| --- | --- |
+| `--status-danger-subtle` / `--status-danger-subtle-foreground` | The panel tier: `Alert`, `Toast`, and the banners `src/http/fragment.ts` renders |
 | `--status-danger-strong` / `--status-danger-strong-foreground` | The chip tier: `Badge`, which starts one stop in because a filled chip sits on a tinted surface rather than a panel's |
-| `--status-danger-border`                                       | The edge of either tier                                                                                               |
+| `--status-danger-border` | The edge of either tier |
 
 The other three intents take the same five roles, spelled `--status-warning-*`,
 `--status-success-*` and `--status-info-*`. The info intent has no _solid_ pair — a saturated fill

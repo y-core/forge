@@ -3,19 +3,17 @@ import { describe, expect, it } from "bun:test";
 import {
   assetManifestStep,
   browserStep,
-  changelogStep,
   classGroupsStep,
   classTokensStep,
   contrastStep,
   cssSourcesStep,
   cssTokensStep,
   designScaleStep,
-  designStep,
-  docsStep,
   exportsStep,
   formatStep,
   jsxStep,
   lintStep,
+  markdownStep,
   namespaceGraphStep,
   testStep,
   typeAwareLintStep,
@@ -31,9 +29,6 @@ const CHECK_STEPS: readonly Step[] = [
   exportsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, files: ["src"] }),
   namespaceGraphStep({ root: "/nowhere", exports: EXPORTS, graph: { primitives: [], leaf: [], edges: {} } }),
   jsxStep({ root: "/nowhere" }),
-  docsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS }),
-  changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }),
-  designStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, designDir: "design", cssDir: "css" }),
   contrastStep({
     root: "/nowhere",
     cssDir: "css",
@@ -69,13 +64,22 @@ describe("builders — the two step kinds", () => {
       "validate-exports",
       "validate-namespace-graph",
       "validate-jsx",
-      "validate-docs",
-      "validate-changelog",
-      "validate-design",
       "validate-contrast",
       "validate-css-sources",
       "validate-asset-manifest",
     ]);
+  });
+});
+
+describe("markdownStep()", () => {
+  it("carries an in-process fixer, which the other checks do not", () => {
+    expect(typeof markdownStep({ root: "/nowhere" }).fix).toBe("function");
+    expect(CHECK_STEPS.filter((step) => isCheckStep(step) && step.fix !== undefined)).toEqual([]);
+  });
+
+  it("runs from the tier the caller states, defaulting to fast like every other check", () => {
+    expect(markdownStep({ root: "/nowhere" }, { tier: "standard" }).tier).toBe("standard");
+    expect(markdownStep({ root: "/nowhere" }).tier).toBeUndefined();
   });
 });
 
@@ -193,17 +197,13 @@ describe("browserStep()", () => {
 });
 
 describe("builders — tier", () => {
-  it("puts every check on the fast tier except the changelog, which defaults to full", () => {
-    expect(CHECK_STEPS.filter((step) => step.tier !== undefined).map((step) => [step.label, step.tier])).toEqual([["validate-changelog", "full"]]);
+  it("puts every check this namespace still builds on the fast tier", () => {
+    expect(CHECK_STEPS.filter((step) => step.tier !== undefined)).toEqual([]);
   });
 
   it("lets a project hold any check back to a higher tier", () => {
     expect(jsxStep({ root: "/nowhere" }, { tier: "full" }).tier).toBe("full");
     expect(jsxStep({ root: "/nowhere" }, { tier: "standard" }).tier).toBe("standard");
-  });
-
-  it("lets a project pull the changelog into the fast run, overriding the default", () => {
-    expect(changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }, { tier: "fast" }).tier).toBeUndefined();
   });
 
   it('omits the key rather than writing "fast", so a fast-tier step carries no key at all', () => {
@@ -264,14 +264,6 @@ describe("builders — conditional on tailwindcss", () => {
 });
 
 describe("builders — config threading", () => {
-  it("hands the config it was given to the check, rather than capturing one of its own", async () => {
-    const step = changelogStep({ root: "/nowhere/forge-no-such-root", packageVersion: "1.0.0" });
-    const result = await step.run("fast");
-
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((finding) => `${finding.file}: ${finding.message}`)).toEqual(["CHANGELOG.md: file does not exist"]);
-  });
-
   it("defers the walk until the runner calls it, so building a table touches no disk", () => {
     expect(() => jsxStep({ root: "/nowhere/forge-no-such-root" })).not.toThrow();
   });

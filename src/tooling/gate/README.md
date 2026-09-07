@@ -23,7 +23,7 @@ import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from
 
 > The barrel rule, what stays unpublished and why, the check layering, and where a project root
 > comes from are owned by
-> [`ASSET_AND_BUILD_TOOLING.md`](../../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5.
+> [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2.
 
 ---
 
@@ -123,7 +123,7 @@ be the one that surprises.
 
 Output is one line per step, then one verdict line:
 
-```
+```text
 ✓ typecheck (0.9s)
 ✗ lint (0.8s)
     src/app/routes.ts:14:3 lint/style/useConst ...
@@ -139,30 +139,31 @@ Output is one line per step, then one verdict line:
 Every validator forge runs on itself is a published function taking a config, so an app can run the
 same rules on its own tree. Each is also a pre-built step, whose label is its `--only` token:
 
-| Step                    | Label                          | Check                    | Asserts                                                                                                                        |
-| ----------------------- | ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `exportsStep`           | `validate-exports`             | `checkExports`           | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable |
-| `namespaceGraphStep`    | `validate-namespace-graph`     | `checkNamespaceGraph`    | Every cross-namespace import is declared, with the right kind, and no mutual value pair                                        |
-| `assetRootStep`         | `validate-asset-root`          | `checkAssetRoot`         | What the assets pipeline writes to the asset root matches the Worker's `run_worker_first` exclusions                           |
-| `assetManifestStep`     | `validate-asset-manifest`      | `checkAssetManifest`     | Every path the emitted assets manifest maps to exists under `publicDir`                                                        |
-| `coLocationStep`        | `validate-co-location`         | `checkCoLocation`        | Every source module has a test beside it, so deleting one is loud                                                              |
-| `buildTimeBoundaryStep` | `validate-build-time-boundary` | `checkBuildTimeBoundary` | No module outside a build-time directory imports one at value                                                                  |
-| `ssrBoundaryStep`       | `validate-ssr-boundary`        | `checkSsrBoundary`       | No Worker-executed module reaches the browser-only tier                                                                        |
-| `jsxStep`               | `validate-jsx`                 | `checkJsx`               | Every shipped `.tsx` carries its pragmas                                                                                       |
-| `docsStep`              | `validate-docs`                | `checkDocs`              | Documented subpaths resolve; section numbering, cross-references, frontmatter, size, freshness                                 |
-| `readmeExportsStep`     | `validate-readme-exports`      | `checkReadmeExports`     | A README's per-subpath export tables name exactly what the barrel exports                                                      |
-| `changelogStep`         | `validate-changelog`           | `checkChangelog`         | Keep a Changelog grammar, ordering, and the topmost heading equalling `package.json`                                           |
-| `designStep`            | `validate-design`              | `checkDesign`            | The design corpus teaches only what ships, and both rule registers agree with the lint plugin                                  |
-| `modernCssStep`         | `validate-modern-css`          | `checkModernCss`         | Stylesheets and class literals use the platform feature that replaced each hand-written pattern                                |
-| `cssSourcesStep`        | `validate-css-sources`         | `checkCssSources`        | Every utility class the library emits is visible to a consumer's Tailwind scan                                                 |
-| `cssTokensStep`         | `validate-css-tokens`          | `checkCssTokens`         | No `@theme` token is declared in a namespace the utility vocabulary overloads                                                  |
-| `classGroupsStep`       | `validate-class-groups`        | `checkClassGroups`       | `cn`'s conflict table matches the one regenerated from the design system                                                       |
-| `classOrderStep`        | `validate-class-order`         | `checkClassOrder`        | Every class literal is a fixed point of `cn`, so sorting one cannot change what it renders                                     |
-| `classTokensStep`       | `validate-class-tokens`        | `checkClassTokens`       | Every class token in the source resolves to CSS the design system compiles                                                     |
-| `designScaleStep`       | `validate-design-scale`        | `checkDesignScale`       | The design-scale data the lint plugin reads matches the one regenerated from the design system                                 |
-| `lintPluginStep`        | `validate-lint-plugin`         | `checkLintPlugin`        | The committed oxlint-plugin bundle a consumer loads matches a fresh build of its TypeScript source                             |
-| `contrastStep`          | `validate-contrast`            | `checkContrast`          | Every audited foreground/background pair meets its contrast criterion                                                          |
-| `browserStep`           | `test:browser`                 | `hasChromium`            | A launchable browser exists — declared as the step's `requires.probe`                                                          |
+| Step | Label | Check | Asserts |
+| --- | --- | --- | --- |
+| `exportsStep` | `validate-exports` | `checkExports` | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable |
+| `namespaceGraphStep` | `validate-namespace-graph` | `checkNamespaceGraph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair |
+| `assetRootStep` | `validate-asset-root` | `checkAssetRoot` | What the assets pipeline writes to the asset root matches the Worker's `run_worker_first` exclusions |
+| `assetManifestStep` | `validate-asset-manifest` | `checkAssetManifest` | Every path the emitted assets manifest maps to exists under `publicDir` |
+| `coLocationStep` | `validate-co-location` | `checkCoLocation` | Every source module has a test beside it, so deleting one is loud |
+| `buildTimeBoundaryStep` | `validate-build-time-boundary` | `checkBuildTimeBoundary` | No module outside a build-time directory imports one at value |
+| `ssrBoundaryStep` | `validate-ssr-boundary` | `checkSsrBoundary` | No Worker-executed module reaches the browser-only tier |
+| `jsxStep` | `validate-jsx` | `checkJsx` | Every shipped `.tsx` carries its pragmas |
+| `markdownStep` | `validate-markdown` | `checkMarkdown` | Markdown holds the house conventions — compact tables, one bullet marker, tagged fences, no stray whitespace |
+| `docsStep` | `validate-docs` | `checkDocs` | Documented subpaths resolve; section numbering, cross-references, frontmatter, size, freshness |
+| `readmeExportsStep` | `validate-readme-exports` | `checkReadmeExports` | A README's per-subpath export tables name exactly what the barrel exports |
+| `changelogStep` | `validate-changelog` | `checkChangelog` | Keep a Changelog grammar, ordering, and the topmost heading equalling `package.json` |
+| `designStep` | `validate-design` | `checkDesign` | The design corpus teaches only what ships, and both rule registers agree with the lint plugin |
+| `modernCssStep` | `validate-modern-css` | `checkModernCss` | Stylesheets and class literals use the platform feature that replaced each hand-written pattern |
+| `cssSourcesStep` | `validate-css-sources` | `checkCssSources` | Every utility class the library emits is visible to a consumer's Tailwind scan |
+| `cssTokensStep` | `validate-css-tokens` | `checkCssTokens` | No `@theme` token is declared in a namespace the utility vocabulary overloads |
+| `classGroupsStep` | `validate-class-groups` | `checkClassGroups` | `cn`'s conflict table matches the one regenerated from the design system |
+| `classOrderStep` | `validate-class-order` | `checkClassOrder` | Every class literal is a fixed point of `cn`, so sorting one cannot change what it renders |
+| `classTokensStep` | `validate-class-tokens` | `checkClassTokens` | Every class token in the source resolves to CSS the design system compiles |
+| `designScaleStep` | `validate-design-scale` | `checkDesignScale` | The design-scale data the lint plugin reads matches the one regenerated from the design system |
+| `lintPluginStep` | `validate-lint-plugin` | `checkLintPlugin` | The committed oxlint-plugin bundle a consumer loads matches a fresh build of its TypeScript source |
+| `contrastStep` | `validate-contrast` | `checkContrast` | Every audited foreground/background pair meets its contrast criterion |
+| `browserStep` | `test:browser` | `hasChromium` | A launchable browser exists — declared as the step's `requires.probe` |
 
 The tool steps carry no check: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep`
 (`format`), `typeAwareLintStep` (`lint:types`) and `testStep` (`test`) spawn `tsc`, `oxlint`,
@@ -177,7 +178,7 @@ shim would run under. Under bun your `playwright.config.ts` may import forge sub
 
 **The `chromium` prerequisite names both routes — a direct download, or a devbox container:**
 
-```
+```text
 ✗ test:browser — chromium not found; run `bunx playwright install chromium`, or use a devbox container — `devctl up`
 ```
 
@@ -200,6 +201,34 @@ exportsStep({
   sealedInternal: ["src/crypto/mod.ts"],
 }),
 ```
+
+### Check markdown against the house conventions
+
+`markdownStep` is the only check that ships a fixer. It walks every `.md` under `sources` (default
+`["src"]`), honouring both a `!`-prefixed source and the `exclude` list — the latter is where a
+generated tree goes, whose bytes another tool owns:
+
+```ts
+// config/steps.ts
+markdownStep({ root: ROOT, sources: ["src", "docs", "README.md"], exclude: ["CHANGELOG.md", ".claude"], rules }),
+```
+
+Every rule is optional and every one accepts `"off"`, so a project opts out of any of them without
+forking the check. `rules.lineLength` is off by default and takes a `scope` of path prefixes, for the
+common case of a tree that already holds a wrap column and one that does not.
+
+**The fixer applies only the mechanical rules** — table padding, list markers and nested indent,
+emphasis delimiters, fence style and language aliases, hard tabs, trailing whitespace, thematic
+breaks, and the blank line around a block. **Four rules are report-only**: a bare fence, a bare URL,
+a second `# ` heading, and an over-long line. A fixer that guessed a language or rewrapped an
+author's prose would do more harm than the finding does.
+
+`renderMarkdown` is idempotent, and a fenced block, an indented code block and the frontmatter are
+literal bytes no rule reaches — a padded table inside a `md` fence is a sample, not a defect.
+
+**Order matters where a formatter also claims markdown.** `oxfmt` pads every table cell to the
+widest column and has no option to stop, so a project running both must put `**/*.md` in
+`.oxfmtrc.json`'s `ignorePatterns` — otherwise each tool undoes the other on every `bun run fix`.
 
 ### Check for hand-written CSS the platform replaced
 
@@ -252,14 +281,14 @@ if (!result.ok) {
 }
 ```
 
-| Type          | Shape                                                                             |
-| ------------- | --------------------------------------------------------------------------------- |
-| `Finding`     | `{ level: "fail" \| "warn"; message; file?; line?; detail? }`                     |
+| Type | Shape |
+| --- | --- |
+| `Finding` | `{ level: "fail" \| "warn"; message; file?; line?; detail? }` |
 | `CheckResult` | `{ ok; findings; summary }` — `ok` is **derived** from the findings, never passed |
 
 The `parse*` / `validate*` / `resolve*` / `check*` / `format*` prefixes name the layer a function
 belongs to; the vocabulary and its purity rules are
-[`ASSET_AND_BUILD_TOOLING.md`](../../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5i's.
+[`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2i's.
 
 ### Test your own step table
 
@@ -327,10 +356,10 @@ formatSemVer(next); // "1.3.0"
 Resolves a step table and runs the gate over it. `createGateBinCommand()` builds it, and the `forge`
 binary attaches it.
 
-| Flag              | Default               | Effect                                                                             |
-| ----------------- | --------------------- | ---------------------------------------------------------------------------------- |
-| `--config <path>` | `config/steps.ts`     | Module default-exporting `readonly Step[]`, relative to `--root` or absolute.      |
-| `--root <path>`   | the working directory | Directory every step runs in, and the base a relative `--config` resolves against. |
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--config <path>` | `config/steps.ts` | Module default-exporting `readonly Step[]`, relative to `--root` or absolute. |
+| `--root <path>` | the working directory | Directory every step runs in, and the base a relative `--config` resolves against. |
 
 Plus every flag `createGateCommand` takes — `--mode`, `--full`, `--only`, `--list`, `--fix` — because the
 command delegates to it once the table is loaded rather than reimplementing the run.
@@ -348,21 +377,21 @@ Builds the `verify` CLI `Command`. The returned command takes no positional argu
 
 `GateCommandConfig`:
 
-| Field    | Type              | Default                    | Description                                                                                |
-| -------- | ----------------- | -------------------------- | ------------------------------------------------------------------------------------------ |
-| `cwd`    | `string`          | —                          | Repository root. Every step is spawned here, so a step's relative paths resolve. Required. |
-| `steps`  | `readonly Step[]` | —                          | The table to resolve against — the project's own steps. Required.                          |
-| `binDir` | `string`          | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve.                                            |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `cwd` | `string` | — | Repository root. Every step is spawned here, so a step's relative paths resolve. Required. |
+| `steps` | `readonly Step[]` | — | The table to resolve against — the project's own steps. Required. |
+| `binDir` | `string` | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve. |
 
 Flags:
 
-| Flag           | Effect                                                                                                    |
-| -------------- | --------------------------------------------------------------------------------------------------------- |
-| `--mode <m>`   | Which tier to run: `fast`, `standard` or `full`. Default `standard`. An unrecognised value is refused.    |
-| `--full`       | Sugar for `--mode full`. Passing both is refused rather than given a precedence.                          |
+| Flag | Effect |
+| --- | --- |
+| `--mode <m>` | Which tier to run: `fast`, `standard` or `full`. Default `standard`. An unrecognised value is refused. |
+| `--full` | Sugar for `--mode full`. Passing both is refused rather than given a precedence. |
 | `--only <a,b>` | Run only those steps, in table order. Repeatable. An unknown label is refused with the known ones listed. |
-| `--list`       | Print the resolved selection and exit, running nothing.                                                   |
-| `--fix`        | Run each selected step's fixer instead of the step. Steps without one are counted as having no fixer.     |
+| `--list` | Print the resolved selection and exit, running nothing. |
+| `--fix` | Run each selected step's fixer instead of the step. Steps without one are counted as having no fixer. |
 
 Behaviour worth relying on:
 
@@ -385,30 +414,34 @@ Behaviour worth relying on:
 
 ### Step table
 
-| Type              | Shape                                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `GATE_MODES`      | `["fast", "standard", "full"]` — the tiers in ascending order, the one order everything ranks against  |
-| `GateMode`        | `(typeof GATE_MODES)[number]` — closed. It also decides what an absent dependency means: skip, or fail |
-| `Step`            | `CommandStep \| CheckStep` — a step is spawned, or called; never both                                  |
-| `StepBase`        | `{ label; tier?; requires? }` — what both variants carry                                               |
-| `CommandStep`     | `StepBase & { cmd; tail; fix? }`                                                                       |
-| `CheckStep`       | `StepBase & { run }` — `run` is handed the mode, so one row can vary its strictness                    |
-| `StepRequirement` | `{ tool; probe?; hint }` — absent, only a full run fails; the lower tiers skip                         |
-| `Selection`       | `{ ok: true; steps; total; scoped } \| { ok: false; error }`                                           |
+| Type | Shape |
+| --- | --- |
+| `GATE_MODES` | `["fast", "standard", "full"]` — the tiers in ascending order, the one order everything ranks against |
+| `GateMode` | `(typeof GATE_MODES)[number]` — closed. It also decides what an absent dependency means: skip, or fail |
+| `Step` | `CommandStep \| CheckStep` — a step is spawned, or called; never both |
+| `StepBase` | `{ label; tier?; requires? }` — what both variants carry |
+| `CommandStep` | `StepBase & { cmd; tail; fix? }` |
+| `CheckStep` | `StepBase & { run; fix? }` — `run` is handed the mode, so one row can vary its strictness |
+| `StepRequirement` | `{ tool; probe?; hint }` — absent, only a full run fails; the lower tiers skip |
+| `Selection` | `{ ok: true; steps; total; scoped } \| { ok: false; error }` |
 
-| Field      | Type                                            | Description                                                                                                                                                                                                        |
-| ---------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `label`    | `string`                                        | Stable identifier — the `--only` token, and the name reported on failure.                                                                                                                                          |
-| `tier`     | `GateMode?`                                     | The **lowest** mode this step runs in; absent means `fast`. An ordered tier rather than a set of modes, so `fast ⊆ standard ⊆ full` holds by construction — selection is a rank comparison, not a membership test. |
-| `requires` | `StepRequirement?`                              | Dependency probed before the step runs: absent, only a full run fails it; the lower tiers skip it.                                                                                                                 |
-| `cmd`      | `readonly [string, ...string[]]`                | Executable followed by its arguments.                                                                                                                                                                              |
-| `tail`     | `number`                                        | Lines of captured output shown when the step fails.                                                                                                                                                                |
-| `fix`      | `readonly [string, ...string[]]?`               | Auto-fixing counterpart invoked by `--fix`.                                                                                                                                                                        |
-| `run`      | `(mode) => CheckResult \| Promise<CheckResult>` | Called in-process with the run's `GateMode`. Its findings are printed whole, so there is no `tail` and no fixer.                                                                                                   |
+| Field | Type | Description |
+| --- | --- | --- |
+| `label` | `string` | Stable identifier — the `--only` token, and the name reported on failure. |
+| `tier` | `GateMode?` | The **lowest** mode this step runs in; absent means `fast`. An ordered tier rather than a set of modes, so `fast ⊆ standard ⊆ full` holds by construction — selection is a rank comparison, not a membership test. |
+| `requires` | `StepRequirement?` | Dependency probed before the step runs: absent, only a full run fails it; the lower tiers skip it. |
+| `cmd` | `readonly [string, ...string[]]` | Executable followed by its arguments. |
+| `tail` | `number` | Lines of captured output shown when the step fails. |
+| `fix` | `readonly [string, ...string[]]?` (command), `() => void \| Promise<void>` (check) | Auto-fixing counterpart invoked by `--fix`: a command spawns it, a check calls it in-process. Absent, the step is counted as having no fixer. |
+| `run` | `(mode) => CheckResult \| Promise<CheckResult>` | Called in-process with the run's `GateMode`. Its findings are printed whole, so there is no `tail`. |
 
 The two variants are exclusive by construction — `cmd?: never` on one and `run?: never` on the other
 — so a step declaring both is a type error rather than a runtime precedence rule. Narrow with
 `isCheckStep(step)` before reaching for a field only one variant has.
+
+**A check's fixer runs in-process too**, and nothing is probed before it: an in-process fixer spawns
+no tool, so it has no dependency to be missing. A throw is reported as that step's failure, for the
+reason a throwing `run` is — a defect in a check still owes the gate a verdict line.
 
 **Why a check runs in-process.** A check already returns `Finding[]` with file, line and detail. A
 subprocess would flatten that to stdout text and then truncate it to `tail` lines, so the runner
@@ -420,11 +453,11 @@ project needs a spawnable file per check.
 Resolves which steps to run. **Pure** — no disk, no spawning, no clock, and no probe. Refusals are
 returned rather than thrown:
 
-| Refusal                   | Why                                                                                          |
-| ------------------------- | -------------------------------------------------------------------------------------------- |
-| duplicate step label      | A label is the `--only` token and the name on a failure line; it must name exactly one step. |
-| unknown `--only` label    | The error lists the labels the requested mode does hold.                                     |
-| a selection of zero steps | Checked on the _outcome_, so it still holds when the selection logic itself is wrong.        |
+| Refusal | Why |
+| --- | --- |
+| duplicate step label | A label is the `--only` token and the name on a failure line; it must name exactly one step. |
+| unknown `--only` label | The error lists the labels the requested mode does hold. |
+| a selection of zero steps | Checked on the _outcome_, so it still holds when the selection logic itself is wrong. |
 
 The first is a property of the **table**, so it is checked before the mode is applied and before
 `--only` narrows: a malformed table is refused whichever run was asked for, and `--only` cannot route
@@ -440,7 +473,7 @@ unscoped run.
 The step table every Cloudflare Worker app in this fleet shares, in execution order:
 `types:cf-runtime` → `types:cf-bindings` → `types:assets` → `validate-asset-manifest` →
 `typecheck` → `lint` → `format` →
-(`governance`) → (`validate-modern-css` → `validate-class-order` → `validate-class-tokens` →
+(`warden`) → (`validate-modern-css` → `validate-class-order` → `validate-class-tokens` →
 `validate-css-tokens`) → `test` → (`validate-asset-root`) → (`test:browser`). Generation leads
 judgement, so a stale generated type surfaces as a type error.
 
@@ -455,27 +488,27 @@ wrangler config.
 
 `CloudflareWorkerStepOptions`:
 
-| Field           | Type                             | Default              | Description                                                                                      |
-| --------------- | -------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
-| `sources`       | `readonly string[]`              | `["src/", "tests/"]` | Directories linted, formatted and type-checked.                                                  |
-| `tests`         | `readonly string[]`              | `["tests/"]`         | Test paths passed to `bun test`.                                                                 |
-| `assetConfig`   | `string?`                        | —                    | Asset config path. Omit to skip the `types:assets` step entirely.                                |
-| `assetOut`      | `string`                         | `.forge/assets.ts`   | Where the asset-types emitter writes.                                                            |
-| `wranglerTypes` | `boolean`                        | `true`               | Emit the two `wrangler types` steps. `false` for an app that declares its binding types by hand. |
-| `workerConfig`  | `string?`                        | —                    | `--config` for the bindings invocation.                                                          |
-| `governance`    | `boolean`                        | `false`              | Add the `gov sync --check` step. Opt-in: it needs a cloned corpus.                               |
-| `root`          | `string`                         | `process.cwd()`      | Application root, needed by the asset-root and design checks.                                    |
-| `browser`       | `boolean`                        | `false`              | Add the `full`-tier `test:browser` step, last in the table.                                      |
-| `design`        | `CloudflareWorkerDesignOptions?` | —                    | Add the design rows. Omit for an app that does not use `ui/*`.                                   |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `sources` | `readonly string[]` | `["src/", "tests/"]` | Directories linted, formatted and type-checked. |
+| `tests` | `readonly string[]` | `["tests/"]` | Test paths passed to `bun test`. |
+| `assetConfig` | `string?` | — | Asset config path. Omit to skip the `types:assets` step entirely. |
+| `assetOut` | `string` | `.forge/assets.ts` | Where the asset-types emitter writes. |
+| `wranglerTypes` | `boolean` | `true` | Emit the two `wrangler types` steps. `false` for an app that declares its binding types by hand. |
+| `workerConfig` | `string?` | — | `--config` for the bindings invocation. |
+| `warden` | `boolean` | `false` | Add the `warden sync --check` step. Opt-in: it needs the cloned `.claude/` trees. |
+| `root` | `string` | `process.cwd()` | Application root, needed by the asset-root and design checks. |
+| `browser` | `boolean` | `false` | Add the `full`-tier `test:browser` step, last in the table. |
+| `design` | `CloudflareWorkerDesignOptions?` | — | Add the design rows. Omit for an app that does not use `ui/*`. |
 
 `CloudflareWorkerDesignOptions`:
 
-| Field        | Type                         | Default    | Description                                                                     |
-| ------------ | ---------------------------- | ---------- | ------------------------------------------------------------------------------- |
-| `stylesheet` | `string`                     | —          | The stylesheet the design system compiles from. Three of the four rows need it. |
-| `cssDir`     | `string?`                    | —          | Directory of stylesheets; omit to skip `validate-css-tokens`.                   |
-| `sources`    | `readonly string[]`          | `["src/"]` | Sources the class rules scan.                                                   |
-| `deferred`   | `readonly DeferredFinding[]` | `[]`       | Platform-CSS findings this app defers.                                          |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `stylesheet` | `string` | — | The stylesheet the design system compiles from. Three of the four rows need it. |
+| `cssDir` | `string?` | — | Directory of stylesheets; omit to skip `validate-css-tokens`. |
+| `sources` | `readonly string[]` | `["src/"]` | Sources the class rules scan. |
+| `deferred` | `readonly DeferredFinding[]` | `[]` | Platform-CSS findings this app defers. |
 
 `design.sources` deliberately does **not** fall back to the table's top-level `sources`.
 `classOrderStep` scans every `.tsx`, specs included, and a spec asserting on `cn` holds deliberately
@@ -508,49 +541,49 @@ project-specific policy, so it is named explicitly alongside.
 
 `LibraryStepOptions`:
 
-| Field                                                   | Type                     | Default       | Description                                                                       |
-| ------------------------------------------------------- | ------------------------ | ------------- | --------------------------------------------------------------------------------- |
-| `root`                                                  | `string`                 | —             | Repository root. Every check resolves and reports its paths against it. Required. |
-| `pkg`                                                   | `GatePackage`            | —             | `{ name; version; exports; files }`, verbatim from `package.json`. Required.      |
-| `sources`                                               | `readonly string[]`      | `["src/"]`    | Directories linted and formatted.                                                 |
-| `tests`                                                 | `readonly string[]`      | whole project | Test paths passed to `bun test`.                                                  |
-| `exports` / `docs` / `jsx` / `changelog` / `classOrder` | `Partial<…CheckConfig>?` | —             | Merged over the config derived from `pkg`, for that check's allowlists.           |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `root` | `string` | — | Repository root. Every check resolves and reports its paths against it. Required. |
+| `pkg` | `GatePackage` | — | `{ name; version; exports; files }`, verbatim from `package.json`. Required. |
+| `sources` | `readonly string[]` | `["src/"]` | Directories linted and formatted. |
+| `tests` | `readonly string[]` | whole project | Test paths passed to `bun test`. |
+| `exports` / `docs` / `jsx` / `changelog` / `classOrder` | `Partial<…CheckConfig>?` | — | Merged over the config derived from `pkg`, for that check's allowlists. |
 
 ### Findings
 
-| Export              | Purpose                                                                           |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `fail` / `warn`     | Build one `Finding` at each level.                                                |
-| `checkResult`       | Derive a `CheckResult` from findings plus a summary line.                         |
-| `scannedNothing`    | The refusal a check returns when its configured sources matched nothing.          |
-| `formatFinding`     | One finding as a printable line.                                                  |
-| `formatCheckResult` | A whole result as printable text.                                                 |
-| `reportCheck`       | Print a result and return the process exit code — for a check run outside a gate. |
+| Export | Purpose |
+| --- | --- |
+| `fail` / `warn` | Build one `Finding` at each level. |
+| `checkResult` | Derive a `CheckResult` from findings plus a summary line. |
+| `scannedNothing` | The refusal a check returns when its configured sources matched nothing. |
+| `formatFinding` | One finding as a printable line. |
+| `formatCheckResult` | A whole result as printable text. |
+| `reportCheck` | Print a result and return the process exit code — for a check run outside a gate. |
 
 ### Changelog
 
-| Function            | Signature                                                            | Description                                                                                           |
-| ------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `parseChangelog`    | `(source: string) => ChangelogParse`                                 | Reads the structure without changing it.                                                              |
+| Function | Signature | Description |
+| --- | --- | --- |
+| `parseChangelog` | `(source: string) => ChangelogParse` | Reads the structure without changing it. |
 | `promoteUnreleased` | `(source: string, opts: PromoteOptions) => ValidationResult<string>` | Retitles `[Unreleased]`, inserts a fresh empty one above it, and appends the compare-link definition. |
-| `formatReleaseDate` | `(date: Date) => string`                                             | `YYYY-MM-DD` in the **local** calendar — not UTC.                                                     |
+| `formatReleaseDate` | `(date: Date) => string` | `YYYY-MM-DD` in the **local** calendar — not UTC. |
 
 `PromoteOptions`:
 
-| Field            | Type      | Default | Description                                                     |
-| ---------------- | --------- | ------- | --------------------------------------------------------------- |
-| `version`        | `string`  | —       | Version being promoted to — bare semver, no leading `v`.        |
-| `date`           | `string`  | —       | Already-formatted release date.                                 |
-| `tagPrefix`      | `string`  | `"v"`   | Prefix used in the compare URL's tag names.                     |
-| `compareUrlBase` | `string?` | —       | Repository base URL. Omit to skip the link definition entirely. |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `version` | `string` | — | Version being promoted to — bare semver, no leading `v`. |
+| `date` | `string` | — | Already-formatted release date. |
+| `tagPrefix` | `string` | `"v"` | Prefix used in the compare URL's tag names. |
+| `compareUrlBase` | `string?` | — | Repository base URL. Omit to skip the link definition entirely. |
 
 `ChangelogParse` is a [`ValidationResult`](../../result/README.md)`<ChangelogDocument>` —
 `{ ok: true; data }` or `{ ok: false; error: readonly string[] }`. `ChangelogDocument` is
 `{ unreleased: UnreleasedSection; versions: readonly VersionHeading[]; linkRefs: readonly string[] }`.
 
-| Type                | Shape                                                                                                     |
-| ------------------- | --------------------------------------------------------------------------------------------------------- |
-| `VersionHeading`    | `{ version: string; date: string; line: number }` — bare semver, ISO date, zero-indexed line.             |
+| Type | Shape |
+| --- | --- |
+| `VersionHeading` | `{ version: string; date: string; line: number }` — bare semver, ISO date, zero-indexed line. |
 | `UnreleasedSection` | `{ line: number; body: readonly string[]; empty: boolean }` — verbatim body up to the next `## ` heading. |
 
 A parse fails on: no `[Unreleased]` section, more than one, an entry heading above it, an entry
@@ -564,13 +597,13 @@ there is no earlier released version.
 
 ### SemVer
 
-| Function        | Signature                                 | Description                                                                                                                  |
-| --------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `parseSemVer`   | `(str: string) => SemVer \| null`         | Parses `major.minor.patch` (optional `v` prefix). Rejects leading zeros, negatives, and malformed input by returning `null`. |
-| `formatSemVer`  | `(v: SemVer) => string`                   | Formats a `SemVer` back to `"major.minor.patch"`.                                                                            |
-| `compareSemVer` | `(a: SemVer, b: SemVer) => -1 \| 0 \| 1`  | Orders two versions.                                                                                                         |
-| `isGreaterThan` | `(next: SemVer, prev: SemVer) => boolean` | `true` when `next` is strictly greater than `prev`.                                                                          |
-| `bumpSemVer`    | `(v: SemVer, kind: BumpKind) => SemVer`   | Returns a new version bumped by `kind`, zeroing lower components.                                                            |
+| Function | Signature | Description |
+| --- | --- | --- |
+| `parseSemVer` | `(str: string) => SemVer \| null` | Parses `major.minor.patch` (optional `v` prefix). Rejects leading zeros, negatives, and malformed input by returning `null`. |
+| `formatSemVer` | `(v: SemVer) => string` | Formats a `SemVer` back to `"major.minor.patch"`. |
+| `compareSemVer` | `(a: SemVer, b: SemVer) => -1 \| 0 \| 1` | Orders two versions. |
+| `isGreaterThan` | `(next: SemVer, prev: SemVer) => boolean` | `true` when `next` is strictly greater than `prev`. |
+| `bumpSemVer` | `(v: SemVer, kind: BumpKind) => SemVer` | Returns a new version bumped by `kind`, zeroing lower components. |
 
 `SemVer` is `{ major: number; minor: number; patch: number }`. `BumpKind` is
 `"major" | "minor" | "patch"`.
@@ -591,7 +624,7 @@ and `findPublicSymbols`.
 - [`@y-core/forge/tooling/lint`](../lint/README.md) — the oxlint plugin and the rule catalogs
   `validate-design` and `validate-modern-css` read.
 - [`@y-core/forge/tooling/cli`](../cli/README.md) — the command framework and `resolveAppRoot`.
-- [`ASSET_AND_BUILD_TOOLING.md`](../../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §5f,
+- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f,
   §5g, §5h and §5i — the published gate, the fleet preset, root resolution, and the check layering.
-- [`TESTING.md`](../../../.decisions/implementation/TESTING.md) §6 — the gate's three modes and its
+- [`TESTING.md`](../../../docs/TESTING.md) §6 — the gate's three modes and its
   flags as forge itself runs them.

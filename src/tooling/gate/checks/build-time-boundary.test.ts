@@ -26,7 +26,7 @@ function project(files: Record<string, string>): BuildTimeBoundaryCheckConfig {
 describe("isBuildTime", () => {
   it("accepts a build-time directory itself and anything under it", () => {
     expect(isBuildTime("src/tooling", BUILD_DIRS)).toBe(true);
-    expect(isBuildTime("src/tooling/gate/checks/docs.ts", BUILD_DIRS)).toBe(true);
+    expect(isBuildTime("src/tooling/gate/checks/exports.ts", BUILD_DIRS)).toBe(true);
     expect(isBuildTime("src/ui/assets/build/color.ts", BUILD_DIRS)).toBe(true);
   });
 

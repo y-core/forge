@@ -31,6 +31,15 @@ describe("isCheckStep()", () => {
     expect(FIXTURE.every((step) => !isCheckStep(step))).toBe(true);
   });
 
+  // A check's fixer is a function and a command's is an argument vector, so the narrowing is what
+  // tells the runner which of the two `--fix` is holding.
+  it("narrows a check carrying a fixer, whose fixer is a function rather than a command", () => {
+    const fixing: Step = { ...check, fix: () => undefined };
+
+    expect(isCheckStep(fixing)).toBe(true);
+    expect(typeof fixing.fix).toBe("function");
+  });
+
   it("selects check and command steps alike, since the distinction is how they run, not whether", () => {
     const result = selectSteps([...FIXTURE, check], { mode: "fast" });
 

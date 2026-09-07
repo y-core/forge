@@ -28,58 +28,63 @@ forge ships its TypeScript/TSX **source** directly — there is no build step an
 
 ## Namespace Overview
 
-See [NAMESPACES.md](.decisions/implementation/NAMESPACES.md) for the authoritative namespace catalog.
+See [NAMESPACES.md](docs/NAMESPACES.md) for the authoritative namespace catalog.
 Each namespace has its own `README.md` with full API documentation — click a namespace to open it.
 
-| Import path                         | Concern                                                              | Docs                                                           |
-| ----------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `@y-core/forge/app`                 | App bootstrap & lifecycle                                            | [src/app/README.md](src/app/README.md)                         |
-| `@y-core/forge/assets`              | Manifest & sprite registry (runtime)                                 | [src/assets/README.md](src/assets/README.md)                   |
-| `@y-core/forge/tooling/assets`      | Asset config, build pipeline & `forge assets`                        | [src/tooling/assets/README.md](src/tooling/assets/README.md)   |
-| `@y-core/forge/tooling/cli`         | CLI command framework                                                | [src/tooling/cli/README.md](src/tooling/cli/README.md)         |
-| `@y-core/forge/tooling/gate`        | Verification gate — steps, presets & checks (Node/Bun only)          | [src/tooling/gate/README.md](src/tooling/gate/README.md)       |
-| `@y-core/forge/tooling/release`     | Release workflow — version, changelog & surface guard                | [src/tooling/release/README.md](src/tooling/release/README.md) |
-| `@y-core/forge/tooling/lint`        | forge's oxlint rules, and the two rule catalogs the gate reads       | [src/tooling/lint/README.md](src/tooling/lint/README.md)       |
-| `@y-core/forge/tooling/lint/plugin` | The same plugin prebuilt — the spelling `.oxlintrc.json` names       | [src/tooling/lint/README.md](src/tooling/lint/README.md)       |
-| `@y-core/forge/tooling/cf`          | Cloudflare — account bindings, zone rules, env schema (`forge cf`)   | [src/tooling/cf/README.md](src/tooling/cf/README.md)           |
-| `@y-core/forge/tooling/term`        | Terminal rendering — width, wrapping, grids & colour                 | [src/tooling/term/README.md](src/tooling/term/README.md)       |
-| `@y-core/forge/config`              | Environment config                                                   | [src/config/README.md](src/config/README.md)                   |
-| `@y-core/forge/context`             | `RequestContext`, `AppContext`                                       | [src/context/README.md](src/context/README.md)                 |
-| `@y-core/forge/form`                | Form parsing, CSRF & bot detection                                   | [src/form/README.md](src/form/README.md)                       |
-| `@y-core/forge/html/htmx`           | HTMX server-side helpers                                             | [src/html/README.md](src/html/README.md)                       |
-| `@y-core/forge/http`                | HTTP output — responses, headers, fragments                          | [src/http/README.md](src/http/README.md)                       |
-| `@y-core/forge/jsx`                 | JSX runtime (`jsxImportSource`); JSX → `HtmlResponse` (`renderPage`) | [src/jsx/README.md](src/jsx/README.md)                         |
-| `@y-core/forge/jsx/jsx-runtime`     | Automatic JSX transform runtime                                      | [src/jsx/README.md](src/jsx/README.md)                         |
-| `@y-core/forge/jsx/register`        | Classic-mode JSX runtime registration                                | [src/jsx/README.md](src/jsx/README.md)                         |
-| `@y-core/forge/logging`             | Structured logging                                                   | [src/logging/README.md](src/logging/README.md)                 |
-| `@y-core/forge/logging/show`        | Log viewer UI & reader                                               | [src/logging/README.md](src/logging/README.md)                 |
-| `@y-core/forge/result`              | Result monad                                                         | [src/result/README.md](src/result/README.md)                   |
-| `@y-core/forge/router`              | Declarative route config                                             | [src/router/README.md](src/router/README.md)                   |
-| `@y-core/forge/security`            | Transport-layer hardening                                            | [src/security/README.md](src/security/README.md)               |
-| `@y-core/forge/session`             | Session + cookie management                                          | [src/session/README.md](src/session/README.md)                 |
-| `@y-core/forge/site`                | Robots, sitemap & zone rules                                         | [src/site/README.md](src/site/README.md)                       |
-| `@y-core/forge/storage/db`          | D1 database client                                                   | [src/storage/README.md](src/storage/README.md)                 |
-| `@y-core/forge/storage/kv`          | Workers KV typed store                                               | [src/storage/README.md](src/storage/README.md)                 |
-| `@y-core/forge/storage/r2`          | R2 object storage                                                    | [src/storage/README.md](src/storage/README.md)                 |
-| `@y-core/forge/testing`             | Test fixtures & fakes                                                | [src/testing/README.md](src/testing/README.md)                 |
-| `@y-core/forge/ui/contracts`        | Shared SSR/browser DOM contract as pure data                         | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/contracts/theme`  | Colour-scheme generation and the audited contrast pairs              | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/core`             | Server-side JSX component library                                    | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/core/client`      | Browser island for ui/core scopes (side-effect)                      | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/controls`         | Pre-bound signal-binding wrappers                                    | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/assets`           | Forge icon glyph names and sprite file map                           | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/assets/build`     | Build-time glyph, colour, cursor and token computation               | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/assets/glyphs`    | Browser-safe sprite glyph parser                                     | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/assets/css/*.css` | Forge stylesheets by filename — `forge.css` is the entry point       | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/design/*.md`      | The design corpus as markdown, by filename                           | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/client`           | Browser-side UI scripts                                              | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/client/htmx`      | HTMX bundle (side-effect)                                            | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/chrome`           | SSR app chrome: Navbar, Toolbar, ThemeToggle                         | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/chrome/client`    | Browser island for chrome scopes (side-effect)                       | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/server`           | SSR-only: Flash, Resumable                                           | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/show`             | Component showcase route helpers                                     | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/ui/show/client`      | Showcase filter island (side-effect)                                 | [src/ui/README.md](src/ui/README.md)                           |
-| `@y-core/forge/validation`          | Schema validation (valibot)                                          | [src/validation/README.md](src/validation/README.md)           |
+| Import path | Concern | Docs |
+| --- | --- | --- |
+| `@y-core/forge/app` | App bootstrap & lifecycle | [src/app/README.md](src/app/README.md) |
+| `@y-core/forge/assets` | Manifest & sprite registry (runtime) | [src/assets/README.md](src/assets/README.md) |
+| `@y-core/forge/tooling/assets` | Asset config, build pipeline & `forge assets` | [src/tooling/assets/README.md](src/tooling/assets/README.md) |
+| `@y-core/forge/tooling/cli` | CLI command framework | [src/tooling/cli/README.md](src/tooling/cli/README.md) |
+| `@y-core/forge/tooling/gate` | Verification gate — steps, presets & checks (Node/Bun only) | [src/tooling/gate/README.md](src/tooling/gate/README.md) |
+| `@y-core/forge/tooling/release` | Release workflow — version, changelog & surface guard | [src/tooling/release/README.md](src/tooling/release/README.md) |
+| `@y-core/forge/tooling/lint` | forge's oxlint rules, and the two rule catalogs the gate reads | [src/tooling/lint/README.md](src/tooling/lint/README.md) |
+| `@y-core/forge/tooling/lint/plugin` | The same plugin prebuilt — the spelling `.oxlintrc.json` names | [src/tooling/lint/README.md](src/tooling/lint/README.md) |
+| `@y-core/forge/tooling/cf` | Cloudflare — account bindings, zone rules, env schema (`forge cf`) | [src/tooling/cf/README.md](src/tooling/cf/README.md) |
+| `@y-core/forge/tooling/term` | Terminal rendering — width, wrapping, grids & colour | [src/tooling/term/README.md](src/tooling/term/README.md) |
+| `@y-core/forge/warden` | The fleet corpus and `warden sync` (Node/Bun only) | [warden/README.md](warden/README.md) |
+| `@y-core/forge/warden/checks` | The documentation, README-export, changelog & design corpus checks | [warden/README.md](warden/README.md) |
+| `@y-core/forge/warden/steps` | The gate steps for those checks — `docsStep`, `changelogStep`, … | [warden/README.md](warden/README.md) |
+| `@y-core/forge/warden/knowledge` | BM25 retrieval over the corpus — index, search, read, related | [warden/README.md](warden/README.md) |
+| `@y-core/forge/warden/mcp` | The MCP server behind `warden serve` — its tools and resources | [warden/README.md](warden/README.md) |
+| `@y-core/forge/config` | Environment config | [src/config/README.md](src/config/README.md) |
+| `@y-core/forge/context` | `RequestContext`, `AppContext` | [src/context/README.md](src/context/README.md) |
+| `@y-core/forge/form` | Form parsing, CSRF & bot detection | [src/form/README.md](src/form/README.md) |
+| `@y-core/forge/html/htmx` | HTMX server-side helpers | [src/html/README.md](src/html/README.md) |
+| `@y-core/forge/http` | HTTP output — responses, headers, fragments | [src/http/README.md](src/http/README.md) |
+| `@y-core/forge/jsx` | JSX runtime (`jsxImportSource`); JSX → `HtmlResponse` (`renderPage`) | [src/jsx/README.md](src/jsx/README.md) |
+| `@y-core/forge/jsx/jsx-runtime` | Automatic JSX transform runtime | [src/jsx/README.md](src/jsx/README.md) |
+| `@y-core/forge/jsx/register` | Classic-mode JSX runtime registration | [src/jsx/README.md](src/jsx/README.md) |
+| `@y-core/forge/logging` | Structured logging | [src/logging/README.md](src/logging/README.md) |
+| `@y-core/forge/logging/show` | Log viewer UI & reader | [src/logging/README.md](src/logging/README.md) |
+| `@y-core/forge/result` | Result monad | [src/result/README.md](src/result/README.md) |
+| `@y-core/forge/router` | Declarative route config | [src/router/README.md](src/router/README.md) |
+| `@y-core/forge/security` | Transport-layer hardening | [src/security/README.md](src/security/README.md) |
+| `@y-core/forge/session` | Session + cookie management | [src/session/README.md](src/session/README.md) |
+| `@y-core/forge/site` | Robots, sitemap & zone rules | [src/site/README.md](src/site/README.md) |
+| `@y-core/forge/storage/db` | D1 database client | [src/storage/README.md](src/storage/README.md) |
+| `@y-core/forge/storage/kv` | Workers KV typed store | [src/storage/README.md](src/storage/README.md) |
+| `@y-core/forge/storage/r2` | R2 object storage | [src/storage/README.md](src/storage/README.md) |
+| `@y-core/forge/testing` | Test fixtures & fakes | [src/testing/README.md](src/testing/README.md) |
+| `@y-core/forge/ui/contracts` | Shared SSR/browser DOM contract as pure data | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/contracts/theme` | Colour-scheme generation and the audited contrast pairs | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/core` | Server-side JSX component library | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/core/client` | Browser island for ui/core scopes (side-effect) | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/controls` | Pre-bound signal-binding wrappers | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/assets` | Forge icon glyph names and sprite file map | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/assets/build` | Build-time glyph, colour, cursor and token computation | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/assets/glyphs` | Browser-safe sprite glyph parser | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/assets/css/*.css` | Forge stylesheets by filename — `forge.css` is the entry point | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/design/*.md` | The design corpus as markdown, by filename | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/client` | Browser-side UI scripts | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/client/htmx` | HTMX bundle (side-effect) | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/chrome` | SSR app chrome: Navbar, Toolbar, ThemeToggle | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/chrome/client` | Browser island for chrome scopes (side-effect) | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/server` | SSR-only: Flash, Resumable | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/show` | Component showcase route helpers | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/ui/show/client` | Showcase filter island (side-effect) | [src/ui/README.md](src/ui/README.md) |
+| `@y-core/forge/validation` | Schema validation (valibot) | [src/validation/README.md](src/validation/README.md) |
 
 > **There is no aggregate `storage` or `ui` barrel** — each client and each UI surface is imported from its own subpath above.
 >
@@ -91,7 +96,7 @@ Each namespace has its own `README.md` with full API documentation — click a n
 
 Handlers and middleware receive a `RequestContext` from `@remix-run/fetch-router`. forge extends it at runtime with the Workers `env` and `executionCtx`, exposed as the `AppContext<Bindings>` type:
 
-```typescript
+```ts
 import { getAppContext, type AppContext } from "@y-core/forge/context";
 
 // Inside any handler/middleware: narrow the RequestContext to an AppContext.
@@ -106,7 +111,7 @@ c.url.pathname; // parsed URL
 
 Custom per-request variables use typed accessors instead of stringly-keyed `get`/`set`:
 
-```typescript
+```ts
 import { contextVar } from "@y-core/forge/context";
 
 const userCtx = contextVar<User>("user");
@@ -123,7 +128,7 @@ See [src/context/README.md](src/context/README.md) for the full API.
 
 All tests live alongside the source they test (`*.test.ts` / `*.test.tsx`) and run directly under Bun with no bundler. `Forge` provides a `request()` helper that builds a `Request` and dispatches it through the full middleware chain:
 
-```typescript
+```ts
 import { Forge } from "@y-core/forge/app";
 
 const res = await app.request(

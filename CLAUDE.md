@@ -14,9 +14,9 @@
 - NEVER provide deprecation shims or backward-compatible paths before v1.0.0
 - NEVER exceed the comment budget — one line of TSDoc per export, the `@public`/`@internal` tags,
   and the rare inline _why_, nothing else
-  ([`CODE_RULES.md`](.decisions/governance/CODE_RULES.md) §5)
+  ([`CODE_RULES.md`](warden/canon/libs/CODE_RULES.md) §5)
 - ALWAYS delete unbudgeted comments from any file you touch, routing rationale worth keeping to its
-  single home ([`CODE_RULES.md`](.decisions/governance/CODE_RULES.md) §5c)
+  single home ([`CODE_RULES.md`](warden/canon/libs/CODE_RULES.md) §5c)
 - ALWAYS add new public symbols to the namespace's `mod.ts` as a named export
 - ALWAYS co-locate tests (`*.test.ts` / `*.test.tsx`) with the source they test
 - ALWAYS enforce exact-match test assertions accounting for HTML entities — never substring matching
@@ -62,12 +62,12 @@ Scope is a property of the URL, so no tool takes a `project` argument.
 
 ## Toolchain
 
-| Tool                   | Role                                                     |
-| ---------------------- | -------------------------------------------------------- |
-| `bun`                  | Package manager and test runner                          |
-| `tsc` (`typescript` 7) | Type checker — the native compiler                       |
-| `oxlint`               | Linter, incl. type-aware rules (use instead of `eslint`) |
-| `oxfmt`                | Formatter and import sorter (use instead of `prettier`)  |
+| Tool | Role |
+| --- | --- |
+| `bun` | Package manager and test runner |
+| `tsc` (`typescript` 7) | Type checker — the native compiler |
+| `oxlint` | Linter, incl. type-aware rules (use instead of `eslint`) |
+| `oxfmt` | Formatter and import sorter (use instead of `prettier`) |
 
 ```bash
 bun run verify                 # the gate — the `standard` tier, what a task closes on
@@ -79,7 +79,7 @@ bun run lint                   # check only, never write (`verify --only lint`)
 bun run fix                    # every step's fixer (`verify --fix`) — lint and format today
 ```
 
-Gate philosophy, the three modes, and the flags: [`TESTING.md`](.decisions/implementation/TESTING.md) §6.
+Gate philosophy, the three modes, and the flags: [`TESTING.md`](docs/TESTING.md) §6.
 The step list itself is `config/steps.ts`.
 
 **Avoid:** `bun-types` (use the custom stub), `eslint` (use `oxlint`), `prettier` (use `oxfmt`), `biome` (retired — use `oxfmt`).
@@ -117,7 +117,7 @@ agent would otherwise carry for the rest of its turn, so the rule follows the si
 rather than the question of who may be trusted to read a result: cross-cutting or voluminous goes
 to `cc-tester`; a single scoped step — `bun run verify --only lint`, or the one test file you just
 wrote — is yours to run, because routing a handful of lines through a second agent buys nothing
-([`PLAIN_LANGUAGE.md`](.decisions/governance/PLAIN_LANGUAGE.md) §12). `cc-plan`, `cc-dev` and
+([`PLAIN_LANGUAGE.md`](warden/canon/shared/PLAIN_LANGUAGE.md) §12). `cc-plan`, `cc-dev` and
 `cc-doc` each run scoped steps on that basis, and `cc-test` smoke-runs the single test file it
 just wrote. **A scoped green is never reported as a green gate**, whoever ran it.
 
@@ -142,9 +142,9 @@ from a wrapped package directly.
 **Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests.
 
 **Leaf vs integration:** classify a namespace before adding code, and never introduce an undeclared
-cross-namespace dependency ([`NAMESPACE_DESIGN.md`](.decisions/governance/NAMESPACE_DESIGN.md) §3).
+cross-namespace dependency ([`NAMESPACE_DESIGN.md`](warden/canon/libs/NAMESPACE_DESIGN.md) §3).
 
-For the namespace catalog, barrel rules, and growth recipes, consult the governing `.decisions/`
+For the namespace catalog, barrel rules, and growth recipes, consult the governing `docs/`
 doc via the **Guide Index** — never duplicate that detail here.
 
 ---
@@ -155,44 +155,35 @@ doc via the **Guide Index** — never duplicate that detail here.
 > `## 0. Quick Reference` listing every section, so you can pick a section without reading the
 > whole file.
 >
-> **Two tables, two directories.** `governance/` holds the portable rules shared with every forge
-> sibling and is overwritten on sync; `implementation/` holds forge's own catalog and rulings and
-> is never touched by a sync ([`AGENT_GUIDE.md`](.decisions/governance/AGENT_GUIDE.md) §6d). Both
-> tables must agree with their directory in both directions.
+> **The canon is not in this table, and not on disk in a consumer.** The fleet's portable rules —
+> AGENT_GUIDE, PLAIN_LANGUAGE, LIBRARY_ARCHITECTURE, NAMESPACE_DESIGN, CODE_RULES, BOUNDARIES,
+> ERROR_HANDLING, TESTING, CODE_REVIEW — live in warden and are reached by search, not by path:
+> the `knowledge_search`, `knowledge_read` and `knowledge_outline` MCP tools, or `warden show <id>`
+> from a terminal. Forge is the canon's home, so here alone they are also readable under
+> `warden/canon/`. Cite one in prose (`CODE_RULES.md §5c`), never by a path a consumer would not
+> have.
 
-### Governance — portable, overwrite-on-sync
-
-- [`AGENT_GUIDE.md`](.decisions/governance/AGENT_GUIDE.md): how `.decisions/` docs are structured, numbered, sized, and cross-referenced; the governance/implementation boundary; the single-home rule
-- [`PLAIN_LANGUAGE.md`](.decisions/governance/PLAIN_LANGUAGE.md): reader-centred prose for governing documents and for what an agent says to a person — relevant, findable, understandable, usable; response length, narration, corrections, scope, delegation
-- [`LIBRARY_ARCHITECTURE.md`](.decisions/governance/LIBRARY_ARCHITECTURE.md): the dependency facade, the runtime-only no-build-step constraint, demand composition, Web-APIs-only, the Workers isolate model
-- [`NAMESPACE_DESIGN.md`](.decisions/governance/NAMESPACE_DESIGN.md): barrel discipline and the `export *` ban, the no-sibling-barrel rule, leaf/integration classification, naming conventions, when to add a namespace
-- [`CODE_RULES.md`](.decisions/governance/CODE_RULES.md): six coding rules — zero global state, explicit errors, validation first, testability, **the comment budget (§5 — the ceiling on prose)**, declarative style
-- [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md): SSR versus browser, transport versus application security, validate-at-boundary, no-PII logging, fail-closed
-- [`ERROR_HANDLING.md`](.decisions/governance/ERROR_HANDLING.md): the one `Result` primitive, failures crossing a boundary, rendering a failure, the error taxonomy
-- [`TESTING.md`](.decisions/governance/TESTING.md): co-location, exact-match assertions, fakes over mocks, security-test requirements, the one-command-two-modes gate
-- [`CODE_REVIEW.md`](.decisions/governance/CODE_REVIEW.md): blocking invariants, tiered detection with a command per rule, severity calibration, known false positives
-
-### Implementation — forge only
-
-- [`SOURCE_OF_TRUTH.md`](.decisions/implementation/SOURCE_OF_TRUTH.md): the register naming which file owns each fact, and the rows that name more than one file
-- [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md): the authoritative subpath catalog, sealed-internal `crypto`, the foundational primitives, and forge's growth rulings
-- [`LIBRARY_ARCHITECTURE.md`](.decisions/implementation/LIBRARY_ARCHITECTURE.md): what forge wraps and what it authors, the named build-time exemptions, the peer-dependency set, the `@source` scope
-- [`ROUTING_AND_MIDDLEWARE.md`](.decisions/implementation/ROUTING_AND_MIDDLEWARE.md): declarative route maps and controllers, `definePage`/`defineAction`, middleware ordering, the `context` namespace
-- [`HTMX.md`](.decisions/implementation/HTMX.md): the selector and JSON trust posture, why URL-valued and `hx-on:*` attributes are unsanitized, and the `isHxRequest` not-a-boundary ruling
-- [`SECURITY_HARDENING.md`](.decisions/implementation/SECURITY_HARDENING.md): CSP nonce headers, CORS, origin-guard tiering, rate limiting, the `trustCfHeaders` trust boundary
-- [`STRUCTURED_LOGGING.md`](.decisions/implementation/STRUCTURED_LOGGING.md): log channels and wrappers, `requestLogger`, KV persistence, the auth-gated log viewer
-- [`ERROR_HANDLING.md`](.decisions/implementation/ERROR_HANDLING.md): the published `Result` signatures, the fragment renderers, the router error boundary's header guarantees, the `serveObject` exception
-- [`INPUT_VALIDATION.md`](.decisions/implementation/INPUT_VALIDATION.md): the valibot `v` facade, form parsing and its byte cap, CSRF, honeypot, Turnstile
-- [`STORAGE_BINDINGS.md`](.decisions/implementation/STORAGE_BINDINGS.md): D1, KV, and R2 clients, the resolve/validate binding pattern, dev degradation
-- [`UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md): the `ui/core` component contract, `ui/controls` bound variants, the signal-binding seam, `cn`/`cva`
-- [`STATE_ATTRIBUTES.md`](.decisions/implementation/STATE_ATTRIBUTES.md): the `data-*` vocabulary a forge element emits — the state hooks both tiers share, the presentational enums, the island payload, the `data-slot` token, and the closed-world conformance sweep
-- [`UI_CLIENT_RUNTIME.md`](.decisions/implementation/UI_CLIENT_RUNTIME.md): browser-only mount controllers, signals, lazy loading, the htmx side-effect import
-- [`UI_DESIGN_GUIDANCE.md`](.decisions/implementation/UI_DESIGN_GUIDANCE.md): the `src/ui/design/` corpus — its Floor/Defaults tiers, the stable `forge-ui-` rule-id scheme, the anti-drift gate contract, the three-way doc boundary, and the dial defaults
-- [`THEME_GENERATION.md`](.decisions/implementation/THEME_GENERATION.md): the dial model a colour scheme is generated from, the emission contract, and the audited contrast pairs the gate and the customiser share
-- [`UI_SHOWCASE.md`](.decisions/implementation/UI_SHOWCASE.md): the `ui/show` surface — what an app supplies to mount it, and the coverage contract that fails the build when a published component has no demo
-- [`ASSET_AND_BUILD_TOOLING.md`](.decisions/implementation/ASSET_AND_BUILD_TOOLING.md): the asset pipeline, the content-hash manifest, the CLI framework, release tooling
-- [`TESTING.md`](.decisions/implementation/TESTING.md): the two runners and the browser set, the security matrix row-to-test map, the `testing` namespace fixtures, the gate's flags
-- [`CODE_REVIEW.md`](.decisions/implementation/CODE_REVIEW.md): forge's `detect:` commands with their real globs, the icon-prop rule, and the full do-not-flag table
+- [`SOURCE_OF_TRUTH.md`](docs/SOURCE_OF_TRUTH.md): the register naming which file owns each fact, and the rows that name more than one file
+- [`NAMESPACES.md`](docs/NAMESPACES.md): the authoritative subpath catalog, sealed-internal `crypto`, the foundational primitives, and forge's growth rulings
+- [`LIBRARY_ARCHITECTURE.md`](docs/LIBRARY_ARCHITECTURE.md): what forge wraps and what it authors, the named build-time exemptions, the peer-dependency set, the `@source` scope
+- [`ROUTING_AND_MIDDLEWARE.md`](docs/ROUTING_AND_MIDDLEWARE.md): declarative route maps and controllers, `definePage`/`defineAction`, middleware ordering, the `context` namespace
+- [`HTMX.md`](docs/HTMX.md): the selector and JSON trust posture, why URL-valued and `hx-on:*` attributes are unsanitized, and the `isHxRequest` not-a-boundary ruling
+- [`SECURITY_HARDENING.md`](docs/SECURITY_HARDENING.md): CSP nonce headers, CORS, origin-guard tiering, rate limiting, the `trustCfHeaders` trust boundary
+- [`STRUCTURED_LOGGING.md`](docs/STRUCTURED_LOGGING.md): log channels and wrappers, `requestLogger`, KV persistence, the auth-gated log viewer
+- [`ERROR_HANDLING.md`](docs/ERROR_HANDLING.md): the published `Result` signatures, the fragment renderers, the router error boundary's header guarantees, the `serveObject` exception
+- [`INPUT_VALIDATION.md`](docs/INPUT_VALIDATION.md): the valibot `v` facade, form parsing and its byte cap, CSRF, honeypot, Turnstile
+- [`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md): D1, KV, and R2 clients, the resolve/validate binding pattern, dev degradation
+- [`UI_SSR_COMPONENTS.md`](docs/UI_SSR_COMPONENTS.md): the `ui/core` component contract, `ui/controls` bound variants, the signal-binding seam
+- [`UI_CLASS_COMPOSITION.md`](docs/UI_CLASS_COMPOSITION.md): `cn`/`cva`, the conflict table and its derivation, the `@utility` recipe layer, the colour-scheme declaration contract
+- [`STATE_ATTRIBUTES.md`](docs/STATE_ATTRIBUTES.md): the `data-*` vocabulary a forge element emits — the state hooks both tiers share, the presentational enums, the island payload, the `data-slot` token, and the closed-world conformance sweep
+- [`UI_CLIENT_RUNTIME.md`](docs/UI_CLIENT_RUNTIME.md): browser-only mount controllers, signals, lazy loading, the htmx side-effect import
+- [`UI_DESIGN_GUIDANCE.md`](docs/UI_DESIGN_GUIDANCE.md): the `src/ui/design/` corpus — its Floor/Defaults tiers, the stable `forge-ui-` rule-id scheme, the anti-drift gate contract, the three-way doc boundary, and the dial defaults
+- [`THEME_GENERATION.md`](docs/THEME_GENERATION.md): the dial model a colour scheme is generated from, the emission contract, and the audited contrast pairs the gate and the customiser share
+- [`UI_SHOWCASE.md`](docs/UI_SHOWCASE.md): the `ui/show` surface — what an app supplies to mount it, and the coverage contract that fails the build when a published component has no demo
+- [`ASSET_PIPELINE.md`](docs/ASSET_PIPELINE.md): the asset pipeline and its config, change detection, the content-hash manifest, the generated assets module
+- [`BUILD_TOOLING.md`](docs/BUILD_TOOLING.md): the CLI framework, the published verification gate and its check contract, release tooling
+- [`TESTING.md`](docs/TESTING.md): the two runners and the browser set, the security matrix row-to-test map, the `testing` namespace fixtures, the gate's flags
+- [`CODE_REVIEW.md`](docs/CODE_REVIEW.md): forge's `detect:` commands with their real globs, the icon-prop rule, and the full do-not-flag table
 
 ---
 
@@ -201,14 +192,14 @@ doc via the **Guide Index** — never duplicate that detail here.
 Add new code in the namespace its concern belongs to; follow the recipe in the governing doc —
 never duplicate a capability that already exists.
 
-| Adding…                                                                             | Goes to                                                                           | Recipe                                                                                                                                   |
-| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Authentication (JWT, OAuth, session login), permissions/RBAC, API-key lifecycle     | NEW `auth` namespace — identity is application-layer, never `security`            | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5a                                                                           |
-| CORS middleware, webhook signature verification                                     | `security` — transport-layer request/response hardening only                      | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5a, [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md) §2                |
-| SSR component                                                                       | `ui/core` (markup only); client behaviour goes in `ui/client`                     | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5b, [`UI_SSR_COMPONENTS.md`](.decisions/implementation/UI_SSR_COMPONENTS.md) |
-| Browser controller, signal, or lazy-loaded resource                                 | `ui/client` — never imported from a Worker-executed file                          | [`BOUNDARIES.md`](.decisions/governance/BOUNDARIES.md) §1, [`UI_CLIENT_RUNTIME.md`](.decisions/implementation/UI_CLIENT_RUNTIME.md) §2   |
-| Third pipeline-builder variant (beyond `definePage`/`defineAction`)                 | extract ALL pipeline builders into a NEW `handler` namespace                      | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5c                                                                           |
-| HTTP output concern (response builders, header classes, HTML escaping, streaming)   | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly           | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §5d                                                                           |
-| Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `.decisions/`                                            | [`UI_DESIGN_GUIDANCE.md`](.decisions/implementation/UI_DESIGN_GUIDANCE.md) §5a                                                           |
-| Build-time module — ask "does this drive an external builder, or is it one?"        | drives one → `src/tooling/assets`; **is** one → the namespace owning the artifact | [`ASSET_AND_BUILD_TOOLING.md`](.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §2c                                                 |
-| Developer-facing tool — a command, a gate check, a lint rule, a release step        | `src/tooling/{cli,term,gate,lint,release,cf,assets}` — never Worker-reachable     | [`NAMESPACES.md`](.decisions/implementation/NAMESPACES.md) §4a                                                                           |
+| Adding… | Goes to | Recipe |
+| --- | --- | --- |
+| Authentication (JWT, OAuth, session login), permissions/RBAC, API-key lifecycle | NEW `auth` namespace — identity is application-layer, never `security` | [`NAMESPACES.md`](docs/NAMESPACES.md) §5a |
+| CORS middleware, webhook signature verification | `security` — transport-layer request/response hardening only | [`NAMESPACES.md`](docs/NAMESPACES.md) §5a, [`BOUNDARIES.md`](warden/canon/libs/BOUNDARIES.md) §2 |
+| SSR component | `ui/core` (markup only); client behaviour goes in `ui/client` | [`NAMESPACES.md`](docs/NAMESPACES.md) §5b, [`UI_SSR_COMPONENTS.md`](docs/UI_SSR_COMPONENTS.md) |
+| Browser controller, signal, or lazy-loaded resource | `ui/client` — never imported from a Worker-executed file | [`BOUNDARIES.md`](warden/canon/libs/BOUNDARIES.md) §1, [`UI_CLIENT_RUNTIME.md`](docs/UI_CLIENT_RUNTIME.md) §2 |
+| Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | [`NAMESPACES.md`](docs/NAMESPACES.md) §5c |
+| HTTP output concern (response builders, header classes, HTML escaping, streaming) | `http` — never `@remix-run/headers`/`@remix-run/html-template` directly | [`NAMESPACES.md`](docs/NAMESPACES.md) §5d |
+| Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `docs/` | [`UI_DESIGN_GUIDANCE.md`](docs/UI_DESIGN_GUIDANCE.md) §5a |
+| Build-time module — ask "does this drive an external builder, or is it one?" | drives one → `src/tooling/assets`; **is** one → the namespace owning the artifact | [`ASSET_PIPELINE.md`](docs/ASSET_PIPELINE.md) §2c |
+| Developer-facing tool — a command, a gate check, a lint rule, a release step | `src/tooling/{cli,term,gate,lint,release,cf,assets}` — never Worker-reachable | [`NAMESPACES.md`](docs/NAMESPACES.md) §4a |

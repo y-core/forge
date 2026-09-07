@@ -7,7 +7,6 @@ import pkg from "../package.json" with { type: "json" };
 import { resolveAppRoot } from "../src/tooling/cli/mod";
 import {
   browserStep,
-  changelogStep,
   classGroupsStep,
   classOrderStep,
   classTokensStep,
@@ -16,18 +15,16 @@ import {
   cssSourcesStep,
   cssTokensStep,
   designScaleStep,
-  designStep,
   FORGE_STATE_RECIPES,
-  docsStep,
   type ExportsMap,
   exportsStep,
   formatStep,
   jsxStep,
   lintPluginStep,
   lintStep,
+  markdownStep,
   modernCssStep,
   namespaceGraphStep,
-  readmeExportsStep,
   type Step,
   buildTimeBoundaryStep,
   ssrBoundaryStep,
@@ -37,6 +34,8 @@ import {
 } from "../src/tooling/gate/mod";
 import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
 import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
+import { changelogStep, designStep, docsStep, readmeExportsStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
+import MARKDOWN from "./markdown";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 
 // Derived from this file's location, never `process.cwd()`: the table must resolve the same paths
@@ -56,9 +55,12 @@ export const STEPS: readonly Step[] = [
     tail: 20,
     cmd: ["tsc", "--noEmit", "-p", "tests/fixtures/workers-consumer/tsconfig.json"],
   },
-  lintStep({ sources: ["src/", "config/"] }),
+  lintStep({ sources: ["src/", "config/", "warden/"] }),
   formatStep({ sources: ["."] }),
-  typeAwareLintStep({ sources: ["src/", "config/"], tier: "standard" }),
+  // Beside the formatter, and before `validate-docs`: oxfmt ignores `**/*.md`, so this is what holds
+  // markdown to a house layout, and `docs` then reads already-normalized bytes.
+  markdownStep({ root: ROOT, ...MARKDOWN }, { tier: "standard" }),
+  typeAwareLintStep({ sources: ["src/", "config/", "warden/"], tier: "standard" }),
   testStep(),
   exportsStep(
     {
@@ -81,7 +83,7 @@ export const STEPS: readonly Step[] = [
       exports: EXPORTS,
       graph: { primitives: PRIMITIVES, leaf: LEAF, edges: EDGES },
       sealedInternal: ["src/crypto/mod.ts"],
-      enumerationDoc: ".decisions/implementation/NAMESPACES.md",
+      enumerationDoc: "docs/NAMESPACES.md",
     },
     { tier: "standard" },
   ),
@@ -91,9 +93,12 @@ export const STEPS: readonly Step[] = [
   coLocationStep(
     {
       root: ROOT,
-      sources: ["src"],
+      sources: ["src", "warden"],
       // A path here that names no walked module fails the check, so the list can only shrink.
       exempt: [
+        // Warden's entry point and its type declarations, on the same terms as forge's own below.
+        "warden/src/bin.ts",
+        "warden/src/types.ts",
         // `bind-contract`'s one function is covered where it is used, by `client/bind-display.test.ts`.
         "src/ui/contracts/bind-contract.ts",
         "src/ui/contracts/alert-contract.ts",
@@ -164,18 +169,24 @@ export const STEPS: readonly Step[] = [
   // that makes it true is checked rather than asserted: no published runtime subpath may reach one
   // of these directories, and no runtime source may name one even before a barrel exports it.
   buildTimeBoundaryStep(
-    { root: ROOT, packageName: pkg.name, exports: EXPORTS, buildTimeDirs: ["src/tooling", "src/ui/assets/build"], sources: ["src"] },
+    { root: ROOT, packageName: pkg.name, exports: EXPORTS, buildTimeDirs: ["src/tooling", "src/ui/assets/build", "warden"], sources: ["src"] },
     { tier: "standard" },
   ),
-  // `.decisions/governance/` is overwrite-on-sync, so an edit made in place is reverted by the next
-  // sync and the reversion looks like nobody's change. Its fixer is the sync itself.
-  { label: "governance", tier: "standard", tail: 20, cmd: ["gov", "sync", "--check"], fix: ["gov", "sync"] },
+  // `.claude/agents/` and `.claude/commands/` are overwrite-on-sync, so an edit made in place is
+  // reverted by the next sync and the reversion looks like nobody's change. The fixer is the sync.
+  { label: "warden", tier: "standard", tail: 20, cmd: ["bun", "warden/src/bin.ts", "sync", "--check"], fix: ["bun", "warden/src/bin.ts", "sync"] },
   docsStep(
     {
       root: ROOT,
       packageName: pkg.name,
       exports: EXPORTS,
-      extraDirs: [".claude/agents"],
+      decisionsDir: "docs",
+      // The source, not `.claude/agents/` — a fix applied to the synced copy is reverted by the
+      // next sync, and the reversion looks like nobody's change.
+      extraDirs: ["warden/claude/agents"],
+      // Forge is the canon's home, so a citation into it resolves on disk. Without this root those
+      // citations would land outside `docs/` and be skipped in silence rather than checked.
+      citableDirs: ["warden/canon/shared", "warden/canon/libs"],
       documentedNonExports: ["./auth", "./handler", "./all", "./crypto"],
       // Written by the compiler and by build configuration, never by a consumer, so a documented row
       // for any of them would advertise an import the reader must not write.
@@ -287,6 +298,10 @@ export const STEPS: readonly Step[] = [
   // Beside `cssSourcesStep` rather than beside the two generator steps it shares a compile with: this
   // one judges what the stylesheets declare, not whether a generated file has drifted.
   cssTokensStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" }, { tier: "standard" }),
+  // Two steps rather than one: an index that will not build and a query that stopped finding its
+  // answer fail for different reasons, and a reader has to be told which to fix.
+  wardenStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
+  wardenQueriesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   browserStep({ tier: "full" }),
 ];
 

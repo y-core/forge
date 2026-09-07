@@ -466,5 +466,5 @@ curation is what is credited here: the selection is theirs.
 Every rule above is written fresh. Each was re-derived against forge's own components, tokens and
 utilities, its trigger stated to match what forge's own check actually detects, and its override
 condition argued from the consequence of adopting the feature rather than carried over from any
-source. See [`UI_DESIGN_GUIDANCE.md`](../../../../.decisions/implementation/UI_DESIGN_GUIDANCE.md) §7 for the
+source. See [`UI_DESIGN_GUIDANCE.md`](../../../../docs/UI_DESIGN_GUIDANCE.md) §7 for the
 constraint this footer discharges.

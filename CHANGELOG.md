@@ -17,7 +17,76 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`@y-core/forge/tooling/gate` no longer exports `docsStep`, `readmeExportsStep`, `changelogStep`,
+  `designStep`, or the four checks behind them.** They moved to `@y-core/forge/warden/steps` and
+  `@y-core/forge/warden/checks`. **No deprecating re-export is possible**: warden sits outside `src/`
+  and the import rule runs one way, so a shim in `tooling/gate` would be exactly the edge
+  `buildTimeBoundaryStep` forbids. Update the imports in your `config/steps.ts`:
+
+  ```ts
+  import { changelogStep, designStep, docsStep, readmeExportsStep } from "@y-core/forge/warden/steps";
+  ```
+
+  `cloudflareWorkerSteps()` calls none of them and is unchanged.
+
+- **`forgeChecks()` emits no `validate-docs` or `validate-changelog` row**, and its `docs` and
+  `changelog` options are gone with them — for the same reason. Add both rows to your own table from
+  `@y-core/forge/warden/steps`. A preset that silently dropped a documentation check would be the
+  quiet failure this release is otherwise about closing.
+
+- **`cloudflareWorkerSteps({ governance: true })` is now `{ warden: true }`**, and the step it emits
+  runs `warden sync --check` rather than `gov sync --check`. `@y-core/governance` is retired: the
+  corpus it carried now ships inside forge, under `warden/`.
+
+### Added
+
+- **`warden` — the fleet's governing corpus, and the machinery that keeps a repository in step with
+  it.** A new bin, and six subpaths: `./warden`, `./warden/checks`, `./warden/steps`,
+  `./warden/knowledge`, `./warden/mcp`, and `./warden/canon/*.md` for reading a canon document
+  directly. `warden sync` writes `.claude/agents/` and `.claude/commands/` and seeds `CLAUDE.md`,
+  `AGENTS.md` and `settings.local.json`; **it never copies the canon**, which is read from the
+  installed package instead. Its own tree separates payload from code: `canon/`, `claude/` and
+  `share/` are what it carries, and every module lives under `warden/src/`.
+
+- **A knowledge layer over both corpora — BM25 across SQLite FTS5, and no new dependency.**
+  `warden index`, `search`, `read`, `outline`, `related` and `catalogue` from a terminal;
+  `warden serve` is an MCP server over stdio offering `knowledge_search`, `knowledge_read`,
+  `knowledge_outline` and `knowledge_related`, plus `knowledge://catalogue` and one resource
+  template per corpus. A chunk id is the citation a human already writes —
+  `canon/libs:CODE_RULES.md#5c` — so retrieval and prose share one namespace.
+
+  **No embeddings, deliberately.** The corpus is ~1,000 chunks of technical identifiers, where
+  lexical retrieval is the stronger method; it carries a hand-written per-section gloss a generic
+  corpus does not; and an embedding provider would make every fresh clone and CI run depend on an
+  egress rule. A curated alias table covers the paraphrase queries that would otherwise be lost.
+
+  The index lives at `.forge/warden/index.sqlite`, gitignored and rebuilt on demand. **An absent
+  index is never an error and a stale one never refuses**: it answers, says it is behind, and
+  refreshes. The gate builds its own at `.forge/warden/gate.sqlite`, so a working index can never
+  change a verdict.
+
+- **Two gate steps, `warden:index` and `warden:queries`.** The first asserts what retrieval depends
+  on — every document chunked, no duplicate id, every numbered section glossed, the catalogue in
+  step. The second runs a golden query set with a coverage assertion: **every canon document must be
+  top-1 for at least one query**, which is what stops the set decaying into a stale fixture. Both
+  declare `bun:sqlite` as a prerequisite, so a non-Bun runner reports them skipped below the `full`
+  tier and fails them there.
+
+- **`checkStep` is published from `@y-core/forge/tooling/gate`**, so a check living outside that
+  namespace builds its step with the same tier and prerequisite handling.
+
+### Fixed
+
+- **`checkDocs` failed silently when its configured `decisionsDir` did not exist.** The other roots
+  still filled the file list, so `scannedNothing` never fired and a run passed having validated zero
+  governing documents — the exact shape a mistyped `decisionsDir` takes. It is now a hard failure.
+  `extraDirs` also walked only one level deep while `decisionsDir` recursed; both recurse now.
+
+- **`checkDocs` gained `citableDirs`** — roots whose sections resolve a citation without the
+  documents themselves being validated or index-reconciled. Without it, a citation into a document
+  outside `decisionsDir` resolved to no key and was skipped in silence rather than checked.
 
 ---
 

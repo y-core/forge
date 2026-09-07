@@ -66,9 +66,9 @@ sprites.get("nope"); // throws: Unknown sprite group: "nope"
 
 ## Core Components & APIs
 
-| Export                 | Signature                                                                 | Purpose                                            |
-| ---------------------- | ------------------------------------------------------------------------- | -------------------------------------------------- |
-| `createManifest`       | `(data: Record<string, string>, prefix: string) => Manifest`              | Builds a logical-name → public-path resolver       |
+| Export | Signature | Purpose |
+| --- | --- | --- |
+| `createManifest` | `(data: Record<string, string>, prefix: string) => Manifest` | Builds a logical-name → public-path resolver |
 | `createSpriteRegistry` | `(sprites: Record<string, string>, manifest: Manifest) => SpriteRegistry` | Resolves sprite group names to public sprite paths |
 
 `Manifest` and `SpriteRegistry` are the two interfaces those functions return, and both are exported
@@ -80,10 +80,10 @@ Returns a `Manifest` with one method, `path(key: string): string`. It strips a l
 key, looks the remainder up in `data`, falls back to the key itself when unmapped, and joins the
 result under `prefix` with the trailing slash normalised away.
 
-| Parameter | Type                     | Description                                                     |
-| --------- | ------------------------ | --------------------------------------------------------------- |
-| `data`    | `Record<string, string>` | Logical name → emitted relative path, as the build wrote it.    |
-| `prefix`  | `string`                 | Public URL prefix, e.g. `/assets`. A trailing slash is trimmed. |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `data` | `Record<string, string>` | Logical name → emitted relative path, as the build wrote it. |
+| `prefix` | `string` | Public URL prefix, e.g. `/assets`. A trailing slash is trimmed. |
 
 ### `createSpriteRegistry(sprites, manifest)`
 
@@ -91,10 +91,10 @@ Returns a `SpriteRegistry` with one method, `get(name: string): string`. It look
 in `sprites` and resolves the result through `manifest`, so the returned URL is prefixed and
 hash-aware. An unregistered name throws `Unknown sprite group: "<name>"`.
 
-| Parameter  | Type                     | Description                                       |
-| ---------- | ------------------------ | ------------------------------------------------- |
-| `sprites`  | `Record<string, string>` | Group name → logical sprite target from config.   |
-| `manifest` | `Manifest`               | The manifest the logical target resolves through. |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `sprites` | `Record<string, string>` | Group name → logical sprite target from config. |
+| `manifest` | `Manifest` | The manifest the logical target resolves through. |
 
 ---
 
@@ -102,5 +102,5 @@ hash-aware. An unregistered name throws `Unknown sprite group: "<name>"`.
 
 - [`@y-core/forge/tooling/assets`](../tooling/assets/README.md) — authoring `assets.config.ts`,
   running the build, and the generated module these two functions are called from.
-- [`ASSET_AND_BUILD_TOOLING.md`](../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §3 — the
+- [`ASSET_PIPELINE.md`](../../docs/ASSET_PIPELINE.md) §3 — the
   runtime lookup contract as a ruling.

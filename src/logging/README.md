@@ -69,21 +69,21 @@ requestLog.info("handler entered"); // record.data includes requestId: "req_abc"
 
 Creates a structured logger that dispatches records to its channels.
 
-| Parameter                | Type                       | Description                                                                                                                                                                                                  |
-| ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `prefix`                 | `string`                   | Label written to every record's `prefix` field.                                                                                                                                                              |
-| `options.channels`       | `LogChannel[]`             | Channels to fan records out to. Defaults to `[consoleChannel()]`.                                                                                                                                            |
-| `options.bindings`       | `Record<string, unknown>`  | Static fields merged into every record's `data`.                                                                                                                                                             |
-| `options.minLevel`       | `LogLevel`                 | Records below this level are dropped before any channel sees them. Children inherit it.                                                                                                                      |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `prefix` | `string` | Label written to every record's `prefix` field. |
+| `options.channels` | `LogChannel[]` | Channels to fan records out to. Defaults to `[consoleChannel()]`. |
+| `options.bindings` | `Record<string, unknown>` | Static fields merged into every record's `data`. |
+| `options.minLevel` | `LogLevel` | Records below this level are dropped before any channel sees them. Children inherit it. |
 | `options.onChannelError` | `(error: unknown) => void` | Called with the rejection reason when a channel write fails. Defaults to one structured `console.error` line. A hook that throws is swallowed. Children inherit it. See [Flush semantics](#flush-semantics). |
 
 Returns a `Logger`:
 
-| Member                              | Signature                  | Description                                                    |
-| ----------------------------------- | -------------------------- | -------------------------------------------------------------- |
-| `debug` / `info` / `warn` / `error` | `(message, data?) => void` | Emit a record at that level.                                   |
-| `flush`                             | `() => Promise<void>`      | Await all pending async channel writes, then clear the queue.  |
-| `child`                             | `(bindings) => Logger`     | Clone with merged `bindings`, same channels and pending queue. |
+| Member | Signature | Description |
+| --- | --- | --- |
+| `debug` / `info` / `warn` / `error` | `(message, data?) => void` | Emit a record at that level. |
+| `flush` | `() => Promise<void>` | Await all pending async channel writes, then clear the queue. |
+| `child` | `(bindings) => Logger` | Clone with merged `bindings`, same channels and pending queue. |
 
 ### `LogChannel`
 
@@ -162,10 +162,10 @@ const channels = [withLevels(consoleChannel(), ["warn", "error"]), kvLogChannel(
 const quiet = [withLevels(consoleChannel(), [])];
 ```
 
-| Parameter | Type                  | Description                                                                                   |
-| --------- | --------------------- | --------------------------------------------------------------------------------------------- |
-| `channel` | `LogChannel`          | The channel to wrap.                                                                          |
-| `levels`  | `readonly LogLevel[]` | Levels the channel accepts. An empty array drops every record; `read`/`readEntry` still work. |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `channel` | `LogChannel` | The channel to wrap. |
+| `levels` | `readonly LogLevel[]` | Levels the channel accepts. An empty array drops every record; `read`/`readEntry` still work. |
 
 Because it applies per channel, a quiet console can sit beside a complete KV history — the
 empty-allowlist case is how a deployment turns a sink off by configuration rather than by
@@ -188,10 +188,10 @@ const channels = [
 ];
 ```
 
-| Parameter | Type                               | Description                                                                                 |
-| --------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
-| `channel` | `LogChannel`                       | The channel to wrap.                                                                        |
-| `redact`  | `(record: LogRecord) => LogRecord` | Called on each record before `write`; return the record to persist. Never mutate the input. |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `channel` | `LogChannel` | The channel to wrap. |
+| `redact` | `(record: LogRecord) => LogRecord` | Called on each record before `write`; return the record to persist. Never mutate the input. |
 
 Independent of `withRedaction`, `kvLogChannel` applies a built-in stack-redaction default — see
 `persistStack` under [`kvLogChannel`](#kvlogchannelkv-options).
@@ -252,14 +252,14 @@ const channel = kvLogChannel(env.LOGS_KV, { prefix: "app-logs", maxLogs: 1000 })
 
 `KvLogChannelOptions`:
 
-| Option             | Type      | Default           | Description                                                                                                                                                                                                                                                                         |
-| ------------------ | --------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prefix`           | `string`  | `"logs"`          | Key prefix used for **both** write and read.                                                                                                                                                                                                                                        |
-| `defaultTtl`       | `number`  | `604800` (7 days) | KV `expirationTtl` per entry — the hard retention backstop.                                                                                                                                                                                                                         |
-| `maxLogs`          | `number`  | `500`             | Soft cap; purge trims down to this count.                                                                                                                                                                                                                                           |
-| `highWater`        | `number`  | `maxLogs * 1.2`   | Purge only runs once stored keys exceed this.                                                                                                                                                                                                                                       |
-| `purgeProbability` | `number`  | `0.02`            | Chance per write that a best-effort purge sweep runs. A selected sweep is covered by the `write` promise, so it is flushed rather than abandoned.                                                                                                                                   |
-| `persistStack`     | `boolean` | `false`           | When `false`, `stack` is recursively stripped from a **cloned** `record.data` before persistence, keeping error stacks out of the KV retention window. The caller's record is never mutated, so `consoleChannel` keeps the stack for local debugging. Set `true` to persist stacks. |
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `prefix` | `string` | `"logs"` | Key prefix used for **both** write and read. |
+| `defaultTtl` | `number` | `604800` (7 days) | KV `expirationTtl` per entry — the hard retention backstop. |
+| `maxLogs` | `number` | `500` | Soft cap; purge trims down to this count. |
+| `highWater` | `number` | `maxLogs * 1.2` | Purge only runs once stored keys exceed this. |
+| `purgeProbability` | `number` | `0.02` | Chance per write that a best-effort purge sweep runs. A selected sweep is covered by the `write` promise, so it is flushed rather than abandoned. |
+| `persistStack` | `boolean` | `false` | When `false`, `stack` is recursively stripped from a **cloned** `record.data` before persistence, keeping error stacks out of the KV retention window. The caller's record is never mutated, so `consoleChannel` keeps the stack for local debugging. Set `true` to persist stacks. |
 
 The prefix captured at construction is used for both `write` and `read`, so a channel
 configured with `prefix: "app-logs"` always reads `app-logs||…` keys — never the default.
@@ -301,13 +301,13 @@ app.get("/orders", (c) => {
 
 `RequestLoggerOptions`:
 
-| Option           | Type                                         | Description                                                                                                                               |
-| ---------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `prefix`         | `string`                                     | Record prefix. Defaults to `"request"`.                                                                                                   |
-| `channels`       | `(c) => LogChannel[]`                        | Per-request factory returning the channels to write to.                                                                                   |
-| `bindings`       | `(c) => Record<string, unknown>`             | Per-request fields merged into every record (e.g. `requestId`).                                                                           |
-| `minLevel`       | `LogLevel \| ((c) => LogLevel \| undefined)` | Logger-wide floor, static or resolved per request (e.g. `(c) => parseLogLevel(c.env.LOG_LEVEL, "info")`). `undefined` means no filtering. |
-| `onChannelError` | `(error: unknown) => void`                   | Passed through to the per-request logger; see `createLogger`'s option of the same name.                                                   |
+| Option | Type | Description |
+| --- | --- | --- |
+| `prefix` | `string` | Record prefix. Defaults to `"request"`. |
+| `channels` | `(c) => LogChannel[]` | Per-request factory returning the channels to write to. |
+| `bindings` | `(c) => Record<string, unknown>` | Per-request fields merged into every record (e.g. `requestId`). |
+| `minLevel` | `LogLevel \| ((c) => LogLevel \| undefined)` | Logger-wide floor, static or resolved per request (e.g. `(c) => parseLogLevel(c.env.LOG_LEVEL, "info")`). `undefined` means no filtering. |
+| `onChannelError` | `(error: unknown) => void` | Passed through to the per-request logger; see `createLogger`'s option of the same name. |
 
 ## Integration Guide
 
@@ -321,11 +321,11 @@ app.get("/orders", (c) => {
 (no query string), `status`, `duration` (ms), and any `bindings` such as `requestId`. The
 level is derived from the response status code:
 
-| Status range | Level   | Meaning                                      |
-| ------------ | ------- | -------------------------------------------- |
-| `< 400`      | `info`  | Successful requests                          |
-| `4xx`        | `warn`  | Client errors — expected, not ops-actionable |
-| `5xx`        | `error` | Server errors — ops-actionable               |
+| Status range | Level | Meaning |
+| --- | --- | --- |
+| `< 400` | `info` | Successful requests |
+| `4xx` | `warn` | Client errors — expected, not ops-actionable |
+| `5xx` | `error` | Server errors — ops-actionable |
 
 This keeps alert noise low: 404s and 422s stay at `warn`. `requestLogger` never emits
 `debug`; reserve `debug` for explicit `createLogger` use and avoid it in production configs.
@@ -350,7 +350,7 @@ scope; they are distinguishable by `message === "unhandled error"`.
 
 ### No PII in logs
 
-The prohibited field classes are [`BOUNDARIES.md`](../../.decisions/governance/BOUNDARIES.md) §4a's,
+The prohibited field classes are [`BOUNDARIES.md`](../../warden/canon/libs/BOUNDARIES.md) §4a's,
 and they bind every channel — worker `console` output is retained and searchable exactly as a
 persisted channel is. The call-site half is to keep the message a static label and put variable data
 in fields:
@@ -414,14 +414,14 @@ level — forgetting a guard is a compile error.
 
 `LogViewerOptions`:
 
-| Option     | Type                                                              | Description                                                                                                                                                       |
-| ---------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `channel`  | `(c) => LogChannel`                                               | Per-request factory for the channel to read from.                                                                                                                 |
-| `access`   | `((c) => boolean \| Promise<boolean>) \| "allow-unauthenticated"` | **Required.** Access decision, run before the channel is touched; `false` → `403 Forbidden`. A throwing predicate propagates to the error boundary (fail closed). |
-| `icon`     | `ForgeIcon<"chevron-down">`                                       | **Required.** App-bound icon rendered in the filter bar's level select. The app injects its own icon so `logging/show` need not own an icon set.                  |
-| `context`  | `(c, config) => Promise<Ctx>`                                     | **Required.** Per-request factory whose resolved value is forwarded to `layout` as `ctx`. Same shape as `ShowcaseOptions.context`.                                |
-| `layout`   | `FC<{ ctx: Ctx }>`                                                | **Required.** Your app's page shell. The viewer builds no document of its own — see below.                                                                        |
-| `basePath` | `string`                                                          | URL prefix the viewer is mounted at, used for HTMX targets. Defaults to `/admin/logs`.                                                                            |
+| Option | Type | Description |
+| --- | --- | --- |
+| `channel` | `(c) => LogChannel` | Per-request factory for the channel to read from. |
+| `access` | `((c) => boolean \| Promise<boolean>) \| "allow-unauthenticated"` | **Required.** Access decision, run before the channel is touched; `false` → `403 Forbidden`. A throwing predicate propagates to the error boundary (fail closed). |
+| `icon` | `ForgeIcon<"chevron-down">` | **Required.** App-bound icon rendered in the filter bar's level select. The app injects its own icon so `logging/show` need not own an icon set. |
+| `context` | `(c, config) => Promise<Ctx>` | **Required.** Per-request factory whose resolved value is forwarded to `layout` as `ctx`. Same shape as `ShowcaseOptions.context`. |
+| `layout` | `FC<{ ctx: Ctx }>` | **Required.** Your app's page shell. The viewer builds no document of its own — see below. |
+| `basePath` | `string` | URL prefix the viewer is mounted at, used for HTMX targets. Defaults to `/admin/logs`. |
 
 #### Why `layout` is required
 
@@ -512,7 +512,7 @@ const log = createLogger("billing", {
 `requestLogger` flushes in a `finally` and hands the guarded promise to `executionCtx.waitUntil`,
 falling back to an inline await when no execution context is available. Why the contract is
 best-effort, what the hook observes that `flush` does not, and the pending-queue cap it covers are
-[`STRUCTURED_LOGGING.md`](../../.decisions/implementation/STRUCTURED_LOGGING.md) §2f's; the cap and
+[`STRUCTURED_LOGGING.md`](../../docs/STRUCTURED_LOGGING.md) §2f's; the cap and
 its eviction policy are `src/logging/logger.ts`'s.
 
 ### KV key layout and retention
@@ -552,8 +552,8 @@ exactly this when a further page exists, rather than claiming there were no matc
 
 ## See also
 
-- [`STRUCTURED_LOGGING.md`](../../.decisions/implementation/STRUCTURED_LOGGING.md) — the channel
+- [`STRUCTURED_LOGGING.md`](../../docs/STRUCTURED_LOGGING.md) — the channel
   contract and its wrappers (§2), the flush contract (§2f), `requestLogger` and its ordering (§3),
   the status-to-level mapping (§4), and the log viewer's ordered contract (§5).
-- [`BOUNDARIES.md`](../../.decisions/governance/BOUNDARIES.md) §4 — the no-PII rule, the prohibited
+- [`BOUNDARIES.md`](../../warden/canon/libs/BOUNDARIES.md) §4 — the no-PII rule, the prohibited
   field classes, and structured fields over interpolation.

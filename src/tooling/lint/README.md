@@ -15,7 +15,7 @@ import { MODERN_CSS_RULES, RULE_CORPUS_PATH, RULE_ENFORCER } from "@y-core/forge
 
 > Every rule id, its permanence, and the three-way boundary between the corpus, this register and
 > the gate are owned by
-> [`UI_DESIGN_GUIDANCE.md`](../../../.decisions/implementation/UI_DESIGN_GUIDANCE.md) §3.
+> [`UI_DESIGN_GUIDANCE.md`](../../../docs/UI_DESIGN_GUIDANCE.md) §3.
 
 ---
 
@@ -132,43 +132,43 @@ resolves the same way one minted here does.
 
 ### The plugin
 
-| Export       | Type         | Purpose                                                          |
-| ------------ | ------------ | ---------------------------------------------------------------- |
-| `lintPlugin` | `LintPlugin` | forge's rules, as oxlint loads them. `meta.name` is `"forge"`.   |
-| `default`    | `LintPlugin` | The same object — oxlint reads a plugin module's default export. |
+| Export | Type | Purpose |
+| --- | --- | --- |
+| `lintPlugin` | `LintPlugin` | forge's rules, as oxlint loads them. `meta.name` is `"forge"`. |
+| `default` | `LintPlugin` | The same object — oxlint reads a plugin module's default export. |
 
 The twenty-three rules it registers:
 
-| Rule key                          | Corpus id                                  | Judges                                                                    |
-| --------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------- |
-| `a11y-aria-beside-data`           | `forge-ui-a11y-aria-beside-data`           | A `data-*` state hook written by hand rather than through `stateAttrs`    |
-| `a11y-heading-size-by-class`      | `forge-ui-a11y-heading-size-by-class`      | A heading whose level is chosen for its size rather than for the outline  |
-| `a11y-label-association`          | `forge-ui-a11y-label-association`          | A `<label>` with neither a `for` nor a wrapped control                    |
-| `a11y-live-politeness`            | `forge-ui-a11y-live-politeness`            | An `aria-live` that is not `polite`, or an unexplained `assertive`        |
-| `a11y-no-aria-readonly-on-button` | `forge-ui-a11y-no-aria-readonly-on-button` | `aria-readonly` on a role that supports no such state                     |
-| `a11y-one-live-region`            | `forge-ui-a11y-one-live-region`            | A live region opened beside the page's one announcer                      |
-| `catalog-wrong-raw-input`         | `forge-ui-catalog-wrong-raw-input`         | A raw control where the showcase should render the component              |
-| `color-theme-no-raw-utility`      | `forge-ui-color-theme-no-raw-utility`      | A raw palette utility with no `dark:` counterpart in the same class list  |
-| `color-token-only`                | `forge-ui-color-token-only`                | A colour utility naming a raw palette value instead of a theme token      |
-| `data-slot-before-spread`         | — none                                     | A literal `data-slot` written before a bare-identifier spread clobbers it |
-| `exact-markup-assertion`          | — none                                     | `toContain`, `toMatch` or `.includes` on markup a render produced         |
-| `focus-ring`                      | `forge-ui-focus-ring`                      | An outline suppressed on a pointer target with no `focus-visible:` ring   |
-| `interaction-focus-visible`       | `forge-ui-interaction-focus-visible`       | A bare `focus:` variant, which paints on a pointer press too              |
-| `no-inline-style`                 | `forge-ui-no-inline-style`                 | An inline `style=` attribute, which the renderer drops                    |
-| `no-nested-card`                  | `forge-ui-no-nested-card`                  | A `<Card>` opened inside a `<Card.Content>`                               |
-| `optional-prop-undefined`         | `forge-ui-optional-prop-undefined`         | An optional prop on a consumer-constructed type declared without `\       |
-| `platform-entry-motion`           | `forge-ui-platform-entry-motion`           | Hand-written entry animation the platform now expresses                   |
-| `platform-logical-spacing`        | `forge-ui-platform-logical-spacing`        | Physical spacing utilities where the logical pair is available            |
-| `platform-text-balance`           | `forge-ui-platform-text-balance`           | Manual line balancing in place of `text-wrap: balance`                    |
-| `platform-text-pretty`            | `forge-ui-platform-text-pretty`            | Orphan control in place of `text-wrap: pretty`                            |
-| `reduced-motion`                  | `forge-ui-reduced-motion`                  | Motion with no `prefers-reduced-motion` escape                            |
-| `spacing-scale-only`              | `forge-ui-spacing-scale-only`              | A spacing value off the design scale                                      |
-| `suppression-needs-reason`        | — none                                     | An `oxlint-disable*` comment that gives no reason                         |
+| Rule key | Corpus id | Judges |
+| --- | --- | --- |
+| `a11y-aria-beside-data` | `forge-ui-a11y-aria-beside-data` | A `data-*` state hook written by hand rather than through `stateAttrs` |
+| `a11y-heading-size-by-class` | `forge-ui-a11y-heading-size-by-class` | A heading whose level is chosen for its size rather than for the outline |
+| `a11y-label-association` | `forge-ui-a11y-label-association` | A `<label>` with neither a `for` nor a wrapped control |
+| `a11y-live-politeness` | `forge-ui-a11y-live-politeness` | An `aria-live` that is not `polite`, or an unexplained `assertive` |
+| `a11y-no-aria-readonly-on-button` | `forge-ui-a11y-no-aria-readonly-on-button` | `aria-readonly` on a role that supports no such state |
+| `a11y-one-live-region` | `forge-ui-a11y-one-live-region` | A live region opened beside the page's one announcer |
+| `catalog-wrong-raw-input` | `forge-ui-catalog-wrong-raw-input` | A raw control where the showcase should render the component |
+| `color-theme-no-raw-utility` | `forge-ui-color-theme-no-raw-utility` | A raw palette utility with no `dark:` counterpart in the same class list |
+| `color-token-only` | `forge-ui-color-token-only` | A colour utility naming a raw palette value instead of a theme token |
+| `data-slot-before-spread` | — none | A literal `data-slot` written before a bare-identifier spread clobbers it |
+| `exact-markup-assertion` | — none | `toContain`, `toMatch` or `.includes` on markup a render produced |
+| `focus-ring` | `forge-ui-focus-ring` | An outline suppressed on a pointer target with no `focus-visible:` ring |
+| `interaction-focus-visible` | `forge-ui-interaction-focus-visible` | A bare `focus:` variant, which paints on a pointer press too |
+| `no-inline-style` | `forge-ui-no-inline-style` | An inline `style=` attribute, which the renderer drops |
+| `no-nested-card` | `forge-ui-no-nested-card` | A `<Card>` opened inside a `<Card.Content>` |
+| `optional-prop-undefined` | `forge-ui-optional-prop-undefined` | An optional prop on a consumer-constructed type declared without `\ |
+| `platform-entry-motion` | `forge-ui-platform-entry-motion` | Hand-written entry animation the platform now expresses |
+| `platform-logical-spacing` | `forge-ui-platform-logical-spacing` | Physical spacing utilities where the logical pair is available |
+| `platform-text-balance` | `forge-ui-platform-text-balance` | Manual line balancing in place of `text-wrap: balance` |
+| `platform-text-pretty` | `forge-ui-platform-text-pretty` | Orphan control in place of `text-wrap: pretty` |
+| `reduced-motion` | `forge-ui-reduced-motion` | Motion with no `prefers-reduced-motion` escape |
+| `spacing-scale-only` | `forge-ui-spacing-scale-only` | A spacing value off the design scale |
+| `suppression-needs-reason` | — none | An `oxlint-disable*` comment that gives no reason |
 
 `data-slot-before-spread`, `exact-markup-assertion` and `suppression-needs-reason` state no design
 rule, so the register names none of them. The first is the ordering half of the JSX contract, moved
 off `validate-jsx`'s tag-frame scanner — the pragma half stays in the gate, where a file-presence
-check belongs. The second is [`TESTING.md`](../../../.decisions/implementation/TESTING.md) §3e's
+check belongs. The second is [`TESTING.md`](../../../docs/TESTING.md) §3e's
 rule, scoped by an `overrides` entry to `src/ui`'s test files rather than turned on everywhere.
 
 `suppression-needs-reason` is AST-anchored and covers every rule rather than only the design ones: `oxlint --type-aware` already
@@ -180,14 +180,14 @@ fails a _stale_ suppression, and this states the other half — a live one says 
 
 ### The design-rule register
 
-| Export             | Type                                     | Purpose                                                                       |
-| ------------------ | ---------------------------------------- | ----------------------------------------------------------------------------- |
-| `RuleId`           | union of 17 string literals              | Every rule the corpus states and this tooling enforces.                       |
-| `RULE_CORPUS_PATH` | `Readonly<Record<RuleId, string>>`       | The corpus file that justifies each rule.                                     |
-| `RuleEnforcer`     | `"gate" \| "lint" \| "contrast"`         | Which mechanism enforces a rule.                                              |
-| `RULE_ENFORCER`    | `Readonly<Record<RuleId, RuleEnforcer>>` | The mechanism for each rule.                                                  |
-| `lintKeyOf`        | `(id: string) => string`                 | The plugin rule key a corpus id is enforced under — the id minus `forge-ui-`. |
-| `corpusIdOf`       | `(key: string) => RuleId \| undefined`   | The corpus id a plugin rule key belongs to, or `undefined`.                   |
+| Export | Type | Purpose |
+| --- | --- | --- |
+| `RuleId` | union of 17 string literals | Every rule the corpus states and this tooling enforces. |
+| `RULE_CORPUS_PATH` | `Readonly<Record<RuleId, string>>` | The corpus file that justifies each rule. |
+| `RuleEnforcer` | `"gate" \| "lint" \| "contrast"` | Which mechanism enforces a rule. |
+| `RULE_ENFORCER` | `Readonly<Record<RuleId, RuleEnforcer>>` | The mechanism for each rule. |
+| `lintKeyOf` | `(id: string) => string` | The plugin rule key a corpus id is enforced under — the id minus `forge-ui-`. |
+| `corpusIdOf` | `(key: string) => RuleId \| undefined` | The corpus id a plugin rule key belongs to, or `undefined`. |
 
 `RULE_ENFORCER` is what keeps a `RULE_CORPUS_PATH` row from asserting nothing once its detector has
 moved: `checkDesign` reads the enforcer to decide which side it holds the row against. A `gate` rule
@@ -196,27 +196,27 @@ is held against the gate's own source detectors, a `lint` rule against `.oxlintr
 
 ### The platform-CSS catalog
 
-| Export                   | Type                                                    | Purpose                                                        |
-| ------------------------ | ------------------------------------------------------- | -------------------------------------------------------------- |
-| `ModernCssRuleId`        | union of 40 string literals                             | Every rule this catalog mints.                                 |
-| `ModernCssCitedRuleId`   | `"forge-ui-interaction-focus-visible"`                  | Ids the design corpus already owns, cited rather than minted.  |
-| `ModernCssReportedId`    | `ModernCssRuleId \| ModernCssCitedRuleId`               | Any id a finding may be reported under.                        |
-| `ModernCssTier`          | `"A" \| "B" \| "C"`                                     | `A` is textual detection; `B` and `C` need rendered behaviour. |
-| `ModernCssRule`          | see below                                               | What the check knows about one rule beyond detecting it.       |
-| `MODERN_CSS_RULES`       | `Readonly<Record<ModernCssRuleId, ModernCssRule>>`      | Every minted rule, keyed by id.                                |
-| `MODERN_CSS_CITED_RULES` | `Readonly<Record<ModernCssCitedRuleId, ModernCssRule>>` | Every cited rule, keyed by id.                                 |
-| `modernCssRule`          | `(id: ModernCssReportedId) => ModernCssRule`            | The rule behind any reported id, from either catalog.          |
+| Export | Type | Purpose |
+| --- | --- | --- |
+| `ModernCssRuleId` | union of 40 string literals | Every rule this catalog mints. |
+| `ModernCssCitedRuleId` | `"forge-ui-interaction-focus-visible"` | Ids the design corpus already owns, cited rather than minted. |
+| `ModernCssReportedId` | `ModernCssRuleId \| ModernCssCitedRuleId` | Any id a finding may be reported under. |
+| `ModernCssTier` | `"A" \| "B" \| "C"` | `A` is textual detection; `B` and `C` need rendered behaviour. |
+| `ModernCssRule` | see below | What the check knows about one rule beyond detecting it. |
+| `MODERN_CSS_RULES` | `Readonly<Record<ModernCssRuleId, ModernCssRule>>` | Every minted rule, keyed by id. |
+| `MODERN_CSS_CITED_RULES` | `Readonly<Record<ModernCssCitedRuleId, ModernCssRule>>` | Every cited rule, keyed by id. |
+| `modernCssRule` | `(id: ModernCssReportedId) => ModernCssRule` | The rule behind any reported id, from either catalog. |
 
 `ModernCssRule`:
 
-| Field         | Type               | Description                                                               |
-| ------------- | ------------------ | ------------------------------------------------------------------------- |
-| `tier`        | `ModernCssTier`    | How the rule is detected.                                                 |
-| `severity`    | `"fail" \| "warn"` | `fail` blocks the gate; `warn` survives a passing step.                   |
-| `corpus`      | `string`           | The corpus file that states the rule.                                     |
-| `replacement` | `string`           | The platform feature that replaces the pattern.                           |
-| `verify`      | `string`           | What has to be confirmed by hand before taking the replacement.           |
-| `enforcer`    | `RuleEnforcer?`    | Absent means `"gate"` — a detector in the check. Four rules are `"lint"`. |
+| Field | Type | Description |
+| --- | --- | --- |
+| `tier` | `ModernCssTier` | How the rule is detected. |
+| `severity` | `"fail" \| "warn"` | `fail` blocks the gate; `warn` survives a passing step. |
+| `corpus` | `string` | The corpus file that states the rule. |
+| `replacement` | `string` | The platform feature that replaces the pattern. |
+| `verify` | `string` | What has to be confirmed by hand before taking the replacement. |
+| `enforcer` | `RuleEnforcer?` | Absent means `"gate"` — a detector in the check. Four rules are `"lint"`. |
 
 A pattern the design corpus already names is reported under **the id it already has**, never under a
 second one minted here — a rule id is permanent and corpus-unique, which is what makes a suppression
@@ -231,5 +231,5 @@ in source, rather than the gate catching them in a stylesheet.
 
 - [`@y-core/forge/tooling/gate`](../gate/README.md) — `validate-design`, `validate-modern-css` and
   `validate-design-scale`, the three steps that read these catalogs.
-- [`UI_DESIGN_GUIDANCE.md`](../../../.decisions/implementation/UI_DESIGN_GUIDANCE.md) §3, §4 and §5
+- [`UI_DESIGN_GUIDANCE.md`](../../../docs/UI_DESIGN_GUIDANCE.md) §3, §4 and §5
   — the stable rule-id scheme, the anti-drift gate contract, and where a new design rule is written.

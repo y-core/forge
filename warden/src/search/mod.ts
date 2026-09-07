@@ -1,0 +1,15 @@
+export type { Hit, SearchOptions } from "./search";
+export { search } from "./search";
+export type { OutlineEntry, Section } from "./read";
+export { outline, readDocument, readSection } from "./read";
+export type { Related } from "./related";
+export { related, unresolved } from "./related";
+export { ALIASES, aliasTerms } from "./aliases";
+export { matchExpression, terms } from "./query";
+export type { Knowledge } from "../index/open";
+export { openIndex, rebuild } from "../index/open";
+export type { BuildReport } from "../index/build";
+export { build, load } from "../index/build";
+export { gateIndexPath, indexPath, openDatabase } from "../index/db";
+export type { Freshness } from "../index/freshness";
+export { advisory, freshness } from "../index/freshness";

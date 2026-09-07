@@ -6,11 +6,11 @@ cited below are not.
 Forge splits navigation into two configuration-driven chrome components and one in-page primitive,
 and the split is by _what the control does_, not by where it sits.
 
-| Given                                        | Choose    | Subpath                   |
-| -------------------------------------------- | --------- | ------------------------- |
-| Destinations — places the user can go        | `Navbar`  | `@y-core/forge/ui/chrome` |
+| Given | Choose | Subpath |
+| --- | --- | --- |
+| Destinations — places the user can go | `Navbar` | `@y-core/forge/ui/chrome` |
 | Verbs — actions on the object currently open | `Toolbar` | `@y-core/forge/ui/chrome` |
-| Peer views of one object already loaded      | `Tabs`    | `@y-core/forge/ui/core`   |
+| Peer views of one object already loaded | `Tabs` | `@y-core/forge/ui/core` |
 
 Note that `Toolbar` is exported by both `@y-core/forge/ui/chrome` (the configuration-driven rail) and
 `@y-core/forge/ui/core` (the `role="toolbar"` primitive the rail is built from). The one-barrel rule
@@ -23,12 +23,12 @@ in `06-forms.md` applies to the pair — `forge-ui-form-one-barrel`.
 `Navbar` is built from a `NavDefinition`, not from JSX children: `NavDefinition` holds `sections`,
 and each `NavSection` holds `items`, typed `NavSectionItem` — any `NavItem`, plus `NavGroup`.
 
-| Shape      | Fields                         | Use for                                                                      |
-| ---------- | ------------------------------ | ---------------------------------------------------------------------------- |
-| `NavLink`  | `label`, `href`, `filters?`    | A destination. `href` is a route-map **key**, resolved through `resolveHref` |
-| `NavMenu`  | `label`, `items`, `filters?`   | A group of destinations behind one trigger                                   |
-| `NavSlot`  | `slot`, `label?`, `filters?`   | Anything that is not a destination — identity, a search box, a `ThemeToggle` |
-| `NavGroup` | `heading`, `group`, `filters?` | A heading over destinations that stay **visible**. Section level only        |
+| Shape | Fields | Use for |
+| --- | --- | --- |
+| `NavLink` | `label`, `href`, `filters?` | A destination. `href` is a route-map **key**, resolved through `resolveHref` |
+| `NavMenu` | `label`, `items`, `filters?` | A group of destinations behind one trigger |
+| `NavSlot` | `slot`, `label?`, `filters?` | Anything that is not a destination — identity, a search box, a `ThemeToggle` |
+| `NavGroup` | `heading`, `group`, `filters?` | A heading over destinations that stay **visible**. Section level only |
 
 `resolveHref` takes a route-map **key** and returns a URL, and nothing requires that URL to be a
 route: an in-page navigation resolves each key to a fragment, which is what lets one `Navbar` serve
@@ -355,12 +355,12 @@ paging; a strip with no stable slides is a feed and wants no dots.
 `Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden`, so the first render is
 correct with no JavaScript.
 
-| Given                                                | Choose                                      |
-| ---------------------------------------------------- | ------------------------------------------- |
-| Peer views of one object, all already rendered       | `Tabs`                                      |
-| Views the user should be able to link to or bookmark | links, not `Tabs`                           |
-| Views that each need a fetch                         | links, or `Tabs` with `activation="manual"` |
-| Steps in an order the user must follow               | neither — a sequence, not a tab set         |
+| Given | Choose |
+| --- | --- |
+| Peer views of one object, all already rendered | `Tabs` |
+| Views the user should be able to link to or bookmark | links, not `Tabs` |
+| Views that each need a fetch | links, or `Tabs` with `activation="manual"` |
+| Steps in an order the user must follow | neither — a sequence, not a tab set |
 
 **Default: `Tabs` only when every panel's content is already on the page.**
 <!-- rule:forge-ui-nav-tabs-loaded -->
@@ -382,13 +382,13 @@ case; this is the one that shows up most.
 
 `@y-core/forge/ui/chrome` publishes the theme contract as constants so that no consumer restates it:
 
-| Constant            | Value                     | What it names                                   |
-| ------------------- | ------------------------- | ----------------------------------------------- |
-| `THEME_STORAGE_KEY` | `"themePreference"`       | The `localStorage` key                          |
-| `THEME_ATTR`        | `"data-theme-preference"` | The `<html>` attribute recording the preference |
-| `DARK_CLASS`        | `"dark"`                  | The class `<html>` carries when dark is active  |
-| `DEFAULT_PREF`      | `"system"`                | The server-side default, resolved client-side   |
-| `FOUC_SCRIPT`       | inline script             | Sets both before first paint                    |
+| Constant | Value | What it names |
+| --- | --- | --- |
+| `THEME_STORAGE_KEY` | `"themePreference"` | The `localStorage` key |
+| `THEME_ATTR` | `"data-theme-preference"` | The `<html>` attribute recording the preference |
+| `DARK_CLASS` | `"dark"` | The class `<html>` carries when dark is active |
+| `DEFAULT_PREF` | `"system"` | The server-side default, resolved client-side |
+| `FOUC_SCRIPT` | inline script | Sets both before first paint |
 
 **Default: embed `FOUC_SCRIPT` in a nonce'd `<script>` in the `<head>`.**
 <!-- rule:forge-ui-nav-fouc-script -->

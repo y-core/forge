@@ -10,6 +10,8 @@ declare type Buffer = Uint8Array;
 interface NodeStdioStream {
   readonly isTTY?: boolean;
   readonly columns?: number;
+  // `warden show` writes a payload with no trailing newline, which `console.log` cannot express.
+  write(data: string): boolean;
 }
 
 declare module "node:process" {
@@ -94,6 +96,7 @@ declare module "node:fs" {
   export function writeFileSync(path: string, data: string, options: { encoding: "utf-8"; mode: number }): void;
   export function existsSync(path: string | URL): boolean;
   export function chmodSync(path: string, mode: number): void;
+  export function utimesSync(path: string, atime: Date | number, mtime: Date | number): void;
   export interface Stats {
     mode: number;
     size: number;
@@ -158,4 +161,5 @@ declare module "node:crypto" {
 
 declare module "node:os" {
   export function tmpdir(): string;
+  export function homedir(): string;
 }

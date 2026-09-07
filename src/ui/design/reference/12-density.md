@@ -4,13 +4,13 @@ Three dials describe how a forge surface is tuned, each on a 1–10 scale. They 
 presets — each one cashes out in specific class choices and specific component choices, and the
 whole point of naming them is that a brief can move one without moving the other two.
 
-| Dial     | What it sets                                                               | Forge's app-UI default |
-| -------- | -------------------------------------------------------------------------- | ---------------------- |
-| Density  | How much information occupies a given area, and how tight the spacing runs | **5**                  |
-| Variance | How far a surface departs from the plainest arrangement that works         | **4**                  |
-| Motion   | How much movement the interface carries                                    | **3**                  |
+| Dial | What it sets | Forge's app-UI default |
+| --- | --- | --- |
+| Density | How much information occupies a given area, and how tight the spacing runs | **5** |
+| Variance | How far a surface departs from the plainest arrangement that works | **4** |
+| Motion | How much movement the interface carries | **3** |
 
-Those defaults are ratified in `.decisions/implementation/UI_DESIGN_GUIDANCE.md` §8, and they are deliberately
+Those defaults are ratified in `docs/UI_DESIGN_GUIDANCE.md` §8, and they are deliberately
 restrained because forge's primary target is product and app UI — surfaces a user sees many times a
 day, having arrived to finish a task. Variance costs recognition there, and motion costs time.
 
@@ -23,18 +23,18 @@ Most briefs do not name a number. They name a surface, and the surface implies t
 signal, take the setting, and say in one line which signal you read — a reviewer who disagrees with
 the output usually disagrees with this inference rather than with the markup.
 
-| Signal in the brief or surrounding code | Density | Variance | Motion | What follows                                                                                                |
-| --------------------------------------- | ------- | -------- | ------ | ----------------------------------------------------------------------------------------------------------- |
-| A data table, or a log viewer           | 8       | 2        | 1      | Rows are scanned, not read. `sm` controls, `Separator` between rows, `tabular-nums` on every numeric column |
-| An admin console                        | 7       | 3        | 2      | Dense but navigable — `Tabs` over stacked sections, one `Card` per region rather than per item              |
-| A dashboard someone watches all day     | 7       | 3        | 2      | Values dominate; chrome recedes to `--muted-foreground`. No decorative `Badge`                              |
-| A settings page                         | 5       | 4        | 3      | Forge's default. `Field` rows inside `Card.Content`, grouped by `Separator`                                 |
-| A form of more than four fields         | 4       | 3        | 2      | Looser than default — vertical rhythm is what makes a long form finishable                                  |
-| A first-run or onboarding wizard        | 3       | 6        | 5      | Seen once, so variance earns its cost. One idea per step, generous `gap-*`                                  |
-| An empty or first-load state            | 3       | 5        | 3      | Space is the message. See `forge-ui-empty-state`                                                            |
-| A public landing page                   | 3       | 7        | 5      | See `13-marketing.md`; still requires a brief                                                               |
-| A mobile-first surface                  | 4       | 3        | 2      | Density drops because targets cannot — see the Floor paragraph below                                        |
-| A surface with no stated audience       | 5       | 4        | 3      | Take the default and ask, rather than guessing high                                                         |
+| Signal in the brief or surrounding code | Density | Variance | Motion | What follows |
+| --- | --- | --- | --- | --- |
+| A data table, or a log viewer | 8 | 2 | 1 | Rows are scanned, not read. `sm` controls, `Separator` between rows, `tabular-nums` on every numeric column |
+| An admin console | 7 | 3 | 2 | Dense but navigable — `Tabs` over stacked sections, one `Card` per region rather than per item |
+| A dashboard someone watches all day | 7 | 3 | 2 | Values dominate; chrome recedes to `--muted-foreground`. No decorative `Badge` |
+| A settings page | 5 | 4 | 3 | Forge's default. `Field` rows inside `Card.Content`, grouped by `Separator` |
+| A form of more than four fields | 4 | 3 | 2 | Looser than default — vertical rhythm is what makes a long form finishable |
+| A first-run or onboarding wizard | 3 | 6 | 5 | Seen once, so variance earns its cost. One idea per step, generous `gap-*` |
+| An empty or first-load state | 3 | 5 | 3 | Space is the message. See `forge-ui-empty-state` |
+| A public landing page | 3 | 7 | 5 | See `13-marketing.md`; still requires a brief |
+| A mobile-first surface | 4 | 3 | 2 | Density drops because targets cannot — see the Floor paragraph below |
+| A surface with no stated audience | 5 | 4 | 3 | Take the default and ask, rather than guessing high |
 
 Default: dial settings are inferred from the strongest signal in the brief using the table above,
 and the inference is stated in one line alongside the Design Read, unless the brief names the
@@ -61,10 +61,10 @@ so the pyramid in `01-hierarchy.md` survives the compression. <!-- rule:forge-ui
 is Floor and an arbitrary value is not a density decision.
 
 | Density | Between rows | Between groups | Section padding |
-| ------- | ------------ | -------------- | --------------- |
-| 3       | `gap-6`      | `gap-10`       | `p-8`           |
-| 5       | `gap-4`      | `gap-6`        | `p-6`           |
-| 8       | `gap-2`      | `gap-4`        | `p-3`           |
+| --- | --- | --- | --- |
+| 3 | `gap-6` | `gap-10` | `p-8` |
+| 5 | `gap-4` | `gap-6` | `p-6` |
+| 8 | `gap-2` | `gap-4` | `p-3` |
 
 Default: raised density selects a lower step on Tailwind's spacing scale — `gap-2` in place of
 `gap-4` — and never an arbitrary value, unless a forge component's own class needs overriding, in

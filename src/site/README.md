@@ -7,7 +7,7 @@ Cloudflare WAF allow-list are all **derived** from it rather than hand-maintaine
 Every function here is a pure string or data transform — no `fs`, no `fetch`. The same code serves
 a build step, a Worker route, or a CLI.
 
-```typescript
+```ts
 import { defineSiteConfig, renderRobotsTxt, renderSitemapXml } from "@y-core/forge/site";
 ```
 
@@ -36,7 +36,7 @@ import { defineSiteConfig, renderRobotsTxt, renderSitemapXml } from "@y-core/for
 
 ### Author a site config
 
-```typescript
+```ts
 import { routePaths } from "@y-core/forge/router";
 import { defineSiteConfig } from "@y-core/forge/site";
 import { routes } from "../src/routes";
@@ -53,7 +53,7 @@ export default defineSiteConfig({
 
 ### Render the two files
 
-```typescript
+```ts
 import { renderRobotsTxt, renderSitemapXml, resolveSiteConfig } from "@y-core/forge/site";
 
 const config = resolveSiteConfig(siteConfig);
@@ -66,7 +66,7 @@ In practice a consumer does not call these directly: the `site` block of an asse
 
 ### Build the zone rules
 
-```typescript
+```ts
 import { buildAllowRule, buildRedirectRule } from "@y-core/forge/site";
 
 const rule = buildAllowRule(

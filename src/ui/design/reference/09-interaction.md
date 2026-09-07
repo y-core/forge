@@ -153,13 +153,13 @@ convenience is how a reader ends up staring at a greyed button with no way to le
 a whole _subtree_ is a fourth thing and belongs to `forge-ui-platform-inert` in
 [`16-platform.md`](./16-platform.md).
 
-| The situation                                                                            | Use                                                         | What the reader learns                           |
-| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
-| The action is unavailable _right now_, and something the reader can do would change that | enabled control + inline explanation, or `Alert` on attempt | what to do next                                  |
-| The action is unavailable and nothing the reader does changes it in this view            | `disabled` + adjacent text                                  | that it exists, and that it is not for them here |
-| The value is real and worth reading, but not editable                                    | `readonly` on the control                                   | the value, and that it is settled                |
-| The reader has no permission for this capability at all                                  | omit it                                                     | nothing — correctly                              |
-| The control is mid-flight on a request                                                   | `hx-disabled-elt` (see [`11-htmx.md`](./11-htmx.md))        | that the request is running                      |
+| The situation | Use | What the reader learns |
+| --- | --- | --- |
+| The action is unavailable _right now_, and something the reader can do would change that | enabled control + inline explanation, or `Alert` on attempt | what to do next |
+| The action is unavailable and nothing the reader does changes it in this view | `disabled` + adjacent text | that it exists, and that it is not for them here |
+| The value is real and worth reading, but not editable | `readonly` on the control | the value, and that it is settled |
+| The reader has no permission for this capability at all | omit it | nothing — correctly |
+| The control is mid-flight on a request | `hx-disabled-elt` (see [`11-htmx.md`](./11-htmx.md)) | that the request is running |
 
 Default: prefer an enabled control that explains its refusal over a disabled one that does not —
 unless the reason is visible within one glance of the control. <!-- rule:forge-ui-interaction-disabled-last -->
@@ -186,7 +186,7 @@ revealed by `focus-within`.
 
 ## Motion
 
-Forge's ratified motion dial is 3 of 10 ([`UI_DESIGN_GUIDANCE.md`](../../../../.decisions/implementation/UI_DESIGN_GUIDANCE.md) §8).
+Forge's ratified motion dial is 3 of 10 ([`UI_DESIGN_GUIDANCE.md`](../../../../docs/UI_DESIGN_GUIDANCE.md) §8).
 That setting is what the rules below encode: movement that reads as the interface _responding_, and
 never as the interface performing.
 

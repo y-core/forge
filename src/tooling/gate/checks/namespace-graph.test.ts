@@ -4,7 +4,7 @@ import { fail } from "../finding";
 import { checkNamespaceGraph, resolveNamespaces, validateNoEnumeration, validateNoMutualValuePairs } from "./namespace-graph";
 import type { EdgeKind } from "./namespace-graph-parse";
 
-const DOC = ".decisions/implementation/NAMESPACES.md";
+const DOC = "docs/NAMESPACES.md";
 
 describe("resolveNamespaces() — the namespace set is derived, never listed", () => {
   it("takes the directory of every mod.ts the exports map names", () => {

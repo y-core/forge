@@ -2,11 +2,9 @@ import {
   assetManifestStep,
   assetRootStep,
   browserStep,
-  changelogStep,
   classOrderStep,
   classTokensStep,
   cssTokensStep,
-  docsStep,
   exportsStep,
   formatStep,
   jsxStep,
@@ -15,9 +13,7 @@ import {
   testStep,
   typecheckStep,
 } from "./builders";
-import type { ChangelogCheckConfig } from "./checks/changelog";
 import type { ClassOrderCheckConfig } from "./checks/class-order";
-import type { DocsCheckConfig } from "./checks/docs";
 import type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
 import type { JsxCheckConfig } from "./checks/jsx";
 import type { DeferredFinding } from "./checks/modern-css-deferred";
@@ -53,8 +49,8 @@ export interface CloudflareWorkerStepOptions {
   wranglerTypes?: boolean;
   /** `--config` for the bindings invocation; the runtime invocation takes none. */
   workerConfig?: string;
-  /** Whether to check `.decisions/governance/` against the pinned corpus. Defaults to `false`. */
-  governance?: boolean;
+  /** Whether to check the synced `.claude/` trees against the installed corpus. Defaults to `false`. */
+  warden?: boolean;
   /** Application root, needed by the asset-root and design checks. Defaults to `process.cwd()`. */
   root?: string;
   /** Whether to emit the `full`-tier `test:browser` step. Defaults to `false`. */
@@ -95,10 +91,10 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   steps.push(typecheckStep(), lintStep({ sources }), formatStep({ sources }));
 
-  // Opt-in: the step runs `gov` from `@y-core/governance`, which is absent in an app that does not
-  // clone the corpus.
-  if (options.governance) {
-    steps.push({ label: "governance", tail: 20, cmd: ["gov", "sync", "--check"], fix: ["gov", "sync"] });
+  // Opt-in: the step runs `warden`, which an app that does not clone the `.claude/` trees has no
+  // reason to run even though forge ships it.
+  if (options.warden) {
+    steps.push({ label: "warden", tail: 20, cmd: ["warden", "sync", "--check"], fix: ["warden", "sync"] });
   }
 
   // Opt-in: an app that uses forge for routing but not `ui/*` gets no rows and needs no
@@ -151,17 +147,15 @@ export interface LibraryStepOptions {
   tests?: readonly string[];
   /** Merged over the exports config derived from `pkg`. */
   exports?: Omit<Partial<ExportsCheckConfig>, "root">;
-  /** Merged over the docs config derived from `pkg`. */
-  docs?: Omit<Partial<DocsCheckConfig>, "root">;
   /** Merged over the jsx config derived from `root`. */
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
-  /** Merged over the changelog config derived from `pkg`. */
-  changelog?: Omit<Partial<ChangelogCheckConfig>, "root">;
   /** Merged over the class-order config derived from `root`; `sources` defaults to `["src"]`. */
   classOrder?: Omit<Partial<ClassOrderCheckConfig>, "root">;
 }
 
-/** The baseline table for a library published under an `exports` map, in execution order. @public */
+/** The baseline table for a library published under an `exports` map, in execution order.
+ *  The documentation and changelog rows are warden's — add `docsStep` and `changelogStep` from
+ *  `@y-core/forge/warden` to this table; they cannot be emitted here without `src` importing warden. @public */
 export function forgeChecks(options: LibraryStepOptions): readonly Step[] {
   const { root, pkg } = options;
   const derived = { root, packageName: pkg.name, exports: pkg.exports };
@@ -173,8 +167,6 @@ export function forgeChecks(options: LibraryStepOptions): readonly Step[] {
     testStep({ sources: options.tests ?? [] }),
     exportsStep({ ...derived, files: pkg.files, ...options.exports }),
     jsxStep({ root, ...options.jsx }),
-    docsStep({ ...derived, ...options.docs }),
-    changelogStep({ root, packageVersion: pkg.version, ...options.changelog }),
     classOrderStep({ root, sources: ["src"], ...options.classOrder }),
   ];
 }

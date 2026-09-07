@@ -7,7 +7,7 @@
   // The committed bundle of that same plugin, which a consumer's oxlint loads instead. `validate-lint-plugin`
   // holds it against the source; linting or formatting it would be judging esbuild's output.
   "ignorePatterns": ["src/tooling/lint/plugin.mjs"],
-  // `suspicious` stays off — see .decisions/implementation/CODE_REVIEW.md
+  // `suspicious` stays off — see docs/CODE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {
     // AST-anchored, and it covers every rule rather than only `design-allow`. `lint:types` already
@@ -15,10 +15,10 @@
     // there; this states the other half — a live suppression says why it is one.
     "forge/suppression-needs-reason": "error",
     // The JSX contract's ordering half, moved off `validate-jsx`'s tag-frame scanner and onto the
-    // AST; `.decisions/implementation/STATE_ATTRIBUTES.md` states the rule.
+    // AST; `docs/STATE_ATTRIBUTES.md` states the rule.
     "forge/data-slot-before-spread": "error",
     // The design corpus's class-string rules, read off the AST rather than line by line. Their ids
-    // are `forge-ui-` + the key here; `.decisions/implementation/UI_DESIGN_GUIDANCE.md` states them
+    // are `forge-ui-` + the key here; `docs/UI_DESIGN_GUIDANCE.md` states them
     // and `validate-design` fails when this list and `design-rules.ts`'s register disagree.
     "forge/a11y-heading-size-by-class": "error",
     "forge/a11y-aria-beside-data": "error",
@@ -38,7 +38,7 @@
     "forge/platform-text-pretty": "error",
     "forge/reduced-motion": "error",
     "forge/spacing-scale-only": "error",
-    // `prefer-tag-over-role` off — its substitutions are wrong for forge's markup; see .decisions/implementation/CODE_REVIEW.md §7c
+    // `prefer-tag-over-role` off — its substitutions are wrong for forge's markup; see docs/CODE_REVIEW.md §7c
     "jsx-a11y/prefer-tag-over-role": "off",
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error",
@@ -140,7 +140,7 @@
     },
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],
-      // a test's job is to feed adversarial markup — see .decisions/governance/TESTING.md
+      // a test's job is to feed adversarial markup — see warden/canon/libs/TESTING.md
       "rules": {
         "typescript/no-non-null-assertion": "off",
         "forge/optional-prop-undefined": "off",

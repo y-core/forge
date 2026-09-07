@@ -239,20 +239,20 @@ describe("cloudflareWorkerSteps() — options", () => {
   });
 });
 
-describe("cloudflareWorkerSteps() — the governance step", () => {
+describe("cloudflareWorkerSteps() — the warden step", () => {
   // The argv is published contract: a sibling's gate invokes exactly these words.
-  it("emits `gov sync --check` after format, with the sync itself as its fixer", () => {
-    const steps = cloudflareWorkerSteps({ governance: true });
-    const governance = steps.find((step) => step.label === "governance");
+  it("emits `warden sync --check` after format, with the sync itself as its fixer", () => {
+    const steps = cloudflareWorkerSteps({ warden: true });
+    const warden = steps.find((step) => step.label === "warden");
 
-    expect(governance?.cmd).toEqual(["gov", "sync", "--check"]);
-    expect(fixerOf(governance)).toEqual(["gov", "sync"]);
-    expect(labelsOf(steps)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "format", "governance", "test"]);
+    expect(warden?.cmd).toEqual(["warden", "sync", "--check"]);
+    expect(fixerOf(warden)).toEqual(["warden", "sync"]);
+    expect(labelsOf(steps)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "format", "warden", "test"]);
   });
 
   it("omits the step entirely for an app that does not clone the corpus", () => {
-    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("governance");
-    expect(labelsOf(cloudflareWorkerSteps({ governance: false }))).not.toContain("governance");
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("warden");
+    expect(labelsOf(cloudflareWorkerSteps({ warden: false }))).not.toContain("warden");
   });
 });
 
@@ -276,16 +276,12 @@ describe("forgeChecks() — shape", () => {
       "test",
       "validate-exports",
       "validate-jsx",
-      "validate-docs",
-      "validate-changelog",
       "validate-class-order",
     ]);
   });
 
-  it("holds only the changelog back to the full tier, so every other step is a fast-run assurance", () => {
-    const held = forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.tier !== undefined);
-
-    expect(held.map((step) => [step.label, step.tier])).toEqual([["validate-changelog", "full"]]);
+  it("puts every step on the fast tier, so the whole preset is a fast-run assurance", () => {
+    expect(forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.tier !== undefined)).toEqual([]);
   });
 
   it("omits the checks carrying project-specific policy, which a table must name explicitly", () => {
@@ -318,11 +314,10 @@ describe("forgeChecks() — options", () => {
     expect(steps.find((step) => step.label === "test")?.cmd).toEqual(["bun", "test", "tests/"]);
   });
 
-  it("reads the changelog's expected version from pkg rather than taking one of its own", async () => {
-    const step = forgeChecks({ root: "/nowhere/forge-no-such-root", pkg: PKG }).find((s) => s.label === "validate-changelog");
+  it("emits no documentation or changelog row — warden owns both, and `src` may not import it", () => {
+    const labels = labelsOf(forgeChecks({ root: "/nowhere", pkg: PKG }));
 
-    expect(step !== undefined && isCheckStep(step)).toBe(true);
-    if (step === undefined || !isCheckStep(step)) return;
-    expect((await step.run("fast")).ok).toBe(false);
+    expect(labels).not.toContain("validate-docs");
+    expect(labels).not.toContain("validate-changelog");
   });
 });

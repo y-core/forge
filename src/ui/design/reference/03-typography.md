@@ -97,12 +97,12 @@ one much wider than 75 loses the return sweep.
 The larger the text, the less leading it needs, because the eye has less horizontal distance to
 travel back across relative to the letterforms.
 
-| Text                                            | Leading                           | Where forge already does this                 |
-| ----------------------------------------------- | --------------------------------- | --------------------------------------------- |
-| A large heading                                 | `leading-none` or `leading-tight` | `Card.Title` sets `leading-none`              |
-| A label or a compact line                       | `leading-snug`                    | `FIELD_LABEL_CLASSES` sets `leading-snug`     |
-| Body copy                                       | `leading-normal`                  | `FormField.Description` sets `leading-normal` |
-| A paragraph the user will actually read through | `leading-relaxed`                 | `Alert.Description` sets `leading-relaxed`    |
+| Text | Leading | Where forge already does this |
+| --- | --- | --- |
+| A large heading | `leading-none` or `leading-tight` | `Card.Title` sets `leading-none` |
+| A label or a compact line | `leading-snug` | `FIELD_LABEL_CLASSES` sets `leading-snug` |
+| Body copy | `leading-normal` | `FormField.Description` sets `leading-normal` |
+| A paragraph the user will actually read through | `leading-relaxed` | `Alert.Description` sets `leading-relaxed` |
 
 Default: leading tightens as size increases and loosens as size decreases, following the table
 above, unless the text sits in a fixed-height row where the line box must match a control's

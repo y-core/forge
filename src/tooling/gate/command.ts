@@ -160,8 +160,27 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         for (const step of steps) {
           // The fixer question comes first: a step with no fixer was never going to spawn, so probing
           // it would report a dependency this run does not need.
-          if (isCheckStep(step) || step.fix === undefined) {
+          if (step.fix === undefined) {
             unfixable++;
+            continue;
+          }
+          // An in-process fixer spawns nothing, so there is no requirement to probe and no captured
+          // output to excerpt: a throw is this step's failure, as it is for `run`.
+          if (isCheckStep(step)) {
+            const started = Date.now();
+            let thrown: string | undefined;
+            try {
+              await step.fix();
+            } catch (error) {
+              thrown = error instanceof Error ? error.message : String(error);
+            }
+            console.log(formatStepLine(`fix:${step.label}`, thrown === undefined, Date.now() - started, style));
+            if (thrown === undefined) {
+              fixed++;
+            } else {
+              console.log(`    ${thrown}`);
+              broke = true;
+            }
             continue;
           }
           const absent = absentRequirement(step);

@@ -33,7 +33,7 @@ describe("the state recipes reach a wrapped control through :has()", () => {
   }
 });
 
-// The admission test of UI_SSR_COMPONENTS.md §3h, read off the compiled artefact rather than argued
+// The admission test of UI_CLASS_COMPOSITION.md §1e, read off the compiled artefact rather than argued
 // from the source: a recipe's signature is honest only when it writes at the scope it claims.
 describe("the @utility recipes claim the scope they paint at", () => {
   const system = loadDesignSystem(resolve(ROOT, STYLESHEET));

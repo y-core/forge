@@ -167,10 +167,10 @@ against the underlying `Request` in a `WeakMap`, so calling it from CSRF middlew
 action handler parses the stream **once**. Bodies that exceed the budget reject with an `Error`
 carrying `{ status: 413 }`.
 
-| Parameter          | Type             | Description                                                            |
-| ------------------ | ---------------- | ---------------------------------------------------------------------- |
-| `context`          | `RequestContext` | The request context; `parseFormData` reads `context.request`.          |
-| `options.maxBytes` | `number`         | Max body size in bytes. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `context` | `RequestContext` | The request context; `parseFormData` reads `context.request`. |
+| `options.maxBytes` | `number` | Max body size in bytes. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). |
 
 The cap is enforced two ways: a `Content-Length` fast-path that rejects before reading the body, and a
 streaming counting transform that errors once the running byte total exceeds `maxBytes` — so a request
@@ -192,10 +192,10 @@ Converts a parsed form into a plain object a schema can validate, carrying every
 sent. This is what `defineAction` uses internally; call it directly only for a handler outside that
 pipeline.
 
-| Parameter      | Type                  | Default | Description                                                                                                                                                          |
-| -------------- | --------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `formData`     | `ReadonlyFormData`    | —       | The parsed body, from `parseFormData`.                                                                                                                               |
-| `options.drop` | `ReadonlySet<string>` | —       | Field names to leave out. Use it for fields a guard already consumed — a CSRF token, a decoy, a CAPTCHA token — since a strict schema has no reason to declare them. |
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `formData` | `ReadonlyFormData` | — | The parsed body, from `parseFormData`. |
+| `options.drop` | `ReadonlySet<string>` | — | Field names to leave out. Use it for fields a guard already consumed — a CSRF token, a decoy, a CAPTCHA token — since a strict schema has no reason to declare them. |
 
 Four properties are load-bearing, and each is why a named-field reader could not do this job:
 
@@ -212,7 +212,7 @@ Four properties are load-bearing, and each is why a named-field reader could not
 Text normalization is deliberately **not** done here — it belongs to the schema, via `formText()`,
 `formMultilineText()` and `formDigits()` for a control whose separators are cosmetic, all from
 `@y-core/forge/validation`. See
-[`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1d for the four reasons.
+[`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1d for the four reasons.
 
 ### CSRF middleware — `csrfProtection`
 
@@ -231,13 +231,13 @@ interface CsrfProtectionOptions {
 `CsrfProtectionOptions` is a named, exported type — import it to type a guard defined outside the
 `csrfProtection(...)` call.
 
-| Parameter    | Type                | Default                           | Description                                                                                                                                                                                           |
-| ------------ | ------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `secret`     | resolver            | —                                 | Returns the signing key or key ring. Invoked once per distinct `context.env` object and cached against it (`WeakMap`), so the key imports once per isolate.                                           |
-| `tokenField` | `string`            | `CSRF_FIELD_DEFAULT` (`"_csrf"`)  | Hidden-input field name the token is read from on mutations.                                                                                                                                          |
-| `headerName` | `string`            | `"X-CSRF-Token"`                  | Request header checked for the token before the form body.                                                                                                                                            |
-| `subject`    | resolver \| `false` | —                                 | **Required.** A resolver binding the token to a session/user identifier so a token minted for one subject cannot be used by another, or the literal `false` to opt into a deliberate path-only token. |
-| `maxBytes`   | `number`            | `FORM_MAX_BYTES_DEFAULT` (100 KB) | Body-size cap for the token lookup's form parse. The guard parses the body first, so a route that raises its handler's cap must raise this one to match.                                              |
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `secret` | resolver | — | Returns the signing key or key ring. Invoked once per distinct `context.env` object and cached against it (`WeakMap`), so the key imports once per isolate. |
+| `tokenField` | `string` | `CSRF_FIELD_DEFAULT` (`"_csrf"`) | Hidden-input field name the token is read from on mutations. |
+| `headerName` | `string` | `"X-CSRF-Token"` | Request header checked for the token before the form body. |
+| `subject` | resolver \| `false` | — | **Required.** A resolver binding the token to a session/user identifier so a token minted for one subject cannot be used by another, or the literal `false` to opt into a deliberate path-only token. |
+| `maxBytes` | `number` | `FORM_MAX_BYTES_DEFAULT` (100 KB) | Body-size cap for the token lookup's form parse. The guard parses the body first, so a route that raises its handler's cap must raise this one to match. |
 
 Behaviour by method:
 
@@ -294,7 +294,7 @@ guard ran on: the `GET` that mints, the mutation that passes, and the mutation i
 guard ran on this request, so nothing consumed the field and nothing should be dropped for it. That is
 the whole contract a downstream reader needs, which is why the accessor lives apart from `csrf.ts` —
 importing it pulls in no token implementation and no Web Crypto work. See
-[`ROUTING_AND_MIDDLEWARE.md`](../../.decisions/implementation/ROUTING_AND_MIDDLEWARE.md) §2b for the derive-only rule
+[`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §2b for the derive-only rule
 built on it.
 
 ### Mint for another path — `mintCsrf`
@@ -307,10 +307,10 @@ Mints a CSRF token bound to `path` using the minter installed by `csrfProtection
 **required** — a token must declare the action path it authorizes. Throws if `path` is missing/empty,
 or if no minter is on the context (i.e. `csrfProtection` is not mounted on the route).
 
-| Parameter | Type             | Description                                                          |
-| --------- | ---------------- | -------------------------------------------------------------------- |
-| `context` | `RequestContext` | A context that ran through `csrfProtection`.                         |
-| `path`    | `string`         | The action path the minted token authorizes (e.g. `"/api/contact"`). |
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `context` | `RequestContext` | A context that ran through `csrfProtection`. |
+| `path` | `string` | The action path the minted token authorizes (e.g. `"/api/contact"`). |
 
 ### CSRF token primitives — `importCsrfKey`, `importCsrfKeyRing`, `createCsrfToken`, `verifyCsrfToken`
 
@@ -337,15 +337,15 @@ A token embeds `kid | path | subject | timestamp | nonce`, base64url-encoded and
 default 1 hour — and future timestamps beyond a 30s clock-skew window), `path` match, optional
 `subject` match, key lookup by `kid`, and finally the signature.
 
-| `createCsrfToken` option (`CsrfTokenOptions`) | Type     | Description                                                             |
-| --------------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| `kid`                                         | `string` | Key id embedded in the token; selects the verification key from a ring. |
-| `subject`                                     | `string` | Session/user identifier bound to the token.                             |
+| `createCsrfToken` option (`CsrfTokenOptions`) | Type | Description |
+| --- | --- | --- |
+| `kid` | `string` | Key id embedded in the token; selects the verification key from a ring. |
+| `subject` | `string` | Session/user identifier bound to the token. |
 
-| `verifyCsrfToken` option (`CsrfVerifyOptions`) | Type     | Description                                                                  |
-| ---------------------------------------------- | -------- | ---------------------------------------------------------------------------- |
-| `maxAgeMs`                                     | `number` | Max token age in ms before it is treated as `expired` (default `3_600_000`). |
-| `subject`                                      | `string` | When set, the token's subject must match exactly, else `subject-mismatch`.   |
+| `verifyCsrfToken` option (`CsrfVerifyOptions`) | Type | Description |
+| --- | --- | --- |
+| `maxAgeMs` | `number` | Max token age in ms before it is treated as `expired` (default `3_600_000`). |
+| `subject` | `string` | When set, the token's subject must match exactly, else `subject-mismatch`. |
 
 The fourth argument is always the `CsrfVerifyOptions` object — pass `{ maxAgeMs }` to set the
 freshness window. There is no bare-`number` shorthand.
@@ -371,10 +371,10 @@ function isHoneypotFilled(formData: ReadonlyFormData, field?: string): boolean;
 Returns `true` when the honeypot field has content — a signal the submitter is a bot, since the field
 is hidden from human users. Returns `false` when the field is absent, empty, or whitespace-only — a lone space from an extension or an autofill pass is not evidence of a bot.
 
-| Parameter  | Type               | Default                                | Description                      |
-| ---------- | ------------------ | -------------------------------------- | -------------------------------- |
-| `formData` | `ReadonlyFormData` | —                                      | Parsed form data.                |
-| `field`    | `string`           | `HONEYPOT_FIELD_DEFAULT` (`"__hp_c7"`) | The decoy field name to inspect. |
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `formData` | `ReadonlyFormData` | — | Parsed form data. |
+| `field` | `string` | `HONEYPOT_FIELD_DEFAULT` (`"__hp_c7"`) | The decoy field name to inspect. |
 
 **A `defineAction` route does not call this.** It names `honeypot: CONTACT_DECOY`, and the pipeline
 runs the check before the schema and drops the field because it checked it — so the schema never has
@@ -442,16 +442,16 @@ route is defined, because the field is dropped whether or not verification ever 
 while `secretKey` and `verify` resolve per request — a secret lives in a binding, and the hostname a
 token must have been minted on is usually the request's own.
 
-| Parameter                  | Type               | Default                   | Description                                                                                                           |
-| -------------------------- | ------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `formData`                 | `ReadonlyFormData` | —                         | Parsed form data carrying the Turnstile response.                                                                     |
-| `secretKey`                | `string`           | —                         | The Turnstile **secret** key (server-side; never the site key).                                                       |
-| `options.expectedHostname` | `string`           | —                         | **Required.** The siteverify hostname must match exactly, else `hostname-mismatch`. Prevents cross-site token replay. |
-| `options.expectedAction`   | `string`           | —                         | When set, the verified action must match, else `action-mismatch`.                                                     |
-| `options.expectedCData`    | `string`           | —                         | When set, the verified cdata must match, else `cdata-mismatch`.                                                       |
-| `options.tokenField`       | `string`           | `TURNSTILE_FIELD_DEFAULT` | Form field holding the Turnstile response token — the field Cloudflare's widget writes.                               |
-| `options.remoteIp`         | `string`           | —                         | Client IP forwarded to siteverify (e.g. the `CF-Connecting-IP` header).                                               |
-| `options.timeoutMs`        | `number`           | `5000`                    | Request timeout; clamped to a 1 ms minimum. A timed-out request returns `timeout`.                                    |
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `formData` | `ReadonlyFormData` | — | Parsed form data carrying the Turnstile response. |
+| `secretKey` | `string` | — | The Turnstile **secret** key (server-side; never the site key). |
+| `options.expectedHostname` | `string` | — | **Required.** The siteverify hostname must match exactly, else `hostname-mismatch`. Prevents cross-site token replay. |
+| `options.expectedAction` | `string` | — | When set, the verified action must match, else `action-mismatch`. |
+| `options.expectedCData` | `string` | — | When set, the verified cdata must match, else `cdata-mismatch`. |
+| `options.tokenField` | `string` | `TURNSTILE_FIELD_DEFAULT` | Form field holding the Turnstile response token — the field Cloudflare's widget writes. |
+| `options.remoteIp` | `string` | — | Client IP forwarded to siteverify (e.g. the `CF-Connecting-IP` header). |
+| `options.timeoutMs` | `number` | `5000` | Request timeout; clamped to a 1 ms minimum. A timed-out request returns `timeout`. |
 
 ```ts
 const result = await verifyTurnstile(formData, env.TURNSTILE_SECRET_KEY, {
@@ -472,30 +472,30 @@ if (!result.ok) {
 
 ### Constants & config
 
-| Export                    | Value                     | Description                                                                 |
-| ------------------------- | ------------------------- | --------------------------------------------------------------------------- |
-| `CSRF_FIELD_DEFAULT`      | `"_csrf"`                 | Default CSRF hidden-input field name.                                       |
-| `HONEYPOT_FIELD_DEFAULT`  | `"__hp_c7"`               | Default honeypot field name. Prefer an app-owned name — this one is public. |
-| `TURNSTILE_FIELD_DEFAULT` | `"cf-turnstile-response"` | The field Cloudflare's Turnstile widget writes its token into.              |
-| `FORM_MAX_BYTES_DEFAULT`  | `102400`                  | Default max form body size (100 KB).                                        |
-| `CsrfConfigSchema`        | valibot schema            | Validates `{ secret }` as ≥32 hex characters.                               |
-| `TurnstileConfigSchema`   | valibot schema            | Validates `{ secretKey, siteKey }`.                                         |
+| Export | Value | Description |
+| --- | --- | --- |
+| `CSRF_FIELD_DEFAULT` | `"_csrf"` | Default CSRF hidden-input field name. |
+| `HONEYPOT_FIELD_DEFAULT` | `"__hp_c7"` | Default honeypot field name. Prefer an app-owned name — this one is public. |
+| `TURNSTILE_FIELD_DEFAULT` | `"cf-turnstile-response"` | The field Cloudflare's Turnstile widget writes its token into. |
+| `FORM_MAX_BYTES_DEFAULT` | `102400` | Default max form body size (100 KB). |
+| `CsrfConfigSchema` | valibot schema | Validates `{ secret }` as ≥32 hex characters. |
+| `TurnstileConfigSchema` | valibot schema | Validates `{ secretKey, siteKey }`. |
 
 ### Types
 
-| Type                     | Description                                                                                                                                        |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ReadonlyFormData`       | Read-only `FormData` view (`get`/`getAll`/`has`/iteration); what `parseFormData` resolves to and what every consumer of a parsed body accepts.     |
-| `ParseFormDataOptions`   | `{ maxBytes? }` for `parseFormData`.                                                                                                               |
-| `FormToObjectOptions`    | `{ drop? }` for `formToObject` — the field names a guard already consumed.                                                                         |
-| `CsrfKeyRing`            | `{ activeKeyId, keys }` — active signing key plus all keys valid for verification.                                                                 |
-| `CsrfSecretResolver`     | `(context) => CryptoKey \| CsrfKeyRing \| Promise<…>`.                                                                                             |
-| `CsrfProtectionOptions`  | `{ secret, tokenField?, headerName?, subject, maxBytes? }` — the `csrfProtection` middleware options (`subject` is required: resolver or `false`). |
-| `CsrfTokenOptions`       | `{ kid?, subject? }` for `createCsrfToken`.                                                                                                        |
-| `CsrfVerifyOptions`      | `{ maxAgeMs?, subject? }` for `verifyCsrfToken`.                                                                                                   |
-| `CsrfResult`             | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. See Security below.                             |
-| `TurnstileVerifyOptions` | `{ expectedHostname, expectedAction?, expectedCData?, tokenField?, remoteIp?, timeoutMs? }`.                                                       |
-| `TurnstileResult`        | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`.                                                 |
+| Type | Description |
+| --- | --- |
+| `ReadonlyFormData` | Read-only `FormData` view (`get`/`getAll`/`has`/iteration); what `parseFormData` resolves to and what every consumer of a parsed body accepts. |
+| `ParseFormDataOptions` | `{ maxBytes? }` for `parseFormData`. |
+| `FormToObjectOptions` | `{ drop? }` for `formToObject` — the field names a guard already consumed. |
+| `CsrfKeyRing` | `{ activeKeyId, keys }` — active signing key plus all keys valid for verification. |
+| `CsrfSecretResolver` | `(context) => CryptoKey \| CsrfKeyRing \| Promise<…>`. |
+| `CsrfProtectionOptions` | `{ secret, tokenField?, headerName?, subject, maxBytes? }` — the `csrfProtection` middleware options (`subject` is required: resolver or `false`). |
+| `CsrfTokenOptions` | `{ kid?, subject? }` for `createCsrfToken`. |
+| `CsrfVerifyOptions` | `{ maxAgeMs?, subject? }` for `verifyCsrfToken`. |
+| `CsrfResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. See Security below. |
+| `TurnstileVerifyOptions` | `{ expectedHostname, expectedAction?, expectedCData?, tokenField?, remoteIp?, timeoutMs? }`. |
+| `TurnstileResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. |
 
 ---
 
@@ -507,9 +507,9 @@ if (!result.ok) {
 > are server diagnostics; `csrfProtection` collapses every failure to a bare `403` with no body
 > detail precisely so nothing else has to.
 
-- [`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) — the CSRF guard
+- [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) — the CSRF guard
   contract (§3), the honeypot and Turnstile guards (§4), the refusal shape and its residual oracle
   (§4c), and the byte cap (§2c).
-- [`BOUNDARIES.md`](../../.decisions/governance/BOUNDARIES.md) — validate-at-boundary, and the
+- [`BOUNDARIES.md`](../../warden/canon/libs/BOUNDARIES.md) — validate-at-boundary, and the
   transport-versus-application split that puts the origin and Fetch-Metadata guards in
   [`@y-core/forge/security`](../security/README.md) rather than here.

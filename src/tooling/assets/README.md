@@ -18,7 +18,7 @@ import { buildAll, defineAssetsConfig, loadConfig } from "@y-core/forge/tooling/
 > two request-time lookups the generated module calls live in
 > [`@y-core/forge/assets`](../../assets/README.md), which imports no Node built-in at all.
 
-See [`ASSET_AND_BUILD_TOOLING.md`](../../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §1
+See [`ASSET_PIPELINE.md`](../../../docs/ASSET_PIPELINE.md) §1
 and §2 for the authoritative architecture.
 
 ---
@@ -148,22 +148,22 @@ UiIconName>`, `ToolbarDefinition<A, UiIconName>`.
 
 ### Config authoring
 
-| Export               | Signature                                                 | Purpose                                                                    |
-| -------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `defineAssetsConfig` | `(config: AssetsConfig) => AssetsConfig`                  | Identity pass-through that supplies authoring types                        |
-| `env`                | `(name: string) => EnvRef`                                | Marks a `define` value to resolve from the build env at `loadConfig` time  |
-| `flag`               | `(name: string) => FlagRef`                               | Marks a `define` value as a boolean flag (`"true"`/`"1"` → `true`)         |
-| `loadConfig`         | `(options: LoadConfigOptions) => Promise<ResolvedConfig>` | Imports, validates, and normalises the config file into a `ResolvedConfig` |
-| `AssetsConfigSchema` | valibot schema                                            | The schema `loadConfig` validates against                                  |
-| `SITE_OUTPUTS`       | `readonly string[]`                                       | The files a configured `site` block writes — `robots.txt`, `sitemap.xml`   |
+| Export | Signature | Purpose |
+| --- | --- | --- |
+| `defineAssetsConfig` | `(config: AssetsConfig) => AssetsConfig` | Identity pass-through that supplies authoring types |
+| `env` | `(name: string) => EnvRef` | Marks a `define` value to resolve from the build env at `loadConfig` time |
+| `flag` | `(name: string) => FlagRef` | Marks a `define` value as a boolean flag (`"true"`/`"1"` → `true`) |
+| `loadConfig` | `(options: LoadConfigOptions) => Promise<ResolvedConfig>` | Imports, validates, and normalises the config file into a `ResolvedConfig` |
+| `AssetsConfigSchema` | valibot schema | The schema `loadConfig` validates against |
+| `SITE_OUTPUTS` | `readonly string[]` | The files a configured `site` block writes — `robots.txt`, `sitemap.xml` |
 
 `LoadConfigOptions`:
 
-| Field        | Type                                   | Default            | Description                                                     |
-| ------------ | -------------------------------------- | ------------------ | --------------------------------------------------------------- |
-| `root`       | `string`                               | —                  | Directory a relative `configPath` resolves against. Required.   |
-| `configPath` | `string?`                              | `assets.config.ts` | The config module to import.                                    |
-| `env`        | `Record<string, string \| undefined>?` | `{}`               | Source for `env()` and `flag()` references in bundle `define`s. |
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `root` | `string` | — | Directory a relative `configPath` resolves against. Required. |
+| `configPath` | `string?` | `assets.config.ts` | The config module to import. |
+| `env` | `Record<string, string \| undefined>?` | `{}` | Source for `env()` and `flag()` references in bundle `define`s. |
 
 `loadConfig` fills the path defaults `sourceDir: "src/static"`, `publicDir: "public/assets"`,
 `publicPrefix: "/assets"`, and returns a `ResolvedConfig` — `AssetsConfig` is the input shape,
@@ -174,29 +174,29 @@ unconfigured.
 
 `AssetsConfig` (every top-level field optional):
 
-| Field             | Type                                      | Notes                                                   |
-| ----------------- | ----------------------------------------- | ------------------------------------------------------- |
-| `paths`           | `PathsConfig`                             | `sourceDir`, `publicDir`, `publicPrefix` (all optional) |
-| `js.bundles`      | `JsBundle[]`                              | esbuild bundles                                         |
-| `css`             | `CssBuild[]`                              | Tailwind builds                                         |
-| `copy`            | `CopyEntry[]`                             | `{ from, to }` static copies                            |
-| `rasters`         | `RasterEntry[]`                           | `{ from, to, width?, height? }` SVG→PNG rasterizations  |
-| `sprites`         | `Sprites` (`Record<string, SpriteGroup>`) | Keyed sprite groups                                     |
-| `fonts.downloads` | `FontDownload[]`                          | `{ url, to }` remote fonts                              |
-| `icons`           | `IconsConfig`                             | Favicon / PWA icon outputs                              |
-| `cursors`         | `CursorsConfig`                           | Baked CSS cursor values (see [Advanced](#advanced))     |
-| `site`            | `SiteBuildConfig`                         | `robots.txt` and `sitemap.xml`                          |
+| Field | Type | Notes |
+| --- | --- | --- |
+| `paths` | `PathsConfig` | `sourceDir`, `publicDir`, `publicPrefix` (all optional) |
+| `js.bundles` | `JsBundle[]` | esbuild bundles |
+| `css` | `CssBuild[]` | Tailwind builds |
+| `copy` | `CopyEntry[]` | `{ from, to }` static copies |
+| `rasters` | `RasterEntry[]` | `{ from, to, width?, height? }` SVG→PNG rasterizations |
+| `sprites` | `Sprites` (`Record<string, SpriteGroup>`) | Keyed sprite groups |
+| `fonts.downloads` | `FontDownload[]` | `{ url, to }` remote fonts |
+| `icons` | `IconsConfig` | Favicon / PWA icon outputs |
+| `cursors` | `CursorsConfig` | Baked CSS cursor values (see [Advanced](#advanced)) |
+| `site` | `SiteBuildConfig` | `robots.txt` and `sitemap.xml` |
 
 `JsBundle`:
 
-| Field       | Type                                  | Notes                                                                      |
-| ----------- | ------------------------------------- | -------------------------------------------------------------------------- |
-| `entry`     | `string`                              | esbuild entry point (required)                                             |
-| `outdir`    | `string`                              | Output subdirectory under `publicDir` (required)                           |
-| `splitting` | `boolean?`                            | Enable code splitting                                                      |
-| `format`    | `"esm" \| "cjs" \| "iife"` (optional) | Output format; defaults to `esm`                                           |
-| `minify`    | `boolean?`                            | Per-bundle minify (the `--minify` flag also applies globally)              |
-| `define`    | `Record<string, DefineValue>?`        | Compile-time constants; values may be literals, `env(...)`, or `flag(...)` |
+| Field | Type | Notes |
+| --- | --- | --- |
+| `entry` | `string` | esbuild entry point (required) |
+| `outdir` | `string` | Output subdirectory under `publicDir` (required) |
+| `splitting` | `boolean?` | Enable code splitting |
+| `format` | `"esm" \| "cjs" \| "iife"` (optional) | Output format; defaults to `esm` |
+| `minify` | `boolean?` | Per-bundle minify (the `--minify` flag also applies globally) |
+| `define` | `Record<string, DefineValue>?` | Compile-time constants; values may be literals, `env(...)`, or `flag(...)` |
 
 `ResolvedJsBundle` is `JsBundle` with `define` already resolved to JavaScript source literals.
 
@@ -222,41 +222,41 @@ basename as the symbol key; an explicit pair names the key itself. `prefix` defa
 
 `CursorsConfig`:
 
-| Field     | Type                                                | Notes                                                                                                       |
-| --------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `target`  | `string`                                            | Output CSS file path (relative to `publicDir`)                                                              |
-| `css`     | `string?`                                           | The compiled CSS file whose custom-property declarations resolve tokens; defaults to the first `css` output |
-| `themes`  | `Record<string, string>`                            | Theme key → CSS selector, e.g. `{ light: ":root", dark: ".dark" }`                                          |
-| `sources` | `CursorSource[]`                                    | Cursor source directories (see below)                                                                       |
-| `vars`    | `Record<string, string \| Record<string, string>>?` | Build-time colour variables; a flat string applies to all themes, a nested record maps theme keys to values |
+| Field | Type | Notes |
+| --- | --- | --- |
+| `target` | `string` | Output CSS file path (relative to `publicDir`) |
+| `css` | `string?` | The compiled CSS file whose custom-property declarations resolve tokens; defaults to the first `css` output |
+| `themes` | `Record<string, string>` | Theme key → CSS selector, e.g. `{ light: ":root", dark: ".dark" }` |
+| `sources` | `CursorSource[]` | Cursor source directories (see below) |
+| `vars` | `Record<string, string \| Record<string, string>>?` | Build-time colour variables; a flat string applies to all themes, a nested record maps theme keys to values |
 
 `CursorSource`:
 
-| Field      | Type                                          | Notes                                                       |
-| ---------- | --------------------------------------------- | ----------------------------------------------------------- |
-| `path`     | `string`                                      | Directory containing cursor SVG files                       |
-| `files`    | `(string \| { key: string; file: string })[]` | File list — bare strings use the stem as the cursor key     |
-| `template` | `{ path: string; file: string }`              | SVG template wrapper applied to every cursor in this source |
+| Field | Type | Notes |
+| --- | --- | --- |
+| `path` | `string` | Directory containing cursor SVG files |
+| `files` | `(string \| { key: string; file: string })[]` | File list — bare strings use the stem as the cursor key |
+| `template` | `{ path: string; file: string }` | SVG template wrapper applied to every cursor in this source |
 
 ### Pipeline functions
 
-| Export                 | Signature                                                                                            | Purpose                                                              |
-| ---------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `buildAll`             | `(config: ResolvedConfig, opts?: BuildOptions) => Promise<void>`                                     | Runs the full pipeline and writes `.forge/assets.ts`                 |
-| `generateAssetsTypes`  | `(config: ResolvedConfig, opts?: { assetsPath?: string }) => Promise<void>`                          | Writes `.forge/assets.ts` from config alone — no build, no toolchain |
-| `buildJS`              | `(bundles: ResolvedJsBundle[], opts: { outDir; minify?; hash? }) => Promise<Record<string, string>>` | esbuild bundling; returns the logical→output mapping                 |
-| `buildCSS`             | `(cssBuild: CssBuild, opts: { outDir; minify?; hash? }) => Record<string, string>`                   | Tailwind build for one entry                                         |
-| `buildSprites`         | `(sprites: Sprites, publicDir: string, opts?: { hash? }) => Promise<SpriteBuildResult>`              | Assembles all sprite groups                                          |
-| `buildIcons`           | `(config: IconsConfig) => Promise<void>`                                                             | Rasterises favicon/PWA icon outputs                                  |
-| `buildFonts`           | `(fonts: { downloads: FontDownload[] }, publicDir: string) => Promise<void>`                         | Downloads remote fonts                                               |
-| `buildRasters`         | `(rasters: RasterEntry[], publicDir: string) => Promise<void>`                                       | Rasterises configured SVGs to PNG under `publicDir`                  |
-| `buildSite`            | `(config: SiteBuildConfig) => void`                                                                  | Writes `robots.txt` and `sitemap.xml` into `config.outDir`           |
-| `copyAssets`           | `(copies: CopyEntry[], publicDir: string) => void`                                                   | Copies static files                                                  |
-| `fetchURL`             | `(url: string, dest: string, opts?: { force? }) => Promise<void>`                                    | Fetches a URL to disk; skips if `dest` exists unless `force`         |
-| `hashFile`             | `(filePath: string) => string`                                                                       | 8-char SHA-256 of a file's bytes                                     |
-| `hashString`           | `(content: string) => string`                                                                        | 8-char SHA-256 of a string                                           |
-| `safeJoin`             | `(base: string, ...segments: string[]) => string`                                                    | Path join that throws if the result escapes `base`                   |
-| `createAssetsCommands` | `() => CommandBase`                                                                                  | Builds the `forge assets` command tree                               |
+| Export | Signature | Purpose |
+| --- | --- | --- |
+| `buildAll` | `(config: ResolvedConfig, opts?: BuildOptions) => Promise<void>` | Runs the full pipeline and writes `.forge/assets.ts` |
+| `generateAssetsTypes` | `(config: ResolvedConfig, opts?: { assetsPath?: string }) => Promise<void>` | Writes `.forge/assets.ts` from config alone — no build, no toolchain |
+| `buildJS` | `(bundles: ResolvedJsBundle[], opts: { outDir; minify?; hash? }) => Promise<Record<string, string>>` | esbuild bundling; returns the logical→output mapping |
+| `buildCSS` | `(cssBuild: CssBuild, opts: { outDir; minify?; hash? }) => Record<string, string>` | Tailwind build for one entry |
+| `buildSprites` | `(sprites: Sprites, publicDir: string, opts?: { hash? }) => Promise<SpriteBuildResult>` | Assembles all sprite groups |
+| `buildIcons` | `(config: IconsConfig) => Promise<void>` | Rasterises favicon/PWA icon outputs |
+| `buildFonts` | `(fonts: { downloads: FontDownload[] }, publicDir: string) => Promise<void>` | Downloads remote fonts |
+| `buildRasters` | `(rasters: RasterEntry[], publicDir: string) => Promise<void>` | Rasterises configured SVGs to PNG under `publicDir` |
+| `buildSite` | `(config: SiteBuildConfig) => void` | Writes `robots.txt` and `sitemap.xml` into `config.outDir` |
+| `copyAssets` | `(copies: CopyEntry[], publicDir: string) => void` | Copies static files |
+| `fetchURL` | `(url: string, dest: string, opts?: { force? }) => Promise<void>` | Fetches a URL to disk; skips if `dest` exists unless `force` |
+| `hashFile` | `(filePath: string) => string` | 8-char SHA-256 of a file's bytes |
+| `hashString` | `(content: string) => string` | 8-char SHA-256 of a string |
+| `safeJoin` | `(base: string, ...segments: string[]) => string` | Path join that throws if the result escapes `base` |
+| `createAssetsCommands` | `() => CommandBase` | Builds the `forge assets` command tree |
 
 `BuildOptions`: `{ minify?: boolean; assetsPath?: string }`. `assetsPath` defaults to
 `.forge/assets.ts`. `minify` toggles both esbuild/Tailwind minification **and** content hashing
@@ -289,12 +289,12 @@ regenerated pass whose content is byte-identical does not touch the file.
 
 Incremental state helpers operate over `BuildState` (`Record<string, string>` of key → hash):
 
-| Export       | Signature                                                          |
-| ------------ | ------------------------------------------------------------------ |
-| `loadState`  | `(statePath: string) => BuildState`                                |
-| `saveState`  | `(statePath: string, state: BuildState) => void`                   |
+| Export | Signature |
+| --- | --- |
+| `loadState` | `(statePath: string) => BuildState` |
+| `saveState` | `(statePath: string, state: BuildState) => void` |
 | `hasChanged` | `(state: BuildState, key: string, currentHash: string) => boolean` |
-| `markBuilt`  | `(state: BuildState, key: string, hash: string) => void`           |
+| `markBuilt` | `(state: BuildState, key: string, hash: string) => void` |
 
 `loadState` returns `{}` for a missing or malformed file. `hasChanged` is `true` when the stored hash
 differs from `currentHash`. A typical watch step: read the source, `hashFile` it, and if `hasChanged`
@@ -309,27 +309,27 @@ run the single relevant build function, then `markBuilt` + `saveState`.
 The `forge` binary attaches the `assets` subtree `createAssetsCommands` builds. Every command calls
 `loadConfig` first, against the root it resolved.
 
-| Command                      | Builds                                             |
-| ---------------------------- | -------------------------------------------------- |
-| `forge assets build`         | Full pipeline + generated module (same as `all`)   |
-| `forge assets build all`     | Full pipeline + generated module                   |
-| `forge assets build css`     | Tailwind CSS only                                  |
-| `forge assets build js`      | esbuild bundles only                               |
-| `forge assets build fonts`   | Font downloads only                                |
-| `forge assets build icons`   | Favicon/PWA icons only                             |
-| `forge assets build rasters` | Configured SVG→PNG rasters only                    |
-| `forge assets sprites`       | SVG sprite sheets only                             |
-| `forge assets gen types`     | Nothing — derives the generated module from config |
+| Command | Builds |
+| --- | --- |
+| `forge assets build` | Full pipeline + generated module (same as `all`) |
+| `forge assets build all` | Full pipeline + generated module |
+| `forge assets build css` | Tailwind CSS only |
+| `forge assets build js` | esbuild bundles only |
+| `forge assets build fonts` | Font downloads only |
+| `forge assets build icons` | Favicon/PWA icons only |
+| `forge assets build rasters` | Configured SVG→PNG rasters only |
+| `forge assets sprites` | SVG sprite sheets only |
+| `forge assets gen types` | Nothing — derives the generated module from config |
 
 **The bare `build` is the union, not a narrower default.** Unlike a scope default, it runs
 everything, so it can never silently do less than asked.
 
-| Flag       | Type    | Applies to                                      | Effect                                                                                       |
-| ---------- | ------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Flag | Type | Applies to | Effect |
+| --- | --- | --- | --- |
 | `--minify` | boolean | `build`, `build all`, `build css/js`, `sprites` | Minify output; on `build`/`build all` and `sprites` it also enables content-hashed filenames |
-| `--config` | string  | every command                                   | Path to `assets.config.ts` (default: `assets.config.ts` under the resolved root)             |
-| `--root`   | string  | every command                                   | Application root; also read from `FORGE_APP_ROOT`, else derived from forge's install path    |
-| `--out`    | string  | `build`, `build all`, `gen types`               | Output path for the generated assets module (default `.forge/assets.ts`)                     |
+| `--config` | string | every command | Path to `assets.config.ts` (default: `assets.config.ts` under the resolved root) |
+| `--root` | string | every command | Application root; also read from `FORGE_APP_ROOT`, else derived from forge's install path |
+| `--out` | string | `build`, `build all`, `gen types` | Output path for the generated assets module (default `.forge/assets.ts`) |
 
 Pass `--help` (or `-h`) at any level for generated help, e.g. `forge assets build --help`.
 
@@ -353,11 +353,11 @@ forge assets gen types    # milliseconds; no tailwind, no esbuild, no sharp, no 
 
 Everything carrying **type** information is config-derived and reproduced exactly:
 
-| Reproduced from config                                                                     | Needs a real build                                         |
-| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| every manifest key — `css[].output`, `<outdir>/<entry>.js`, `sprites.<group>.target`       | every manifest value (the content hash)                    |
-| every icon name — `basename(file, ".svg")` or the explicit `key`, plus the group `prefix`  | each symbol's `viewBox`, scraped from the assembled sprite |
-| sprite group → `*Icon` and `*IconName` export names, `publicPrefix`, cursor and theme keys | the baked cursor data-URIs                                 |
+| Reproduced from config | Needs a real build |
+| --- | --- |
+| every manifest key — `css[].output`, `<outdir>/<entry>.js`, `sprites.<group>.target` | every manifest value (the content hash) |
+| every icon name — `basename(file, ".svg")` or the explicit `key`, plus the group `prefix` | each symbol's `viewBox`, scraped from the assembled sprite |
+| sprite group → `*Icon` and `*IconName` export names, `publicPrefix`, cursor and theme keys | the baked cursor data-URIs |
 
 So the emitted module is shape-identical to a real build — same exports, same `createIcon` calls,
 and critically the same `*_META` literal keys, which are what give `createIcon` its icon-name union
@@ -386,7 +386,7 @@ degrades the manifest to unhashed paths. It rewrites only when the shape no long
 or a glyph added, a sprite target or prefix renamed — because that module no longer describes the
 config. The command says which it did:
 
-```
+```text
 ✓ assets: wrote .forge/assets.ts (types only)
 ✓ assets: kept .forge/assets.ts — an existing build artifact already fits the config
 ```
@@ -425,24 +425,24 @@ owns only the config shape. It reads one or more source directories of cursor SV
 cursor for every configured theme, and returns a `CURSOR_BAKES` object the generated module
 re-exports:
 
-```
+```text
 Record<cursorKey, Record<themeKey, cssValue>>
 ```
 
 Each `cssValue` is a complete CSS `cursor` property value:
 
-```
+```text
 url("data:image/svg+xml,<encoded-svg>") <hx> <hy>, auto
 ```
 
 **Template SVGs** act as the outer wrapper. They receive three structural placeholders injected at
 bake time:
 
-| Placeholder   | Replaced with                                                          |
-| ------------- | ---------------------------------------------------------------------- |
-| `{{viewBox}}` | The cursor SVG's `viewBox` attribute value                             |
-| `{{markup}}`  | The cursor SVG's sanitized inner geometry                              |
-| `{{signal}}`  | Resolved hex for the cursor's `data-cursor-token` in the current theme |
+| Placeholder | Replaced with |
+| --- | --- |
+| `{{viewBox}}` | The cursor SVG's `viewBox` attribute value |
+| `{{markup}}` | The cursor SVG's sanitized inner geometry |
+| `{{signal}}` | Resolved hex for the cursor's `data-cursor-token` in the current theme |
 
 `{{signal}}` is the only colour placeholder — it exists because the token _name_ varies per cursor
 (each cursor SVG carries its own `data-cursor-token`). Every fixed colour in a template resolves
@@ -493,10 +493,10 @@ just as CSS does. Config values win over CSS-declared values of the same name.
 
 **`data-cursor-*` conventions** on the cursor SVG root `<svg>`:
 
-| Attribute             | Role                                                                   |
-| --------------------- | ---------------------------------------------------------------------- |
-| `data-cursor-token`   | CSS custom property name for the signal colour (the `{{signal}}` slot) |
-| `data-cursor-hotspot` | `"<x> <y>"` hotspot coordinates in the CSS `cursor` value              |
+| Attribute | Role |
+| --- | --- |
+| `data-cursor-token` | CSS custom property name for the signal colour (the `{{signal}}` slot) |
+| `data-cursor-hotspot` | `"<x> <y>"` hotspot coordinates in the CSS `cursor` value |
 
 Both are optional; omitting `data-cursor-token` leaves `{{signal}}` as `#000000`, and omitting
 `data-cursor-hotspot` defaults to `0 0`. A token that _is_ declared but resolves to something the
@@ -568,5 +568,5 @@ Source **reads** (`from`, font `url`, remote sprite `source.path`) are intention
   module calls, and the only asset code a Worker may import.
 - [`@y-core/forge/tooling/cli`](../cli/README.md) — the command framework `createAssetsCommands`
   builds on, and `resolveAppRoot`.
-- [`ASSET_AND_BUILD_TOOLING.md`](../../../.decisions/implementation/ASSET_AND_BUILD_TOOLING.md) §1,
+- [`ASSET_PIPELINE.md`](../../../docs/ASSET_PIPELINE.md) §1,
   §2 and §6 — the config contract, the pipeline's ordered stages, and the generated module.

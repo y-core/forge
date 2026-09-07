@@ -2,10 +2,10 @@
 
 Schema validation for forge apps, built on [valibot](https://valibot.dev). The namespace re-exports the entire valibot API under a single `v` import, adds a small set of forge's own schema and issue helpers beside it, carries the `ValidationResult<T>` result type used across forge's request pipeline, and ships a Cloudflare env-schema code generator (`forge cf gen env`) under the `/cli` sub-path.
 
-| Import path                | Surface                                                                                                                                            |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Import path | Surface |
+| --- | --- |
 | `@y-core/forge/validation` | `v` (valibot namespace), `strictObject`, `formText`, `formMultilineText`, `formDigits`, `safeCheck`, `describeValidationIssue`, `ValidationResult` |
-| `@y-core/forge/tooling/cf` | `forge cf gen env` env-schema generator API (also a `bin`)                                                                                         |
+| `@y-core/forge/tooling/cf` | `forge cf gen env` env-schema generator API (also a `bin`) |
 
 **Everything except `v` is a sibling of it, not a member.** `strictObject` and `v.strictObject` are two different functions, and the one without the prefix is the recommendation for untrusted input.
 
@@ -29,7 +29,7 @@ Schema validation for forge apps, built on [valibot](https://valibot.dev). The n
 
 Declare the schema with `strictObject` and the form-text primitives, parse untrusted input with `v.safeParse`, and convert the result into a `ValidationResult` at the system boundary.
 
-```typescript
+```ts
 import { describeValidationIssue, formMultilineText, formText, strictObject, v, type ValidationResult } from "@y-core/forge/validation";
 
 const ContactSchema = strictObject({
@@ -52,7 +52,7 @@ function validateContact(fields: unknown): ValidationResult<ContactInput> {
 
 Inspect `result.ok` before reading `data`:
 
-```typescript
+```ts
 const outcome = validateContact(rawFields);
 if (!outcome.ok) {
   // outcome.error: readonly string[] — the field names that failed
@@ -70,7 +70,7 @@ A route on `defineAction` (from `@y-core/forge/app`) writes none of this: it han
 
 `v` is the entire valibot namespace re-exported under one name. Use `v.object(...)`, `v.string()`, `v.pipe(...)`, `v.email()`, `v.minLength()`, `v.safeParse(...)`, `v.InferOutput<...>`, and every other valibot primitive, action, and combinator through this prefix. Never import `valibot` directly — `v` guarantees the forge-pinned version and avoids dual-package conflicts.
 
-```typescript
+```ts
 import { v } from "@y-core/forge/validation";
 
 const schema = v.object({ count: v.pipe(v.number(), v.minValue(0)) });
@@ -81,7 +81,7 @@ const result = v.safeParse(schema, { count: 3 }); // { success, output | issues 
 
 #### `strictObject(entries, message?)`
 
-```typescript
+```ts
 function strictObject<TEntries extends v.ObjectEntries>(
   entries: TEntries,
   message?: v.ErrorMessage<v.StrictObjectIssue>,
@@ -90,7 +90,7 @@ function strictObject<TEntries extends v.ObjectEntries>(
 
 A strict object schema in which only a field the schema _actually declares_ counts as declared. Use it in place of `v.strictObject` for anything parsing untrusted input — a request body above all.
 
-```typescript
+```ts
 import { strictObject, v } from "@y-core/forge/validation";
 
 const ContactSchema = strictObject({ name: v.string(), email: v.pipe(v.string(), v.email()) });
@@ -104,14 +104,14 @@ The correction is applied **at construction**, so it survives composition: the p
 
 #### `formText()` / `formMultilineText()`
 
-```typescript
+```ts
 function formText(): v.GenericSchema<string, string>; // trim
 function formMultilineText(): v.GenericSchema<string, string>; // CRLF → LF, then trim
 ```
 
 The default shapes for form text. `formText()` is the single-line variant and **preserves** CRLF; `formMultilineText()` folds CRLF pairs to LF first, which is what a browser submits from a `<textarea>` regardless of platform. Compose either like any other schema:
 
-```typescript
+```ts
 import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation";
 
 const MessageSchema = strictObject({
@@ -120,19 +120,19 @@ const MessageSchema = strictObject({
 });
 ```
 
-**Why here and not in the body reader.** A form body reaches a schema exactly as submitted, so without one of these a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "` and every required-field check becomes bypassable with spaces. Normalizing in the reader was rejected for four reasons, and [`INPUT_VALIDATION.md`](../../.decisions/implementation/INPUT_VALIDATION.md) §1d owns them — the short version is that only the schema knows a field was a textarea.
+**Why here and not in the body reader.** A form body reaches a schema exactly as submitted, so without one of these a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "` and every required-field check becomes bypassable with spaces. Normalizing in the reader was rejected for four reasons, and [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1d owns them — the short version is that only the schema knows a field was a textarea.
 
 **The fold runs before the trim, and that ordering is about length, not output.** `trim` treats `\r` and `\n` alike, so the two operations produce the same string in either order. What the order decides is what the rest of the pipe sees: under `v.pipe(formMultilineText(), v.maxLength(500))` each line break counts once, so a 500-character limit means the same thing whether the newline arrived as LF or CRLF instead of silently halving the budget for line breaks.
 
 #### `formDigits()`
 
-```typescript
+```ts
 function formDigits(): v.GenericSchema<string, string>; // every non-digit removed
 ```
 
 The shape for a control whose separators are cosmetic — a card number the user reads as `4111 1111 1111 1111`, a phone number as `(555) 123-4567`. Every character outside `0`–`9` is removed, so one number reaches the schema as one string however it was rendered:
 
-```typescript
+```ts
 import { formDigits, strictObject, v } from "@y-core/forge/validation";
 
 const PaymentSchema = strictObject({
@@ -148,13 +148,13 @@ const PaymentSchema = strictObject({
 
 #### `safeCheck(requirement, message)`
 
-```typescript
+```ts
 function safeCheck<TInput>(requirement: (input: TInput) => boolean, message: string): v.CheckAction<TInput, string>;
 ```
 
 A `v.check` whose `message` the author states is **value-free** — it describes the requirement and never interpolates the input. An env refusal surfaces a registered message verbatim in place of the bare word `check`:
 
-```typescript
+```ts
 import { safeCheck, v } from "@y-core/forge/validation";
 
 const OriginSchema = v.pipe(
@@ -173,7 +173,7 @@ const OriginSchema = v.pipe(
 
 #### `describeValidationIssue(issue)`
 
-```typescript
+```ts
 function describeValidationIssue(issue: v.BaseIssue<unknown>): string;
 ```
 
@@ -181,7 +181,7 @@ Names the failing field, bounded in depth and per-segment length, and nothing el
 
 Each of the alternatives is a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and `issue.input` is the submission itself. Only the path survives, bounded, because a `v.record` key or a refused undeclared key is caller-chosen text of caller-chosen length. The result therefore varies only with _which_ field failed — a 50,000-character value and a 5-character one produce the same string, and extra fields cannot multiply the response.
 
-```typescript
+```ts
 const messages = result.issues.map(describeValidationIssue); // ["email"]
 return fragmentResponse(renderValidationErrors(messages), 422);
 ```
@@ -192,14 +192,14 @@ return fragmentResponse(renderValidationErrors(messages), 422);
 
 A domain alias of forge's one `Result` primitive describing the outcome of a validation pass — its failure channel carries the per-field message list in the single `error` field:
 
-```typescript
+```ts
 type ValidationResult<T> = Result<T, readonly string[]>;
 //  ≡ { ok: true; data: T } | { ok: false; error: readonly string[] };
 ```
 
-| Variant | Fields                                  | Meaning                                                       |
-| ------- | --------------------------------------- | ------------------------------------------------------------- |
-| Success | `ok: true`, `data: T`                   | Input parsed; `data` is the typed value.                      |
+| Variant | Fields | Meaning |
+| --- | --- | --- |
+| Success | `ok: true`, `data: T` | Input parsed; `data` is the typed value. |
 | Failure | `ok: false`, `error: readonly string[]` | Validation failed; `error` holds the human-readable messages. |
 
 This type is defined in and re-exported from `@y-core/forge/result` (the single result primitive). Convert a valibot result into it by mapping `result.issues` through `describeValidationIssue` on failure (see the usage example above) — not through `issue.message`, which reproduces the submitted value.
@@ -228,16 +228,16 @@ Run the generator as a `package.json` script:
 bun run gen:env
 ```
 
-| Flag         | Default                 | Description                                                                                                         |
-| ------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `--wrangler` | `wrangler.jsonc`        | Path to the wrangler config.                                                                                        |
-| `--dev-vars` | `.dev.vars`             | Path to the `.dev.vars` secrets file.                                                                               |
-| `--out`      | `src/app/env.schema.ts` | Output module path.                                                                                                 |
-| `--config`   | `src/app/env.config.ts` | Host-policy module exporting a `Partial<GenOptions>`; built-in `DEFAULT_OPTIONS` are used when this file is absent. |
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--wrangler` | `wrangler.jsonc` | Path to the wrangler config. |
+| `--dev-vars` | `.dev.vars` | Path to the `.dev.vars` secrets file. |
+| `--out` | `src/app/env.schema.ts` | Output module path. |
+| `--config` | `src/app/env.config.ts` | Host-policy module exporting a `Partial<GenOptions>`; built-in `DEFAULT_OPTIONS` are used when this file is absent. |
 
 The command reads the wrangler bindings and dev-vars keys, collects entries, emits the module, and runs an oxfmt format pass so the generated file passes the lint gate. A typical generated module:
 
-```typescript
+```ts
 /** env.schema.ts — GENERATED — do not edit; run `bun run gen:env`. */
 import { v } from "@y-core/forge/validation";
 
@@ -252,7 +252,7 @@ export type Env = v.InferOutput<typeof EnvSchema>;
 
 Override generation policy with a `--config` module that exports a `Partial<GenOptions>` (as `options` or `default`), merged over `DEFAULT_OPTIONS`:
 
-```typescript
+```ts
 // src/app/env.config.ts
 import type { GenOptions } from "@y-core/forge/tooling/cf";
 
@@ -261,7 +261,7 @@ export const options: Partial<GenOptions> = { optional: new Set(["ANALYTICS"]), 
 
 To call the generator programmatically (e.g. wiring it into a custom CLI via `execute`):
 
-```typescript
+```ts
 import { execute } from "@y-core/forge/tooling/cli";
 import { createGenEnvCommand } from "@y-core/forge/tooling/cf";
 
@@ -272,11 +272,11 @@ await execute(createGenEnvCommand());
 
 #### Command API (`cf-env-command`)
 
-| Export                | Signature                                      | Description                                                                                                                                        |
-| --------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createGenEnvCommand` | `() => CommandBase`                            | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge cf gen env` bin entry. |
-| `readWranglerConfig`  | `(path: string) => Record<string, unknown>`    | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped).                                                            |
-| `loadOptions`         | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given.                                 |
+| Export | Signature | Description |
+| --- | --- | --- |
+| `createGenEnvCommand` | `() => CommandBase` | Builds the `gen-env` command (read wrangler + dev-vars → collect → emit → format). Pass to `execute`; it is also the `forge cf gen env` bin entry. |
+| `readWranglerConfig` | `(path: string) => Record<string, unknown>` | Reads and parses a `wrangler.jsonc` file (JSONC comments and trailing commas stripped). |
+| `loadOptions` | `(configPath?: string) => Promise<GenOptions>` | Loads a `--config` policy module and merges it over `DEFAULT_OPTIONS`; returns the defaults when no path is given. |
 
 #### Generator internals (`cf-env-registry` + `cf-env-gen`)
 
@@ -294,6 +294,6 @@ no supported way to assemble a schema from the internal pieces.
 
 Only `GenOptions` is public — the host-policy shape you pass via a `--config` module.
 
-| Type         | Shape                                                                                                  | Description                                                                                                                                                                  |
-| ------------ | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Type | Shape | Description |
+| --- | --- | --- |
 | `GenOptions` | `{ optional: Set<string>; refinements: Record<string, { minLength?: number }>; bindingCheck: string }` | Host policy layered over the generated schema: optional bindings, per-var refinements, and the shared `v.custom` presence check. Merged over the internal `DEFAULT_OPTIONS`. |
