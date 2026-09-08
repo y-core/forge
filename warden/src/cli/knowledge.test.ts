@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { createCommand } from "../../../src/tooling/cli/command";
-import type { CommandBase } from "../../../src/tooling/cli/types";
+import { CliError } from "../../../src/tooling/cli/errors";
+import type { CallableCommand, CommandBase } from "../../../src/tooling/cli/types";
 import { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./knowledge";
 
 function tree(): CommandBase {
@@ -9,6 +13,18 @@ function tree(): CommandBase {
   createKnowledgeCommands(root);
   createCatalogueCommand(root);
   createServeCommand(root);
+  return root;
+}
+
+function catalogueCommand(): CallableCommand {
+  const found = tree().commands.find((command) => command.name === "catalogue");
+  if (found === undefined) throw new Error("the catalogue command is not mounted");
+  return found as CallableCommand;
+}
+
+function repoAt(...segments: string[]): string {
+  const root = join(mkdtempSync(join(tmpdir(), "warden-catalogue-")), ...segments);
+  mkdirSync(join(root, "warden"), { recursive: true });
   return root;
 }
 
@@ -49,5 +65,27 @@ describe("the knowledge commands", () => {
     expect(args.outline).toEqual({ kind: "exact", count: 1 });
     expect(args.related).toEqual({ kind: "exact", count: 1 });
     expect(args.index).toEqual({ kind: "none" });
+  });
+});
+
+describe("warden catalogue --write", () => {
+  it("writes into the repository `--root` names, not into the installed package", async () => {
+    const root = repoAt("consumer");
+
+    await catalogueCommand().run?.([], { root, kind: "libs", write: true });
+
+    expect(existsSync(join(root, "warden/CATALOGUE.md"))).toBe(true);
+    expect(readFileSync(join(root, "warden/CATALOGUE.md"), "utf-8")).toContain("# Catalogue");
+  });
+
+  // The defect this guards: resolving against the library's own root wrote a consumer's catalogue
+  // into their dependency, and the failing gate's remedy was the command that did it.
+  it("refuses a target inside node_modules rather than mutating a dependency", () => {
+    const root = repoAt("node_modules", "@y-core", "forge");
+
+    expect(() => {
+      void catalogueCommand().run?.([], { root, kind: "libs", write: true });
+    }).toThrow(CliError);
+    expect(existsSync(join(root, "warden/CATALOGUE.md"))).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 
 import { addCommand, createCommand } from "../../../src/tooling/cli/command";
 import { CliError } from "../../../src/tooling/cli/errors";
@@ -12,7 +12,7 @@ import { renderImpact } from "../impact/render";
 import { gateIndexPath, indexPath } from "../index/db";
 import { openIndex, rebuild } from "../index/open";
 import { serveStdio } from "../mcp/server";
-import { resolveRepoRoot, WARDEN_ROOT } from "../paths";
+import { resolveRepoRoot } from "../paths";
 import { outline, readSection } from "../search/read";
 import { related } from "../search/related";
 import { corpusLabel, search } from "../search/search";
@@ -237,7 +237,7 @@ export function createCatalogueCommand(parent: CommandBase): void {
     parent,
     createCommand({
       name: "catalogue",
-      description: "Print the canon catalogue, or write it to warden/CATALOGUE.md",
+      description: "Print the canon catalogue, or write it to <root>/warden/CATALOGUE.md",
       flags: { root: ROOT_FLAG, kind: KIND_FLAG, write: { type: "boolean", description: "Write the file rather than printing it" } },
       run: (_args, flags) => {
         // No `dependency`: the committed catalogue is the fleet canon's inventory, and this command
@@ -250,7 +250,12 @@ export function createCatalogueCommand(parent: CommandBase): void {
             process.stdout.write(rendered);
             return;
           }
-          const file = resolve(WARDEN_ROOT, "CATALOGUE.md");
+          const file = resolve(root, "warden/CATALOGUE.md");
+          // The repository being indexed, never the installed package: resolving against the
+          // library's own root wrote a consumer's catalogue into their `node_modules`.
+          if (file.split(sep).includes("node_modules")) {
+            throw new CliError("invalid-args", `refusing to write inside a dependency — ${file} is under node_modules`);
+          }
           writeFileSync(file, rendered, "utf-8");
           console.log(`wrote ${file}`);
         } finally {

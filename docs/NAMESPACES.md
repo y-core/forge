@@ -24,7 +24,7 @@ audience: internal
 - §3 Authoritative Namespace Catalog: every subpath and its classification
 - §3a Public Export Paths: the catalog table
 - §3b Internal Namespaces: sealed-internal `crypto`
-- §3c `tooling/lint` — a Namespace Whose Barrel Is Also a Plugin: the published surface, the two rule catalogs, and the prebuilt copy a consumer loads
+- §3c `tooling/lint` — a Namespace Whose Barrel Is Also a Plugin: the published surface, the two rule catalogs, and the two prebuilt copies a consumer's node processes load
 - §4 Namespace Classification: the leaf/integration split
 - §4a Leaf Namespace Rules: no cross-namespace forge imports beyond the §4c primitives
 - §4b Integration Namespace Rules: where edges are declared, and what the graph gate proves
@@ -106,6 +106,7 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/tooling/cli` | `src/tooling/cli/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError`; plus the shared foundation the tool namespaces read config through — `resolveAppRoot`, `loadConfigModule`, the JSONC parser and editor, and the barrel parser |
 | `@y-core/forge/tooling/gate` | `src/tooling/gate/mod.ts` | the verification gate — the gate command factory, the step builders and presets, and every check. It also owns the changelog and semver parsers, which is what lets `tooling/release` depend on it and never the reverse. The gate's formatters are `@internal` ([`BUILD_TOOLING.md`](./BUILD_TOOLING.md) §2f) |
 | `@y-core/forge/tooling/release` | `src/tooling/release/mod.ts` | `createReleaseCommand`, `resolveVersion`, `ReleaseError` — the release workflow, built on the gate's changelog and semver parsers and its barrel parser. The git and manifest helpers are `@internal` ([`BUILD_TOOLING.md`](./BUILD_TOOLING.md) §2c) |
+| `@y-core/forge/tooling/gate/chromium` | `src/tooling/gate/chromium.mjs` | `resolveChromiumPath`, prebuilt — the spelling a consumer's `playwright.config.ts` imports. It exists for the same reason `./tooling/lint/plugin` does: playwright loads its config under node, which refuses to strip types from a file under `node_modules`; `validate-chromium-bundle` rebuilds it and fails on any drift from the source |
 | `@y-core/forge/tooling/lint` | `src/tooling/lint/mod.ts` | forge's oxlint JS plugin, default-exported for `.oxlintrc.json`'s `jsPlugins`, plus the two rule catalogs the gate's design and modern-CSS checks read. Loaded as raw TypeScript: oxlint resolves the source directly, so the plugin ships with no build step. Its types are structural restatements of oxlint's own, because `oxlint` is a devDependency and a published module must not depend on it |
 | `@y-core/forge/tooling/lint/plugin` | `src/tooling/lint/plugin.mjs` | The same plugin, prebuilt — the spelling a consumer's `.oxlintrc.json` names in `jsPlugins`. It exists because node refuses to strip types from a file under `node_modules`, so a consumer's oxlint cannot load `mod.ts` at all; `validate-lint-plugin` rebuilds it and fails on any drift from the source |
 | `@y-core/forge/tooling/cf` | `src/tooling/cf/mod.ts` | `createCfCommands` — the whole `forge cf` subtree. `createSyncAccountCommand`, `syncBindings` and the resource handlers (`account/`); `createSyncZoneCommand` (`zone/`); `createGenEnvCommand` (`gen/`); and the pieces both scopes share — `createCfClient`, `loadWranglerConfig`, `renderSections`, `detectTarget`. Imports `tooling/cli`, `tooling/term`, `site` |
@@ -210,10 +211,24 @@ without the consumer building it. The cost is that a generated file can drift fr
 is why `validate-lint-plugin` re-bundles and diffs on every gate run, exactly as
 `validate-design-scale` does for the generated scale. Forge's own `.oxlintrc.json` keeps naming
 `./src/tooling/lint/mod.ts`, so a rule edit takes effect here without a regeneration step —
-regenerate with `bun run gen:lint-plugin` before committing it. **Pre-bundling is the remedy only
-where the host runtime is not forge's to choose**: oxlint hosts its plugin under node, but
-`browserStep` writes playwright's argv itself, so it spawns `bunx --bun playwright test` and the
-restriction never applies.
+regenerate with `bun run gen:bundles` before committing it.
+
+**Pre-bundling is the remedy wherever a consumer's node process imports forge, and playwright is
+the second such host.** A `playwright.config.ts` importing a forge subpath dies at config load with
+the same `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, and running playwright under bun instead is
+not a free choice: a dev server playwright spawns itself binds, under bun, where the browser cannot
+reach it — measured in a devbox sandbox as six specs passing under `bunx playwright test` and the
+same six failing with `net::ERR_ABORTED` under `bunx --bun playwright test`. So forge cannot pick
+the runtime on a consumer's behalf; `browserStep` spawns `playwright test` — the installed binary
+resolved off the runner's `binDir`, whose shebang is node, rather than `bunx`, which would fall
+back to installing from the registry when it resolved nothing — and
+`./tooling/gate/chromium` publishes a committed bundle of `checks/chromium.ts` — the one symbol a
+config needs — held against its source by `validate-chromium-bundle`. `resolveChromiumPath` was
+split out of `checks/browser.ts` to make that bundlable: `hasChromium` imports `@playwright/test`,
+a devDependency a published module may not reach.
+
+Forge's own `playwright.config.ts` imports the `.mjs` rather than the source, so forge's gate
+exercises the exact module a consumer loads and a broken bundle fails here rather than there.
 
 **A published module may not import a build-time package, so oxlint's types are restated in
 `types.ts` rather than imported from it.** oxlint is a devDependency, and an import of its types

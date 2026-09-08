@@ -169,7 +169,8 @@ same rules on its own tree. Each is also a pre-built step, whose label is its `-
 | `classOrderStep` | `validate-class-order` | `checkClassOrder` | Every class literal is a fixed point of `cn`, so sorting one cannot change what it renders |
 | `classTokensStep` | `validate-class-tokens` | `checkClassTokens` | Every class token in the source resolves to CSS the design system compiles |
 | `designScaleStep` | `validate-design-scale` | `checkDesignScale` | The design-scale data the lint plugin reads matches the one regenerated from the design system |
-| `lintPluginStep` | `validate-lint-plugin` | `checkLintPlugin` | The committed oxlint-plugin bundle a consumer loads matches a fresh build of its TypeScript source |
+| `lintPluginStep` | `validate-lint-plugin` | `checkBundle` | The committed oxlint-plugin bundle a consumer loads matches a fresh build of its TypeScript source |
+| `chromiumBundleStep` | `validate-chromium-bundle` | `checkBundle` | The committed chromium-resolution bundle a `playwright.config.ts` imports matches a fresh build of its TypeScript source |
 | `contrastStep` | `validate-contrast` | `checkContrast` | Every audited foreground/background pair meets its contrast criterion |
 | `browserStep` | `test:browser` | `hasChromium` | A launchable browser exists — declared as the step's `requires.probe` |
 
@@ -177,12 +178,15 @@ The tool steps carry no check: `typecheckStep` (`typecheck`), `lintStep` (`lint`
 (`format`), `typeAwareLintStep` (`lint:types`) and `testStep` (`test`) spawn `tsc`, `oxlint`,
 `oxfmt` and `bun test`.
 
-**`browserStep` spawns `bunx --bun playwright test`, not bare `playwright test`.** Forge ships raw
-TypeScript, and node refuses to strip types from a file under `node_modules`
-(`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which is what the `node_modules/.bin/playwright`
-shim would run under. Under bun your `playwright.config.ts` may import forge subpaths freely —
-`resolveChromiumPath` from `@y-core/forge/tooling/gate` among them. Match your own
-`test:browser` script to the same command so the two cannot diverge.
+**`browserStep` spawns `playwright test` — the installed binary off `binDir`, whose shebang is
+node.** Not `bunx`, which installs from the registry when it resolves nothing locally; and not
+under bun, because a dev server playwright spawns itself binds there where the browser cannot reach
+it in a sandbox, so a repo whose specs need a `webServer` cannot run. Node refuses to strip types
+from a file under `node_modules`
+(`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so import `resolveChromiumPath` in your
+`playwright.config.ts` from `@y-core/forge/tooling/gate/chromium` — the prebuilt `.mjs` — rather
+than from `@y-core/forge/tooling/gate`. Match your own `test:browser` script to the same command so
+the two cannot diverge.
 
 **The `chromium` prerequisite names both routes — a direct download, or a devbox container:**
 

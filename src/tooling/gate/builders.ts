@@ -6,6 +6,7 @@ import { type AssetManifestCheckConfig, checkAssetManifest } from "./checks/asse
 import { type AssetRootCheckConfig, checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
 import { type BuildTimeBoundaryCheckConfig, checkBuildTimeBoundary } from "./checks/build-time-boundary";
+import { type BundleCheckConfig, checkBundle, hasEsbuild } from "./checks/bundle";
 import { type ClassGroupsCheckConfig, checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder, type ClassOrderCheckConfig } from "./checks/class-order";
 import { checkClassTokens, type ClassTokensCheckConfig } from "./checks/class-tokens";
@@ -17,7 +18,6 @@ import { checkDesignScale, type DesignScaleCheckConfig } from "./checks/design-s
 import { hasTailwind } from "./checks/design-system";
 import { checkExports, type ExportsCheckConfig } from "./checks/exports";
 import { checkJsx, type JsxCheckConfig } from "./checks/jsx";
-import { checkLintPlugin, hasEsbuild, type LintPluginCheckConfig } from "./checks/lint-plugin";
 import { checkMarkdown, fixMarkdown, type MarkdownCheckConfig } from "./checks/markdown";
 import { checkModernCss, type ModernCssCheckConfig } from "./checks/modern-css";
 import { checkNamespaceGraph, type NamespaceGraphCheckConfig } from "./checks/namespace-graph";
@@ -112,7 +112,7 @@ export function testStep(options: SourceStepOptions = {}): CommandStep {
   return { label: "test", tail: 120, cmd: ["bun", "test", ...(options.sources ?? [])], ...tier(options.tier) };
 }
 
-/** `playwright test` under bun, defaulting to the `full` tier: it needs a downloaded browser. @public */
+/** `playwright test` under node, defaulting to the `full` tier: it needs a downloaded browser. @public */
 export function browserStep(options: { hint?: string } & StepOptions = {}): CommandStep {
   return {
     label: "test:browser",
@@ -120,10 +120,12 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
     // step table can be read for which steps run in which mode without opening this file.
     ...tier(options.tier, "full"),
     tail: 120,
-    // Under bun, not node: forge ships raw TypeScript, and node refuses to strip types from a file
-    // under `node_modules` — so a consumer's `playwright.config.ts` importing any forge subpath
-    // dies at config load with ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING.
-    cmd: ["bunx", "--bun", "playwright", "test"],
+    // The installed binary off `binDir`, like every other command step — never `bunx`, which falls
+    // back to installing from the registry when it resolves nothing. Its shebang is node, which is
+    // what this step needs: under bun a dev server playwright spawns itself binds where the browser
+    // cannot reach it in a sandbox, and `@y-core/forge/tooling/gate/chromium` is prebuilt so
+    // nothing forces bun on a config either.
+    cmd: ["playwright", "test"],
     // The probe targets the browser, not the `playwright` CLI: the CLI is a devDependency and always
     // present, so probing it would pass vacuously and let every spec fail at launch. The remedy names
     // both routes because the reader is, by definition, outside a devbox container — every image there
@@ -208,6 +210,9 @@ export function jsxStep(config: JsxCheckConfig, options: StepOptions = {}): Chec
  *  the `full` tier and failed by it. */
 const tailwindRequired = (): StepRequirement => ({ tool: "tailwindcss", probe: hasTailwind, hint: "run `bun add -d tailwindcss`" });
 
+/** The dependency every bundle-drift step shares — `esbuild` is an optional peer. */
+const esbuildRequired = (): StepRequirement => ({ tool: "esbuild", probe: hasEsbuild, hint: "run `bun add -d esbuild`" });
+
 /** Measures every audited foreground/background pair against its contrast criterion. @public */
 export function contrastStep(config: ContrastCheckConfig, options: StepOptions = {}): CheckStep {
   // The dependency rides on the palette: a project pointing `palettePath` elsewhere is not gated on tailwind.
@@ -231,10 +236,15 @@ export function designScaleStep(config: DesignScaleCheckConfig, options: StepOpt
 /** Rebuilds the committed oxlint-plugin bundle and fails on any drift from its TypeScript source.
  *  A consumer loads that bundle rather than the source, because node refuses to strip types under
  *  `node_modules`. @public */
-export function lintPluginStep(config: LintPluginCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-lint-plugin", () => checkLintPlugin(config), options, {
-    requires: { tool: "esbuild", probe: hasEsbuild, hint: "run `bun add -d esbuild`" },
-  });
+export function lintPluginStep(config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-lint-plugin", () => checkBundle(config), options, { requires: esbuildRequired() });
+}
+
+/** Rebuilds the committed chromium-resolution bundle and fails on any drift from its TypeScript
+ *  source. A `playwright.config.ts` loads that bundle under node, which refuses to strip types
+ *  under `node_modules`. @public */
+export function chromiumBundleStep(config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-chromium-bundle", () => checkBundle(config), options, { requires: esbuildRequired() });
 }
 
 /** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */

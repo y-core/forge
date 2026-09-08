@@ -1,4 +1,4 @@
-// Generated from src/tooling/lint/mod.ts by `bun run gen:lint-plugin` — do not edit.
+// Generated from src/tooling/lint/mod.ts by `bun run gen:bundles` — do not edit.
 
 // src/tooling/lint/design-rules.ts
 var RULE_CORPUS_PATH = {

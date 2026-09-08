@@ -20,7 +20,9 @@ export interface WardenCheckConfig extends DependencyOptions {
   root: string;
   /** The canon tree this repository is subject to. */
   kind: Tree;
-  /** The committed catalogue, relative to `root`. Defaults to `warden/CATALOGUE.md`. */
+  /** The committed catalogue, relative to `root`. Unset in every repository but the canon's home:
+   *  the rendered catalogue is canon-scoped and so byte-identical everywhere, which makes it the
+   *  canon owner's to commit; elsewhere the live `knowledge://catalogue` resource is the copy. */
   catalogue?: string;
   /** Directory of this repository's own governing documents. Defaults to `docs`. */
   docsDir?: string;
@@ -36,7 +38,6 @@ export interface WardenCheckConfig extends DependencyOptions {
  *  an edit in progress can never change a verdict. @public */
 export function checkWarden(config: WardenCheckConfig): CheckResult {
   const { root, kind } = config;
-  const cataloguePath = config.catalogue ?? "warden/CATALOGUE.md";
   const dependencyRoot = dependencyRootOf(config, root);
   const sources = discover(root, kind, {
     ...(config.docsDir === undefined ? {} : { docsDir: config.docsDir }),
@@ -72,7 +73,7 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
       ...missingGloss(db, config.docsDir ?? "docs"),
       ...unresolvedRelations(db),
       ...ambiguousCitations(report),
-      ...catalogueDrift(db, root, cataloguePath),
+      ...(config.catalogue === undefined ? [] : catalogueDrift(db, root, config.catalogue)),
     ];
     const warnings = findings.filter((finding) => finding.level === "warn").length;
     return checkResult(

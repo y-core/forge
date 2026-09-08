@@ -6,7 +6,7 @@
   "jsPlugins": ["./src/tooling/lint/mod.ts"],
   // The committed bundle of that same plugin, which a consumer's oxlint loads instead. `validate-lint-plugin`
   // holds it against the source; linting or formatting it would be judging esbuild's output.
-  "ignorePatterns": ["src/tooling/lint/plugin.mjs"],
+  "ignorePatterns": ["src/tooling/gate/chromium.mjs", "src/tooling/lint/plugin.mjs"],
   // `suspicious` stays off — see docs/CODE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {

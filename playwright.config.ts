@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { resolveChromiumPath } from "./src/tooling/gate/mod";
+import { resolveChromiumPath } from "./src/tooling/gate/chromium.mjs";
 
 /**
  * The browser set — real Chromium, one verb of its own (`bun run test:browser`).
@@ -21,8 +21,10 @@ import { resolveChromiumPath } from "./src/tooling/gate/mod";
  * `executablePath` is not a preference: playwright reads no environment variable for the browser
  * path, so a container that bakes Chromium in is invisible to it without this line and every spec
  * fails inside `browserType.launch()` rather than in the code under test.
- * `src/tooling/gate/checks/browser.ts` owns that resolution, because the gate's prerequisite probe must answer
- * from the same rule.
+ * `src/tooling/gate/checks/chromium.ts` owns that resolution, because the gate's prerequisite probe must answer
+ * from the same rule. The import is the committed `chromium.mjs` bundle of it, not the source: this
+ * config loads under node, which refuses to strip types under `node_modules`, and forge loading the
+ * exact module a consumer loads is what makes a broken bundle fail here rather than there.
  */
 export default defineConfig({
   testDir: ".",

@@ -43,6 +43,7 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/tooling/assets` | Asset config, build pipeline & `forge assets` | [src/tooling/assets/README.md](src/tooling/assets/README.md) |
 | `@y-core/forge/tooling/cli` | CLI command framework | [src/tooling/cli/README.md](src/tooling/cli/README.md) |
 | `@y-core/forge/tooling/gate` | Verification gate — steps, presets & checks (Node/Bun only) | [src/tooling/gate/README.md](src/tooling/gate/README.md) |
+| `@y-core/forge/tooling/gate/chromium` | Chromium resolution prebuilt — the spelling `playwright.config.ts` imports | [src/tooling/gate/README.md](src/tooling/gate/README.md) |
 | `@y-core/forge/tooling/release` | Release workflow — version, changelog & surface guard | [src/tooling/release/README.md](src/tooling/release/README.md) |
 | `@y-core/forge/tooling/lint` | forge's oxlint rules, and the two rule catalogs the gate reads | [src/tooling/lint/README.md](src/tooling/lint/README.md) |
 | `@y-core/forge/tooling/lint/plugin` | The same plugin prebuilt — the spelling `.oxlintrc.json` names | [src/tooling/lint/README.md](src/tooling/lint/README.md) |

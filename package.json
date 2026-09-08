@@ -17,13 +17,13 @@
   },
   "scripts": {
     "fix": "bun run src/tooling/root/bin.ts verify --fix",
+    "gen:bundles": "bun run src/tooling/gate/checks/bundle.ts",
     "gen:class-groups": "bun run src/tooling/gate/checks/class-groups.ts && oxfmt src/ui/core/utils/class-groups.ts",
     "gen:design-scale": "bun run src/tooling/gate/checks/design-scale.ts && oxfmt src/tooling/lint/data/design-scale.ts",
-    "gen:lint-plugin": "bun run src/tooling/gate/checks/lint-plugin.ts",
     "lint": "bun run src/tooling/root/bin.ts verify --only lint",
     "release": "bun run src/tooling/root/bin.ts release",
     "test": "bun test",
-    "test:browser": "bunx --bun playwright test",
+    "test:browser": "playwright test",
     "test:workerd": "bun test tests/workerd/",
     "verify": "bun run src/tooling/root/bin.ts verify",
     "verify:fast": "bun run src/tooling/root/bin.ts verify --mode fast",
@@ -179,6 +179,7 @@
       "types": "./src/tooling/gate/mod.ts",
       "import": "./src/tooling/gate/mod.ts"
     },
+    "./tooling/gate/chromium": "./src/tooling/gate/chromium.mjs",
     "./tooling/lint": {
       "types": "./src/tooling/lint/mod.ts",
       "import": "./src/tooling/lint/mod.ts"

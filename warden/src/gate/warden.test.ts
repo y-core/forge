@@ -41,7 +41,8 @@ function repo(prefix: string, options: { catalogue?: string; docA?: string } = {
   return root;
 }
 
-const run = (root: string) => checkWarden({ root, kind: "libs", indexPath: ":memory:", canonRoot: join(root, "warden/canon") });
+const run = (root: string) =>
+  checkWarden({ root, kind: "libs", indexPath: ":memory:", canonRoot: join(root, "warden/canon"), catalogue: "warden/CATALOGUE.md" });
 
 describe("checkWarden()", () => {
   it("passes a corpus whose catalogue is in step", () => {
@@ -94,10 +95,19 @@ describe("checkWarden()", () => {
     expect(result.findings.map((finding) => finding.message)).toContain("is out of step with the corpus — run `warden catalogue --write`");
   });
 
-  it("fails when the catalogue does not exist at all", () => {
+  it("fails when a configured catalogue does not exist at all", () => {
     expect(run(repo("warden-gate-absent-")).findings.map((finding) => finding.message)).toContain(
       "does not exist — run `warden catalogue --write`",
     );
+  });
+
+  // The rendered catalogue is canon-scoped, so only the canon's home repository has one to commit.
+  it("skips the catalogue assertion entirely when no catalogue is configured", () => {
+    const root = repo("warden-gate-uncatalogued-");
+    const result = checkWarden({ root, kind: "libs", indexPath: ":memory:", canonRoot: join(root, "warden/canon") });
+
+    expect(result.ok).toBe(true);
+    expect(result.findings.map((finding) => finding.message).join("\n")).not.toContain("warden catalogue --write");
   });
 
   it("fails a section with no Quick Reference line — retrieval loses its best signal for it", () => {

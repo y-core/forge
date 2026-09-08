@@ -87,12 +87,12 @@ This is a hard requirement:
 `playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it,
 never restate it here.
 
-**The set runs under bun — `bunx --bun playwright test`, in the script and in `browserStep`'s argv
-alike.** `node_modules/.bin/playwright` is a node shim, and node refuses to strip types from a file
-under `node_modules`, so a consumer's `playwright.config.ts` importing any forge subpath dies at
-config load. Forge's own config imports relatively and never hit it; a consumer hits it on the first
-import. It is the same restriction the committed lint-plugin bundle answers, and
-[`NAMESPACES.md`](NAMESPACES.md) §3c is its single home — including why the two remedies differ.
+**The set runs the installed binary under node — `playwright test`, in the script and in
+`browserStep`'s argv alike — and the config imports the committed `./tooling/gate/chromium` bundle,
+because under bun a dev server playwright spawns itself is unreachable from the browser in a
+sandbox.** [`NAMESPACES.md`](NAMESPACES.md) §3c is that ruling's single home. The bare name is
+resolved off the runner's `binDir`, as every command step's is — a gate never reaches a registry to
+find what it runs.
 
 **The set is held back to the `full` tier, and the reason is a prerequisite, not cost.**
 It needs a browser binary, and a prerequisite is the only legitimate ground for holding a step back.

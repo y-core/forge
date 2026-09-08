@@ -7,6 +7,7 @@ import pkg from "../package.json" with { type: "json" };
 import { resolveAppRoot } from "../src/tooling/cli/mod";
 import {
   browserStep,
+  chromiumBundleStep,
   classGroupsStep,
   classOrderStep,
   classTokensStep,
@@ -46,6 +47,9 @@ import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 export const ROOT = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 
 const EXPORTS = pkg.exports as ExportsMap;
+
+// Named once: both bundle rows report the same verb, because one script writes both artifacts.
+const GEN = "bun run gen:bundles";
 
 // `typecheck` runs first because a type failure cascades into misleading lint and test failures.
 /** The gate's steps, in execution order. */
@@ -219,9 +223,15 @@ export const STEPS: readonly Step[] = [
     { root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" },
     { tier: "standard" },
   ),
-  // The bundle a consumer's oxlint loads, held against the source forge's own `.oxlintrc.json` names:
-  // node refuses to strip types under `node_modules`, so the two copies exist and one can drift.
-  lintPluginStep({ root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs" }, { tier: "standard" }),
+  // Two bundles for one reason — node refuses to strip types under `node_modules`, so a consumer
+  // loads a prebuilt copy of each surface a node process imports. They drift independently, so each
+  // is its own row: one names the plugin `.oxlintrc.json` loads, the other the resolution a
+  // `playwright.config.ts` imports.
+  lintPluginStep({ root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs", fixer: GEN }, { tier: "standard" }),
+  chromiumBundleStep(
+    { root: ROOT, entry: "src/tooling/gate/checks/chromium.ts", bundle: "src/tooling/gate/chromium.mjs", fixer: GEN },
+    { tier: "standard" },
+  ),
   contrastStep(
     {
       root: ROOT,
@@ -259,7 +269,9 @@ export const STEPS: readonly Step[] = [
   cssTokensStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" }, { tier: "standard" }),
   // Two steps rather than one: an index that will not build and a query that stopped finding its
   // answer fail for different reasons, and a reader has to be told which to fix.
-  wardenStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
+  // The catalogue is named here because forge is the canon's home repository — the rendered
+  // inventory is canon-scoped, so it is forge's to commit and no consumer's.
+  wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md" }, { tier: "standard" }),
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   duplicatesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   browserStep({ tier: "full" }),

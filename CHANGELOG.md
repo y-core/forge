@@ -17,7 +17,46 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`@y-core/forge/tooling/gate/chromium` — the spelling a consumer's `playwright.config.ts` can
+  actually import.** Playwright loads its config under node, which refuses to strip types from a
+  file under `node_modules`, so importing `resolveChromiumPath` from `@y-core/forge/tooling/gate`
+  died at config load. The subpath publishes a committed esbuild bundle of the one symbol a config
+  needs; `validate-chromium-bundle` re-bundles and fails on any drift, as `validate-lint-plugin`
+  already did for the oxlint plugin. Both artifacts are written by `bun run gen:bundles`.
+
+### Changed
+
+- **`browserStep` spawns `playwright test`, not `bunx --bun playwright test`.** The `--bun` was
+  there to dodge type stripping; the prebuilt subpath removes the need, and bun was never free — a
+  dev server playwright spawns itself binds, under bun, where the browser cannot reach it in a
+  sandbox. A consumer whose gate spawns its own server could not run the step at all. `bunx` went
+  with it: the runner already prepends `node_modules/.bin` to `PATH`, so the bare name resolves the
+  installed binary — whose shebang is node — while `bunx` would fall back to installing from the
+  registry when it resolved nothing. Every other command step already resolved this way.
+  `bun run test:browser` and forge's own `playwright.config.ts` follow, the config importing the
+  committed `.mjs` so forge's gate exercises the exact module a consumer loads.
+- **`wardenStep`'s `catalogue` assertion is opt-in.** It defaulted to `warden/CATALOGUE.md` and
+  failed `warden:index` in any repository that had no such file. The rendered catalogue is
+  canon-scoped and so byte-identical everywhere, which makes it the canon owner's to commit and no
+  consumer's; elsewhere the live `knowledge://catalogue` resource is the copy. Forge names the path
+  explicitly, so its own gate is unchanged.
+
+- **`checks/lint-plugin.ts` is now `checks/bundle.ts`, generic in its names.** `LintPluginCheckConfig`
+  → `BundleCheckConfig`, `bundleLintPlugin` → `bundleSource`, `checkLintPlugin` → `checkBundle`,
+  `writeLintPlugin` → `writeBundle`; the config gains a required `fixer` naming the regeneration
+  verb each failure reports. `resolveChromiumPath` moves from `checks/browser.ts` to
+  `checks/chromium.ts`, which imports nothing but `node:fs` and is therefore bundlable — the public
+  symbol is re-exported from the same barrel under the same name. `gen:lint-plugin` becomes
+  `gen:bundles`, which writes both artifacts.
+
+### Fixed
+
+- **`warden catalogue --write` no longer writes into `node_modules`.** It resolved the target
+  against warden's own installed root, so a consumer following the gate's own remedy silently
+  mutated `node_modules/@y-core/forge/warden/CATALOGUE.md`. It now honours `--root`, as documented,
+  and refuses outright when the resolved path is inside a dependency.
 
 ---
 

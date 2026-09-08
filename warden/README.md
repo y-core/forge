@@ -90,10 +90,16 @@ warden related <id>          # what a section defers to, cites, is cited by, and
 warden impact <ref>          # which sections a ref changed, what depends on them, what they govern
 
 warden catalogue             # print the canon catalogue
-warden catalogue --write     # write it to warden/CATALOGUE.md instead
+warden catalogue --write     # write it to <root>/warden/CATALOGUE.md instead
 
 warden serve                 # serve the corpus over MCP on stdio
 ```
+
+**Only the canon's home repository commits a catalogue.** `warden catalogue` renders the fleet
+canon and nothing repository-specific, so the file is byte-identical wherever it is written —
+forge owns it, and `wardenStep` asserts it only where `catalogue` is configured. Elsewhere the
+live `knowledge://catalogue` resource is the copy, rendered per repository and stored nowhere.
+`--write` writes under the root it was given and refuses a target inside `node_modules`.
 
 Search, read, outline and related also take `--gate`, which reads the gate's own index rather than
 the working one.
@@ -158,7 +164,7 @@ fixed, because a label is the `--only` token a developer types.
 | `readmeExportsStep` | function | `validate-readme-exports` — a README's export tables against the barrels. |
 | `changelogStep` | function | `validate-changelog` — the changelog against the package version. Defaults to the `full` tier. |
 | `designStep` | function | `validate-design` — the design corpus against the tree it governs. |
-| `wardenStep` | function | `warden:index` — rebuilds the knowledge index and asserts what retrieval depends on. |
+| `wardenStep` | function | `warden:index` — rebuilds the knowledge index and asserts what retrieval depends on. Its `catalogue` option is opt-in and belongs to the canon's home repository alone. |
 | `wardenQueriesStep` | function | `warden:queries` — the golden retrieval set against a freshly built index. |
 | `duplicatesStep` | function | `warden:duplicates` — two sections saying the same thing, which the single-home rule forbids. |
 

@@ -8,6 +8,7 @@ export {
   assetRootStep,
   browserStep,
   buildTimeBoundaryStep,
+  chromiumBundleStep,
   classGroupsStep,
   classOrderStep,
   classTokensStep,
@@ -44,7 +45,8 @@ export type { AssetManifestCheckConfig } from "./checks/asset-manifest";
 export { checkAssetManifest } from "./checks/asset-manifest";
 export type { AssetRootCheckConfig } from "./checks/asset-root";
 export { checkAssetRoot } from "./checks/asset-root";
-export { hasChromium, resolveChromiumPath } from "./checks/browser";
+export { hasChromium } from "./checks/browser";
+export { resolveChromiumPath } from "./checks/chromium";
 export { hasWorkerd } from "./checks/workerd";
 export type { BuildTimeBoundaryCheckConfig } from "./checks/build-time-boundary";
 export { buildTimeSubpaths, checkBuildTimeBoundary, isBuildTime } from "./checks/build-time-boundary";
@@ -98,8 +100,8 @@ export type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
 export { checkExports, isBrowserSubpath, isPublished, parseSubpathPatterns } from "./checks/exports";
 export type { JsxCheckConfig } from "./checks/jsx";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
-export type { LintPluginCheckConfig } from "./checks/lint-plugin";
-export { bundleLintPlugin, checkLintPlugin, hasEsbuild, writeLintPlugin } from "./checks/lint-plugin";
+export type { BundleCheckConfig } from "./checks/bundle";
+export { bundleSource, checkBundle, hasEsbuild, writeBundle } from "./checks/bundle";
 export type { MarkdownCheckConfig } from "./checks/markdown";
 export { checkMarkdown, fixMarkdown, resolveMarkdownFiles } from "./checks/markdown";
 export type {

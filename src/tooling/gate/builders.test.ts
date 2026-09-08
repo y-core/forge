@@ -175,8 +175,16 @@ describe("browserStep()", () => {
     expect(browserStep().tier).toBe("full");
   });
 
-  it("spawns playwright under bun, since node cannot strip types from a forge subpath under node_modules", () => {
-    expect(browserStep().cmd).toEqual(["bunx", "--bun", "playwright", "test"]);
+  // Under bun a dev server playwright spawns itself is unreachable from the browser in a sandbox,
+  // and the prebuilt `tooling/gate/chromium` subpath is what removes the reason to prefer bun.
+  it("spawns the installed binary under node, so a config that starts its own server can reach it", () => {
+    expect(browserStep().cmd).toEqual(["playwright", "test"]);
+  });
+
+  // `bunx` installs from the registry when it resolves nothing locally, which is a supply-chain
+  // fallback no gate step may carry — every other command step resolves off `binDir` too.
+  it("never routes through a resolver that could fetch a binary from the registry", () => {
+    expect(browserStep().cmd).not.toContain("bunx");
   });
 
   it("names the browser as the prerequisite, not the playwright CLI that is always installed", () => {
