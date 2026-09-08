@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.8] — 2026-09-08
+
 ### Added
 
 - **`@y-core/forge/tooling/gate/chromium` — the spelling a consumer's `playwright.config.ts` can
@@ -5350,6 +5356,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.8]: https://github.com/y-core/forge/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/y-core/forge/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/y-core/forge/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/y-core/forge/compare/v0.1.4...v0.1.5
