@@ -5,8 +5,19 @@ import * as childProcess from "node:child_process";
 const mockExecSync = mock((_cmd: string, _args?: string[], _opts?: unknown): string | Buffer => "");
 await mock.module("node:child_process", () => ({ ...childProcess, execFileSync: mockExecSync }));
 
-const { gitExec, isWorkingTreeClean, getLatestTag, getCommitsSinceTag, getLastCommitMessage, createTag, commit, tagExists, readFileAtRef } =
-  await import("./git");
+const {
+  gitExec,
+  isWorkingTreeClean,
+  getLatestTag,
+  getCommitsSinceTag,
+  getLastCommitMessage,
+  createTag,
+  commit,
+  tagExists,
+  readFileAtRef,
+  tagIsAncestorOfHead,
+  remoteTags,
+} = await import("./git");
 
 describe("gitExec()", () => {
   it("returns trimmed stdout", () => {
@@ -97,6 +108,63 @@ describe("getCommitsSinceTag()", () => {
   it("splits commit lines into an array", () => {
     mockExecSync.mockReturnValue("abc1234 feat: add thing\ndef5678 fix: bug");
     expect(getCommitsSinceTag("/cwd", "v0.1.0")).toEqual(["abc1234 feat: add thing", "def5678 fix: bug"]);
+  });
+});
+
+describe("tagIsAncestorOfHead()", () => {
+  it("returns true when merge-base exits zero", () => {
+    mockExecSync.mockReturnValue("");
+    expect(tagIsAncestorOfHead("/cwd", "v1.0.0")).toBe(true);
+    expect(mockExecSync.mock.calls.at(-1)![1]).toEqual(["merge-base", "--is-ancestor", "v1.0.0", "HEAD"]);
+  });
+
+  it("returns false on exit 1, which is merge-base answering 'no'", () => {
+    mockExecSync.mockImplementation(() => {
+      throw Object.assign(new Error("Command failed"), { status: 1 });
+    });
+    expect(tagIsAncestorOfHead("/cwd", "v1.0.0")).toBe(false);
+    mockExecSync.mockReturnValue("");
+  });
+
+  it("throws on any other exit, so git failing to answer does not read as a rewrite", () => {
+    mockExecSync.mockImplementation(() => {
+      throw Object.assign(new Error("Command failed"), { status: 128, stderr: "not a valid object name" });
+    });
+    expect(() => tagIsAncestorOfHead("/cwd", "v9.9.9")).toThrow("git merge-base failed: not a valid object name");
+    mockExecSync.mockReturnValue("");
+  });
+});
+
+describe("remoteTags()", () => {
+  it("strips the refs/tags prefix from each line", () => {
+    mockExecSync.mockReturnValue("abc123\trefs/tags/v0.1.0\ndef456\trefs/tags/v0.2.0");
+    expect(remoteTags("/cwd")).toEqual(["v0.1.0", "v0.2.0"]);
+  });
+
+  it("collapses the ^{} dereference line an annotated tag adds", () => {
+    mockExecSync.mockReturnValue("abc123\trefs/tags/v0.1.0\ndef456\trefs/tags/v0.1.0^{}");
+    expect(remoteTags("/cwd")).toEqual(["v0.1.0", "v0.1.0"]);
+  });
+
+  it("asks the named remote, defaulting to origin", () => {
+    mockExecSync.mockReturnValue("");
+    void remoteTags("/cwd");
+    expect(mockExecSync.mock.calls.at(-1)![1]).toEqual(["ls-remote", "--tags", "origin"]);
+    void remoteTags("/cwd", "upstream");
+    expect(mockExecSync.mock.calls.at(-1)![1]).toEqual(["ls-remote", "--tags", "upstream"]);
+  });
+
+  it("returns an empty array for a remote carrying no tags", () => {
+    mockExecSync.mockReturnValue("");
+    expect(remoteTags("/cwd")).toEqual([]);
+  });
+
+  it("returns null when the remote cannot be reached", () => {
+    mockExecSync.mockImplementation(() => {
+      throw { stderr: "Could not resolve host: github.com", stdout: "", message: "Command failed" };
+    });
+    expect(remoteTags("/cwd")).toBeNull();
+    mockExecSync.mockReturnValue("");
   });
 });
 

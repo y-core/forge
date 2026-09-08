@@ -160,6 +160,29 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
     expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
   });
 
+  // The refusal a tripped guard renders is deliberately indistinguishable from a validation refusal,
+  // so the log line is the only thing that tells an operator a CAPTCHA cannot pass in this
+  // environment rather than that the first field was simply wrong.
+  it("logs every tripped turnstile guard with its reason, not only an unreachable siteverify", async () => {
+    const app = makeApp(
+      defineAction({
+        schema: NameSchema,
+        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
+        handle: () => new Response("success"),
+      }),
+    );
+
+    const logs = await captureLogs(() => post(app, "name=Jane"));
+    expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("missing-token"))).toBe(true);
+  });
+
+  it("logs a tripped honeypot on the same line, naming the guard that refused", async () => {
+    const app = makeApp(defineAction({ schema: NameSchema, honeypot: "company", handle: () => new Response("success") }));
+
+    const logs = await captureLogs(() => post(app, "name=Jane&company=bot"));
+    expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("honeypot"))).toBe(true);
+  });
+
   it("still reaches handle through resolvers that do not throw", async () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
 

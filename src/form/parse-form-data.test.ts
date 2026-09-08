@@ -141,6 +141,23 @@ describe("parseFormData — byte limits", () => {
     expect(after?.get("name")).toBe("Alice");
   });
 
+  // Every other case here is urlencoded, where the boundary the re-wrapping `Response` must be handed
+  // does not exist. Multipart is the encoding that proves the metered stream is still decodable.
+  it("round-trips a multipart body through the metering transform", async () => {
+    const app = new Forge();
+    mapHandler(app, "POST", "/test", async (c) => {
+      const fd = await parseFormData(c);
+      return new Response(`${fd.get("name") as string}|${fd.get("message") as string}`);
+    });
+
+    const form = new FormData();
+    form.append("name", "Alice");
+    form.append("message", "Hello.");
+    const res = await app.request("/test", { method: "POST", body: form });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("Alice|Hello.");
+  });
+
   it("accepts a body within the limit", async () => {
     const app = new Forge();
     mapHandler(app, "POST", "/test", async (c) => {

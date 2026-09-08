@@ -7,4 +7,4 @@ export { checkDocs, parseSections, stripFences, validateFrontmatter, validateNoR
 export type { SubpathCitation } from "./docs-parse";
 export { findSubpathCitations, quickReference, uncitedSubpaths } from "./docs-parse";
 export type { ReadmeExportsCheckConfig } from "./readme-exports";
-export { checkReadmeExports } from "./readme-exports";
+export { checkReadmeExports, discoverReadmes } from "./readme-exports";

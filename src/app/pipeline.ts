@@ -71,6 +71,7 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
 
     // The decoy is checked first so a bot that filled it never spends a siteverify call.
     if (def.honeypot !== undefined && isHoneypotFilled(formData, def.honeypot)) {
+      logger.warn("Submission refused by a bot guard", { guard: "honeypot" });
       return err(def.onBotDetected ? await def.onBotDetected({ guard: "honeypot" }, c) : refuseSubmission([guardRefusalMessage]));
     }
 
@@ -78,10 +79,11 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
       const secretKey = await def.turnstile.secretKey(c, config);
       const verification = await verifyTurnstile(formData, secretKey, { ...def.turnstile.verify(c, config), tokenField: turnstileField });
       if (!verification.ok) {
-        // An unverifiable CAPTCHA fails closed, but a run of these is an outage rather than an attack.
-        if (verification.error === "network-error" || verification.error === "timeout") {
-          logger.warn("Turnstile verification unavailable", { reason: verification.error });
-        }
+        // Logged on every trip, not only on an outage: the refusal a tripped guard renders is
+        // deliberately a validation refusal naming the first declared field, so without this line a
+        // CAPTCHA that cannot pass in a given environment is indistinguishable — from the outside and
+        // from the logs — from a form whose first field is simply wrong.
+        logger.warn("Submission refused by a bot guard", { guard: "turnstile", reason: verification.error });
         return err(
           def.onBotDetected
             ? await def.onBotDetected({ guard: "turnstile", reason: verification.error }, c)

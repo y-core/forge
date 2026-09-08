@@ -20,7 +20,8 @@ export interface ExportsCheckConfig {
   files: readonly string[];
   /** Directory scanned for source barrels, relative to `root`. Defaults to `"src"`. */
   sourceDir?: string;
-  /** Subpaths whose runtime import is skipped because loading them touches DOM globals. */
+  /** Further subpaths whose runtime import is skipped because loading them touches DOM globals.
+   *  A subpath under a `client` segment is derived; this is for one that is browser-only under another name. */
   browserOnly?: readonly string[];
   /** Subpaths that intentionally export no value, because they mutate globals or register once. */
   sideEffectOnly?: readonly string[];
@@ -46,6 +47,13 @@ function targetOf(entry: ExportsMap[string]): string | undefined {
 /** Strip a leading `./` so map targets and repo-relative paths compare directly. */
 function bare(path: string): string {
   return path.startsWith("./") ? path.slice(2) : path;
+}
+
+// The same convention `ssrBoundaryStep.entryPoints` relies on: a `client` segment is where the
+// browser runtime lives, so a subpath under one reaches DOM globals at import time by construction.
+/** Whether a subpath is browser-only by its own name. @public */
+export function isBrowserSubpath(specifier: string): boolean {
+  return specifier.split("/").includes("client");
 }
 
 /** Split every subpath pattern in the map into its four fixed parts. @public */
@@ -128,11 +136,25 @@ function collectModFiles(root: string, dir: string): string[] {
 export async function checkExports(config: ExportsCheckConfig): Promise<CheckResult> {
   const { root, packageName, exports: map, files } = config;
   const sourceDir = config.sourceDir ?? "src";
-  const browserOnly = new Set(config.browserOnly ?? []);
+  const configuredBrowserOnly = config.browserOnly ?? [];
   const sideEffectOnly = new Set(config.sideEffectOnly ?? []);
   const sealedInternal = new Set(config.sealedInternal ?? []);
+  const isBrowserOnly = (specifier: string): boolean => isBrowserSubpath(specifier) || configuredBrowserOnly.includes(specifier);
 
   const { patterns, findings } = parseSubpathPatterns(map);
+
+  // Every escape a check offers is itself a drift surface, so each is held to the tree it names:
+  // an entry the convention already derives is redundant, and one naming no subpath is stale.
+  for (const specifier of configuredBrowserOnly) {
+    if (isBrowserSubpath(specifier)) {
+      findings.push(fail(`browserOnly: ${specifier} sits under a \`client\` segment, which is browser-only already — delete the entry`));
+    } else if (!(specifier in map)) {
+      findings.push(fail(`browserOnly: ${specifier} is not a subpath of the exports map — delete the entry`));
+    }
+  }
+  for (const specifier of sideEffectOnly) {
+    if (!(specifier in map)) findings.push(fail(`sideEffectOnly: ${specifier} is not a subpath of the exports map — delete the entry`));
+  }
 
   const barrelDirs = new Set<string>();
   const ownExportTargetFiles = new Set<string>();
@@ -214,14 +236,14 @@ export async function checkExports(config: ExportsCheckConfig): Promise<CheckRes
     }
 
     if (values.length === 0) {
-      if (!hasTypeExports && !browserOnly.has(specifier) && !sideEffectOnly.has(specifier)) {
+      if (!hasTypeExports && !isBrowserOnly(specifier) && !sideEffectOnly.has(specifier)) {
         findings.push(fail(`${specifier}: no value exports found in barrel`));
       }
       checked++;
       continue;
     }
 
-    if (browserOnly.has(specifier) || sideEffectOnly.has(specifier)) {
+    if (isBrowserOnly(specifier) || sideEffectOnly.has(specifier)) {
       checked++;
       continue;
     }
@@ -254,9 +276,16 @@ export async function checkExports(config: ExportsCheckConfig): Promise<CheckRes
     if (missing.size > 0) findings.push(fail(`${specifier}: @public symbols missing from barrel: ${[...missing].sort().join(", ")}`));
   }
 
-  for (const modFile of collectModFiles(root, resolve(root, sourceDir))) {
+  const modFiles = collectModFiles(root, resolve(root, sourceDir));
+  for (const modFile of modFiles) {
     if (exportedTargets.has(modFile) || patterns.some((p) => covers(p, modFile)) || sealedInternal.has(modFile)) continue;
     findings.push(fail("barrel is not a package.json exports target and not on the sealed-internal allowlist", { file: modFile }));
+  }
+
+  const walkedMods = new Set(modFiles);
+  for (const barrel of sealedInternal) {
+    if (exportedTargets.has(barrel)) findings.push(fail(`sealedInternal: ${barrel} is a published exports target — delete the entry`));
+    else if (!walkedMods.has(barrel)) findings.push(fail(`sealedInternal: ${barrel} is not a barrel this check walks — delete the entry`));
   }
 
   for (const entry of files) {

@@ -6,6 +6,7 @@ import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
 import { checkDesign, type DesignCheckConfig } from "./checks/design";
 import { checkDocs, type DocsCheckConfig } from "./checks/docs";
 import { checkReadmeExports, type ReadmeExportsCheckConfig } from "./checks/readme-exports";
+import { checkDuplicates, type DuplicateCheckConfig } from "./gate/duplicates";
 import { checkGoldenQueries, type GoldenCheckConfig } from "./gate/queries";
 import { checkWarden, type WardenCheckConfig } from "./gate/warden";
 
@@ -44,4 +45,11 @@ export function wardenStep(config: WardenCheckConfig, options: StepOptions = {})
  *  which one to fix. @public */
 export function wardenQueriesStep(config: GoldenCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("warden:queries", () => checkGoldenQueries(config), options, { requires: SQLITE });
+}
+
+/** Reports two sections saying the same thing, which the single-home rule forbids. A third step for
+ *  the same reason the second is one — and it needs no index, because the text it compares is never
+ *  stored in a column. @public */
+export function duplicatesStep(config: DuplicateCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("warden:duplicates", () => checkDuplicates(config), options);
 }

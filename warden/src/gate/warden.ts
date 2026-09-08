@@ -8,6 +8,7 @@ import { renderCatalogue } from "../catalogue/render";
 import { discover } from "../corpus/source";
 import { build, load } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
+import { packageNameOf } from "../paths";
 import { unresolved } from "../search/related";
 import type { SourceDoc, Tree } from "../types";
 import { canonVersion } from "../version";
@@ -50,7 +51,7 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
     // a `UNIQUE` violation here means two sections claimed one id, which is a located finding.
     let report;
     try {
-      report = build(db, sources, canonVersion());
+      report = build(db, sources, canonVersion(), packageNameOf(root));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const collision = duplicateChunkId(sources);

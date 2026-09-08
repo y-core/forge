@@ -1,9 +1,19 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-import { balancedSpan, blankComments, blankSourceComments, collectFiles, collectSource, listDirectories, listFiles } from "./source-scan";
+import {
+  balancedSpan,
+  blankComments,
+  blankSourceComments,
+  collectFiles,
+  collectSource,
+  excludedBy,
+  listDirectories,
+  listFiles,
+  resolveSources,
+} from "./source-scan";
 
 describe("balancedSpan() — the bracket it closes", () => {
   const balanced: { source: string; label: string }[] = [
@@ -147,5 +157,47 @@ describe("collectFiles() — the order and spelling a finding inherits", () => {
   it("lists only the immediate entries, files and directories apart", () => {
     expect(listFiles(join(root, "src"), () => true)).toEqual(["z.ts"]);
     expect(listDirectories(join(root, "src"))).toEqual(["a", "b"]);
+  });
+});
+
+describe("excludedBy() — the prefix boundary", () => {
+  it("excludes the prefix itself and what sits beneath it", () => {
+    expect(excludedBy("src/ui/design", ["src/ui/design"])).toBe(true);
+    expect(excludedBy("src/ui/design/catalog.md", ["src/ui/design"])).toBe(true);
+  });
+
+  it("does not exclude a sibling whose name merely starts with the prefix", () => {
+    expect(excludedBy("src/ui/designer/index.ts", ["src/ui/design"])).toBe(false);
+  });
+
+  it("excludes nothing when no prefix is given", () => {
+    expect(excludedBy("src/ui/design", [])).toBe(false);
+  });
+});
+
+describe("resolveSources() — the walk a `!` entry narrows", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-resolve-"));
+
+  beforeAll(() => {
+    for (const path of ["src/a.ts", "src/skip/b.ts", "src/skipper/c.ts", "src/d.md"]) {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), "", "utf-8");
+    }
+  });
+
+  it("returns every accepted file under the sources, sorted", () => {
+    expect(resolveSources(root, ["src"], (name) => name.endsWith(".ts"))).toEqual(["src/a.ts", "src/skip/b.ts", "src/skipper/c.ts"]);
+  });
+
+  it("drops the subtree a `!` entry names, and only that subtree", () => {
+    expect(resolveSources(root, ["src", "!src/skip"], (name) => name.endsWith(".ts"))).toEqual(["src/a.ts", "src/skipper/c.ts"]);
+  });
+
+  it("dedupes a file two sources both reach", () => {
+    expect(resolveSources(root, ["src", "src/a.ts"], (name) => name.endsWith(".ts"))).toEqual(["src/a.ts", "src/skip/b.ts", "src/skipper/c.ts"]);
+  });
+
+  it("returns nothing when every source is excluded", () => {
+    expect(resolveSources(root, ["src", "!src"], () => true)).toEqual([]);
   });
 });

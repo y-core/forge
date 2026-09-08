@@ -6,7 +6,7 @@ import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn
 import { type DeferredFinding, MODERN_CSS_DEFERRED } from "./modern-css-deferred";
 import { findModernCssViolations, type ModernCssFinding } from "./modern-css-parse";
 import { findModernCssSourceViolations } from "./modern-css-source-parse";
-import { collectSource } from "./source-scan";
+import { resolveSources } from "./source-scan";
 
 /** What the modern-CSS check needs to know about the project. @public */
 export interface ModernCssCheckConfig {
@@ -33,9 +33,7 @@ export function checkModernCss(config: ModernCssCheckConfig): CheckResult {
   const { root, sources } = config;
   const deferrals = config.deferred ?? MODERN_CSS_DEFERRED;
   const owned = deferrals.filter((entry) => entry.owner.trim() !== "");
-  const excluded = sources.filter((source) => source.startsWith("!")).map((source) => source.slice(1));
-  const collected = sources.filter((source) => !source.startsWith("!")).flatMap((source) => collectSource(root, source, SCANNED));
-  const files = [...new Set(collected)].filter((file) => !excluded.some((prefix) => file === prefix || file.startsWith(`${prefix}/`))).sort();
+  const files = resolveSources(root, sources, SCANNED);
 
   if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no stylesheet or source`, "modern-CSS");
 

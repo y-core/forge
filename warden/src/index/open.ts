@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import { discover } from "../corpus/source";
+import { packageNameOf } from "../paths";
 import type { SourceDoc, Tree } from "../types";
 import { build, type BuildReport } from "./build";
 import { indexPath, openDatabase } from "./db";
@@ -9,6 +10,8 @@ import { advisory, freshness } from "./freshness";
 /** An open index, its documents, and one line saying whether it is behind them. @public */
 export interface Knowledge {
   db: Database;
+  /** The repository the index was built from — what a caller needs to reach the tree behind it. */
+  root: string;
   sources: SourceDoc[];
   /** Empty when the index is current; otherwise the line a caller renders above its results. */
   advisory: string;
@@ -46,6 +49,7 @@ export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): 
 
   const knowledge: Knowledge = {
     db,
+    root,
     sources: [],
     advisory: "",
     refresh: () => {
@@ -62,7 +66,7 @@ export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): 
       // and this corpus rebuilds in well under a second, which is cheaper than the bookkeeping an
       // external-content FTS table needs to have rows deleted from it correctly.
       try {
-        build(db, sources, canonVersion);
+        build(db, sources, canonVersion, packageNameOf(root));
         knowledge.advisory = "";
       } catch (error) {
         // The index is behind and could not be brought forward. Answering from it is still better
@@ -82,7 +86,7 @@ export function rebuild(root: string, kind: Tree, options: OpenOptions = {}): Bu
   const sources = sourcesOf(root, kind, options);
   const db = openDatabase(options.path ?? indexPath(root));
   try {
-    const report = build(db, sources, options.canonVersion ?? "unknown");
+    const report = build(db, sources, options.canonVersion ?? "unknown", packageNameOf(root));
     // A build that empties the tables frees pages without returning them to the OS, so an index
     // carried across a schema change keeps the old file's size. `rebuild` owns its handle and runs
     // outside any transaction, which is what `VACUUM` needs — `refresh()` is the server's hot path

@@ -37,6 +37,7 @@ description: "Barrel export rules, the authoritative subpath catalog, leaf-versu
 - §5f ui/client — Where a Browser Controller Belongs: controllers, signals, and lazy-loaded resources
 - §5g tooling — Where a Developer-Facing Tool Belongs: a command, a gate check, a lint rule or a release step, and why none of it is Worker-reachable
 - §6 When to Add a New Namespace: criteria and checklist
+- §7 Binding a Subpath to Its Governance: a row lists a subpath, a prose rule binds it
 
 ---
 
@@ -63,7 +64,14 @@ and `crypto/mod` — are §4c below, which owns the closure argument that makes 
 Rows follow `package.json` `exports` order, which owns the subpath names. The Key Exports
 column is an orientation aid — **`src/{ns}/mod.ts` is authoritative for what a namespace
 exports.** Leaf/integration classification is declared in `config/namespaces.ts` (see §4a)
-and side-effect status in `package.json` `sideEffects`; this table enumerates neither.
+and side-effect status in `package.json` `sideEffects`; this table enumerates neither. A row here
+_lists_ a subpath; what _binds_ it is a prose rule (§7).
+
+**The `./warden*` subpaths are catalogued in [`warden/README.md`](../warden/README.md), not here.**
+Warden sits outside `src/`, is a developer tool rather than a runtime namespace, and its five
+subpaths — `./warden`, `./warden/checks`, `./warden/knowledge`, `./warden/mcp`, `./warden/steps` —
+are published all the same. Their absence from this table is deliberate, so that a reader can tell
+it from a namespace that lost its row.
 
 **Asset rows are entries whose target is not a module**, and they carry two rules a barrel row does
 not.
@@ -122,9 +130,11 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend`, `UnsatisfiableRangeError` |
 | `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TESTING.md`](./TESTING.md) §7 |
 | `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
+| `@y-core/forge/ui/assets/build` | `src/ui/assets/build/mod.ts` | `forgeUiSpriteSources`, `svgToSymbol`, `sanitizeSVG`, `extractViewBoxes`, `parseColor`, `toHex`, `readThemeTokens`, `resolveToken`, `buildCursors` — build-time only; it computes the artifacts `ui/assets` owns and drives no external builder ([`ASSET_PIPELINE.md`](./ASSET_PIPELINE.md) §2c) |
 | `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
 | `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. Underneath: `theme-colors.css` (the status hues and alpha ramps), `theme-base.css` (the semantic-token mapping, the `color-scheme` declarations, and the `@theme inline` bridge), `forge-ui.css` (the layered component and state rules), and the ready-made schemes — `theme-neutral.css` is the default, and `theme-slate.css` is the structural model for an app's own |
 | `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | the DOM contract as pure data — the state-attribute and scope-event declarations, and the scope-name and selector constants each keyboard primitive shares between its SSR and client halves |
+| `@y-core/forge/ui/contracts/theme` | `src/ui/contracts/theme/mod.ts` | the colour model a forge scheme is generated from and the contrast audit the gate and the customiser share — `buildScale`, `buildTheme`, `schemeCss`, `liveRatios`, the OKLCh conversions, `DIALS` / `Dial` / `DialValues`, `CONTRAST_PAIRS`, `ACCEPTED_CONTRAST`, `CRITERION`. Runtime-neutral: pure data and pure functions ([`THEME_GENERATION.md`](./THEME_GENERATION.md)) |
 | `@y-core/forge/ui/controls` | `src/ui/controls/mod.ts` | bound control variants that shadow the `ui/core` names — see §5b |
 | `@y-core/forge/ui/core` | `src/ui/core/mod.ts` | the SSR component set — see [`UI_SSR_COMPONENTS.md`](./UI_SSR_COMPONENTS.md) — plus `cn`, `cva`, which [`UI_CLASS_COMPOSITION.md`](./UI_CLASS_COMPOSITION.md) owns |
 | `@y-core/forge/ui/core/client` | `src/ui/core/client.ts` | ui/core browser controller registration |
@@ -259,23 +269,12 @@ where the coupling that matters actually lives.
 
 ### 4b. Integration Namespace Rules
 
-A namespace is **integration** when it composes across forge namespaces. **Every edge is declared
-in `config/namespaces.ts` (`EDGES`) as source, target and kind**; an undeclared
-cross-namespace import is a defect, and so is a declared edge no source file makes. Imports of §4c
-primitives are not edges and are not declared.
-
-`src/tooling/gate/checks/namespace-graph.ts` walks `src/**`, builds the observed graph and diffs it
-against that declaration, so an undeclared import, a stale declaration, and a leaf that quietly
-gained an edge each fail the gate rather than passing unnoticed. Three properties of the walk are
-load-bearing and not self-evident:
-
-- **Test files are excluded.** Counting `*.test.ts(x)` and `*.browser.ts(x)` would reclassify most
-  of the declared leaves as integration and invent edges into `testing` no consumer can reach. A
-  fixture import is not a layering claim.
-- **The §4c exemption is target-only.** An edge _into_ a primitive is exempt; an edge _out of_ one
-  is a reported violation. That is §4c's own closure property, enforced rather than trusted.
-- **An edge's kind is the AND across its import sites.** One value import anywhere makes the whole
-  edge a value edge, so declaring an edge type-only is a claim about every site, not the first.
+See [`NAMESPACE_DESIGN.md`](../warden/canon/libs/NAMESPACE_DESIGN.md) §3b for what makes a namespace
+integration, the declare-every-edge rule, and the three properties of the graph walk that are
+load-bearing and not self-evident. What is local: edges are declared in `config/namespaces.ts` as
+`EDGES`, `src/tooling/gate/checks/namespace-graph.ts` walks `src/**` and diffs against them, the
+excluded test files are `*.test.ts(x)` and `*.browser.ts(x)`, and the primitives the walk exempts
+are §4c's rather than the canon's §3c.
 
 **The `| Namespace | Composes |` table may not come back here either.** The guard windows from the
 `### 4a.` heading to the next `## `, so §4a, §4b and §4c are one window and a table written in this
@@ -459,3 +458,40 @@ request handler runs is the one way to get this wrong, and the step fails it.
 
 See [`NAMESPACE_DESIGN.md`](../warden/canon/libs/NAMESPACE_DESIGN.md) §5 for the four criteria a new
 namespace must meet and the checklist it must clear before merge.
+
+---
+
+## 7. Binding a Subpath to Its Governance
+
+**A catalog row lists a subpath; a prose rule binds it.** §3a tells a reader that `./router` exists
+and what it exports. It does not tell them which rule decides what may go in there, what may not,
+and what the namespace is answerable to — and a subpath named nowhere but in a table row is
+governed by nothing, however complete the table looks.
+
+**Every published subpath is bound by at least one prose rule, or is declared exempt with its
+reason.** A rule binds a subpath by naming it in prose: `./ui/client` is bound by §5f, `./http` by
+§5d, `./tooling/*` by §5g. An exemption is as good as a rule when the reason is stated — the
+`./jsx/jsx-runtime` family is written by the compiler and reached by no author, so no rule about
+what belongs there could be acted on.
+
+**Existence only.** The reconciliation runs both ways — every subpath has a rule, and every rule
+names a live subpath — and it asks nothing about whether the rule is any good. Adequacy is a
+judgement a check cannot make, and a check that pretended to make it would be trusted for a
+guarantee it never gave ([`AGENT_GUIDE.md`](../warden/canon/shared/AGENT_GUIDE.md) §5c).
+
+**Never a hand-maintained register.** There is no subpath → rule table anywhere, here or elsewhere.
+The binding is derived from the citations already in the prose and the `exports` map, which is why
+it cannot fall out of date with either — the same reason `AGENT_GUIDE.md` §5c refuses to register
+the documents it governs at all: a list disagrees with the directory it describes, and then a reader
+has two answers and no way to pick.
+
+`validate-docs` reports an unbound subpath as a **warning**, not a failure. The backlog it found on
+the day it was written is a backlog, and a check that fails a build over one gets exempted wholesale
+instead of worked down. It is promoted to a failure once the list is empty.
+
+**This rule lives here rather than in the canon, and that placement is deliberate.** It is about a
+repository with an `exports` map, so `canon/libs/` is where it would be portable to — but it has
+been measured against exactly one corpus, forge's. It is promoted to the canon when a second
+repository needs it. That order is reversible; the other is not, because a canon rule is
+byte-identical in every repository that clones it and a rule that turned out to fit only forge
+would already be law everywhere.

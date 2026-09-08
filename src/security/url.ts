@@ -3,7 +3,7 @@ import type { BaseUrlConfig, DeriveAllowedOriginsOptions, ParsedUrl } from "./ty
 
 const LOOPBACK_ALLOWANCE = "http://localhost and http://127.0.0.1 are allowed for local development";
 
-/** Valibot schema transforming an https URL string (or an http loopback URL) into a `BaseUrlConfig`; dev posture: SECURITY_HARDENING.md §3f. @public */
+/** Valibot schema transforming an https URL string (or an http loopback URL) into a `BaseUrlConfig`; the origin set it feeds: SECURITY_HARDENING.md §3f. @public */
 export const BaseUrlConfigSchema = v.pipe(
   v.string(),
   v.url(),

@@ -36,6 +36,7 @@ description: "The V8 isolate model and what module scope may hold, post-response
 - §4b Local Development Variables: the gitignored file
 - §4c The Pre-Deploy Gate: what must pass, and what must not be skipped
 - §4d Environment Parity: schema validation surfaces misconfiguration early
+- §4e Development Transport Posture: https at every hop, so origins survive the round trip
 - §5 Static Assets: serving files without spending Worker CPU
 - §5a The Public Directory and Build Outputs: what lands where
 - §5b Serve Assets Before the Worker: the routing decision
@@ -208,6 +209,42 @@ variable throws a structured error naming the field rather than defaulting silen
 This is what makes staging worth having: a misconfiguration surfaces as an immediate, legible
 failure in the first environment it reaches, instead of as a subtly wrong behaviour in the last
 one.
+
+### 4e. Development Transport Posture
+
+**Development is https at every hop.** Origin guards compare origins by exact string, so any scheme
+mismatch between what the browser sends and what the app believes its own origin to be rejects every
+write. The dev server stamps its configured local protocol onto the request URL and onto every
+origin-bearing header, so an app serving http behind a TLS-terminating proxy sees the browser's
+`https://` origin arrive as `http://` and 403s its own forms.
+
+The ruling:
+
+- **The dev server's local protocol is set to https.** This is what makes the scheme survive the
+  round trip; it is not optional tuning.
+- **The configured site origin is whatever URL the browser is actually pointed at**, https and all.
+  It is one variable with one meaning and three values, each supplied by the surface that owns the
+  environment: the deployed origin in production; the TLS-terminating proxy's origin in the local
+  variables file, for ordinary development in a container (§4b); and the loopback https port on the
+  dev server's own command line, for a browser suite that reaches the app without the proxy. It is
+  the single source of truth the allowed-origin set is derived from, and it is validated at boot like
+  every other environment value (§4d).
+- **Never a scheme-rewriting middleware.** The rejected alternative reconstructs the request URL or
+  the `Origin` header with the scheme corrected before the guard runs. A guard whose input is
+  rewritten by the app verifies nothing — it launders an attacker-supplied origin into a trusted one,
+  and it is a dev-only code path sitting in the production request chain. Fix the transport, not the
+  evidence.
+- **A browser suite targets loopback https**, rather than dropping to http and diverging from the
+  posture under test.
+- **`upgrade-insecure-requests`, HSTS, and `Secure` cookies stay hardcoded.** They are not made
+  conditional on the environment, because under this posture they are correct in development by
+  construction.
+
+Where a case needs an origin the site origin cannot express, the extra entries are supplied from a
+development entry point the production bundle never imports — each a normalized https-or-loopback
+origin that throws at boot otherwise, so the production bundle structurally contains none of them.
+Carried as an ordinary environment variable instead, an extra-origins list is a production allowlist
+waiting to be widened by a typo.
 
 ---
 

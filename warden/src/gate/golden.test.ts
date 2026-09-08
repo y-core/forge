@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
 import { parseId } from "../corpus/ident";
-import { GOLDEN } from "./golden";
+import { type Dimension, GOLDEN } from "./golden";
+
+const DIMENSIONS: readonly Dimension[] = ["placement", "prohibition", "procedure", "rationale", "boundary"];
 
 describe("GOLDEN", () => {
   it("gives every entry a parseable chunk id, so a typo fails here rather than as a retrieval miss", () => {
@@ -22,5 +24,15 @@ describe("GOLDEN", () => {
     const canon = new Set(GOLDEN.filter((golden) => golden.expect.startsWith("canon")).map((golden) => golden.expect.split("#")[0]));
 
     expect(canon.size).toBeGreaterThanOrEqual(9);
+  });
+
+  it("tags every shipped entry, since an untagged one is silently absent from the rollup", () => {
+    expect(GOLDEN.filter((golden) => golden.dimension === undefined).map((golden) => golden.query)).toEqual([]);
+  });
+
+  it("asks every dimension at least once, so the rollup cannot lose one without a test saying so", () => {
+    const asked = new Set(GOLDEN.map((golden) => golden.dimension));
+
+    expect(DIMENSIONS.filter((dimension) => !asked.has(dimension))).toEqual([]);
   });
 });

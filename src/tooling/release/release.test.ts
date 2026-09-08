@@ -23,6 +23,8 @@ interface MockDeps {
   writeChangelog: Mock<(cwd: string, file: string, source: string) => void>;
   readRepositoryUrl: Mock<(cwd: string) => string | null>;
   removedSurfaceSince: Mock<(cwd: string, ref: string) => string[]>;
+  tagIsAncestorOfHead: Mock<(cwd: string, tag: string) => boolean>;
+  remoteTags: Mock<(cwd: string) => string[] | null>;
   now: Mock<() => Date>;
 }
 
@@ -38,6 +40,8 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     writeChangelog: mock((_cwd: string, _file: string, _source: string): void => {}),
     readRepositoryUrl: mock((_cwd: string): string | null => "https://x/repo"),
     removedSurfaceSince: mock((_cwd: string, _ref: string): string[] => []),
+    tagIsAncestorOfHead: mock((_cwd: string, _tag: string): boolean => true),
+    remoteTags: mock((_cwd: string): string[] | null => ["v1.0.0"]),
     now: mock((): Date => new Date(2026, 1, 3)),
     ...overrides,
   };
@@ -329,7 +333,7 @@ describe("createReleaseCommand() — the shrinking-surface guard", () => {
     expect(cmd.flags).toHaveProperty("allow-semver");
   });
 
-  it("refuses an auto-patch whose surface shrank, naming the lost entries and the escape hatch", () => {
+  it("refuses an auto-patch whose surface shrank, naming the lost entries and the prefix that answers it", () => {
     const deps = shrinking({
       removedSurfaceSince: mock((_cwd: string, _ref: string): string[] => ["./http#serveObject", "./storage/r2#r2Client"]),
     });
@@ -338,7 +342,8 @@ describe("createReleaseCommand() — the shrinking-surface guard", () => {
       "Public export surface shrank since v1.0.0, but the resolved bump is auto-patch:\n" +
         "  ./http#serveObject\n" +
         "  ./storage/r2#r2Client\n" +
-        "Prefix a commit `minor:` or pass an explicit version, or use --allow-semver.",
+        "Give the commit that removed them a `minor:` subject prefix (`major:` from 1.0) — that prefix is the only signal a consumer pinning by tag gets.\n" +
+        "--allow-semver overrides this deliberately, for a shrink where a patch bump is genuinely correct.",
     );
   });
 
@@ -391,6 +396,77 @@ describe("createReleaseCommand() — the shrinking-surface guard", () => {
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
     void cmd.run?.([], FLAGS);
     expect(deps.removedSurfaceSince.mock.calls).toHaveLength(0);
+  });
+});
+
+describe("createReleaseCommand() — amend floor preflight", () => {
+  const FLAGS = { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false };
+
+  it("releases when the previous tag is an ancestor of HEAD and the remote carries it", () => {
+    const deps = makeDeps();
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    void cmd.run?.([], FLAGS);
+    expect(deps.tagIsAncestorOfHead.mock.calls[0]).toEqual(["/project", "v1.0.0"]);
+    expect(deps.createTag.mock.calls).toHaveLength(1);
+  });
+
+  it("refuses when the previous tag is no longer an ancestor of HEAD, naming the tag and the recovery", () => {
+    const deps = makeDeps({ tagIsAncestorOfHead: mock((_cwd: string, _tag: string): boolean => false) });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    expect(() => cmd.run?.([], FLAGS)).toThrow(
+      "v1.0.0 is no longer an ancestor of HEAD — published history was rewritten.\n" +
+        "Consumers fetch a codeload tarball at v1.0.0, so the commits they already hold no longer match the tag, " +
+        "and no version change signals it. Recover the rewritten commits with `git reflog` and rebuild HEAD on top of the tag.",
+    );
+  });
+
+  it("the rewrite refusal precedes every mutation, and does not go on to ask the remote", () => {
+    const deps = makeDeps({ tagIsAncestorOfHead: mock((_cwd: string, _tag: string): boolean => false) });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    expect(() => cmd.run?.([], FLAGS)).toThrow(ReleaseError);
+    expect(deps.updatePackageVersion.mock.calls).toHaveLength(0);
+    expect(deps.createTag.mock.calls).toHaveLength(0);
+    expect(deps.remoteTags.mock.calls).toHaveLength(0);
+  });
+
+  it("refuses when a reachable remote does not carry the previous tag, naming the push", () => {
+    const deps = makeDeps({ remoteTags: mock((_cwd: string): string[] | null => ["v0.9.0"]) });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    expect(() => cmd.run?.([], FLAGS)).toThrow(
+      "v1.0.0 exists locally but not on the remote, so no consumer can fetch it.\n" + "Run `git push --tags` before cutting 1.1.0 on top of it.",
+    );
+    expect(deps.createTag.mock.calls).toHaveLength(0);
+  });
+
+  it("reports an unreachable remote and releases anyway, since a local release has no route out", () => {
+    const deps = makeDeps({ remoteTags: mock((_cwd: string): string[] | null => null) });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    const logs = runCapturingLogs(() => void cmd.run?.([], FLAGS));
+    expect(logs).toContain("  (remote unreachable — could not confirm v1.0.0 is pushed)");
+    expect(deps.createTag.mock.calls).toHaveLength(1);
+  });
+
+  it("asks neither question on a first release, where there is no floor", () => {
+    const deps = makeDeps({ resolveVersion: mock((): VersionResult => ({ version: "0.0.1", reason: "first-release", previous: null })) });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    void cmd.run?.([], FLAGS);
+    expect(deps.tagIsAncestorOfHead.mock.calls).toHaveLength(0);
+    expect(deps.remoteTags.mock.calls).toHaveLength(0);
+  });
+
+  it("still checks the floor for an in-sync release, which cuts nothing but reports on a rewritten tag", () => {
+    const deps = makeDeps({
+      resolveVersion: mock((): VersionResult => ({ version: "1.0.0", reason: "in-sync", previous: "v1.0.0" })),
+      tagIsAncestorOfHead: mock((_cwd: string, _tag: string): boolean => false),
+    });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    expect(() => cmd.run?.([], FLAGS)).toThrow(ReleaseError);
+  });
+
+  it("checks the floor in a dry run too, so --dry shows the refusal it would hit", () => {
+    const deps = makeDeps({ tagIsAncestorOfHead: mock((_cwd: string, _tag: string): boolean => false) });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    expect(() => cmd.run?.([], { ...FLAGS, dry: true })).toThrow(ReleaseError);
   });
 });
 

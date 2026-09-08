@@ -86,20 +86,10 @@ consequence of the declaration, not its justification — the declaration was ow
 
 ### 3d. CSS Source Scanning Stops at `ui/`
 
-**Tailwind never scans `node_modules`.** Shipping raw source therefore does not ship _rules_ — a
-consumer's build sees forge's markup only if something tells its scanner where to look, and a class
-with no rule renders as an attribute that does nothing.
-
-`forge.css` answers that for components: it carries `@source` paths, written **relative to itself**
-so they resolve against wherever forge landed under pnpm, a workspace, a git dependency or a
-monorepo alike. A consumer-side path would have to hardcode an install layout and would be wrong
-under most of them.
-
-**The scope stops at `ui/`, and that is the decision rather than the reach of a relative path.** A
-component library owes its consumers the classes its own components emit — importing `ui` _is_ the
-statement that they will be rendered. A namespace whose markup is opt-in owes them something
-different: whether an app mounts that surface is the app's call, not forge's, so what it owes is a
-**documented `@source` requirement in that namespace's README**, and the app scans it.
+See [`LIBRARY_ARCHITECTURE.md`](../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §3d for why a scanner
+never reaches `node_modules`, why the source paths are written relative to the stylesheet, and why
+the scope stops at the component tier. Here the scanner is Tailwind, the stylesheet is `forge.css`,
+the paths are `@source` directives, and the component tier is `ui/`.
 
 **The scope is enforced in both directions, and the coverage direction is the one that catches
 drift.** A directory under `src/ui/` whose files declare a utility class must be scanned or
@@ -136,12 +126,9 @@ from `@remix-run/*`.
 
 ### 4b. Breaking the Facade
 
-When a consumer needs a third-party feature the facade does not yet expose:
-
-1. Add the export to the appropriate namespace `mod.ts`.
-2. Run the gate — `validate-exports` must pass.
-
-**Never reach into `node_modules` directly from app code.**
+See [`LIBRARY_ARCHITECTURE.md`](../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §4c for the procedure
+and the ban on reaching into `node_modules`. Here the barrel to add the export to is the namespace's
+`mod.ts`, and the gate step that answers is `validate-exports`.
 
 ---
 

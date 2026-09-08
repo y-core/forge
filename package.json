@@ -24,6 +24,7 @@
     "release": "bun run src/tooling/root/bin.ts release",
     "test": "bun test",
     "test:browser": "bunx --bun playwright test",
+    "test:workerd": "bun test tests/workerd/",
     "verify": "bun run src/tooling/root/bin.ts verify",
     "verify:fast": "bun run src/tooling/root/bin.ts verify --mode fast",
     "verify:full": "bun run src/tooling/root/bin.ts verify --full",
@@ -54,7 +55,8 @@
     "oxlint": "1.80.0",
     "oxlint-tsgolint": "7.0.2001",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "wrangler": "^4.129.1"
   },
   "peerDependencies": {
     "esbuild": ">=0.20.0",

@@ -63,6 +63,11 @@ export interface Chunk {
   /** The section verbatim, for `knowledge_read`. */
   body: string;
   ordinal: number;
+  /** 1-indexed line its heading sits on, and the last line of its block — the span a changed line
+   *  is resolved through. Stored rather than re-derived, so the spans and the ids come out of one
+   *  build and can never name different sections. */
+  line: number;
+  endLine: number;
   /** Whether the chunk competes in search. False for a heading that only organises its children:
    *  it is addressable and appears in an outline, but has no prose of its own to rank. */
   searchable: boolean;
@@ -71,7 +76,7 @@ export interface Chunk {
 /** One edge between documents, resolved or not. @public */
 export interface Relation {
   from: string;
-  kind: "defers" | "cites";
+  kind: "defers" | "cites" | "governs";
   to?: string;
   raw: string;
 }

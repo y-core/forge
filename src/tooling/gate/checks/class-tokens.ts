@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { utilityOf } from "../../../ui/core/utils/cn";
 import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
 import { loadDesignSystem } from "./design-system";
-import { balancedSpan, blankSourceComments, collectSource, lineAt } from "./source-scan";
+import { balancedSpan, blankSourceComments, lineAt, resolveSources } from "./source-scan";
 
 /** What the class-token check needs to know about the project. @public */
 export interface ClassTokensCheckConfig {
@@ -129,9 +129,7 @@ export function unknownTokens(file: string, source: string, known: (token: strin
 /** Walks the configured sources and reports every class token the compiled design system produces no CSS for. @public */
 export async function checkClassTokens(config: ClassTokensCheckConfig): Promise<CheckResult> {
   const { root, sources } = config;
-  const excluded = sources.filter((source) => source.startsWith("!")).map((source) => source.slice(1));
-  const collected = sources.filter((source) => !source.startsWith("!")).flatMap((source) => collectSource(root, source, SCANNED));
-  const files = [...new Set(collected)].filter((file) => !excluded.some((prefix) => file === prefix || file.startsWith(`${prefix}/`))).sort();
+  const files = resolveSources(root, sources, SCANNED);
 
   if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no source`, "class-token");
 

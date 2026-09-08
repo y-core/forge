@@ -59,6 +59,17 @@ export interface DocsCheckConfig {
   documentedNonExports?: readonly string[];
   /** Published subpaths the front page is licensed *not* to cite. */
   tableExemptSubpaths?: readonly string[];
+  /** Documents that must enumerate every published subpath, each with its own exemptions.
+   *
+   *  A list because two catalogs have genuinely different scopes: the front page covers every
+   *  published subpath, a namespace catalog covers the runtime ones. Defaults to the front page
+   *  alone, held against `tableExemptSubpaths`. */
+  catalogs?: readonly { doc: string; exempt?: readonly string[] }[];
+  /** Published subpaths licensed to be listed in a table and bound by no prose rule.
+   *
+   *  A row lists a subpath; a prose rule binds it (`NAMESPACES.md` §7). Warn, not fail, so a
+   *  backlog is triaged rather than exempted wholesale. */
+  listedOnlySubpaths?: readonly string[];
   /** Line count above which a governing document warns. Defaults to 600. */
   sizeWarn?: number;
   /** Line count above which it fails. Defaults to 800. */
@@ -321,9 +332,11 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
   const sizeFail = config.sizeFail ?? 800;
   const descriptionMax = config.descriptionMax ?? 200;
   const documentedNonExports = new Set(config.documentedNonExports ?? []);
-  const tableExempt = new Set(config.tableExemptSubpaths ?? []);
+  const catalogs = config.catalogs ?? [{ doc: rootReadme, exempt: config.tableExemptSubpaths }];
+  const listedOnly = new Set(config.listedOnlySubpaths ?? []);
 
   const findings: Finding[] = [];
+  const proseBound = new Set<string>();
 
   const exportSubpaths = new Set(Object.keys(config.exports).filter((key) => !key.includes("*")));
   const exportPatterns = Object.entries(config.exports)
@@ -474,7 +487,8 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     const source = sources.get(file) ?? "";
     const stripped = stripFences(source);
 
-    for (const { line, raw, subpath } of findSubpathCitations(source, packageName, { strict: isStrict(file) })) {
+    for (const { kind, line, raw, subpath } of findSubpathCitations(source, packageName, { strict: isStrict(file) })) {
+      if (kind === "prose") proseBound.add(subpath);
       if (documentedNonExports.has(subpath)) continue;
       if (!isExportSubpath(subpath)) {
         findings.push(fail(`\`${packageName}${raw}\` is not reachable through package.json exports`, { file, line }));
@@ -570,16 +584,24 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     }
   }
 
-  const readmeSource = sources.get(rootReadme);
-  if (readmeSource !== undefined) {
-    const citations = findSubpathCitations(readmeSource, packageName, { strict: true });
-    for (const subpath of uncitedSubpaths(exportSubpaths, citations, tableExempt)) {
+  for (const catalog of catalogs) {
+    const source = sources.get(catalog.doc);
+    if (source === undefined) continue;
+    const citations = findSubpathCitations(source, packageName, { strict: true });
+    for (const subpath of uncitedSubpaths(exportSubpaths, citations, new Set(catalog.exempt ?? []))) {
       findings.push(
         fail(`\`${subpath}\` is published by package.json exports but not cited — add a namespace-table row, or exempt it with a rationale`, {
-          file: rootReadme,
+          file: catalog.doc,
         }),
       );
     }
+  }
+
+  // A row lists a subpath; a prose rule binds it. Warn, because the backlog this found on the day
+  // it was written is a backlog, and a check that fails a build over one gets exempted wholesale.
+  for (const subpath of [...exportSubpaths].sort()) {
+    if (proseBound.has(subpath) || listedOnly.has(subpath) || documentedNonExports.has(subpath)) continue;
+    findings.push(warn(`\`${subpath}\` is listed but bound by no prose rule — add one, or exempt it with a reason`));
   }
 
   const warnings = findings.filter((finding) => finding.level === "warn").length;

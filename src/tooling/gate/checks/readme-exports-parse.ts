@@ -19,7 +19,8 @@ export interface DocumentedSymbol {
   line: number;
 }
 
-const ANCHOR_RE = /^>\s*Import path:\s*`([^`]+)`\s*→\s*`([^`]+)`/;
+/** The line that opts a README section into the check. @public */
+export const ANCHOR_RE = /^>\s*Import path:\s*`([^`]+)`\s*→\s*`([^`]+)`/;
 
 const HEADING_RE = /^##\s/;
 

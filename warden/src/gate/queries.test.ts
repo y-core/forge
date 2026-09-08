@@ -24,9 +24,17 @@ function repo(prefix: string): string {
   return root;
 }
 
-// `negative: []` by default so each case states its own; the shipped set is written against the
-// real corpus and would be measuring nothing against this three-document fixture.
-const config = (root: string) => ({ root, kind: "libs" as const, indexPath: ":memory:", canonRoot: join(root, "warden/canon"), negative: [] });
+// `negative: []` and `aliases` by default so each case states its own; the shipped set and the
+// shipped table are written against the real corpus and would be measuring nothing — or warning on
+// all 139 bridges — against this three-document fixture.
+const config = (root: string) => ({
+  root,
+  kind: "libs" as const,
+  indexPath: ":memory:",
+  canonRoot: join(root, "warden/canon"),
+  negative: [],
+  aliases: new Map([["bot", ["honeypot"]]]),
+});
 
 const COVERING = [
   { query: "comment budget ceiling", expect: "canon:CODE_RULES.md#1" },
@@ -38,7 +46,52 @@ describe("checkGoldenQueries()", () => {
     const result = checkGoldenQueries({ ...config(repo("warden-golden-ok-")), queries: COVERING });
 
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe("2 golden queries, 2 documents reached top-1, floor margin 1.000 answered / 0.000 refused.");
+    expect(result.summary).toBe(
+      "2 golden queries, 2 documents reached top-1, 1/1 alias bridges live, floor margin 1.000 answered / 0.000 refused.",
+    );
+  });
+
+  it("omits the rollup entirely for an untagged set, which is what a consumer's own set is", () => {
+    const result = checkGoldenQueries({ ...config(repo("warden-golden-untagged-")), queries: COVERING });
+
+    expect(result.summary.endsWith("refused.")).toBe(true);
+  });
+
+  it("reports the worst rank and thinnest coverage each kind of question cost, in a fixed order", () => {
+    const result = checkGoldenQueries({
+      ...config(repo("warden-golden-dimensions-")),
+      queries: [
+        { ...(COVERING[1] as (typeof COVERING)[number]), dimension: "procedure" as const },
+        { ...(COVERING[0] as (typeof COVERING)[number]), dimension: "placement" as const },
+      ],
+    });
+
+    expect(result.summary).toBe(
+      "2 golden queries, 2 documents reached top-1, 1/1 alias bridges live, floor margin 1.000 answered / 0.000 refused; placement worst 1 / thinnest 1.000, procedure worst 1 / thinnest 1.000.",
+    );
+  });
+
+  it("says a kind of question missed rather than printing a rank it never earned", () => {
+    const result = checkGoldenQueries({
+      ...config(repo("warden-golden-dimension-miss-")),
+      queries: [{ query: "comment budget ceiling", expect: "canon:CODE_RULES.md#9", dimension: "rationale" }],
+      coverage: false,
+    });
+
+    expect(result.summary).toContain("rationale worst miss / thinnest none reached");
+  });
+
+  it("warns on an alias bridge that reaches no chunk, which nothing else would ever surface", () => {
+    const result = checkGoldenQueries({
+      ...config(repo("warden-golden-dead-bridge-")),
+      queries: COVERING,
+      aliases: new Map([["bot", ["honeypot", "turnstile"]]]),
+    });
+
+    // A dead bridge is reported and does not fail: the table is the fleet's, not this repository's.
+    expect(result.ok).toBe(true);
+    expect(result.findings.map((finding) => finding.message)).toContain("alias bridge `bot` → `turnstile` reaches no chunk");
+    expect(result.summary).toContain("1/2 alias bridges live");
   });
 
   it("fails a negative query the corpus answered anyway — what stops the floor being deleted", () => {

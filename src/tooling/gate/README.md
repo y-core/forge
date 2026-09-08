@@ -149,17 +149,17 @@ same rules on its own tree. Each is also a pre-built step, whose label is its `-
 
 | Step | Label | Check | Asserts |
 | --- | --- | --- | --- |
-| `exportsStep` | `validate-exports` | `checkExports` | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable |
+| `exportsStep` | `validate-exports` | `checkExports` | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable; and no escape entry restates the `client` convention or names a subpath that is gone |
 | `namespaceGraphStep` | `validate-namespace-graph` | `checkNamespaceGraph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair |
 | `assetRootStep` | `validate-asset-root` | `checkAssetRoot` | What the assets pipeline writes to the asset root matches the Worker's `run_worker_first` exclusions |
 | `assetManifestStep` | `validate-asset-manifest` | `checkAssetManifest` | Every path the emitted assets manifest maps to exists under `publicDir` |
-| `coLocationStep` | `validate-co-location` | `checkCoLocation` | Every source module has a test beside it, so deleting one is loud |
+| `coLocationStep` | `validate-co-location` | `checkCoLocation` | Every source module has a test beside it, so deleting one is loud — bar a `types.ts` or `bin.ts`, each held to declaring nothing callable |
 | `buildTimeBoundaryStep` | `validate-build-time-boundary` | `checkBuildTimeBoundary` | No module outside a build-time directory imports one at value |
 | `ssrBoundaryStep` | `validate-ssr-boundary` | `checkSsrBoundary` | No Worker-executed module reaches the browser-only tier |
 | `jsxStep` | `validate-jsx` | `checkJsx` | Every shipped `.tsx` carries its pragmas |
 | `markdownStep` | `validate-markdown` | `checkMarkdown` | Markdown holds the house conventions — compact tables, one bullet marker, tagged fences, no stray whitespace |
 | `docsStep` | `validate-docs` | `checkDocs` | Documented subpaths resolve; section numbering, cross-references, frontmatter, size, freshness |
-| `readmeExportsStep` | `validate-readme-exports` | `checkReadmeExports` | A README's per-subpath export tables name exactly what the barrel exports |
+| `readmeExportsStep` | `validate-readme-exports` | `checkReadmeExports` | Every README carrying a `> Import path:` anchor names in its tables exactly what the barrel exports |
 | `changelogStep` | `validate-changelog` | `checkChangelog` | Keep a Changelog grammar, ordering, and the topmost heading equalling `package.json` |
 | `designStep` | `validate-design` | `checkDesign` | The design corpus teaches only what ships, and both rule registers agree with the lint plugin |
 | `modernCssStep` | `validate-modern-css` | `checkModernCss` | Stylesheets and class literals use the platform feature that replaced each hand-written pattern |
@@ -206,9 +206,17 @@ exportsStep({
   packageName: pkg.name,
   exports: pkg.exports,
   files: pkg.files,
+  browserOnly: [],
   sealedInternal: ["src/crypto/mod.ts"],
 }),
 ```
+
+Where the tree already states a fact, the check derives it and the config field is the override, not
+the declaration. `browserOnly` is empty above because a subpath under a `client` segment is
+browser-only by its own name; an entry is for one that is browser-only under another name. The three
+escapes — `browserOnly`, `sideEffectOnly`, `sealedInternal` — are each held to the tree they name: an
+entry the convention already derives, or one naming a subpath the map no longer has, fails rather
+than sitting inert.
 
 ### Check markdown against the house conventions
 
@@ -519,7 +527,8 @@ wrangler config.
 
 `design.sources` deliberately does **not** fall back to the table's top-level `sources`.
 `classOrderStep` scans every `.tsx`, specs included, and a spec asserting on `cn` holds deliberately
-self-conflicting literals — forge's own table excludes four such files by name. `deferred` defaults
+self-conflicting literals — forge's own table excludes four such files by name, hoisted to
+`config/exemptions.ts` so the reason has one home. `deferred` defaults
 to `[]` rather than forge's own list, so no app inherits deferrals keyed to `src/ui/…` paths.
 
 The asset-root step is added only when **both** `assetConfig` and `workerConfig` are given: the

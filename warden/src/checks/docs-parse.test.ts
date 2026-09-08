@@ -29,7 +29,7 @@ describe("findSubpathCitations() — strict scanning (governing docs and the roo
   it("reads a citation out of a markdown table cell", () => {
     const cited = findSubpathCitations("| `@y-core/forge/render` | JSX → `HtmlResponse` |", PKG, { strict: true });
 
-    expect(cited).toEqual([{ line: 1, raw: "/render", subpath: "./render" }]);
+    expect(cited).toEqual([{ kind: "table", line: 1, raw: "/render", subpath: "./render" }]);
   });
 
   it("reads a citation out of a bolded markdown link label", () => {
@@ -75,8 +75,34 @@ describe("findSubpathCitations() — the shapes that are not citations", () => {
   });
 });
 
+describe("findSubpathCitations() — what the citation is doing", () => {
+  const kinds = (source: string) => findSubpathCitations(source, PKG, { strict: true }).map((c) => `${c.subpath}:${c.kind}`);
+
+  it("classifies a table row as listing, not binding", () => {
+    expect(kinds("| `@y-core/forge/router` | `src/router/mod.ts` | route helpers |")).toEqual(["./router:table"]);
+  });
+
+  it("classifies an indented table row as a table row, because a nested table is still a table", () => {
+    expect(kinds("  | `@y-core/forge/router` | route helpers |")).toEqual(["./router:table"]);
+  });
+
+  it("classifies a prose sentence as binding", () => {
+    expect(kinds("A new browser controller goes to `@y-core/forge/ui/client`.")).toEqual(["./ui/client:prose"]);
+  });
+
+  it("classifies a list item as prose, so a bulleted rule binds", () => {
+    expect(kinds("- HTTP output belongs in `@y-core/forge/http`.")).toEqual(["./http:prose"]);
+  });
+
+  it("reports both kinds when one subpath is listed in a table and bound in prose", () => {
+    const source = ["| `@y-core/forge/http` | `src/http/mod.ts` |", "", "Every HTTP output concern goes to `@y-core/forge/http`."].join("\n");
+
+    expect(kinds(source)).toEqual(["./http:table", "./http:prose"]);
+  });
+});
+
 function cite(...cited: string[]): SubpathCitation[] {
-  return cited.map((subpath, i) => ({ line: i + 1, raw: subpath.slice(1), subpath }));
+  return cited.map((subpath, i) => ({ kind: "prose" as const, line: i + 1, raw: subpath.slice(1), subpath }));
 }
 
 describe("uncitedSubpaths() — the coverage direction", () => {

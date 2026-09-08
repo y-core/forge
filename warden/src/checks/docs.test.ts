@@ -679,3 +679,114 @@ describe("checkDocs() — agreementDirs", () => {
     expect(messages(root)).toEqual([]);
   });
 });
+
+describe("checkDocs() — binding a subpath to its governance", () => {
+  const catalogDoc = (title: string, rows: string) =>
+    `---\ntitle: ${title}\ndescription: "One sentence describing what this document governs."\n---\n\n## 0. Quick Reference\n\n- §1 Catalog: every subpath\n\n## 1. Catalog\n\n| Export Path | Source |\n| --- | --- |\n${rows}\n`;
+
+  const catalogIndex = index("- [`NAMESPACES.md`](docs/NAMESPACES.md): the namespace catalog");
+
+  it("passes a subpath that a prose rule binds", () => {
+    const root = fixtureRoot({
+      "CLAUDE.md": catalogIndex,
+      "docs/NAMESPACES.md": catalogDoc(
+        "Namespaces",
+        "| `@y-core/forge/http` | the HTTP output namespace |\n\nEvery HTTP output concern goes to `@y-core/forge/http`.",
+      ),
+    });
+
+    const result = checkDocs({
+      root,
+      packageName: "@y-core/forge",
+      exports: { "./http": "./src/http/mod.ts" },
+      decisionsDir: "docs",
+      catalogs: [{ doc: "docs/NAMESPACES.md" }],
+    });
+
+    expect(result.findings.map((f) => f.message)).toEqual([]);
+  });
+
+  it("warns on a subpath a table lists and no prose binds", () => {
+    const root = fixtureRoot({
+      "CLAUDE.md": catalogIndex,
+      "docs/NAMESPACES.md": catalogDoc("Namespaces", "| `@y-core/forge/router` | the router namespace |"),
+    });
+
+    const result = checkDocs({
+      root,
+      packageName: "@y-core/forge",
+      exports: { "./router": "./src/router/mod.ts" },
+      decisionsDir: "docs",
+      catalogs: [{ doc: "docs/NAMESPACES.md" }],
+    });
+
+    expect(result.findings.map((f) => `${f.level}: ${f.message}`)).toEqual([
+      "warn: `./router` is listed but bound by no prose rule — add one, or exempt it with a reason",
+    ]);
+  });
+
+  it("stays silent on a table-only subpath that `listedOnlySubpaths` exempts", () => {
+    const root = fixtureRoot({
+      "CLAUDE.md": catalogIndex,
+      "docs/NAMESPACES.md": catalogDoc("Namespaces", "| `@y-core/forge/router` | the router namespace |"),
+    });
+
+    const result = checkDocs({
+      root,
+      packageName: "@y-core/forge",
+      exports: { "./router": "./src/router/mod.ts" },
+      decisionsDir: "docs",
+      catalogs: [{ doc: "docs/NAMESPACES.md" }],
+      listedOnlySubpaths: ["./router"],
+    });
+
+    expect(result.findings.map((f) => f.message)).toEqual([]);
+  });
+
+  it("fails a subpath absent from a configured catalog, which is what the front page alone missed", () => {
+    const root = fixtureRoot({
+      "CLAUDE.md": catalogIndex,
+      "docs/NAMESPACES.md": catalogDoc(
+        "Namespaces",
+        "| `@y-core/forge/http` | the HTTP output namespace |\n\nEvery HTTP output concern goes to `@y-core/forge/http`.",
+      ),
+    });
+
+    const result = checkDocs({
+      root,
+      packageName: "@y-core/forge",
+      exports: { "./http": "./src/http/mod.ts", "./ui/contracts/theme": "./src/ui/contracts/theme/mod.ts" },
+      decisionsDir: "docs",
+      catalogs: [{ doc: "docs/NAMESPACES.md" }],
+      listedOnlySubpaths: ["./ui/contracts/theme"],
+    });
+
+    expect(result.findings.map((f) => `${f.level}: ${f.file ?? ""}: ${f.message}`)).toEqual([
+      "fail: docs/NAMESPACES.md: `./ui/contracts/theme` is published by package.json exports but not cited — add a namespace-table row, or exempt it with a rationale",
+    ]);
+  });
+
+  it("exempts a subpath from one catalog without exempting it from the other", () => {
+    const root = fixtureRoot({
+      "CLAUDE.md": catalogIndex,
+      "README.md": "# forge\n\n| Export | Source |\n| --- | --- |\n| `@y-core/forge/warden` | the warden namespace |\n",
+      "docs/NAMESPACES.md": catalogDoc(
+        "Namespaces",
+        "| `@y-core/forge/http` | the HTTP output namespace |\n\nEvery HTTP output concern goes to `@y-core/forge/http`.",
+      ),
+    });
+
+    const result = checkDocs({
+      root,
+      packageName: "@y-core/forge",
+      exports: { "./http": "./src/http/mod.ts", "./warden": "./warden/src/mod.ts" },
+      decisionsDir: "docs",
+      catalogs: [{ doc: "README.md" }, { doc: "docs/NAMESPACES.md", exempt: ["./warden"] }],
+      listedOnlySubpaths: ["./warden"],
+    });
+
+    expect(result.findings.map((f) => `${f.file ?? ""}: ${f.message}`)).toEqual([
+      "README.md: `./http` is published by package.json exports but not cited — add a namespace-table row, or exempt it with a rationale",
+    ]);
+  });
+});

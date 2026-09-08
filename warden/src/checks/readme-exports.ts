@@ -3,21 +3,34 @@ import { resolve } from "node:path";
 
 import { parseConsumerExportNames, parseTypeExportNames } from "../../../src/tooling/gate/checks/barrel-parse";
 import {
+  ANCHOR_RE,
   parseExportsHeadingLine,
   parseExportsTableSymbols,
   parseImportPathAnchors,
   parseTypesProse,
 } from "../../../src/tooling/gate/checks/readme-exports-parse";
+import { resolveSources } from "../../../src/tooling/gate/checks/source-scan";
 import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../../../src/tooling/gate/finding";
 
 /** What the README-exports check needs to find both halves of the coupling. @public */
 export interface ReadmeExportsCheckConfig {
   /** Application root. `readme` and every anchored barrel resolve against it. */
   root: string;
-  /** The READMEs to check, each relative to `root`. */
-  readmes: readonly string[];
+  /** The READMEs to check, each relative to `root`. Defaults to every marked README under `sources`. */
+  readmes?: readonly string[];
+  /** Directories walked for marked READMEs when `readmes` is absent. Defaults to `["src", "warden"]`. */
+  sources?: readonly string[];
   /** Subpaths whose section documents no export table, each legitimately so. */
   exempt?: readonly string[];
+}
+
+/** Every README under `sources` carrying at least one `> Import path:` anchor, repo-relative. @public */
+export function discoverReadmes(root: string, sources: readonly string[]): string[] {
+  return resolveSources(root, sources, (name) => name === "README.md").filter((file) =>
+    readFileSync(resolve(root, file), "utf-8")
+      .split("\n")
+      .some((line) => ANCHOR_RE.test(line)),
+  );
 }
 
 /** Holds a README's per-subpath export tables against the barrels they document. @public */
@@ -27,10 +40,14 @@ export function checkReadmeExports(config: ReadmeExportsCheckConfig): CheckResul
   const findings: Finding[] = [];
   let checked = 0;
 
-  // The anchor is opt-in, so `checked` reaching zero is supported; no README to hold is not.
-  if (config.readmes.length === 0) return scannedNothing("no README is configured", "readme-exports", "held");
+  // The marker is what opts a section in, so the READMEs are derived from it by default and named
+  // only by a consumer whose tree says otherwise.
+  const readmes = config.readmes ?? discoverReadmes(root, config.sources ?? ["src", "warden"]);
 
-  for (const readme of config.readmes) {
+  // The anchor is opt-in, so `checked` reaching zero is supported; no README to hold is not.
+  if (readmes.length === 0) return scannedNothing("no README carries a `> Import path:` anchor", "readme-exports", "held");
+
+  for (const readme of readmes) {
     const readmePath = resolve(root, readme);
     if (!existsSync(readmePath)) {
       findings.push(fail(`\`${readme}\` not found`, { file: readme }));
@@ -42,7 +59,7 @@ export function checkReadmeExports(config: ReadmeExportsCheckConfig): CheckResul
 
   return checkResult(
     findings,
-    `README exports: ${checked} subpath tables across ${config.readmes.length} READMEs agree with their barrels, ${exempt.size} exempt`,
+    `README exports: ${checked} subpath tables across ${readmes.length} READMEs agree with their barrels, ${exempt.size} exempt`,
   );
 }
 

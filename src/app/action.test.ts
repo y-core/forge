@@ -748,13 +748,14 @@ describe("defineAction — bot guards", () => {
     expect(await res.text()).toBe(refusal("name"));
   });
 
-  it("logs a network error as an outage rather than a rejection", async () => {
+  // The line is the same for every trip; the reason is what tells an outage from a rejection.
+  it("logs a network error with the reason that names it an outage", async () => {
     fakeSiteverify(async () => {
       throw new Error("connection refused");
     });
 
     const logs = await captureLogs(() => post(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`));
-    expect(logs.some((line) => line.includes("Turnstile verification unavailable") && line.includes("network-error"))).toBe(true);
+    expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("network-error"))).toBe(true);
   });
 
   it("fails closed on a siteverify timeout and carries the reason in the rejection", async () => {

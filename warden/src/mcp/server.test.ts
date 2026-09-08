@@ -60,12 +60,18 @@ describe("handle()", () => {
     expect(handle(index, "notifications/initialized", {}, null)).toBeUndefined();
   });
 
-  it("lists the four tools and the resources", () => {
+  it("lists the five tools and the resources", () => {
     const tools = handle(index, "tools/list", {}, 1)?.result as { tools: Array<{ name: string }> } | undefined;
     const resources = handle(index, "resources/list", {}, 1)?.result as { resources: unknown[] } | undefined;
     const templates = handle(index, "resources/templates/list", {}, 1)?.result as { resourceTemplates: unknown[] } | undefined;
 
-    expect(tools?.tools.map((tool) => tool.name)).toEqual(["knowledge_search", "knowledge_read", "knowledge_outline", "knowledge_related"]);
+    expect(tools?.tools.map((tool) => tool.name)).toEqual([
+      "knowledge_search",
+      "knowledge_read",
+      "knowledge_outline",
+      "knowledge_related",
+      "knowledge_impact",
+    ]);
     expect(resources?.resources).toHaveLength(1);
     expect(templates?.resourceTemplates).toHaveLength(2);
   });

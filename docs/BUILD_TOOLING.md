@@ -492,6 +492,15 @@ in the consuming repository's `config/steps.ts`**, beside the step table: that f
 "what does this repository's gate do?", so a step is one entry in it — the builder for the check,
 and the config it runs with.
 
+**Where the tree already states a fact, the check derives it and the config field is the override.**
+A hand-kept path list is itself a drift surface: it rots silently on a rename, and the reason an
+entry exists ends up far from the file it excuses. So a check reads the convention the codebase
+already keeps — a filename, a path segment, an opt-in marker — and every allowlist stays accepted as
+config on top of it, which is what a consuming app whose tree says otherwise supplies. A derived
+default is not a forge-specific rule smuggled into a published check; a default a consumer cannot
+displace would be. **An entry that only restates what the check derives fails**, on the same terms
+as a stale one: an escape nobody can see the need for is an escape nobody notices going wrong.
+
 ### 2j. Trunk-Only Development and the Amend Floor
 
 **Forge develops on the trunk: no branches, no pull requests, no worktrees.** There is no CI, so a
@@ -506,6 +515,15 @@ workflow.
 and reorder freely. **At or below it, history is published**: consumers pin codeload tarballs at a
 tag, so a consumer has already fetched those commits, and rewriting them changes what they got
 without changing the version they asked for.
+
+**`forge release` enforces the floor rather than trusting it**, in a preflight that runs before
+anything is written: it refuses when the previous tag is not an ancestor of HEAD
+(`history-rewritten`, no override), and when a reachable remote does not carry that tag
+(`tag-unpushed`) — an unpushed tag does not exist for a consumer, and `getLatestTag` would cut the
+next release on top of it regardless. Neither is a gate step: both are properties of the commit that
+publishes a release, the release command is where they can still be answered, and a network-
+dependent step would break an offline `verify:full` for a reason unrelated to the code. A remote
+that cannot be reached is reported and non-fatal.
 
 Three habits carry the rest:
 
@@ -523,8 +541,9 @@ Three habits carry the rest:
 defaults everything else to patch, so the prefix is the sole machine-readable "this will break
 you" — and pre-1.0 forge ships breaking changes with no shim while consumers pin by tag, which
 makes that signal the only warning they get. The surface guard (`removedSurfaceSince` in
-`surface.ts`) already refuses a shrinking export surface under an auto-patch release; reaching for
-`--allow-semver` silences that guard rather than answering it, and the answer it is asking for is
-the prefix.
+`surface.ts`) refuses a shrinking export surface under an auto-patch release, and its refusal names
+the prefix as the remedy: `--allow-semver` silences the guard rather than answering it, and is
+described there as the deliberate override it is — for a shrink where a patch bump is genuinely
+correct.
 
 ---

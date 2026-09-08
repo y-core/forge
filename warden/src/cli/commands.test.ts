@@ -16,6 +16,7 @@ describe("createWardenCommands()", () => {
       "read",
       "outline",
       "related",
+      "impact",
       "catalogue",
       "serve",
     ]);

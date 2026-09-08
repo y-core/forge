@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { cn } from "../../../ui/core/utils/cn";
 import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
 import { findClassLiterals, findSkippedClassPositions } from "./design-parse";
-import { collectSource } from "./source-scan";
+import { resolveSources } from "./source-scan";
 
 /** What the class-order check needs to know about the project. @public */
 export interface ClassOrderCheckConfig {
@@ -68,9 +68,7 @@ export function validateClassOrder(file: string, source: string): Finding[] {
 /** Walks the configured sources and reports every self-conflicting class literal. @public */
 export function checkClassOrder(config: ClassOrderCheckConfig): CheckResult {
   const { root, sources } = config;
-  const excluded = sources.filter((source) => source.startsWith("!")).map((source) => source.slice(1));
-  const collected = sources.filter((source) => !source.startsWith("!")).flatMap((source) => collectSource(root, source, SCANNED));
-  const files = [...new Set(collected)].filter((file) => !excluded.some((prefix) => file === prefix || file.startsWith(`${prefix}/`))).sort();
+  const files = resolveSources(root, sources, SCANNED);
 
   if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no source`, "class-order");
 

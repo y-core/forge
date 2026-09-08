@@ -1,3 +1,4 @@
+import { findSubpathCitations } from "../checks/docs-parse";
 import type { Chunk, Relation, SourceDoc } from "../types";
 import { chunkId, sourceId } from "./ident";
 
@@ -26,11 +27,18 @@ export function resolveDoc(cited: string, sources: readonly SourceDoc[], from?: 
   return candidates.length === 1 && only !== undefined ? sourceId(only.corpus, only.path) : undefined;
 }
 
-/** Every edge one document's chunks declare: the `> Defers to:` header, and every `§N` citation.
+/** Every edge one document's chunks declare: the `> Defers to:` header, every `§N` citation, and —
+ *  given a `packageName` — every subpath a section's prose governs.
  *
  *  An unresolved edge is kept with its raw spelling rather than dropped — the gate warns on it, and
  *  a dropped edge would look like a document that simply cites nothing. @public */
-export function relationsOf(doc: SourceDoc, chunks: readonly Chunk[], header: string, sources: readonly SourceDoc[]): Relation[] {
+export function relationsOf(
+  doc: SourceDoc,
+  chunks: readonly Chunk[],
+  header: string,
+  sources: readonly SourceDoc[],
+  packageName?: string,
+): Relation[] {
   const relations: Relation[] = [];
   const docId = sourceId(doc.corpus, doc.path);
 
@@ -60,6 +68,25 @@ export function relationsOf(doc: SourceDoc, chunks: readonly Chunk[], header: st
       const target = resolveDoc(match[1] ?? "", sources, doc);
       const to = target === undefined ? undefined : `${target}#${match[2] ?? ""}`;
       relations.push({ from: chunk.id, kind: "cites", raw, ...(to === undefined ? {} : { to }) });
+    }
+  }
+
+  // Prose only: a table row lists a subpath, a rule binds it. A namespace catalog lists every
+  // published subpath, so indexing its rows would make one section govern the whole codebase.
+  //
+  // The target is minted as `code:<subpath>` and is never null. `unresolved()` selects every
+  // relation with a null target and the gate reports the count as citations resolving to no
+  // indexed document; a `governs` edge is not one of those, and a null would inflate that number
+  // with rows working exactly as intended. `parseId` deliberately does not answer for a `code:`
+  // id — it is a two-corpus function, and no relation target is ever passed to it.
+  if (packageName !== undefined) {
+    for (const chunk of chunks) {
+      const bound = new Set<string>();
+      for (const citation of findSubpathCitations(chunk.body, packageName, { strict: true })) {
+        if (citation.kind !== "prose" || bound.has(citation.subpath)) continue;
+        bound.add(citation.subpath);
+        relations.push({ from: chunk.id, kind: "governs", to: `code:${citation.subpath}`, raw: `${packageName}${citation.raw}` });
+      }
     }
   }
 

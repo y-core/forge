@@ -26,8 +26,11 @@ interface Loaded {
   hash: string;
 }
 
-/** Reads and parses every document, resolving relations against the whole set. @public */
-export function load(sources: readonly SourceDoc[]): Loaded[] {
+/** Reads and parses every document, resolving relations against the whole set.
+ *
+ *  `packageName` is what lets a section's prose emit a `governs` edge; absent it, none is produced.
+ *  Honestly optional, so a caller with no package to name is not obliged to invent one. @public */
+export function load(sources: readonly SourceDoc[], packageName?: string): Loaded[] {
   return sources.map((doc) => {
     const source = readFileSync(doc.file, "utf-8");
     const stat = statSync(doc.file) as { size: number; mtimeMs?: number };
@@ -38,7 +41,7 @@ export function load(sources: readonly SourceDoc[]): Loaded[] {
       title: title === "" ? doc.path : title,
       description,
       chunks,
-      relations: relationsOf(doc, chunks, headerOf(source), sources),
+      relations: relationsOf(doc, chunks, headerOf(source), sources, packageName),
       size: stat.size,
       mtime: stat.mtimeMs ?? 0,
       hash: fnv1a(source),
@@ -48,8 +51,8 @@ export function load(sources: readonly SourceDoc[]): Loaded[] {
 
 /** Replaces the whole index from `sources`, in one transaction so a failed build leaves the
  *  previous one intact rather than a half-written database. @public */
-export function build(db: Database, sources: readonly SourceDoc[], canonVersion: string): BuildReport {
-  const loaded = load(sources);
+export function build(db: Database, sources: readonly SourceDoc[], canonVersion: string, packageName?: string): BuildReport {
+  const loaded = load(sources, packageName);
 
   const write = db.transaction(() => {
     db.run("DELETE FROM relation");
@@ -64,7 +67,7 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
       "INSERT INTO source (corpus, tree, path, title, description, weight, size, mtime, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     );
     const insertChunk = db.prepare(
-      "INSERT INTO chunk (id, source_id, section, title, heading_path, gloss, rules, body, ordinal, searchable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING rowid",
+      "INSERT INTO chunk (id, source_id, section, title, heading_path, gloss, rules, body, ordinal, searchable, line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING rowid",
     );
     const insertSearch = db.prepare("INSERT INTO chunk_fts (rowid, title, heading_path, gloss, rules, search_body) VALUES (?, ?, ?, ?, ?, ?)");
     const insertRelation = db.prepare("INSERT INTO relation (from_id, kind, to_id, raw) VALUES (?, ?, ?, ?)");
@@ -95,6 +98,8 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
           chunk.body,
           chunk.ordinal,
           chunk.searchable ? 1 : 0,
+          chunk.line,
+          chunk.endLine,
         ) as { rowid: number } | null;
         // The FTS row is written from the chunk in hand rather than selected back out of `chunk`,
         // which is what lets the content table drop `search_body` entirely. An organising heading is

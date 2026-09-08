@@ -3,7 +3,7 @@ import { loadConfigModule } from "../cli/config-module";
 import type { Command } from "../cli/types";
 import { formatReleaseDate, parseChangelog, promoteUnreleased } from "../gate/changelog";
 import { definitionList } from "../term/grid";
-import { commit, createTag, isWorkingTreeClean, tagExists } from "./git";
+import { commit, createTag, isWorkingTreeClean, remoteTags, tagExists, tagIsAncestorOfHead } from "./git";
 import { readChangelog, readRepositoryUrl, updatePackageVersion, writeChangelog } from "./pkg-json";
 import { removedSurfaceSince } from "./surface";
 import type { BumpEvidence, ReleaseCommandConfig, ReleaseDeps } from "./types";
@@ -37,6 +37,8 @@ export function createReleaseCommand(
     writeChangelog,
     readRepositoryUrl,
     removedSurfaceSince,
+    tagIsAncestorOfHead,
+    remoteTags,
     now: () => new Date(),
   },
 ): Command<typeof releaseFlags> {
@@ -60,6 +62,30 @@ export function createReleaseCommand(
 
       const result = deps.resolveVersion({ ...(explicit !== undefined ? { explicit } : {}), cwd, tagPrefix });
 
+      // The amend floor (BUILD_TOOLING §2j) is otherwise a habit: both invariants are properties of
+      // the commit that publishes a release, so this is the last point either can still be answered.
+      if (result.previous !== null) {
+        if (!deps.tagIsAncestorOfHead(cwd, result.previous)) {
+          throw new ReleaseError(
+            "history-rewritten",
+            `${result.previous} is no longer an ancestor of HEAD — published history was rewritten.\n` +
+              `Consumers fetch a codeload tarball at ${result.previous}, so the commits they already hold no longer match the tag, ` +
+              "and no version change signals it. Recover the rewritten commits with `git reflog` and rebuild HEAD on top of the tag.",
+          );
+        }
+
+        const published = deps.remoteTags(cwd);
+        if (published === null) {
+          console.log(`  (remote unreachable — could not confirm ${result.previous} is pushed)`);
+        } else if (!published.includes(result.previous)) {
+          throw new ReleaseError(
+            "tag-unpushed",
+            `${result.previous} exists locally but not on the remote, so no consumer can fetch it.\n` +
+              `Run \`git push --tags\` before cutting ${result.version} on top of it.`,
+          );
+        }
+      }
+
       if (result.reason === "in-sync") {
         console.log(`Already at ${result.version} — nothing to release.`);
         return;
@@ -72,7 +98,8 @@ export function createReleaseCommand(
             "surface-shrink",
             `Public export surface shrank since ${result.previous}, but the resolved bump is auto-patch:\n` +
               `${removed.map((entry) => `  ${entry}`).join("\n")}\n` +
-              "Prefix a commit `minor:` or pass an explicit version, or use --allow-semver.",
+              "Give the commit that removed them a `minor:` subject prefix (`major:` from 1.0) — that prefix is the only signal a consumer pinning by tag gets.\n" +
+              "--allow-semver overrides this deliberately, for a shrink where a patch bump is genuinely correct.",
           );
         }
       }

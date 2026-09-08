@@ -272,9 +272,28 @@ A latest tag that cannot be parsed is fatal rather than skipped: the not-greater
 
 Before an `auto-patch` release, the command compares the `<specifier>#<exportName>` set the previous
 tag published against the working tree's. Any entry that has gone refuses the release, naming each
-one, and pointing at the three ways forward: prefix a commit `minor:`, pass an explicit version, or
-pass `--allow-semver`. The check runs only on `auto-patch` with a previous tag — an explicit version
-and a `minor:`/`major:` bump have already said what they are.
+one and naming the remedy: a `minor:` subject prefix (`major:` from 1.0) on the commit that removed
+them, which is the only machine-readable signal a consumer pinning by tag gets. `--allow-semver` is
+the deliberate override, for a shrink where a patch bump is genuinely correct. The check runs only
+on `auto-patch` with a previous tag — an explicit version and a `minor:`/`major:` bump have already
+said what they are.
+
+### The amend-floor preflight
+
+With a previous tag resolved, and before anything is written, the command asks two questions about
+it ([`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2j):
+
+- **Is the tag still an ancestor of HEAD?** If not, history at or below the amend floor was
+  rewritten: consumers have already fetched those commits in a codeload tarball, so the tag now
+  names different content with no version change to say so. This refuses with `history-rewritten`
+  and no override — the remedy is `git reflog` and rebuilding HEAD on top of the tag.
+- **Does the remote carry the tag?** `forge release` never pushes, and a tag that stays local does
+  not exist for a consumer while `getLatestTag` will happily cut the next release on top of it. A
+  reachable remote that lacks the tag refuses with `tag-unpushed`, naming `git push --tags`.
+
+A remote that cannot be reached is reported and non-fatal: releasing from a machine with no route
+out is ordinary, and an unanswerable question is not a failed one. Both run in a `--dry` run too, so
+`--dry` shows the refusal a real release would hit.
 
 ### Errors
 
@@ -294,6 +313,8 @@ Extends `Error` with a discriminated `kind` field for programmatic handling.
 | `changelog-empty` | `[Unreleased]` carries no entry while commits exist since the tag, and `--allow-empty-changelog` was not passed. |
 | `changelog-malformed` | The changelog does not parse, or cannot be promoted. No flag overrides this. |
 | `surface-shrink` | A patch release drops a public export and `--allow-semver` was not passed. |
+| `history-rewritten` | The previous tag is no longer an ancestor of HEAD. No flag overrides this. |
+| `tag-unpushed` | A reachable remote does not carry the previous tag. |
 
 A tag that fails to create after the commit landed says so in the message — the commit is named as
 unpushed and untagged, because that is the state the reader has to clean up.

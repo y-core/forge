@@ -13,8 +13,17 @@ function tree(): CommandBase {
 }
 
 describe("the knowledge commands", () => {
-  it("mounts the five knowledge verbs, the catalogue and the server", () => {
-    expect(tree().commands.map((command) => command.name)).toEqual(["index", "search", "read", "outline", "related", "catalogue", "serve"]);
+  it("mounts the six knowledge verbs, the catalogue and the server", () => {
+    expect(tree().commands.map((command) => command.name)).toEqual([
+      "index",
+      "search",
+      "read",
+      "outline",
+      "related",
+      "impact",
+      "catalogue",
+      "serve",
+    ]);
   });
 
   it("gives every one a --root, so no command has to discover the repository", () => {
@@ -28,7 +37,7 @@ describe("the knowledge commands", () => {
   it("gives the commands that read an index a --gate flag, so the gate's own can be inspected", () => {
     const gated = tree().commands.filter((command) => command.flags.gate !== undefined);
 
-    expect(gated.map((command) => command.name)).toEqual(["index", "search", "read", "outline", "related"]);
+    expect(gated.map((command) => command.name)).toEqual(["index", "search", "read", "outline", "related", "impact"]);
   });
 
   it("requires the argument each verb cannot work without", () => {

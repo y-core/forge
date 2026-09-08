@@ -40,6 +40,28 @@ export function parseBarrelExports(source: string): { values: string[]; hasExpor
   return { values, hasExportStar, hasTypeExports };
 }
 
+// Deliberately narrower than "has behaviour": its only job is to falsify a declaration-file claim,
+// so a const bound to an object literal — a schema, a lookup table — is not callable.
+/** Every exported binding that is callable or instantiable — a function, a class, or a const bound to either. @public */
+export function parseCallableExports(source: string): Set<string> {
+  const stripped = blankSourceComments(source);
+  const names = new Set<string>();
+
+  const declRe = /export\s+(?:default\s+)?(?:async\s+)?(function|class)(?:\s+([A-Za-z_$]\w*))?/g;
+  for (const match of stripped.matchAll(declRe)) names.add(match[2] ?? `default ${match[1]}`);
+
+  // `:[^=]+` stops at the first `=`, so an arrow-typed annotation (`(x: T) => U`) ends the match
+  // early and the const is missed rather than mis-claimed; the `=>` form below catches it back.
+  const constRe =
+    /export\s+const\s+([A-Za-z_$]\w*)\s*(?::[^=;]*(?:=>[^=;]*)*)?=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*(?::[^=]*)?=>|[A-Za-z_$]\w*\s*=>)/g;
+  for (const match of stripped.matchAll(constRe)) {
+    const name = match[1];
+    if (name !== undefined) names.add(name);
+  }
+
+  return names;
+}
+
 /** Collects every identifier a barrel makes available, including re-exported types and alias names. */
 export function parseBarrelExportNames(source: string): Set<string> {
   const stripped = blankSourceComments(source);

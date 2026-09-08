@@ -134,6 +134,8 @@ export function chunkDocument(doc: SourceDoc, source: string): Chunk[] {
       searchBody,
       body: block.join("\n").trim(),
       ordinal: ordinal++,
+      line: heading.line + 1,
+      endLine: end,
       // Two shapes are emitted but not indexed, because the title is what a reader scans an outline
       // for and the target of every `§N` citation the corpus writes — dropping them made
       // `NAMESPACES.md §3` an id that resolved nowhere.

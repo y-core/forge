@@ -430,7 +430,8 @@ describe("CustomiseContent", () => {
   it("emits a scheme file whose shape is a scheme file", async () => {
     const { dials } = loadCustomise(ctx("?gh=256&gc=45"));
     const emitted = textOf(await page("?gh=256&gc=45"), "pre", "data-scheme-output");
-    expect(emitted).toBe(`<code>${schemeCss(buildTheme(dials), dials)}</code>`);
+    // The waiver's apostrophes arrive as entities, which is what the renderer owes any text node.
+    expect(emitted).toBe(`<code>${schemeCss(buildTheme(dials), dials).replaceAll("'", "&#39;")}</code>`);
     expect(emitted.split(":root {").length - 1).toBe(2);
     expect(emitted.split(".dark {").length - 1).toBe(0);
   });
@@ -487,6 +488,16 @@ describe("CustomiseContent", () => {
 });
 
 describe("schemeCss", () => {
+  // Position is the assertion: `validate-modern-css` reports the missing layer at line 1, and a
+  // waiver suppresses only its own line or the one above, so line 2 would not suppress.
+  it("opens with the platform-layer waiver, so a pasted scheme passes validate-modern-css unedited", () => {
+    const dials = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10, radiusField: 10, radiusBox: 16, controlH: 40 };
+    const css = schemeCss(buildTheme(dials), dials);
+    expect(css.split("\n")[0]).toBe(
+      "/* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */",
+    );
+  });
+
   it("declares twelve solid steps per family, once each", () => {
     const dials = { grayHue: 256, grayChroma: 45, accentHue: 267, accentChroma: 195, radius: 10, radiusField: 10, radiusBox: 16, controlH: 40 };
     const css = schemeCss(buildTheme(dials), dials);

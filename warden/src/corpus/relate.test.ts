@@ -21,6 +21,8 @@ const chunk = (id: string, body: string): Chunk => ({
   searchBody: body,
   body,
   ordinal: 0,
+  line: 1,
+  endLine: 1,
   searchable: true,
 });
 
@@ -110,5 +112,45 @@ describe("relationsOf()", () => {
 describe("citationTarget()", () => {
   it("builds the chunk id a `DOC.md §N` citation names", () => {
     expect(citationTarget("CODE_RULES.md", "5c", SOURCES)).toBe("canon:CODE_RULES.md#5c");
+  });
+});
+
+describe("relationsOf() — the governs edges", () => {
+  const govern = (body: string) =>
+    relationsOf(DOC, [chunk("project:docs/TESTING.md#1", body)], "", SOURCES, "@y-core/forge").filter((r) => r.kind === "governs");
+
+  it("emits nothing without a package name, so the parameter is honestly optional", () => {
+    const body = "Every HTTP output concern goes to `@y-core/forge/http`.";
+
+    expect(relationsOf(DOC, [chunk("project:docs/TESTING.md#1", body)], "", SOURCES)).toEqual([]);
+  });
+
+  it("binds a subpath a section's prose names, targeting a non-null `code:` id", () => {
+    expect(govern("Every HTTP output concern goes to `@y-core/forge/http`.")).toEqual([
+      { from: "project:docs/TESTING.md#1", kind: "governs", to: "code:./http", raw: "@y-core/forge/http" },
+    ]);
+  });
+
+  it("skips a table row, because a row lists a subpath and only prose binds it", () => {
+    expect(govern("| `@y-core/forge/http` | `src/http/mod.ts` | response builders |")).toEqual([]);
+  });
+
+  it("binds once when one section names a subpath in prose and again in a row", () => {
+    const body = ["| `@y-core/forge/http` | `src/http/mod.ts` |", "", "HTTP output belongs in `@y-core/forge/http`."].join("\n");
+
+    expect(govern(body).map((relation) => relation.to)).toEqual(["code:./http"]);
+  });
+
+  it("binds each distinct subpath a section names once, in the order the prose names them", () => {
+    const body = "`@y-core/forge/http` renders; `@y-core/forge/result` carries the outcome; `@y-core/forge/http` again.";
+
+    expect(govern(body).map((relation) => relation.to)).toEqual(["code:./http", "code:./result"]);
+  });
+
+  it("scopes the edge to the chunk, so a citation in one section never binds another", () => {
+    const chunks = [chunk("project:docs/TESTING.md#1", "Use `@y-core/forge/http`."), chunk("project:docs/TESTING.md#2", "No subpath here.")];
+    const edges = relationsOf(DOC, chunks, "", SOURCES, "@y-core/forge").filter((relation) => relation.kind === "governs");
+
+    expect(edges.map((relation) => relation.from)).toEqual(["project:docs/TESTING.md#1"]);
   });
 });

@@ -84,8 +84,10 @@ warden read <id>             # print one section whole, by the chunk id search r
   --neighbours=<n>           # also print N sections either side
 
 warden outline <path>        # list every section of one document with its one-line summary
-warden related <id>          # what a section defers to, cites, and is cited by
+warden related <id>          # what a section defers to, cites, is cited by, and governs
   --depth=<n>                # follow edges N levels (default: 1)
+
+warden impact <ref>          # which sections a ref changed, what depends on them, what they govern
 
 warden catalogue             # print the canon catalogue
 warden catalogue --write     # write it to warden/CATALOGUE.md instead
@@ -133,6 +135,7 @@ are built out of.
 | `uncitedSubpaths` | function | The published subpaths no governing document cites. |
 | `checkReadmeExports` | function | Holds a README's per-subpath export tables against the barrels they document. |
 | `ReadmeExportsCheckConfig` | type | What `checkReadmeExports` needs: the root, the READMEs, and the subpaths exempt from a table. |
+| `discoverReadmes` | function | Every README under the walked sources carrying at least one `> Import path:` anchor. |
 | `checkChangelog` | function | Holds the changelog's headings against the current package version. |
 | `validateChangelog` | function | The changelog rules alone, over a parsed source. |
 | `ChangelogCheckConfig` | type | What `checkChangelog` needs: the root and the package version. |
@@ -156,6 +159,7 @@ fixed, because a label is the `--only` token a developer types.
 | `designStep` | function | `validate-design` — the design corpus against the tree it governs. |
 | `wardenStep` | function | `warden:index` — rebuilds the knowledge index and asserts what retrieval depends on. |
 | `wardenQueriesStep` | function | `warden:queries` — the golden retrieval set against a freshly built index. |
+| `duplicatesStep` | function | `warden:duplicates` — two sections saying the same thing, which the single-home rule forbids. |
 
 ## `@y-core/forge/warden/knowledge`
 
@@ -211,7 +215,7 @@ The MCP server: the tool and resource surface, the JSON-RPC framing, and the std
 
 | Symbol | Kind | Summary |
 | --- | --- | --- |
-| `TOOLS` | const | The declared tools — search, read, outline and related. |
+| `TOOLS` | const | The declared tools — search, read, outline, related and impact. |
 | `callTool` | function | Runs one tool against an open index. |
 | `ToolSpec` | type | A tool's declared shape, as `tools/list` returns it. |
 | `ToolResult` | type | One tool's result, in MCP's content shape. |

@@ -1,12 +1,15 @@
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../../../src/tooling/gate/finding";
+import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
 import { discover } from "../corpus/source";
 import { build } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
 import { freshness } from "../index/freshness";
+import { packageNameOf } from "../paths";
+import { ALIASES } from "../search/aliases";
+import { documentFrequency } from "../search/coverage";
 import { search } from "../search/search";
 import type { Tree } from "../types";
 import { canonVersion } from "../version";
-import { GOLDEN, type GoldenQuery, NEGATIVE } from "./golden";
+import { type Dimension, GOLDEN, type GoldenQuery, NEGATIVE } from "./golden";
 
 /** What the golden-query check needs to know about the project. @public */
 export interface GoldenCheckConfig {
@@ -26,6 +29,8 @@ export interface GoldenCheckConfig {
   indexPath?: string;
   /** Whether every canon document must be top-1 for at least one query. Defaults to `true`. */
   coverage?: boolean;
+  /** Replaces the shipped alias table — the bridges held to reaching something. */
+  aliases?: ReadonlyMap<string, readonly string[]>;
 }
 
 const TOP_N = 5;
@@ -33,6 +38,32 @@ const TOP_N = 5;
 /** How deep the margin measurement looks. Matches the pool `search` scores for coverage, so the
  *  reported figure is the whole of what the floor refused rather than the top of it. */
 const POOL = 60;
+
+/** The order the rollup prints, fixed so two runs are diffable. */
+const DIMENSIONS: readonly Dimension[] = ["placement", "prohibition", "procedure", "rationale", "boundary"];
+
+interface Rollup {
+  /** The furthest down the expected hit sat, 1-indexed. */
+  worst: number;
+  /** Whether some query of this kind did not find its answer at all. */
+  missed: boolean;
+  /** The least of a query's information any answer of this kind carried. */
+  thinnest?: number;
+}
+
+/** What each kind of question cost retrieval, in the fixed order, or `""` when nothing is tagged.
+ *
+ *  Instrumentation, not a threshold: the alias table is built on the claim that placement is the
+ *  question lexical retrieval serves worst, and until this ran nothing measured it. A dimension
+ *  earns a threshold once there are runs to set one from. */
+function rollup(measured: ReadonlyMap<Dimension, Rollup>): string {
+  const clauses = DIMENSIONS.filter((dimension) => measured.has(dimension)).map((dimension) => {
+    const seen = measured.get(dimension) as Rollup;
+    const thinnest = seen.thinnest === undefined ? "none reached" : seen.thinnest.toFixed(3);
+    return `${dimension} worst ${seen.missed ? "miss" : seen.worst} / thinnest ${thinnest}`;
+  });
+  return clauses.length === 0 ? "" : `; ${clauses.join(", ")}`;
+}
 
 /** Runs the golden retrieval set against a freshly built index.
  *
@@ -51,9 +82,10 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
     // `warden` runs first in the same gate and builds this very database from the same sources, so
     // a second unconditional build is 150 ms of repeated work. Run alone, the index is absent or
     // stale — never fresh — so this still builds what it measures.
-    if (!freshness(db, sources, canonVersion()).fresh) build(db, sources, canonVersion());
+    if (!freshness(db, sources, canonVersion()).fresh) build(db, sources, canonVersion(), packageNameOf(config.root));
     const findings: Finding[] = [];
     const topOne = new Set<string>();
+    const measured = new Map<Dimension, Rollup>();
     let thinnest = 1;
     let loudest = 0;
 
@@ -67,6 +99,16 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
 
       const rank = hits.findIndex((hit) => hit.id === golden.expect);
       const within = golden.within ?? 3;
+
+      if (golden.dimension !== undefined) {
+        const seen = measured.get(golden.dimension) ?? { worst: 0, missed: false };
+        measured.set(golden.dimension, {
+          worst: Math.max(seen.worst, rank + 1),
+          missed: seen.missed || rank === -1,
+          ...(expected === undefined && seen.thinnest === undefined ? {} : { thinnest: Math.min(seen.thinnest ?? 1, expected?.coverage ?? 1) }),
+        });
+      }
+
       if (rank === -1 || rank >= within) {
         const actual = hits.slice(0, TOP_N).map((hit, index) => `  ${index + 1}. ${hit.id}  (${hit.score.toFixed(3)})`);
         findings.push(
@@ -119,8 +161,26 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
       }
     }
 
+    // A bridge whose target no chunk carries is OR-ed into every query that triggers it and reaches
+    // nothing — dead weight that could sit there for years, since a bridge failing is indistinguishable
+    // from a bridge nobody needed. Warned rather than failed: the table is the fleet's, and a
+    // consumer's corpus legitimately lacks some of its vocabulary.
+    const aliases = config.aliases ?? ALIASES;
+    let live = 0;
+    let bridges = 0;
+    for (const [term, targets] of aliases) {
+      for (const target of targets) {
+        bridges++;
+        if (documentFrequency(db, target) > 0) live++;
+        else findings.push(warn(`alias bridge \`${term}\` → \`${target}\` reaches no chunk`, { file: "warden/src/search/aliases.ts" }));
+      }
+    }
+
     const margin = `floor margin ${thinnest.toFixed(3)} answered / ${loudest.toFixed(3)} refused`;
-    return checkResult(findings, `${queries.length} golden queries, ${topOne.size} documents reached top-1, ${margin}.`);
+    return checkResult(
+      findings,
+      `${queries.length} golden queries, ${topOne.size} documents reached top-1, ${live}/${bridges} alias bridges live, ${margin}${rollup(measured)}.`,
+    );
   } finally {
     db.close();
   }

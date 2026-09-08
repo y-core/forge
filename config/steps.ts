@@ -30,11 +30,13 @@ import {
   ssrBoundaryStep,
   testStep,
   typeAwareLintStep,
+  workerdStep,
   typecheckStep,
 } from "../src/tooling/gate/mod";
 import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
 import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
-import { changelogStep, designStep, docsStep, readmeExportsStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
+import { changelogStep, designStep, docsStep, duplicatesStep, readmeExportsStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
+import { BROWSER_ONLY, CN_FIXTURE_SPECS, CO_LOCATION_EXEMPT, DESIGN_CORPUS_EXCLUDED, SEALED_INTERNAL } from "./exemptions";
 import MARKDOWN from "./markdown";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 
@@ -61,18 +63,19 @@ export const STEPS: readonly Step[] = [
   // markdown to a house layout, and `docs` then reads already-normalized bytes.
   markdownStep({ root: ROOT, ...MARKDOWN }, { tier: "standard" }),
   typeAwareLintStep({ sources: ["src/", "config/", "warden/"], tier: "standard" }),
-  testStep(),
+  // Scoped to `src/`: `tests/workerd/` is the `full`-tier `test:workerd` step's, and each of its
+  // specs starts a real Workers runtime.
+  testStep({ sources: ["src/"] }),
   exportsStep(
     {
       root: ROOT,
       packageName: pkg.name,
       exports: EXPORTS,
       files: pkg.files,
-      // Listed subpaths reach DOM globals at import time, so only their runtime import is withheld;
-      // static parsing still runs.
-      browserOnly: ["./ui/chrome/client", "./ui/client", "./ui/client/htmx", "./ui/core/client", "./ui/show/client"],
+      // A subpath under a `client` segment is derived browser-only, so only its static parsing runs.
+      browserOnly: BROWSER_ONLY,
       sideEffectOnly: ["./jsx/register"],
-      sealedInternal: ["src/crypto/mod.ts"],
+      sealedInternal: SEALED_INTERNAL,
       assetDirs: [{ dir: "src/ui/assets/css", extension: ".css" }],
     },
     { tier: "standard" },
@@ -82,7 +85,7 @@ export const STEPS: readonly Step[] = [
       root: ROOT,
       exports: EXPORTS,
       graph: { primitives: PRIMITIVES, leaf: LEAF, edges: EDGES },
-      sealedInternal: ["src/crypto/mod.ts"],
+      sealedInternal: SEALED_INTERNAL,
       enumerationDoc: "docs/NAMESPACES.md",
     },
     { tier: "standard" },
@@ -94,62 +97,8 @@ export const STEPS: readonly Step[] = [
     {
       root: ROOT,
       sources: ["src", "warden"],
-      // A path here that names no walked module fails the check, so the list can only shrink.
-      exempt: [
-        // Warden's entry point and its type declarations, on the same terms as forge's own below.
-        "warden/src/bin.ts",
-        "warden/src/types.ts",
-        // `bind-contract`'s one function is covered where it is used, by `client/bind-display.test.ts`.
-        "src/ui/contracts/bind-contract.ts",
-        "src/ui/contracts/alert-contract.ts",
-        "src/ui/contracts/composite-contract.ts",
-        "src/ui/contracts/dialog-contract.ts",
-        "src/ui/contracts/island-contract.ts",
-        "src/ui/contracts/navbar-contract.ts",
-        "src/ui/contracts/number-field-contract.ts",
-        "src/ui/contracts/overlay-contract.ts",
-        "src/ui/contracts/scope-events.ts",
-        "src/ui/contracts/slider-contract.ts",
-        "src/ui/contracts/tabs-contract.ts",
-        "src/ui/contracts/theme-toggle-contract.ts",
-        "src/ui/contracts/theme/contrast-accepted.ts",
-        "src/ui/contracts/theme/contrast-pairs.ts",
-        "src/ui/contracts/toast-contract.ts",
-        "src/ui/contracts/toggle-contract.ts",
-        "src/ui/contracts/toolbar-contract.ts",
-        "src/ui/contracts/turnstile-contract.ts",
-        "src/ui/show/coverage-missing.ts",
-        "src/ui/design/catalog-missing.ts",
-        "src/ui/show/lazy-contract.ts",
-        "src/ui/show/scope-contract.ts",
-        "src/ui/show/toast-contract.ts",
-        // Test infrastructure and a vendor side-effect import: neither has behaviour of its own.
-        "src/ui/client/browser-test-helper.ts",
-        "src/ui/client/test-dom.ts",
-        "src/ui/client/htmx.ts",
-        "src/tooling/lint/test-support.ts",
-        "src/test-setup.ts",
-        // Type declarations only. Each was read for a smuggled helper before being listed; one that
-        // grows a function stops being exempt.
-        "src/app/types.ts",
-        "src/tooling/cf/account/handlers/types.ts",
-        "src/tooling/cli/types.ts",
-        "src/tooling/lint/types.ts",
-        "src/form/types.ts",
-        "src/jsx/types.ts",
-        "src/security/types.ts",
-        "src/storage/db/types.ts",
-        "src/storage/kv/types.ts",
-        "src/storage/r2/types.ts",
-        // Declared data: constant tables and, for `design-scale`, a generated file.
-        "src/tooling/cf/types.ts",
-        "src/tooling/lint/data/design-scale.ts",
-        "src/form/constants.ts",
-        // Executable entry points — argv in, `process.exit` out. What they wire is tested where it lives.
-        "src/tooling/assets/bin.ts",
-        "src/tooling/release/bin.ts",
-        "src/tooling/root/bin.ts",
-      ],
+      // An entry naming no walked module fails the check, so the map can only shrink.
+      exempt: CO_LOCATION_EXEMPT,
     },
     { tier: "standard" },
   ),
@@ -208,6 +157,13 @@ export const STEPS: readonly Step[] = [
       // Written by the compiler and by build configuration, never by a consumer, so a documented row
       // for any of them would advertise an import the reader must not write.
       tableExemptSubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"],
+      // Two catalogs, two scopes: the front page covers every published subpath, `NAMESPACES.md`
+      // §3a covers the runtime namespaces and says in its own lead why warden's five are elsewhere.
+      catalogs: [
+        { doc: "README.md", exempt: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"] },
+        { doc: "docs/NAMESPACES.md", exempt: ["./warden", "./warden/checks", "./warden/knowledge", "./warden/mcp", "./warden/steps"] },
+      ],
+      listedOnlySubpaths: [],
     },
     { tier: "standard" },
   ),
@@ -216,7 +172,6 @@ export const STEPS: readonly Step[] = [
   readmeExportsStep(
     {
       root: ROOT,
-      readmes: ["src/ui/README.md", "src/storage/README.md", "src/testing/README.md", "warden/README.md"],
       // Four are side-effect imports whose section documents registered scopes rather than symbols,
       // and `./ui/client/htmx` re-exports the vendored library itself, which has no forge surface.
       exempt: ["./ui/core/client", "./ui/client/htmx", "./ui/chrome/client", "./ui/show/client"],
@@ -235,27 +190,9 @@ export const STEPS: readonly Step[] = [
     },
     { tier: "standard" },
   ),
-  // `src/ui/design` is excluded for the reason it is not `@source`-scanned either: its samples are
-  // counter-examples quoting the exact patterns this check forbids.
-  modernCssStep({ root: ROOT, sources: ["src/ui", "!src/ui/design"] }, { tier: "standard" }),
-  // The excluded specs pin `cn`'s own resolution or this check's own detection, so their fixtures
-  // are deliberately self-conflicting literals — the very input the rule forbids everywhere else.
-  classOrderStep(
-    {
-      root: ROOT,
-      sources: [
-        "src",
-        "!src/tooling/gate/checks/class-order.test.ts",
-        "!src/tooling/gate/checks/design-parse.test.ts",
-        "!src/tooling/gate/checks/source-scan.test.ts",
-        "!src/ui/core/form.test.tsx",
-      ],
-    },
-    { tier: "standard" },
-  ),
-  // `src/ui/design` is excluded for the same reason `modernCssStep` excludes it: its samples quote
-  // the very tokens it teaches against. The check reads every literal, not only class positions.
-  classTokensStep({ root: ROOT, sources: ["src/ui", "!src/ui/design"], stylesheet: "src/ui/assets/css/tailwind.css" }, { tier: "standard" }),
+  modernCssStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED] }, { tier: "standard" }),
+  classOrderStep({ root: ROOT, sources: ["src", ...CN_FIXTURE_SPECS] }, { tier: "standard" }),
+  classTokensStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED], stylesheet: "src/ui/assets/css/tailwind.css" }, { tier: "standard" }),
   // `tailwindcss` is an optional peer: a standard run on a machine without it reports the step
   // skipped, one with it gets the drift check, and a full run fails either way.
   classGroupsStep(
@@ -303,8 +240,6 @@ export const STEPS: readonly Step[] = [
       classFree: new Map([
         ["assets", "sprite and glyph data — no markup, no class strings"],
         ["client", "mount controllers; the markup they operate on is the consumer's"],
-        // Not `@source`-scanned: half the corpus's samples are counter-examples quoting the exact
-        // classes it forbids, so scanning would compile forge's anti-patterns into consumer stylesheets.
         ["design", "design corpus — markdown only, and its samples deliberately quote forbidden classes"],
         ["server", "SSR helpers that delegate to core/ components for all markup"],
       ]),
@@ -319,7 +254,9 @@ export const STEPS: readonly Step[] = [
   // answer fail for different reasons, and a reader has to be told which to fix.
   wardenStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
+  duplicatesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   browserStep({ tier: "full" }),
+  workerdStep({ tier: "full" }),
 ];
 
 export default STEPS;

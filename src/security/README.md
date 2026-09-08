@@ -467,7 +467,7 @@ The hash cannot reach production because production never imports the dev entry.
 
 **Symptom:** every write in local development 403s, while the same code is fine in production. The origin guards compare origins by exact string, so a dev server speaking `http` behind a TLS-terminating proxy rejects the browser's `https` origin — its own forms included.
 
-**What to do:** serve https at every hop in dev — the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `extraOrigins` only in the proxy-less case. The ruling, including why the scheme is never patched up in middleware and why HSTS and `Secure` cookies stay hardcoded, is [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §3f's.
+**What to do:** serve https at every hop in dev — the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `extraOrigins` only in the proxy-less case. The posture — including why the scheme is never patched up in middleware and why HSTS and `Secure` cookies stay hardcoded — is [`WORKERS_PLATFORM.md`](../../warden/canon/apps/WORKERS_PLATFORM.md) §4e's; how `allowedOrigins` is derived here, and what `extraOrigins` may hold, are [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §3f's.
 
 ---
 
@@ -477,5 +477,7 @@ The hash cannot reach production because production never imports the dev entry.
 - [`@y-core/forge/session`](../session/) — session cookies and middleware
 - [`@y-core/forge/http`](../http/) — `safeUrl` URL sanitization, response fragments
 - [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) — the header
-  factory and its nonce contract (§2), origin-guard tiering (§3e), the https-everywhere dev posture
+  factory and its nonce contract (§2), origin-guard tiering (§3e), deriving `allowedOrigins` in dev
   (§3f), rate-limit key selection (§4d), and the Cloudflare header trust boundary (§5c)
+- [`WORKERS_PLATFORM.md`](../../warden/canon/apps/WORKERS_PLATFORM.md) §4e — the https-everywhere
+  development transport posture the origin guards depend on

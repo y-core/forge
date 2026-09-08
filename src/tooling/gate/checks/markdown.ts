@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { type CheckResult, checkResult, type Finding, scannedNothing } from "../finding";
 import { type MarkdownRules, parseMarkdown, renderMarkdown, validateMarkdown } from "./markdown-parse";
-import { collectSource } from "./source-scan";
+import { excludedBy, resolveSources } from "./source-scan";
 
 /** What the markdown check needs to know about the project. @public */
 export interface MarkdownCheckConfig {
@@ -19,16 +19,10 @@ export interface MarkdownCheckConfig {
 
 const MARKDOWN = (name: string): boolean => name.endsWith(".md");
 
-function excluded(file: string, prefixes: readonly string[]): boolean {
-  return prefixes.some((prefix) => file === prefix || file.startsWith(`${prefix}/`));
-}
-
 /** Every markdown file the config points at, repo-relative, deduped and sorted. @public */
 export function resolveMarkdownFiles(config: MarkdownCheckConfig): string[] {
   const sources = config.sources ?? ["src"];
-  const skipped = [...sources.filter((source) => source.startsWith("!")).map((source) => source.slice(1)), ...(config.exclude ?? [])];
-  const collected = sources.filter((source) => !source.startsWith("!")).flatMap((source) => collectSource(config.root, source, MARKDOWN));
-  return [...new Set(collected)].filter((file) => !excluded(file, skipped)).sort();
+  return resolveSources(config.root, sources, MARKDOWN).filter((file) => !excludedBy(file, config.exclude ?? []));
 }
 
 /** Hold every markdown file to the house conventions. Reports; writes nothing. @public */

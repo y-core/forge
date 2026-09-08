@@ -1,5 +1,7 @@
 /** A `@y-core/forge/…` reference found in a document. */
 export interface SubpathCitation {
+  /** What the citation does: a table row *lists* a subpath, prose *binds* it. */
+  kind: "prose" | "table";
   /** 1-indexed line the citation sits on. */
   line: number;
   /** The path fragment as written, package name stripped — e.g. `/ui/core`. */
@@ -44,13 +46,14 @@ export function findSubpathCitations(source: string, packageName: string, opts: 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
     if (!opts.strict && !IMPORT_POSITION.test(line)) continue;
+    const kind = line.trimStart().startsWith("|") ? "table" : "prose";
 
     for (const match of line.matchAll(re)) {
       const raw = match[1];
       if (!raw || raw.endsWith("/")) continue;
       if (raw.includes("...")) continue;
 
-      found.push({ line: i + 1, raw, subpath: `.${raw.replace(/[.\-/]+$/, "")}` });
+      found.push({ kind, line: i + 1, raw, subpath: `.${raw.replace(/[.\-/]+$/, "")}` });
     }
   }
   return found;

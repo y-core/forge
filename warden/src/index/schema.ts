@@ -2,10 +2,10 @@
 
 /** Bumped whenever the tables change shape. A mismatch rebuilds rather than migrates: the index is
  *  a derived artifact under `.forge/`, never committed, and a full build is under a second. @public */
-export const SCHEMA_VERSION = "3";
+export const SCHEMA_VERSION = "4";
 
 /** Bumped whenever chunking, glossing or weighting changes what the same documents would produce. @public */
-export const INDEXER_VERSION = "6";
+export const INDEXER_VERSION = "7";
 
 /** `tokenchars` is the highest-leverage knob here: without `-_/.§` the tokenizer splits
  *  `Result<T,E>`, `ui/core`, `forge-ui-focus-ring`, `@y-core/forge/ui/show` and `§5c` into pieces,
@@ -49,7 +49,9 @@ CREATE TABLE chunk (
   rules        TEXT NOT NULL,
   body         TEXT NOT NULL,
   ordinal      INTEGER NOT NULL,
-  searchable   INTEGER NOT NULL
+  searchable   INTEGER NOT NULL,
+  line         INTEGER NOT NULL,
+  end_line     INTEGER NOT NULL
 );
 
 CREATE INDEX chunk_by_source ON chunk (source_id, ordinal);

@@ -62,8 +62,8 @@ exception to the `create*` factory-naming rule ([`NAMESPACES.md`](./NAMESPACES.m
 
 ### 1b. Narrowing a Result
 
-**Narrow with a single `if (!r.ok)` guard and return early.** Chaining by early return keeps
-the happy path at the left margin; nesting does not.
+See [`ERROR_HANDLING.md`](../warden/canon/libs/ERROR_HANDLING.md) §1b for the guard shape, the
+early-return rule, and why a cast after a `Result` check is a defect.
 
 ### 1c. `GuardResult` and `ValidationResult` Domain Aliases
 
@@ -220,13 +220,10 @@ stack trace.** Consumers may override the page with `onError` on `createApp`, `d
 
 ### 5c. Infrastructure Errors — Log and Fail Closed
 
-External service failures sit between expected and unexpected: the call is expected to fail
-sometimes, but the specific error is not actionable by the user.
-
-**Catch, log with context via the request logger, return `503`.**
-
-Log enough to diagnose (service, operation, sanitised identifiers) — never user-supplied
-content that may carry PII.
+See [`ERROR_HANDLING.md`](../warden/canon/libs/ERROR_HANDLING.md) §5c for the tier, the
+catch-log-`503` rule, and what a log line may and may not carry. What is local: the log goes through
+`createLogger` rather than `console`, so a Worker's structured output carries the request context
+the canon calls for.
 
 ### 5d. `defineAction` and `definePage` Error Recovery
 

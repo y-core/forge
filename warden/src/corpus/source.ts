@@ -23,7 +23,9 @@ const CANON_TREES: readonly Tree[] = ["shared", "libs", "apps"];
  *  of "how many comments am I allowed to write" — is mostly `src/ui/design/` routing tables at 1.0
  *  and 1.3, which a README weight does not reach, and raising 0.9 would lift the one README stub
  *  among them rather than sink it. The floor margin widened on its own (0.392/0.308 before the sweep,
- *  0.390/0.271 after), which is the sweep's real effect. @public */
+ *  0.390/0.271 after), which is the sweep's real effect. The sweep itself is no longer a manual one:
+ *  `warden:duplicates` measures it every run, so a later re-examination starts from that step's
+ *  output rather than from this paragraph. @public */
 export function weightOf(corpus: Corpus, path: string): number {
   if (corpus === "canon") return 1.3;
   if (path === "src/ui/design/floor.md") return 1.3;

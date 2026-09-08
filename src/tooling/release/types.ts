@@ -9,7 +9,9 @@ export type ReleaseErrorKind =
   | "changelog-empty"
   | "changelog-malformed"
   | "manifest-malformed"
-  | "surface-shrink";
+  | "surface-shrink"
+  | "history-rewritten"
+  | "tag-unpushed";
 
 /** An error raised by the release pipeline, tagged with its {@link ReleaseErrorKind}. */
 export class ReleaseError extends Error {
@@ -66,6 +68,10 @@ export interface ReleaseDeps {
   readRepositoryUrl: (cwd: string) => string | null;
   /** Public-surface entries present at `ref` and gone from the working tree. */
   removedSurfaceSince: (cwd: string, ref: string) => string[];
+  /** False when `tag` is no longer an ancestor of HEAD, i.e. published history was rewritten. */
+  tagIsAncestorOfHead: (cwd: string, tag: string) => boolean;
+  /** Tag names the remote carries, or `null` when it could not be reached. */
+  remoteTags: (cwd: string) => string[] | null;
   /** The release moment. Injected so a test needs no clock. */
   now: () => Date;
 }

@@ -17,7 +17,79 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **An amend-floor preflight in `forge release`.** Before anything is written, the command refuses a
+  release whose previous tag is no longer an ancestor of HEAD (`history-rewritten`, no override) —
+  published history was rewritten, so the tag names different content than the tarball a consumer
+  already holds, with no version change to signal it — and refuses when a reachable remote does not
+  carry that tag (`tag-unpushed`), which would otherwise cut a release on a predecessor nobody can
+  fetch. An unreachable remote is reported and non-fatal, so a release from a machine with no route
+  out still works ([`BUILD_TOOLING.md`](docs/BUILD_TOOLING.md) §2j).
+- **A duplication gate step, `warden:duplicates`.** Word-shingle overlap over every searchable chunk
+  reports two sections that say the same thing, which the single-home rule forbids and nothing
+  measured until now — the last sweep was manual and its record was a doc comment. `checkDuplicates`,
+  `DuplicateCheckConfig` and `duplicatesStep` are exported from `@y-core/forge/warden` and
+  `@y-core/forge/warden/steps`. Every finding is a warning: a specialisation legitimately restates
+  the rule it narrows, so a pair above the threshold is evidence to read, not a build to stop
+  ([`AGENT_GUIDE.md`](warden/canon/shared/AGENT_GUIDE.md) §8).
+- **A question-type tag on every golden query.** `GoldenQuery.dimension` labels a query `placement`,
+  `prohibition`, `procedure`, `rationale` or `boundary`, and `warden:queries` rolls up the worst rank
+  and thinnest coverage per dimension. Coverage was measured per document and never per kind of
+  question, which left the claim the alias table is built on — that placement is what lexical
+  retrieval serves worst — unmeasured. Instrumentation only: no new finding and no new threshold.
+
+- **A workerd test set, `bun run test:workerd`.** Specs under `tests/workerd/` run forge inside the
+  real Workers runtime against a fixture in `tests/fixtures/`, closing the blind spot that `bun test`
+  has by construction: it drives an app through `app.request` under Bun, whose `Request` is not
+  workerd's. `workerdStep` and `hasWorkerd` are exported from `@y-core/forge/tooling/gate`; the step
+  is `full`-tier behind a runtime prerequisite, exactly as `browserStep` is behind a browser
+  ([`TESTING.md`](docs/TESTING.md) §1f).
+
+### Changed
+
+- **Three gate checks derive from the tree what `config/steps.ts` used to nominate by hand, and hold
+  every remaining entry to its claim.** `validate-co-location` exempts a `types.ts` or a `bin.ts` by
+  name, then fails one that exports a function, a class, or a const bound to either — the note that
+  a listed file was read for a smuggled helper is now enforced rather than written down.
+  `validate-exports` derives a subpath under a `client` segment as browser-only, and fails a
+  `browserOnly`, `sideEffectOnly` or `sealedInternal` entry that restates a convention or names a
+  subpath that is gone, which none of the three had. `validate-readme-exports` discovers the READMEs
+  carrying a `> Import path:` anchor instead of being handed them, and still refuses a tree where
+  none does. Every allowlist stays accepted as config for a consuming app, and `coLocationStep`'s
+  `exempt` is now a `ReadonlyMap<string, string>` of path to reason, a blank one failing
+  ([`BUILD_TOOLING.md`](docs/BUILD_TOOLING.md) §2i, [`TESTING.md`](docs/TESTING.md) §2).
+
+- **The shrinking-surface refusal names the `minor:` prefix as the remedy, not as one of three
+  peers.** It previously offered "prefix a commit `minor:`, pass an explicit version, or use
+  `--allow-semver`" in one `or` chain, where only the first records the shrink anywhere
+  `resolveVersion` reads. `--allow-semver` is now described as the deliberate override it is. What
+  the guard refuses is unchanged ([`BUILD_TOOLING.md`](docs/BUILD_TOOLING.md) §2j).
+
+- **Seven `docs/` sections stop restating the canon rule they narrow and cite it instead** — the
+  whole of what `warden:duplicates` reported on its first run, from 0.290 to 0.625 overlap. Each kept
+  only what is local: `ERROR_HANDLING.md` §1b and §5c, `TESTING.md` §3d, `LIBRARY_ARCHITECTURE.md`
+  §3d and §4b, `NAMESPACES.md` §4b, and the twin response builders in `src/http/README.md`. Nothing
+  was deleted outright — every rule is still one link away, and now has one home
+  ([`AGENT_GUIDE.md`](warden/canon/shared/AGENT_GUIDE.md) §8).
+
+- **Every tripped bot guard is logged at `warn`, naming the guard and Turnstile's reason** — not only
+  an unreachable siteverify. A tripped guard answers in a validation refusal's clothes by design, so
+  the log line was the only thing standing between an operator and a CAPTCHA that cannot pass in a
+  given environment reading as every submission getting its first field wrong. The response the
+  caller sees is unchanged ([`INPUT_VALIDATION.md`](docs/INPUT_VALIDATION.md) §4c).
+
+- **`schemeCss()` emits the `modern-css-allow: forge-ui-platform-layer` waiver as its first line**,
+  byte-identical to the one every scheme file forge ships carries. A scheme copied from the theme
+  customiser now passes `validate-modern-css` unedited, and keeps passing after a regeneration.
+
+- **`SECURITY_HARDENING.md` §3f narrows to forge's own half.** The development transport posture it
+  used to rule on — https at every hop, the dev server's local protocol, never a scheme-rewriting
+  middleware — is now `WORKERS_PLATFORM.md` §4e in the apps canon, where a consuming app can cite it.
+  §3f keeps `BASE_URL` as the derivation source for `allowedOrigins` and `extraOrigins` as the sole
+  escape hatch, and points at the canon for the rest.
+
+- **The `test` step is scoped to `src/`**, so the fast tier runs the co-located suites alone.
 
 ---
 

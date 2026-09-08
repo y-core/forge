@@ -130,16 +130,9 @@ The `content-type` is fixed: passing a `content-type` key in `headers` (case-ins
 function fragmentResponse(body: string | SafeHtml, status?: number, headers?: Record<string, string>): Response;
 ```
 
-Constructs an HTML **fragment** `Response` (an HTMX partial) with `content-type: text/html;
-charset=utf-8`. No DOCTYPE is added — fragments are swapped into an existing document by HTMX. Accepts
-a `SafeHtml` value or a string. Use `htmlResponse` for full documents. As with `htmlResponse`, the
-`content-type` is fixed: passing a `content-type` key in `headers` (case-insensitive) **throws**.
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `body` | `string \| SafeHtml` | — | The fragment markup (no DOCTYPE). |
-| `status` | `number` | `200` | HTTP status code. |
-| `headers` | `Record<string, string>` | — | Extra headers, merged into the response. `content-type` is fixed — passing it (case-insensitive) throws. |
+`htmlResponse` above, minus the DOCTYPE: fragments are swapped into an existing document by HTMX, so
+adding one would nest a second document inside the first. Same parameters, same fixed `content-type`,
+same throw on passing one. Use `htmlResponse` for full documents.
 
 ### Redirects — `redirect`, `createRedirectResponse`
 

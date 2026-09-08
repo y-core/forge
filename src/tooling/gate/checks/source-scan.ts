@@ -46,6 +46,18 @@ export function collectSource(root: string, source: string, accept: (name: strin
   return collectFiles(root, source, accept);
 }
 
+/** Whether `file` is `prefix` or sits beneath it. @public */
+export function excludedBy(file: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => file === prefix || file.startsWith(`${prefix}/`));
+}
+
+/** Every file under `sources`, honouring `!`-prefixed exclusions — deduped and sorted. Walks, judges nothing. @public */
+export function resolveSources(root: string, sources: readonly string[], accept: (name: string) => boolean): string[] {
+  const excluded = sources.filter((source) => source.startsWith("!")).map((source) => source.slice(1));
+  const collected = sources.filter((source) => !source.startsWith("!")).flatMap((source) => collectSource(root, source, accept));
+  return [...new Set(collected)].filter((file) => !excludedBy(file, excluded)).sort();
+}
+
 /** The 1-indexed line `index` falls on. @public */
 export function lineAt(source: string, index: number): number {
   return source.slice(0, index).split("\n").length;

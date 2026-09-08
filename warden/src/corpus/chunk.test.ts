@@ -183,3 +183,41 @@ describe("chunkDocument() — a document with no section numbers", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe("chunkDocument() — the line span each section carries", () => {
+  const readme: SourceDoc = { corpus: "project", path: "src/ui/README.md", file: "/nowhere/README.md", weight: 0.9 };
+
+  it("records the 1-indexed heading line and the last line of the block", () => {
+    // 1: # UI  2: (blank)  3: ## One  4: (blank)  5: First.  6: (blank)  7: ## Two  8: (blank)  9: Second.
+    const source = ["# UI", "", "## One", "", "First.", "", "## Two", "", "Second."].join("\n");
+
+    expect(chunkDocument(readme, source).map((chunk) => `${chunk.section} ${chunk.line}-${chunk.endLine}`)).toEqual(["~one 3-6", "~two 7-9"]);
+  });
+
+  it("counts a heading quoted inside a fence as a line of the block, not a boundary", () => {
+    const source = ["# UI", "", "## One", "", "```md", "## Fake Heading", "```", "", "After."].join("\n");
+    const [chunk] = chunkDocument(readme, source);
+
+    expect([chunk?.line, chunk?.endLine]).toEqual([3, 9]);
+  });
+
+  it("skips the Quick Reference, so the first span belongs to §1 and not to §0", () => {
+    const source = [
+      "---",
+      "title: A",
+      'description: "One."',
+      "---",
+      "",
+      "## 0. Quick Reference",
+      "",
+      "- §1 One: it",
+      "",
+      "## 1. One",
+      "",
+      "Body.",
+    ].join("\n");
+    const doc: SourceDoc = { corpus: "project", path: "docs/A.md", file: "/nowhere/A.md", weight: 1.2 };
+
+    expect(chunkDocument(doc, source).map((chunk) => `${chunk.section} ${chunk.line}-${chunk.endLine}`)).toEqual(["1 10-12"]);
+  });
+});

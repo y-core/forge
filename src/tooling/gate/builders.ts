@@ -22,6 +22,7 @@ import { checkMarkdown, fixMarkdown, type MarkdownCheckConfig } from "./checks/m
 import { checkModernCss, type ModernCssCheckConfig } from "./checks/modern-css";
 import { checkNamespaceGraph, type NamespaceGraphCheckConfig } from "./checks/namespace-graph";
 import { checkSsrBoundary, type SsrBoundaryCheckConfig } from "./checks/ssr-boundary";
+import { hasWorkerd } from "./checks/workerd";
 import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./steps";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
@@ -132,6 +133,26 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
       tool: "chromium",
       probe: hasChromium,
       hint: options.hint ?? "run `bunx playwright install chromium`, or use a devbox container — `devctl up`",
+    }),
+  };
+}
+
+/** `bun test` over `sources` (default `tests/workerd/`), defaulting to the `full` tier: each spec starts a real Workers runtime. @public */
+export function workerdStep(options: { hint?: string } & SourceStepOptions = {}): CommandStep {
+  const sources = options.sources ?? ["tests/workerd/"];
+  return {
+    label: "test:workerd",
+    // Defaults to `full` — a workerd start costs tens of seconds — but the caller may state it, so
+    // the step table can be read for which steps run in which mode without opening this file.
+    ...tier(options.tier, "full"),
+    tail: 120,
+    cmd: ["bun", "test", ...sources],
+    // The probe targets the runtime, not the test runner: `bun` is always present, so probing it
+    // would pass vacuously and let every spec fail at server start.
+    ...prerequisite(options.requires, {
+      tool: "workerd",
+      probe: hasWorkerd,
+      hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it",
     }),
   };
 }

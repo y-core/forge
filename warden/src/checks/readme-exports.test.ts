@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checkReadmeExports } from "./readme-exports";
+import { checkReadmeExports, discoverReadmes } from "./readme-exports";
 
 let root: string;
 
@@ -176,5 +176,39 @@ describe("checkReadmeExports() — a table held against its barrel", () => {
       findings: [],
       summary: "README exports: 0 subpath tables across 1 READMEs agree with their barrels, 0 exempt",
     });
+  });
+});
+
+describe("checkReadmeExports() — the READMEs it finds when none is configured", () => {
+  it("discovers a README carrying the anchor", () => {
+    readme(section("| `Form` | component | A form. |", "**Types:** `FormProps`."));
+    expect(discoverReadmes(root, ["src"])).toEqual(["src/ui/README.md"]);
+  });
+
+  it("ignores a README that carries no anchor", () => {
+    readme("# Title\n\nNo import-path line here.\n");
+    expect(discoverReadmes(root, ["src"])).toEqual([]);
+  });
+
+  it("holds every discovered README, so an undocumented export still fails", () => {
+    readme(section("| `FormProps` | type | Its props. |"));
+    expect(checkReadmeExports({ root, sources: ["src"] }).findings.map((finding) => finding.message)).toEqual([
+      "`src/ui/core/mod.ts` exports the value `Form`, which the `./ui/core` table does not name",
+    ]);
+  });
+
+  it("lets an explicit `readmes` win over discovery", () => {
+    readme(section("| `FormProps` | type | Its props. |"));
+    expect(checkReadmeExports({ root, readmes: [], sources: ["src"] }).ok).toBe(false);
+  });
+
+  it("refuses a tree where discovery finds no marked README, rather than reporting a green gate", () => {
+    readme("# Title\n\nNo import-path line here.\n");
+    const result = checkReadmeExports({ root, sources: ["src"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "no README carries a `> Import path:` anchor — refusing to report a green readme-exports gate that held nothing",
+    ]);
   });
 });

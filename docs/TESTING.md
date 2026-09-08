@@ -1,6 +1,6 @@
 ---
 title: Testing Discipline
-description: "forge's two test runners and its browser set, the entity encoding map, the security matrix coverage map, and the testing namespace fixtures."
+description: "forge's three test runners, its browser and workerd sets, the entity encoding map, the security matrix coverage map, and the testing namespace fixtures."
 ---
 
 # Testing Discipline
@@ -16,12 +16,13 @@ description: "forge's two test runners and its browser set, the entity encoding 
 
 ## 0. Quick Reference
 
-- §1 Test Runners: the two runners, their type stub, and which question each answers
+- §1 Test Runners: the three runners, their type stub, and which question each answers
 - §1a bun:test Primitives: import source and nesting limit
 - §1b Custom bun:test Stub — No bun-types: the hard package ban
 - §1c The Browser Set: real Chromium behind its own verb
 - §1d Waiting on an htmx Swap: settled, not merely swapped
 - §1e Media Options Playwright Does Not Implement: why a spec takes `test` from the harness
+- §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
@@ -47,10 +48,11 @@ description: "forge's two test runners and its browser set, the entity encoding 
 
 ## 1. Test Runners
 
-**Forge has two runners, and they answer different questions.** `bun test` proves that a function
+**Forge has three runners, and they answer different questions.** `bun test` proves that a function
 returns what it should and that the server emitted the markup it promised. The browser set (§1c)
-proves that a controller does what it claims **to a keystroke**. Neither substitutes for the other,
-and both are kept.
+proves that a controller does what it claims **to a keystroke**. The workerd set (§1f) proves that a
+request is decoded the way a deployed Worker decodes it. None substitutes for another, and all three
+are kept.
 
 ### 1a. bun:test Primitives
 
@@ -135,6 +137,7 @@ redefined.
 | the server emitted this exact markup | `bun test`, exact-HTML assertion (§3) |
 | a pure function returns this value | `bun test` |
 | a controller moves focus / writes an attribute / consumes a key | **the browser set only** |
+| a request is decoded the way a deployed Worker decodes it | **the workerd set only** (§1f) |
 
 **An SSR string is not sufficient evidence for a controller**, and a behaviour test does not subsume
 an exact-HTML test — a component can behave correctly while emitting markup no stylesheet matches.
@@ -191,6 +194,26 @@ The harness `test` reinstates the three as real options and applies them through
 specs use. **Nothing enforces the import** — `browser-test-helper.browser.ts` is the regression
 that would catch the option silently reverting to a no-op, not a check on call sites.
 
+### 1f. The Workerd Set
+
+**A spec under `tests/workerd/` runs forge inside the real Workers runtime, under its own verb,
+`bun run test:workerd`.** It exists because the default suite drives an app through `app.request`
+under Bun, and Bun's `Request` is not workerd's. Anywhere the two disagree on a request — body
+decoding above all — the default suite is green **by construction**, whatever the deployed app does.
+Forge is a Workers library, so that blind spot is the one worth paying a runtime for.
+
+**Each spec starts `wrangler dev` over a fixture in `tests/fixtures/`, under node.** Not
+`createTestHarness`: it starts under bun but never answers a request, and the wrangler CLI refuses
+bun outright. Spawning the CLI as a child keeps `bun test` the only test runner in this repository
+(`CLAUDE.md`'s toolchain table), while the code under test still executes in workerd.
+
+**The set is held back to the `full` tier, and the reason is a prerequisite, not cost** — the same
+ground the browser set is held back on (§1c). `hasWorkerd` probes `wrangler`, which is what resolves
+the platform-specific runtime package, and `workerdStep`'s hint names `bun install`.
+
+**`test` is scoped to `src/` so that this set is not also the fast tier's.** A spec here costs a
+runtime start; a co-located test costs milliseconds, and the inner loop must stay the inner loop.
+
 ---
 
 ## 2. Co-Located Test Files
@@ -198,6 +221,18 @@ that would catch the option silently reverting to a no-op, not a check on call s
 See [`TESTING.md`](../warden/canon/libs/TESTING.md) §2 for co-location, the naming convention, the
 publish exclusion, and the concrete-file import rule with its two exceptions. forge's browser set
 follows the same rule under its own suffix (§1c).
+
+**Two filenames need no test, and neither is taken on trust.** A module named `types.ts` or `bin.ts`
+is exempt by name: the first declares, the second is argv in and `process.exit` out, and what it
+wires is tested where that lives. `validate-co-location` then re-checks the claim the name makes —
+**one that exports a function, a class, or a const bound to either fails**, naming the callable.
+Give it a test, or move the function to a module that has one. There is no third state: a module
+that needs a nomination goes in `config/exemptions.ts` with the reason it needs one, and a blank
+reason fails too.
+
+The convention is deliberately narrow. "Exports no function" would have exempted every component
+written as `export const Button = (…) => …` and every lint rule written as an object literal — 125
+files that carry a test today — while catching nothing the nominations did not already cover.
 
 ---
 
@@ -251,28 +286,11 @@ is the only accepted shape.
 
 ### 3d. Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees
 
-**The operational check, applied before a test is counted as written: delete the mechanism the test
-names; a test that still passes was never testing it.**
-
-The failure shape is always the same. The subject is a _mechanism_ — a timer cleared, a list that
-does not grow, an observer disconnected — and the assertion reads an _outcome_ that a second,
-independent mechanism also produces. A guard clause is the usual second mechanism: `if (disposed)
-return;` at the top of a callback makes "nothing visibly happened" true whether or not the timer
-that calls it was ever cancelled.
-
-Two shapes worth recognising:
-
-- **A guard downstream of the subject.** Remove the disposal guard from a lazy-loading controller
-  and every case but one stays green — the one counting initialisations. The pre-existing assertion
-  re-observed the element and checked what appeared, which the guard and the mechanism produce
-  identically.
-- **An assertion that passes when its subject is absent.** `expect(probe?.[0]).not.toBe("x")` passes
-  when `probe` has been deleted outright, because optional chaining makes the expression `undefined`.
-  A negative assertion over an optional path asserts nothing.
-
-**Pin the mechanism, and pin that it was armed.** "The timer never fired" is worth nothing without
-"a timer was scheduled" — a mechanism never set up also never runs. Both halves in one assertion is
-the cheapest form: `expect(timers).toEqual({ scheduled: 1, fired: 0 })`.
+See [`TESTING.md`](../warden/canon/libs/TESTING.md) §3d for the delete-the-mechanism check, the two
+failure shapes it catches, and the rule that a mechanism is pinned along with its having been armed.
+The two shapes look like this here: the disposal guard is `if (disposed) return;` in a lazy-loading
+controller, and the absent subject is `expect(probe?.[0]).not.toBe("x")`, which passes once `probe`
+has been deleted outright.
 
 This does not weaken §1c's rule that a browser case asserts a DOM state rather than a call count.
 What is counted here is the **platform's** own invocation — a timer callback firing, a property being
@@ -383,8 +401,11 @@ See [`TESTING.md`](../warden/canon/libs/TESTING.md) §6 for the one-command-thre
 table, the prerequisite line, and the scoped-run rule. `config/steps.ts` owns forge's step list
 and its per-step tier ([`SOURCE_OF_TRUTH.md`](./SOURCE_OF_TRUTH.md) §2a): `fast` holds `typecheck`,
 `lint`, `format` and `test`; `standard` adds every `validate-*` row plus
-`typecheck:workers-consumer`, `lint:types` and `governance`; `full` adds `validate-changelog` and
-`test:browser`.
+`typecheck:workers-consumer`, `lint:types` and `governance`; `full` adds `validate-changelog`,
+`test:browser` and `test:workerd`.
+
+`test` is scoped to `src/`, so the fast tier runs the co-located suites alone and the workerd set is
+reached only through its own step (§1d).
 
 ---
 

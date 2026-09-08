@@ -6,6 +6,9 @@ import { CliError } from "../../../src/tooling/cli/errors";
 import type { CommandBase } from "../../../src/tooling/cli/types";
 import { renderCatalogue } from "../catalogue/render";
 import { parseId } from "../corpus/ident";
+import { changed } from "../impact/git";
+import { impact } from "../impact/impact";
+import { renderImpact } from "../impact/render";
 import { gateIndexPath, indexPath } from "../index/db";
 import { openIndex, rebuild } from "../index/open";
 import { serveStdio } from "../mcp/server";
@@ -29,7 +32,7 @@ function context(flags: { root?: string | undefined; kind?: string | undefined; 
   return { root, kind: resolveKind(root, flags.kind), path: flags.gate === true ? gateIndexPath(root) : indexPath(root) };
 }
 
-/** Builds the `warden` knowledge commands: `index`, `search`, `read`, `outline`, `related`. @public */
+/** Builds the `warden` knowledge commands: `index`, `search`, `read`, `outline`, `related`, `impact`. @public */
 export function createKnowledgeCommands(parent: CommandBase): void {
   addCommand(
     parent,
@@ -173,6 +176,26 @@ export function createKnowledgeCommands(parent: CommandBase): void {
             return;
           }
           for (const edge of edges) console.log(`${edge.kind.padEnd(10)} ${edge.id ?? `(unresolved) ${edge.raw}`}`);
+        } finally {
+          knowledge.close();
+        }
+      },
+    }),
+  );
+
+  addCommand(
+    parent,
+    createCommand({
+      name: "impact",
+      description: "Show which governing sections a ref changed, what depends on them, and what they govern",
+      args: { kind: "exact", count: 1 },
+      flags: { root: ROOT_FLAG, kind: KIND_FLAG, gate: GATE_FLAG },
+      run: (args, flags) => {
+        const { root, kind, path } = context(flags);
+        const ref = args[0] ?? "";
+        const knowledge = openIndex(root, kind, { path, canonVersion: canonVersion() });
+        try {
+          process.stdout.write(renderImpact(impact(knowledge.db, root, knowledge.sources, ref, changed(root, ref))));
         } finally {
           knowledge.close();
         }

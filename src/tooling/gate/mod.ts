@@ -29,12 +29,14 @@ export {
   typeAwareLintStep,
   checkStep,
   typecheckStep,
+  workerdStep,
 } from "./builders";
 export {
   exportNamesFromLine,
   findPublicSymbols,
   parseBarrelExportNames,
   parseBarrelExports,
+  parseCallableExports,
   parseConsumerExportNames,
   parseTypeExportNames,
 } from "./checks/barrel-parse";
@@ -43,6 +45,7 @@ export { checkAssetManifest } from "./checks/asset-manifest";
 export type { AssetRootCheckConfig } from "./checks/asset-root";
 export { checkAssetRoot } from "./checks/asset-root";
 export { hasChromium, resolveChromiumPath } from "./checks/browser";
+export { hasWorkerd } from "./checks/workerd";
 export type { BuildTimeBoundaryCheckConfig } from "./checks/build-time-boundary";
 export { buildTimeSubpaths, checkBuildTimeBoundary, isBuildTime } from "./checks/build-time-boundary";
 export type { ClassGroupsCheckConfig } from "./checks/class-groups";
@@ -55,7 +58,7 @@ export type { ClassOrderCheckConfig } from "./checks/class-order";
 export { checkClassOrder, droppedToken, validateClassOrder } from "./checks/class-order";
 export type { ClassTokensCheckConfig, SourceLiteral } from "./checks/class-tokens";
 export { checkClassTokens, stringLiterals, unknownTokens } from "./checks/class-tokens";
-export { type CoLocationCheckConfig, checkCoLocation, testCandidates } from "./checks/co-location";
+export { type CoLocationCheckConfig, checkCoLocation, declaredByName, testCandidates } from "./checks/co-location";
 export { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./checks/color";
 export type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, Measurement, Unresolved } from "./checks/contrast";
 export { checkContrast, measurePairs, parsePalette, resolveColor } from "./checks/contrast";
@@ -92,7 +95,7 @@ export {
   parseDeclaredCustomProperties,
 } from "./checks/design-parse";
 export type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
-export { checkExports, isPublished, parseSubpathPatterns } from "./checks/exports";
+export { checkExports, isBrowserSubpath, isPublished, parseSubpathPatterns } from "./checks/exports";
 export type { JsxCheckConfig } from "./checks/jsx";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
 export type { LintPluginCheckConfig } from "./checks/lint-plugin";
@@ -168,16 +171,24 @@ export {
   sectionWindow,
 } from "./checks/namespace-graph-parse";
 export type { DocumentedSymbol, ImportPathAnchor } from "./checks/readme-exports-parse";
-export { parseExportsHeadingLine, parseExportsTableSymbols, parseImportPathAnchors, parseTypesProse } from "./checks/readme-exports-parse";
+export {
+  ANCHOR_RE,
+  parseExportsHeadingLine,
+  parseExportsTableSymbols,
+  parseImportPathAnchors,
+  parseTypesProse,
+} from "./checks/readme-exports-parse";
 export {
   balancedSpan,
   blankComments,
   blankSourceComments,
   collectFiles,
   collectSource,
+  excludedBy,
   lineAt,
   listDirectories,
   listFiles,
+  resolveSources,
   suppressedBy,
 } from "./checks/source-scan";
 export { boundaryViolation, checkSsrBoundary, type SsrBoundaryCheckConfig, validateSsrBoundary } from "./checks/ssr-boundary";

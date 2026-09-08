@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +22,20 @@ export function walkUpToRepo(from: string): string | undefined {
     const parent = dirname(current);
     if (parent === current) return undefined;
     current = parent;
+  }
+}
+
+/** The name a repository publishes under, or `undefined` when it declares none.
+ *
+ *  Read at each call site rather than threaded through `OpenOptions`: the field would then reach
+ *  every `openIndex` and `rebuild` caller, and each of the four builds already holds the root. @public */
+export function packageNameOf(root: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(resolve(root, "package.json"), "utf-8"));
+    const name = (parsed as { name?: unknown }).name;
+    return typeof name === "string" && name !== "" ? name : undefined;
+  } catch {
+    return undefined;
   }
 }
 

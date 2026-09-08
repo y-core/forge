@@ -44,6 +44,37 @@ export function getLatestTag(cwd: string, prefix: string): string | null {
   return null;
 }
 
+/** True when `tag` is an ancestor of HEAD — false when published history below it was rewritten. */
+export function tagIsAncestorOfHead(cwd: string, tag: string): boolean {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", tag, "HEAD"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+    return true;
+  } catch (err) {
+    // Exit 1 is the answer "no"; anything else is git failing to answer, which must not read as a rewrite.
+    if (err && typeof err === "object" && (err as { status?: unknown }).status === 1) return false;
+    throw new ReleaseError("git-error", `git merge-base failed: ${gitErrorDetail(err)}`);
+  }
+}
+
+/** Tag names `remote` carries, or `null` when the remote could not be reached. */
+export function remoteTags(cwd: string, remote = "origin"): string[] | null {
+  let output: string;
+  try {
+    output = gitExec(["ls-remote", "--tags", remote], cwd);
+  } catch {
+    return null;
+  }
+  return (
+    output
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split("\t")[1] ?? "")
+      // An annotated tag also lists a `^{}` dereference line for the commit it points at.
+      .map((ref) => ref.replace(/^refs\/tags\//, "").replace(/\^\{\}$/, ""))
+      .filter(Boolean)
+  );
+}
+
 /** Returns each `--oneline` commit entry made since `tag`. */
 export function getCommitsSinceTag(cwd: string, tag: string): string[] {
   const output = gitExec(["log", `${tag}..HEAD`, "--oneline"], cwd);

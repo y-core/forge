@@ -190,6 +190,44 @@ describe("checkExports() — one entry against the source tree", () => {
   });
 });
 
+describe("checkExports() — the browser-only convention and the escapes it holds", () => {
+  const tree = { "src/x/client/mod.ts": VALUE_BARREL, "src/x/client/thing.ts": "export const thing = 1;\n" };
+
+  it("imports no subpath under a `client` segment, with no entry configured", async () => {
+    expect(await messages(tree, { exports: { "./x/client": "./src/x/client/mod.ts" }, files: ["src"] })).toEqual([]);
+  });
+
+  it("reports an explicit entry the convention already derives — a redundant escape is a drift surface", async () => {
+    expect(await messages(tree, { exports: { "./x/client": "./src/x/client/mod.ts" }, files: ["src"], browserOnly: ["./x/client"] })).toEqual([
+      "browserOnly: ./x/client sits under a `client` segment, which is browser-only already — delete the entry",
+    ]);
+  });
+
+  it("reports a `browserOnly` entry naming a subpath the map does not have", async () => {
+    expect(await messages(tree, { exports: { "./x/client": "./src/x/client/mod.ts" }, files: ["src"], browserOnly: ["./gone"] })).toEqual([
+      "browserOnly: ./gone is not a subpath of the exports map — delete the entry",
+    ]);
+  });
+
+  it("reports a `sideEffectOnly` entry naming a subpath the map does not have", async () => {
+    expect(await messages(tree, { exports: { "./x/client": "./src/x/client/mod.ts" }, files: ["src"], sideEffectOnly: ["./gone"] })).toEqual([
+      "sideEffectOnly: ./gone is not a subpath of the exports map — delete the entry",
+    ]);
+  });
+
+  it("reports a `sealedInternal` entry naming a barrel that is not there", async () => {
+    expect(
+      await messages(tree, { exports: { "./x/client": "./src/x/client/mod.ts" }, files: ["src"], sealedInternal: ["src/gone/mod.ts"] }),
+    ).toEqual(["sealedInternal: src/gone/mod.ts is not a barrel this check walks — delete the entry"]);
+  });
+
+  it("reports a `sealedInternal` entry naming a barrel the map publishes", async () => {
+    expect(
+      await messages(tree, { exports: { "./x/client": "./src/x/client/mod.ts" }, files: ["src"], sealedInternal: ["src/x/client/mod.ts"] }),
+    ).toEqual(["sealedInternal: src/x/client/mod.ts is a published exports target — delete the entry"]);
+  });
+});
+
 describe("checkExports() — @public symbols against their barrel", () => {
   it("reports every public symbol the barrel does not name, sorted", async () => {
     const tree = {

@@ -1,3 +1,6 @@
+import { changed } from "../impact/git";
+import { impact } from "../impact/impact";
+import { renderImpact } from "../impact/render";
 import type { Knowledge } from "../index/open";
 import { outline, readSection } from "../search/read";
 import { related } from "../search/related";
@@ -12,7 +15,7 @@ export interface ToolSpec {
 
 const STRING = { type: "string" } as const;
 
-/** The four tools. Parameterised computation is a tool; addressable content is a resource, and
+/** The five tools. Parameterised computation is a tool; addressable content is a resource, and
  *  lives in `resources.ts`. @public */
 export const TOOLS: readonly ToolSpec[] = [
   {
@@ -56,15 +59,29 @@ export const TOOLS: readonly ToolSpec[] = [
   {
     name: "knowledge_related",
     description:
-      "What a section defers to, what it cites, and what cites it. Ask this before changing a rule: the inbound edges are what else depends on it.",
+      "What a section defers to, what it cites, what cites it, and which published subpaths its prose governs. Ask this before changing a rule: the inbound edges are what else depends on it, and the `governs` edges are the code it binds.",
     inputSchema: {
       type: "object",
       properties: {
         id: { ...STRING, description: "A chunk id, or a document id without the `#section`" },
-        kinds: { type: "array", items: STRING, description: "Filter to `defers`, `cites`, `defers-by` or `cites-by`" },
+        kinds: {
+          type: "array",
+          items: STRING,
+          description: "Filter to `defers`, `cites`, `governs`, or any of them with `-by` for the inbound direction",
+        },
         depth: { type: "number", description: "Follow edges N levels (default 1)" },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "knowledge_impact",
+    description:
+      "Given a git ref, which governing sections a diff changed, what else depends on each of them, and which published subpaths each one governs. The blast radius of a documentation change, in the direction a reviewer reads it.",
+    inputSchema: {
+      type: "object",
+      properties: { ref: { ...STRING, description: "A git ref to diff against, e.g. `HEAD~1` or `main`" } },
+      required: ["ref"],
     },
   },
 ];
@@ -146,6 +163,17 @@ export function callTool(knowledge: Knowledge, name: string, args: Record<string
       const edges = related(knowledge.db, id, kinds, typeof args.depth === "number" ? args.depth : 1);
       if (edges.length === 0) return text(`${advisory}No relation from or to "${id}".`);
       return text(advisory + edges.map((edge) => `${edge.kind.padEnd(10)} ${edge.id ?? `(unresolved) ${edge.raw}`}`).join("\n"));
+    }
+
+    case "knowledge_impact": {
+      const ref = typeof args.ref === "string" ? args.ref : "";
+      if (ref === "") return failure("knowledge_impact needs a git ref.");
+      try {
+        const report = impact(knowledge.db, knowledge.root, knowledge.sources, ref, changed(knowledge.root, ref));
+        return text(advisory + renderImpact(report));
+      } catch (error) {
+        return failure(error instanceof Error ? error.message : String(error));
+      }
     }
 
     default:

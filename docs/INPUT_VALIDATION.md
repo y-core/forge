@@ -383,9 +383,8 @@ which is what lets two widgets live in one form. Both are named in
 [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIME.md) §2c.
 
 **An unverifiable CAPTCHA fails closed.** A siteverify call that timed out or never landed says
-nothing about the caller, so the submission is refused anyway — but it is logged, because a run of
-those is an outage rather than an attack, and `onBotDetected` receives the reason so an app can
-tell the two apart.
+nothing about the caller, so the submission is refused anyway, and `onBotDetected` receives the
+reason so an app can tell an outage from an attack.
 
 **`secretKey` is server-side only and must never appear in a client bundle**; `siteKey` is the
 client-side half.
@@ -401,6 +400,14 @@ bug.** A caller who knows its own body would have validated can still infer that
 from a guard. Closing it means synthesising a plausible per-submission field, which manufactures a
 second, richer signal; forge takes the narrower residual. An app that needs the distinction hidden
 from a knowledgeable caller supplies `onBotDetected` and renders its own response.
+
+**Every trip is logged at `warn`, naming the guard and, for Turnstile, the reason.** The refusal is
+deliberately indistinguishable from a validation failure to the caller, so without the log line it
+is indistinguishable to the operator too — and a CAPTCHA that cannot pass in a given environment
+then reads as every submission getting its first field wrong. That is not hypothetical: it is what a
+consuming app saw under a local dev server whose widget issued no token, and diagnosing it took a
+Workers-runtime spec ([`TESTING.md`](./TESTING.md) §1f) to rule the body parse out. The response the
+caller sees is unchanged; only the server-side record is.
 
 ---
 

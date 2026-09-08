@@ -2,7 +2,8 @@ import type { Database } from "bun:sqlite";
 
 /** One edge out of, or into, a chunk or document. @public */
 export interface Related {
-  /** `defers`, `cites`, or the same with `-by` for an inbound edge. */
+  /** `defers`, `cites`, `governs`, or the same with `-by` for an inbound edge. A `governs` edge
+   *  points at a `code:<subpath>` id rather than a document. */
   kind: string;
   /** The id at the other end; absent when the citation resolved to nothing. */
   id?: string;
@@ -49,7 +50,10 @@ export function related(db: Database, id: string, kinds?: readonly string[], dep
         if (emitted.has(key)) continue;
         emitted.add(key);
         found.push({ kind: row.kind, ...(row.to_id === null ? {} : { id: row.to_id }), raw: row.raw });
-        if (row.to_id !== null && !seen.has(row.to_id)) {
+        // A `code:` target is a leaf. Traversing one would fan a depth-2 walk out to every document
+        // that happens to govern the same subpath — a real relation, but not the one asked for, and
+        // it would arrive unlabelled among the citation edges.
+        if (row.to_id !== null && !row.to_id.startsWith("code:") && !seen.has(row.to_id)) {
           seen.add(row.to_id);
           next.push(row.to_id);
         }

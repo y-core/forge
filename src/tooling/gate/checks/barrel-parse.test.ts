@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
 
-import { findPublicSymbols, parseBarrelExportNames, parseBarrelExports, parseConsumerExportNames, parseTypeExportNames } from "./barrel-parse";
+import {
+  findPublicSymbols,
+  parseBarrelExportNames,
+  parseBarrelExports,
+  parseCallableExports,
+  parseConsumerExportNames,
+  parseTypeExportNames,
+} from "./barrel-parse";
 
 function fixture(source: string): string {
   return source;
@@ -272,5 +279,51 @@ describe("parseTypeExportNames() — the type half of a barrel", () => {
 
     expect(sorted(parseTypeExportNames(path))).toEqual([]);
     expect(sorted(parseConsumerExportNames(path))).toEqual(["Card"]);
+  });
+});
+
+describe("parseCallableExports() — the claim a declaration file makes", () => {
+  const callable: [string, string, string][] = [
+    ["a function declaration", "export function alpha(): void {}", "alpha"],
+    ["an async function declaration", "export async function alpha(): Promise<void> {}", "alpha"],
+    ["a class declaration", "export class Alpha {}", "Alpha"],
+    ["a default function", "export default function alpha(): void {}", "alpha"],
+    ["a default class", "export default class Alpha {}", "Alpha"],
+    ["a const bound to an arrow", "export const alpha = () => {};", "alpha"],
+    ["a const bound to an async arrow", "export const alpha = async () => {};", "alpha"],
+    ["an annotated const bound to an arrow", "export const alpha: Handler = (a) => a;", "alpha"],
+    ["a const bound to a function expression", "export const alpha = function () {};", "alpha"],
+    ["a const bound to an async function expression", "export const alpha = async function () {};", "alpha"],
+    ["a const bound to a single-parameter arrow", "export const alpha = (a) => a;", "alpha"],
+    ["a const whose annotation is itself a function type", "export const alpha: (a: number) => void = (a) => {};", "alpha"],
+  ];
+
+  for (const [label, source, name] of callable) {
+    it(`finds ${label}`, () => {
+      expect([...parseCallableExports(fixture(source))]).toEqual([name]);
+    });
+  }
+
+  const declared: [string, string][] = [
+    ["an object literal", "export const TABLE = { a: 1 };"],
+    ["an object literal holding a method", "export const rule: LintRule = { create() {} };"],
+    ["an interface", "export interface Thing {\n  a: number;\n}"],
+    ["a type alias of a function", "export type Handler = (a: number) => void;"],
+    ["a string constant", 'export const NAME = "alpha";'],
+    ["an array of records", "export const PAIRS = [{ a: 1 }];"],
+  ];
+
+  for (const [label, source] of declared) {
+    it(`finds nothing in ${label}`, () => {
+      expect([...parseCallableExports(fixture(source))]).toEqual([]);
+    });
+  }
+
+  it("finds nothing in a callable that is commented out", () => {
+    expect([...parseCallableExports(fixture("// export function alpha(): void {}\n/* export class Alpha {} */\n"))]).toEqual([]);
+  });
+
+  it("finds an unnamed default export by its kind, so it is still reported", () => {
+    expect([...parseCallableExports(fixture("export default function () {}"))]).toEqual(["default function"]);
   });
 });
