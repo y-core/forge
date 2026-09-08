@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.6] — 2026-09-08
+
 ### Added
 
 - **An amend-floor preflight in `forge release`.** Before anything is written, the command refuses a
@@ -5249,6 +5255,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.6]: https://github.com/y-core/forge/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/y-core/forge/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/y-core/forge/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/y-core/forge/compare/v0.1.2...v0.1.3
